@@ -60,4 +60,6 @@ db/*.db-journal
 
 # Upload / download directories
 /upload/
-/download/
+/download/.accesslog
+.config
+.stats
