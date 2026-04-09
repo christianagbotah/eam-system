@@ -50,5 +50,14 @@ test
 prompt
 
 server.log
+
 # Skills directory
 /skills/
+
+# Database files (regenerated via prisma db push)
+db/*.db
+db/*.db-journal
+
+# Upload / download directories
+/upload/
+/download/
