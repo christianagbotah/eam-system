@@ -692,7 +692,7 @@ function LoginPage() {
 function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const { currentPage, navigate, sidebarOpen, enabledModules } = useNavigationStore();
   const expanded = forceExpanded ?? sidebarOpen;
-  const { user, hasPermission, logout } = useAuthStore();
+  const { user, permissions, hasPermission, logout } = useAuthStore();
   const [openMenus, setOpenMenus] = useState<string[]>([]);
 
   // Menu group definition
@@ -906,7 +906,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       if (codes.length > 0 && !codes.some(c => enabledModules.has(c))) return false;
     }
     return true;
-  }), [menuGroups, hasPermission, enabledModules]);
+  }), [menuGroups, hasPermission, enabledModules, permissions]);
 
   // Get tooltip text for collapsed sidebar
   const getGroupTooltip = (group: NavGroup) => {
@@ -1090,29 +1090,21 @@ function Sidebar() {
         <SidebarContent />
       </aside>
 
-      {/* Mobile overlay - always mounted, CSS controls visibility to prevent remount flicker */}
-      <div
-        className={`fixed inset-0 z-50 lg:hidden transition-all duration-300 ${
-          mobileSidebarOpen
-            ? 'opacity-100 pointer-events-auto'
-            : 'opacity-0 pointer-events-none'
-        }`}
-      >
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileSidebarOpen(false)} />
-        <aside
-          className={`absolute left-0 top-0 bottom-0 w-72 bg-sidebar z-50 shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
-            mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}
-        >
-          <button
-            className="absolute top-4 right-3 text-sidebar-foreground/50 hover:text-sidebar-foreground z-10"
-            onClick={() => setMobileSidebarOpen(false)}
-          >
-            <X className="h-5 w-5" />
-          </button>
-          <SidebarContent forceExpanded />
-        </aside>
-      </div>
+      {/* Mobile sidebar */}
+      {mobileSidebarOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileSidebarOpen(false)} />
+          <aside className="absolute left-0 top-0 bottom-0 w-72 bg-sidebar z-50 shadow-2xl flex flex-col overflow-hidden">
+            <button
+              className="absolute top-4 right-3 text-sidebar-foreground/50 hover:text-sidebar-foreground z-10"
+              onClick={() => setMobileSidebarOpen(false)}
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <SidebarContent forceExpanded />
+          </aside>
+        </div>
+      )}
     </>
   );
 }
