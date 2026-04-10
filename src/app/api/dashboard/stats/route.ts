@@ -136,7 +136,10 @@ export async function GET() {
         createdTodayMR,
         createdTodayWO,
         completedTodayWO,
-        // MR breakdown
+        // MR breakdown (aliased for frontend)
+        approvedRequests: mrStats['approved'] || 0,
+        rejectedRequests: mrStats['rejected'] || 0,
+        convertedRequests: mrStats['converted'] || 0,
         pendingMR: mrStats['pending'] || 0,
         inProgressMR: mrStats['in_progress'] || 0,
         approvedMR: mrStats['approved'] || 0,
@@ -150,6 +153,16 @@ export async function GET() {
         inProgressWO: woStats['in_progress'] || 0,
         completedWO: woStats['completed'] || 0,
         closedWO: woStats['closed'] || 0,
+        // WO type breakdown for donut chart
+        preventiveWO: await db.workOrder.count({ where: { type: 'preventive' } }),
+        correctiveWO: await db.workOrder.count({ where: { type: 'corrective' } }),
+        emergencyWO: await db.workOrder.count({ where: { type: 'emergency' } }),
+        inspectionWO: await db.workOrder.count({ where: { type: 'inspection' } }),
+        predictiveWO: await db.workOrder.count({ where: { type: 'predictive' } }),
+        // Priority breakdown for MR
+        highPriorityMR: await db.maintenanceRequest.count({ where: { priority: { in: ['high', 'urgent'] } } }),
+        mediumPriorityMR: await db.maintenanceRequest.count({ where: { priority: 'medium' } }),
+        lowPriorityMR: await db.maintenanceRequest.count({ where: { priority: 'low' } }),
         // Recent items
         recentRequests,
         recentWorkOrders,

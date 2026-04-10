@@ -263,6 +263,26 @@ export interface DashboardStats {
   createdTodayMR: number;
   createdTodayWO: number;
   completedTodayWO: number;
+  pendingMR: number;
+  inProgressMR: number;
+  approvedMR: number;
+  rejectedMR: number;
+  convertedMR: number;
+  draftWO: number;
+  requestedWO: number;
+  approvedWO: number;
+  assignedWO: number;
+  inProgressWO: number;
+  completedWO: number;
+  closedWO: number;
+  preventiveWO: number;
+  correctiveWO: number;
+  emergencyWO: number;
+  inspectionWO: number;
+  predictiveWO: number;
+  highPriorityMR: number;
+  mediumPriorityMR: number;
+  lowPriorityMR: number;
   recentRequests: MaintenanceRequest[];
   recentWorkOrders: WorkOrder[];
 }

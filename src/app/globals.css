@@ -172,4 +172,33 @@
   nav.overflow-y-auto::-webkit-scrollbar-thumb:hover {
     background: oklch(0.45 0.05 163);
   }
+
+  /* Dark mode scrollbar overrides */
+  .dark .overflow-y-auto::-webkit-scrollbar-thumb,
+  .dark .overflow-auto::-webkit-scrollbar-thumb {
+    background: oklch(0.35 0.02 163);
+  }
+  .dark .overflow-y-auto::-webkit-scrollbar-thumb:hover,
+  .dark .overflow-auto::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.45 0.03 163);
+  }
+  .dark .overflow-y-auto,
+  .dark .overflow-auto {
+    scrollbar-color: oklch(0.35 0.02 163) transparent;
+  }
+}
+
+/* Dark mode color overrides for dashboard elements */
+.dark .dark\:bg-amber-950\/30 { background-color: oklch(0.22 0.04 75 / 0.3); }
+.dark .dark\:bg-emerald-950\/30 { background-color: oklch(0.20 0.04 160 / 0.3); }
+.dark .dark\:bg-red-950\/30 { background-color: oklch(0.20 0.04 25 / 0.3); }
+.dark .dark\:bg-teal-950\/30 { background-color: oklch(0.20 0.04 180 / 0.3); }
+.dark .dark\:bg-sky-950\/30 { background-color: oklch(0.20 0.04 230 / 0.3); }
+.dark .dark\:bg-violet-950\/30 { background-color: oklch(0.20 0.04 300 / 0.3); }
+.dark .dark\:bg-orange-950\/30 { background-color: oklch(0.22 0.04 55 / 0.3); }
+
+/* Chart tooltip dark mode */
+.dark [data-slot="chart-tooltip"] {
+  background-color: oklch(0.17 0.02 163) !important;
+  border-color: oklch(1 0 0 / 12%) !important;
 }
