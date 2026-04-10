@@ -2441,6 +2441,7 @@ function SettingsRolesPage() {
 
   const permissionsByModule = useMemo(() => {
     const map: Record<string, Permission[]> = {};
+    if (!Array.isArray(permissions)) return map;
     permissions.forEach(p => {
       if (!map[p.module]) map[p.module] = [];
       map[p.module].push(p);
@@ -2453,8 +2454,11 @@ function SettingsRolesPage() {
       api.get<Role[]>('/api/roles'),
       api.get<Permission[]>('/api/permissions'),
     ]).then(([rolesRes, permsRes]) => {
-      if (rolesRes.success && rolesRes.data) setRoles(rolesRes.data);
-      if (permsRes.success && permsRes.data) setPermissions(permsRes.data);
+      if (rolesRes.success && rolesRes.data) setRoles(Array.isArray(rolesRes.data) ? rolesRes.data : []);
+      if (permsRes.success && permsRes.data) {
+        const perms = Array.isArray(permsRes.data) ? permsRes.data : (permsRes.data as { all?: Permission[] }).all || [];
+        setPermissions(perms);
+      }
       setLoading(false);
     });
   }, []);
