@@ -2,6 +2,54 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
 
+// GET /api/roles/[id] — Get single role with permissions
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const role = await db.role.findUnique({
+      where: { id },
+      include: {
+        rolePermissions: {
+          include: {
+            permission: {
+              select: { id: true, slug: true, name: true, module: true, action: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!role) {
+      return NextResponse.json({ success: false, error: 'Role not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        id: role.id,
+        name: role.name,
+        slug: role.slug,
+        description: role.description,
+        level: role.level,
+        isSystem: role.isSystem,
+        permissionCount: role.rolePermissions.length,
+        permissions: role.rolePermissions.map((rp) => rp.permission),
+      },
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch role';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
 // PUT /api/roles/[id] — Update role
 export async function PUT(
   request: NextRequest,

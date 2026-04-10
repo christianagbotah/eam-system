@@ -758,3 +758,30 @@ Stage Summary:
   - `/api/pm-schedules` (GET list with dueSoon filter, POST create) ✅
   - `/api/pm-schedules/[id]` (GET full detail, PUT, DELETE soft) ✅ — NEW
 
+
+---
+Task ID: 4-6
+Agent: full-stack-developer
+Task: Build all missing frontend pages for EAM system
+
+Work Log:
+- Updated sidebar navigation (removed comingSoon from assets, inventory, analytics; added plants, departments, audit to settings)
+- Updated router switch with 7 new page cases
+- Replaced SettingsUsersPage with full CRUD version (create/edit/reset password dialogs, actions dropdown)
+- Replaced SettingsRolesPage with interactive permission matrix (role cards, Switch toggles, CRUD dialogs)
+- Built SettingsPlantsPage with CRUD dialogs (card grid layout, active/inactive badges)
+- Built SettingsDepartmentsPage with CRUD dialogs (table layout, plant/parent selects)
+- Built NotificationsPage with read/mark-all-read (type-based icons and colors)
+- Built AuditLogsPage with filterable table (expandable rows for oldValues/newValues)
+- Built AssetsPage with stats bar, filters, create/edit dialogs (comprehensive form)
+- Built InventoryPage with stock level indicators (progress bars, low stock highlighting)
+- Built AnalyticsPage with Recharts charts and KPIs (WO status, asset condition donut, cost trend area, top assets bar)
+- Added missing icon imports (Key, UserMinus, Filter, MoreHorizontal, Pencil, Trash2, MapPin, Target, Activity, Gauge, UserPlus, CircleDot, Hash, Timer, ChevronDown)
+- Fixed lint error (set-state-in-effect in AuditLogsPage)
+- All lint checks passing
+
+Stage Summary:
+- All 9 new/enhanced pages implemented
+- Lint passing
+- Total page.tsx lines: 4441
+

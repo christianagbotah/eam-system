@@ -37,14 +37,23 @@ export async function PUT(
     // Delete all existing permissions for this role
     await db.rolePermission.deleteMany({ where: { roleId: id } });
 
-    // Create new permission assignments
+    // Validate all permission IDs exist
     if (permissionIds.length > 0) {
-      await db.rolePermission.createMany({
-        data: permissionIds.map((permissionId: string) => ({
-          roleId: id,
-          permissionId,
-        })),
+      const validPerms = await db.permission.findMany({
+        where: { id: { in: permissionIds } },
+        select: { id: true },
       });
+      const validIds = new Set(validPerms.map(p => p.id));
+      const filteredIds = permissionIds.filter((id: string) => validIds.has(id));
+
+      if (filteredIds.length > 0) {
+        await db.rolePermission.createMany({
+          data: filteredIds.map((permissionId: string) => ({
+            roleId: id,
+            permissionId,
+          })),
+        });
+      }
     }
 
     // Fetch updated role with permissions
