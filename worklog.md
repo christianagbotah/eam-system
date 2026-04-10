@@ -114,5 +114,27 @@
 - ✅ `next build` successful — all 17 routes compiled
 - ✅ Database seeded with 7 roles, 54 permissions, 7 users, 10 modules, sample MR and WO data
 
+### Full Workflow Verification (from dev.log)
+The following workflow was tested and confirmed working:
+1. ✅ Login (POST /api/auth/login) — 200
+2. ✅ Create MR (POST /api/maintenance-requests) — 201
+3. ✅ Approve MR (POST /api/maintenance-requests/:id/approve) — 200
+4. ✅ Create WO (POST /api/work-orders) — 201
+5. ✅ Assign WO (POST /api/work-orders/:id/assign) — 200
+6. ✅ Start WO (POST /api/work-orders/:id/start) — 200
+7. ✅ Complete WO (POST /api/work-orders/:id/complete) — 200
+8. ✅ Close WO (POST /api/work-orders/:id/close) — 200 (403 for non-authorized user, 200 for admin)
+9. ✅ Permission enforcement — 403 for unauthorized actions
+10. ✅ Lint: 0 errors, 0 warnings
+
+### Test Accounts (password: password123)
+- admin — Full system access
+- manager — Approvals, reports, analytics
+- supervisor — Team oversight, MR approvals
+- planner — WO planning, PM schedules
+- technician — Execute/complete WOs, create MRs
+- operator — Create MRs, view production
+- shop_attendant — Inventory management
+
 ---
 
