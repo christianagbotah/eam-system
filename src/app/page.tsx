@@ -2950,7 +2950,7 @@ function SettingsRolesPage() {
   const selectedPermCount = rolePerms.length;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1800px] mx-auto">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Roles & Permissions</h1>
@@ -2959,21 +2959,15 @@ function SettingsRolesPage() {
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Create Role</Button>
       </div>
 
-      {/* Role Selector — sticky horizontal pill strip */}
-      <Card className="border-0 shadow-sm sticky top-0 z-30 bg-card/95 backdrop-blur-sm">
-        <div className="px-4 py-3 border-b bg-muted/30">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Select Role</p>
-            {selectedRoleData && (
-              <Badge variant="outline" className="text-xs font-medium gap-1">
-                <Shield className="h-3 w-3" />
-                {selectedPermCount}/{totalPerms} permissions
-              </Badge>
-            )}
+      {/* Two-column layout: Roles (left) | Permissions (right) */}
+      <div className="flex gap-5 min-h-[calc(100vh-14rem)]">
+
+        {/* ─── Left Column: Role List ─── */}
+        <Card className="border-0 shadow-sm w-64 shrink-0 flex flex-col overflow-hidden">
+          <div className="px-4 py-3 border-b bg-muted/30 shrink-0">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Roles ({roles.length})</p>
           </div>
-        </div>
-        <div className="p-3">
-          <div className="flex flex-wrap gap-2">
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {roles.map(role => {
               const isSelected = selectedRoleId === role.id;
               const rpIds = allRolePerms[role.id] || [];
@@ -2982,113 +2976,117 @@ function SettingsRolesPage() {
                 <div
                   key={role.id}
                   onClick={() => setSelectedRoleId(role.id)}
-                  className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border transition-all text-left cursor-pointer ${isSelected ? 'bg-emerald-50 border-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-700 shadow-sm' : 'bg-card border-border/60 hover:border-border hover:shadow-sm'}`}
+                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all cursor-pointer group ${isSelected ? 'bg-emerald-50 dark:bg-emerald-950/30' : 'hover:bg-muted/60'}`}
                 >
-                  <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: (role.color || '#10b981') + '18', color: role.color || '#10b981' }}>
+                  <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: (role.color || '#10b981') + (isSelected ? '28' : '15'), color: role.color || '#10b981' }}>
                     <Shield className="h-3.5 w-3.5" />
                   </div>
-                  <div className="min-w-0">
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <p className={`text-sm font-medium truncate ${isSelected ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{role.name}</p>
-                      {role.isSystem && <span className="text-[8px] px-1 py-px rounded bg-muted text-muted-foreground font-bold shrink-0">SYS</span>}
+                      {role.isSystem && <span className="text-[7px] px-1 py-px rounded bg-muted text-muted-foreground font-bold shrink-0">SYS</span>}
                     </div>
-                    <p className="text-[10px] text-muted-foreground">{count}/{totalPerms} &middot; Level {role.level}</p>
+                    <p className="text-[10px] text-muted-foreground">{count}/{totalPerms}</p>
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
-                      <button className="h-6 w-6 flex items-center justify-center rounded hover:bg-muted/60 transition-colors shrink-0 ml-1">
-                        <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                      <button className="h-5 w-5 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-all shrink-0">
+                        <MoreHorizontal className="h-3 w-3 text-muted-foreground" />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEditRole(role); }}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
-                      {!role.isSystem && <DropdownMenuItem className="text-red-600" onClick={(e) => { e.stopPropagation(); handleDeleteRole(role); }}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>}
+                    <DropdownMenuContent align="end" className="w-36">
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEditRole(role); }}><Pencil className="h-3 w-3 mr-2" />Edit</DropdownMenuItem>
+                      {!role.isSystem && <DropdownMenuItem className="text-red-600" onClick={(e) => { e.stopPropagation(); handleDeleteRole(role); }}><Trash2 className="h-3 w-3 mr-2" />Delete</DropdownMenuItem>}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
               );
             })}
           </div>
-        </div>
-      </Card>
+        </Card>
 
-      {/* Permission Modules — vertical scroll */}
-      <div className="space-y-4">
-        {moduleNames.map(([module, perms], idx) => {
-          const moduleEnabledCount = perms.filter(p => rolePerms.includes(p.id)).length;
-          const allEnabled = moduleEnabledCount === perms.length;
-          return (
-            <Card key={module} className="border-0 shadow-sm overflow-hidden">
-              {/* Module header */}
-              <div
-                className={`flex items-center justify-between px-5 py-3.5 border-b cursor-pointer transition-colors ${allEnabled ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40' : 'bg-muted/30 border-border/60 hover:bg-muted/50'}`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${allEnabled ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
-                    {allEnabled ? <CheckCircle2 className="h-4 w-4" /> : <Settings className="h-4 w-4" />}
+        {/* ─── Right Column: Permissions for Selected Role ─── */}
+        <div className="flex-1 min-w-0 overflow-y-auto space-y-4">
+          {selectedRoleData && (
+            <div className="flex items-center gap-3 mb-1">
+              <div className="h-9 w-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: (selectedRoleData.color || '#10b981') + '18', color: selectedRoleData.color || '#10b981' }}>
+                <Shield className="h-4 w-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold">{selectedRoleData.name}</h2>
+                <p className="text-xs text-muted-foreground">{selectedRoleData.description || `Level ${selectedRoleData.level}`} &middot; {selectedPermCount} of {totalPerms} permissions enabled</p>
+              </div>
+            </div>
+          )}
+
+          {moduleNames.map(([module, perms]) => {
+            const moduleEnabledCount = perms.filter(p => rolePerms.includes(p.id)).length;
+            const allEnabled = moduleEnabledCount === perms.length;
+            return (
+              <Card key={module} className="border-0 shadow-sm overflow-hidden">
+                {/* Module header with master toggle */}
+                <div
+                  className={`flex items-center justify-between px-5 py-3.5 border-b transition-colors ${allEnabled ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40' : 'bg-muted/30 border-border/60'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`h-7 w-7 rounded-md flex items-center justify-center ${allEnabled ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
+                      {allEnabled ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Settings className="h-3.5 w-3.5" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">{module.replace(/_/g, ' ')}</p>
+                      <p className="text-[10px] text-muted-foreground">{perms.length} permissions</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold">{module.replace(/_/g, ' ')}</p>
-                    <p className="text-[11px] text-muted-foreground">{perms.length} permissions</p>
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className={`text-[11px] font-medium tabular-nums ${allEnabled ? 'border-emerald-300 text-emerald-600 dark:border-emerald-600 dark:text-emerald-400' : ''}`}>
+                      {moduleEnabledCount}/{perms.length}
+                    </Badge>
+                    <Switch
+                      checked={allEnabled}
+                      onCheckedChange={() => {
+                        if (allEnabled) {
+                          const newPerms = rolePerms.filter(pid => !perms.some(p => p.id === pid));
+                          setRolePerms(newPerms);
+                          setSavingPerm(true);
+                          api.put(`/api/roles/${selectedRoleId}/permissions`, { permissionIds: newPerms }).then(() => setSavingPerm(false));
+                        } else {
+                          const newPerms = [...new Set([...rolePerms, ...perms.map(p => p.id)])];
+                          setRolePerms(newPerms);
+                          setSavingPerm(true);
+                          api.put(`/api/roles/${selectedRoleId}/permissions`, { permissionIds: newPerms }).then(() => setSavingPerm(false));
+                        }
+                      }}
+                    />
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant="outline" className={`text-xs font-medium ${allEnabled ? 'border-emerald-300 text-emerald-600 dark:border-emerald-600 dark:text-emerald-400' : ''}`}>
-                    {moduleEnabledCount}/{perms.length}
-                  </Badge>
-                  <Switch
-                    checked={allEnabled}
-                    onCheckedChange={() => {
-                      if (allEnabled) {
-                        // Remove all module perms
-                        const newPerms = rolePerms.filter(pid => !perms.some(p => p.id === pid));
-                        setRolePerms(newPerms);
-                        setSavingPerm(true);
-                        api.put(`/api/roles/${selectedRoleId}/permissions`, { permissionIds: newPerms }).then(() => setSavingPerm(false));
-                      } else {
-                        // Add all module perms
-                        const newPerms = [...new Set([...rolePerms, ...perms.map(p => p.id)])];
-                        setRolePerms(newPerms);
-                        setSavingPerm(true);
-                        api.put(`/api/roles/${selectedRoleId}/permissions`, { permissionIds: newPerms }).then(() => setSavingPerm(false));
-                      }
-                    }}
-                    onClick={e => e.stopPropagation()}
-                  />
+                {/* Permission items */}
+                <div className="p-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1.5">
+                  {perms.map(p => {
+                    const isOn = rolePerms.includes(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all text-left ${isOn ? 'bg-emerald-50/70 dark:bg-emerald-950/25' : 'hover:bg-muted/50'}`}
+                        onClick={() => togglePermission(p.id)}
+                      >
+                        <Switch checked={isOn} onCheckedChange={() => togglePermission(p.id)} className="scale-[0.72] shrink-0" onClick={e => e.stopPropagation()} />
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-xs font-medium truncate ${isOn ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{p.name}</p>
+                          <p className="text-[10px] text-muted-foreground/60 truncate">{p.slug}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-              </div>
-              {/* Permission items — grid layout */}
-              <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-                {perms.map(p => {
-                  const isOn = rolePerms.includes(p.id);
-                  return (
-                    <button
-                      key={p.id}
-                      className={`flex items-center justify-between px-3 py-2.5 rounded-lg border transition-all text-left ${isOn ? 'bg-emerald-50/70 border-emerald-200/70 dark:bg-emerald-950/30 dark:border-emerald-800/50' : 'bg-card border-border/50 hover:border-border hover:shadow-sm'}`}
-                      onClick={() => togglePermission(p.id)}
-                    >
-                      <div className="min-w-0 flex-1 mr-2">
-                        <p className={`text-xs font-medium truncate ${isOn ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{p.name}</p>
-                        <p className="text-[10px] text-muted-foreground/60 truncate">{p.slug}</p>
-                      </div>
-                      <Switch
-                        checked={isOn}
-                        onCheckedChange={() => togglePermission(p.id)}
-                        className="scale-[0.72] shrink-0"
-                        onClick={e => e.stopPropagation()}
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-            </Card>
-          );
-        })}
+              </Card>
+            );
+          })}
+        </div>
       </div>
 
       {/* Saving indicator */}
       {savingPerm && (
-        <div className="fixed bottom-6 right-6 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-card border shadow-lg">
+        <div className="fixed bottom-6 right-6 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-card border shadow-lg z-50">
           <RefreshCw className="h-3.5 w-3.5 animate-spin text-emerald-600" />
           <span className="text-xs font-medium text-muted-foreground">Saving permissions...</span>
         </div>
