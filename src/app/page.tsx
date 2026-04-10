@@ -2979,10 +2979,10 @@ function SettingsRolesPage() {
               const rpIds = allRolePerms[role.id] || [];
               const count = isSelected ? selectedPermCount : rpIds.length;
               return (
-                <button
+                <div
                   key={role.id}
                   onClick={() => setSelectedRoleId(role.id)}
-                  className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border transition-all text-left ${isSelected ? 'bg-emerald-50 border-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-700 shadow-sm' : 'bg-card border-border/60 hover:border-border hover:shadow-sm'}`}
+                  className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border transition-all text-left cursor-pointer ${isSelected ? 'bg-emerald-50 border-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-700 shadow-sm' : 'bg-card border-border/60 hover:border-border hover:shadow-sm'}`}
                 >
                   <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: (role.color || '#10b981') + '18', color: role.color || '#10b981' }}>
                     <Shield className="h-3.5 w-3.5" />
@@ -3005,7 +3005,7 @@ function SettingsRolesPage() {
                       {!role.isSystem && <DropdownMenuItem className="text-red-600" onClick={(e) => { e.stopPropagation(); handleDeleteRole(role); }}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                </button>
+                </div>
               );
             })}
           </div>
