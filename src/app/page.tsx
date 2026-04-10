@@ -6533,13 +6533,13 @@ function AssetHealthPage() {
           <CardContent className="space-y-4 max-h-96 overflow-y-auto">
             {categories.length === 0 ? (
               <EmptyState icon={FolderOpen} title="No categories" description="Asset categories will appear here." />
-            ) : categories.map(cat => {
+            ) : categories.map((cat, idx) => {
               const pct = total > 0 ? Math.round((cat.total / total) * 100) : 0;
               const goodPct = cat.total > 0 ? Math.round((cat.good / cat.total) * 100) : 0;
               const fairPct = cat.total > 0 ? Math.round((cat.fair / cat.total) * 100) : 0;
               const poorPct = cat.total > 0 ? Math.round((cat.poor / cat.total) * 100) : 0;
               return (
-                <div key={cat.name} className="space-y-1.5">
+                <div key={`${cat.name}-${idx}`} className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium truncate max-w-[200px]">{cat.name}</span>
                     <span className="text-xs text-muted-foreground">{cat.total} ({pct}%)</span>
