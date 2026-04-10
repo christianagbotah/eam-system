@@ -126,3 +126,28 @@ Stage Summary:
 - Mobile sidebar stays mounted (CSS visibility), no state loss on open/close
 - Smooth slide-in animation added for mobile sidebar
 - Files modified: `src/stores/navigationStore.ts`, `src/app/page.tsx`
+
+---
+Task ID: 3
+Agent: Main
+Task: Fix sidebar menu items not showing (root cause: moduleCode mismatch)
+
+Work Log:
+- Investigated why sidebar menu items were not showing on mobile
+- Discovered the root cause: sidebar menu groups used uppercase abbreviated `moduleCode` values ('CORE', 'ASSET', 'RWOP', 'IOT', 'REPORTS', 'HRMS', 'MPMP', 'TRAC', 'IMS') that did NOT match the actual database module codes (lowercase: 'core', 'assets', 'work_orders', 'iot_sensors', etc.)
+- The `enabledModules` Set was populated from the database using actual codes, so `Set.has('ASSET')` always returned false since the set contained 'assets' — causing ALL menu groups to be filtered out
+- Updated `NavGroup` interface to support `moduleCodes?: string[]` for groups spanning multiple modules
+- Updated filter logic to check `moduleCodes` (any match) or `moduleCode` (single match)
+- Mapped all 12 sidebar groups to correct database codes:
+  - Dashboard → 'core', Assets → 'assets'
+  - Maintenance → ['work_orders', 'maintenance_requests']
+  - IoT → 'iot_sensors', Analytics → ['analytics', 'kpi_dashboard', 'oee', 'downtime', 'energy']
+  - Operations → ['meter_readings', 'training', 'shift_management']
+  - Production → 'production', Quality → ['quality', 'capa'], Safety → 'safety'
+  - Inventory → 'inventory', Reports → 'reports', Settings → 'modules'
+- Verified all 12 groups have at least one matching enabled module
+
+Stage Summary:
+- ALL sidebar menu groups now correctly match against database module codes
+- Menu items appear on both desktop and mobile sidebar
+- Files modified: `src/app/page.tsx` (NavGroup interface, filter logic, all moduleCode values)

@@ -701,14 +701,15 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     icon: React.ElementType;
     perm: string;
     page?: PageName;
-    moduleCode?: string; // maps to SystemModule.code for module-aware filtering
+    moduleCode?: string; // maps to SystemModule.code (lowercase) for module-aware filtering
+    moduleCodes?: string[]; // for groups spanning multiple modules (any match = visible)
     children?: { page: PageName; label: string; icon?: React.ElementType }[];
   }
 
   const menuGroups = useMemo<NavGroup[]>(() => [
-    { label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view', page: 'dashboard', moduleCode: 'CORE' },
+    { label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view', page: 'dashboard', moduleCode: 'core' },
     {
-      label: 'Assets', icon: Building2, perm: 'assets.view', moduleCode: 'ASSET',
+      label: 'Assets', icon: Building2, perm: 'assets.view', moduleCode: 'assets',
       children: [
         { page: 'assets-machines', label: 'Machines', icon: Building2 },
         { page: 'assets-hierarchy', label: 'Hierarchy', icon: GitBranch },
@@ -719,7 +720,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Maintenance', icon: Wrench, perm: 'work_orders.view', moduleCode: 'RWOP',
+      label: 'Maintenance', icon: Wrench, perm: 'work_orders.view', moduleCodes: ['work_orders', 'maintenance_requests'],
       children: [
         { page: 'maintenance-work-orders', label: 'Work Orders', icon: ClipboardList },
         { page: 'maintenance-requests', label: 'Requests', icon: MessageSquare },
@@ -732,7 +733,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'IoT', icon: Wifi, perm: 'iot.view', moduleCode: 'IOT',
+      label: 'IoT', icon: Wifi, perm: 'iot.view', moduleCode: 'iot_sensors',
       children: [
         { page: 'iot-devices', label: 'Devices', icon: Smartphone },
         { page: 'iot-monitoring', label: 'Monitoring', icon: Monitor },
@@ -740,7 +741,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Analytics', icon: BarChart3, perm: 'analytics.view', moduleCode: 'REPORTS',
+      label: 'Analytics', icon: BarChart3, perm: 'analytics.view', moduleCodes: ['analytics', 'kpi_dashboard', 'oee', 'downtime', 'energy'],
       children: [
         { page: 'analytics-kpi', label: 'KPI Dashboard', icon: Target },
         { page: 'analytics-oee', label: 'OEE', icon: Gauge },
@@ -749,7 +750,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Operations', icon: ClipboardCheck, perm: 'operations.view', moduleCode: 'HRMS',
+      label: 'Operations', icon: ClipboardCheck, perm: 'operations.view', moduleCodes: ['meter_readings', 'training', 'shift_management'],
       children: [
         { page: 'operations-meter-readings', label: 'Meter Readings', icon: Gauge },
         { page: 'operations-training', label: 'Training', icon: GraduationCap },
@@ -760,7 +761,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Production', icon: Zap, perm: 'production.view', moduleCode: 'MPMP',
+      label: 'Production', icon: Zap, perm: 'production.view', moduleCode: 'production',
       children: [
         { page: 'production-work-centers', label: 'Work Centers', icon: Factory },
         { page: 'production-resource-planning', label: 'Resource Planning', icon: Layers },
@@ -773,7 +774,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Quality', icon: ShieldCheck, perm: 'quality.view', moduleCode: 'TRAC',
+      label: 'Quality', icon: ShieldCheck, perm: 'quality.view', moduleCodes: ['quality', 'capa'],
       children: [
         { page: 'quality-inspections', label: 'Inspections', icon: Search },
         { page: 'quality-ncr', label: 'NCR', icon: FileCheck },
@@ -784,7 +785,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Safety', icon: HardHat, perm: 'safety.view', moduleCode: 'TRAC',
+      label: 'Safety', icon: HardHat, perm: 'safety.view', moduleCode: 'safety',
       children: [
         { page: 'safety-incidents', label: 'Incidents', icon: TriangleAlert },
         { page: 'safety-inspections', label: 'Inspections', icon: Search },
@@ -794,7 +795,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Inventory', icon: Package, perm: 'inventory.view', moduleCode: 'IMS',
+      label: 'Inventory', icon: Package, perm: 'inventory.view', moduleCode: 'inventory',
       children: [
         { page: 'inventory-items', label: 'Items', icon: Package },
         { page: 'inventory-categories', label: 'Categories', icon: FolderOpen },
@@ -809,7 +810,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Reports', icon: FileBarChart, perm: 'reports.view', moduleCode: 'REPORTS',
+      label: 'Reports', icon: FileBarChart, perm: 'reports.view', moduleCode: 'reports',
       children: [
         { page: 'reports-asset', label: 'Asset Reports', icon: Building2 },
         { page: 'reports-maintenance', label: 'Maintenance Reports', icon: Wrench },
@@ -822,7 +823,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Settings', icon: Cog, perm: 'settings.update', moduleCode: 'CORE',
+      label: 'Settings', icon: Cog, perm: 'settings.update', moduleCode: 'modules',
       children: [
         { page: 'settings-general', label: 'General', icon: Settings },
         { page: 'settings-users', label: 'Users', icon: Users },
@@ -900,7 +901,10 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     // Permission check
     if (!hasPermission(g.perm)) return false;
     // Module-aware check: hide groups whose module is not enabled (unless data not loaded yet)
-    if (enabledModules !== null && g.moduleCode && !enabledModules.has(g.moduleCode)) return false;
+    if (enabledModules !== null) {
+      const codes = g.moduleCodes || (g.moduleCode ? [g.moduleCode] : []);
+      if (codes.length > 0 && !codes.some(c => enabledModules.has(c))) return false;
+    }
     return true;
   }), [menuGroups, hasPermission, enabledModules]);
 
