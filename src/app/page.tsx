@@ -690,7 +690,7 @@ function LoginPage() {
 
 // Sidebar inner content extracted as a separate component with collapsible submenus
 function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
-  const { currentPage, navigate, sidebarOpen } = useNavigationStore();
+  const { currentPage, navigate, sidebarOpen, enabledModules } = useNavigationStore();
   const expanded = forceExpanded ?? sidebarOpen;
   const { user, hasPermission, logout } = useAuthStore();
   const [openMenus, setOpenMenus] = useState<string[]>([]);
@@ -704,21 +704,6 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     moduleCode?: string; // maps to SystemModule.code for module-aware filtering
     children?: { page: PageName; label: string; icon?: React.ElementType }[];
   }
-
-  // Track enabled modules from database (start with all visible until API loads)
-  const [enabledModules, setEnabledModules] = useState<Set<string> | null>(null);
-
-  useEffect(() => {
-    api.get<any[]>('/api/modules').then(res => {
-      if (res.success && Array.isArray(res.data)) {
-        const enabled = new Set<string>();
-        res.data.forEach((m: any) => {
-          if (m.isEnabled || m.isCore) enabled.add(m.code);
-        });
-        setEnabledModules(enabled);
-      }
-    });
-  }, []);
 
   const menuGroups = useMemo<NavGroup[]>(() => [
     { label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view', page: 'dashboard', moduleCode: 'CORE' },
@@ -1101,21 +1086,29 @@ function Sidebar() {
         <SidebarContent />
       </aside>
 
-      {/* Mobile overlay */}
-      {mobileSidebarOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileSidebarOpen(false)} />
-          <aside className="absolute left-0 top-0 bottom-0 w-72 bg-sidebar z-50 shadow-2xl flex flex-col overflow-hidden">
-            <button
-              className="absolute top-4 right-3 text-sidebar-foreground/50 hover:text-sidebar-foreground z-10"
-              onClick={() => setMobileSidebarOpen(false)}
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <SidebarContent forceExpanded />
-          </aside>
-        </div>
-      )}
+      {/* Mobile overlay - always mounted, CSS controls visibility to prevent remount flicker */}
+      <div
+        className={`fixed inset-0 z-50 lg:hidden transition-all duration-300 ${
+          mobileSidebarOpen
+            ? 'opacity-100 pointer-events-auto'
+            : 'opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileSidebarOpen(false)} />
+        <aside
+          className={`absolute left-0 top-0 bottom-0 w-72 bg-sidebar z-50 shadow-2xl flex flex-col overflow-hidden transition-transform duration-300 ease-in-out ${
+            mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+        >
+          <button
+            className="absolute top-4 right-3 text-sidebar-foreground/50 hover:text-sidebar-foreground z-10"
+            onClick={() => setMobileSidebarOpen(false)}
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <SidebarContent forceExpanded />
+        </aside>
+      </div>
     </>
   );
 }
@@ -8605,12 +8598,13 @@ function SettingsBackupPage() {
 // ============================================================================
 
 function AppShell() {
-  const { currentPage, navigate, toggleSidebar, setMobileSidebarOpen } = useNavigationStore();
+  const { currentPage, navigate, toggleSidebar, setMobileSidebarOpen, fetchModules } = useNavigationStore();
   const { user, isAuthenticated, isLoading, fetchMe, logout } = useAuthStore();
 
   useEffect(() => {
     fetchMe();
-  }, [fetchMe]);
+    fetchModules();
+  }, [fetchMe, fetchModules]);
 
   if (isLoading) {
     return <LoadingScreen />;

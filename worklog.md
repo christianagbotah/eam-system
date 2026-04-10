@@ -103,3 +103,26 @@ Stage Summary:
 - No regressions on desktop sidebar behavior
 - ESLint passes with no errors
 - Files modified: `src/app/page.tsx` (SidebarContent + Sidebar components)
+
+---
+Task ID: 2
+Agent: Main
+Task: Fix sidebar menu items appearing/disappearing on mobile (persistent fix)
+
+Work Log:
+- Identified two root causes of menu flickering on mobile:
+  1. `enabledModules` was local state in SidebarContent — started as `null` (show all), API call completed → items filtered out → visible flash
+  2. Mobile sidebar used conditional rendering `{mobileSidebarOpen && (...)}` — component unmounted/remounted every open, resetting all state and re-triggering the API flash
+- Moved `enabledModules` + `fetchModules` action to `navigationStore.ts` zustand store with duplicate-fetch guard
+- Removed local `enabledModules` useState and useEffect API call from SidebarContent
+- Changed mobile sidebar from conditional rendering to CSS-based visibility:
+  - Overlay: `opacity-0 pointer-events-none` (hidden) → `opacity-100 pointer-events-auto` (visible)
+  - Aside: `-translate-x-full` (off-screen) → `translate-x-0` (on-screen)
+  - Added `transition-all duration-300` for smooth slide-in animation
+- Added `fetchModules()` call in AppShell useEffect alongside `fetchMe()`
+
+Stage Summary:
+- Menu items no longer flicker on mobile — modules data is fetched once and persists in zustand store
+- Mobile sidebar stays mounted (CSS visibility), no state loss on open/close
+- Smooth slide-in animation added for mobile sidebar
+- Files modified: `src/stores/navigationStore.ts`, `src/app/page.tsx`
