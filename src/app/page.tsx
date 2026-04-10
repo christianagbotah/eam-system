@@ -4737,7 +4737,12 @@ function AssetsPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   // Delete
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const { navigate } = useNavigationStore();
+  const { navigate, pageParams } = useNavigationStore();
+
+  // If navigated here with an asset ID, open detail view
+  useEffect(() => {
+    if (pageParams?.id && !detailId) setDetailId(pageParams.id);
+  }, [pageParams]);
 
   const emptyForm = { name: '', assetTag: '', serialNumber: '', categoryId: '', manufacturer: '', model: '', yearManufactured: '', condition: 'new', status: 'operational', criticality: 'medium', location: '', building: '', floor: '', area: '', plantId: '', departmentId: '', description: '', purchaseDate: '', purchaseCost: '', expectedLifeYears: '' };
   const [form, setForm] = useState(emptyForm);
@@ -6358,6 +6363,7 @@ function AssetsHierarchyPage() {
   const [assets, setAssets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const navigate = useNavigationStore(s => s.navigate);
 
   useEffect(() => {
     (async () => {
@@ -6380,13 +6386,20 @@ function AssetsHierarchyPage() {
     const isOpen = expanded.has(a.id);
     return (
       <div key={a.id}>
-        <button onClick={() => children.length > 0 && toggle(a.id)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted/50 text-sm text-left transition-colors" style={{ paddingLeft: `${depth * 20 + 12}px` }}>
-          {children.length > 0 && <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />}
-          {children.length === 0 && <span className="w-3.5" />}
-          <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
-          <span className="flex-1 truncate font-medium">{a.name}</span>
+        <div className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted/50 text-sm transition-colors" style={{ paddingLeft: `${depth * 20 + 12}px` }}>
+          {children.length > 0 ? (
+            <button onClick={() => toggle(a.id)} className="shrink-0 p-0.5 rounded hover:bg-muted">
+              <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+            </button>
+          ) : (
+            <span className="w-4.5" />
+          )}
+          <button onClick={() => navigate('asset-detail', { id: a.id })} className="flex items-center gap-2 flex-1 min-w-0 text-left hover:underline">
+            <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="flex-1 truncate font-medium">{a.name}</span>
+          </button>
           <Badge variant="outline" className="text-[10px] shrink-0">{a.status?.replace(/_/g,' ')}</Badge>
-        </button>
+        </div>
         {isOpen && children.length > 0 && renderTree(children, depth + 1)}
       </div>
     );
@@ -6403,7 +6416,7 @@ function AssetsHierarchyPage() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Tree View</CardTitle>
-          <CardDescription>Click to expand/collapse branches</CardDescription>
+          <CardDescription>Click asset name to view details. Click chevron to expand/collapse branches.</CardDescription>
         </CardHeader>
         <CardContent>
           {roots.length === 0 ? (
