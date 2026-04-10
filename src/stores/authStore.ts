@@ -78,12 +78,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   hasPermission: (slug: string) => {
     const { permissions } = get();
-    return permissions.includes(slug);
+    return Array.isArray(permissions) && permissions.includes(slug);
   },
 
   hasAnyPermission: (slugs: string[]) => {
     const { permissions } = get();
-    return slugs.some(s => permissions.includes(s));
+    return Array.isArray(permissions) && slugs.some(s => permissions.includes(s));
   },
 
   isAdmin: () => {
