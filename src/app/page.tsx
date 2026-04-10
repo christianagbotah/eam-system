@@ -6363,7 +6363,7 @@ function AssetsHierarchyPage() {
     (async () => {
       try {
         const res = await api.get('/api/assets?limit=9999');
-        if (res.data) setAssets(res.data.data || []);
+        if (res.success && res.data) setAssets(Array.isArray(res.data) ? res.data : []);
       } catch { /* empty */ }
       setLoading(false);
     })();
@@ -6424,8 +6424,8 @@ function AssetHealthPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await api.get('/api/assets');
-        if (res.data) setAssets(res.data.assets || res.data || []);
+        const res = await api.get('/api/assets?limit=9999');
+        if (res.success && res.data) setAssets(Array.isArray(res.data) ? res.data : []);
       } catch { /* empty */ }
       setLoading(false);
     })();
@@ -8923,8 +8923,8 @@ function AnalyticsOeePage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await api.get('/api/assets');
-        if (res.data) setAssets(res.data.assets || res.data || []);
+        const res = await api.get('/api/assets?limit=9999');
+        if (res.success && res.data) setAssets(Array.isArray(res.data) ? res.data : []);
       } catch { /* empty */ }
       setLoading(false);
     })();
@@ -9202,8 +9202,8 @@ function AnalyticsEnergyPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await api.get('/api/assets');
-        if (res.data) setAssets(res.data.assets || res.data || []);
+        const res = await api.get('/api/assets?limit=9999');
+        if (res.success && res.data) setAssets(Array.isArray(res.data) ? res.data : []);
       } catch { /* empty */ }
       setLoading(false);
     })();
