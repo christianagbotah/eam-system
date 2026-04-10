@@ -1112,3 +1112,85 @@ Stage Summary:
 - `src/app/api/roles/route.ts` — Admin role special handling in list endpoint
 
 ### Build: ✅ Lint clean (0 errors, 0 warnings), dev server compiling
+
+---
+
+## Session 13 - Full Sidebar Migration: Collapsible Submenus, Module Management & 67+ Pages
+
+- **Date:** 2026-04-12
+- **Context:** User requested full migration from reference project. The original project has 12 menu groups with 67+ submenu items, while the current project only had 15 flat navigation items. Complete rebuild of sidebar, module management, and all pages required.
+
+### TASK 1: Expand PageName Type (types/index.ts)
+- **Status:** ✅ Completed
+- Expanded from 19 page names to **89 page names** covering all EAM modules
+- Organized by module: Assets (6), Maintenance (10), IoT (3), Analytics (4), Operations (6), Production (8), Quality (6), Safety (5), Inventory (10), Reports (8), Settings (11), Core (2)
+
+### TASK 2: Rebuild Sidebar with Collapsible Submenus
+- **Status:** ✅ Completed
+- Complete rewrite of `SidebarContent` component (~350 lines)
+- **12 menu groups** with collapsible submenus matching reference project exactly:
+  - Dashboard (standalone), Assets (6), Maintenance (8), IoT (3), Analytics (4), Operations (6), Production (8), Quality (6), Safety (5), Inventory (10), Reports (8), Settings (11)
+- `openMenus` state for tracking expanded groups
+- `toggleMenu` callback with animation (ChevronRight rotation)
+- Auto-expand parent when child page is active
+- Collapsed mode: icons only with tooltips
+- Expanded mode: icon + label + chevron + indented children
+- **57 new Lucide icons** imported for all submenu items
+
+### TASK 3: Module-Aware Navigation
+- **Status:** ✅ Completed
+- Each menu group has `moduleCode` field mapping to SystemModule.code
+- Fetches enabled modules from `/api/modules` on mount
+- Filters sidebar to only show groups whose module is enabled
+- Starts with all visible until API loads (no flash of hidden content)
+- 11 EAM module codes: CORE, ASSET, RWOP, MRMP, MPMP, IMS, HRMS, IOT, DIGITAL_TWIN, TRAC, REPORTS
+
+### TASK 4: Module Management Page Rebuild (Two-Tier Activation)
+- **Status:** ✅ Completed
+- Complete rewrite of `SettingsModulesPage` (~359 lines)
+- **Two-tier activation system**:
+  - **Tier 1 (Vendor Admin)**: Can "activate/license" modules → sets `isActive = true`
+  - **Tier 2 (Company Admin)**: Can "enable" licensed modules → sets `isEnabled = true`
+- 4 summary stat cards: Total, Core, Licensed, Enabled
+- Two-step legend card explaining the flow
+- Module cards with icon, name, description, code/version badges
+- Two independent toggle switches per module (License + Enable)
+- Status timeline showing who licensed/enabled and when
+- Core modules cannot be deactivated or disabled
+- Cannot enable a module that isn't licensed
+- API route updated (`/api/modules/[id]`) to support both `isActive` and `isEnabled` fields with timestamp tracking
+
+### TASK 5: All New Page Components (~390 lines)
+- **Status:** ✅ Completed
+- **Reusable `ComingSoonPage`**: Generic placeholder with icon, description, feature grid, "Coming Soon" badge
+- **Functional pages** (with API integration):
+  - `AssetsMachinesPage` — Asset list from `/api/assets`
+  - `AssetsHierarchyPage` — Tree view from `/api/assets`, expandable nodes
+  - `AssetHealthPage` — Condition/criticality/status breakdown from `/api/assets`
+  - `MaintenanceWorkOrdersPage` — Wraps existing WorkOrdersPage
+  - `MaintenanceDashboardPage` — KPI cards from `/api/dashboard/stats`
+  - `InventoryItemsPage` — Wraps existing InventoryPage
+  - `SettingsGeneralPage` — Timezone/currency/date format selects
+- **Coming Soon pages** for ~50+ modules under development
+- **90+ routes** in renderPage switch
+- **90+ page titles** in pageTitle record
+
+### TASK 6: Database & Seed Data Update
+- **Status:** ✅ Completed
+- Updated `prisma/seed.ts` with 11 EAM modules:
+  - CORE (System Core), ASSET (Asset Lifecycle), RWOP (Repair & WO), MRMP (Maintenance & PM)
+  - IMS (Inventory), REPORTS (Analytics & Reporting), MPMP (Manufacturing Production)
+  - HRMS (Human Resource), IOT (IoT & Predictive Maintenance), DIGITAL_TWIN (Digital Twin), TRAC (Safety & Compliance)
+- 6 modules pre-licensed and enabled (CORE, ASSET, RWOP, MRMP, IMS, REPORTS)
+- 5 modules unlicensed (MPMP, HRMS, IOT, DIGITAL_TWIN, TRAC) — hidden from sidebar
+- **80 permissions** created (up from ~54), including new modules: iot, production, quality, safety, operations, reports
+- Admin role gets all 80 permissions
+- New permission actions: `manage`, `activate`, `export`
+
+### Files Modified
+- `src/types/index.ts` — Expanded PageName type (89 page names)
+- `src/app/page.tsx` — ~1180 lines added (5809 → 6988 lines): sidebar, pages, router
+- `src/app/api/modules/[id]/route.ts` — PATCH handler for two-tier activation
+- `prisma/seed.ts` — 11 EAM modules, 80 permissions
+
+### Build: ✅ Lint clean (0 errors, 0 warnings), dev server compiles in ~300ms

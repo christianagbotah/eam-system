@@ -18,8 +18,13 @@ async function seed() {
     'roles',
     'modules',
     'settings',
+    'iot',
+    'production',
+    'quality',
+    'safety',
+    'operations',
   ];
-  const actions = ['view', 'create', 'update', 'delete', 'approve', 'assign', 'execute', 'export'];
+  const actions = ['view', 'create', 'update', 'delete', 'approve', 'assign', 'execute', 'export', 'manage', 'activate'];
 
   const permissionMap: Record<string, string> = {};
   for (const mod of modules) {
@@ -27,7 +32,13 @@ async function seed() {
       // Some modules don't need all actions
       if (mod === 'dashboard' && !['view'].includes(action)) continue;
       if (mod === 'settings' && !['view', 'update'].includes(action)) continue;
-      if (mod === 'modules' && !['view', 'update'].includes(action)) continue;
+      if (mod === 'modules' && !['view', 'update', 'activate', 'manage'].includes(action)) continue;
+      if (mod === 'reports' && !['view', 'manage', 'export'].includes(action)) continue;
+      if (mod === 'iot' && !['view', 'manage'].includes(action)) continue;
+      if (mod === 'production' && !['view', 'manage'].includes(action)) continue;
+      if (mod === 'quality' && !['view', 'manage'].includes(action)) continue;
+      if (mod === 'safety' && !['view', 'manage'].includes(action)) continue;
+      if (mod === 'operations' && !['view', 'manage'].includes(action)) continue;
 
       const perm = await db.permission.create({
         data: {
@@ -95,7 +106,16 @@ async function seed() {
 
   console.log('✅ Created 5 roles');
 
-  // 3. Assign permissions to roles (except admin - gets all dynamically)
+  // 3. Assign ALL permissions to admin role
+  const allPermIds = Object.values(permissionMap);
+  for (const pid of allPermIds) {
+    await db.rolePermission.create({
+      data: { roleId: adminRole.id, permissionId: pid },
+    });
+  }
+  console.log(`✅ Assigned ${allPermIds.length} permissions to admin role`);
+
+  // 3b. Assign permissions to other roles (non-admin)
   // Supervisor permissions
   const supervisorPerms = [
     'dashboard.view',
@@ -240,21 +260,51 @@ async function seed() {
 
   console.log('✅ Created demo users');
 
-  // 8. Create System Modules
+  // 8. Create System Modules (35 comprehensive EAM modules)
   const systemModules = [
-    { code: 'core', name: 'Core Module', description: 'Core EAM functionality', isCore: true, version: '1.0.0' },
-    { code: 'work_orders', name: 'Work Orders', description: 'Work order management', isCore: true, version: '1.0.0' },
-    { code: 'maintenance_requests', name: 'Maintenance Requests', description: 'Request management workflow', isCore: true, version: '1.0.0' },
-    { code: 'assets', name: 'Asset Management', description: 'Asset registry and tracking', isCore: false, version: '1.0.0' },
-    { code: 'inventory', name: 'Inventory / Spare Parts', description: 'Spare parts and materials management', isCore: false, version: '1.0.0' },
-    { code: 'preventive', name: 'Preventive Maintenance', description: 'PM scheduling and planning', isCore: false, version: '1.0.0' },
-    { code: 'reports', name: 'Reports & Analytics', description: 'Custom reports and KPI dashboards', isCore: false, version: '1.0.0' },
-    { code: 'purchasing', name: 'Purchasing', description: 'Purchase requisitions and orders', isCore: false, version: '1.0.0' },
-    { code: 'contractors', name: 'Contractor Management', description: 'External contractor tracking', isCore: false, version: '1.0.0' },
-    { code: 'documents', name: 'Document Management', description: 'Attach and manage documents', isCore: false, version: '1.0.0' },
+    // Core modules (always active)
+    { code: 'core', name: 'Core Platform', description: 'Core EAM platform with authentication, navigation, and base functionality', isCore: true, version: '2.0.0', licensed: true },
+    { code: 'assets', name: 'Asset Management', description: 'Complete asset registry, hierarchy, tracking, and lifecycle management', isCore: true, version: '2.0.0', licensed: true },
+    { code: 'maintenance_requests', name: 'Maintenance Requests', description: 'Submit, review, approve, and convert maintenance requests with full workflow', isCore: true, version: '2.0.0', licensed: true },
+    { code: 'work_orders', name: 'Work Orders', description: 'Plan, assign, execute, and track maintenance work orders with SLA management', isCore: true, version: '2.0.0', licensed: true },
+    { code: 'inventory', name: 'Inventory & Spare Parts', description: 'Manage spare parts inventory, stock levels, locations, and replenishment', isCore: true, version: '2.0.0', licensed: true },
+    // Optional modules - licensed by default in demo
+    { code: 'pm_schedules', name: 'PM Schedules', description: 'Preventive maintenance scheduling with auto work order generation', isCore: false, version: '2.0.0', licensed: true },
+    { code: 'analytics', name: 'Analytics & KPI', description: 'Advanced analytics, dashboards, and KPI monitoring', isCore: false, version: '1.5.0', licensed: true },
+    { code: 'production', name: 'Production Management', description: 'Work centers, resource planning, scheduling, and capacity management', isCore: false, version: '1.5.0', licensed: true },
+    { code: 'quality', name: 'Quality Management', description: 'Inspections, NCR, audits, SPC, CAPA, and quality control plans', isCore: false, version: '1.5.0', licensed: true },
+    { code: 'safety', name: 'Safety Management', description: 'Incidents, safety inspections, training, equipment, and permits', isCore: false, version: '1.5.0', licensed: true },
+    { code: 'iot_sensors', name: 'IoT Sensors', description: 'IoT device management, real-time monitoring, and threshold-based alerts', isCore: false, version: '1.3.0', licensed: true },
+    { code: 'calibration', name: 'Calibration', description: 'Instrument calibration schedules, tracking, and compliance records', isCore: false, version: '1.2.0', licensed: true },
+    { code: 'downtime', name: 'Downtime Tracking', description: 'Machine downtime logging, root cause analysis, and MTBF/MTTR analytics', isCore: false, version: '1.2.0', licensed: true },
+    { code: 'meter_readings', name: 'Meter Readings', description: 'Equipment meter readings, meter-based PM triggers, and trending', isCore: false, version: '1.1.0', licensed: true },
+    { code: 'training', name: 'Training Management', description: 'Training programs, certifications, skills tracking, and competency management', isCore: false, version: '1.1.0', licensed: false },
+    { code: 'risk_assessment', name: 'Risk Assessment', description: 'Risk identification, assessment matrices, mitigation planning, and monitoring', isCore: false, version: '1.2.0', licensed: false },
+    { code: 'condition_monitoring', name: 'Condition Monitoring', description: 'Vibration, temperature, and other condition monitoring with trending', isCore: false, version: '1.3.0', licensed: false },
+    { code: 'digital_twin', name: 'Digital Twin', description: '3D asset visualization, digital twin modeling, and real-time state mirroring', isCore: false, version: '1.0.0', licensed: false },
+    { code: 'bom', name: 'Bill of Materials', description: 'Equipment BOM management, spare part lists, and component relationships', isCore: false, version: '1.1.0', licensed: true },
+    { code: 'failure_analysis', name: 'Failure Analysis', description: 'Failure modes, effects analysis, and failure pattern recognition', isCore: false, version: '1.0.0', licensed: false },
+    { code: 'rca_analysis', name: 'Root Cause Analysis', description: '5-Why analysis, fishbone diagrams, and RCA documentation workflows', isCore: false, version: '1.0.0', licensed: false },
+    { code: 'capa', name: 'CAPA Management', description: 'Corrective and preventive actions tracking and verification', isCore: false, version: '1.0.0', licensed: false },
+    { code: 'reports', name: 'Reports & Dashboards', description: 'Custom report builder, scheduled reports, and multi-format export', isCore: false, version: '2.0.0', licensed: true },
+    { code: 'vendors', name: 'Vendor Management', description: 'Supplier management, vendor evaluation, and procurement workflows', isCore: false, version: '1.1.0', licensed: true },
+    { code: 'tools', name: 'Tool Management', description: 'Tool inventory, calibration tracking, assignment, and availability', isCore: false, version: '1.0.0', licensed: false },
+    { code: 'notifications', name: 'Notifications', description: 'In-app notifications, email alerts, and notification preferences', isCore: false, version: '1.5.0', licensed: true },
+    { code: 'documents', name: 'Document Management', description: 'Document storage, versioning, approvals, and file organization', isCore: false, version: '1.2.0', licensed: true },
+    { code: 'modules', name: 'Module Management', description: 'System module licensing, activation, and feature management', isCore: true, version: '2.0.0', licensed: true },
+    { code: 'kpi_dashboard', name: 'KPI Dashboard', description: 'Customizable KPI dashboards with real-time data widgets', isCore: false, version: '1.3.0', licensed: true },
+    { code: 'predictive', name: 'Predictive Maintenance', description: 'ML-based predictive analytics for maintenance planning', isCore: false, version: '1.0.0', licensed: false },
+    { code: 'oee', name: 'OEE Tracking', description: 'Overall Equipment Effectiveness tracking, analysis, and improvement', isCore: false, version: '1.2.0', licensed: false },
+    { code: 'energy', name: 'Energy Management', description: 'Energy consumption monitoring, optimization, and cost tracking', isCore: false, version: '1.1.0', licensed: false },
+    { code: 'shift_management', name: 'Shift Management', description: 'Shift scheduling, handover logs, and workforce planning', isCore: false, version: '1.1.0', licensed: false },
+    { code: 'erp_integration', name: 'ERP Integration', description: 'Integration with external ERP systems via API connectors', isCore: false, version: '1.0.0', licensed: false },
+    { code: 'forecasting', name: 'Demand Forecasting', description: 'AI-powered demand forecasting for spare parts and resources', isCore: false, version: '1.0.0', licensed: false },
   ];
 
   for (const mod of systemModules) {
+    const validFrom = mod.licensed ? new Date('2024-01-01') : null;
+    const validUntil = mod.licensed ? new Date('2026-12-31') : null;
+
     const sysMod = await db.systemModule.create({
       data: {
         code: mod.code,
@@ -262,23 +312,29 @@ async function seed() {
         description: mod.description,
         isCore: mod.isCore,
         version: mod.version,
+        isSystemLicensed: mod.licensed,
+        validFrom,
+        validUntil,
       },
     });
 
-    // Auto-activate core modules
-    if (mod.isCore) {
+    // Auto-activate core modules; for optional modules, set isActive if licensed
+    if (mod.isCore || mod.licensed) {
       await db.companyModule.create({
         data: {
           systemModuleId: sysMod.id,
-          isActive: true,
-          isEnabled: true,
-          activatedAt: new Date(),
+          isActive: mod.isCore || mod.licensed,
+          isEnabled: mod.isCore || mod.licensed,
+          licensedAt: mod.isCore ? new Date('2024-01-01') : mod.licensed ? new Date('2024-01-15') : null,
+          licensedBy: admin.id,
+          activatedAt: mod.isCore ? new Date('2024-01-01') : mod.licensed ? new Date('2024-01-20') : null,
+          activatedBy: admin.id,
         },
       });
     }
   }
 
-  console.log('✅ Created system modules');
+  console.log(`✅ Created ${systemModules.length} system modules`);
 
   // 9. Create Status Transitions
   // Maintenance Request transitions

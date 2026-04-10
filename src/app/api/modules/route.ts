@@ -10,6 +10,21 @@ export async function GET() {
       orderBy: { createdAt: 'asc' },
     });
 
+    // Collect all licensedBy user IDs to batch-fetch
+    const licensedByUserIds = modules
+      .map((m) => m.companyModules[0]?.licensedBy)
+      .filter((id): id is string => !!id);
+
+    // Batch fetch all licensed-by users
+    let licensedByUsers: Record<string, { id: string; fullName: string }> = {};
+    if (licensedByUserIds.length > 0) {
+      const users = await db.user.findMany({
+        where: { id: { in: licensedByUserIds } },
+        select: { id: true, fullName: true },
+      });
+      licensedByUsers = Object.fromEntries(users.map((u) => [u.id, { id: u.id, fullName: u.fullName }]));
+    }
+
     const data = modules.map((m) => {
       const companyModule = m.companyModules[0];
       return {
@@ -28,6 +43,12 @@ export async function GET() {
         isActive: companyModule?.isActive ?? false,
         activationLocked: companyModule?.activationLocked ?? false,
         activatedAt: companyModule?.activatedAt ?? null,
+        // Licensing fields
+        licensedAt: companyModule?.licensedAt ?? null,
+        licensedBy: companyModule?.licensedBy ?? null,
+        licensedByUser: companyModule?.licensedBy
+          ? licensedByUsers[companyModule.licensedBy] ?? null
+          : null,
       };
     });
 

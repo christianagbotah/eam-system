@@ -83,6 +83,16 @@ export interface Module {
   sortOrder: number;
   routePath?: string;
   isEnabled?: boolean; // company activation
+  // Vendor licensing fields
+  isSystemLicensed?: boolean;
+  licenseKey?: string;
+  validFrom?: string;
+  validUntil?: string;
+  licensedAt?: string;
+  licensedBy?: string;
+  licensedByUser?: { id: string; fullName: string };
+  activatedAt?: string;
+  activationLocked?: boolean;
 }
 
 // Maintenance Requests
@@ -341,25 +351,96 @@ export interface ApiResponse<T = any> {
   error?: string;
 }
 
-// Navigation
+// Navigation — Full EAM module pages matching reference project
 export type PageName =
+  // Core
   | 'dashboard'
+  | 'notifications'
+  // Assets (6 subpages)
+  | 'assets-machines'
+  | 'assets-hierarchy'
+  | 'assets-bom'
+  | 'assets-condition-monitoring'
+  | 'assets-digital-twin'
+  | 'assets-health'
+  // Maintenance (8 subpages)
+  | 'maintenance-work-orders'
   | 'maintenance-requests'
   | 'mr-detail'
   | 'create-mr'
-  | 'work-orders'
-  | 'wo-detail'
-  | 'assets'
-  | 'asset-detail'
-  | 'inventory'
+  | 'maintenance-dashboard'
+  | 'maintenance-analytics'
+  | 'maintenance-calibration'
+  | 'maintenance-risk-assessment'
+  | 'maintenance-tools'
   | 'pm-schedules'
-  | 'reports'
-  | 'analytics'
-  | 'notifications'
+  // IoT (3 subpages)
+  | 'iot-devices'
+  | 'iot-monitoring'
+  | 'iot-rules'
+  // Analytics (4 subpages)
+  | 'analytics-kpi'
+  | 'analytics-oee'
+  | 'analytics-downtime'
+  | 'analytics-energy'
+  // Operations (6 subpages)
+  | 'operations-meter-readings'
+  | 'operations-training'
+  | 'operations-surveys'
+  | 'operations-time-logs'
+  | 'operations-shift-handover'
+  | 'operations-checklists'
+  // Production (8 subpages)
+  | 'production-work-centers'
+  | 'production-resource-planning'
+  | 'production-scheduling'
+  | 'production-capacity'
+  | 'production-efficiency'
+  | 'production-bottlenecks'
+  | 'production-orders'
+  | 'production-batches'
+  // Quality (6 subpages)
+  | 'quality-inspections'
+  | 'quality-ncr'
+  | 'quality-audits'
+  | 'quality-control-plans'
+  | 'quality-spc'
+  | 'quality-capa'
+  // Safety (5 subpages)
+  | 'safety-incidents'
+  | 'safety-inspections'
+  | 'safety-training'
+  | 'safety-equipment'
+  | 'safety-permits'
+  // Inventory (10 subpages)
+  | 'inventory-items'
+  | 'inventory-categories'
+  | 'inventory-locations'
+  | 'inventory-transactions'
+  | 'inventory-adjustments'
+  | 'inventory-requests'
+  | 'inventory-transfers'
+  | 'inventory-suppliers'
+  | 'inventory-purchase-orders'
+  | 'inventory-receiving'
+  // Reports (8 subpages)
+  | 'reports-asset'
+  | 'reports-maintenance'
+  | 'reports-inventory'
+  | 'reports-production'
+  | 'reports-quality'
+  | 'reports-safety'
+  | 'reports-financial'
+  | 'reports-custom'
+  // Settings (8 subpages)
+  | 'settings-general'
   | 'settings-users'
   | 'settings-roles'
   | 'settings-modules'
+  | 'settings-notifications'
+  | 'settings-integrations'
+  | 'settings-backup'
+  | 'settings-audit'
   | 'settings-company'
   | 'settings-plants'
-  | 'settings-departments'
-  | 'settings-audit';
+  | 'settings-departments';

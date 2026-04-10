@@ -116,6 +116,61 @@ import {
   History,
   ArrowUpDown,
   ExternalLink,
+  GitBranch,
+  ListChecks,
+  HeartPulse,
+  Box,
+  Crosshair,
+  Wrench as WrenchIcon,
+  Smartphone,
+  Radio,
+  Wifi,
+  Ruler,
+  GraduationCap,
+  FileText,
+  ArrowRightLeft,
+  CheckSquare,
+  Calendar,
+  TrendingDown,
+  ShieldCheck,
+  FileCheck,
+  ShieldAlert,
+  TriangleAlert,
+  HardHat,
+  ScrollText,
+  FolderOpen,
+  Truck,
+  Download,
+  Database,
+  Link2,
+  Globe,
+  BellRing,
+  Layers,
+  Server,
+  Cpu,
+  Thermometer,
+  Droplets,
+  ClipboardCheck,
+  Group,
+  Building,
+  FileBarChart,
+  PieChart as PieChartIcon,
+  BookOpen,
+  MapPinned,
+  Warehouse,
+  ScanLine,
+  Route,
+  Workflow,
+  FlaskConical,
+  Microscope,
+  TestTubes,
+  StopCircle,
+  Ban,
+  Megaphone,
+  FilePlus,
+  FileSpreadsheet,
+  BrainCircuit,
+  Waypoints,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area,
@@ -630,39 +685,251 @@ function LoginPage() {
 // SIDEBAR
 // ============================================================================
 
-// Sidebar inner content extracted as a separate component
+// Sidebar inner content extracted as a separate component with collapsible submenus
 function SidebarContent() {
   const { currentPage, navigate, sidebarOpen } = useNavigationStore();
   const { user, hasPermission, logout } = useAuthStore();
+  const [openMenus, setOpenMenus] = useState<string[]>([]);
 
-  const navItems: { page: PageName; label: string; icon: React.ElementType; perm: string; comingSoon?: boolean }[] = [
-    { page: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view' },
-    { page: 'maintenance-requests', label: 'Maintenance Requests', icon: ClipboardList, perm: 'maintenance_requests.view' },
-    { page: 'work-orders', label: 'Work Orders', icon: Wrench, perm: 'work_orders.view' },
-    { page: 'assets', label: 'Assets', icon: Building2, perm: 'assets.view' },
-    { page: 'inventory', label: 'Inventory', icon: Package, perm: 'inventory.view' },
-    { page: 'pm-schedules', label: 'PM Schedules', icon: Timer, perm: 'work_orders.view' },
-    { page: 'production', label: 'Production', icon: Zap, perm: 'production.view', comingSoon: true },
-    { page: 'analytics', label: 'Analytics', icon: BarChart3, perm: 'analytics.view' },
-  ];
+  // Menu group definition
+  interface NavGroup {
+    label: string;
+    icon: React.ElementType;
+    perm: string;
+    page?: PageName;
+    moduleCode?: string; // maps to SystemModule.code for module-aware filtering
+    children?: { page: PageName; label: string; icon?: React.ElementType }[];
+  }
 
-  const settingsItems: { page: PageName; label: string; icon: React.ElementType; perm: string }[] = [
-    { page: 'settings-users', label: 'Users', icon: Users, perm: 'users.view' },
-    { page: 'settings-roles', label: 'Roles & Permissions', icon: Shield, perm: 'roles.view' },
-    { page: 'settings-modules', label: 'Module Management', icon: Boxes, perm: 'modules.manage' },
-    { page: 'settings-company', label: 'Company Profile', icon: Building2, perm: 'settings.update' },
-    { page: 'settings-plants', label: 'Plants', icon: Factory, perm: 'plants.view' },
-    { page: 'settings-departments', label: 'Departments', icon: Building2, perm: 'departments.view' },
-    { page: 'settings-audit', label: 'Audit Logs', icon: Eye, perm: 'audit.view' },
-  ];
+  // Track enabled modules from database (start with all visible until API loads)
+  const [enabledModules, setEnabledModules] = useState<Set<string> | null>(null);
 
-  const visibleNavItems = navItems.filter(item => item.comingSoon || hasPermission(item.perm));
-  const visibleSettingsItems = settingsItems.filter(item => hasPermission(item.perm));
-  const showSettings = visibleSettingsItems.length > 0;
+  useEffect(() => {
+    api.get<any[]>('/api/modules').then(res => {
+      if (res.success && Array.isArray(res.data)) {
+        const enabled = new Set<string>();
+        res.data.forEach((m: any) => {
+          if (m.isEnabled || m.isCore) enabled.add(m.code);
+        });
+        setEnabledModules(enabled);
+      }
+    });
+  }, []);
+
+  const menuGroups = useMemo<NavGroup[]>(() => [
+    { label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view', page: 'dashboard', moduleCode: 'CORE' },
+    {
+      label: 'Assets', icon: Building2, perm: 'assets.view', moduleCode: 'ASSET',
+      children: [
+        { page: 'assets-machines', label: 'Machines', icon: Building2 },
+        { page: 'assets-hierarchy', label: 'Hierarchy', icon: GitBranch },
+        { page: 'assets-bom', label: 'Bill of Materials', icon: ListChecks },
+        { page: 'assets-condition-monitoring', label: 'Condition Monitoring', icon: Activity },
+        { page: 'assets-digital-twin', label: 'Digital Twin', icon: Box },
+        { page: 'assets-health', label: 'Asset Health', icon: HeartPulse },
+      ],
+    },
+    {
+      label: 'Maintenance', icon: Wrench, perm: 'work_orders.view', moduleCode: 'RWOP',
+      children: [
+        { page: 'maintenance-work-orders', label: 'Work Orders', icon: ClipboardList },
+        { page: 'maintenance-requests', label: 'Requests', icon: MessageSquare },
+        { page: 'maintenance-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { page: 'maintenance-analytics', label: 'Analytics', icon: BarChart3 },
+        { page: 'maintenance-calibration', label: 'Calibration', icon: Crosshair },
+        { page: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert },
+        { page: 'maintenance-tools', label: 'Tools', icon: WrenchIcon },
+        { page: 'pm-schedules', label: 'PM Schedules', icon: Timer },
+      ],
+    },
+    {
+      label: 'IoT', icon: Wifi, perm: 'iot.view', moduleCode: 'IOT',
+      children: [
+        { page: 'iot-devices', label: 'Devices', icon: Smartphone },
+        { page: 'iot-monitoring', label: 'Monitoring', icon: Monitor },
+        { page: 'iot-rules', label: 'Rules', icon: Radio },
+      ],
+    },
+    {
+      label: 'Analytics', icon: BarChart3, perm: 'analytics.view', moduleCode: 'REPORTS',
+      children: [
+        { page: 'analytics-kpi', label: 'KPI Dashboard', icon: Target },
+        { page: 'analytics-oee', label: 'OEE', icon: Gauge },
+        { page: 'analytics-downtime', label: 'Downtime', icon: TrendingDown },
+        { page: 'analytics-energy', label: 'Energy', icon: Zap },
+      ],
+    },
+    {
+      label: 'Operations', icon: ClipboardCheck, perm: 'operations.view', moduleCode: 'HRMS',
+      children: [
+        { page: 'operations-meter-readings', label: 'Meter Readings', icon: Gauge },
+        { page: 'operations-training', label: 'Training', icon: GraduationCap },
+        { page: 'operations-surveys', label: 'Surveys', icon: FileText },
+        { page: 'operations-time-logs', label: 'Time Logs', icon: Clock },
+        { page: 'operations-shift-handover', label: 'Shift Handover', icon: ArrowRightLeft },
+        { page: 'operations-checklists', label: 'Checklists', icon: CheckSquare },
+      ],
+    },
+    {
+      label: 'Production', icon: Zap, perm: 'production.view', moduleCode: 'MPMP',
+      children: [
+        { page: 'production-work-centers', label: 'Work Centers', icon: Factory },
+        { page: 'production-resource-planning', label: 'Resource Planning', icon: Layers },
+        { page: 'production-scheduling', label: 'Scheduling', icon: Calendar },
+        { page: 'production-capacity', label: 'Capacity', icon: Box },
+        { page: 'production-efficiency', label: 'Efficiency', icon: TrendingUp },
+        { page: 'production-bottlenecks', label: 'Bottlenecks', icon: AlertTriangle },
+        { page: 'production-orders', label: 'Orders', icon: ClipboardList },
+        { page: 'production-batches', label: 'Batches', icon: Package },
+      ],
+    },
+    {
+      label: 'Quality', icon: ShieldCheck, perm: 'quality.view', moduleCode: 'TRAC',
+      children: [
+        { page: 'quality-inspections', label: 'Inspections', icon: Search },
+        { page: 'quality-ncr', label: 'NCR', icon: FileCheck },
+        { page: 'quality-audits', label: 'Audits', icon: ShieldAlert },
+        { page: 'quality-control-plans', label: 'Control Plans', icon: ScrollText },
+        { page: 'quality-spc', label: 'SPC', icon: BarChart3 },
+        { page: 'quality-capa', label: 'CAPA', icon: HardHat },
+      ],
+    },
+    {
+      label: 'Safety', icon: HardHat, perm: 'safety.view', moduleCode: 'TRAC',
+      children: [
+        { page: 'safety-incidents', label: 'Incidents', icon: TriangleAlert },
+        { page: 'safety-inspections', label: 'Inspections', icon: Search },
+        { page: 'safety-training', label: 'Training', icon: GraduationCap },
+        { page: 'safety-equipment', label: 'Equipment', icon: HardHat },
+        { page: 'safety-permits', label: 'Permits', icon: FileCheck },
+      ],
+    },
+    {
+      label: 'Inventory', icon: Package, perm: 'inventory.view', moduleCode: 'IMS',
+      children: [
+        { page: 'inventory-items', label: 'Items', icon: Package },
+        { page: 'inventory-categories', label: 'Categories', icon: FolderOpen },
+        { page: 'inventory-locations', label: 'Locations', icon: MapPin },
+        { page: 'inventory-transactions', label: 'Transactions', icon: ArrowRightLeft },
+        { page: 'inventory-adjustments', label: 'Adjustments', icon: ArrowUpDown },
+        { page: 'inventory-requests', label: 'Requests', icon: FileText },
+        { page: 'inventory-transfers', label: 'Transfers', icon: Truck },
+        { page: 'inventory-suppliers', label: 'Suppliers', icon: Building },
+        { page: 'inventory-purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
+        { page: 'inventory-receiving', label: 'Receiving', icon: Download },
+      ],
+    },
+    {
+      label: 'Reports', icon: FileBarChart, perm: 'reports.view', moduleCode: 'REPORTS',
+      children: [
+        { page: 'reports-asset', label: 'Asset Reports', icon: Building2 },
+        { page: 'reports-maintenance', label: 'Maintenance Reports', icon: Wrench },
+        { page: 'reports-inventory', label: 'Inventory Reports', icon: Package },
+        { page: 'reports-production', label: 'Production Reports', icon: Factory },
+        { page: 'reports-quality', label: 'Quality Reports', icon: ShieldCheck },
+        { page: 'reports-safety', label: 'Safety Reports', icon: HardHat },
+        { page: 'reports-financial', label: 'Financial Reports', icon: TrendingUp },
+        { page: 'reports-custom', label: 'Custom Reports', icon: FileSpreadsheet },
+      ],
+    },
+    {
+      label: 'Settings', icon: Cog, perm: 'settings.update', moduleCode: 'CORE',
+      children: [
+        { page: 'settings-general', label: 'General', icon: Settings },
+        { page: 'settings-users', label: 'Users', icon: Users },
+        { page: 'settings-roles', label: 'Roles & Permissions', icon: Shield },
+        { page: 'settings-modules', label: 'Module Management', icon: Boxes },
+        { page: 'settings-company', label: 'Company Profile', icon: Building2 },
+        { page: 'settings-plants', label: 'Plants', icon: Factory },
+        { page: 'settings-departments', label: 'Departments', icon: Building },
+        { page: 'settings-notifications', label: 'Notifications', icon: BellRing },
+        { page: 'settings-integrations', label: 'Integrations', icon: Link2 },
+        { page: 'settings-backup', label: 'Backup', icon: Database },
+        { page: 'settings-audit', label: 'Audit Logs', icon: Eye },
+      ],
+    },
+  ], []);
+
+  const toggleMenu = useCallback((label: string) => {
+    setOpenMenus(prev => prev.includes(label) ? prev.filter(l => l !== label) : [...prev, label]);
+  }, []);
+
+  // Auto-expand parent when child is active
+  useEffect(() => {
+    let shouldExpand = false;
+    for (const group of menuGroups) {
+      if (!group.children) continue;
+      const childMatch = group.children.some(c => {
+        if (c.page === currentPage) return true;
+        if (c.page === 'maintenance-requests' && (currentPage === 'mr-detail' || currentPage === 'create-mr')) return true;
+        if (c.page === 'maintenance-work-orders' && currentPage === 'wo-detail') return true;
+        return false;
+      });
+      if (childMatch && !openMenus.includes(group.label)) {
+        shouldExpand = true;
+        break;
+      }
+    }
+    if (shouldExpand) {
+      // Use queueMicrotask to avoid cascading render warning
+      queueMicrotask(() => {
+        setOpenMenus(prev => {
+          const next = [...prev];
+          for (const group of menuGroups) {
+            if (!group.children) continue;
+            const childMatch = group.children.some(c => {
+              if (c.page === currentPage) return true;
+              if (c.page === 'maintenance-requests' && (currentPage === 'mr-detail' || currentPage === 'create-mr')) return true;
+              if (c.page === 'maintenance-work-orders' && currentPage === 'wo-detail') return true;
+              return false;
+            });
+            if (childMatch && !next.includes(group.label)) {
+              next.push(group.label);
+              break;
+            }
+          }
+          return next;
+        });
+      });
+    }
+  }, [currentPage]);
+
+  // Check if a group or its children are active
+  const isGroupActive = useCallback((group: NavGroup) => {
+    if (group.page) return currentPage === group.page;
+    if (!group.children) return false;
+    return group.children.some(c => {
+      if (c.page === currentPage) return true;
+      if (c.page === 'maintenance-requests' && (currentPage === 'mr-detail' || currentPage === 'create-mr')) return true;
+      if (c.page === 'maintenance-work-orders' && currentPage === 'wo-detail') return true;
+      return false;
+    });
+  }, [currentPage]);
+
+  // Filter visible groups
+  const visibleGroups = useMemo(() => menuGroups.filter(g => {
+    // Permission check
+    if (!hasPermission(g.perm)) return false;
+    // Module-aware check: hide groups whose module is not enabled (unless data not loaded yet)
+    if (enabledModules !== null && g.moduleCode && !enabledModules.has(g.moduleCode)) return false;
+    return true;
+  }), [menuGroups, hasPermission, enabledModules]);
+
+  // Get tooltip text for collapsed sidebar
+  const getGroupTooltip = (group: NavGroup) => {
+    if (!group.children) return group.label;
+    const activeChild = group.children.find(c => {
+      if (c.page === currentPage) return true;
+      if (c.page === 'maintenance-requests' && (currentPage === 'mr-detail' || currentPage === 'create-mr')) return true;
+      if (c.page === 'maintenance-work-orders' && currentPage === 'wo-detail') return true;
+      return false;
+    });
+    return activeChild ? `${group.label} → ${activeChild.label}` : group.label;
+  };
 
   return (
     <div className="flex flex-col h-full">
-      {/* Brand — Prominent logo on dark surface */}
+      {/* Brand */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-sidebar-border shrink-0">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 shrink-0 shadow-lg shadow-emerald-900/30">
           <Factory className="h-5 w-5 text-white" />
@@ -675,82 +942,111 @@ function SidebarContent() {
         )}
       </div>
 
-      {/* Navigation - overflow-y-auto for reliable native scroll */}
+      {/* Navigation */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4">
         <div className="space-y-0.5">
-          {visibleNavItems.map(item => {
-            const Icon = item.icon;
-            const active = currentPage === item.page ||
-              (item.page === 'maintenance-requests' && (currentPage === 'mr-detail' || currentPage === 'create-mr')) ||
-              (item.page === 'work-orders' && (currentPage === 'wo-detail'));
-            return (
-              <TooltipProvider key={item.page} delayDuration={0}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      onClick={() => item.comingSoon ? toast.info(`${item.label} module coming soon!`) : navigate(item.page)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all relative ${
-                        active
-                          ? 'bg-sidebar-accent text-sidebar-primary font-medium shadow-sm shadow-black/10'
-                          : item.comingSoon
-                            ? 'text-sidebar-foreground/25 cursor-not-allowed'
-                            : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground/90'
-                      }`}
-                      disabled={item.comingSoon}
-                    >
-                      {active && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-sidebar-primary" />
-                      )}
-                      <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-sidebar-primary' : ''}`} />
-                      {sidebarOpen && (
-                        <span className="flex-1 text-left">{item.label}</span>
-                      )}
-                      {sidebarOpen && item.comingSoon && (
-                        <span className="text-[9px] px-1.5 py-0 rounded border border-sidebar-border text-sidebar-foreground/25 font-medium">SOON</span>
-                      )}
-                    </button>
-                  </TooltipTrigger>
-                  {!sidebarOpen && <TooltipContent side="right">{item.label}{item.comingSoon ? ' (Coming Soon)' : ''}</TooltipContent>}
-                </Tooltip>
-              </TooltipProvider>
-            );
-          })}
+          {visibleGroups.map(group => {
+            const Icon = group.icon;
+            const active = isGroupActive(group);
+            const isOpen = openMenus.includes(group.label);
+            const hasChildren = !!group.children;
 
-          {showSettings && (
-            <>
-              <Separator className="my-3 bg-sidebar-border" />
-              <p className={`px-3 text-[10px] uppercase tracking-widest text-sidebar-foreground/30 mb-1.5 font-semibold ${!sidebarOpen && 'text-center'}`}>
-                {sidebarOpen ? 'Configuration' : '⚙'}
-              </p>
-              {visibleSettingsItems.map(item => {
-                const Icon = item.icon;
-                const active = currentPage === item.page;
-                return (
-                  <TooltipProvider key={item.page} delayDuration={0}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
+            // Standalone item (no children)
+            if (!hasChildren) {
+              return (
+                <TooltipProvider key={group.label} delayDuration={0}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => navigate(group.page!)}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all relative ${
+                          active
+                            ? 'bg-sidebar-accent text-sidebar-primary font-medium shadow-sm shadow-black/10'
+                            : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground/90'
+                        }`}
+                      >
+                        {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-sidebar-primary" />}
+                        <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-sidebar-primary' : ''}`} />
+                        {sidebarOpen && <span className="flex-1 text-left">{group.label}</span>}
+                      </button>
+                    </TooltipTrigger>
+                    {!sidebarOpen && <TooltipContent side="right">{group.label}</TooltipContent>}
+                  </Tooltip>
+                </TooltipProvider>
+              );
+            }
+
+            // Collapsed sidebar — show only icon with tooltip
+            if (!sidebarOpen) {
+              return (
+                <TooltipProvider key={group.label} delayDuration={0}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => {
+                          const firstChild = group.children![0];
+                          navigate(firstChild.page);
+                        }}
+                        className={`w-full flex items-center justify-center px-3 py-2.5 rounded-lg text-sm transition-all relative ${
+                          active
+                            ? 'bg-sidebar-accent text-sidebar-primary font-medium shadow-sm shadow-black/10'
+                            : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground/90'
+                        }`}
+                      >
+                        {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-sidebar-primary" />}
+                        <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-sidebar-primary' : ''}`} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">{getGroupTooltip(group)}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              );
+            }
+
+            // Expanded sidebar — show icon + label + chevron + children
+            return (
+              <div key={group.label}>
+                <button
+                  onClick={() => toggleMenu(group.label)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all relative ${
+                    active
+                      ? 'bg-sidebar-accent text-sidebar-primary font-medium shadow-sm shadow-black/10'
+                      : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground/90'
+                  }`}
+                >
+                  {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-sidebar-primary" />}
+                  <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-sidebar-primary' : ''}`} />
+                  <span className="flex-1 text-left">{group.label}</span>
+                  <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
+                </button>
+                {isOpen && (
+                  <div className="ml-4 mt-0.5 space-y-0.5 border-l border-sidebar-border pl-3">
+                    {group.children!.map(child => {
+                      const childActive = child.page === currentPage ||
+                        (child.page === 'maintenance-requests' && (currentPage === 'mr-detail' || currentPage === 'create-mr')) ||
+                        (child.page === 'maintenance-work-orders' && currentPage === 'wo-detail');
+                      const ChildIcon = child.icon;
+                      return (
                         <button
-                          onClick={() => navigate(item.page)}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all relative ${
-                            active
-                              ? 'bg-sidebar-accent text-sidebar-primary font-medium shadow-sm shadow-black/10'
-                              : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground/90'
+                          key={child.page}
+                          onClick={() => navigate(child.page)}
+                          className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] transition-all relative ${
+                            childActive
+                              ? 'bg-sidebar-accent text-sidebar-primary font-medium'
+                              : 'text-sidebar-foreground/50 hover:bg-sidebar-accent/30 hover:text-sidebar-foreground/80'
                           }`}
                         >
-                          {active && (
-                            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-sidebar-primary" />
-                          )}
-                          <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-sidebar-primary' : ''}`} />
-                          {sidebarOpen && <span>{item.label}</span>}
+                          {childActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-4 rounded-r-full bg-sidebar-primary" />}
+                          {ChildIcon && <ChildIcon className={`h-[15px] w-[15px] shrink-0 ${childActive ? 'text-sidebar-primary' : ''}`} />}
+                          <span className="flex-1 text-left">{child.label}</span>
                         </button>
-                      </TooltipTrigger>
-                      {!sidebarOpen && <TooltipContent side="right">{item.label}</TooltipContent>}
-                    </Tooltip>
-                  </TooltipProvider>
-                );
-              })}
-            </>
-          )}
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </nav>
 
@@ -3134,11 +3430,53 @@ function SettingsRolesPage() {
 // SETTINGS - MODULES
 // ============================================================================
 
+// Module icon mapping
+const moduleIconMap: Record<string, React.ElementType> = {
+  core: Boxes,
+  assets: Building2,
+  maintenance_requests: ClipboardList,
+  work_orders: Wrench,
+  inventory: Package,
+  pm_schedules: Calendar,
+  analytics: BarChart3,
+  production: Zap,
+  quality: FlaskConical,
+  safety: HardHat,
+  iot_sensors: Radio,
+  calibration: Ruler,
+  downtime: Timer,
+  meter_readings: Gauge,
+  training: GraduationCap,
+  risk_assessment: TriangleAlert,
+  condition_monitoring: Activity,
+  digital_twin: BrainCircuit,
+  bom: Layers,
+  failure_analysis: AlertCircle,
+  rca_analysis: GitBranch,
+  capa: ShieldCheck,
+  reports: FileBarChart,
+  vendors: Truck,
+  tools: ScanLine,
+  notifications: BellRing,
+  documents: FolderOpen,
+  modules: Cog,
+  kpi_dashboard: PieChartIcon,
+  predictive: TrendingUp,
+  oee: Target,
+  energy: Zap,
+  shift_management: Clock,
+  erp_integration: Link2,
+  forecasting: TrendingUp,
+};
+
 function SettingsModulesPage() {
   const [modules, setModules] = useState<Module[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('licensing');
+  const [searchQuery, setSearchQuery] = useState('');
   const { hasPermission } = useAuthStore();
-  const canToggle = hasPermission('modules.activate');
+  const canLicense = hasPermission('modules.activate');
+  const canManage = hasPermission('modules.manage');
 
   useEffect(() => {
     api.get<Module[]>('/api/modules').then(res => {
@@ -3147,82 +3485,375 @@ function SettingsModulesPage() {
     });
   }, []);
 
-  const handleToggle = async (mod: Module) => {
-    if (mod.isCore && !mod.isEnabled) return;
-    const res = await api.patch(`/api/modules/${mod.id}`, { isEnabled: !mod.isEnabled });
+  // Derived stats
+  const stats = useMemo(() => {
+    const total = modules.length;
+    const licensed = modules.filter(m => m.isActive || m.isCore).length;
+    const active = modules.filter(m => m.isEnabled || m.isCore).length;
+    const core = modules.filter(m => m.isCore).length;
+    return { total, licensed, active, core };
+  }, [modules]);
+
+  // Filtered modules
+  const filteredModules = useMemo(() => {
+    if (!searchQuery.trim()) return modules;
+    const q = searchQuery.toLowerCase();
+    return modules.filter(m =>
+      m.name.toLowerCase().includes(q) ||
+      m.code.toLowerCase().includes(q) ||
+      (m.description || '').toLowerCase().includes(q)
+    );
+  }, [modules, searchQuery]);
+
+  // Licensing tab shows all modules
+  const licensingModules = filteredModules;
+  // Activation tab shows only licensed modules
+  const activationModules = filteredModules.filter(m => m.isActive || m.isCore);
+
+  const handleLicenseToggle = async (mod: Module) => {
+    if (mod.isCore) return;
+    const nextIsActive = !mod.isActive;
+    const res = await api.patch(`/api/modules/${mod.id}`, { isActive: nextIsActive });
     if (res.success) {
-      setModules(prev => prev.map(m => m.id === mod.id ? { ...m, isEnabled: !m.isEnabled } : m));
-      toast.success(`${mod.name} ${!mod.isEnabled ? 'activated' : 'deactivated'}`);
+      setModules(prev => prev.map(m => m.id === mod.id ? { ...m, isActive: nextIsActive, isEnabled: nextIsActive ? m.isEnabled : false } : m));
+      toast.success(`${mod.name} ${nextIsActive ? 'licensed successfully' : 'license revoked'}`);
+    } else {
+      toast.error(res.error || 'Failed to update module license');
+    }
+  };
+
+  const handleEnableToggle = async (mod: Module) => {
+    if (mod.isCore && mod.isEnabled) return;
+    if (!mod.isActive && !mod.isCore) {
+      toast.error('Module must be licensed by vendor before it can be enabled');
+      return;
+    }
+    const nextIsEnabled = !mod.isEnabled;
+    const res = await api.put(`/api/modules/${mod.id}`, { isEnabled: nextIsEnabled });
+    if (res.success) {
+      setModules(prev => prev.map(m => m.id === mod.id ? { ...m, isEnabled: nextIsEnabled } : m));
+      toast.success(`${mod.name} ${nextIsEnabled ? 'activated' : 'deactivated'}`);
     } else {
       toast.error(res.error || 'Failed to update module');
     }
+  };
+
+  const getLicenseStatus = (mod: Module): { label: string; color: string } => {
+    if (mod.isCore) return { label: 'Licensed (Core)', color: 'text-emerald-700 bg-emerald-50' };
+    if (!mod.isActive) return { label: 'Unlicensed', color: 'text-slate-500 bg-slate-100' };
+    if (mod.validUntil && new Date(mod.validUntil) < new Date()) return { label: 'Expired', color: 'text-red-600 bg-red-50' };
+    return { label: 'Licensed', color: 'text-emerald-700 bg-emerald-50' };
+  };
+
+  const getCardBorderStyle = (mod: Module): string => {
+    const isEnabled = mod.isEnabled || mod.isCore;
+    const isActive = mod.isActive || mod.isCore;
+    if (isEnabled) return 'ring-1 ring-emerald-200 dark:ring-emerald-800 border-0';
+    if (isActive) return 'ring-1 ring-amber-200 dark:ring-amber-800 border-0';
+    return 'border-0';
   };
 
   if (loading) return <LoadingSkeleton />;
 
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Module Management</h1>
-        <p className="text-muted-foreground text-sm mt-0.5">Manage system modules and feature availability</p>
+        <p className="text-muted-foreground text-sm mt-0.5">
+          Two-tier module system: vendor licensing controls availability, company activation enables features
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {modules.map(mod => {
-          const moduleIcon: Record<string, React.ElementType> = {
-            maintenance_requests: ClipboardList,
-            work_orders: Wrench,
-            assets: Building2,
-            inventory: Package,
-            production: Zap,
-            analytics: BarChart3,
-          };
-          const Icon = moduleIcon[mod.code] || Boxes;
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                <Layers className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Total Modules</p>
+                <p className="text-xl font-bold">{stats.total}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center">
+                <Key className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Licensed</p>
+                <p className="text-xl font-bold">{stats.licensed}<span className="text-sm text-muted-foreground font-normal ml-0.5">/{stats.total}</span></p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <CheckCircle2 className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Active</p>
+                <p className="text-xl font-bold">{stats.active}<span className="text-sm text-muted-foreground font-normal ml-0.5">/{stats.total}</span></p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+                <Lock className="h-4.5 w-4.5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">Core Modules</p>
+                <p className="text-xl font-bold">{stats.core}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
-          return (
-            <Card key={mod.id} className={`border-0 shadow-sm transition-all hover:shadow-md ${mod.isEnabled ? 'ring-1 ring-emerald-200' : 'opacity-75'}`}>
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${mod.isEnabled ? 'bg-emerald-100 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-semibold text-sm">{mod.name}</h3>
-                        {mod.isCore && <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">CORE</Badge>}
+      {/* Tabs & Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="licensing" className="gap-1.5">
+              <Shield className="h-3.5 w-3.5" />
+              Module Licensing
+            </TabsTrigger>
+            <TabsTrigger value="activation" className="gap-1.5">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Module Activation
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="relative w-full sm:w-64">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search modules..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="pl-9 h-9"
+          />
+        </div>
+      </div>
+
+      {/* Licensing Tab */}
+      {activeTab === 'licensing' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {licensingModules.map(mod => {
+            const Icon = moduleIconMap[mod.code] || Boxes;
+            const licenseStatus = getLicenseStatus(mod);
+            const borderStyle = getCardBorderStyle(mod);
+            const isGreyedOut = !mod.isActive && !mod.isCore;
+
+            return (
+              <Card key={mod.id} className={`shadow-sm transition-all hover:shadow-md ${borderStyle} ${isGreyedOut ? 'opacity-60' : ''}`}>
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${mod.isActive || mod.isCore ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                        <Icon className="h-5 w-5" />
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{mod.description}</p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Badge variant="outline" className="text-[10px] font-mono">{mod.code}</Badge>
-                        <span className="text-[10px] text-muted-foreground">v{mod.version}</span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-semibold text-sm truncate">{mod.name}</h3>
+                          {mod.isCore ? (
+                            <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-0.5">
+                              <Lock className="h-2.5 w-2.5" />
+                              CORE
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-500 border-slate-200">OPTIONAL</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{mod.description}</p>
                       </div>
                     </div>
-                  </div>
-                  {canToggle && (
-                    <Switch
-                      checked={mod.isEnabled}
-                      onCheckedChange={() => handleToggle(mod)}
-                      disabled={mod.isCore && mod.isEnabled}
-                    />
-                  )}
-                </div>
-                <div className="mt-3 pt-3 border-t">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <div className={`h-1.5 w-1.5 rounded-full ${mod.isEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                      <span className="text-[11px] font-medium">{mod.isEnabled ? 'Active' : 'Inactive'}</span>
-                    </div>
-                    {!mod.isCore && (
-                      <Badge variant="secondary" className="text-[9px]">Optional</Badge>
+                    {canLicense && (
+                      <Switch
+                        checked={mod.isActive || mod.isCore}
+                        onCheckedChange={() => handleLicenseToggle(mod)}
+                        disabled={mod.isCore}
+                        className="shrink-0"
+                      />
                     )}
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+
+                  {/* Module meta */}
+                  <div className="flex items-center gap-2 mt-3">
+                    <Badge variant="outline" className="text-[10px] font-mono">{mod.code}</Badge>
+                    <span className="text-[10px] text-muted-foreground">v{mod.version}</span>
+                  </div>
+
+                  {/* Status row */}
+                  <div className="mt-3 pt-3 border-t grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">License Status</p>
+                      <span className={`inline-flex items-center text-[11px] font-medium px-1.5 py-0.5 rounded ${licenseStatus.color}`}>
+                        {licenseStatus.label}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Activation</p>
+                      <div className="flex items-center gap-1.5">
+                        <div className={`h-1.5 w-1.5 rounded-full ${mod.isEnabled || mod.isCore ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                        <span className="text-[11px] font-medium">{mod.isEnabled || mod.isCore ? 'Active' : 'Inactive'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* License period & licensed by */}
+                  {mod.isActive && (mod.validFrom || mod.validUntil || mod.licensedAt) && (
+                    <div className="mt-2.5 pt-2.5 border-t space-y-1">
+                      {mod.validFrom && mod.validUntil && (
+                        <p className="text-[10px] text-muted-foreground">
+                          <Calendar className="inline h-3 w-3 mr-1 -mt-px" />
+                          {format(new Date(mod.validFrom), 'MMM d, yyyy')} — {format(new Date(mod.validUntil), 'MMM d, yyyy')}
+                        </p>
+                      )}
+                      {mod.licensedAt && (
+                        <p className="text-[10px] text-muted-foreground">
+                          <Clock className="inline h-3 w-3 mr-1 -mt-px" />
+                          Licensed {formatDistanceToNow(new Date(mod.licensedAt), { addSuffix: true })}
+                          {mod.licensedByUser && <> by {mod.licensedByUser.fullName}</>}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+          {licensingModules.length === 0 && (
+            <div className="col-span-full flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <Search className="h-8 w-8 mb-2" />
+              <p className="text-sm font-medium">No modules found</p>
+              <p className="text-xs">Try adjusting your search query</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Activation Tab */}
+      {activeTab === 'activation' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {activationModules.map(mod => {
+            const Icon = moduleIconMap[mod.code] || Boxes;
+            const borderStyle = getCardBorderStyle(mod);
+            const isEnabled = mod.isEnabled || mod.isCore;
+
+            return (
+              <Card key={mod.id} className={`shadow-sm transition-all hover:shadow-md ${borderStyle}`}>
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${isEnabled ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-50 text-amber-500'}`}>
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-semibold text-sm truncate">{mod.name}</h3>
+                          {mod.isCore ? (
+                            <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 flex items-center gap-0.5">
+                              <Lock className="h-2.5 w-2.5" />
+                              CORE
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-500 border-slate-200">OPTIONAL</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{mod.description}</p>
+                      </div>
+                    </div>
+                    {canManage && (
+                      <Switch
+                        checked={isEnabled}
+                        onCheckedChange={() => handleEnableToggle(mod)}
+                        disabled={mod.isCore && mod.isEnabled}
+                        className="shrink-0"
+                      />
+                    )}
+                  </div>
+
+                  {/* Module meta */}
+                  <div className="flex items-center gap-2 mt-3">
+                    <Badge variant="outline" className="text-[10px] font-mono">{mod.code}</Badge>
+                    <span className="text-[10px] text-muted-foreground">v{mod.version}</span>
+                  </div>
+
+                  {/* Status row */}
+                  <div className="mt-3 pt-3 border-t grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Status</p>
+                      <div className="flex items-center gap-1.5">
+                        <div className={`h-1.5 w-1.5 rounded-full ${isEnabled ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                        <span className={`text-[11px] font-medium ${isEnabled ? 'text-emerald-700' : 'text-amber-600'}`}>
+                          {isEnabled ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Licensed</p>
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                        <span className="text-[11px] font-medium text-emerald-700">Yes</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Activated date */}
+                  {mod.activatedAt && (
+                    <div className="mt-2.5 pt-2.5 border-t">
+                      <p className="text-[10px] text-muted-foreground">
+                        <CheckCircle2 className="inline h-3 w-3 mr-1 -mt-px text-emerald-500" />
+                        Activated {formatDistanceToNow(new Date(mod.activatedAt), { addSuffix: true })}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Inactive notice */}
+                  {!isEnabled && !mod.isCore && (
+                    <div className="mt-2.5 pt-2.5 border-t">
+                      <p className="text-[10px] text-amber-600 bg-amber-50 rounded px-2 py-1">
+                        <AlertTriangle className="inline h-3 w-3 mr-1 -mt-px" />
+                        Module is licensed but not yet activated
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+          {activationModules.length === 0 && (
+            <div className="col-span-full flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <Key className="h-8 w-8 mb-2" />
+              <p className="text-sm font-medium">No licensed modules</p>
+              <p className="text-xs">License modules from the licensing tab first</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Permission notice */}
+      {!canLicense && !canManage && (
+        <Card className="border-0 shadow-sm bg-amber-50">
+          <CardContent className="p-4 flex items-center gap-3">
+            <ShieldAlert className="h-5 w-5 text-amber-500 shrink-0" />
+            <p className="text-sm text-amber-700">
+              You need <strong>modules.activate</strong> or <strong>modules.manage</strong> permission to manage modules. Contact your administrator.
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -5632,6 +6263,399 @@ function NotificationPopover() {
 }
 
 // ============================================================================
+// GENERIC COMING SOON PAGE
+// ============================================================================
+
+function ComingSoonPage({ title, description, icon: Icon, features }: { title: string; description: string; icon: React.ElementType; features?: string[] }) {
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+        <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/40 dark:to-teal-900/40 flex items-center justify-center mb-4">
+          <Icon className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+        <p className="text-muted-foreground mt-2 max-w-md">{description}</p>
+        {features && features.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-8 max-w-lg w-full">
+            {features.map(f => (
+              <div key={f} className="flex items-center gap-2 p-3 rounded-lg border bg-card">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                <span className="text-sm text-left">{f}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <Badge variant="outline" className="mt-6 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800">Coming Soon</Badge>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// ASSETS SUBPAGES
+// ============================================================================
+
+function AssetsMachinesPage() {
+  const { navigate } = useNavigationStore();
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Machines</h1>
+        <p className="text-muted-foreground mt-1">View and manage all registered machines and equipment</p>
+      </div>
+      <AssetsPage />
+    </div>
+  );
+}
+
+function AssetsHierarchyPage() {
+  const [assets, setAssets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/api/assets');
+        if (res.data) setAssets(res.data.assets || res.data || []);
+      } catch { /* empty */ }
+      setLoading(false);
+    })();
+  }, []);
+
+  const roots = assets.filter((a: any) => !a.parentId);
+  const getChildren = (parentId: string) => assets.filter((a: any) => a.parentId === parentId);
+  const toggle = (id: string) => {
+    setExpanded(prev => { const n = new Set(prev); if (n.has(id)) { n.delete(id); } else { n.add(id); } return n; });
+  };
+
+  const renderTree = (items: any[], depth: number = 0) => items.map(a => {
+    const children = getChildren(a.id);
+    const isOpen = expanded.has(a.id);
+    return (
+      <div key={a.id}>
+        <button onClick={() => children.length > 0 && toggle(a.id)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-muted/50 text-sm text-left transition-colors" style={{ paddingLeft: `${depth * 20 + 12}px` }}>
+          {children.length > 0 && <ChevronRight className={`h-3.5 w-3.5 shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />}
+          {children.length === 0 && <span className="w-3.5" />}
+          <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="flex-1 truncate font-medium">{a.name}</span>
+          <Badge variant="outline" className="text-[10px] shrink-0">{a.status?.replace(/_/g,' ')}</Badge>
+        </button>
+        {isOpen && children.length > 0 && renderTree(children, depth + 1)}
+      </div>
+    );
+  });
+
+  if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Asset Hierarchy</h1>
+        <p className="text-muted-foreground mt-1">Visualize the parent-child relationships between assets</p>
+      </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Tree View</CardTitle>
+          <CardDescription>Click to expand/collapse branches</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {roots.length === 0 ? (
+            <EmptyState icon={GitBranch} title="No assets found" description="Create assets to build the hierarchy tree" />
+          ) : (
+            <div className="max-h-[500px] overflow-y-auto">{renderTree(roots)}</div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function AssetHealthPage() {
+  const [assets, setAssets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/api/assets');
+        if (res.data) setAssets(res.data.assets || res.data || []);
+      } catch { /* empty */ }
+      setLoading(false);
+    })();
+  }, []);
+
+  const conditions = ['new', 'good', 'fair', 'poor', 'out_of_service'];
+  const condColors: Record<string, string> = { new: 'bg-emerald-500', good: 'bg-emerald-400', fair: 'bg-amber-400', poor: 'bg-orange-500', out_of_service: 'bg-red-500' };
+  const condLabels: Record<string, string> = { new: 'New', good: 'Good', fair: 'Fair', poor: 'Poor', out_of_service: 'Out of Service' };
+  const critColors: Record<string, string> = { low: 'text-emerald-600', medium: 'text-amber-600', high: 'text-orange-600', critical: 'text-red-600' };
+
+  const condCounts = conditions.map(c => ({ condition: c, count: assets.filter((a: any) => a.condition === c).length }));
+  const critCounts = ['low', 'medium', 'high', 'critical'].map(c => ({ criticality: c, count: assets.filter((a: any) => a.criticality === c).length }));
+  const statusCounts = ['operational', 'standby', 'under_maintenance', 'decommissioned'].map(s => ({ status: s, count: assets.filter((a: any) => a.status === s).length }));
+  const total = assets.length || 1;
+
+  if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Asset Health</h1>
+        <p className="text-muted-foreground mt-1">Overview of asset conditions, criticality, and operational status</p>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        {condCounts.map(c => (
+          <Card key={c.condition}>
+            <CardContent className="p-4 text-center">
+              <div className={`h-2 rounded-full mb-3 ${condColors[c.condition]}`} />
+              <p className="text-2xl font-bold">{c.count}</p>
+              <p className="text-xs text-muted-foreground">{condLabels[c.condition]}</p>
+              <p className="text-[10px] text-muted-foreground mt-1">{Math.round(c.count / total * 100)}%</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-base">By Criticality</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {critCounts.map(c => (
+              <div key={c.criticality} className="flex items-center gap-3">
+                <span className={`text-sm font-medium capitalize w-24 ${critColors[c.criticality]}`}>{c.criticality}</span>
+                <div className="flex-1 bg-muted rounded-full h-2.5"><div className="bg-primary rounded-full h-2.5 transition-all" style={{ width: `${(c.count / total) * 100}%` }} /></div>
+                <span className="text-sm font-semibold w-8 text-right">{c.count}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-base">By Status</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {statusCounts.map(s => (
+              <div key={s.status} className="flex items-center gap-3">
+                <span className="text-sm font-medium capitalize w-44">{s.status.replace(/_/g,' ')}</span>
+                <div className="flex-1 bg-muted rounded-full h-2.5"><div className="bg-primary rounded-full h-2.5 transition-all" style={{ width: `${(s.count / total) * 100}%` }} /></div>
+                <span className="text-sm font-semibold w-8 text-right">{s.count}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// Asset Coming Soon pages
+function AssetsBomPage() { return <ComingSoonPage title="Bill of Materials" description="Manage hierarchical parts lists for each asset, including components, sub-assemblies, and spare parts." icon={ListChecks} features={['Hierarchical BOM structure', 'Component substitution tracking', 'Spare parts linkage', 'Cost roll-up calculations', 'Revision history']} />; }
+function AssetsConditionMonitoringPage() { return <ComingSoonPage title="Condition Monitoring" description="Real-time monitoring of asset health parameters including vibration, temperature, pressure, and more." icon={Activity} features={['Real-time sensor data', 'Threshold alerts', 'Trend analysis', 'Predictive degradation curves']} />; }
+function AssetsDigitalTwinPage() { return <ComingSoonPage title="Digital Twin" description="Create and manage digital replicas of physical assets for simulation and predictive analysis." icon={Box} features={['3D asset visualization', 'Real-time data sync', 'Simulation scenarios', 'Performance modeling']} />; }
+
+// ============================================================================
+// MAINTENANCE SUBPAGES
+// ============================================================================
+
+function MaintenanceWorkOrdersPage() {
+  const { navigate } = useNavigationStore();
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Work Orders</h1>
+        <p className="text-muted-foreground mt-1">Create, track, and manage all maintenance work orders</p>
+      </div>
+      <WorkOrdersPage />
+    </div>
+  );
+}
+
+function MaintenanceDashboardPage() {
+  const [stats, setStats] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    (async () => {
+      try { const res = await api.get('/api/dashboard/stats'); if (res.data) setStats(res.data); } catch { /* empty */ }
+      setLoading(false);
+    })();
+  }, []);
+  const kpis = [
+    { label: 'Active WOs', value: stats?.activeWorkOrders ?? '-', icon: Wrench, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Completed', value: stats?.completedWorkOrders ?? '-', icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Overdue', value: stats?.overdueWorkOrders ?? '-', icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+    { label: 'Created Today', value: stats?.createdTodayWO ?? '-', icon: Plus, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+  ];
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Dashboard</h1><p className="text-muted-foreground mt-1">Maintenance operations overview and KPIs</p></div>
+      {loading ? <LoadingSkeleton /> : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {kpis.map(k => { const I = k.icon; return (
+            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+          ); })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MaintenanceAnalyticsPage() {
+  return <ComingSoonPage title="Maintenance Analytics" description="Advanced analytics for maintenance operations including MTTR, MTBF, failure patterns, and predictive insights." icon={BarChart3} features={['MTTR / MTBF tracking', 'Failure mode analysis', 'PM compliance rates', 'Cost trend analysis', 'Predictive failure alerts']} />;
+}
+function MaintenanceCalibrationPage() { return <ComingSoonPage title="Calibration" description="Manage instrument calibration schedules, records, and compliance tracking." icon={Crosshair} features={['Calibration scheduling', 'Equipment tracking', 'Compliance certificates', 'Due date alerts']} />; }
+function MaintenanceRiskAssessmentPage() { return <ComingSoonPage title="Risk Assessment" description="Evaluate and manage risks associated with asset failures and maintenance activities." icon={TriangleAlert} features={['Risk matrix', 'Risk scoring', 'Mitigation plans', 'Risk history tracking']} />; }
+function MaintenanceToolsPage() { return <ComingSoonPage title="Tools" description="Manage maintenance tool inventory, assignments, and calibration records." icon={WrenchIcon} features={['Tool registry', 'Checkout/check-in', 'Calibration tracking', 'Tool availability']} />; }
+
+// ============================================================================
+// INVENTORY SUBPAGES
+// ============================================================================
+
+function InventoryItemsPage() {
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">Inventory Items</h1><p className="text-muted-foreground mt-1">Manage spare parts, consumables, and supply inventory</p></div>
+      <InventoryPage />
+    </div>
+  );
+}
+
+function InventoryCategoriesPage() { return <ComingSoonPage title="Inventory Categories" description="Organize inventory items into hierarchical categories for better management." icon={FolderOpen} features={['Category tree', 'Item categorization', 'Search & filter', 'Bulk operations']} />; }
+function InventoryLocationsPage() { return <ComingSoonPage title="Inventory Locations" description="Manage warehouse locations, bins, and storage areas for inventory items." icon={MapPin} features={['Warehouse mapping', 'Bin locations', 'Storage capacity', 'Location search']} />; }
+function InventoryTransactionsPage() { return <ComingSoonPage title="Inventory Transactions" description="View complete transaction history for all inventory movements." icon={ArrowRightLeft} features={['Transaction log', 'Filter by type', 'Date range search', 'Export reports']} />; }
+function InventoryAdjustmentsPage() { return <ComingSoonPage title="Inventory Adjustments" description="Record stock adjustments, write-offs, and corrections." icon={ArrowUpDown} features={['Stock adjustment form', 'Approval workflow', 'Reason tracking', 'Audit trail']} />; }
+function InventoryRequestsPage() { return <ComingSoonPage title="Inventory Requests" description="Submit and track material requisitions from maintenance work orders." icon={FileText} features={['Requisition form', 'Approval process', 'WO linkage', 'Status tracking']} />; }
+function InventoryTransfersPage() { return <ComingSoonPage title="Inventory Transfers" description="Transfer inventory items between locations, plants, or departments." icon={Truck} features={['Transfer orders', 'Multi-location', 'Approval workflow', 'In-transit tracking']} />; }
+function InventorySuppliersPage() { return <ComingSoonPage title="Suppliers" description="Manage supplier information, contacts, and performance metrics." icon={Building} features={['Supplier directory', 'Contact management', 'Performance ratings', 'Lead time tracking']} />; }
+function InventoryPurchaseOrdersPage() { return <ComingSoonPage title="Purchase Orders" description="Create and manage purchase orders for inventory replenishment." icon={ShoppingCart} features={['PO creation', 'Approval workflow', 'Supplier selection', 'Delivery tracking']} />; }
+function InventoryReceivingPage() { return <ComingSoonPage title="Receiving" description="Receive delivered items and update inventory stock levels." icon={Download} features={['GRN processing', 'Quality inspection', 'Stock update', 'PO matching']} />; }
+
+// ============================================================================
+// IoT SUBPAGES
+// ============================================================================
+
+function IotDevicesPage() { return <ComingSoonPage title="IoT Devices" description="Register and manage IoT sensors, gateways, and connected devices across your facility." icon={Smartphone} features={['Device registry', 'Connection status', 'Firmware updates', 'Device groups']} />; }
+function IotMonitoringPage() { return <ComingSoonPage title="IoT Monitoring" description="Real-time monitoring dashboard for all connected IoT devices and sensor data." icon={Monitor} features={['Live data feeds', 'Custom dashboards', 'Alert management', 'Historical trends']} />; }
+function IotRulesPage() { return <ComingSoonPage title="IoT Rules" description="Configure automation rules and alert thresholds for IoT sensor data." icon={Radio} features={['Rule builder', 'Threshold configuration', 'Notification triggers', 'Action workflows']} />; }
+
+// ============================================================================
+// ANALYTICS SUBPAGES
+// ============================================================================
+
+function AnalyticsKpiPage() { return <ComingSoonPage title="KPI Dashboard" description="Organization-wide key performance indicators for maintenance, reliability, and operations." icon={Target} features={['Customizable KPIs', 'Benchmarking', 'Trend analysis', 'Drill-down views']} />; }
+function AnalyticsOeePage() { return <ComingSoonPage title="OEE" description="Overall Equipment Effectiveness tracking and analysis for production assets." icon={Gauge} features={['Availability tracking', 'Performance metrics', 'Quality rate', 'OEE trends']} />; }
+function AnalyticsDowntimePage() { return <ComingSoonPage title="Downtime Analysis" description="Track and analyze equipment downtime events, causes, and patterns." icon={TrendingDown} features={['Downtime events', 'Pareto analysis', 'Root cause tracking', 'Cost impact']} />; }
+function AnalyticsEnergyPage() { return <ComingSoonPage title="Energy Analytics" description="Monitor energy consumption patterns and optimize energy usage across assets." icon={Zap} features={['Energy metering', 'Consumption trends', 'Cost analysis', 'Efficiency benchmarks']} />; }
+
+// ============================================================================
+// OPERATIONS SUBPAGES
+// ============================================================================
+
+function OperationsMeterReadingsPage() { return <ComingSoonPage title="Meter Readings" description="Record and track meter/gauge readings for utility meters and equipment." icon={Gauge} features={['Reading entry', 'Automated collection', 'Trend charts', 'Anomaly detection']} />; }
+function OperationsTrainingPage() { return <ComingSoonPage title="Training" description="Manage employee training records, certifications, and compliance." icon={GraduationCap} features={['Training records', 'Certification tracking', 'Due date alerts', 'Competency matrix']} />; }
+function OperationsSurveysPage() { return <ComingSoonPage title="Surveys" description="Create and conduct safety, compliance, and operational surveys." icon={FileText} features={['Survey builder', 'Response collection', 'Analytics', 'Action items']} />; }
+function OperationsTimeLogsPage() { return <ComingSoonPage title="Time Logs" description="Track employee work hours, shifts, and labor allocation." icon={Clock} features={['Time entry', 'Shift tracking', 'Labor allocation', 'Overtime management']} />; }
+function OperationsShiftHandoverPage() { return <ComingSoonPage title="Shift Handover" description="Manage shift-to-shift handover notes, pending tasks, and critical information." icon={ArrowRightLeft} features={['Handover templates', 'Task tracking', 'Escalation log', 'Sign-off workflow']} />; }
+function OperationsChecklistsPage() { return <ComingSoonPage title="Checklists" description="Create and manage operational checklists for routine procedures and audits." icon={CheckSquare} features={['Checklist templates', 'Completion tracking', 'Inspection forms', 'Compliance records']} />; }
+
+// ============================================================================
+// PRODUCTION SUBPAGES
+// ============================================================================
+
+function ProductionWorkCentersPage() { return <ComingSoonPage title="Work Centers" description="Define and manage production work centers, lines, and cells." icon={Factory} features={['Work center registry', 'Capacity definition', 'Equipment mapping', 'Scheduling integration']} />; }
+function ProductionResourcePlanningPage() { return <ComingSoonPage title="Resource Planning" description="Plan and allocate resources (people, machines, materials) for production." icon={Layers} features={['Resource allocation', 'Capacity planning', 'Demand forecasting', 'Gantt charts']} />; }
+function ProductionSchedulingPage() { return <ComingSoonPage title="Production Scheduling" description="Create and manage production schedules and sequencing." icon={Calendar} features={['Schedule builder', 'Drag-and-drop', 'Conflict detection', 'Real-time updates']} />; }
+function ProductionCapacityPage() { return <ComingSoonPage title="Capacity Management" description="Monitor and manage production capacity utilization and bottlenecks." icon={Box} features={['Capacity dashboard', 'Utilization tracking', 'Bottleneck alerts', 'Expansion planning']} />; }
+function ProductionEfficiencyPage() { return <ComingSoonPage title="Production Efficiency" description="Track production efficiency metrics and identify improvement opportunities." icon={TrendingUp} features={['Efficiency KPIs', 'Throughput tracking', 'Waste analysis', 'Improvement plans']} />; }
+function ProductionBottlenecksPage() { return <ComingSoonPage title="Bottleneck Analysis" description="Identify and analyze production bottlenecks to optimize throughput." icon={AlertTriangle} features={['Bottleneck detection', 'Impact analysis', 'Root cause analysis', 'Optimization suggestions']} />; }
+function ProductionOrdersPage() { return <ComingSoonPage title="Production Orders" description="Create and manage production orders from planning through completion." icon={ClipboardList} features={['Order creation', 'Progress tracking', 'Material requirements', 'Completion reporting']} />; }
+function ProductionBatchesPage() { return <ComingSoonPage title="Batch Management" description="Track production batches, lot numbers, and traceability." icon={Package} features={['Batch tracking', 'Lot traceability', 'Quality results', 'Shelf life management']} />; }
+
+// ============================================================================
+// QUALITY SUBPAGES
+// ============================================================================
+
+function QualityInspectionsPage() { return <ComingSoonPage title="Inspections" description="Schedule, conduct, and track quality inspections and checks." icon={Search} features={['Inspection plans', 'Checklists', 'Result recording', 'Non-conformance linkage']} />; }
+function QualityNcrPage() { return <ComingSoonPage title="Non-Conformance Reports" description="Manage non-conformance reports, investigations, and corrective actions." icon={FileCheck} features={['NCR registration', 'Investigation tracking', 'Disposition', 'CAPA linkage']} />; }
+function QualityAuditsPage() { return <ComingSoonPage title="Quality Audits" description="Plan and execute internal and external quality audits." icon={ShieldAlert} features={['Audit planning', 'Checklists', 'Finding management', 'Compliance tracking']} />; }
+function QualityControlPlansPage() { return <ComingSoonPage title="Control Plans" description="Define quality control plans for products and processes." icon={ScrollText} features={['Control plan templates', 'Inspection points', 'Sampling plans', 'Reaction plans']} />; }
+function QualitySpcPage() { return <ComingSoonPage title="Statistical Process Control" description="Monitor process stability using SPC charts and statistical methods." icon={BarChart3} features={['Control charts', 'Cp/Cpk analysis', 'Process capability', 'Out-of-control alerts']} />; }
+function QualityCapaPage() { return <ComingSoonPage title="CAPA" description="Manage Corrective and Preventive Actions for quality improvement." icon={HardHat} features={['CAPA workflow', 'Root cause analysis', 'Action tracking', 'Effectiveness verification']} />; }
+
+// ============================================================================
+// SAFETY SUBPAGES
+// ============================================================================
+
+function SafetyIncidentsPage() { return <ComingSoonPage title="Incidents" description="Report, investigate, and track safety incidents and near-misses." icon={TriangleAlert} features={['Incident reporting', 'Investigation workflow', 'Corrective actions', 'Regulatory compliance']} />; }
+function SafetyInspectionsPage() { return <ComingSoonPage title="Safety Inspections" description="Schedule and conduct safety inspections and workplace audits." icon={Search} features={['Inspection schedules', 'Checklists', 'Finding tracking', 'Compliance reports']} />; }
+function SafetyTrainingPage() { return <ComingSoonPage title="Safety Training" description="Manage safety training programs, certifications, and compliance." icon={GraduationCap} features={['Training records', 'Certification tracking', 'Due date alerts', 'Competency assessment']} />; }
+function SafetyEquipmentPage() { return <ComingSoonPage title="Safety Equipment" description="Track PPE, safety devices, and emergency equipment inventory." icon={HardHat} features={['Equipment registry', 'Inspection dates', 'Replacement tracking', 'Assignment log']} />; }
+function SafetyPermitsPage() { return <ComingSoonPage title="Permits" description="Manage work permits including hot work, confined space, and electrical permits." icon={FileCheck} features={['Permit templates', 'Approval workflow', 'Expiration alerts', 'Audit trail']} />; }
+
+// ============================================================================
+// REPORTS SUBPAGES
+// ============================================================================
+
+function ReportsAssetPage() { return <ComingSoonPage title="Asset Reports" description="Generate comprehensive reports on asset register, conditions, and lifecycle." icon={Building2} features={['Asset register reports', 'Condition summaries', 'Depreciation schedules', 'Lifecycle analysis']} />; }
+function ReportsMaintenancePage() { return <ComingSoonPage title="Maintenance Reports" description="Reports on work orders, PM compliance, costs, and maintenance performance." icon={Wrench} features={['WO summary reports', 'PM compliance', 'Cost analysis', 'Downtime reports']} />; }
+function ReportsInventoryPage() { return <ComingSoonPage title="Inventory Reports" description="Reports on stock levels, movements, values, and procurement." icon={Package} features={['Stock status reports', 'Movement history', 'Valuation reports', 'Reorder analysis']} />; }
+function ReportsProductionPage() { return <ComingSoonPage title="Production Reports" description="Reports on production output, efficiency, and resource utilization." icon={Factory} features={['Production summaries', 'Efficiency reports', 'Resource utilization', 'Quality metrics']} />; }
+function ReportsQualityPage() { return <ComingSoonPage title="Quality Reports" description="Reports on inspections, NCRs, CAPAs, and quality KPIs." icon={ShieldCheck} features={['Quality dashboards', 'NCR trends', 'CAPA status', 'Compliance reports']} />; }
+function ReportsSafetyPage() { return <ComingSoonPage title="Safety Reports" description="Reports on incidents, inspections, training, and safety KPIs." icon={HardHat} features={['Incident summaries', 'Inspection reports', 'Training compliance', 'Safety trends']} />; }
+function ReportsFinancialPage() { return <ComingSoonPage title="Financial Reports" description="Financial reports on maintenance costs, asset values, and budgets." icon={TrendingUp} features={['Cost analysis', 'Budget tracking', 'Asset valuation', 'ROI calculations']} />; }
+function ReportsCustomPage() { return <ComingSoonPage title="Custom Reports" description="Build and save custom reports with flexible filters and formatting." icon={FileSpreadsheet} features={['Report builder', 'Custom filters', 'Scheduled delivery', 'Export options']} />; }
+
+// ============================================================================
+// SETTINGS SUBPAGES
+// ============================================================================
+
+function SettingsGeneralPage() {
+  const [profile, setProfile] = useState<any>(() => {
+    if (typeof window === 'undefined') return { timezone: 'UTC', currency: 'USD', dateFormat: 'MM/DD/YYYY', companyName: '' };
+    try { const s = localStorage.getItem('iassetspro_company_profile'); return s ? JSON.parse(s) : { timezone: 'UTC', currency: 'USD', dateFormat: 'MM/DD/YYYY', companyName: '' }; } catch { return { timezone: 'UTC', currency: 'USD', dateFormat: 'MM/DD/YYYY', companyName: '' }; }
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await new Promise(r => setTimeout(r, 800));
+    localStorage.setItem('iassetspro_company_profile', JSON.stringify(profile));
+    toast.success('General settings saved');
+    setSaving(false);
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">General Settings</h1><p className="text-muted-foreground mt-1">Configure system-wide preferences and defaults</p></div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader><CardTitle className="text-base">Regional Settings</CardTitle><CardDescription>Timezone, currency, and date format</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2"><Label>Timezone</Label><Select value={profile.timezone} onValueChange={v => setProfile(p => ({ ...p, timezone: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="UTC">UTC</SelectItem><SelectItem value="America/New_York">Eastern Time</SelectItem><SelectItem value="America/Chicago">Central Time</SelectItem><SelectItem value="America/Denver">Mountain Time</SelectItem><SelectItem value="America/Los_Angeles">Pacific Time</SelectItem><SelectItem value="Europe/London">London (GMT)</SelectItem><SelectItem value="Africa/Accra">Accra (GMT)</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>Currency</Label><Select value={profile.currency} onValueChange={v => setProfile(p => ({ ...p, currency: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="USD">USD ($)</SelectItem><SelectItem value="EUR">EUR (€)</SelectItem><SelectItem value="GBP">GBP (£)</SelectItem><SelectItem value="GHS">GHS (₵)</SelectItem><SelectItem value="NGN">NGN (₦)</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>Date Format</Label><Select value={profile.dateFormat} onValueChange={v => setProfile(p => ({ ...p, dateFormat: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem><SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem><SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem><SelectItem value="DD-MMM-YYYY">DD-MMM-YYYY</SelectItem></SelectContent></Select></div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">System Information</CardTitle><CardDescription>Current system configuration</CardDescription></CardHeader>
+          <CardContent className="space-y-3">
+            {[
+              { label: 'Version', value: '2.0.0' },
+              { label: 'Environment', value: 'Production' },
+              { label: 'Database', value: 'SQLite' },
+              { label: 'Last Backup', value: 'Never' },
+            ].map(r => (
+              <div key={r.label} className="flex justify-between items-center py-2 border-b last:border-0"><span className="text-sm text-muted-foreground">{r.label}</span><span className="text-sm font-medium">{r.value}</span></div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+      <Button onClick={handleSave} disabled={saving}>{saving ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Saving...</> : 'Save Changes'}</Button>
+    </div>
+  );
+}
+
+function SettingsNotificationsPage() { return <ComingSoonPage title="Notification Preferences" description="Configure email, SMS, and in-app notification preferences." icon={BellRing} features={['Notification channels', 'Preference templates', 'Quiet hours', 'Escalation rules']} />; }
+function SettingsIntegrationsPage() { return <ComingSoonPage title="Integrations" description="Connect with third-party systems and external services." icon={Link2} features={['API configuration', 'Webhook management', 'OAuth connections', 'Data sync settings']} />; }
+function SettingsBackupPage() { return <ComingSoonPage title="Backup & Restore" description="Manage system backups, data exports, and disaster recovery." icon={Database} features={['Automated backups', 'Manual backup', 'Data restore', 'Backup history']} />; }
+
+// ============================================================================
 // MAIN APP SHELL
 // ============================================================================
 
@@ -5653,49 +6677,205 @@ function AppShell() {
 
   const renderPage = () => {
     switch (currentPage) {
+      // Core
       case 'dashboard': return <DashboardPage />;
+      case 'notifications': return <NotificationsPage />;
+      // Assets
+      case 'assets-machines': return <AssetsMachinesPage />;
+      case 'assets-hierarchy': return <AssetsHierarchyPage />;
+      case 'assets-bom': return <AssetsBomPage />;
+      case 'assets-condition-monitoring': return <AssetsConditionMonitoringPage />;
+      case 'assets-digital-twin': return <AssetsDigitalTwinPage />;
+      case 'assets-health': return <AssetHealthPage />;
+      // Maintenance
+      case 'maintenance-work-orders':
+      case 'wo-detail': return <MaintenanceWorkOrdersPage />;
       case 'maintenance-requests':
       case 'mr-detail':
       case 'create-mr': return <MaintenanceRequestsPage />;
-      case 'work-orders':
-      case 'wo-detail': return <WorkOrdersPage />;
-      case 'assets':
-      case 'asset-detail': return <AssetsPage />;
-      case 'inventory': return <InventoryPage />;
+      case 'maintenance-dashboard': return <MaintenanceDashboardPage />;
+      case 'maintenance-analytics': return <MaintenanceAnalyticsPage />;
+      case 'maintenance-calibration': return <MaintenanceCalibrationPage />;
+      case 'maintenance-risk-assessment': return <MaintenanceRiskAssessmentPage />;
+      case 'maintenance-tools': return <MaintenanceToolsPage />;
       case 'pm-schedules': return <PmSchedulesPage />;
-      case 'analytics': return <AnalyticsPage />;
-      case 'notifications': return <NotificationsPage />;
+      // IoT
+      case 'iot-devices': return <IotDevicesPage />;
+      case 'iot-monitoring': return <IotMonitoringPage />;
+      case 'iot-rules': return <IotRulesPage />;
+      // Analytics
+      case 'analytics-kpi': return <AnalyticsKpiPage />;
+      case 'analytics-oee': return <AnalyticsOeePage />;
+      case 'analytics-downtime': return <AnalyticsDowntimePage />;
+      case 'analytics-energy': return <AnalyticsEnergyPage />;
+      // Operations
+      case 'operations-meter-readings': return <OperationsMeterReadingsPage />;
+      case 'operations-training': return <OperationsTrainingPage />;
+      case 'operations-surveys': return <OperationsSurveysPage />;
+      case 'operations-time-logs': return <OperationsTimeLogsPage />;
+      case 'operations-shift-handover': return <OperationsShiftHandoverPage />;
+      case 'operations-checklists': return <OperationsChecklistsPage />;
+      // Production
+      case 'production-work-centers': return <ProductionWorkCentersPage />;
+      case 'production-resource-planning': return <ProductionResourcePlanningPage />;
+      case 'production-scheduling': return <ProductionSchedulingPage />;
+      case 'production-capacity': return <ProductionCapacityPage />;
+      case 'production-efficiency': return <ProductionEfficiencyPage />;
+      case 'production-bottlenecks': return <ProductionBottlenecksPage />;
+      case 'production-orders': return <ProductionOrdersPage />;
+      case 'production-batches': return <ProductionBatchesPage />;
+      // Quality
+      case 'quality-inspections': return <QualityInspectionsPage />;
+      case 'quality-ncr': return <QualityNcrPage />;
+      case 'quality-audits': return <QualityAuditsPage />;
+      case 'quality-control-plans': return <QualityControlPlansPage />;
+      case 'quality-spc': return <QualitySpcPage />;
+      case 'quality-capa': return <QualityCapaPage />;
+      // Safety
+      case 'safety-incidents': return <SafetyIncidentsPage />;
+      case 'safety-inspections': return <SafetyInspectionsPage />;
+      case 'safety-training': return <SafetyTrainingPage />;
+      case 'safety-equipment': return <SafetyEquipmentPage />;
+      case 'safety-permits': return <SafetyPermitsPage />;
+      // Inventory
+      case 'inventory-items': return <InventoryItemsPage />;
+      case 'inventory-categories': return <InventoryCategoriesPage />;
+      case 'inventory-locations': return <InventoryLocationsPage />;
+      case 'inventory-transactions': return <InventoryTransactionsPage />;
+      case 'inventory-adjustments': return <InventoryAdjustmentsPage />;
+      case 'inventory-requests': return <InventoryRequestsPage />;
+      case 'inventory-transfers': return <InventoryTransfersPage />;
+      case 'inventory-suppliers': return <InventorySuppliersPage />;
+      case 'inventory-purchase-orders': return <InventoryPurchaseOrdersPage />;
+      case 'inventory-receiving': return <InventoryReceivingPage />;
+      // Reports
+      case 'reports-asset': return <ReportsAssetPage />;
+      case 'reports-maintenance': return <ReportsMaintenancePage />;
+      case 'reports-inventory': return <ReportsInventoryPage />;
+      case 'reports-production': return <ReportsProductionPage />;
+      case 'reports-quality': return <ReportsQualityPage />;
+      case 'reports-safety': return <ReportsSafetyPage />;
+      case 'reports-financial': return <ReportsFinancialPage />;
+      case 'reports-custom': return <ReportsCustomPage />;
+      // Settings
+      case 'settings-general': return <SettingsGeneralPage />;
       case 'settings-users': return <SettingsUsersPage />;
       case 'settings-roles': return <SettingsRolesPage />;
       case 'settings-modules': return <SettingsModulesPage />;
       case 'settings-company': return <CompanyProfilePage />;
       case 'settings-plants': return <SettingsPlantsPage />;
       case 'settings-departments': return <SettingsDepartmentsPage />;
+      case 'settings-notifications': return <SettingsNotificationsPage />;
+      case 'settings-integrations': return <SettingsIntegrationsPage />;
+      case 'settings-backup': return <SettingsBackupPage />;
       case 'settings-audit': return <AuditLogsPage />;
+      // Legacy fallbacks
+      case 'assets':
+      case 'asset-detail': return <AssetsPage />;
+      case 'inventory': return <InventoryPage />;
+      case 'analytics': return <AnalyticsPage />;
       default: return <DashboardPage />;
     }
   };
 
   const pageTitle: Record<string, string> = {
+    // Core
     'dashboard': 'Dashboard',
-    'maintenance-requests': 'Maintenance Requests',
+    'notifications': 'Notifications',
+    // Assets
+    'assets-machines': 'Machines',
+    'assets-hierarchy': 'Asset Hierarchy',
+    'assets-bom': 'Bill of Materials',
+    'assets-condition-monitoring': 'Condition Monitoring',
+    'assets-digital-twin': 'Digital Twin',
+    'assets-health': 'Asset Health',
+    // Maintenance
+    'maintenance-work-orders': 'Work Orders',
+    'wo-detail': 'Work Order Details',
+    'maintenance-requests': 'Requests',
     'mr-detail': 'Request Details',
     'create-mr': 'New Request',
-    'work-orders': 'Work Orders',
-    'wo-detail': 'Work Order Details',
-    'assets': 'Asset Register',
-    'asset-detail': 'Asset Details',
-    'inventory': 'Inventory',
+    'maintenance-dashboard': 'Maintenance Dashboard',
+    'maintenance-analytics': 'Maintenance Analytics',
+    'maintenance-calibration': 'Calibration',
+    'maintenance-risk-assessment': 'Risk Assessment',
+    'maintenance-tools': 'Tools',
     'pm-schedules': 'PM Schedules',
-    'analytics': 'Analytics',
-    'notifications': 'Notifications',
+    // IoT
+    'iot-devices': 'IoT Devices',
+    'iot-monitoring': 'IoT Monitoring',
+    'iot-rules': 'IoT Rules',
+    // Analytics
+    'analytics-kpi': 'KPI Dashboard',
+    'analytics-oee': 'OEE',
+    'analytics-downtime': 'Downtime Analysis',
+    'analytics-energy': 'Energy Analytics',
+    // Operations
+    'operations-meter-readings': 'Meter Readings',
+    'operations-training': 'Training',
+    'operations-surveys': 'Surveys',
+    'operations-time-logs': 'Time Logs',
+    'operations-shift-handover': 'Shift Handover',
+    'operations-checklists': 'Checklists',
+    // Production
+    'production-work-centers': 'Work Centers',
+    'production-resource-planning': 'Resource Planning',
+    'production-scheduling': 'Production Scheduling',
+    'production-capacity': 'Capacity Management',
+    'production-efficiency': 'Production Efficiency',
+    'production-bottlenecks': 'Bottleneck Analysis',
+    'production-orders': 'Production Orders',
+    'production-batches': 'Batch Management',
+    // Quality
+    'quality-inspections': 'Inspections',
+    'quality-ncr': 'Non-Conformance Reports',
+    'quality-audits': 'Quality Audits',
+    'quality-control-plans': 'Control Plans',
+    'quality-spc': 'Statistical Process Control',
+    'quality-capa': 'CAPA',
+    // Safety
+    'safety-incidents': 'Incidents',
+    'safety-inspections': 'Safety Inspections',
+    'safety-training': 'Safety Training',
+    'safety-equipment': 'Safety Equipment',
+    'safety-permits': 'Permits',
+    // Inventory
+    'inventory-items': 'Inventory Items',
+    'inventory-categories': 'Categories',
+    'inventory-locations': 'Locations',
+    'inventory-transactions': 'Transactions',
+    'inventory-adjustments': 'Adjustments',
+    'inventory-requests': 'Requests',
+    'inventory-transfers': 'Transfers',
+    'inventory-suppliers': 'Suppliers',
+    'inventory-purchase-orders': 'Purchase Orders',
+    'inventory-receiving': 'Receiving',
+    // Reports
+    'reports-asset': 'Asset Reports',
+    'reports-maintenance': 'Maintenance Reports',
+    'reports-inventory': 'Inventory Reports',
+    'reports-production': 'Production Reports',
+    'reports-quality': 'Quality Reports',
+    'reports-safety': 'Safety Reports',
+    'reports-financial': 'Financial Reports',
+    'reports-custom': 'Custom Reports',
+    // Settings
+    'settings-general': 'General Settings',
     'settings-users': 'Users',
     'settings-roles': 'Roles & Permissions',
     'settings-modules': 'Module Management',
     'settings-company': 'Company Profile',
     'settings-plants': 'Plants',
     'settings-departments': 'Departments',
+    'settings-notifications': 'Notifications',
+    'settings-integrations': 'Integrations',
+    'settings-backup': 'Backup & Restore',
     'settings-audit': 'Audit Logs',
+    // Legacy
+    'assets': 'Asset Register',
+    'asset-detail': 'Asset Details',
+    'inventory': 'Inventory',
+    'analytics': 'Analytics',
   };
 
   return (
