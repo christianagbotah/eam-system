@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
-    if (!session || (!hasPermission(session, 'departments.create') && !isAdmin(session))) {
+    if (!session || !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

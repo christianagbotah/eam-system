@@ -199,3 +199,28 @@ Stage Summary:
 - 100% of pages are now functional (80/80) — zero Coming Soon stubs remain
 - File grew from ~8,900 to ~13,214 lines
 - All 12 sidebar modules fully populated with real enterprise content
+
+---
+Task ID: 1
+Agent: main
+Task: Fix "Coming Soon" sections and admin permission errors
+
+Work Log:
+- Searched all pages for "Coming Soon" references - found only logo upload in CompanyProfilePage and an unused ComingSoonPage component
+- Discovered company profile PUT API requires `settings.manage` permission which doesn't exist in DB (actual permission is `settings.update`)
+- Found `plants.create` and `departments.create` permissions also missing from DB
+- Fixed company-profile API: `settings.manage` → `settings.update`
+- Fixed plants API POST: removed double-gating `isAdmin && hasPermission('plants.create')` → just `isAdmin`
+- Fixed departments API POST: `hasPermission('departments.create') && isAdmin` → just `isAdmin`
+- Seeded 11 missing permissions to DB: plants.view/create/update/delete/manage, departments.view/create/update/delete/manage, settings.manage
+- Built production-ready logo upload feature: created /api/upload route with file validation (type, size), updated CompanyProfilePage with upload/remove buttons and progress indicator
+- Updated API client (src/lib/api.ts) to support FormData uploads (conditional Content-Type header)
+- Removed unused ComingSoonPage component and "Coming Soon" badge
+- Removed dead "Asset Coming Soon pages" comment
+
+Stage Summary:
+- Zero "Coming Soon" sections remain in the application
+- Company profile now saves correctly for admin users
+- Logo upload fully functional with file type/size validation
+- All API permission references verified against DB
+- 11 new permissions seeded to database

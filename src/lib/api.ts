@@ -7,8 +7,10 @@ export async function apiFetch<T = any>(
 ): Promise<{ success: boolean; data?: T; error?: string }> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('eam_token') : null;
 
+  const isFormData = options.body instanceof FormData;
+
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers as Record<string, string> || {}),
   };
@@ -34,10 +36,10 @@ export async function apiFetch<T = any>(
 export const api = {
   get: <T = any>(endpoint: string) => apiFetch<T>(endpoint),
   post: <T = any>(endpoint: string, body?: any) =>
-    apiFetch<T>(endpoint, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
+    apiFetch<T>(endpoint, { method: 'POST', body: body instanceof FormData ? body : (body ? JSON.stringify(body) : undefined) }),
   patch: <T = any>(endpoint: string, body?: any) =>
-    apiFetch<T>(endpoint, { method: 'PATCH', body: body ? JSON.stringify(body) : undefined }),
+    apiFetch<T>(endpoint, { method: 'PATCH', body: body instanceof FormData ? body : (body ? JSON.stringify(body) : undefined) }),
   put: <T = any>(endpoint: string, body?: any) =>
-    apiFetch<T>(endpoint, { method: 'PUT', body: body ? JSON.stringify(body) : undefined }),
+    apiFetch<T>(endpoint, { method: 'PUT', body: body instanceof FormData ? body : (body ? JSON.stringify(body) : undefined) }),
   delete: <T = any>(endpoint: string) => apiFetch<T>(endpoint, { method: 'DELETE' }),
 };

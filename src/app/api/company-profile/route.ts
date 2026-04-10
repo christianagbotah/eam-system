@@ -51,7 +51,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'settings.manage')) {
+    if (!hasPermission(session, 'settings.update')) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

@@ -3887,6 +3887,7 @@ function CompanyProfilePage() {
   const [form, setForm] = useState<CompanyProfile>(defaultCompanyProfile);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     api.get<CompanyProfile>('/api/company-profile').then(res => {
@@ -3897,6 +3898,58 @@ function CompanyProfilePage() {
 
   const handleChange = (field: keyof CompanyProfile, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('File too large. Maximum size is 2MB');
+      return;
+    }
+    if (!['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'].includes(file.type)) {
+      toast.error('Invalid file type. Allowed: PNG, JPEG, GIF, WebP, SVG');
+      return;
+    }
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await api.post('/api/upload', formData);
+      if (res.success && res.data?.url) {
+        // Save the logo URL to company profile
+        const profileRes = await api.put('/api/company-profile', { ...form, logo: res.data.url, isSetupComplete: true });
+        if (profileRes.success && profileRes.data) {
+          setForm(profileRes.data);
+          toast.success('Logo uploaded successfully');
+        } else {
+          toast.error(profileRes.error || 'Failed to save logo');
+        }
+      } else {
+        toast.error(res.error || 'Failed to upload logo');
+      }
+    } catch {
+      toast.error('Failed to upload logo');
+    }
+    setUploading(false);
+    // Reset file input
+    e.target.value = '';
+  };
+
+  const handleRemoveLogo = async () => {
+    setUploading(true);
+    try {
+      const profileRes = await api.put('/api/company-profile', { ...form, logo: null, isSetupComplete: true });
+      if (profileRes.success && profileRes.data) {
+        setForm(profileRes.data);
+        toast.success('Logo removed');
+      } else {
+        toast.error(profileRes.error || 'Failed to remove logo');
+      }
+    } catch {
+      toast.error('Failed to remove logo');
+    }
+    setUploading(false);
   };
 
   const handleSave = async () => {
@@ -3932,20 +3985,41 @@ function CompanyProfilePage() {
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-4">
             <CardTitle className="text-base">Company Logo</CardTitle>
-            <CardDescription>Upload your company logo for branding</CardDescription>
+            <CardDescription>Upload your company logo for branding (PNG, JPEG, WebP, SVG — max 2MB)</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-4">
-              <div className="h-20 w-20 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0 overflow-hidden">
+              <div className="h-20 w-20 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0 overflow-hidden border-2 border-white/20 shadow-sm">
                 {form.logo ? (
                   <img src={form.logo} alt="Company Logo" className="h-full w-full object-cover" />
                 ) : (
                   <Factory className="h-8 w-8 text-white" />
                 )}
               </div>
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Logo upload will be available in a future update</p>
-                <Badge variant="outline" className="text-[10px]">Coming Soon</Badge>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+                    <Upload className="h-3.5 w-3.5" />
+                    {uploading ? 'Uploading...' : 'Upload Logo'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={handleLogoUpload}
+                      disabled={uploading}
+                    />
+                  </label>
+                  {form.logo && (
+                    <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10" onClick={handleRemoveLogo} disabled={uploading}>
+                      <Trash2 className="h-3 w-3 mr-1" />Remove
+                    </Button>
+                  )}
+                </div>
+                {uploading && (
+                  <div className="w-32 h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div className="h-full bg-primary rounded-full animate-pulse w-full" />
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
@@ -6261,35 +6335,6 @@ function NotificationPopover() {
 }
 
 // ============================================================================
-// GENERIC COMING SOON PAGE
-// ============================================================================
-
-function ComingSoonPage({ title, description, icon: Icon, features }: { title: string; description: string; icon: React.ElementType; features?: string[] }) {
-  return (
-    <div className="page-content">
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/40 dark:to-teal-900/40 flex items-center justify-center mb-4">
-          <Icon className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
-        </div>
-        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-        <p className="text-muted-foreground mt-2 max-w-md">{description}</p>
-        {features && features.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-8 max-w-lg w-full">
-            {features.map(f => (
-              <div key={f} className="flex items-center gap-2 p-3 rounded-lg border bg-card">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                <span className="text-sm text-left">{f}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <Badge variant="outline" className="mt-6 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800">Coming Soon</Badge>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
 // ASSETS SUBPAGES
 // ============================================================================
 
@@ -6591,7 +6636,7 @@ function AssetHealthPage() {
   );
 }
 
-// Asset Coming Soon pages
+// Asset detail pages
 function AssetsBomPage() {
   const [bomItems] = useState([
     { id: '1', parent: 'CNC Machine A1', component: 'Main Spindle Assembly', partNumber: 'SPD-4521-A', quantity: 1, unit: 'ea', specification: 'High-speed spindle, 15k RPM, 7.5kW', status: 'active', revision: 'C', indent: false },

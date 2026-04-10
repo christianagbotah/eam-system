@@ -29,8 +29,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
-    if (!session || !isAdmin(session) || !hasPermission(session, 'plants.create')) {
-      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    if (!session || !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Admin access required' }, { status: 403 });
     }
 
     const body = await request.json();
