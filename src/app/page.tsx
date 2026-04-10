@@ -3359,17 +3359,20 @@ function SettingsRolesPage() {
                   {perms.map(p => {
                     const isOn = rolePerms.includes(p.id);
                     return (
-                      <button
+                      <div
                         key={p.id}
-                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all text-left ${isOn ? 'bg-emerald-50/70 dark:bg-emerald-950/25' : 'hover:bg-muted/50'}`}
+                        role="button"
+                        tabIndex={0}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all cursor-pointer ${isOn ? 'bg-emerald-50/70 dark:bg-emerald-950/25' : 'hover:bg-muted/50'}`}
                         onClick={() => togglePermission(p.id)}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePermission(p.id); } }}
                       >
                         <Switch checked={isOn} onCheckedChange={() => togglePermission(p.id)} className="scale-[0.72] shrink-0" onClick={e => e.stopPropagation()} />
                         <div className="min-w-0 flex-1">
                           <p className={`text-xs font-medium truncate ${isOn ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{p.name}</p>
                           <p className="text-[10px] text-muted-foreground/60 truncate">{p.slug}</p>
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
