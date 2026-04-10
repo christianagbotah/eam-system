@@ -2959,8 +2959,8 @@ function SettingsRolesPage() {
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Create Role</Button>
       </div>
 
-      {/* Role Selector — horizontal pill strip */}
-      <Card className="border-0 shadow-sm">
+      {/* Role Selector — sticky horizontal pill strip */}
+      <Card className="border-0 shadow-sm sticky top-0 z-30 bg-card/95 backdrop-blur-sm">
         <div className="px-4 py-3 border-b bg-muted/30">
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Select Role</p>

@@ -188,6 +188,27 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Cursor pointer on all interactive elements */
+  button,
+  a,
+  [role="button"],
+  [role="link"],
+  [role="tab"],
+  [role="switch"],
+  [type="button"],
+  [type="submit"],
+  [type="reset"],
+  summary,
+  select,
+  input[type="checkbox"],
+  input[type="radio"] {
+    cursor: pointer;
+  }
+  label:has(input[type="checkbox"]),
+  label:has(input[type="radio"]),
+  label:has([role="switch"]) {
+    cursor: pointer;
+  }
 }
 
 /* ============================================================================
