@@ -252,18 +252,31 @@ export interface WOStatusHistory {
 export interface DashboardStats {
   totalRequests: number;
   pendingRequests: number;
+  pendingApprovals: number;
   approvedRequests: number;
   rejectedRequests: number;
   convertedRequests: number;
   totalWorkOrders: number;
-  draftWorkOrders: number;
-  assignedWorkOrders: number;
-  inProgressWorkOrders: number;
+  activeWorkOrders: number;
   completedWorkOrders: number;
-  closedWorkOrders: number;
   overdueWorkOrders: number;
+  createdTodayMR: number;
+  createdTodayWO: number;
+  completedTodayWO: number;
   recentRequests: MaintenanceRequest[];
   recentWorkOrders: WorkOrder[];
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  entityType?: string;
+  entityId?: string;
+  actionUrl?: string;
+  isRead: boolean;
+  createdAt: string;
 }
 
 // API Response

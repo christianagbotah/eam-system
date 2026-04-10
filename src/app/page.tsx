@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
-import type { PageName, User, MaintenanceRequest, WorkOrder, DashboardStats, Module, Role, Permission, UserRole } from '@/types';
+import type { PageName, User, MaintenanceRequest, WorkOrder, DashboardStats, Module, Role, Permission, UserRole, Notification } from '@/types';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -787,7 +787,7 @@ function DashboardPage() {
 
   const statCards = [
     { label: 'Open Requests', value: stats?.pendingRequests || 0, color: 'text-amber-600', bg: 'bg-amber-50', icon: ClipboardList, permission: 'maintenance_requests.view' },
-    { label: 'Active WOs', value: (stats?.assignedWorkOrders || 0) + (stats?.inProgressWorkOrders || 0), color: 'text-emerald-600', bg: 'bg-emerald-50', icon: Wrench, permission: 'work_orders.view' },
+    { label: 'Active WOs', value: stats?.activeWorkOrders || 0, color: 'text-emerald-600', bg: 'bg-emerald-50', icon: Wrench, permission: 'work_orders.view' },
     { label: 'Completed', value: stats?.completedWorkOrders || 0, color: 'text-teal-600', bg: 'bg-teal-50', icon: CheckCircle2, permission: 'work_orders.view' },
     { label: 'Overdue', value: stats?.overdueWorkOrders || 0, color: 'text-red-600', bg: 'bg-red-50', icon: AlertTriangle, permission: 'work_orders.view' },
   ];
@@ -823,10 +823,15 @@ function DashboardPage() {
       {/* Stats */}
       {visibleStatCards.length > 0 && (
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-          {visibleStatCards.map((card, idx) => {
+          {visibleStatCards.map((card) => {
             const Icon = card.icon;
-            const trendLabels: Record<string, string> = { 'Open Requests': '+3 today', 'Active WOs': '-2 vs avg', 'Completed': '+5 this week', 'Overdue': 'Needs attention' };
-            const trendColors: Record<string, string> = { 'Open Requests': 'text-amber-600', 'Active WOs': 'text-emerald-600', 'Completed': 'text-emerald-600', 'Overdue': 'text-red-600' };
+            const trendInfo: Record<string, { label: string; color: string }> = {
+              'Open Requests': { label: stats?.createdTodayMR ? `+${stats.createdTodayMR} today` : 'No new today', color: stats?.createdTodayMR ? 'text-amber-600' : 'text-muted-foreground' },
+              'Active WOs': { label: `${activeWorkOrders} active now`, color: 'text-emerald-600' },
+              'Completed': { label: stats?.completedTodayWO ? `+${stats.completedTodayWO} today` : 'None today', color: stats?.completedTodayWO ? 'text-emerald-600' : 'text-muted-foreground' },
+              'Overdue': { label: stats?.overdueWorkOrders ? `${stats.overdueWorkOrders} need attention` : 'All on track', color: stats?.overdueWorkOrders ? 'text-red-600' : 'text-emerald-600' },
+            };
+            const trend = trendInfo[card.label] || { label: '', color: 'text-muted-foreground' };
             return (
               <Card key={card.label} className="border-0 shadow-sm hover:shadow-md transition-all duration-200 group">
                 <CardContent className="p-5">
@@ -834,8 +839,8 @@ function DashboardPage() {
                     <div className="space-y-2">
                       <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{card.label}</p>
                       <p className="text-3xl font-bold tracking-tight">{card.value}</p>
-                      <p className={`text-[11px] font-medium ${trendColors[card.label] || 'text-muted-foreground'}`}>
-                        {trendLabels[card.label]}
+                      <p className={`text-[11px] font-medium ${trend.color}`}>
+                        {trend.label}
                       </p>
                     </div>
                     <div className={`h-11 w-11 rounded-xl ${card.bg} flex items-center justify-center group-hover:scale-110 transition-transform duration-200`}>

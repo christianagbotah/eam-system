@@ -178,3 +178,272 @@ The following workflow was tested and confirmed working:
 
 ---
 
+## Session 4 - User & Role Management API Routes (Task 3b + 3c)
+
+- **Date:** 2026-04-10
+- **Context:** Build CRUD API routes for individual user management and role management, following existing patterns from `auth.ts`, `db.ts`, and existing route files.
+
+### Task 3b: User Detail & Management Routes
+- **Status:** ✅ Completed
+
+#### `GET /api/users/[id]` — Get single user
+- Auth required; admin or self-access (session.userId === id)
+- Includes `userRoles` (with role) and `plantAccess` (with plant)
+- Strips `passwordHash` from response
+- Returns 404 if user not found
+
+#### `PUT /api/users/[id]` — Update user profile and assignments
+- Auth required; permission `users.update` or admin
+- Accepts: `fullName`, `email`, `phone`, `department`, `staffId`, `status`, `roleIds[]`, `plantIds[]`
+- Email change: checks for duplicates before updating
+- Role assignments: deletes all existing `UserRole`, creates new ones from `roleIds`
+- Plant assignments: deletes all existing `UserPlant`, creates new ones from `plantIds`
+- Creates audit log with old/new values
+- Returns updated user with relations
+
+#### `DELETE /api/users/[id]` — Deactivate user (soft delete)
+- Auth required; admin only
+- Sets `status` to `"inactive"` (no hard delete)
+- Rejects if user already inactive
+- Creates audit log
+- Returns success message
+
+#### `POST /api/users/[id]/reset-password` — Reset password
+- Auth required; admin only
+- Body: `{ password: string }` — validated min 6 chars
+- Hashes with bcryptjs (10 rounds)
+- Creates audit log (does NOT log the password)
+- Returns success message
+
+### Task 3c: Role Management Routes
+- **Status:** ✅ Completed
+
+#### `POST /api/roles` — Create new role (added to existing file)
+- Auth required; permission `roles.create` or admin
+- Body: `name`, `slug`, `description?`, `level?`, `permissionIds?`
+- Checks slug uniqueness
+- Creates `RolePermission` records if `permissionIds` provided
+- Returns created role with permissions (status 201)
+
+#### `PUT /api/roles/[id]` — Update role
+- Auth required; admin only
+- Body: `name?`, `description?`, `level?`, `permissionIds?`
+- Cannot modify `slug` or `isSystem` (protected fields)
+- If `permissionIds` provided: deletes all existing `RolePermission`, creates new ones
+- Creates audit log
+- Returns updated role with permissions
+
+#### `DELETE /api/roles/[id]` — Delete role
+- Auth required; admin only
+- Cannot delete system roles (`isSystem=true`)
+- Cannot delete roles with assigned users
+- Cascade deletes `RolePermission` records
+- Creates audit log
+- Returns success message
+
+#### `PUT /api/roles/[id]/permissions` — Set permissions for a role
+- Auth required; permission `roles.update` or admin
+- Body: `{ permissionIds: string[] }`
+- Deletes all existing `RolePermission` for this role
+- Creates new ones from `permissionIds`
+- Creates audit log
+- Returns updated role with permissions
+
+### Technical Notes
+- All dynamic routes use `{ params }: { params: Promise<{ id: string }> }` pattern (Next.js 16)
+- All responses follow `{ success: boolean, data?: any, error?: string }` format
+- Password hashing: `hash` from `bcryptjs` with 10 rounds
+- Audit logging on all mutating operations
+- Lint: ✅ 0 errors, 0 warnings
+
+---
+
+## Session 5 - Plant, Department, Notification & Audit Log API Routes (Task 3d + 3e + 3f)
+
+- **Date:** 2026-04-11
+- **Context:** Build CRUD API routes for plants, departments, notifications, and audit logs, following existing patterns from `auth.ts`, `db.ts`, and existing route files.
+
+### Task 3d: Plant Management Routes
+- **Status:** ✅ Completed
+
+#### `GET /api/plants` — List all plants
+- Auth required; admin only
+- Includes `_count.departments` for each plant
+- Filters by `isActive: true`
+- Returns plants array ordered by createdAt asc
+
+#### `POST /api/plants` — Create plant
+- Auth required; admin + `plants.create` permission
+- Body: `{ name, code, location?, country?, city? }`
+- Validates code uniqueness
+- Returns created plant (status 201)
+
+#### `GET /api/plants/[id]` — Get single plant
+- Auth required
+- Includes departments with supervisor info and children count
+- Returns 404 if not found
+
+#### `PUT /api/plants/[id]` — Update plant
+- Auth required; admin only
+- Allowed fields: name, code, location, country, city, isActive
+- Validates code uniqueness if code is changed
+- Creates audit log
+- Returns updated plant
+
+#### `DELETE /api/plants/[id]` — Deactivate plant (soft delete)
+- Auth required; admin only
+- Sets `isActive = false` (no hard delete)
+- Creates audit log
+- Returns deactivated plant
+
+### Task 3e: Department Management Routes
+- **Status:** ✅ Completed
+
+#### `GET /api/departments` — List departments
+- Auth required
+- Query params: `plantId` (filter), `includeChildren` (boolean, includes nested children)
+- Includes supervisor info, parent info, plant info
+- If `includeChildren=false`: includes `_count.children` instead
+- Returns departments array ordered by plantId, name
+
+#### `POST /api/departments` — Create department
+- Auth required; `departments.create` permission or admin
+- Body: `{ name, code, plantId, parentId?, supervisorId? }`
+- Validates plant, parent department, and supervisor user exist
+- Returns created department with relations (status 201)
+
+#### `GET /api/departments/[id]` — Get single department
+- Auth required
+- Includes parent, plant, supervisor, and children (with supervisor + children count)
+- Returns 404 if not found
+
+#### `PUT /api/departments/[id]` — Update department
+- Auth required; admin only
+- Allowed fields: name, code, plantId, parentId, supervisorId
+- Prevents self-parent circular reference
+- Creates audit log
+- Returns updated department with relations
+
+#### `DELETE /api/departments/[id]` — Delete department
+- Auth required; admin only
+- Only allowed if department has no children (`_count.children === 0`)
+- Hard delete (cascade handles relations)
+- Creates audit log
+- Returns deleted department id
+
+### Task 3f: Notification & Audit Log Routes
+- **Status:** ✅ Completed
+
+#### `GET /api/notifications` — Get notifications for current user
+- Auth required
+- Query params: `unreadOnly` (boolean), `limit` (default 50, max 200)
+- Filters by `userId = session.userId`
+- Returns `{ notifications, unreadCount }` ordered by createdAt desc
+
+#### `POST /api/notifications` — Create notification (system use)
+- Auth required; admin only
+- Body: `{ userId, type, title, message, entityType?, entityId?, actionUrl? }`
+- Validates recipient user exists
+- Returns created notification (status 201)
+
+#### `PUT /api/notifications/[id]` — Mark notification as read
+- Auth required
+- Only allows user to mark their own notifications (userId check)
+- Sets `isRead = true`
+- Returns updated notification
+
+#### `PUT /api/notifications/read-all` — Mark all as read
+- Auth required
+- Updates all notifications where `userId = session.userId AND isRead = false`
+- Returns `{ updatedCount: number }`
+
+#### `GET /api/audit-logs` — List audit logs
+- Auth required; admin only
+- Query params: `entityType`, `entityId`, `userId`, `action`, `limit` (default 100, max 500), `offset`
+- Includes user info (id, fullName, username)
+- Returns `{ logs, total }` ordered by createdAt desc
+
+### Technical Notes
+- All dynamic routes use `{ params }: { params: Promise<{ id: string }> }` pattern (Next.js 16)
+- All responses follow `{ success: boolean, data?: any, error?: string }` format
+- Plant deletion is soft (isActive=false); department deletion is hard (only if no children)
+- Notification ownership enforcement (users can only mark their own as read)
+- Audit logging on all plant and department mutating operations
+- Lint: ✅ 0 errors, 0 warnings
+
+---
+
+## Session 6 - WO Sub-table API Routes (Task 3a)
+
+- **Date:** 2026-04-11
+- **Context:** Build CRUD API routes for work order sub-tables (team members, materials, comments, time logs), following existing patterns from `auth.ts`, `db.ts`, and `work-orders/[id]/route.ts`.
+
+### Task 3a: WO Sub-table Routes
+- **Status:** ✅ Completed
+
+#### `POST /api/work-orders/[id]/team-members` — Add team member
+- Auth required; permission `work_orders.assign` or `work_orders.*`
+- Body: `{ userId, role? }` (role defaults to "assistant")
+- Validates WO exists, checks not locked (admin bypass)
+- Prevents duplicates (same user on same WO, returns 409)
+- Returns created member with user info (id, fullName, username, department)
+- Creates audit log entry (entityType: `wo_team_member`)
+
+#### `DELETE /api/work-orders/[id]/team-members/[memberId]` — Remove team member
+- Auth required; permission `work_orders.assign` or `work_orders.*`
+- Validates member belongs to the WO (returns 400 if mismatch)
+- Checks WO not locked (admin bypass)
+- Creates audit log entry
+- Returns deleted member id
+
+#### `POST /api/work-orders/[id]/materials` — Add material/part request
+- Auth required; permission `work_orders.update` or `work_orders.*`
+- Body: `{ itemName, itemId?, quantity, unitCost?, totalCost? }`
+- Auto-calculates `totalCost = unitCost × quantity` if both provided and totalCost not given
+- Sets `requestedBy` to current user, `status` to "requested"
+- Checks WO not locked (admin bypass)
+- Returns created material with requester/approver/issuer info
+- Creates audit log entry (entityType: `wo_material`)
+
+#### `PUT /api/work-orders/[id]/materials/[materialId]` — Update material status
+- Auth required
+- Body: `{ status, notes? }` — valid statuses: requested, approved, issued, returned
+- When status="approved", sets `approvedBy` to current user
+- When status="issued", sets `issuedBy` to current user
+- Validates material belongs to the WO
+- Returns updated material with requester/approver/issuer info
+- Creates audit log entry
+
+#### `DELETE /api/work-orders/[id]/materials/[materialId]` — Remove material
+- Auth required; permission `work_orders.update` or `work_orders.*`
+- Only allows deletion if status is "requested" (returns 400 otherwise)
+- Checks WO not locked (admin bypass)
+- Validates material belongs to the WO
+- Creates audit log entry
+- Returns deleted material id
+
+#### `POST /api/work-orders/[id]/comments` — Add comment
+- Auth required (no specific permission beyond authentication)
+- Body: `{ content: string }` — validates non-empty after trim
+- Creates `WorkOrderComment` with userId from session
+- Returns created comment with user info (id, fullName, username)
+
+#### `POST /api/work-orders/[id]/time-logs` — Add time log entry
+- Auth required (no specific permission beyond authentication)
+- Body: `{ action, notes? }` — valid actions: start, pause, resume, complete
+- If action is "start": updates WO `actualStart` if not set
+- If action is "complete": updates WO `actualEnd` if not set, recalculates `actualHours` (time delta rounded to 2 decimal places, added to existing hours)
+- Checks WO not locked (admin bypass)
+- Creates `WorkOrderTimeLog` with user info
+- Creates audit log entry (entityType: `wo_time_log`)
+
+### Technical Notes
+- All dynamic routes use `{ params }: { params: Promise<{ id: string }> }` pattern (Next.js 16)
+- Multi-param routes (memberId, materialId) use `Promise<{ id: string; memberId: string }>`
+- All responses follow `{ success: boolean, data?: any, error?: string }` format
+- Consistent error handling: try/catch with `error instanceof Error`
+- Audit logging on all mutating operations
+- Lint: ✅ 0 errors, 0 warnings
+
+---
+

@@ -74,6 +74,33 @@ export async function GET() {
     const activeWorkOrders =
       (woStats['in_progress'] || 0) + (woStats['waiting_parts'] || 0);
 
+    // Completed WOs
+    const completedWorkOrders = woStats['completed'] || 0;
+
+    // Overdue WOs (past planned end and not completed/closed/cancelled)
+    const overdueWorkOrders = await db.workOrder.count({
+      where: {
+        plannedEnd: { lt: new Date() },
+        status: { notIn: ['completed', 'closed', 'cancelled'] },
+      },
+    });
+
+    // Today's counts for trends
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const createdTodayMR = await db.maintenanceRequest.count({
+      where: { createdAt: { gte: todayStart } },
+    });
+
+    const completedTodayWO = await db.workOrder.count({
+      where: { updatedAt: { gte: todayStart }, status: 'completed' },
+    });
+
+    const createdTodayWO = await db.workOrder.count({
+      where: { createdAt: { gte: todayStart } },
+    });
+
     // Pending requests
     const pendingRequests = mrStats['pending'] || 0;
 
@@ -100,9 +127,15 @@ export async function GET() {
       data: {
         totalWorkOrders: totalWO,
         activeWorkOrders,
+        completedWorkOrders,
+        overdueWorkOrders,
         pendingRequests,
         pendingApprovals,
         totalRequests: totalMR,
+        // Trends
+        createdTodayMR,
+        createdTodayWO,
+        completedTodayWO,
         // MR breakdown
         pendingMR: mrStats['pending'] || 0,
         inProgressMR: mrStats['in_progress'] || 0,

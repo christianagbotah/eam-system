@@ -103,6 +103,7 @@ model User {
 
   // Audit
   auditLogs       AuditLog[]
+  notifications   Notification[]
 
   @@map("users")
 }
@@ -437,4 +438,25 @@ model AuditLog {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("audit_logs")
+}
+
+// ============================================================================
+// 8. NOTIFICATIONS
+// ============================================================================
+
+model Notification {
+  id          String   @id @default(cuid())
+  userId      String                       // recipient
+  type        String                       // mr_assigned, mr_approved, mr_rejected, wo_assigned, wo_started, wo_completed, wo_closed, system, info
+  title       String
+  message     String
+  entityType  String?                      // maintenance_request, work_order
+  entityId    String?                      // reference to the entity
+  actionUrl   String?                      // SPA page to navigate to, e.g. "mr-detail"
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
 }
