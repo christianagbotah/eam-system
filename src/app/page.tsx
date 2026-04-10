@@ -107,6 +107,8 @@ import {
   Timer,
   Key,
   UserMinus,
+  History,
+  ArrowUpDown,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area,
@@ -2103,6 +2105,22 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
   const [completionNotes, setCompletionNotes] = useState('');
   const { hasPermission } = useAuthStore();
   const [users, setUsers] = useState<User[]>([]);
+  // Edit WO
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+  // Time log
+  const [timeLogOpen, setTimeLogOpen] = useState(false);
+  const [tlAction, setTlAction] = useState('start');
+  const [tlHours, setTlHours] = useState('');
+  const [tlNotes, setTlNotes] = useState('');
+  const [tlLoading, setTlLoading] = useState(false);
+  // Material
+  const [materialOpen, setMaterialOpen] = useState(false);
+  const [matName, setMatName] = useState('');
+  const [matQty, setMatQty] = useState('');
+  const [matCost, setMatCost] = useState('');
+  const [matUnit, setMatUnit] = useState('each');
+  const [matLoading, setMatLoading] = useState(false);
 
   const fetchWO = useCallback(async () => {
     const res = await api.get<WorkOrder>(`/api/work-orders/${id}`);
@@ -2142,6 +2160,64 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
     if (res.success) { toast.success('Comment added'); setComment(''); fetchWO(); }
   };
 
+  const openEditWO = () => {
+    if (!wo) return;
+    setEditForm({
+      title: wo.title, description: wo.description || '', type: wo.type,
+      priority: wo.priority, estimatedHours: wo.estimatedHours?.toString() || '',
+      plannedStart: wo.plannedStart ? wo.plannedStart.slice(0, 16) : '',
+      plannedEnd: wo.plannedEnd ? wo.plannedEnd.slice(0, 16) : '',
+      failureDescription: wo.failureDescription || '',
+      causeDescription: wo.causeDescription || '',
+      actionDescription: wo.actionDescription || '',
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditWO = async () => {
+    if (!editForm.title) { toast.error('Title is required'); return; }
+    setActionLoading(true);
+    const payload: any = { action: 'update' };
+    if (editForm.title) payload.title = editForm.title;
+    if (editForm.description !== undefined) payload.description = editForm.description;
+    if (editForm.type) payload.type = editForm.type;
+    if (editForm.priority) payload.priority = editForm.priority;
+    if (editForm.estimatedHours) payload.estimatedHours = parseFloat(editForm.estimatedHours);
+    if (editForm.plannedStart) payload.plannedStart = editForm.plannedStart;
+    if (editForm.plannedEnd) payload.plannedEnd = editForm.plannedEnd;
+    if (editForm.failureDescription !== undefined) payload.failureDescription = editForm.failureDescription;
+    if (editForm.causeDescription !== undefined) payload.causeDescription = editForm.causeDescription;
+    if (editForm.actionDescription !== undefined) payload.actionDescription = editForm.actionDescription;
+    const res = await api.patch(`/api/work-orders/${id}`, payload);
+    if (res.success) { toast.success('Work order updated'); setEditOpen(false); fetchWO(); }
+    else { toast.error(res.error || 'Update failed'); }
+    setActionLoading(false);
+  };
+
+  const handleTimeLog = async () => {
+    setTlLoading(true);
+    const body: any = { action: tlAction };
+    if (tlNotes) body.notes = tlNotes;
+    if (tlHours && (tlAction === 'start' || tlAction === 'resume')) body.hoursWorked = parseFloat(tlHours);
+    const res = await api.post(`/api/work-orders/${id}/time-logs`, body);
+    if (res.success) { toast.success('Time log recorded'); setTimeLogOpen(false); setTlHours(''); setTlNotes(''); fetchWO(); }
+    else { toast.error(res.error || 'Failed to log time'); }
+    setTlLoading(false);
+  };
+
+  const handleAddMaterial = async () => {
+    if (!matName) { toast.error('Item name is required'); return; }
+    setMatLoading(true);
+    const body: any = { itemName: matName };
+    if (matQty) body.quantity = parseFloat(matQty);
+    if (matCost) body.unitCost = parseFloat(matCost);
+    if (matUnit) body.unit = matUnit;
+    const res = await api.post(`/api/work-orders/${id}/materials`, body);
+    if (res.success) { toast.success('Material added'); setMaterialOpen(false); setMatName(''); setMatQty(''); setMatCost(''); fetchWO(); }
+    else { toast.error(res.error || 'Failed to add material'); }
+    setMatLoading(false);
+  };
+
   if (loading) return <LoadingSkeleton />;
   if (!wo) return <div className="p-6">Work order not found</div>;
 
@@ -2151,6 +2227,7 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
   const canComplete = hasPermission('work_orders.complete') && wo.status === 'in_progress';
   const canVerify = hasPermission('work_orders.verify') && wo.status === 'completed';
   const canClose = hasPermission('work_orders.close') && wo.status === 'verified';
+  const canEdit = !['closed', 'cancelled'].includes(wo.status);
 
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
@@ -2173,13 +2250,15 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
             <Button className="bg-emerald-600 hover:bg-emerald-700 text-white"><CheckCircle2 className="h-4 w-4 mr-1" />Actions</Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {canEdit && <DropdownMenuItem onClick={openEditWO}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}
+            {canEdit && <DropdownMenuSeparator />}
             {canApprove && <DropdownMenuItem onClick={() => handleAction('approve')}><CheckCircle2 className="h-4 w-4 mr-2" />Approve</DropdownMenuItem>}
             {canAssign && <DropdownMenuItem onClick={() => setActionDialog('assign')}><Users className="h-4 w-4 mr-2" />Assign</DropdownMenuItem>}
             {canStart && <DropdownMenuItem onClick={() => handleAction('start')}><Play className="h-4 w-4 mr-2" />Start Work</DropdownMenuItem>}
             {canComplete && <DropdownMenuItem onClick={() => setActionDialog('complete')}><Check className="h-4 w-4 mr-2" />Complete</DropdownMenuItem>}
             {canVerify && <DropdownMenuItem onClick={() => handleAction('verify')}><Eye className="h-4 w-4 mr-2" />Verify</DropdownMenuItem>}
             {canClose && <DropdownMenuItem onClick={() => handleAction('close')}><Lock className="h-4 w-4 mr-2" />Close</DropdownMenuItem>}
-            {!canApprove && !canAssign && !canStart && !canComplete && !canVerify && !canClose && (
+            {!canEdit && !canApprove && !canAssign && !canStart && !canComplete && !canVerify && !canClose && (
               <DropdownMenuItem disabled>No actions available</DropdownMenuItem>
             )}
           </DropdownMenuContent>
@@ -2218,6 +2297,88 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
         </DialogContent>
       </Dialog>
 
+      {/* Edit WO Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Edit Work Order</DialogTitle><DialogDescription>Update work order details.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-1.5"><Label>Title *</Label><Input value={editForm.title || ''} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Description</Label><Textarea value={editForm.description || ''} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Type</Label>
+                <Select value={editForm.type} onValueChange={v => setEditForm(f => ({ ...f, type: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="preventive">Preventive</SelectItem><SelectItem value="corrective">Corrective</SelectItem><SelectItem value="emergency">Emergency</SelectItem><SelectItem value="inspection">Inspection</SelectItem><SelectItem value="predictive">Predictive</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5"><Label>Priority</Label>
+                <Select value={editForm.priority} onValueChange={v => setEditForm(f => ({ ...f, priority: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem><SelectItem value="emergency">Emergency</SelectItem></SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5"><Label>Est. Hours</Label><Input type="number" value={editForm.estimatedHours || ''} onChange={e => setEditForm(f => ({ ...f, estimatedHours: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Planned Start</Label><Input type="datetime-local" value={editForm.plannedStart || ''} onChange={e => setEditForm(f => ({ ...f, plannedStart: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Planned End</Label><Input type="datetime-local" value={editForm.plannedEnd || ''} onChange={e => setEditForm(f => ({ ...f, plannedEnd: e.target.value }))} /></div>
+            </div>
+            <Separator />
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Failure Analysis</p>
+            <div className="space-y-1.5"><Label>Failure Description</Label><Textarea value={editForm.failureDescription || ''} onChange={e => setEditForm(f => ({ ...f, failureDescription: e.target.value }))} rows={2} /></div>
+            <div className="space-y-1.5"><Label>Cause Description</Label><Textarea value={editForm.causeDescription || ''} onChange={e => setEditForm(f => ({ ...f, causeDescription: e.target.value }))} rows={2} /></div>
+            <div className="space-y-1.5"><Label>Action Description</Label><Textarea value={editForm.actionDescription || ''} onChange={e => setEditForm(f => ({ ...f, actionDescription: e.target.value }))} rows={2} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={handleEditWO} disabled={actionLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{actionLoading ? 'Saving...' : 'Save Changes'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Time Log Dialog */}
+      <Dialog open={timeLogOpen} onOpenChange={setTimeLogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Log Time</DialogTitle><DialogDescription>Record time spent on this work order.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5"><Label>Action</Label>
+              <Select value={tlAction} onValueChange={setTlAction}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="start">Start</SelectItem><SelectItem value="pause">Pause</SelectItem><SelectItem value="resume">Resume</SelectItem><SelectItem value="complete">Complete</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5"><Label>Hours Worked</Label><Input type="number" step="0.25" value={tlHours} onChange={e => setTlHours(e.target.value)} placeholder="e.g. 2.5" /></div>
+            <div className="space-y-1.5"><Label>Notes</Label><Textarea value={tlNotes} onChange={e => setTlNotes(e.target.value)} placeholder="Optional notes..." rows={2} /></div>
+            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={handleTimeLog}>
+              {tlLoading ? 'Logging...' : 'Log Time'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Material Dialog */}
+      <Dialog open={materialOpen} onOpenChange={setMaterialOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Add Material</DialogTitle><DialogDescription>Add a material or part to this work order.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5"><Label>Item Name *</Label><Input value={matName} onChange={e => setMatName(e.target.value)} placeholder="e.g. Bearing 6205" /></div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5"><Label>Quantity</Label><Input type="number" value={matQty} onChange={e => setMatQty(e.target.value)} placeholder="1" /></div>
+              <div className="space-y-1.5"><Label>Unit Cost</Label><Input type="number" step="0.01" value={matCost} onChange={e => setMatCost(e.target.value)} placeholder="0.00" /></div>
+              <div className="space-y-1.5"><Label>Unit</Label>
+                <Select value={matUnit} onValueChange={setMatUnit}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="each">Each</SelectItem><SelectItem value="kg">Kg</SelectItem><SelectItem value="meter">Meter</SelectItem><SelectItem value="set">Set</SelectItem><SelectItem value="box">Box</SelectItem></SelectContent>
+                </Select>
+              </div>
+            </div>
+            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={matLoading} onClick={handleAddMaterial}>
+              {matLoading ? 'Adding...' : 'Add Material'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Body */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
@@ -2245,6 +2406,82 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
                   </div>
                 ))}
               </ScrollArea>
+            </CardContent>
+          </Card>
+
+          {/* Time Logs */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {wo.actualHours || 0}h total</CardDescription></div>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setTlAction('start'); setTlHours(''); setTlNotes(''); setTimeLogOpen(true); }}><Timer className="h-3.5 w-3.5" />Log Time</Button>
+            </CardHeader>
+            <CardContent>
+              {(!wo.timeLogs || wo.timeLogs.length === 0) ? (
+                <p className="text-sm text-muted-foreground">No time logs recorded yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {wo.timeLogs.map(tl => (
+                    <div key={tl.id} className="flex items-center gap-3 text-sm py-2 border-b last:border-0">
+                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${tl.action === 'start' ? 'bg-emerald-100 text-emerald-700' : tl.action === 'pause' ? 'bg-amber-100 text-amber-700' : tl.action === 'resume' ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700'}`}>
+                        {tl.action === 'start' ? <Play className="h-3.5 w-3.5" /> : tl.action === 'pause' ? <Pause className="h-3.5 w-3.5" /> : tl.action === 'resume' ? <Play className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium capitalize">{tl.action}</p>
+                        <p className="text-xs text-muted-foreground">{tl.userName || 'Unknown'} · {formatDateTime(tl.createdAt)}</p>
+                        {tl.note && <p className="text-xs text-muted-foreground mt-0.5">{tl.note}</p>}
+                      </div>
+                      {tl.duration != null && tl.duration > 0 && (
+                        <Badge variant="outline" className="text-[10px] shrink-0">{tl.duration}h</Badge>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Materials */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle className="text-base">Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.materials?.length || 0} items</CardDescription></div>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setMatName(''); setMatQty(''); setMatCost(''); setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" />Add Material</Button>
+            </CardHeader>
+            <CardContent>
+              {(!wo.materials || wo.materials.length === 0) ? (
+                <p className="text-sm text-muted-foreground">No materials added yet.</p>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Item</TableHead>
+                          <TableHead className="text-right">Qty</TableHead>
+                          <TableHead className="text-right hidden sm:table-cell">Unit Cost</TableHead>
+                          <TableHead className="text-right hidden sm:table-cell">Total</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {wo.materials.map(m => (
+                          <TableRow key={m.id}>
+                            <TableCell className="font-medium text-sm">{m.itemName || '-'}</TableCell>
+                            <TableCell className="text-right text-sm">{m.quantity || 0} {m.unit || ''}</TableCell>
+                            <TableCell className="text-right text-sm hidden sm:table-cell">${(m.unitCost || 0).toFixed(2)}</TableCell>
+                            <TableCell className="text-right text-sm hidden sm:table-cell font-medium">${(m.totalCost || (m.quantity || 0) * (m.unitCost || 0)).toFixed(2)}</TableCell>
+                            <TableCell><Badge variant="outline" className="text-[10px] capitalize">{m.status || 'requested'}</Badge></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <div className="flex justify-end mt-3 pt-3 border-t">
+                    <div className="text-sm font-semibold">
+                      Total: ${wo.materials.reduce((sum, m) => sum + (m.totalCost || (m.quantity || 0) * (m.unitCost || 0)), 0).toFixed(2)}
+                    </div>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -3479,6 +3716,7 @@ function SettingsDepartmentsPage() {
 function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigationStore(s => s.navigate);
 
   const loadNotifications = useCallback(() => {
     api.get<Notification[]>('/api/notifications').then(res => { if (res.success && res.data) setNotifications(Array.isArray(res.data) ? res.data : []); setLoading(false); });
@@ -3497,7 +3735,7 @@ function NotificationsPage() {
     await api.put(`/api/notifications/${n.id}`);
     setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true } : x));
     if (n.actionUrl) {
-      // Navigate based on actionUrl if possible
+      navigate(n.actionUrl as PageName);
     }
   };
 
@@ -3705,6 +3943,11 @@ function AssetsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [conditionFilter, setConditionFilter] = useState('all');
   const [criticalityFilter, setCriticalityFilter] = useState('all');
+  // Detail view
+  const [detailId, setDetailId] = useState<string | null>(null);
+  // Delete
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const { navigate } = useNavigationStore();
 
   const emptyForm = { name: '', assetTag: '', serialNumber: '', categoryId: '', manufacturer: '', model: '', yearManufactured: '', condition: 'new', status: 'operational', criticality: 'medium', location: '', building: '', floor: '', area: '', plantId: '', departmentId: '', description: '', purchaseDate: '', purchaseCost: '', expectedLifeYears: '' };
   const [form, setForm] = useState(emptyForm);
@@ -3752,7 +3995,19 @@ function AssetsPage() {
   const statusColors: Record<string, string> = { operational: 'bg-emerald-100 text-emerald-700', under_maintenance: 'bg-amber-100 text-amber-700', decommissioned: 'bg-slate-100 text-slate-500', disposed: 'bg-red-100 text-red-600' };
   const criticalityColors: Record<string, string> = { low: 'bg-slate-100 text-slate-600', medium: 'bg-sky-100 text-sky-700', high: 'bg-amber-100 text-amber-700', critical: 'bg-red-100 text-red-700' };
 
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    const res = await api.delete(`/api/assets/${deleteId}`);
+    if (res.success) { toast.success('Asset deleted'); setDeleteId(null); loadData(); }
+    else { toast.error(res.error || 'Failed to delete'); }
+  };
+
   if (loading) return <LoadingSkeleton />;
+
+  // Render detail view if an asset is selected
+  if (detailId) {
+    return <AssetDetailPage id={detailId} onBack={() => setDetailId(null)} />;
+  }
 
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
@@ -3830,7 +4085,10 @@ function AssetsPage() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setDetailId(a.id)}><Eye className="h-3.5 w-3.5 mr-2" />View</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openEdit(a)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-red-600" onClick={() => setDeleteId(a.id)}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -3911,6 +4169,159 @@ function AssetsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Delete Asset</DialogTitle><DialogDescription>Are you sure you want to delete this asset? This action cannot be undone.</DialogDescription></DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ============================================================================
+// ASSET DETAIL PAGE
+// ============================================================================
+
+function AssetDetailPage({ id, onBack }: { id: string; onBack: () => void }) {
+  const [asset, setAsset] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get<any>(`/api/assets/${id}`).then(res => {
+      if (res.success && res.data) setAsset(res.data);
+      setLoading(false);
+    });
+  }, [id]);
+
+  if (loading) return <LoadingSkeleton />;
+  if (!asset) return <div className="p-6">Asset not found</div>;
+
+  const specs: Record<string, string> = asset.specification || {};
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      {/* Header */}
+      <div className="flex items-start gap-3 flex-wrap">
+        <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-sm text-muted-foreground">{asset.assetTag}</span>
+            <Badge variant="outline" className="capitalize">{(asset.status || '').replace(/_/g, ' ')}</Badge>
+            <Badge variant="outline" className="capitalize">{asset.condition || '-'}</Badge>
+            <Badge variant="outline" className="uppercase">{asset.criticality || '-'}</Badge>
+          </div>
+          <h1 className="text-xl font-bold mt-1">{asset.name}</h1>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          {/* Description */}
+          <Card className="border-0 shadow-sm dark:bg-card">
+            <CardHeader><CardTitle className="text-base">Description</CardTitle></CardHeader>
+            <CardContent><p className="text-sm text-muted-foreground whitespace-pre-wrap">{asset.description || 'No description'}</p></CardContent>
+          </Card>
+
+          {/* Specifications */}
+          {Object.keys(specs).length > 0 && (
+            <Card className="border-0 shadow-sm dark:bg-card">
+              <CardHeader><CardTitle className="text-base">Specifications</CardTitle></CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {Object.entries(specs).map(([key, value]) => (
+                    <div key={key} className="flex justify-between text-sm py-1.5 border-b last:border-0">
+                      <span className="text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</span>
+                      <span className="font-medium">{String(value)}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* PM Schedules */}
+          {asset.pmSchedules && asset.pmSchedules.length > 0 && (
+            <Card className="border-0 shadow-sm dark:bg-card">
+              <CardHeader><CardTitle className="text-base">PM Schedules</CardTitle></CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {asset.pmSchedules.map((pm: any) => (
+                    <div key={pm.id} className="flex items-center justify-between text-sm py-2 border-b last:border-0">
+                      <div>
+                        <p className="font-medium">{pm.title}</p>
+                        <p className="text-xs text-muted-foreground">{pm.frequencyType} · Priority: {(pm.priority || '').toUpperCase()}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground">Next Due</p>
+                        <p className="text-sm font-medium">{pm.nextDueDate ? formatDate(pm.nextDueDate) : 'N/A'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Right Panel */}
+        <div className="space-y-4">
+          <Card className="border-0 shadow-sm dark:bg-card">
+            <CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Category</span><span className="font-medium">{asset.category?.name || '-'}</span></div>
+              <Separator />
+              <div className="flex justify-between"><span className="text-muted-foreground">Serial Number</span><span className="font-mono font-medium">{asset.serialNumber || '-'}</span></div>
+              <Separator />
+              <div className="flex justify-between"><span className="text-muted-foreground">Manufacturer</span><span className="font-medium">{asset.manufacturer || '-'}</span></div>
+              <Separator />
+              <div className="flex justify-between"><span className="text-muted-foreground">Model</span><span className="font-medium">{asset.model || '-'}</span></div>
+              <Separator />
+              <div className="flex justify-between"><span className="text-muted-foreground">Location</span><span className="font-medium">{asset.location || '-'}</span></div>
+              <Separator />
+              <div className="flex justify-between"><span className="text-muted-foreground">Plant</span><span className="font-medium">{asset.plant?.name || '-'}</span></div>
+              <Separator />
+              <div className="flex justify-between"><span className="text-muted-foreground">Created</span><span className="font-medium">{formatDate(asset.createdAt)}</span></div>
+            </CardContent>
+          </Card>
+
+          {/* Financial */}
+          <Card className="border-0 shadow-sm dark:bg-card">
+            <CardHeader><CardTitle className="text-base">Financial</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Purchase Cost</span><span className="font-medium">${asset.purchaseCost?.toLocaleString() || '-'}</span></div>
+              <Separator />
+              <div className="flex justify-between"><span className="text-muted-foreground">Current Value</span><span className="font-medium">${asset.currentValue?.toLocaleString() || '-'}</span></div>
+              <Separator />
+              <div className="flex justify-between"><span className="text-muted-foreground">Purchase Date</span><span className="font-medium">{formatDate(asset.purchaseDate)}</span></div>
+              <Separator />
+              <div className="flex justify-between"><span className="text-muted-foreground">Warranty Expiry</span><span className="font-medium">{formatDate(asset.warrantyExpiry)}</span></div>
+              <Separator />
+              <div className="flex justify-between"><span className="text-muted-foreground">Expected Life</span><span className="font-medium">{asset.expectedLifeYears ? `${asset.expectedLifeYears} years` : '-'}</span></div>
+            </CardContent>
+          </Card>
+
+          {/* Assigned To */}
+          {asset.assignedTo && asset.assignedTo.length > 0 && (
+            <Card className="border-0 shadow-sm dark:bg-card">
+              <CardHeader><CardTitle className="text-base">Assigned To</CardTitle></CardHeader>
+              <CardContent className="space-y-2">
+                {asset.assignedTo.map((u: any) => (
+                  <div key={u.id} className="flex items-center gap-2 text-sm">
+                    <Avatar className="h-6 w-6"><AvatarFallback className="text-[9px]">{getInitials(u.fullName || 'U')}</AvatarFallback></Avatar>
+                    <span className="font-medium">{u.fullName}</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -3929,6 +4340,18 @@ function InventoryPage() {
   const [searchText, setSearchText] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  // Delete
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  // Stock movement
+  const [movementOpen, setMovementOpen] = useState(false);
+  const [movType, setMovType] = useState('in');
+  const [movItemId, setMovItemId] = useState('');
+  const [movQty, setMovQty] = useState('');
+  const [movReason, setMovReason] = useState('');
+  const [movLoading, setMovLoading] = useState(false);
+  // Stock movements list
+  const [selectedMovItemId, setSelectedMovItemId] = useState<string | null>(null);
+  const [stockMovements, setStockMovements] = useState<any[]>([]);
 
   const emptyForm = { itemCode: '', name: '', description: '', category: 'spare_part', unitOfMeasure: 'each', currentStock: '', minStockLevel: '', maxStockLevel: '', reorderQuantity: '', unitCost: '', supplier: '', location: '', binLocation: '', plantId: '' };
   const [form, setForm] = useState(emptyForm);
@@ -3970,6 +4393,29 @@ function InventoryPage() {
     setSaving(false);
   };
 
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    const res = await api.delete(`/api/inventory/${deleteId}`);
+    if (res.success) { toast.success('Item deleted'); setDeleteId(null); loadData(); }
+    else { toast.error(res.error || 'Failed to delete'); }
+  };
+
+  const handleStockMovement = async () => {
+    if (!movItemId || !movQty) { toast.error('Item and quantity required'); return; }
+    setMovLoading(true);
+    const res = await api.post(`/api/inventory/${movItemId}/stock-movements`, { type: movType, quantity: parseFloat(movQty), reason: movReason || undefined });
+    if (res.success) { toast.success('Stock movement recorded'); setMovementOpen(false); setMovQty(''); setMovReason(''); loadData(); }
+    else { toast.error(res.error || 'Failed'); }
+    setMovLoading(false);
+  };
+
+  const loadMovements = useCallback((itemId: string) => {
+    setSelectedMovItemId(itemId);
+    api.get<any[]>(`/api/inventory/${itemId}/stock-movements`).then(res => {
+      if (res.success && res.data) setStockMovements(Array.isArray(res.data) ? res.data : []);
+    });
+  }, []);
+
   if (loading) return <LoadingSkeleton />;
 
   return (
@@ -3979,7 +4425,10 @@ function InventoryPage() {
           <h1 className="text-2xl font-bold tracking-tight">Inventory</h1>
           <p className="text-muted-foreground text-sm mt-1">Manage spare parts, consumables, and supplies</p>
         </div>
-        <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Item</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => { setMovItemId(''); setMovQty(''); setMovReason(''); setMovType('in'); setMovementOpen(true); }} className="gap-1.5"><ArrowUpDown className="h-4 w-4" />Stock Movement</Button>
+          <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Item</Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -4054,6 +4503,9 @@ function InventoryPage() {
                         <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => openEdit(i)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => loadMovements(i.id)}><History className="h-3.5 w-3.5 mr-2" />Movements</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="text-red-600" onClick={() => setDeleteId(i.id)}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -4115,6 +4567,85 @@ function InventoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Delete Inventory Item</DialogTitle><DialogDescription>Are you sure? This action cannot be undone.</DialogDescription></DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Stock Movement Dialog */}
+      <Dialog open={movementOpen} onOpenChange={setMovementOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Stock Movement</DialogTitle><DialogDescription>Record a stock movement.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5"><Label>Movement Type</Label>
+              <Select value={movType} onValueChange={setMovType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="in">Stock In</SelectItem><SelectItem value="out">Stock Out</SelectItem><SelectItem value="adjustment">Adjustment</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5"><Label>Item *</Label>
+              <Select value={movItemId} onValueChange={setMovItemId}>
+                <SelectTrigger><SelectValue placeholder="Select item..." /></SelectTrigger>
+                <SelectContent>{items.map(it => <SelectItem key={it.id} value={it.id}>{it.name} ({it.itemCode})</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5"><Label>Quantity *</Label><Input type="number" value={movQty} onChange={e => setMovQty(e.target.value)} placeholder="Enter quantity" /></div>
+            <div className="space-y-1.5"><Label>Reason</Label><Textarea value={movReason} onChange={e => setMovReason(e.target.value)} placeholder="Optional reason..." rows={2} /></div>
+            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={movLoading} onClick={handleStockMovement}>
+              {movLoading ? 'Recording...' : 'Record Movement'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Stock Movements Section */}
+      {selectedMovItemId && (
+        <Card className="border-0 shadow-sm dark:bg-card">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div><CardTitle className="text-base">Stock Movements</CardTitle><CardDescription className="text-xs">For item: {items.find(it => it.id === selectedMovItemId)?.name || selectedMovItemId}</CardDescription></div>
+            <Button size="sm" variant="ghost" onClick={() => { setSelectedMovItemId(null); setStockMovements([]); }}><X className="h-4 w-4" /></Button>
+          </CardHeader>
+          <CardContent>
+            {stockMovements.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No stock movements found for this item.</p>
+            ) : (
+              <div className="max-h-64 overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Type</TableHead>
+                      <TableHead className="text-right">Qty</TableHead>
+                      <TableHead className="hidden sm:table-cell">Previous</TableHead>
+                      <TableHead className="hidden sm:table-cell">New</TableHead>
+                      <TableHead className="hidden md:table-cell">Reason</TableHead>
+                      <TableHead>Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {stockMovements.map(m => (
+                      <TableRow key={m.id}>
+                        <TableCell><Badge variant="outline" className={`text-[10px] ${m.type === 'in' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : m.type === 'out' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{m.type === 'in' ? 'Stock In' : m.type === 'out' ? 'Stock Out' : 'Adjustment'}</Badge></TableCell>
+                        <TableCell className="text-right font-medium">{m.type === 'out' ? '-' : '+'}{m.quantity}</TableCell>
+                        <TableCell className="hidden sm:table-cell">{m.previousStock ?? '-'}</TableCell>
+                        <TableCell className="hidden sm:table-cell font-medium">{m.newStock ?? '-'}</TableCell>
+                        <TableCell className="hidden md:table-cell text-sm text-muted-foreground max-w-[200px] truncate">{m.reason || '-'}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{formatDateTime(m.createdAt)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -4124,83 +4655,107 @@ function InventoryPage() {
 // ============================================================================
 
 function AnalyticsPage() {
-  const kpiData = [
-    { label: 'MTTR', value: '4.2 hrs', change: '-12%', icon: Timer, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'MTBF', value: '168 hrs', change: '+8%', icon: Activity, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Asset Utilization', value: '87%', change: '+3%', icon: Gauge, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'PM Compliance', value: '92%', change: '+5%', icon: Target, color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' },
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState('30');
+
+  useEffect(() => {
+    let active = true;
+    api.get(`/api/analytics?period=${period}`).then(res => {
+      if (active) {
+        if (res.success && res.data) setData(res.data);
+        setLoading(false);
+      }
+    });
+    return () => { active = false; };
+  }, [period]);
+
+  if (loading) return <LoadingSkeleton />;
+
+  const kpis = data?.kpis || {};
+  const costs = data?.costs || {};
+  const charts = data?.charts || {};
+
+  const kpiCards = [
+    { label: 'MTTR', value: `${kpis.mttr || 0} hrs`, icon: Timer, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'MTBF', value: `${kpis.mtbf || 0} hrs`, icon: Activity, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Asset Utilization', value: `${kpis.assetUtilization || 0}%`, icon: Gauge, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'PM Compliance', value: `${kpis.pmCompliance || 0}%`, icon: Target, color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' },
+    { label: 'SLA Compliance', value: `${kpis.slaCompliance || 0}%`, icon: CheckCircle2, color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400' },
   ];
 
-  const woStatusData = [
-    { status: 'Draft', count: 5, fill: 'var(--color-draft)' },
-    { status: 'Requested', count: 12, fill: 'var(--color-requested)' },
-    { status: 'In Progress', count: 18, fill: 'var(--color-in_progress)' },
-    { status: 'Completed', count: 42, fill: 'var(--color-completed)' },
-    { status: 'Closed', count: 28, fill: 'var(--color-closed)' },
-  ];
+  const woStatusData = (charts.woStatus || []).map((s: any, i: number) => ({
+    status: s.status || s.name || `Status ${i}`,
+    count: s.count || s.value || 0,
+    fill: CHART_COLORS[i % CHART_COLORS.length],
+  }));
 
-  const woStatusConfig = {
-    draft: { label: 'Draft', color: '#94a3b8' },
-    requested: { label: 'Requested', color: '#06b6d4' },
-    in_progress: { label: 'In Progress', color: '#f59e0b' },
+  const woStatusConfig = Object.fromEntries(woStatusData.map((s: any, i: number) => [s.status.toLowerCase().replace(/ /g, '_'), { label: s.status, color: CHART_COLORS[i % CHART_COLORS.length] }])) as any;
+
+  const conditionData = (charts.assetCondition || []).map((c: any) => ({
+    name: c.condition || c.name || 'Unknown',
+    value: c.count || c.value || 0,
+    fill: CHART_COLORS[(charts.assetCondition || []).indexOf(c) % CHART_COLORS.length],
+  }));
+
+  const conditionConfig = Object.fromEntries(conditionData.map((c: any) => [c.name, { label: c.name, color: c.fill }])) as any;
+
+  const dailyTrendData = (charts.dailyTrend || []).map((d: any) => ({
+    date: d.date ? d.date.slice(5) : d.date,
+    created: d.created || d.total || 0,
+    completed: d.completed || 0,
+  }));
+
+  const trendConfig = {
+    created: { label: 'Created', color: '#06b6d4' },
     completed: { label: 'Completed', color: '#10b981' },
-    closed: { label: 'Closed', color: '#6b7280' },
   } as const;
 
-  const conditionData = [
-    { name: 'New', value: 15, fill: '#10b981' },
-    { name: 'Good', value: 45, fill: '#059669' },
-    { name: 'Fair', value: 25, fill: '#f59e0b' },
-    { name: 'Poor', value: 8, fill: '#ef4444' },
-  ];
-
-  const conditionConfig = {
-    New: { label: 'New', color: '#10b981' },
-    Good: { label: 'Good', color: '#059669' },
-    Fair: { label: 'Fair', color: '#f59e0b' },
-    Poor: { label: 'Poor', color: '#ef4444' },
-  } as const;
-
-  const costTrendData = [
-    { month: 'Jul', corrective: 45000, preventive: 28000 },
-    { month: 'Aug', corrective: 38000, preventive: 32000 },
-    { month: 'Sep', corrective: 52000, preventive: 30000 },
-    { month: 'Oct', corrective: 41000, preventive: 35000 },
-    { month: 'Nov', corrective: 36000, preventive: 38000 },
-    { month: 'Dec', corrective: 33000, preventive: 40000 },
-  ];
-
-  const costConfig = {
-    corrective: { label: 'Corrective', color: '#f59e0b' },
-    preventive: { label: 'Preventive', color: '#10b981' },
-  } as const;
-
-  const topAssetsData = [
-    { name: 'Compressor C-101', hours: 142 },
-    { name: 'Pump P-205', hours: 118 },
-    { name: 'Motor M-302', hours: 96 },
-    { name: 'Valve V-108', hours: 84 },
-    { name: 'Conveyor CV-401', hours: 72 },
-  ];
+  const topAssetsData = (charts.topMaintainedAssets || []).map((a: any) => ({
+    name: a.name || 'Unknown',
+    count: a.count || a.hours || 0,
+  }));
 
   const topAssetsConfig = {
-    hours: { label: 'Hours', color: '#10b981' },
+    count: { label: 'WO Count', color: '#10b981' },
   } as const;
+
+  const priorityData = (charts.woPriority || []).map((p: any, i: number) => ({
+    priority: (p.priority || p.name || 'Unknown').charAt(0).toUpperCase() + (p.priority || p.name || 'Unknown').slice(1),
+    count: p.count || p.value || 0,
+    fill: CHART_COLORS[i % CHART_COLORS.length],
+  }));
+
+  const priorityConfig = Object.fromEntries(priorityData.map((p: any, i: number) => [p.priority.toLowerCase(), { label: p.priority, color: CHART_COLORS[i % CHART_COLORS.length] }])) as any;
+
+  const mrCategoryData = (charts.mrCategories || []).map((c: any, i: number) => ({
+    category: c.category || c.name || 'Other',
+    count: c.count || c.value || 0,
+    fill: CHART_COLORS[i % CHART_COLORS.length],
+  }));
+
+  const mrCatConfig = Object.fromEntries(mrCategoryData.map((c: any, i: number) => [c.category.toLowerCase().replace(/ /g, '_'), { label: c.category, color: CHART_COLORS[i % CHART_COLORS.length] }])) as any;
 
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
-        <p className="text-muted-foreground text-sm mt-1">Maintenance performance insights and KPIs</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
+          <p className="text-muted-foreground text-sm mt-1">Maintenance performance insights and KPIs</p>
+        </div>
+        <Select value={period} onValueChange={setPeriod}>
+          <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="7">Last 7 days</SelectItem><SelectItem value="30">Last 30 days</SelectItem><SelectItem value="90">Last 90 days</SelectItem></SelectContent>
+        </Select>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {kpiData.map(kpi => (
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {kpiCards.map(kpi => (
           <Card key={kpi.label} className="border-0 shadow-sm dark:bg-card">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${kpi.color}`}><kpi.icon className="h-4.5 w-4.5" /></div>
-                <span className={`text-xs font-medium ${kpi.change.startsWith('+') ? 'text-emerald-600' : 'text-red-500'}`}>{kpi.change}</span>
               </div>
               <p className="text-2xl font-bold">{kpi.value}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{kpi.label}</p>
@@ -4209,6 +4764,32 @@ function AnalyticsPage() {
         ))}
       </div>
 
+      {/* Cost Summary */}
+      <Card className="border-0 shadow-sm dark:bg-card">
+        <CardHeader className="pb-2"><CardTitle className="text-base">Cost Summary</CardTitle><CardDescription className="text-xs">Financial overview</CardDescription></CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="text-center p-3 rounded-lg bg-muted/50">
+              <p className="text-xl font-bold">${((costs.totalMaintenanceCost || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+              <p className="text-xs text-muted-foreground">Total Maint. Cost</p>
+            </div>
+            <div className="text-center p-3 rounded-lg bg-muted/50">
+              <p className="text-xl font-bold">${((costs.totalLaborCost || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+              <p className="text-xs text-muted-foreground">Labor Cost</p>
+            </div>
+            <div className="text-center p-3 rounded-lg bg-muted/50">
+              <p className="text-xl font-bold">${((costs.totalPartsCost || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+              <p className="text-xs text-muted-foreground">Parts Cost</p>
+            </div>
+            <div className="text-center p-3 rounded-lg bg-muted/50">
+              <p className="text-xl font-bold">${((costs.inventoryValue || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+              <p className="text-xs text-muted-foreground">Inventory Value</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* WO Status Distribution */}
         <Card className="border-0 shadow-sm dark:bg-card">
@@ -4220,13 +4801,15 @@ function AnalyticsPage() {
                 <XAxis type="number" tick={{ fontSize: 11 }} />
                 <YAxis type="category" dataKey="status" tick={{ fontSize: 11 }} width={80} />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="count" radius={[0, 4, 4, 0]} fill="var(--color-status)" />
+                <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                  {woStatusData.map((entry: any, idx: number) => <Cell key={idx} fill={entry.fill} />)}
+                </Bar>
               </BarChart>
             </ChartContainer>
           </CardContent>
         </Card>
 
-        {/* Asset Condition Distribution */}
+        {/* Asset Condition Donut */}
         <Card className="border-0 shadow-sm dark:bg-card">
           <CardHeader className="pb-2"><CardTitle className="text-base">Asset Condition</CardTitle><CardDescription className="text-xs">Distribution by condition</CardDescription></CardHeader>
           <CardContent>
@@ -4234,33 +4817,33 @@ function AnalyticsPage() {
               <PieChart>
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Pie data={conditionData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} dataKey="value" nameKey="name" strokeWidth={2} stroke="hsl(var(--background))">
-                  {conditionData.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
+                  {conditionData.map((entry: any, idx: number) => <Cell key={idx} fill={entry.fill} />)}
                 </Pie>
               </PieChart>
             </ChartContainer>
-            <div className="grid grid-cols-4 gap-2 mt-2">
-              {conditionData.map(c => (
+            <div className="flex flex-wrap gap-3 mt-2 justify-center">
+              {conditionData.map((c: any) => (
                 <div key={c.name} className="flex items-center gap-1.5 text-xs">
                   <div className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: c.fill }} />
-                  <span className="text-muted-foreground">{c.name}</span>
+                  <span className="text-muted-foreground">{c.name} ({c.value})</span>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
 
-        {/* Maintenance Cost Trend */}
+        {/* Daily WO Trend */}
         <Card className="border-0 shadow-sm dark:bg-card">
-          <CardHeader className="pb-2"><CardTitle className="text-base">Maintenance Cost Trend</CardTitle><CardDescription className="text-xs">Last 6 months</CardDescription></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Daily WO Trend</CardTitle><CardDescription className="text-xs">Created vs completed</CardDescription></CardHeader>
           <CardContent>
-            <ChartContainer config={costConfig} className="h-[260px] w-full">
-              <AreaChart data={costTrendData} margin={{ left: 0, right: 16 }}>
+            <ChartContainer config={trendConfig} className="h-[260px] w-full">
+              <AreaChart data={dailyTrendData} margin={{ left: 0, right: 16 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 11 }} />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Area type="monotone" dataKey="corrective" stackId="1" stroke="var(--color-corrective)" fill="var(--color-corrective)" fillOpacity={0.6} />
-                <Area type="monotone" dataKey="preventive" stackId="1" stroke="var(--color-preventive)" fill="var(--color-preventive)" fillOpacity={0.6} />
+                <Area type="monotone" dataKey="created" stroke="var(--color-created)" fill="var(--color-created)" fillOpacity={0.3} />
+                <Area type="monotone" dataKey="completed" stroke="var(--color-completed)" fill="var(--color-completed)" fillOpacity={0.3} />
               </AreaChart>
             </ChartContainer>
           </CardContent>
@@ -4268,15 +4851,56 @@ function AnalyticsPage() {
 
         {/* Top Maintained Assets */}
         <Card className="border-0 shadow-sm dark:bg-card">
-          <CardHeader className="pb-2"><CardTitle className="text-base">Top Maintained Assets</CardTitle><CardDescription className="text-xs">By maintenance hours</CardDescription></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Top Maintained Assets</CardTitle><CardDescription className="text-xs">By work order count</CardDescription></CardHeader>
           <CardContent>
             <ChartContainer config={topAssetsConfig} className="h-[260px] w-full">
               <BarChart data={topAssetsData} layout="vertical" margin={{ left: 0, right: 16 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={120} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={130} />
                 <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="hours" radius={[0, 4, 4, 0]} fill="var(--color-hours)" />
+                <Bar dataKey="count" radius={[0, 4, 4, 0]} fill="var(--color-count)" />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+
+        {/* WO Priority Pie */}
+        <Card className="border-0 shadow-sm dark:bg-card">
+          <CardHeader className="pb-2"><CardTitle className="text-base">WO Priority Mix</CardTitle><CardDescription className="text-xs">Distribution by priority</CardDescription></CardHeader>
+          <CardContent>
+            <ChartContainer config={priorityConfig} className="h-[260px] w-full">
+              <PieChart>
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Pie data={priorityData} cx="50%" cy="50%" outerRadius={90} dataKey="count" nameKey="priority" strokeWidth={2} stroke="hsl(var(--background))">
+                  {priorityData.map((entry: any, idx: number) => <Cell key={idx} fill={entry.fill} />)}
+                </Pie>
+              </PieChart>
+            </ChartContainer>
+            <div className="flex flex-wrap gap-3 mt-2 justify-center">
+              {priorityData.map((p: any) => (
+                <div key={p.priority} className="flex items-center gap-1.5 text-xs">
+                  <div className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: p.fill }} />
+                  <span className="text-muted-foreground">{p.priority} ({p.count})</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* MR Category Bar */}
+        <Card className="border-0 shadow-sm dark:bg-card">
+          <CardHeader className="pb-2"><CardTitle className="text-base">MR Categories</CardTitle><CardDescription className="text-xs">Requests by category</CardDescription></CardHeader>
+          <CardContent>
+            <ChartContainer config={mrCatConfig} className="h-[260px] w-full">
+              <BarChart data={mrCategoryData} layout="vertical" margin={{ left: 0, right: 16 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="category" tick={{ fontSize: 10 }} width={100} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                  {mrCategoryData.map((entry: any, idx: number) => <Cell key={idx} fill={entry.fill} />)}
+                </Bar>
               </BarChart>
             </ChartContainer>
           </CardContent>

@@ -862,3 +862,105 @@ Stage Summary:
 - Lint passing
 - Total page.tsx lines: 4441
 
+---
+
+## Session 12 - Enterprise Feature Enhancements: WO Details, Analytics, Inventory, Assets, Notifications
+
+- **Date:** 2026-04-12
+- **Context:** Bring all pages to full enterprise-grade quality with additional features: time logs, materials, edit forms, API-driven analytics, delete actions, stock movements, asset detail view, and notification navigation fixes.
+
+### Task 1: Import Additional Icons
+- **Status:** ✅ Completed
+- Added `History` (for stock movements) and `ArrowUpDown` (for stock in/out) to lucide-react imports
+- All other needed icons (Timer, Activity, Gauge, Target, MoreHorizontal, Pencil, Trash2, Clock, Plus) were already imported
+
+### Task 2: WODetailPage Enhancements (~line 2099-2610)
+- **Status:** ✅ Completed
+
+#### Edit WO Dialog
+- Added "Edit" option in Actions dropdown (visible when WO is not closed/cancelled)
+- Full edit form: title, description, type, priority, estimated hours, planned start/end, failure/cause/action descriptions
+- PATCH to `/api/work-orders/${id}` with `action: 'update'`
+
+#### Time Logs Card
+- Displays time log entries from `wo.timeLogs` with action-specific icons (start=green/play, pause=amber/pause, resume=sky/play, complete=violet/check)
+- Shows user name, timestamp, duration badge
+- "Log Time" button opens dialog with: action type selector, hours worked input, notes
+- POST to `/api/work-orders/${id}/time-logs`
+- Shows total hours from `wo.actualHours`
+
+#### Materials Card
+- Table of materials from `wo.materials`: item name, quantity, unit cost, total cost, status badge
+- "Add Material" button opens dialog: item name, quantity, unit cost, unit selector
+- POST to `/api/work-orders/${id}/materials`
+- Running total at bottom of table
+
+### Task 3: AnalyticsPage Rebuild (~line 4657-4910)
+- **Status:** ✅ Completed
+- Replaced entire function (hardcoded mock data) with API-driven version
+- Fetches from `/api/analytics?period=30` on mount with cleanup
+- Period selector (7/30/90 days) triggers re-fetch
+- KPI cards (5): MTTR, MTBF, Asset Utilization, PM Compliance, SLA Compliance from `data.kpis`
+- Cost summary card: total maintenance, labor, parts, inventory value from `data.costs`
+- 6 charts using Recharts with ChartContainer:
+  - WO Status vertical bar chart from `data.charts.woStatus`
+  - Asset Condition donut chart from `data.charts.assetCondition`
+  - Daily WO Trend area chart (created vs completed) from `data.charts.dailyTrend`
+  - Top Maintained Assets horizontal bar from `data.charts.topMaintainedAssets`
+  - WO Priority pie chart from `data.charts.woPriority`
+  - MR Category horizontal bar from `data.charts.mrCategories`
+- Dynamic chart config generation from API data using CHART_COLORS palette
+- Loading skeleton while data loads
+
+### Task 4: InventoryPage Enhancements (~line 4332-4530)
+- **Status:** ✅ Completed
+
+#### Delete Action
+- Added "Delete" option in dropdown menu (with red styling and separator)
+- Confirmation dialog before deleting
+- DELETE to `/api/inventory/${id}` on confirm, refreshes list
+
+#### Stock Movements
+- "Stock Movement" button in page header (next to Add Item)
+- Dialog: movement type selector (Stock In / Stock Out / Adjustment), item selector from existing items, quantity, reason
+- POST to `/api/inventory/${id}/stock-movements`
+- "Movements" option in each row's dropdown menu loads stock movement history
+- Movements table below main table: type badge, qty (+/-), previous/new stock, reason, date
+- Closeable section with X button
+
+### Task 5: AssetsPage Enhancements (~line 3933-4326)
+- **Status:** ✅ Completed
+
+#### Delete Action
+- Added "View" and "Delete" in dropdown menu (with separator)
+- Confirmation dialog with destructive button
+- DELETE to `/api/assets/${id}`
+
+#### AssetDetailPage Component (~line 4190-4326)
+- New component rendered when `detailId` state is set in AssetsPage
+- Full asset details card with badges (status, condition, criticality)
+- Specifications card from `asset.specification` JSON (key-value grid)
+- PM Schedules list (title, frequency, priority, next due date)
+- Right panel: Details (category, serial, manufacturer, model, location, plant, created date)
+- Financial card (purchase cost, current value, purchase date, warranty, expected life)
+- Assigned To card with avatars
+- Back button to return to list
+
+### Task 6: NotificationsPage Navigation Fix (~line 3716-3740)
+- **Status:** ✅ Completed
+- Added `navigate` from `useNavigationStore` at component level
+- Fixed `markRead` to actually navigate when `n.actionUrl` exists using `navigate(n.actionUrl as PageName)`
+
+### Technical Notes
+- All changes follow existing patterns: `border-0 shadow-sm dark:bg-card`, `p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto`
+- All API calls use the `api` helper from `@/lib/api`
+- Toast notifications from `sonner` for all user actions
+- shadcn/ui components used throughout (Card, Button, Dialog, Select, Input, Badge, Table, etc.)
+- Fixed React hooks lint error in AnalyticsPage (avoiding setState synchronously in effect)
+- Total page.tsx lines: 4442 → 5065 (+623 lines)
+
+### Files Modified
+- `src/app/page.tsx` — All 6 task modifications
+
+### Build: ✅ Lint clean (0 errors, 0 warnings), dev server compiling successfully
+
