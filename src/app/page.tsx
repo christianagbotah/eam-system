@@ -2964,7 +2964,7 @@ function SettingsRolesPage() {
       <div className="flex gap-4 flex-1 min-h-0 mx-6 lg:mx-8 mb-6 lg:mb-8">
 
         {/* ─── Left Column: Role List (viewport height, own scroll) ─── */}
-        <Card className="border-0 shadow-sm w-60 shrink-0 flex flex-col overflow-hidden">
+        <Card className="border border-border/60 shadow-md w-60 shrink-0 flex flex-col overflow-hidden bg-muted/40 dark:bg-muted/20">
           <div className="px-4 py-3 border-b bg-muted/30 shrink-0">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Roles ({roles.length})</p>
           </div>
