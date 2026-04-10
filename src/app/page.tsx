@@ -161,6 +161,7 @@ import {
   ScanLine,
   Route,
   Workflow,
+  DollarSign,
   FlaskConical,
   Microscope,
   TestTubes,
@@ -171,6 +172,8 @@ import {
   FileSpreadsheet,
   BrainCircuit,
   Waypoints,
+  Mail,
+  Upload,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area,
@@ -6386,7 +6389,8 @@ function AssetHealthPage() {
   }, []);
 
   const conditions = ['new', 'good', 'fair', 'poor', 'out_of_service'];
-  const condColors: Record<string, string> = { new: 'bg-emerald-500', good: 'bg-emerald-400', fair: 'bg-amber-400', poor: 'bg-orange-500', out_of_service: 'bg-red-500' };
+  const condColors: Record<string, string> = { new: 'bg-emerald-500', good: 'bg-emerald-400', fair: 'bg-amber-400', poor: 'bg-red-400', out_of_service: 'bg-red-600' };
+  const condBadgeColors: Record<string, string> = { new: 'bg-emerald-50 text-emerald-700 border-emerald-200', good: 'bg-emerald-50 text-emerald-700 border-emerald-200', fair: 'bg-amber-50 text-amber-700 border-amber-200', poor: 'bg-red-50 text-red-700 border-red-200', out_of_service: 'bg-red-100 text-red-800 border-red-300' };
   const condLabels: Record<string, string> = { new: 'New', good: 'Good', fair: 'Fair', poor: 'Poor', out_of_service: 'Out of Service' };
   const critColors: Record<string, string> = { low: 'text-emerald-600', medium: 'text-amber-600', high: 'text-orange-600', critical: 'text-red-600' };
 
@@ -6394,6 +6398,48 @@ function AssetHealthPage() {
   const critCounts = ['low', 'medium', 'high', 'critical'].map(c => ({ criticality: c, count: assets.filter((a: any) => a.criticality === c).length }));
   const statusCounts = ['operational', 'standby', 'under_maintenance', 'decommissioned'].map(s => ({ status: s, count: assets.filter((a: any) => a.status === s).length }));
   const total = assets.length || 1;
+
+  const goodCount = assets.filter((a: any) => a.condition === 'good' || a.condition === 'new').length;
+  const fairCount = assets.filter((a: any) => a.condition === 'fair').length;
+  const poorCount = assets.filter((a: any) => a.condition === 'poor').length;
+  const criticalCount = assets.filter((a: any) => a.condition === 'out_of_service').length;
+
+  const summaryCards = [
+    { label: 'Total Assets', value: assets.length, icon: Box, color: 'text-slate-600 bg-slate-50 dark:bg-slate-900/30 dark:text-slate-400' },
+    { label: 'Good Condition', value: goodCount, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Fair Condition', value: fairCount, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Poor Condition', value: poorCount, icon: AlertCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+    { label: 'Critical', value: criticalCount, icon: XCircle, color: 'text-red-700 bg-red-100 dark:bg-red-900/40 dark:text-red-300' },
+  ];
+
+  // Category distribution
+  const categories = useMemo(() => {
+    const map = new Map<string, { total: number; good: number; fair: number; poor: number; critical: number }>();
+    assets.forEach((a: any) => {
+      const cat = a.category || 'Uncategorized';
+      if (!map.has(cat)) map.set(cat, { total: 0, good: 0, fair: 0, poor: 0, critical: 0 });
+      const c = map.get(cat)!;
+      c.total++;
+      if (a.condition === 'good' || a.condition === 'new') c.good++;
+      else if (a.condition === 'fair') c.fair++;
+      else if (a.condition === 'poor') c.poor++;
+      else c.critical++;
+    });
+    return Array.from(map.entries()).map(([name, d]) => ({ name, ...d })).sort((a, b) => b.total - a.total).slice(0, 8);
+  }, [assets]);
+
+  // Health matrix: group by criticality, show condition badges
+  const criticalityLevels = ['critical', 'high', 'medium', 'low'];
+  const healthMatrix = criticalityLevels.map(crit => {
+    const group = assets.filter((a: any) => a.criticality === crit);
+    return { criticality: crit, assets: group };
+  });
+
+  // Assets needing attention
+  const attentionAssets = assets.filter((a: any) => a.condition === 'poor' || a.condition === 'out_of_service').sort((a: any, b: any) => {
+    const order: Record<string, number> = { out_of_service: 0, poor: 1 };
+    return (order[a.condition] ?? 2) - (order[b.condition] ?? 2);
+  });
 
   if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
 
@@ -6403,44 +6449,149 @@ function AssetHealthPage() {
         <h1 className="text-2xl font-bold tracking-tight">Asset Health</h1>
         <p className="text-muted-foreground mt-1">Overview of asset conditions, criticality, and operational status</p>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        {condCounts.map(c => (
-          <Card key={c.condition}>
-            <CardContent className="p-4 text-center">
-              <div className={`h-2 rounded-full mb-3 ${condColors[c.condition]}`} />
-              <p className="text-2xl font-bold">{c.count}</p>
-              <p className="text-xs text-muted-foreground">{condLabels[c.condition]}</p>
-              <p className="text-[10px] text-muted-foreground mt-1">{Math.round(c.count / total * 100)}%</p>
+
+      {/* Summary KPI cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        {summaryCards.map(k => { const I = k.icon; return (
+          <Card key={k.label}><CardContent className="p-4"><div className="flex items-center gap-3"><div className={`h-10 w-10 rounded-lg ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+
+      {/* Health Matrix */}
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Health Matrix</CardTitle><CardDescription>Asset conditions grouped by criticality level</CardDescription></CardHeader>
+        <CardContent>
+          {healthMatrix.map(group => (
+            <div key={group.criticality} className="mb-4 last:mb-0">
+              <div className="flex items-center gap-2 mb-2">
+                <Badge variant="outline" className={`capitalize font-semibold ${critColors[group.criticality]} border-current/20`}>{group.criticality}</Badge>
+                <span className="text-xs text-muted-foreground">{group.assets.length} asset(s)</span>
+              </div>
+              {group.assets.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {group.assets.map((a: any) => (
+                    <Badge key={a.id} variant="outline" className={`text-[11px] ${condBadgeColors[a.condition] || ''} ${a.condition === 'out_of_service' ? 'animate-pulse' : ''}`}>
+                      {a.name || a.assetTag}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground pl-1">No assets in this criticality level</p>
+              )}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Health distribution by category */}
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-base">Health by Category</CardTitle></CardHeader>
+          <CardContent className="space-y-4 max-h-96 overflow-y-auto">
+            {categories.length === 0 ? (
+              <EmptyState icon={FolderOpen} title="No categories" description="Asset categories will appear here." />
+            ) : categories.map(cat => {
+              const pct = total > 0 ? Math.round((cat.total / total) * 100) : 0;
+              const goodPct = cat.total > 0 ? Math.round((cat.good / cat.total) * 100) : 0;
+              const fairPct = cat.total > 0 ? Math.round((cat.fair / cat.total) * 100) : 0;
+              const poorPct = cat.total > 0 ? Math.round((cat.poor / cat.total) * 100) : 0;
+              return (
+                <div key={cat.name} className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium truncate max-w-[200px]">{cat.name}</span>
+                    <span className="text-xs text-muted-foreground">{cat.total} ({pct}%)</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted overflow-hidden flex">
+                    <div className="bg-emerald-400 h-full" style={{ width: `${goodPct}%` }} />
+                    <div className="bg-amber-400 h-full" style={{ width: `${fairPct}%` }} />
+                    <div className="bg-red-400 h-full" style={{ width: `${poorPct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+            {categories.length > 0 && (
+              <div className="flex items-center gap-4 pt-2 border-t">
+                <div className="flex items-center gap-1.5"><div className="h-2 w-2 rounded-full bg-emerald-400" /><span className="text-[10px] text-muted-foreground">Good</span></div>
+                <div className="flex items-center gap-1.5"><div className="h-2 w-2 rounded-full bg-amber-400" /><span className="text-[10px] text-muted-foreground">Fair</span></div>
+                <div className="flex items-center gap-1.5"><div className="h-2 w-2 rounded-full bg-red-400" /><span className="text-[10px] text-muted-foreground">Poor/Critical</span></div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* By Criticality + By Status */}
+        <div className="space-y-6">
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-base">By Criticality</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {critCounts.map(c => (
+                <div key={c.criticality} className="flex items-center gap-3">
+                  <span className={`text-sm font-medium capitalize w-24 ${critColors[c.criticality]}`}>{c.criticality}</span>
+                  <div className="flex-1 bg-muted rounded-full h-2.5"><div className="bg-primary rounded-full h-2.5 transition-all" style={{ width: `${(c.count / total) * 100}%` }} /></div>
+                  <span className="text-sm font-semibold w-8 text-right">{c.count}</span>
+                </div>
+              ))}
             </CardContent>
           </Card>
-        ))}
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-base">By Status</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {statusCounts.map(s => (
+                <div key={s.status} className="flex items-center gap-3">
+                  <span className="text-sm font-medium capitalize w-44">{s.status.replace(/_/g,' ')}</span>
+                  <div className="flex-1 bg-muted rounded-full h-2.5"><div className="bg-primary rounded-full h-2.5 transition-all" style={{ width: `${(s.count / total) * 100}%` }} /></div>
+                  <span className="text-sm font-semibold w-8 text-right">{s.count}</span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      {/* Assets needing attention */}
+      {attentionAssets.length > 0 && (
         <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-base">By Criticality</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            {critCounts.map(c => (
-              <div key={c.criticality} className="flex items-center gap-3">
-                <span className={`text-sm font-medium capitalize w-24 ${critColors[c.criticality]}`}>{c.criticality}</span>
-                <div className="flex-1 bg-muted rounded-full h-2.5"><div className="bg-primary rounded-full h-2.5 transition-all" style={{ width: `${(c.count / total) * 100}%` }} /></div>
-                <span className="text-sm font-semibold w-8 text-right">{c.count}</span>
-              </div>
-            ))}
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-red-500" />
+              <CardTitle className="text-base">Assets Needing Attention</CardTitle>
+            </div>
+            <CardDescription>{attentionAssets.length} asset(s) in poor or critical condition</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Asset</TableHead>
+                    <TableHead className="hidden md:table-cell">Tag</TableHead>
+                    <TableHead>Condition</TableHead>
+                    <TableHead className="hidden lg:table-cell">Criticality</TableHead>
+                    <TableHead className="hidden md:table-cell">Location</TableHead>
+                    <TableHead className="hidden lg:table-cell">Category</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {attentionAssets.map((a: any) => (
+                    <TableRow key={a.id}>
+                      <TableCell className="font-medium text-sm">{a.name || '-'}</TableCell>
+                      <TableCell className="font-mono text-xs hidden md:table-cell">{a.assetTag || '-'}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={`text-[11px] ${condBadgeColors[a.condition] || ''} ${a.condition === 'out_of_service' ? 'animate-pulse' : ''}`}>
+                          {condLabels[a.condition] || a.condition}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell"><span className={`capitalize text-sm font-medium ${critColors[a.criticality] || ''}`}>{a.criticality || '-'}</span></TableCell>
+                      <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{a.location || '-'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">{a.category || '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-base">By Status</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            {statusCounts.map(s => (
-              <div key={s.status} className="flex items-center gap-3">
-                <span className="text-sm font-medium capitalize w-44">{s.status.replace(/_/g,' ')}</span>
-                <div className="flex-1 bg-muted rounded-full h-2.5"><div className="bg-primary rounded-full h-2.5 transition-all" style={{ width: `${(s.count / total) * 100}%` }} /></div>
-                <span className="text-sm font-semibold w-8 text-right">{s.count}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
+      )}
     </div>
   );
 }
@@ -6497,7 +6648,110 @@ function MaintenanceDashboardPage() {
 }
 
 function MaintenanceAnalyticsPage() {
-  return <ComingSoonPage title="Maintenance Analytics" description="Advanced analytics for maintenance operations including MTTR, MTBF, failure patterns, and predictive insights." icon={BarChart3} features={['MTTR / MTBF tracking', 'Failure mode analysis', 'PM compliance rates', 'Cost trend analysis', 'Predictive failure alerts']} />;
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api.get<DashboardStats>('/api/dashboard/stats'),
+      api.get<WorkOrder[]>('/api/work-orders'),
+    ]).then(([statsRes, woRes]) => {
+      if (statsRes.success && statsRes.data) setStats(statsRes.data);
+      if (woRes.success && woRes.data) setWorkOrders(woRes.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const completedWOs = workOrders.filter(wo => wo.status === 'completed' || wo.status === 'verified' || wo.status === 'closed');
+  const mttr = completedWOs.length > 0 ? (completedWOs.reduce((sum, wo) => sum + (wo.actualHours || 0), 0) / completedWOs.length).toFixed(1) : '0.0';
+  const totalHours = completedWOs.reduce((sum, wo) => sum + (wo.actualHours || 0), 0);
+  const mtbf = completedWOs.length > 1 ? (totalHours / Math.max(completedWOs.length - 1, 1)).toFixed(1) : totalHours.toFixed(1);
+  const totalWOs = stats?.totalWorkOrders || 0;
+  const preventiveWOs = stats?.preventiveWO || 0;
+  const pmCompliance = totalWOs > 0 ? Math.round((preventiveWOs / totalWOs) * 100) : 0;
+  const totalCost = workOrders.reduce((sum, wo) => sum + (wo.totalCost || 0), 0);
+
+  const typeBreakdown = [
+    { type: 'Preventive', count: stats?.preventiveWO || 0, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
+    { type: 'Corrective', count: stats?.correctiveWO || 0, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
+    { type: 'Emergency', count: stats?.emergencyWO || 0, color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' },
+    { type: 'Inspection', count: stats?.inspectionWO || 0, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300' },
+    { type: 'Predictive', count: stats?.predictiveWO || 0, color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300' },
+  ];
+
+  const priorityBreakdown = [
+    { priority: 'Low', count: workOrders.filter(wo => wo.priority === 'low').length },
+    { priority: 'Medium', count: workOrders.filter(wo => wo.priority === 'medium').length },
+    { priority: 'High', count: workOrders.filter(wo => wo.priority === 'high').length },
+    { priority: 'Critical', count: workOrders.filter(wo => wo.priority === 'critical' || wo.priority === 'emergency').length },
+  ];
+
+  const kpis = [
+    { label: 'MTTR (Hours)', value: mttr, icon: Timer, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'MTBF (Hours)', value: mtbf, icon: Activity, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Total Maintenance Cost', value: `$${totalCost.toLocaleString()}`, icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+  ];
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Analytics</h1><p className="text-muted-foreground mt-1">Advanced analytics for maintenance operations including MTTR, MTBF, and cost trends</p></div>
+      {loading ? <LoadingSkeleton /> : (<>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {kpis.map(k => { const I = k.icon; return (
+            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+          ); })}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border"><CardHeader><CardTitle className="text-base">WO Type Distribution</CardTitle><CardDescription className="text-xs">Breakdown by work order type</CardDescription></CardHeader><CardContent>
+            <div className="space-y-3">
+              {typeBreakdown.map(t => {
+                const pct = totalWOs > 0 ? Math.round((t.count / totalWOs) * 100) : 0;
+                return (
+                  <div key={t.type} className="flex items-center gap-3">
+                    <span className="text-sm font-medium w-24">{t.type}</span>
+                    <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${pct}%` }} /></div>
+                    <span className="text-sm font-semibold w-16 text-right">{t.count} ({pct}%)</span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent></Card>
+          <Card className="border"><CardHeader><CardTitle className="text-base">Priority Breakdown</CardTitle><CardDescription className="text-xs">Work orders by priority level</CardDescription></CardHeader><CardContent>
+            <div className="space-y-3">
+              {priorityBreakdown.map(p => {
+                const pct = workOrders.length > 0 ? Math.round((p.count / workOrders.length) * 100) : 0;
+                return (
+                  <div key={p.priority} className="flex items-center gap-3">
+                    <span className="text-sm font-medium w-24">{p.priority}</span>
+                    <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full transition-all ${p.priority === 'Critical' ? 'bg-red-500' : p.priority === 'High' ? 'bg-amber-500' : p.priority === 'Medium' ? 'bg-sky-500' : 'bg-slate-400'}`} style={{ width: `${pct}%` }} /></div>
+                    <span className="text-sm font-semibold w-16 text-right">{p.count} ({pct}%)</span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent></Card>
+        </div>
+        <Card className="border"><CardHeader><CardTitle className="text-base">Recent Cost Summary</CardTitle><CardDescription className="text-xs">Latest completed work orders by cost</CardDescription></CardHeader><CardContent>
+          <Table><TableHeader><TableRow><TableHead>WO #</TableHead><TableHead>Title</TableHead><TableHead>Type</TableHead><TableHead className="text-right">Total Cost</TableHead><TableHead className="text-right">Material</TableHead><TableHead className="text-right">Labor</TableHead><TableHead className="hidden md:table-cell">Actual Hours</TableHead></TableRow></TableHeader><TableBody>
+            {completedWOs.sort((a, b) => (b.totalCost || 0) - (a.totalCost || 0)).slice(0, 10).map(wo => (
+              <TableRow key={wo.id} className="hover:bg-muted/30">
+                <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
+                <TableCell className="font-medium max-w-[200px] truncate">{wo.title}</TableCell>
+                <TableCell className="text-xs capitalize">{wo.type.replace('_', ' ')}</TableCell>
+                <TableCell className="text-right font-semibold">${(wo.totalCost || 0).toLocaleString()}</TableCell>
+                <TableCell className="text-right text-muted-foreground">${(wo.materialCost || 0).toLocaleString()}</TableCell>
+                <TableCell className="text-right text-muted-foreground">${(wo.laborCost || 0).toLocaleString()}</TableCell>
+                <TableCell className="hidden md:table-cell text-muted-foreground">{wo.actualHours || '-'}</TableCell>
+              </TableRow>
+            ))}
+            {completedWOs.length === 0 && <TableRow><TableCell colSpan={7}><EmptyState icon={BarChart3} title="No completed work orders" description="Cost data will appear once work orders are completed." /></TableCell></TableRow>}
+          </TableBody></Table>
+        </CardContent></Card>
+      </>)}
+    </div>
+  );
 }
 function MaintenanceCalibrationPage() { return <ComingSoonPage title="Calibration" description="Manage instrument calibration schedules, records, and compliance tracking." icon={Crosshair} features={['Calibration scheduling', 'Equipment tracking', 'Compliance certificates', 'Due date alerts']} />; }
 function MaintenanceRiskAssessmentPage() { return <ComingSoonPage title="Risk Assessment" description="Evaluate and manage risks associated with asset failures and maintenance activities." icon={TriangleAlert} features={['Risk matrix', 'Risk scoring', 'Mitigation plans', 'Risk history tracking']} />; }
@@ -6516,9 +6770,257 @@ function InventoryItemsPage() {
   );
 }
 
-function InventoryCategoriesPage() { return <ComingSoonPage title="Inventory Categories" description="Organize inventory items into hierarchical categories for better management." icon={FolderOpen} features={['Category tree', 'Item categorization', 'Search & filter', 'Bulk operations']} />; }
+function InventoryCategoriesPage() {
+  const [categories, setCategories] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [selectedCat, setSelectedCat] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [form, setForm] = useState({ name: '', code: '', description: '', parentId: '' });
+  const [searchText, setSearchText] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/api/asset-categories');
+        if (res.data) setCategories(res.data.categories || res.data || []);
+      } catch { /* empty */ }
+      setLoading(false);
+    })();
+  }, []);
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const getChildren = (parentId: string | null) => categories.filter(c => (parentId ? c.parentId === parentId : !c.parentId));
+
+  const countDescendants = (id: string): number => {
+    let count = 0;
+    categories.filter(c => c.parentId === id).forEach(c => { count += 1 + countDescendants(c.id); });
+    return count;
+  };
+
+  const renderTree = (parentId: string | null, depth: number = 0) => {
+    const children = getChildren(parentId);
+    const q = searchText.toLowerCase();
+    const filtered = q ? children.filter((c: any) => c.name?.toLowerCase().includes(q) || c.code?.toLowerCase().includes(q)) : children;
+    return filtered.map((cat: any) => {
+      const hasChildren = categories.some(c => c.parentId === cat.id);
+      const isExpanded = expandedIds.has(cat.id);
+      return (
+        <div key={cat.id}>
+          <div className="flex items-center gap-2 py-2.5 px-3 rounded-lg hover:bg-muted/50 transition-colors group" style={{ paddingLeft: `${depth * 24 + 12}px` }}>
+            {hasChildren ? (
+              <button onClick={() => toggleExpand(cat.id)} className="p-0.5 rounded hover:bg-muted">
+                <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+              </button>
+            ) : (
+              <div className="w-5" />
+            )}
+            <FolderOpen className="h-4 w-4 text-amber-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium truncate">{cat.name}</span>
+              {cat.code && <span className="text-[10px] text-muted-foreground ml-2 font-mono">{cat.code}</span>}
+            </div>
+            <Badge variant="secondary" className="text-[10px] h-5">{cat._count?.assets ?? 0} items</Badge>
+            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+              <button onClick={() => { setSelectedCat(cat); setForm({ name: cat.name, code: cat.code || '', description: cat.description || '', parentId: cat.parentId || '' }); setEditOpen(true); }} className="p-1 rounded hover:bg-muted"><Pencil className="h-3.5 w-3.5 text-muted-foreground" /></button>
+              <button onClick={() => { if (confirm('Delete this category?')) { setCategories(prev => prev.filter(c => c.id !== cat.id)); toast.success('Category deleted'); } }} className="p-1 rounded hover:bg-red-50"><Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-red-500" /></button>
+            </div>
+          </div>
+          {hasChildren && isExpanded && renderTree(cat.id, depth + 1)}
+        </div>
+      );
+    });
+  };
+
+  const handleCreate = async () => {
+    if (!form.name) { toast.error('Name is required'); return; }
+    setSaving(true);
+    await new Promise(r => setTimeout(r, 600));
+    const newCat = { id: `cat-${Date.now()}`, name: form.name, code: form.code, description: form.description, parentId: form.parentId || null, isActive: true, _count: { assets: 0 } };
+    setCategories(prev => [...prev, newCat]);
+    toast.success('Category created');
+    setCreateOpen(false);
+    setForm({ name: '', code: '', description: '', parentId: '' });
+    setSaving(false);
+  };
+
+  const handleEdit = async () => {
+    if (!selectedCat) return;
+    setSaving(true);
+    await new Promise(r => setTimeout(r, 600));
+    setCategories(prev => prev.map(c => c.id === selectedCat.id ? { ...c, name: form.name, code: form.code, description: form.description, parentId: form.parentId || null } : c));
+    toast.success('Category updated');
+    setEditOpen(false);
+    setSelectedCat(null);
+    setSaving(false);
+  };
+
+  const rootCategories = getChildren(null);
+  const totalItems = categories.reduce((sum: number, c: any) => sum + (c._count?.assets ?? 0), 0);
+
+  if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Inventory Categories</h1>
+          <p className="text-muted-foreground text-sm mt-1">{categories.length} categories · {totalItems} total items</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="relative min-w-[200px] max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search categories..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
+          </div>
+          <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Category</Button>
+        </div>
+      </div>
+
+      <Card className="border-0 shadow-sm">
+        <CardContent className="p-2">
+          {rootCategories.length === 0 ? (
+            <EmptyState icon={FolderOpen} title="No categories yet" description="Create your first category to start organizing inventory items." />
+          ) : (
+            renderTree(null)
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Create Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Create Category</DialogTitle><DialogDescription>Add a new inventory category to the hierarchy.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Category Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g., Electrical Components" /></div>
+            <div className="space-y-2"><Label>Code</Label><Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="e.g., ELEC" /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Category description..." rows={2} /></div>
+            <div className="space-y-2">
+              <Label>Parent Category</Label>
+              <Select value={form.parentId} onValueChange={v => setForm(f => ({ ...f, parentId: v }))}>
+                <SelectTrigger><SelectValue placeholder="None (root category)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None (root category)</SelectItem>
+                  {categories.map((c: any) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? 'Creating...' : 'Create Category'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit Category</DialogTitle><DialogDescription>Update category details.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Category Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Code</Label><Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} /></div>
+            <div className="space-y-2">
+              <Label>Parent Category</Label>
+              <Select value={form.parentId} onValueChange={v => setForm(f => ({ ...f, parentId: v }))}>
+                <SelectTrigger><SelectValue placeholder="None (root)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None (root category)</SelectItem>
+                  {categories.filter((c: any) => c.id !== selectedCat?.id).map((c: any) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={handleEdit} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? 'Saving...' : 'Save Changes'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 function InventoryLocationsPage() { return <ComingSoonPage title="Inventory Locations" description="Manage warehouse locations, bins, and storage areas for inventory items." icon={MapPin} features={['Warehouse mapping', 'Bin locations', 'Storage capacity', 'Location search']} />; }
-function InventoryTransactionsPage() { return <ComingSoonPage title="Inventory Transactions" description="View complete transaction history for all inventory movements." icon={ArrowRightLeft} features={['Transaction log', 'Filter by type', 'Date range search', 'Export reports']} />; }
+function InventoryTransactionsPage() {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterType, setFilterType] = useState<string>('all');
+
+  useEffect(() => {
+    api.get<any[]>('/api/inventory').then(res => {
+      if (res.success && res.data) setItems(res.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const allTransactions = items.flatMap(item =>
+    (item.stockMovements || []).map((m: any) => ({ ...m, itemName: item.name, itemCode: item.itemCode }))
+  ).sort((a, b) => new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime());
+
+  const filtered = filterType === 'all' ? allTransactions : allTransactions.filter(t => t.type === filterType);
+  const totalTransactions = allTransactions.length;
+  const received = allTransactions.filter(t => t.type === 'received' || t.type === 'in').length;
+  const issued = allTransactions.filter(t => t.type === 'issued' || t.type === 'out').length;
+  const adjustments = allTransactions.filter(t => t.type === 'adjustment').length;
+
+  const summaryCards = [
+    { label: 'Total Transactions', value: totalTransactions, icon: ArrowRightLeft, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Items Received', value: received, icon: Download, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Items Issued', value: issued, icon: Package, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Adjustments', value: adjustments, icon: ArrowUpDown, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+  ];
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Inventory Transactions</h1><p className="text-muted-foreground mt-1">View complete transaction history for all inventory movements</p></div>
+        <Select value={filterType} onValueChange={setFilterType}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="received">Received</SelectItem>
+            <SelectItem value="issued">Issued</SelectItem>
+            <SelectItem value="adjustment">Adjustment</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {loading ? <LoadingSkeleton /> : (<>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {summaryCards.map(k => { const I = k.icon; return (
+            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+          ); })}
+        </div>
+        <Card className="border-0 shadow-sm"><Table><TableHeader><TableRow><TableHead>Item</TableHead><TableHead className="hidden sm:table-cell">Code</TableHead><TableHead>Type</TableHead><TableHead>Quantity</TableHead><TableHead className="hidden md:table-cell">Reference</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.length === 0 ? (
+            <TableRow><TableCell colSpan={6} className="h-48"><EmptyState icon={ArrowRightLeft} title="No transactions found" description="Transactions will appear once inventory movements are recorded." /></TableCell></TableRow>
+          ) : filtered.slice(0, 50).map((t, i) => (
+            <TableRow key={i} className="hover:bg-muted/30">
+              <TableCell className="font-medium">{t.itemName}</TableCell>
+              <TableCell className="font-mono text-xs hidden sm:table-cell">{t.itemCode}</TableCell>
+              <TableCell><Badge variant="outline" className={t.type === 'received' || t.type === 'in' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : t.type === 'issued' || t.type === 'out' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-sky-50 text-sky-700 border-sky-200'}>{(t.type || 'N/A').toUpperCase()}</Badge></TableCell>
+              <TableCell className={t.type === 'issued' || t.type === 'out' ? 'text-red-600 font-medium' : 'text-emerald-600 font-medium'}>{t.type === 'issued' || t.type === 'out' ? '-' : '+'}{Math.abs(t.quantity || 0)}</TableCell>
+              <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{t.reference || '-'}</TableCell>
+              <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{formatDate(t.createdAt || t.date)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></Card>
+      </>)}
+    </div>
+  );
+}
 function InventoryAdjustmentsPage() { return <ComingSoonPage title="Inventory Adjustments" description="Record stock adjustments, write-offs, and corrections." icon={ArrowUpDown} features={['Stock adjustment form', 'Approval workflow', 'Reason tracking', 'Audit trail']} />; }
 function InventoryRequestsPage() { return <ComingSoonPage title="Inventory Requests" description="Submit and track material requisitions from maintenance work orders." icon={FileText} features={['Requisition form', 'Approval process', 'WO linkage', 'Status tracking']} />; }
 function InventoryTransfersPage() { return <ComingSoonPage title="Inventory Transfers" description="Transfer inventory items between locations, plants, or departments." icon={Truck} features={['Transfer orders', 'Multi-location', 'Approval workflow', 'In-transit tracking']} />; }
@@ -6538,10 +7040,522 @@ function IotRulesPage() { return <ComingSoonPage title="IoT Rules" description="
 // ANALYTICS SUBPAGES
 // ============================================================================
 
-function AnalyticsKpiPage() { return <ComingSoonPage title="KPI Dashboard" description="Organization-wide key performance indicators for maintenance, reliability, and operations." icon={Target} features={['Customizable KPIs', 'Benchmarking', 'Trend analysis', 'Drill-down views']} />; }
-function AnalyticsOeePage() { return <ComingSoonPage title="OEE" description="Overall Equipment Effectiveness tracking and analysis for production assets." icon={Gauge} features={['Availability tracking', 'Performance metrics', 'Quality rate', 'OEE trends']} />; }
-function AnalyticsDowntimePage() { return <ComingSoonPage title="Downtime Analysis" description="Track and analyze equipment downtime events, causes, and patterns." icon={TrendingDown} features={['Downtime events', 'Pareto analysis', 'Root cause tracking', 'Cost impact']} />; }
-function AnalyticsEnergyPage() { return <ComingSoonPage title="Energy Analytics" description="Monitor energy consumption patterns and optimize energy usage across assets." icon={Zap} features={['Energy metering', 'Consumption trends', 'Cost analysis', 'Efficiency benchmarks']} />; }
+function AnalyticsKpiPage() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api.get<DashboardStats>('/api/dashboard/stats'),
+      api.get<WorkOrder[]>('/api/work-orders'),
+      api.get<MaintenanceRequest[]>('/api/maintenance-requests'),
+    ]).then(([statsRes, woRes, mrRes]) => {
+      if (statsRes.success && statsRes.data) setStats(statsRes.data);
+      if (woRes.success && woRes.data) setWorkOrders(woRes.data);
+      if (mrRes.success && mrRes.data) setRequests(mrRes.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const totalWOs = stats?.totalWorkOrders || 0;
+  const completedWOs = stats?.completedWorkOrders || 0;
+  const completionRate = totalWOs > 0 ? Math.round((completedWOs / totalWOs) * 100) : 0;
+  const completedList = workOrders.filter(wo => wo.status === 'completed' || wo.status === 'verified' || wo.status === 'closed');
+  const mttr = completedList.length > 0 ? (completedList.reduce((sum, wo) => sum + (wo.actualHours || 0), 0) / completedList.length).toFixed(1) : '0.0';
+  const preventiveWOs = stats?.preventiveWO || 0;
+  const pmCompliance = totalWOs > 0 ? Math.round((preventiveWOs / totalWOs) * 100) : 0;
+
+  const kpiCards = [
+    { label: 'Total Assets', value: '-', icon: Building2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Active Work Orders', value: stats?.activeWorkOrders || 0, icon: Wrench, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Completion Rate', value: `${completionRate}%`, icon: CheckCircle2, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
+    { label: 'MTTR (Hours)', value: mttr, icon: Timer, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Overdue WOs', value: stats?.overdueWorkOrders || 0, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+    { label: 'PM Compliance', value: `${pmCompliance}%`, icon: ClipboardCheck, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+  ];
+
+  const recentWOs = [...workOrders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
+  const recentMRs = [...requests].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">KPI Dashboard</h1><p className="text-muted-foreground mt-1">Organization-wide key performance indicators for maintenance, reliability, and operations</p></div>
+      {loading ? <LoadingSkeleton /> : (<>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {kpiCards.map(k => { const I = k.icon; return (
+            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+          ); })}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border"><CardHeader><CardTitle className="text-base">Recent Work Orders</CardTitle><CardDescription className="text-xs">Latest work order activity</CardDescription></CardHeader><CardContent>
+            <div className="space-y-3">
+              {recentWOs.map(wo => (
+                <div key={wo.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="font-mono text-xs text-muted-foreground">{wo.woNumber}</span>
+                    <span className="font-medium text-sm truncate">{wo.title}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0"><StatusBadge status={wo.status} /></div>
+                </div>
+              ))}
+              {recentWOs.length === 0 && <EmptyState icon={Wrench} title="No work orders" description="Work orders will appear here." />}
+            </div>
+          </CardContent></Card>
+          <Card className="border"><CardHeader><CardTitle className="text-base">Recent Maintenance Requests</CardTitle><CardDescription className="text-xs">Latest request activity</CardDescription></CardHeader><CardContent>
+            <div className="space-y-3">
+              {recentMRs.map(mr => (
+                <div key={mr.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="font-mono text-xs text-muted-foreground">{mr.requestNumber}</span>
+                    <span className="font-medium text-sm truncate">{mr.title}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0"><StatusBadge status={mr.status} /></div>
+                </div>
+              ))}
+              {recentMRs.length === 0 && <EmptyState icon={ClipboardList} title="No requests" description="Maintenance requests will appear here." />}
+            </div>
+          </CardContent></Card>
+        </div>
+      </>)}
+    </div>
+  );
+}
+function AnalyticsOeePage() {
+  const [assets, setAssets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/api/assets');
+        if (res.data) setAssets(res.data.assets || res.data || []);
+      } catch { /* empty */ }
+      setLoading(false);
+    })();
+  }, []);
+
+  // Simulated OEE data derived from asset states
+  const operationalAssets = assets.filter((a: any) => a.status === 'operational').length;
+  const totalAssets = assets.length || 1;
+
+  const availability = operationalAssets > 0 ? Math.min(98, 75 + Math.floor(operationalAssets / Math.max(1, totalAssets) * 25) + Math.floor(Math.random() * 5)) : 0;
+  const performance = availability > 60 ? Math.min(97, 68 + Math.floor(Math.random() * 20)) : 45;
+  const quality = performance > 50 ? Math.min(99, 88 + Math.floor(Math.random() * 10)) : 70;
+  const oee = Math.round((availability * performance * quality) / 10000 * 100) / 100;
+
+  const gaugeColor = (val: number) => {
+    if (val >= 85) return 'text-emerald-500';
+    if (val >= 65) return 'text-amber-500';
+    return 'text-red-500';
+  };
+  const gaugeBg = (val: number) => {
+    if (val >= 85) return 'bg-emerald-100 dark:bg-emerald-900/30';
+    if (val >= 65) return 'bg-amber-100 dark:bg-amber-900/30';
+    return 'bg-red-100 dark:bg-red-900/30';
+  };
+  const strokeColor = (val: number) => {
+    if (val >= 85) return 'stroke-emerald-500';
+    if (val >= 65) return 'stroke-amber-500';
+    return 'stroke-red-500';
+  };
+
+  function GaugeCircle({ value, label, size = 140 }: { value: number; label: string; size?: number }) {
+    const radius = (size - 16) / 2;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference - (value / 100) * circumference;
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <div className={`rounded-2xl p-4 ${gaugeBg(value)}`}>
+          <svg width={size} height={size} className="-rotate-90">
+            <circle cx={size / 2} cy={size / 2} r={radius} fill="none" className="stroke-muted" strokeWidth="10" />
+            <circle cx={size / 2} cy={size / 2} r={radius} fill="none" className={strokeColor(value)} strokeWidth="10" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 1s ease' }} />
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className={`text-2xl font-bold ${gaugeColor(value)}`}>{value}%</span>
+          </div>
+        </div>
+        <p className="text-sm font-medium">{label}</p>
+      </div>
+    );
+  }
+
+  const oeeTarget = 85;
+  const gap = oee - oeeTarget;
+
+  if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">OEE Dashboard</h1>
+        <p className="text-muted-foreground mt-1">Overall Equipment Effectiveness — Availability × Performance × Quality</p>
+      </div>
+
+      {/* OEE Score */}
+      <Card className="border-0 shadow-sm">
+        <CardContent className="p-6">
+          <div className="flex flex-col md:flex-row items-center gap-8 justify-center">
+            <div className="flex flex-col items-center">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Overall OEE</p>
+              <div className={`relative w-44 h-44 rounded-2xl p-4 ${gaugeBg(oee)}`}>
+                <svg width="144" height="144" className="-rotate-90">
+                  <circle cx="72" cy="72" r="60" fill="none" className="stroke-muted" strokeWidth="12" />
+                  <circle cx="72" cy="72" r="60" fill="none" className={strokeColor(oee)} strokeWidth="12" strokeLinecap="round"
+                    strokeDasharray={2 * Math.PI * 60} strokeDashoffset={2 * Math.PI * 60 - (oee / 100) * 2 * Math.PI * 60}
+                    style={{ transition: 'stroke-dashoffset 1s ease' }} />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className={`text-3xl font-bold ${gaugeColor(oee)}`}>{oee}%</span>
+                  <span className="text-xs text-muted-foreground">Target: {oeeTarget}%</span>
+                </div>
+              </div>
+              <Badge variant={oee >= oeeTarget ? 'default' : 'secondary'} className={`mt-2 ${oee >= oeeTarget ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
+                {gap >= 0 ? `${gap.toFixed(1)}% above target` : `${Math.abs(gap).toFixed(1)}% below target`}
+              </Badge>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-8">
+              <GaugeCircle value={availability} label="Availability" />
+              <GaugeCircle value={performance} label="Performance" />
+              <GaugeCircle value={quality} label="Quality" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* OEE Breakdown */}
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-base">OEE Breakdown</CardTitle><CardDescription>Component contribution to overall OEE</CardDescription></CardHeader>
+          <CardContent className="space-y-5">
+            {[
+              { label: 'Availability', value: availability, desc: 'Planned vs unplanned downtime' },
+              { label: 'Performance', value: performance, desc: 'Speed losses and minor stops' },
+              { label: 'Quality', value: quality, desc: 'Defect rate and rework' },
+            ].map(item => (
+              <div key={item.label} className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <span className="text-sm font-medium">{item.label}</span>
+                    <p className="text-[11px] text-muted-foreground">{item.desc}</p>
+                  </div>
+                  <span className={`text-sm font-bold ${gaugeColor(item.value)}`}>{item.value}%</span>
+                </div>
+                <div className="h-3 bg-muted rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all duration-700 ${item.value >= 85 ? 'bg-emerald-500' : item.value >= 65 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${item.value}%` }} />
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        {/* Top Losses */}
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-base">Top Loss Categories</CardTitle><CardDescription>Simulated production loss analysis</CardDescription></CardHeader>
+          <CardContent className="space-y-3 max-h-72 overflow-y-auto">
+            {[
+              { type: 'Unplanned Downtime', hours: 12.5, pct: 28, color: 'bg-red-500' },
+              { type: 'Speed Loss', hours: 8.2, pct: 18, color: 'bg-amber-500' },
+              { type: 'Planned Downtime', hours: 7.0, pct: 16, color: 'bg-sky-500' },
+              { type: 'Quality Rejects', hours: 6.3, pct: 14, color: 'bg-orange-500' },
+              { type: 'Setup / Changeover', hours: 5.1, pct: 11, color: 'bg-violet-500' },
+              { type: 'Minor Stops', hours: 3.8, pct: 8, color: 'bg-teal-500' },
+              { type: 'Rework', hours: 2.2, pct: 5, color: 'bg-purple-500' },
+            ].map(loss => (
+              <div key={loss.type} className="flex items-center gap-3">
+                <div className={`h-3 w-3 rounded-full ${loss.color} shrink-0`} />
+                <span className="text-sm flex-1 truncate">{loss.type}</span>
+                <span className="text-xs text-muted-foreground w-16 text-right">{loss.hours}h</span>
+                <div className="w-20 bg-muted rounded-full h-2"><div className={`h-full rounded-full ${loss.color}`} style={{ width: `${loss.pct}%` }} /></div>
+                <span className="text-xs font-semibold w-10 text-right">{loss.pct}%</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Asset-level OEE (simulated) */}
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Asset OEE Scores</CardTitle><CardDescription>Simulated OEE per asset based on condition and status</CardDescription></CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Asset</TableHead>
+                  <TableHead className="hidden md:table-cell">Category</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="hidden lg:table-cell">Condition</TableHead>
+                  <TableHead>Est. OEE</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {assets.slice(0, 15).map((a: any) => {
+                  let estOee = 0;
+                  if (a.status === 'operational' && (a.condition === 'good' || a.condition === 'new')) estOee = 82 + Math.floor(Math.random() * 16);
+                  else if (a.status === 'operational' && a.condition === 'fair') estOee = 60 + Math.floor(Math.random() * 20);
+                  else if (a.status === 'standby') estOee = 40 + Math.floor(Math.random() * 25);
+                  else if (a.status === 'under_maintenance') estOee = 10 + Math.floor(Math.random() * 20);
+                  else estOee = 0;
+                  return (
+                    <TableRow key={a.id}>
+                      <TableCell className="font-medium text-sm">{a.name || a.assetTag}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{a.category || '-'}</TableCell>
+                      <TableCell><Badge variant="outline" className="text-[11px] capitalize">{a.status?.replace(/_/g, ' ')}</Badge></TableCell>
+                      <TableCell className="hidden lg:table-cell"><Badge variant="outline" className="text-[11px] capitalize">{a.condition}</Badge></TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 bg-muted rounded-full h-2"><div className={`h-full rounded-full ${estOee >= 85 ? 'bg-emerald-500' : estOee >= 65 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${Math.min(100, estOee)}%` }} /></div>
+                          <span className={`text-sm font-semibold ${gaugeColor(estOee)}`}>{estOee}%</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+function AnalyticsDowntimePage() {
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get<WorkOrder[]>('/api/work-orders').then(res => {
+      if (res.success && res.data) setWorkOrders(res.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const downtimeEvents = workOrders.filter(wo => wo.type === 'corrective' || wo.type === 'emergency');
+  const totalEvents = downtimeEvents.length;
+  const completedDowntime = downtimeEvents.filter(wo => wo.status === 'completed' || wo.status === 'verified' || wo.status === 'closed');
+  const avgResolutionTime = completedDowntime.length > 0 ? (completedDowntime.reduce((sum, wo) => sum + (wo.actualHours || 0), 0) / completedDowntime.length).toFixed(1) : '0.0';
+  const costImpact = downtimeEvents.reduce((sum, wo) => sum + (wo.totalCost || 0), 0);
+
+  const assetFreq: Record<string, number> = {};
+  downtimeEvents.forEach(wo => {
+    const name = wo.assetName || 'Unknown';
+    assetFreq[name] = (assetFreq[name] || 0) + 1;
+  });
+  const mostAffected = Object.entries(assetFreq).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  const sortedEvents = [...downtimeEvents].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const kpis = [
+    { label: 'Downtime Events', value: totalEvents, icon: TrendingDown, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+    { label: 'Avg Resolution (Hrs)', value: avgResolutionTime, icon: Timer, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Most Affected', value: mostAffected.length > 0 ? mostAffected[0][0] : '-', icon: AlertTriangle, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    { label: 'Cost Impact', value: `$${costImpact.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  ];
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">Downtime Analysis</h1><p className="text-muted-foreground mt-1">Track and analyze equipment downtime events, causes, and patterns</p></div>
+      {loading ? <LoadingSkeleton /> : (<>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {kpis.map(k => { const I = k.icon; return (
+            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{typeof k.value === 'string' && k.value.length > 14 ? k.value.slice(0, 14) + '...' : k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+          ); })}
+        </div>
+        {mostAffected.length > 0 && (
+          <Card className="border"><CardHeader><CardTitle className="text-base">Most Affected Assets</CardTitle><CardDescription className="text-xs">Top assets by downtime frequency</CardDescription></CardHeader><CardContent>
+            <div className="space-y-3">
+              {mostAffected.map(([name, count], i) => {
+                const pct = totalEvents > 0 ? Math.round((count / totalEvents) * 100) : 0;
+                return (
+                  <div key={name} className="flex items-center gap-3">
+                    <span className="text-sm font-medium w-6">#{i + 1}</span>
+                    <span className="text-sm font-medium flex-1 truncate">{name}</span>
+                    <div className="w-32 h-2.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-red-500 rounded-full transition-all" style={{ width: `${pct}%` }} /></div>
+                    <span className="text-sm font-semibold w-16 text-right">{count} events</span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent></Card>
+        )}
+        <Card className="border-0 shadow-sm"><Table><TableHeader><TableRow><TableHead>WO #</TableHead><TableHead>Title</TableHead><TableHead className="hidden md:table-cell">Asset</TableHead><TableHead>Type</TableHead><TableHead>Priority</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell text-right">Hours</TableHead><TableHead className="hidden lg:table-cell text-right">Cost</TableHead><TableHead className="hidden xl:table-cell">Created</TableHead></TableRow></TableHeader><TableBody>
+          {sortedEvents.length === 0 ? (
+            <TableRow><TableCell colSpan={9} className="h-48"><EmptyState icon={TrendingDown} title="No downtime events" description="Corrective and emergency work orders will appear here." /></TableCell></TableRow>
+          ) : sortedEvents.map(wo => (
+            <TableRow key={wo.id} className="hover:bg-muted/30">
+              <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
+              <TableCell className="font-medium max-w-[200px] truncate">{wo.title}</TableCell>
+              <TableCell className="text-sm hidden md:table-cell">{wo.assetName || '-'}</TableCell>
+              <TableCell><Badge variant="outline" className={wo.type === 'emergency' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}>{wo.type.toUpperCase()}</Badge></TableCell>
+              <TableCell><PriorityBadge priority={wo.priority} /></TableCell>
+              <TableCell><StatusBadge status={wo.status} /></TableCell>
+              <TableCell className="text-right text-muted-foreground hidden lg:table-cell">{wo.actualHours || '-'}</TableCell>
+              <TableCell className="text-right font-medium hidden lg:table-cell">${(wo.totalCost || 0).toLocaleString()}</TableCell>
+              <TableCell className="text-xs text-muted-foreground hidden xl:table-cell">{formatDate(wo.createdAt)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></Card>
+      </>)}
+    </div>
+  );
+}
+function AnalyticsEnergyPage() {
+  const [assets, setAssets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/api/assets');
+        if (res.data) setAssets(res.data.assets || res.data || []);
+      } catch { /* empty */ }
+      setLoading(false);
+    })();
+  }, []);
+
+  // Simulated energy data
+  const totalConsumption = 48250;
+  const totalCost = 28950;
+  const avgDailyConsumption = 1608;
+  const efficiencyScore = 78;
+
+  const summaryCards = [
+    { label: 'Total Consumption', value: `${(totalConsumption / 1000).toFixed(1)} MWh`, icon: Zap, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Total Cost', value: `$${(totalCost / 1000).toFixed(1)}k`, icon: TrendingUp, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Avg Daily', value: `${avgDailyConsumption} kWh`, icon: BarChart3, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Efficiency Score', value: `${efficiencyScore}%`, icon: Target, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+  ];
+
+  // Monthly consumption trend (simulated)
+  const monthlyData = [
+    { month: 'Jan', kwh: 4200, cost: 2520 },
+    { month: 'Feb', kwh: 3800, cost: 2280 },
+    { month: 'Mar', kwh: 4500, cost: 2700 },
+    { month: 'Apr', kwh: 4100, cost: 2460 },
+    { month: 'May', kwh: 4800, cost: 2880 },
+    { month: 'Jun', kwh: 5200, cost: 3120 },
+    { month: 'Jul', kwh: 5600, cost: 3360 },
+    { month: 'Aug', kwh: 5400, cost: 3240 },
+    { month: 'Sep', kwh: 4600, cost: 2760 },
+    { month: 'Oct', kwh: 3900, cost: 2340 },
+    { month: 'Nov', kwh: 3700, cost: 2220 },
+    { month: 'Dec', kwh: 3450, cost: 2070 },
+  ];
+  const maxKwh = Math.max(...monthlyData.map(m => m.kwh));
+
+  // Meter readings (simulated)
+  const meterReadings = [
+    { id: '1', meter: 'MTR-001 Main', reading: '124568', date: '2025-01-15', consumption: 2480, cost: 1488 },
+    { id: '2', meter: 'MTR-002 Building A', reading: '87342', date: '2025-01-15', consumption: 1850, cost: 1110 },
+    { id: '3', meter: 'MTR-003 Production', reading: '198421', date: '2025-01-15', consumption: 3200, cost: 1920 },
+    { id: '4', meter: 'MTR-004 HVAC', reading: '56218', date: '2025-01-15', consumption: 980, cost: 588 },
+    { id: '5', meter: 'MTR-005 Lighting', reading: '34521', date: '2025-01-15', consumption: 620, cost: 372 },
+    { id: '6', meter: 'MTR-006 Compressed Air', reading: '76834', date: '2025-01-15', consumption: 1540, cost: 924 },
+    { id: '7', meter: 'MTR-007 Workshop', reading: '43210', date: '2025-01-15', consumption: 880, cost: 528 },
+    { id: '8', meter: 'MTR-008 Cooling Tower', reading: '65432', date: '2025-01-15', consumption: 1280, cost: 768 },
+  ];
+
+  // Top consumers from assets
+  const topConsumers = assets.slice(0, 8).map((a: any, i: number) => ({
+    name: a.name || a.assetTag || `Asset ${i + 1}`,
+    consumption: Math.floor(2000 - i * 200 + Math.random() * 500),
+  })).sort((a: any, b: any) => b.consumption - a.consumption);
+  const maxConsumption = topConsumers.length > 0 ? topConsumers[0].consumption : 1;
+
+  if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Energy Analytics</h1>
+        <p className="text-muted-foreground mt-1">Monitor energy consumption patterns and optimize usage across assets</p>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {summaryCards.map(k => { const I = k.icon; return (
+          <Card key={k.label}><CardContent className="p-4"><div className="flex items-center gap-3"><div className={`h-10 w-10 rounded-lg ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Monthly consumption trend */}
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Consumption Trend</CardTitle><CardDescription>kWh per month (simulated)</CardDescription></CardHeader>
+          <CardContent className="space-y-2.5">
+            {monthlyData.map(m => (
+              <div key={m.month} className="flex items-center gap-3">
+                <span className="text-xs font-medium w-8 text-muted-foreground">{m.month}</span>
+                <div className="flex-1 bg-muted rounded-full h-5 overflow-hidden">
+                  <div className={`h-full rounded-full transition-all ${m.kwh >= 5000 ? 'bg-red-400' : m.kwh >= 4000 ? 'bg-amber-400' : 'bg-emerald-400'}`} style={{ width: `${(m.kwh / maxKwh) * 100}%` }} />
+                </div>
+                <span className="text-xs font-semibold w-16 text-right">{m.kwh.toLocaleString()}</span>
+              </div>
+            ))}
+            <div className="flex items-center gap-4 pt-2 border-t">
+              <div className="flex items-center gap-1.5"><div className="h-2 w-2 rounded-full bg-emerald-400" /><span className="text-[10px] text-muted-foreground">&lt; 4,000 kWh</span></div>
+              <div className="flex items-center gap-1.5"><div className="h-2 w-2 rounded-full bg-amber-400" /><span className="text-[10px] text-muted-foreground">4,000-5,000</span></div>
+              <div className="flex items-center gap-1.5"><div className="h-2 w-2 rounded-full bg-red-400" /><span className="text-[10px] text-muted-foreground">&gt; 5,000 kWh</span></div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Top energy consumers */}
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-base">Top Energy Consumers</CardTitle><CardDescription>Assets ranked by estimated consumption</CardDescription></CardHeader>
+          <CardContent className="space-y-3 max-h-80 overflow-y-auto">
+            {topConsumers.map((c: any, i: number) => (
+              <div key={c.name} className="flex items-center gap-3">
+                <span className="text-xs font-bold text-muted-foreground w-5">#{i + 1}</span>
+                <span className="text-sm flex-1 truncate">{c.name}</span>
+                <div className="w-24 bg-muted rounded-full h-2"><div className="bg-emerald-500 h-full rounded-full" style={{ width: `${(c.consumption / maxConsumption) * 100}%` }} /></div>
+                <span className="text-xs font-semibold w-16 text-right">{c.consumption.toLocaleString()} kWh</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Meter readings table */}
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Meter Readings</CardTitle><CardDescription>Latest meter readings and consumption data (simulated)</CardDescription></CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Meter</TableHead>
+                  <TableHead className="hidden md:table-cell">Reading</TableHead>
+                  <TableHead className="hidden sm:table-cell">Date</TableHead>
+                  <TableHead>Consumption (kWh)</TableHead>
+                  <TableHead className="hidden md:table-cell">Cost</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {meterReadings.map(m => (
+                  <TableRow key={m.id}>
+                    <TableCell className="font-medium text-sm font-mono">{m.meter}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{m.reading}</TableCell>
+                    <TableCell className="text-sm hidden sm:table-cell">{m.date}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="w-12 bg-muted rounded-full h-1.5"><div className="bg-amber-400 h-full rounded-full" style={{ width: `${Math.min(100, (m.consumption / 3500) * 100)}%` }} /></div>
+                        <span className="text-sm font-semibold">{m.consumption.toLocaleString()}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground hidden md:table-cell">${m.cost.toLocaleString()}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 // ============================================================================
 // OPERATIONS SUBPAGES
@@ -6550,9 +7564,248 @@ function AnalyticsEnergyPage() { return <ComingSoonPage title="Energy Analytics"
 function OperationsMeterReadingsPage() { return <ComingSoonPage title="Meter Readings" description="Record and track meter/gauge readings for utility meters and equipment." icon={Gauge} features={['Reading entry', 'Automated collection', 'Trend charts', 'Anomaly detection']} />; }
 function OperationsTrainingPage() { return <ComingSoonPage title="Training" description="Manage employee training records, certifications, and compliance." icon={GraduationCap} features={['Training records', 'Certification tracking', 'Due date alerts', 'Competency matrix']} />; }
 function OperationsSurveysPage() { return <ComingSoonPage title="Surveys" description="Create and conduct safety, compliance, and operational surveys." icon={FileText} features={['Survey builder', 'Response collection', 'Analytics', 'Action items']} />; }
-function OperationsTimeLogsPage() { return <ComingSoonPage title="Time Logs" description="Track employee work hours, shifts, and labor allocation." icon={Clock} features={['Time entry', 'Shift tracking', 'Labor allocation', 'Overtime management']} />; }
+function OperationsTimeLogsPage() {
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchText, setSearchText] = useState('');
+
+  useEffect(() => {
+    api.get<WorkOrder[]>('/api/work-orders').then(res => {
+      if (res.success && res.data) setWorkOrders(res.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const allTimeLogs = workOrders.flatMap(wo =>
+    (wo.timeLogs || []).map((tl: any) => ({ ...tl, woNumber: wo.woNumber, woTitle: wo.title }))
+  ).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const filtered = searchText.trim() ? allTimeLogs.filter(tl => {
+    const q = searchText.toLowerCase();
+    return (tl.woNumber || '').toLowerCase().includes(q) || (tl.userName || '').toLowerCase().includes(q) || (tl.action || '').toLowerCase().includes(q);
+  }) : allTimeLogs;
+
+  const totalHours = allTimeLogs.reduce((sum, tl) => sum + (tl.duration || 0), 0);
+  const now = new Date();
+  const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay());
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const thisWeekHours = allTimeLogs.filter(tl => tl.createdAt && new Date(tl.createdAt) >= weekStart).reduce((sum, tl) => sum + (tl.duration || 0), 0);
+  const thisMonthHours = allTimeLogs.filter(tl => tl.createdAt && new Date(tl.createdAt) >= monthStart).reduce((sum, tl) => sum + (tl.duration || 0), 0);
+
+  const techHours: Record<string, number> = {};
+  allTimeLogs.forEach(tl => {
+    const name = tl.userName || 'Unknown';
+    techHours[name] = (techHours[name] || 0) + (tl.duration || 0);
+  });
+  const topTech = Object.entries(techHours).sort((a, b) => b[1] - a[1])[0];
+
+  const summaryCards = [
+    { label: 'Total Hours Logged', value: totalHours.toFixed(1), icon: Clock, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'This Week', value: thisWeekHours.toFixed(1), icon: Calendar, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'This Month', value: thisMonthHours.toFixed(1), icon: Timer, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Top Technician', value: topTech ? topTech[0] : '-', icon: Users, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+  ];
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Time Logs</h1><p className="text-muted-foreground mt-1">Track employee work hours, shifts, and labor allocation</p></div>
+        <div className="relative min-w-[200px] max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Search logs..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
+        </div>
+      </div>
+      {loading ? <LoadingSkeleton /> : (<>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {summaryCards.map(k => { const I = k.icon; return (
+            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+          ); })}
+        </div>
+        <Card className="border-0 shadow-sm"><Table><TableHeader><TableRow><TableHead>WO #</TableHead><TableHead className="hidden sm:table-cell">User</TableHead><TableHead>Action</TableHead><TableHead className="hidden md:table-cell">Start Time</TableHead><TableHead className="hidden md:table-cell">End Time</TableHead><TableHead className="text-right">Duration</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.length === 0 ? (
+            <TableRow><TableCell colSpan={7} className="h-48"><EmptyState icon={Clock} title="No time logs found" description="Time logs will appear once work order time tracking is used." /></TableCell></TableRow>
+          ) : filtered.slice(0, 50).map((tl, i) => (
+            <TableRow key={i} className="hover:bg-muted/30">
+              <TableCell className="font-mono text-xs">{tl.woNumber}</TableCell>
+              <TableCell className="text-sm hidden sm:table-cell">{tl.userName || '-'}</TableCell>
+              <TableCell className="text-sm capitalize">{(tl.action || '').replace(/_/g, ' ')}</TableCell>
+              <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{tl.startTime ? formatDateTime(tl.startTime) : '-'}</TableCell>
+              <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{tl.endTime ? formatDateTime(tl.endTime) : '-'}</TableCell>
+              <TableCell className="text-right font-medium">{tl.duration ? `${tl.duration.toFixed(1)}h` : '-'}</TableCell>
+              <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{formatDate(tl.createdAt)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></Card>
+      </>)}
+    </div>
+  );
+}
 function OperationsShiftHandoverPage() { return <ComingSoonPage title="Shift Handover" description="Manage shift-to-shift handover notes, pending tasks, and critical information." icon={ArrowRightLeft} features={['Handover templates', 'Task tracking', 'Escalation log', 'Sign-off workflow']} />; }
-function OperationsChecklistsPage() { return <ComingSoonPage title="Checklists" description="Create and manage operational checklists for routine procedures and audits." icon={CheckSquare} features={['Checklist templates', 'Completion tracking', 'Inspection forms', 'Compliance records']} />; }
+function OperationsChecklistsPage() {
+  const defaultChecklists = [
+      { id: '1', name: 'Daily Safety Inspection', description: 'Routine safety walkthrough for all production areas', category: 'safety', itemsCount: 12, lastUsed: '2025-01-14', items: ['Check fire extinguisher accessibility', 'Inspect emergency exit signage', 'Verify PPE availability at stations', 'Check spill containment kits', 'Test emergency stop buttons', 'Inspect guard rails and barriers', 'Check overhead lighting', 'Verify first aid kit contents', 'Inspect floor conditions for hazards', 'Check machine guarding', 'Test alarm systems', 'Document findings'] },
+      { id: '2', name: 'Preventive Maintenance - HVAC', description: 'Monthly PM checklist for HVAC systems', category: 'maintenance', itemsCount: 8, lastUsed: '2025-01-10', items: ['Check air filters', 'Inspect belt tension', 'Verify thermostat calibration', 'Check refrigerant levels', 'Clean condenser coils', 'Inspect ductwork connections', 'Test blower motor', 'Record operating temperatures'] },
+      { id: '3', name: 'Equipment Startup Procedure', description: 'Standard procedure for starting production equipment', category: 'startup', itemsCount: 10, lastUsed: '2025-01-15', items: ['Verify power supply', 'Check hydraulic oil levels', 'Inspect pneumatic connections', 'Test safety interlocks', 'Verify material supply', 'Run dry cycle test', 'Check sensor calibration', 'Verify conveyor alignment', 'Test emergency stops', 'Begin production run'] },
+      { id: '4', name: 'Electrical Panel Inspection', description: 'Quarterly electrical safety and compliance inspection', category: 'inspection', itemsCount: 15, lastUsed: '2024-12-20', items: ['Check panel labeling', 'Verify grounding connections', 'Inspect wire insulation', 'Test circuit breakers', 'Check for moisture intrusion', 'Verify load balancing', 'Inspect terminal connections', 'Test GFCI outlets', 'Check arc flash labels', 'Verify panel clearance', 'Inspect door seals', 'Test emergency lighting', 'Check cable routing', 'Verify lockout/tagout devices', 'Document inspection results'] },
+      { id: '5', name: 'Quality Audit Checklist', description: 'Monthly quality management system audit', category: 'audit', itemsCount: 9, lastUsed: '2025-01-08', items: ['Review corrective actions', 'Check document control', 'Verify training records', 'Inspect calibration logs', 'Review customer complaints', 'Check process controls', 'Verify material traceability', 'Review non-conformances', 'Audit management review records'] },
+      { id: '6', name: 'Shutdown Procedure', description: 'Standard procedure for safely shutting down production equipment', category: 'shutdown', itemsCount: 7, lastUsed: '2025-01-13', items: ['Complete production run', 'Clean equipment surfaces', 'Remove work-in-progress', 'Drain hydraulic systems', 'Lock out energy sources', 'Secure access points', 'Complete log entries'] },
+    ];
+
+  const [checklists, setChecklists] = useState<any[]>(defaultChecklists);
+  const [loading] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [selected, setSelected] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [form, setForm] = useState({ name: '', description: '', category: 'safety', items: '' });
+
+  const categories = ['safety', 'maintenance', 'inspection', 'startup', 'shutdown', 'audit', 'calibration'];
+
+  const catColors: Record<string, string> = {
+    safety: 'bg-red-50 text-red-700 border-red-200',
+    maintenance: 'bg-amber-50 text-amber-700 border-amber-200',
+    inspection: 'bg-sky-50 text-sky-700 border-sky-200',
+    startup: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    shutdown: 'bg-orange-50 text-orange-700 border-orange-200',
+    audit: 'bg-violet-50 text-violet-700 border-violet-200',
+    calibration: 'bg-teal-50 text-teal-700 border-teal-200',
+  };
+
+  const catIcons: Record<string, React.ElementType> = {
+    safety: ShieldAlert,
+    maintenance: Wrench,
+    inspection: Search,
+    startup: Play,
+    shutdown: StopCircle,
+    audit: FileCheck,
+    calibration: Crosshair,
+  };
+
+  const filtered = useMemo(() => {
+    if (!searchText.trim()) return checklists;
+    const q = searchText.toLowerCase();
+    return checklists.filter(c => c.name.toLowerCase().includes(q) || c.category.toLowerCase().includes(q) || c.description.toLowerCase().includes(q));
+  }, [checklists, searchText]);
+
+  const handleCreate = async () => {
+    if (!form.name) { toast.error('Name is required'); return; }
+    if (!form.items.trim()) { toast.error('At least one checklist item is required'); return; }
+    setSaving(true);
+    await new Promise(r => setTimeout(r, 600));
+    const items = form.items.split('\n').map(s => s.trim()).filter(Boolean);
+    const newChecklist = {
+      id: `cl-${Date.now()}`,
+      name: form.name,
+      description: form.description,
+      category: form.category,
+      itemsCount: items.length,
+      lastUsed: new Date().toISOString().split('T')[0],
+      items,
+    };
+    setChecklists(prev => [newChecklist, ...prev]);
+    toast.success('Checklist created');
+    setCreateOpen(false);
+    setForm({ name: '', description: '', category: 'safety', items: '' });
+    setSaving(false);
+  };
+
+  if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Checklists</h1>
+          <p className="text-muted-foreground text-sm mt-1">{checklists.length} checklist template(s)</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="relative min-w-[200px] max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search checklists..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
+          </div>
+          <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Checklist</Button>
+        </div>
+      </div>
+
+      {/* Checklist grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {filtered.length === 0 ? (
+          <div className="col-span-full"><EmptyState icon={CheckSquare} title="No checklists found" description="Create a checklist template or adjust your search." /></div>
+        ) : filtered.map(cl => {
+          const CatIcon = catIcons[cl.category] || ClipboardList;
+          return (
+            <Card key={cl.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => { setSelected(cl); setViewOpen(true); }}>
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between mb-3">
+                  <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${catColors[cl.category] || 'bg-slate-100'}`}>
+                    <CatIcon className="h-4 w-4" />
+                  </div>
+                  <Badge variant="outline" className={`text-[10px] capitalize ${catColors[cl.category] || ''}`}>{cl.category}</Badge>
+                </div>
+                <h3 className="font-semibold text-sm mb-1">{cl.name}</h3>
+                <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{cl.description}</p>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1"><ListChecks className="h-3 w-3" />{cl.itemsCount} items</span>
+                  <span>Used {cl.lastUsed ? timeAgo(cl.lastUsed) : 'never'}</span>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Create Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Create Checklist</DialogTitle><DialogDescription>Define a new checklist template for routine procedures.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Checklist Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g., Monthly Safety Walkthrough" /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="What is this checklist for..." rows={2} /></div>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{categories.map(c => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2"><Label>Checklist Items * (one per line)</Label><Textarea value={form.items} onChange={e => setForm(f => ({ ...f, items: e.target.value }))} placeholder={`Check fire extinguisher\nInspect emergency exits\nVerify PPE availability`} rows={6} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? 'Creating...' : 'Create Checklist'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Dialog */}
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{selected?.name}</DialogTitle>
+            <DialogDescription>{selected?.description}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className={`text-[11px] capitalize ${catColors[selected?.category || ''] || ''}`}>{selected?.category}</Badge>
+              <span className="text-xs text-muted-foreground">{selected?.itemsCount} items</span>
+              {selected?.lastUsed && <span className="text-xs text-muted-foreground">· Last used {timeAgo(selected.lastUsed)}</span>}
+            </div>
+            <Separator />
+            <div className="space-y-2">
+              {selected?.items?.map((item: string, i: number) => (
+                <div key={i} className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-muted/50">
+                  <div className="h-4 w-4 rounded border border-muted-foreground/30 flex-shrink-0" />
+                  <span className="text-sm">{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 // ============================================================================
 // PRODUCTION SUBPAGES
@@ -6592,13 +7845,339 @@ function SafetyPermitsPage() { return <ComingSoonPage title="Permits" descriptio
 // REPORTS SUBPAGES
 // ============================================================================
 
-function ReportsAssetPage() { return <ComingSoonPage title="Asset Reports" description="Generate comprehensive reports on asset register, conditions, and lifecycle." icon={Building2} features={['Asset register reports', 'Condition summaries', 'Depreciation schedules', 'Lifecycle analysis']} />; }
-function ReportsMaintenancePage() { return <ComingSoonPage title="Maintenance Reports" description="Reports on work orders, PM compliance, costs, and maintenance performance." icon={Wrench} features={['WO summary reports', 'PM compliance', 'Cost analysis', 'Downtime reports']} />; }
-function ReportsInventoryPage() { return <ComingSoonPage title="Inventory Reports" description="Reports on stock levels, movements, values, and procurement." icon={Package} features={['Stock status reports', 'Movement history', 'Valuation reports', 'Reorder analysis']} />; }
+function ReportsAssetPage() {
+  const [assets, setAssets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterCondition, setFilterCondition] = useState<string>('all');
+  const [filterCriticality, setFilterCriticality] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+
+  useEffect(() => {
+    api.get<any[]>('/api/assets').then(res => {
+      if (res.success && res.data) setAssets(res.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const filtered = assets.filter(a => {
+    if (filterCondition !== 'all' && a.condition !== filterCondition) return false;
+    if (filterCriticality !== 'all' && a.criticality !== filterCriticality) return false;
+    if (filterStatus !== 'all' && a.status !== filterStatus) return false;
+    return true;
+  });
+
+  const byCondition: Record<string, number> = {};
+  const byCriticality: Record<string, number> = {};
+  const byStatus: Record<string, number> = {};
+  assets.forEach(a => {
+    const c = a.condition || 'Unknown'; byCondition[c] = (byCondition[c] || 0) + 1;
+    const cr = a.criticality || 'Unknown'; byCriticality[cr] = (byCriticality[cr] || 0) + 1;
+    const s = a.status || 'Unknown'; byStatus[s] = (byStatus[s] || 0) + 1;
+  });
+
+  const conditionColors: Record<string, string> = { excellent: 'bg-emerald-100 text-emerald-700 border-emerald-200', good: 'bg-sky-100 text-sky-700 border-sky-200', fair: 'bg-amber-100 text-amber-700 border-amber-200', poor: 'bg-orange-100 text-orange-700 border-orange-200', critical: 'bg-red-100 text-red-700 border-red-200' };
+
+  const summaryCards = [
+    { label: 'Total Assets', value: assets.length, icon: Building2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Conditions', value: Object.keys(byCondition).length, icon: Activity, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Critical Assets', value: byCriticality['critical'] || 0, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+    { label: 'Active Assets', value: byStatus['active'] || byStatus['operational'] || 0, icon: CheckCircle2, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+  ];
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">Asset Reports</h1><p className="text-muted-foreground mt-1">Comprehensive reports on asset register, conditions, and lifecycle</p></div>
+      {loading ? <LoadingSkeleton /> : (<>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {summaryCards.map(k => { const I = k.icon; return (
+            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+          ); })}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select value={filterCondition} onValueChange={setFilterCondition}><SelectTrigger className="w-40"><SelectValue placeholder="Condition" /></SelectTrigger><SelectContent><SelectItem value="all">All Conditions</SelectItem>{Object.keys(byCondition).map(c => <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</SelectItem>)}</SelectContent></Select>
+          <Select value={filterCriticality} onValueChange={setFilterCriticality}><SelectTrigger className="w-40"><SelectValue placeholder="Criticality" /></SelectTrigger><SelectContent><SelectItem value="all">All Criticality</SelectItem>{Object.keys(byCriticality).map(c => <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</SelectItem>)}</SelectContent></Select>
+          <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem>{Object.keys(byStatus).map(s => <SelectItem key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</SelectItem>)}</SelectContent></Select>
+        </div>
+        <Card className="border-0 shadow-sm"><Table><TableHeader><TableRow><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Asset Tag</TableHead><TableHead className="hidden md:table-cell">Category</TableHead><TableHead>Condition</TableHead><TableHead className="hidden sm:table-cell">Criticality</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Location</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.length === 0 ? (
+            <TableRow><TableCell colSpan={7} className="h-48"><EmptyState icon={Building2} title="No assets found" description="Adjust your filters or add assets to see reports." /></TableCell></TableRow>
+          ) : filtered.map(asset => (
+            <TableRow key={asset.id} className="hover:bg-muted/30">
+              <TableCell className="font-medium">{asset.name}</TableCell>
+              <TableCell className="font-mono text-xs hidden sm:table-cell">{asset.assetTag || '-'}</TableCell>
+              <TableCell className="text-sm hidden md:table-cell">{asset.category || '-'}</TableCell>
+              <TableCell><Badge variant="outline" className={conditionColors[asset.condition] || 'bg-slate-100 text-slate-700 border-slate-200'}>{(asset.condition || 'N/A').toUpperCase()}</Badge></TableCell>
+              <TableCell className="hidden sm:table-cell"><Badge variant="outline" className={asset.criticality === 'critical' ? 'bg-red-50 text-red-700 border-red-200' : asset.criticality === 'high' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-700 border-slate-200'}>{(asset.criticality || 'N/A').toUpperCase()}</Badge></TableCell>
+              <TableCell><Badge variant="outline" className={asset.status === 'active' || asset.status === 'operational' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : asset.status === 'inactive' ? 'bg-slate-100 text-slate-500 border-slate-200' : 'bg-red-50 text-red-700 border-red-200'}>{(asset.status || 'N/A').toUpperCase()}</Badge></TableCell>
+              <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">{asset.location || '-'}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></Card>
+      </>)}
+    </div>
+  );
+}
+function ReportsMaintenancePage() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api.get<DashboardStats>('/api/dashboard/stats'),
+      api.get<WorkOrder[]>('/api/work-orders'),
+      api.get<MaintenanceRequest[]>('/api/maintenance-requests'),
+    ]).then(([statsRes, woRes, mrRes]) => {
+      if (statsRes.success && statsRes.data) setStats(statsRes.data);
+      if (woRes.success && woRes.data) setWorkOrders(woRes.data);
+      if (mrRes.success && mrRes.data) setRequests(mrRes.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const totalWOs = stats?.totalWorkOrders || 0;
+  const completedWOs = stats?.completedWorkOrders || 0;
+  const completionRate = totalWOs > 0 ? Math.round((completedWOs / totalWOs) * 100) : 0;
+  const avgCost = workOrders.length > 0 ? (workOrders.reduce((sum, wo) => sum + (wo.totalCost || 0), 0) / workOrders.length) : 0;
+  const overdue = stats?.overdueWorkOrders || 0;
+
+  const typeBreakdown = [
+    { type: 'Preventive', count: stats?.preventiveWO || 0, color: 'bg-emerald-500' },
+    { type: 'Corrective', count: stats?.correctiveWO || 0, color: 'bg-amber-500' },
+    { type: 'Emergency', count: stats?.emergencyWO || 0, color: 'bg-red-500' },
+    { type: 'Inspection', count: stats?.inspectionWO || 0, color: 'bg-sky-500' },
+    { type: 'Predictive', count: stats?.predictiveWO || 0, color: 'bg-violet-500' },
+  ];
+
+  const priorityCounts = [
+    { priority: 'Low', count: workOrders.filter(wo => wo.priority === 'low').length },
+    { priority: 'Medium', count: workOrders.filter(wo => wo.priority === 'medium').length },
+    { priority: 'High', count: workOrders.filter(wo => wo.priority === 'high').length },
+    { priority: 'Critical/Emergency', count: workOrders.filter(wo => wo.priority === 'critical' || wo.priority === 'emergency').length },
+  ];
+
+  const recentMRs = [...requests].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 10);
+
+  const summaryCards = [
+    { label: 'Total Work Orders', value: totalWOs, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Completion Rate', value: `${completionRate}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Avg WO Cost', value: `$${avgCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: DollarSign, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Overdue', value: overdue, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+  ];
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Reports</h1><p className="text-muted-foreground mt-1">Reports on work orders, PM compliance, costs, and maintenance performance</p></div>
+      {loading ? <LoadingSkeleton /> : (<>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {summaryCards.map(k => { const I = k.icon; return (
+            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+          ); })}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border"><CardHeader><CardTitle className="text-base">WO by Type</CardTitle><CardDescription className="text-xs">Work order type distribution</CardDescription></CardHeader><CardContent>
+            <div className="space-y-3">
+              {typeBreakdown.filter(t => t.count > 0).map(t => {
+                const pct = totalWOs > 0 ? Math.round((t.count / totalWOs) * 100) : 0;
+                return (
+                  <div key={t.type} className="flex items-center gap-3">
+                    <span className="text-sm font-medium w-28">{t.type}</span>
+                    <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className={`h-full ${t.color} rounded-full transition-all`} style={{ width: `${pct}%` }} /></div>
+                    <span className="text-sm font-semibold w-16 text-right">{t.count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent></Card>
+          <Card className="border"><CardHeader><CardTitle className="text-base">Priority Breakdown</CardTitle><CardDescription className="text-xs">Work orders by priority level</CardDescription></CardHeader><CardContent>
+            <div className="space-y-3">
+              {priorityCounts.map(p => {
+                const pct = workOrders.length > 0 ? Math.round((p.count / workOrders.length) * 100) : 0;
+                return (
+                  <div key={p.priority} className="flex items-center gap-3">
+                    <span className="text-sm font-medium w-36">{p.priority}</span>
+                    <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full transition-all ${p.priority.includes('Critical') ? 'bg-red-500' : p.priority === 'High' ? 'bg-amber-500' : p.priority === 'Medium' ? 'bg-sky-500' : 'bg-slate-400'}`} style={{ width: `${pct}%` }} /></div>
+                    <span className="text-sm font-semibold w-16 text-right">{p.count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent></Card>
+        </div>
+        <Card className="border"><CardHeader><CardTitle className="text-base">Recent Maintenance Requests</CardTitle><CardDescription className="text-xs">Latest submitted requests</CardDescription></CardHeader><CardContent>
+          <Table><TableHeader><TableRow><TableHead>Request #</TableHead><TableHead>Title</TableHead><TableHead className="hidden sm:table-cell">Asset</TableHead><TableHead>Priority</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Created</TableHead></TableRow></TableHeader><TableBody>
+            {recentMRs.length === 0 ? (
+              <TableRow><TableCell colSpan={6}><EmptyState icon={ClipboardList} title="No maintenance requests" description="Requests will appear here once submitted." /></TableCell></TableRow>
+            ) : recentMRs.map(mr => (
+              <TableRow key={mr.id} className="hover:bg-muted/30">
+                <TableCell className="font-mono text-xs">{mr.requestNumber}</TableCell>
+                <TableCell className="font-medium max-w-[200px] truncate">{mr.title}</TableCell>
+                <TableCell className="text-sm hidden sm:table-cell">{mr.assetName || '-'}</TableCell>
+                <TableCell><PriorityBadge priority={mr.priority} /></TableCell>
+                <TableCell><StatusBadge status={mr.status} /></TableCell>
+                <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{formatDate(mr.createdAt)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </CardContent></Card>
+      </>)}
+    </div>
+  );
+}
+function ReportsInventoryPage() {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchText, setSearchText] = useState('');
+
+  useEffect(() => {
+    api.get<any[]>('/api/inventory').then(res => {
+      if (res.success && res.data) setItems(res.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const filtered = searchText.trim() ? items.filter(i => {
+    const q = searchText.toLowerCase();
+    return (i.name || '').toLowerCase().includes(q) || (i.itemCode || '').toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q);
+  }) : items;
+
+  const totalItems = items.length;
+  const totalValue = items.reduce((sum, i) => sum + ((i.currentStock || 0) * (i.unitCost || 0)), 0);
+  const lowStock = items.filter(i => i.currentStock > 0 && i.currentStock <= (i.minStockLevel || 0));
+  const outOfStock = items.filter(i => i.currentStock <= 0);
+
+  const summaryCards = [
+    { label: 'Total Items', value: totalItems, icon: Package, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Total Value', value: `$${totalValue.toLocaleString()}`, icon: DollarSign, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Low Stock', value: lowStock.length, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Out of Stock', value: outOfStock.length, icon: XCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+  ];
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Inventory Reports</h1><p className="text-muted-foreground mt-1">Reports on stock levels, movements, values, and procurement</p></div>
+        <div className="relative min-w-[200px] max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Search items..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
+        </div>
+      </div>
+      {loading ? <LoadingSkeleton /> : (<>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {summaryCards.map(k => { const I = k.icon; return (
+            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+          ); })}
+        </div>
+        <Card className="border-0 shadow-sm"><Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden md:table-cell">Category</TableHead><TableHead className="text-right">Stock</TableHead><TableHead className="hidden sm:table-cell text-right">Min Stock</TableHead><TableHead className="text-right">Value</TableHead><TableHead className="hidden lg:table-cell">Status</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.length === 0 ? (
+            <TableRow><TableCell colSpan={7} className="h-48"><EmptyState icon={Package} title="No inventory items found" description="Items will appear here once inventory is populated." /></TableCell></TableRow>
+          ) : filtered.map(item => {
+            const isLow = item.currentStock > 0 && item.currentStock <= (item.minStockLevel || 0);
+            const isOut = item.currentStock <= 0;
+            const value = (item.currentStock || 0) * (item.unitCost || 0);
+            return (
+              <TableRow key={item.id} className={`hover:bg-muted/30 ${isOut ? 'bg-red-50/50 dark:bg-red-950/20' : isLow ? 'bg-amber-50/50 dark:bg-amber-950/20' : ''}`}>
+                <TableCell className="font-mono text-xs">{item.itemCode}</TableCell>
+                <TableCell className="font-medium">{item.name}</TableCell>
+                <TableCell className="text-sm hidden md:table-cell">{item.category || '-'}</TableCell>
+                <TableCell className={`text-right font-medium ${isOut ? 'text-red-600' : isLow ? 'text-amber-600' : ''}`}>{item.currentStock || 0}</TableCell>
+                <TableCell className="text-right text-muted-foreground hidden sm:table-cell">{item.minStockLevel || 0}</TableCell>
+                <TableCell className="text-right font-medium">${value.toLocaleString()}</TableCell>
+                <TableCell className="hidden lg:table-cell">{isOut ? <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">OUT OF STOCK</Badge> : isLow ? <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">LOW STOCK</Badge> : <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">OK</Badge>}</TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody></Table></Card>
+      </>)}
+    </div>
+  );
+}
 function ReportsProductionPage() { return <ComingSoonPage title="Production Reports" description="Reports on production output, efficiency, and resource utilization." icon={Factory} features={['Production summaries', 'Efficiency reports', 'Resource utilization', 'Quality metrics']} />; }
 function ReportsQualityPage() { return <ComingSoonPage title="Quality Reports" description="Reports on inspections, NCRs, CAPAs, and quality KPIs." icon={ShieldCheck} features={['Quality dashboards', 'NCR trends', 'CAPA status', 'Compliance reports']} />; }
 function ReportsSafetyPage() { return <ComingSoonPage title="Safety Reports" description="Reports on incidents, inspections, training, and safety KPIs." icon={HardHat} features={['Incident summaries', 'Inspection reports', 'Training compliance', 'Safety trends']} />; }
-function ReportsFinancialPage() { return <ComingSoonPage title="Financial Reports" description="Financial reports on maintenance costs, asset values, and budgets." icon={TrendingUp} features={['Cost analysis', 'Budget tracking', 'Asset valuation', 'ROI calculations']} />; }
+function ReportsFinancialPage() {
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get<WorkOrder[]>('/api/work-orders').then(res => {
+      if (res.success && res.data) setWorkOrders(res.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const totalCost = workOrders.reduce((sum, wo) => sum + (wo.totalCost || 0), 0);
+  const materialCost = workOrders.reduce((sum, wo) => sum + (wo.materialCost || 0), 0);
+  const laborCost = workOrders.reduce((sum, wo) => sum + (wo.laborCost || 0), 0);
+  const avgCost = workOrders.length > 0 ? totalCost / workOrders.length : 0;
+
+  const costByType: Record<string, { cost: number; count: number }> = {};
+  workOrders.forEach(wo => {
+    const t = wo.type || 'other';
+    if (!costByType[t]) costByType[t] = { cost: 0, count: 0 };
+    costByType[t].cost += wo.totalCost || 0;
+    costByType[t].count += 1;
+  });
+  const typeEntries = Object.entries(costByType).sort((a, b) => b[1].cost - a[1].cost);
+
+  const highCostWOs = [...workOrders].sort((a, b) => (b.totalCost || 0) - (a.totalCost || 0)).slice(0, 15);
+
+  const typeColors: Record<string, string> = { preventive: 'bg-emerald-500', corrective: 'bg-amber-500', emergency: 'bg-red-500', inspection: 'bg-sky-500', predictive: 'bg-violet-500', project: 'bg-teal-500' };
+
+  const summaryCards = [
+    { label: 'Total Maintenance Cost', value: `$${totalCost.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Material Cost', value: `$${materialCost.toLocaleString()}`, icon: Package, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Labor Cost', value: `$${laborCost.toLocaleString()}`, icon: Users, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Avg WO Cost', value: `$${avgCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+  ];
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">Financial Reports</h1><p className="text-muted-foreground mt-1">Financial reports on maintenance costs, asset values, and budgets</p></div>
+      {loading ? <LoadingSkeleton /> : (<>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {summaryCards.map(k => { const I = k.icon; return (
+            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+          ); })}
+        </div>
+        <Card className="border"><CardHeader><CardTitle className="text-base">Cost by WO Type</CardTitle><CardDescription className="text-xs">Maintenance expenditure breakdown by type</CardDescription></CardHeader><CardContent>
+          <div className="space-y-3">
+            {typeEntries.map(([type, data]) => {
+              const pct = totalCost > 0 ? Math.round((data.cost / totalCost) * 100) : 0;
+              return (
+                <div key={type} className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-28 capitalize">{type.replace('_', ' ')}</span>
+                  <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className={`h-full ${typeColors[type] || 'bg-slate-400'} rounded-full transition-all`} style={{ width: `${pct}%` }} /></div>
+                  <span className="text-sm font-semibold w-28 text-right">${data.cost.toLocaleString()} ({pct}%)</span>
+                </div>
+              );
+            })}
+            {typeEntries.length === 0 && <p className="text-sm text-muted-foreground">No cost data available.</p>}
+          </div>
+        </CardContent></Card>
+        <Card className="border"><CardHeader><CardTitle className="text-base">High-Cost Work Orders</CardTitle><CardDescription className="text-xs">Top work orders by total cost</CardDescription></CardHeader><CardContent>
+          <Table><TableHeader><TableRow><TableHead>WO #</TableHead><TableHead>Title</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden md:table-cell">Priority</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Material</TableHead><TableHead className="text-right">Labor</TableHead><TableHead className="text-right">Total</TableHead></TableRow></TableHeader><TableBody>
+            {highCostWOs.length === 0 ? (
+              <TableRow><TableCell colSpan={8}><EmptyState icon={DollarSign} title="No cost data" description="Cost data will appear once work orders have costs assigned." /></TableCell></TableRow>
+            ) : highCostWOs.map(wo => (
+              <TableRow key={wo.id} className="hover:bg-muted/30">
+                <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
+                <TableCell className="font-medium max-w-[200px] truncate">{wo.title}</TableCell>
+                <TableCell className="text-xs capitalize hidden sm:table-cell">{wo.type.replace('_', ' ')}</TableCell>
+                <TableCell className="hidden md:table-cell"><PriorityBadge priority={wo.priority} /></TableCell>
+                <TableCell><StatusBadge status={wo.status} /></TableCell>
+                <TableCell className="text-right text-muted-foreground">${(wo.materialCost || 0).toLocaleString()}</TableCell>
+                <TableCell className="text-right text-muted-foreground">${(wo.laborCost || 0).toLocaleString()}</TableCell>
+                <TableCell className="text-right font-semibold">${(wo.totalCost || 0).toLocaleString()}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </CardContent></Card>
+      </>)}
+    </div>
+  );
+}
 function ReportsCustomPage() { return <ComingSoonPage title="Custom Reports" description="Build and save custom reports with flexible filters and formatting." icon={FileSpreadsheet} features={['Report builder', 'Custom filters', 'Scheduled delivery', 'Export options']} />; }
 
 // ============================================================================
@@ -6651,9 +8230,374 @@ function SettingsGeneralPage() {
   );
 }
 
-function SettingsNotificationsPage() { return <ComingSoonPage title="Notification Preferences" description="Configure email, SMS, and in-app notification preferences." icon={BellRing} features={['Notification channels', 'Preference templates', 'Quiet hours', 'Escalation rules']} />; }
-function SettingsIntegrationsPage() { return <ComingSoonPage title="Integrations" description="Connect with third-party systems and external services." icon={Link2} features={['API configuration', 'Webhook management', 'OAuth connections', 'Data sync settings']} />; }
-function SettingsBackupPage() { return <ComingSoonPage title="Backup & Restore" description="Manage system backups, data exports, and disaster recovery." icon={Database} features={['Automated backups', 'Manual backup', 'Data restore', 'Backup history']} />; }
+function SettingsNotificationsPage() {
+  const [saving, setSaving] = useState(false);
+  const [channels, setChannels] = useState({ inApp: true, email: true, emailAddr: 'admin@company.com', sms: false, phone: '' });
+  const [quietHours, setQuietHours] = useState({ enabled: false, start: '22:00', end: '07:00', timezone: 'UTC' });
+  const [notifTypes, setNotifTypes] = useState({
+    woAssigned: true, woStatusChange: true, mrApprovedRejected: true, pmDue: true,
+    lowStockAlert: true, assetConditionAlert: false, systemNotifications: true,
+  });
+
+  const typeLabels: Record<string, { label: string; desc: string }> = {
+    woAssigned: { label: 'WO Assigned', desc: 'When a work order is assigned to you' },
+    woStatusChange: { label: 'WO Status Change', desc: 'Status updates on work orders you follow' },
+    mrApprovedRejected: { label: 'MR Approved/Rejected', desc: 'Maintenance request approval decisions' },
+    pmDue: { label: 'PM Due', desc: 'Preventive maintenance schedule reminders' },
+    lowStockAlert: { label: 'Low Stock Alert', desc: 'Inventory items below reorder point' },
+    assetConditionAlert: { label: 'Asset Condition Alert', desc: 'Assets with degraded condition readings' },
+    systemNotifications: { label: 'System Notifications', desc: 'System updates, maintenance windows' },
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    await new Promise(r => setTimeout(r, 800));
+    localStorage.setItem('iassetspro_notif_settings', JSON.stringify({ channels, quietHours, notifTypes }));
+    toast.success('Notification preferences saved');
+    setSaving(false);
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Notification Preferences</h1>
+        <p className="text-muted-foreground mt-1">Configure how and when you receive notifications</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Notification Channels */}
+        <Card>
+          <CardHeader><CardTitle className="text-base">Notification Channels</CardTitle><CardDescription>Choose where to receive notifications</CardDescription></CardHeader>
+          <CardContent className="space-y-5">
+            <div className="flex items-center justify-between">
+              <div><Label className="text-sm font-medium">In-App Notifications</Label><p className="text-xs text-muted-foreground mt-0.5">Receive notifications within the application</p></div>
+              <Switch checked={channels.inApp} onCheckedChange={v => setChannels(c => ({ ...c, inApp: v }))} />
+            </div>
+            <Separator />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div><Label className="text-sm font-medium">Email Notifications</Label><p className="text-xs text-muted-foreground mt-0.5">Receive notifications via email</p></div>
+                <Switch checked={channels.email} onCheckedChange={v => setChannels(c => ({ ...c, email: v }))} />
+              </div>
+              {channels.email && (
+                <div className="space-y-2 pl-1"><Label className="text-xs">Email Address</Label><Input value={channels.emailAddr} onChange={e => setChannels(c => ({ ...c, emailAddr: e.target.value }))} placeholder="admin@company.com" /></div>
+              )}
+            </div>
+            <Separator />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div><Label className="text-sm font-medium">SMS Notifications</Label><p className="text-xs text-muted-foreground mt-0.5">Receive critical alerts via SMS</p></div>
+                <Switch checked={channels.sms} onCheckedChange={v => setChannels(c => ({ ...c, sms: v }))} />
+              </div>
+              {channels.sms && (
+                <div className="space-y-2 pl-1"><Label className="text-xs">Phone Number</Label><Input value={channels.phone} onChange={e => setChannels(c => ({ ...c, phone: e.target.value }))} placeholder="+1 234 567 8900" /></div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Quiet Hours */}
+        <Card>
+          <CardHeader><CardTitle className="text-base">Quiet Hours</CardTitle><CardDescription>Pause non-critical notifications during specified hours</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div><Label className="text-sm font-medium">Enable Quiet Hours</Label><p className="text-xs text-muted-foreground mt-0.5">Only urgent alerts will be sent</p></div>
+              <Switch checked={quietHours.enabled} onCheckedChange={v => setQuietHours(q => ({ ...q, enabled: v }))} />
+            </div>
+            {quietHours.enabled && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label className="text-xs">Start Time</Label><Input type="time" value={quietHours.start} onChange={e => setQuietHours(q => ({ ...q, start: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label className="text-xs">End Time</Label><Input type="time" value={quietHours.end} onChange={e => setQuietHours(q => ({ ...q, end: e.target.value }))} /></div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">Timezone</Label>
+                  <Select value={quietHours.timezone} onValueChange={v => setQuietHours(q => ({ ...q, timezone: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="UTC">UTC</SelectItem>
+                      <SelectItem value="America/New_York">Eastern Time</SelectItem>
+                      <SelectItem value="America/Chicago">Central Time</SelectItem>
+                      <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
+                      <SelectItem value="Europe/London">London (GMT)</SelectItem>
+                      <SelectItem value="Africa/Accra">Accra (GMT)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Notification Types */}
+        <Card className="lg:col-span-2">
+          <CardHeader><CardTitle className="text-base">Notification Types</CardTitle><CardDescription>Toggle specific notification categories</CardDescription></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
+              {Object.entries(typeLabels).map(([key, { label, desc }]) => (
+                <div key={key} className="flex items-center justify-between py-3 border-b last:border-0">
+                  <div><Label className="text-sm font-medium">{label}</Label><p className="text-xs text-muted-foreground mt-0.5">{desc}</p></div>
+                  <Switch checked={notifTypes[key as keyof typeof notifTypes]} onCheckedChange={v => setNotifTypes(n => ({ ...n, [key]: v }))} />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Button onClick={handleSave} disabled={saving}>{saving ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Saving...</> : 'Save Preferences'}</Button>
+    </div>
+  );
+}
+function SettingsIntegrationsPage() {
+  const [configOpen, setConfigOpen] = useState(false);
+  const [selected, setSelected] = useState<any>(null);
+  const [configForm, setConfigForm] = useState({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' });
+  const [saving, setSaving] = useState(false);
+
+  const integrations = [
+    { id: 'erp', name: 'ERP Integration', description: 'Connect to your enterprise resource planning system for data synchronization', icon: Server, connected: false, fields: ['url', 'apiKey', 'username', 'password'] },
+    { id: 'iot', name: 'IoT Platform', description: 'Stream sensor data from IoT devices and gateways into iAssetsPro', icon: Cpu, connected: true, fields: ['url', 'apiKey'] },
+    { id: 'email', name: 'Email Server', description: 'Configure SMTP settings for email notifications and reports delivery', icon: Mail, connected: true, fields: ['url', 'username', 'password'] },
+    { id: 'sms', name: 'SMS Gateway', description: 'Set up SMS delivery for critical alerts via your preferred gateway', icon: Smartphone, connected: false, fields: ['url', 'apiKey'] },
+    { id: 'webhooks', name: 'Webhooks', description: 'Send real-time event notifications to external systems via webhooks', icon: Globe, connected: false, fields: ['webhookUrl'] },
+    { id: 'ldap', name: 'LDAP / Active Directory', description: 'Sync users and authenticate via your organization\'s directory service', icon: Shield, connected: false, fields: ['url', 'username', 'password'] },
+  ];
+
+  const openConfig = (integ: any) => {
+    setSelected(integ);
+    setConfigForm({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' });
+    setConfigOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!selected) return;
+    setSaving(true);
+    await new Promise(r => setTimeout(r, 800));
+    toast.success(`${selected.name} configuration saved`);
+    setConfigOpen(false);
+    setSelected(null);
+    setSaving(false);
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Integrations</h1>
+        <p className="text-muted-foreground mt-1">Connect with third-party systems and external services</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {integrations.map(integ => {
+          const I = integ.icon;
+          return (
+            <Card key={integ.id} className="hover:shadow-md transition-shadow">
+              <CardContent className="p-5">
+                <div className="flex items-start gap-4">
+                  <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${integ.connected ? 'bg-emerald-50 dark:bg-emerald-900/30' : 'bg-muted'}`}>
+                    <I className={`h-5 w-5 ${integ.connected ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-semibold text-sm">{integ.name}</h3>
+                      <Badge variant="outline" className={`text-[10px] ${integ.connected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                        {integ.connected ? (
+                          <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Connected</span>
+                        ) : 'Not Connected'}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{integ.description}</p>
+                    <Button variant={integ.connected ? 'outline' : 'default'} size="sm" className={integ.connected ? '' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} onClick={() => openConfig(integ)}>
+                      {integ.connected ? <><Settings className="h-3.5 w-3.5 mr-1" />Configure</> : <><Link2 className="h-3.5 w-3.5 mr-1" />Connect</>}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Configure Dialog */}
+      <Dialog open={configOpen} onOpenChange={setConfigOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selected?.connected ? 'Configure' : 'Connect'} {selected?.name}</DialogTitle>
+            <DialogDescription>{selected?.description}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {selected?.fields?.includes('url') && (
+              <div className="space-y-2"><Label>Server URL</Label><Input value={configForm.url} onChange={e => setConfigForm(f => ({ ...f, url: e.target.value }))} placeholder="https://example.com/api" /></div>
+            )}
+            {selected?.fields?.includes('apiKey') && (
+              <div className="space-y-2"><Label>API Key</Label><Input type="password" value={configForm.apiKey} onChange={e => setConfigForm(f => ({ ...f, apiKey: e.target.value }))} placeholder="Enter API key" /></div>
+            )}
+            {selected?.fields?.includes('username') && (
+              <div className="space-y-2"><Label>Username</Label><Input value={configForm.username} onChange={e => setConfigForm(f => ({ ...f, username: e.target.value }))} placeholder="Username" /></div>
+            )}
+            {selected?.fields?.includes('password') && (
+              <div className="space-y-2"><Label>Password</Label><Input type="password" value={configForm.password} onChange={e => setConfigForm(f => ({ ...f, password: e.target.value }))} placeholder="Password" /></div>
+            )}
+            {selected?.fields?.includes('webhookUrl') && (
+              <div className="space-y-2"><Label>Webhook URL</Label><Input value={configForm.webhookUrl} onChange={e => setConfigForm(f => ({ ...f, webhookUrl: e.target.value }))} placeholder="https://your-server.com/webhook" /></div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfigOpen(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? 'Saving...' : selected?.connected ? 'Save Configuration' : 'Connect'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+function SettingsBackupPage() {
+  const [backingUp, setBackingUp] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+
+  const backupHistory = [
+    { id: '1', date: '2025-01-15 03:00', type: 'Automatic', size: '24.5 MB', status: 'completed' },
+    { id: '2', date: '2025-01-14 03:00', type: 'Automatic', size: '24.3 MB', status: 'completed' },
+    { id: '3', date: '2025-01-13 15:32', type: 'Manual', size: '24.4 MB', status: 'completed' },
+    { id: '4', date: '2025-01-13 03:00', type: 'Automatic', size: '24.2 MB', status: 'completed' },
+    { id: '5', date: '2025-01-12 03:00', type: 'Automatic', size: '24.1 MB', status: 'failed' },
+    { id: '6', date: '2025-01-11 03:00', type: 'Automatic', size: '24.0 MB', status: 'completed' },
+    { id: '7', date: '2025-01-10 03:00', type: 'Automatic', size: '23.8 MB', status: 'completed' },
+  ];
+
+  const lastBackup = backupHistory.find(b => b.status === 'completed');
+
+  const summaryCards = [
+    { label: 'Last Backup', value: lastBackup?.date ? format(new Date(lastBackup.date), 'MMM d, HH:mm') : 'Never', icon: History, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Backup Size', value: lastBackup?.size || '-', icon: Database, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Auto-backup', value: 'Enabled', icon: RefreshCw, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Total Backups', value: backupHistory.filter(b => b.status === 'completed').length.toString(), icon: Layers, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+  ];
+
+  const handleBackup = async () => {
+    setBackingUp(true);
+    await new Promise(r => setTimeout(r, 2000));
+    toast.success('Backup completed successfully');
+    setBackingUp(false);
+  };
+
+  const handleRestore = async () => {
+    setRestoring(true);
+    await new Promise(r => setTimeout(r, 2000));
+    toast.success('Data restored successfully');
+    setRestoring(false);
+  };
+
+  const handleExport = (type: string) => {
+    toast.success(`${type} export started. Download will begin shortly.`);
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Backup & Restore</h1>
+        <p className="text-muted-foreground mt-1">Manage system backups, data exports, and disaster recovery</p>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {summaryCards.map(k => { const I = k.icon; return (
+          <Card key={k.label}><CardContent className="p-4"><div className="flex items-center gap-3"><div className={`h-10 w-10 rounded-lg ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-lg font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Manual Backup */}
+        <Card>
+          <CardHeader><CardTitle className="text-base">Manual Backup</CardTitle><CardDescription>Create an immediate backup of all system data</CardDescription></CardHeader>
+          <CardContent>
+            <Button onClick={handleBackup} disabled={backingUp} className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto">
+              {backingUp ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Creating Backup...</> : <><Database className="h-4 w-4 mr-2" />Create Backup Now</>}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Data Export */}
+        <Card>
+          <CardHeader><CardTitle className="text-base">Data Export</CardTitle><CardDescription>Export specific data as CSV files</CardDescription></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[
+                { label: 'Assets', icon: Box },
+                { label: 'Inventory', icon: Package },
+                { label: 'Work Orders', icon: ClipboardList },
+              ].map(exp => {
+                const I = exp.icon;
+                return (
+                  <Button key={exp.label} variant="outline" onClick={() => handleExport(exp.label)} className="h-auto py-3">
+                    <div className="flex flex-col items-center gap-1.5">
+                      <I className="h-5 w-5 text-muted-foreground" />
+                      <span className="text-xs">Export {exp.label} CSV</span>
+                    </div>
+                  </Button>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Restore */}
+        <Card className="lg:col-span-2">
+          <CardHeader><CardTitle className="text-base">Restore Data</CardTitle><CardDescription>Upload a backup file to restore system data</CardDescription></CardHeader>
+          <CardContent>
+            <div className="border-2 border-dashed rounded-xl p-8 text-center hover:border-emerald-300 transition-colors">
+              <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <p className="text-sm font-medium mb-1">Drag & drop backup file here</p>
+              <p className="text-xs text-muted-foreground mb-4">or click to browse (.sql, .json, .zip)</p>
+              <Button variant="outline" size="sm" disabled={restoring} onClick={handleRestore}>
+                {restoring ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Restoring...</> : 'Choose File'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Backup History */}
+      <Card>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Backup History</CardTitle></CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Size</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-10">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {backupHistory.map(b => (
+                  <TableRow key={b.id}>
+                    <TableCell className="text-sm">{formatDateTime(b.date)}</TableCell>
+                    <TableCell><Badge variant="outline" className="text-[11px]">{b.type}</Badge></TableCell>
+                    <TableCell className="text-sm">{b.size}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`text-[11px] ${b.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                        {b.status === 'completed' ? <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />Success</span> : <span className="flex items-center gap-1"><XCircle className="h-3 w-3" />Failed</span>}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {b.status === 'completed' && (
+                        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => toast.info('Download started')}><Download className="h-3.5 w-3.5" /></Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 // ============================================================================
 // MAIN APP SHELL
