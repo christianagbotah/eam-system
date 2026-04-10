@@ -45,26 +45,29 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      user: {
-        id: user.id,
-        username: user.username,
-        fullName: user.fullName,
-        email: user.email,
-        avatar: user.avatar,
-        department: user.department,
-        phone: user.phone,
-        status: user.status,
-        roles,
+      data: {
+        user: {
+          id: user.id,
+          username: user.username,
+          fullName: user.fullName,
+          email: user.email,
+          avatar: user.avatar,
+          department: user.department,
+          phone: user.phone,
+          status: user.status,
+          roles,
+          permissions: session.permissions,
+          plantId: primaryPlant?.plantId ?? null,
+          plantAccess: user.plantAccess.map((up) => ({
+            id: up.plant.id,
+            code: up.plant.code,
+            name: up.plant.name,
+            location: up.plant.location,
+            accessLevel: up.accessLevel,
+            isPrimary: up.isPrimary,
+          })),
+        },
         permissions: session.permissions,
-        plantId: primaryPlant?.plantId ?? null,
-        plantAccess: user.plantAccess.map((up) => ({
-          id: up.plant.id,
-          code: up.plant.code,
-          name: up.plant.name,
-          location: up.plant.location,
-          accessLevel: up.accessLevel,
-          isPrimary: up.isPrimary,
-        })),
       },
     });
   } catch (error: unknown) {

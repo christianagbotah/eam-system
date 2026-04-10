@@ -441,7 +441,38 @@ model AuditLog {
 }
 
 // ============================================================================
-// 8. NOTIFICATIONS
+// 8. COMPANY PROFILE
+// ============================================================================
+
+model CompanyProfile {
+  id          String   @id @default(cuid())
+  companyName String                           // legal name of the company
+  tradingName String?                          // display/brand name
+  logo        String?                          // URL or path to company logo
+  address     String?
+  city        String?
+  region      String?
+  country     String?
+  postalCode  String?
+  phone       String?
+  email       String?
+  website     String?
+  industry    String?                          // manufacturing, mining, food, etc.
+  employeeCount String?                        // e.g. "100-500"
+  fiscalYearStart String?                      // e.g. "January"
+  timezone    String   @default("UTC")
+  currency    String   @default("GHS")         // default currency code
+  dateFormat  String   @default("DD/MM/YYYY")
+  isSetupComplete Boolean @default(false)      // has completed initial setup wizard
+  setupCompletedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("company_profile")
+}
+
+// ============================================================================
+// 9. NOTIFICATIONS
 // ============================================================================
 
 model Notification {

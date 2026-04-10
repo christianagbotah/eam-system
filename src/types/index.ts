@@ -279,6 +279,32 @@ export interface Notification {
   createdAt: string;
 }
 
+// Company Profile
+export interface CompanyProfile {
+  id: string;
+  companyName: string;
+  tradingName?: string;
+  logo?: string;
+  address?: string;
+  city?: string;
+  region?: string;
+  country?: string;
+  postalCode?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  industry?: string;
+  employeeCount?: string;
+  fiscalYearStart?: string;
+  timezone: string;
+  currency: string;
+  dateFormat: string;
+  isSetupComplete: boolean;
+  setupCompletedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // API Response
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -299,4 +325,5 @@ export type PageName =
   | 'reports'
   | 'settings-users'
   | 'settings-roles'
-  | 'settings-modules';
+  | 'settings-modules'
+  | 'settings-company';

@@ -486,3 +486,74 @@ The following workflow was tested and confirmed working:
 - Modules: 2 (list, toggle)
 - Permissions: 1 (list grouped by module)
 
+---
+Task ID: 6
+Agent: image-generation
+Task: Generate iAssetsPro SVG logo
+
+Work Log:
+- Created professional SVG logo for iAssetsPro
+- Logo features: emerald gradient rounded-square icon with 3 ascending bars (representing managed assets with growth), subtle arrow accent, and clean typography
+- Color scheme: emerald gradient (#34d399 → #10b981 → #047857) for icon, #0f172a for "Assets", #10b981 for "i", #059669 for "Pro"
+- Icon includes drop shadow filter and subtle inner ring for depth
+- Typography uses Inter/system-ui font stack with 800/700 weights
+- Designed to work at all sizes (favicon through large display)
+- Saved to public/logo.svg
+
+Stage Summary:
+- iAssetsPro brand logo created as clean, scalable SVG
+
+---
+
+## Session 8 - iAssetsPro Bug Fixes, Rebrand Finalization & Company Profile
+
+- **Date:** 2026-04-11
+- **Context:** Fix critical auth response format bug, finalize rebranding, add Company Profile settings page, update demo accounts.
+
+### BUG 1: Auth Response Format Mismatch (CRITICAL FIX)
+- **Status:** ✅ Completed
+- **Problem:** Login API (`/api/auth/login`) returned `{ success: true, user: {...}, token }` without a `data` wrapper. The `apiFetch` helper checks `json.data !== undefined ? json.data : json` — since no `data` property existed, it returned the whole JSON as `res.data`. The authStore then expected `res.data.permissions` at root level, but permissions were nested at `res.data.user.permissions`, causing `undefined`.
+- **Fix in `/api/auth/login/route.ts`:** Wrapped response in `data` property AND added `permissions` at root level alongside `user` and `token`: `{ success: true, data: { user: {...}, token, permissions } }`
+- **Same fix applied to `/api/auth/me/route.ts`:** Consistent `data` wrapper with root-level `permissions`
+- Both routes now align with `apiFetch` convention and `authStore` expectations
+
+### BUG 2: Dashboard Variable Reference Error
+- **Status:** Already Fixed (no change needed)
+- Line 830 already uses `stats?.activeWorkOrders || 0` — confirmed correct
+
+### TASK 2: Rebrand from GTP EAM to iAssetsPro
+- **Status:** Already Done (no change needed)
+- No "GTP", "GTP EAM", or "GTP Ghana Limited" references found anywhere in the codebase
+- All branding text already shows "iAssetsPro" throughout login page, sidebar, loading screen, copyright
+- Sidebar subtitle updated from "Asset Management" → "EAM System"
+
+### TASK 3: Company Profile Settings Page
+- **Status:** ✅ Completed
+- Added `'settings-company'` to `PageName` type in `src/types/index.ts`
+- Added `Company Profile` nav item in sidebar settings (icon: `Building2`, permission: `settings.update`)
+- Built `CompanyProfilePage` component (~230 lines) with:
+  - Logo placeholder card (coming soon badge)
+  - Company Details card: name, address, city, country, postal code
+  - Contact Information card: phone, email, website
+  - Additional Information card: industry (13-option select), number of employees
+  - Save Changes button with loading spinner
+  - Uses localStorage (`iassetspro_company_profile`) for persistence
+  - Lazy initializer in `useState` to avoid SSR/hydration issues
+- Added routing case for `settings-company` in page switch
+- Added `'settings-company': 'Company Profile'` to page title record
+
+### TASK 4: Demo Accounts Update
+- **Status:** ✅ Completed
+- Changed demo accounts to match seeded database:
+  - `admin` / `admin123` — Administrator (was: Full Access)
+  - `planner1` / `password123` — Planner (was: kwame.asante / Manager)
+  - `supervisor1` / `password123` — Supervisor (was: kojo.boateng / Supervisor)
+
+### Files Modified
+- `src/app/api/auth/login/route.ts` — Response wrapped in `data`, permissions at root
+- `src/app/api/auth/me/route.ts` — Same response format fix
+- `src/types/index.ts` — Added `'settings-company'` to PageName union
+- `src/app/page.tsx` — Demo accounts, sidebar subtitle, Company Profile nav, page component, routing
+
+### Build: ✅ Lint clean (0 errors, 0 warnings), dev server compiling successfully
+

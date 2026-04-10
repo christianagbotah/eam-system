@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GTP EAM - Enterprise Asset Management",
-  description: "Enterprise Asset Management System for GTP Ghana Limited",
+  title: "iAssetsPro - Enterprise Asset Management",
+  description: "Intelligent Enterprise Asset Management System",
   icons: {
     icon: "/logo.svg",
   },

@@ -204,7 +204,7 @@ function LoadingScreen() {
           <Factory className="h-6 w-6 text-white" />
         </div>
         <div className="space-y-2">
-          <h2 className="text-lg font-semibold text-foreground">GTP EAM</h2>
+          <h2 className="text-lg font-semibold text-foreground">iAssetsPro</h2>
           <p className="text-sm text-muted-foreground">Loading your workspace...</p>
         </div>
         <div className="flex gap-1 justify-center">
@@ -255,7 +255,7 @@ function LoginPage() {
     setLoading(true);
     const ok = await login(username, password);
     if (ok) {
-      toast.success('Welcome to GTP EAM!');
+      toast.success('Welcome to iAssetsPro!');
     } else {
       toast.error('Invalid credentials');
     }
@@ -310,7 +310,7 @@ function LoginPage() {
                   <Factory className="h-6 w-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-base font-bold tracking-tight">GTP EAM</h1>
+                  <h1 className="text-base font-bold tracking-tight">iAssetsPro</h1>
                   <p className="text-emerald-300/80 text-xs font-medium">Enterprise Asset Management</p>
                 </div>
               </div>
@@ -320,7 +320,7 @@ function LoginPage() {
                   Intelligent Asset Management Platform
                 </h2>
                 <p className="text-xs text-emerald-200/80 leading-relaxed max-w-lg">
-                  Transform your maintenance operations with real-time monitoring, predictive analytics, and comprehensive asset lifecycle management for GTP Ghana Limited.
+                  Transform your maintenance operations with real-time monitoring, predictive analytics, and comprehensive asset lifecycle management.
                 </p>
               </div>
             </div>
@@ -361,7 +361,7 @@ function LoginPage() {
 
           {/* Footer */}
           <div className="flex items-center justify-between text-[11px] text-emerald-300/50 pt-6 border-t border-white/10">
-            <span>&copy; {new Date().getFullYear()} GTP Ghana Limited</span>
+            <span>&copy; {new Date().getFullYear()} iAssetsPro</span>
             <div className="flex items-center gap-2">
               <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full text-[10px] font-semibold flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -383,7 +383,7 @@ function LoginPage() {
                 <Factory className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-slate-900">GTP EAM</h1>
+                <h1 className="text-lg font-bold text-slate-900">iAssetsPro</h1>
                 <p className="text-[11px] text-slate-500">Enterprise Asset Management</p>
               </div>
             </div>
@@ -513,9 +513,9 @@ function LoginPage() {
             <p className="font-semibold text-xs text-slate-500 mb-2.5 uppercase tracking-wider">Demo Accounts</p>
             <div className="space-y-2 text-xs">
               {[
-                { user: 'admin', pass: 'admin123', role: 'Full Access', color: 'text-emerald-600' },
-                { user: 'kwame.asante', pass: 'password123', role: 'Manager', color: 'text-amber-600' },
-                { user: 'kojo.boateng', pass: 'password123', role: 'Supervisor', color: 'text-teal-600' },
+                { user: 'admin', pass: 'admin123', role: 'Administrator', color: 'text-emerald-600' },
+                { user: 'planner1', pass: 'password123', role: 'Planner', color: 'text-amber-600' },
+                { user: 'supervisor1', pass: 'password123', role: 'Supervisor', color: 'text-teal-600' },
               ].map(d => (
                 <button
                   key={d.user}
@@ -604,6 +604,7 @@ function SidebarContent() {
     { page: 'settings-users', label: 'Users', icon: Users, perm: 'users.view' },
     { page: 'settings-roles', label: 'Roles & Permissions', icon: Shield, perm: 'roles.view' },
     { page: 'settings-modules', label: 'Module Management', icon: Boxes, perm: 'modules.manage' },
+    { page: 'settings-company', label: 'Company Profile', icon: Building2, perm: 'settings.update' },
   ];
 
   const visibleNavItems = navItems.filter(item => item.comingSoon || hasPermission(item.perm));
@@ -619,8 +620,8 @@ function SidebarContent() {
         </div>
         {sidebarOpen && (
           <div className="overflow-hidden">
-            <h1 className="text-base font-bold text-sidebar-foreground tracking-tight">GTP EAM</h1>
-            <p className="text-[10px] text-sidebar-foreground/50 uppercase tracking-widest">Asset Management</p>
+            <h1 className="text-base font-bold text-sidebar-foreground tracking-tight">iAssetsPro</h1>
+            <p className="text-[10px] text-sidebar-foreground/50 uppercase tracking-widest">EAM System</p>
           </div>
         )}
       </div>
@@ -827,7 +828,7 @@ function DashboardPage() {
             const Icon = card.icon;
             const trendInfo: Record<string, { label: string; color: string }> = {
               'Open Requests': { label: stats?.createdTodayMR ? `+${stats.createdTodayMR} today` : 'No new today', color: stats?.createdTodayMR ? 'text-amber-600' : 'text-muted-foreground' },
-              'Active WOs': { label: `${activeWorkOrders} active now`, color: 'text-emerald-600' },
+              'Active WOs': { label: `${stats?.activeWorkOrders || 0} active now`, color: 'text-emerald-600' },
               'Completed': { label: stats?.completedTodayWO ? `+${stats.completedTodayWO} today` : 'None today', color: stats?.completedTodayWO ? 'text-emerald-600' : 'text-muted-foreground' },
               'Overdue': { label: stats?.overdueWorkOrders ? `${stats.overdueWorkOrders} need attention` : 'All on track', color: stats?.overdueWorkOrders ? 'text-red-600' : 'text-emerald-600' },
             };
@@ -2268,6 +2269,263 @@ function SettingsModulesPage() {
 }
 
 // ============================================================================
+// COMPANY PROFILE PAGE
+// ============================================================================
+
+interface CompanyProfile {
+  companyName: string;
+  address: string;
+  city: string;
+  country: string;
+  postalCode: string;
+  phone: string;
+  email: string;
+  website: string;
+  industry: string;
+  numberOfEmployees: string;
+}
+
+const defaultCompanyProfile: CompanyProfile = {
+  companyName: 'iAssetsPro Inc.',
+  address: '',
+  city: '',
+  country: '',
+  postalCode: '',
+  phone: '',
+  email: '',
+  website: '',
+  industry: 'manufacturing',
+  numberOfEmployees: '',
+};
+
+function CompanyProfilePage() {
+  const [form, setForm] = useState<CompanyProfile>(() => {
+    if (typeof window === 'undefined') return defaultCompanyProfile;
+    try {
+      const stored = localStorage.getItem('iassetspro_company_profile');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        return { ...defaultCompanyProfile, ...parsed };
+      }
+    } catch {
+      // ignore parse errors
+    }
+    return defaultCompanyProfile;
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleChange = (field: keyof CompanyProfile, value: string) => {
+    setForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    await new Promise(r => setTimeout(r, 500));
+    localStorage.setItem('iassetspro_company_profile', JSON.stringify(form));
+    setSaving(false);
+    toast.success('Company profile saved successfully');
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Company Profile</h1>
+        <p className="text-muted-foreground text-sm mt-0.5">Manage your organization details and information</p>
+      </div>
+
+      <div className="grid gap-6 max-w-3xl">
+        {/* Logo Placeholder */}
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-base">Company Logo</CardTitle>
+            <CardDescription>Upload your company logo for branding</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4">
+              <div className="h-20 w-20 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0">
+                <Factory className="h-8 w-8 text-white" />
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">Logo upload will be available in a future update</p>
+                <Badge variant="outline" className="text-[10px]">Coming Soon</Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Company Details */}
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-base">Company Details</CardTitle>
+            <CardDescription>Basic information about your organization</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2 space-y-2">
+                <Label htmlFor="companyName" className="text-sm font-medium">Company Name</Label>
+                <Input
+                  id="companyName"
+                  value={form.companyName}
+                  onChange={e => handleChange('companyName', e.target.value)}
+                  placeholder="Enter company name"
+                  className="h-10"
+                />
+              </div>
+              <div className="sm:col-span-2 space-y-2">
+                <Label htmlFor="address" className="text-sm font-medium">Address</Label>
+                <Textarea
+                  id="address"
+                  value={form.address}
+                  onChange={e => handleChange('address', e.target.value)}
+                  placeholder="Enter street address"
+                  rows={2}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="city" className="text-sm font-medium">City</Label>
+                <Input
+                  id="city"
+                  value={form.city}
+                  onChange={e => handleChange('city', e.target.value)}
+                  placeholder="Enter city"
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="country" className="text-sm font-medium">Country</Label>
+                <Input
+                  id="country"
+                  value={form.country}
+                  onChange={e => handleChange('country', e.target.value)}
+                  placeholder="Enter country"
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="postalCode" className="text-sm font-medium">Postal Code</Label>
+                <Input
+                  id="postalCode"
+                  value={form.postalCode}
+                  onChange={e => handleChange('postalCode', e.target.value)}
+                  placeholder="Enter postal code"
+                  className="h-10"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Contact Information */}
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-base">Contact Information</CardTitle>
+            <CardDescription>How people can reach your organization</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="phone" className="text-sm font-medium">Phone</Label>
+                <Input
+                  id="phone"
+                  value={form.phone}
+                  onChange={e => handleChange('phone', e.target.value)}
+                  placeholder="+1 (555) 000-0000"
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-sm font-medium">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={form.email}
+                  onChange={e => handleChange('email', e.target.value)}
+                  placeholder="info@company.com"
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="website" className="text-sm font-medium">Website</Label>
+                <Input
+                  id="website"
+                  value={form.website}
+                  onChange={e => handleChange('website', e.target.value)}
+                  placeholder="https://www.company.com"
+                  className="h-10"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Additional Info */}
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-base">Additional Information</CardTitle>
+            <CardDescription>Industry and organization size details</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="industry" className="text-sm font-medium">Industry</Label>
+                <Select value={form.industry} onValueChange={v => handleChange('industry', v)}>
+                  <SelectTrigger className="h-10">
+                    <SelectValue placeholder="Select industry" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manufacturing">Manufacturing</SelectItem>
+                    <SelectItem value="energy">Energy & Utilities</SelectItem>
+                    <SelectItem value="construction">Construction</SelectItem>
+                    <SelectItem value="healthcare">Healthcare</SelectItem>
+                    <SelectItem value="transportation">Transportation & Logistics</SelectItem>
+                    <SelectItem value="mining">Mining & Resources</SelectItem>
+                    <SelectItem value="oil_gas">Oil & Gas</SelectItem>
+                    <SelectItem value="telecommunications">Telecommunications</SelectItem>
+                    <SelectItem value="food_beverage">Food & Beverage</SelectItem>
+                    <SelectItem value="pharmaceutical">Pharmaceutical</SelectItem>
+                    <SelectItem value="real_estate">Real Estate & Facilities</SelectItem>
+                    <SelectItem value="government">Government & Public Sector</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="numberOfEmployees" className="text-sm font-medium">Number of Employees</Label>
+                <Input
+                  id="numberOfEmployees"
+                  value={form.numberOfEmployees}
+                  onChange={e => handleChange('numberOfEmployees', e.target.value)}
+                  placeholder="e.g. 500"
+                  className="h-10"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Save Button */}
+        <div className="flex justify-end">
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white min-w-[140px]"
+          >
+            {saving ? (
+              <span className="flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                Saving...
+              </span>
+            ) : (
+              'Save Changes'
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // MAIN APP SHELL
 // ============================================================================
 
@@ -2298,6 +2556,7 @@ function AppShell() {
       case 'settings-users': return <SettingsUsersPage />;
       case 'settings-roles': return <SettingsRolesPage />;
       case 'settings-modules': return <SettingsModulesPage />;
+      case 'settings-company': return <CompanyProfilePage />;
       default: return <DashboardPage />;
     }
   };
@@ -2312,6 +2571,7 @@ function AppShell() {
     'settings-users': 'Users',
     'settings-roles': 'Roles & Permissions',
     'settings-modules': 'Module Management',
+    'settings-company': 'Company Profile',
   };
 
   return (
