@@ -964,3 +964,26 @@ Stage Summary:
 
 ### Build: ✅ Lint clean (0 errors, 0 warnings), dev server compiling successfully
 
+---
+Task ID: 12
+Agent: main
+Task: Enterprise sidebar theming + PM Schedules page + continued development
+
+Work Log:
+- Fixed light mode sidebar background from dark (oklch 0.17) to clean near-white (oklch 0.98)
+- Updated all sidebar CSS variables for light mode: foreground dark text, emerald accent, light borders
+- Dark mode sidebar preserved with deep emerald tones
+- Updated sidebar scrollbar colors for both light and dark modes
+- Built complete PM Schedules frontend page (~390 lines) with full CRUD
+- PM Schedules features: stats bar, due soon filter, overdue/due-soon highlighting, frequency labels, create/edit dialogs, deactivate action
+- Added sidebar navigation link for PM Schedules with Timer icon
+- Added pm-schedules to PageName type and routing
+- Fixed api.del() → api.delete() method call
+- Lint: 0 errors, 0 warnings
+- Committed and pushed to GitHub (f1636a1)
+
+Stage Summary:
+- Enterprise-grade light sidebar with clean white background and proper contrast
+- PM Schedules page fully functional with CRUD operations
+- All 16 frontend pages operational with consistent enterprise theming
+
