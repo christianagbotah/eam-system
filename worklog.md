@@ -1049,3 +1049,22 @@ Stage Summary:
 - Admin role correctly shows all permissions (fixed in API)
 - Role management page uses sticky column matrix layout
 - Files modified: src/app/globals.css, src/app/page.tsx, src/app/api/roles/[id]/route.ts
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: UI improvements — colored header, avatar dropdown, fix admin 0-perms, sticky role columns
+
+Work Log:
+- Enhanced header background with emerald tint: `oklch(0.968 0.014 163)` light mode, `oklch(0.16 0.02 163)` dark mode
+- Enhanced user avatar dropdown: wider (w-60), user profile section with avatar+name+username, added Notifications link, improved Sign Out styling with red hover bg
+- Fixed Admin role showing 0 permissions: seeded 61 RolePermission records for admin role in SQLite DB (admin had no explicit RolePermission rows)
+- Improved sticky role name column: widened to w-56, solid bg-[var(--header)] for header, bg-card/bg-emerald-50/95 for rows, added right-side shadow for depth, border uses header-border color
+- All changes compile cleanly, ESLint passes
+
+Stage Summary:
+- Header has visible emerald tint in both light and dark modes
+- User dropdown menu is polished with profile section, navigation links, and styled sign-out
+- Admin now correctly shows 61/61 permissions on role management page
+- Role name column is properly sticky with shadow separator when scrolling permission columns
+- Files modified: `src/app/globals.css`, `src/app/page.tsx`

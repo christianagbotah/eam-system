@@ -109,10 +109,10 @@
   --sidebar-border: oklch(0.26 0.02 260);
   --sidebar-ring: oklch(0.508 0.16 163);
 
-  /* ===== HEADER — Subtle tinted surface for visual identity ===== */
-  --header: oklch(0.975 0.008 163);
-  --header-foreground: oklch(0.17 0.02 260);
-  --header-border: oklch(0.91 0.01 155);
+  /* ===== HEADER — Subtle emerald-tinted surface for brand identity ===== */
+  --header: oklch(0.968 0.014 163);
+  --header-foreground: oklch(0.15 0.02 260);
+  --header-border: oklch(0.90 0.018 163);
 }
 
 /* ============================================================================

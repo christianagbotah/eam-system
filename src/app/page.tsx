@@ -2956,7 +2956,7 @@ function SettingsRolesPage() {
             {/* Header row */}
             <div className="flex border-b bg-muted/40">
               {/* Sticky role name header */}
-              <div className="sticky left-0 z-20 w-52 shrink-0 px-4 py-3 bg-muted/80 backdrop-blur-sm border-r">
+              <div className="sticky left-0 z-20 w-56 shrink-0 px-4 py-3 bg-[var(--header)] border-r border-header-border shadow-[2px_0_4px_-1px_rgba(0,0,0,0.05)]">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Role</p>
               </div>
               {/* Module columns header — generated dynamically */}
@@ -2979,7 +2979,7 @@ function SettingsRolesPage() {
                     onClick={() => setSelectedRoleId(role.id)}
                   >
                     {/* Sticky role name cell */}
-                    <div className={`sticky left-0 z-10 w-52 shrink-0 px-4 py-3 border-r flex items-center gap-2.5 transition-colors ${isSelected ? 'bg-emerald-50 dark:bg-emerald-950/30' : 'bg-card'}`}>
+                    <div className={`sticky left-0 z-10 w-56 shrink-0 px-4 py-3 border-r border-header-border flex items-center gap-2.5 transition-colors shadow-[2px_0_4px_-1px_rgba(0,0,0,0.05)] ${isSelected ? 'bg-emerald-50/95 dark:bg-emerald-950/40' : 'bg-card'}`}>
                       <div className="h-8 w-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: (role.color || '#10b981') + '20', color: role.color || '#10b981' }}>
                         <Shield className="h-3.5 w-3.5" />
                       </div>
@@ -5478,7 +5478,7 @@ function AppShell() {
             <Separator orientation="vertical" className="h-6 mx-1 bg-border/40" />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2.5 pl-1 pr-1.5 py-1 rounded-lg hover:bg-muted transition-colors cursor-pointer">
+                <button className="flex items-center gap-2.5 pl-1 pr-1.5 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer">
                   <Avatar className="h-8 w-8 border-2 border-primary/20">
                     <AvatarFallback className="text-xs font-bold bg-primary/10 text-primary">{user ? getInitials(user.fullName) : '?'}</AvatarFallback>
                   </Avatar>
@@ -5489,20 +5489,30 @@ function AppShell() {
                   <ChevronDown className="h-3.5 w-3.5 text-muted-foreground hidden md:block" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" className="w-60">
                 <DropdownMenuLabel className="font-normal">
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">{user?.fullName}</p>
-                    <p className="text-xs text-muted-foreground">{user?.username}</p>
+                  <div className="flex flex-col space-y-1.5 pb-1">
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                        <span className="text-sm font-bold text-primary">{user ? getInitials(user.fullName) : '?'}</span>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium leading-none">{user?.fullName}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{user?.username}</p>
+                      </div>
+                    </div>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate('dashboard')}><LayoutDashboard className="h-4 w-4 mr-2" />Dashboard</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('settings-company')}><Building2 className="h-4 w-4 mr-2" />Company Profile</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('dashboard')}><LayoutDashboard className="h-4 w-4 mr-2.5" />Dashboard</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('notifications')}><Bell className="h-4 w-4 mr-2.5" />Notifications</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate('settings-audit')}><History className="h-4 w-4 mr-2" />Audit Logs</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('settings-company')}><Building2 className="h-4 w-4 mr-2.5" />Company Profile</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('settings-audit')}><History className="h-4 w-4 mr-2.5" />Audit Logs</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={logout}><LogOut className="h-4 w-4 mr-2" />Sign Out</DropdownMenuItem>
+                <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/30" onClick={logout}>
+                  <LogOut className="h-4 w-4 mr-2.5" />Sign Out
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
