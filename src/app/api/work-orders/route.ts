@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getSession } from '@/lib/sessions';
 
 export async function GET(request: NextRequest) {
   try {
@@ -40,9 +41,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '');
-    const { sessions } = await import('../auth/login/route');
-    const session = token ? sessions.get(token) : null;
+    const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
@@ -74,7 +73,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    await db.woStatusHistory.create({
+    await db.wOStatusHistory.create({
       data: {
         workOrderId: wo.id,
         toStatus: 'draft',

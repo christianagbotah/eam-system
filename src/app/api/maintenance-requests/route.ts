@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { sessions } from '../auth/login/route';
-
-function getSession(request: NextRequest) {
-  const token = request.headers.get('authorization')?.replace('Bearer ', '');
-  return token ? sessions.get(token) : null;
-}
+import { getSession } from '@/lib/sessions';
 
 export async function GET(request: NextRequest) {
   try {

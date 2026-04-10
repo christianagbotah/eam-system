@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { sessions } from '../auth/login/route';
-
-function getSession(request: NextRequest) {
-  const token = request.headers.get('authorization')?.replace('Bearer ', '');
-  return token ? sessions.get(token) : null;
-}
+import { getSession } from '@/lib/sessions';
 
 export async function GET(
   request: NextRequest,
@@ -40,7 +35,6 @@ export async function GET(
   }
 }
 
-// Approve a maintenance request
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -114,7 +108,6 @@ export async function PATCH(
         },
       });
     } else if (action === 'convert') {
-      // Convert to Work Order
       const woCount = await db.workOrder.count();
       const woNumber = `WO-${new Date().getFullYear()}-${String(woCount + 1).padStart(3, '0')}`;
 
@@ -159,7 +152,7 @@ export async function PATCH(
         },
       });
 
-      await db.woStatusHistory.create({
+      await db.wOStatusHistory.create({
         data: {
           workOrderId: wo.id,
           toStatus: 'draft',

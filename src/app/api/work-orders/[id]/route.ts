@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { sessions } from '../../auth/login/route';
-
-function getSession(request: NextRequest) {
-  const token = request.headers.get('authorization')?.replace('Bearer ', '');
-  return token ? sessions.get(token) : null;
-}
+import { getSession } from '@/lib/sessions';
 
 export async function GET(
   request: NextRequest,
@@ -31,8 +26,8 @@ export async function GET(
         request: {
           select: {
             id: true,
-            requestNumber,
-            title,
+            requestNumber: true,
+            title: true,
             requester: { select: { id: true, fullName: true, username: true } },
           },
         },
@@ -78,7 +73,7 @@ export async function PATCH(
           data: { status: 'approved' },
           include: { creator: { select: { id: true, fullName: true } } },
         });
-        await db.woStatusHistory.create({
+        await db.wOStatusHistory.create({
           data: { workOrderId: id, fromStatus: wo.status, toStatus: 'approved', changedById: session.userId, reason: reason || 'Work order approved' },
         });
         break;
@@ -98,15 +93,17 @@ export async function PATCH(
           },
           include: { creator: { select: { id: true, fullName: true } } },
         });
-        // Add as team member leader if not already
         if (assignedToId) {
-          await db.wOTeamMember.upsert({
-            where: { id: `${id}-${assignedToId}` },
-            create: { workOrderId: id, userId: assignedToId, userName: assignedToName, role: 'leader' },
-            update: { role: 'leader' },
-          }).catch(() => {});
+          const existing = await db.wOTeamMember.findFirst({ where: { workOrderId: id, userId: assignedToId } });
+          if (!existing) {
+            await db.wOTeamMember.create({
+              data: { workOrderId: id, userId: assignedToId, userName: assignedToName, role: 'leader' },
+            });
+          } else {
+            await db.wOTeamMember.update({ where: { id: existing.id }, data: { role: 'leader' } });
+          }
         }
-        await db.woStatusHistory.create({
+        await db.wOStatusHistory.create({
           data: { workOrderId: id, fromStatus: wo.status, toStatus: 'assigned', changedById: session.userId, reason: reason || `Assigned to ${assignedToName}` },
         });
         break;
@@ -125,7 +122,7 @@ export async function PATCH(
         await db.wOTimeLog.create({
           data: { workOrderId: id, userId: session.userId, action: 'start', startTime: now, note: 'Work started' },
         });
-        await db.woStatusHistory.create({
+        await db.wOStatusHistory.create({
           data: { workOrderId: id, fromStatus: wo.status, toStatus: 'in_progress', changedById: session.userId, reason: reason || 'Work started' },
         });
         break;
@@ -144,7 +141,6 @@ export async function PATCH(
           },
           include: { creator: { select: { id: true, fullName: true } } },
         });
-        // Calculate actual hours
         if (wo.actualStart) {
           const hours = (now.getTime() - new Date(wo.actualStart).getTime()) / (1000 * 60 * 60);
           await db.workOrder.update({ where: { id }, data: { actualHours: Math.round(hours * 100) / 100 } });
@@ -157,7 +153,7 @@ export async function PATCH(
         await db.wOTimeLog.create({
           data: { workOrderId: id, userId: session.userId, action: 'complete', endTime: now, note: 'Work completed' },
         });
-        await db.woStatusHistory.create({
+        await db.wOStatusHistory.create({
           data: { workOrderId: id, fromStatus: wo.status, toStatus: 'completed', changedById: session.userId, reason: reason || 'Work completed by technician' },
         });
         break;
@@ -169,7 +165,7 @@ export async function PATCH(
           data: { status: 'verified' },
           include: { creator: { select: { id: true, fullName: true } } },
         });
-        await db.woStatusHistory.create({
+        await db.wOStatusHistory.create({
           data: { workOrderId: id, fromStatus: wo.status, toStatus: 'verified', changedById: session.userId, reason: reason || 'Work verified by supervisor' },
         });
         break;
@@ -181,7 +177,7 @@ export async function PATCH(
           data: { status: 'closed', isLocked: true, lockedBy: session.userId, lockedAt: now, lockReason: 'Work order closed' },
           include: { creator: { select: { id: true, fullName: true } } },
         });
-        await db.woStatusHistory.create({
+        await db.wOStatusHistory.create({
           data: { workOrderId: id, fromStatus: wo.status, toStatus: 'closed', changedById: session.userId, reason: reason || 'Work order closed' },
         });
         break;
@@ -193,7 +189,7 @@ export async function PATCH(
           data: { status: 'cancelled' },
           include: { creator: { select: { id: true, fullName: true } } },
         });
-        await db.woStatusHistory.create({
+        await db.wOStatusHistory.create({
           data: { workOrderId: id, fromStatus: wo.status, toStatus: 'cancelled', changedById: session.userId, reason: reason || 'Work order cancelled' },
         });
         break;
@@ -211,13 +207,13 @@ export async function PATCH(
         return NextResponse.json({ success: true, data: newComment });
       }
 
-      default:
-        // Generic update
+      default: {
         updatedWo = await db.workOrder.update({
           where: { id },
           data: updateData,
           include: { creator: { select: { id: true, fullName: true } } },
         });
+      }
     }
 
     return NextResponse.json({ success: true, data: updatedWo });

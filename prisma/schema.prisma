@@ -8,52 +8,20 @@ datasource db {
 }
 
 // ============================================================================
-// USER & AUTH
+// 1. CORE RBAC SYSTEM
 // ============================================================================
-
-model User {
-  id            String    @id @default(cuid())
-  username      String    @unique
-  email         String    @unique
-  password      String
-  fullName      String
-  avatar        String?
-  phone         String?
-  departmentId  String?
-  supervisorId  String?
-  plantId       String?
-  status        String    @default("active") // active, inactive, suspended
-  lastLoginAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  department    Department?      @relation(fields: [departmentId], references: [id])
-  supervisor    User?            @relation("SupervisorOf", fields: [supervisorId], references: [id])
-  subordinates  User[]           @relation("SupervisorOf")
-  plant         Plant?           @relation(fields: [plantId], references: [id])
-  userRoles     UserRole[]
-  directPerms   UserPermission[]
-  plantAccess   UserPlant[]
-  auditLogs     AuditLog[]
-  requestsCreated   MaintenanceRequest[] @relation("Requester")
-  requestsReviewed  MaintenanceRequest[] @relation("Reviewer")
-  woCreated         WorkOrder[] @relation("WOCreator")
-
-  @@map("users")
-}
 
 model Role {
   id          String   @id @default(cuid())
-  name        String   @unique
+  name        String
   slug        String   @unique
   description String?
-  level       Int      @default(0) // higher = more privileges
-  isSystem    Boolean  @default(false) // cannot be deleted
-  color       String?  // UI theme color
+  level       Int      @default(0)       // hierarchy level (higher = more privileges)
+  isSystem    Boolean  @default(false)   // cannot be deleted
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  userRoles      UserRole[]
+  userRoles       UserRole[]
   rolePermissions RolePermission[]
 
   @@map("roles")
@@ -61,17 +29,82 @@ model Role {
 
 model Permission {
   id          String   @id @default(cuid())
-  slug        String   @unique // e.g. "work_orders.view"
-  name        String   // e.g. "View Work Orders"
-  module      String   // e.g. "work_orders"
-  action      String   // view, create, update, delete, approve, assign, execute, export
+  slug        String   @unique          // e.g. "work_orders.view"
+  name        String                     // e.g. "View Work Orders"
+  module      String                     // e.g. "work_orders"
+  action      String                     // view, create, update, delete, approve, assign, execute, export
   description String?
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   rolePermissions RolePermission[]
   userPermissions UserPermission[]
 
   @@map("permissions")
+}
+
+model RolePermission {
+  id           String   @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  email        String    @unique
+  passwordHash String
+  fullName     String
+  staffId      String?   @unique
+  phone        String?
+  avatar       String?
+  department   String?
+  status       String    @default("active")  // active, inactive
+  isVendorAdmin Boolean  @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // RBAC relations
+  userRoles       UserRole[]
+  directPerms     UserPermission[]
+  plantAccess     UserPlant[]
+
+  // Department supervision
+  deptSupervised  Department[]  @relation("DeptSupervisor")
+
+  // Maintenance Request relations
+  mrRequested     MaintenanceRequest[] @relation("MRRequester")
+  mrSupervised    MaintenanceRequest[] @relation("MRSupervisor")
+  mrApproved      MaintenanceRequest[] @relation("MRApprover")
+  mrPlanned       MaintenanceRequest[] @relation("MRPlanner")
+
+  // Work Order relations
+  woAssigned      WorkOrder[]          @relation("WOAssignedTo")
+  woTeamLeader    WorkOrder[]          @relation("WOTeamLeader")
+  woSupervised    WorkOrder[]          @relation("WOSupervisor")
+  woAssignedBy    WorkOrder[]          @relation("WOAssignedBy")
+  woPlanned       WorkOrder[]          @relation("WOPlanner")
+  woLocked        WorkOrder[]          @relation("WOLocker")
+
+  // Work Order sub-table relations
+  woTeamMembers   WorkOrderTeamMember[]
+  woTimeLogs      WorkOrderTimeLog[]
+  woComments      WorkOrderComment[]
+  woMaterialsRequested WorkOrderMaterial[] @relation("WOMatRequested")
+  woMaterialsApproved  WorkOrderMaterial[] @relation("WOMatApproved")
+  woMaterialsIssued    WorkOrderMaterial[] @relation("WOMatIssued")
+
+  // Audit
+  auditLogs       AuditLog[]
+
+  @@map("users")
 }
 
 model UserRole {
@@ -87,26 +120,13 @@ model UserRole {
   @@map("user_roles")
 }
 
-model RolePermission {
-  id           String @id @default(cuid())
-  roleId       String
-  permissionId String
-  createdAt    DateTime @default(now())
-
-  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-
-  @@unique([roleId, permissionId])
-  @@map("role_permissions")
-}
-
 model UserPermission {
   id           String    @id @default(cuid())
   userId       String
   permissionId String
   isGranted    Boolean   @default(true)
-  grantedBy    String?
   expiresAt    DateTime?
+  grantedBy    String?   // userId of the granter
   createdAt    DateTime  @default(now())
 
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -117,68 +137,93 @@ model UserPermission {
 }
 
 // ============================================================================
-// MODULE & SUBSCRIPTION
+// 2. MODULE SUBSCRIPTION SYSTEM (3-tier)
 // ============================================================================
 
-model Module {
-  id            String   @id @default(cuid())
-  code          String   @unique
-  name          String
-  description   String?
-  icon          String?  // lucide icon name
-  version       String   @default("1.0.0")
-  isCore        Boolean  @default(false)
-  isActive      Boolean  @default(false) // vendor licensed
-  sortOrder     Int      @default(0)
-  routePath     String?  // frontend route
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+model SystemModule {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  name            String
+  description     String?
+  version         String    @default("1.0.0")
+  isCore          Boolean   @default(false)
+  isSystemLicensed Boolean  @default(false) // vendor-level license flag
+  licenseKey      String?
+  validFrom       DateTime?
+  validUntil      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   companyModules CompanyModule[]
 
-  @@map("modules")
+  @@map("system_modules")
 }
 
 model CompanyModule {
-  id          String    @id @default(cuid())
-  moduleId    String
-  isEnabled   Boolean   @default(false) // company activated
-  activatedAt DateTime?
-  activatedBy String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  systemModuleId  String
+  companyId       String?   // tenant/company reference (optional for single-company setup)
+  isActive        Boolean   @default(false)  // licensed by vendor
+  isEnabled       Boolean   @default(false)  // activated by company
+  licensedAt      DateTime?
+  licensedBy      String?
+  activatedAt     DateTime?
+  activatedBy     String?
+  activationLocked Boolean  @default(false)  // prevent deactivation once locked
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  systemModule SystemModule @relation(fields: [systemModuleId], references: [id], onDelete: Cascade)
 
-  @@unique([moduleId])
+  @@unique([systemModuleId, companyId])
   @@map("company_modules")
 }
 
 // ============================================================================
-// ORGANIZATION
+// 3. PLANT / ORGANIZATION
 // ============================================================================
 
 model Plant {
   id        String   @id @default(cuid())
-  code      String   @unique
   name      String
+  code      String   @unique
   location  String?
+  country   String?
+  city      String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users User[]
+  departments Department[]
   plantAccess UserPlant[]
 
   @@map("plants")
 }
 
+model Department {
+  id          String   @id @default(cuid())
+  name        String
+  code        String
+  plantId     String
+  parentId    String?              // self-reference for sub-departments
+  supervisorId String?             // → User
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  plant      Plant       @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  parent     Department? @relation("DeptHierarchy", fields: [parentId], references: [id])
+  children   Department[] @relation("DeptHierarchy")
+  supervisor User?       @relation("DeptSupervisor", fields: [supervisorId], references: [id])
+
+  @@map("departments")
+}
+
 model UserPlant {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   userId      String
   plantId     String
-  isPrimary   Boolean @default(false)
-  accessLevel String @default("read") // read, write, admin
+  accessLevel String   @default("read")  // read, write, admin
+  isPrimary   Boolean  @default(false)
   createdAt   DateTime @default(now())
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -188,251 +233,208 @@ model UserPlant {
   @@map("user_plants")
 }
 
-model Department {
-  id          String   @id @default(cuid())
-  name        String
-  code        String   @unique
-  parentId    String?
-  level       Int      @default(1) // 1=Main, 2=Sub
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+// ============================================================================
+// 4. MAINTENANCE REQUESTS
+// ============================================================================
 
-  parent    Department?      @relation("DeptHierarchy", fields: [parentId], references: [id])
-  children  Department[]     @relation("DeptHierarchy")
-  users     User[]
+model MaintenanceRequest {
+  id                String    @id @default(cuid())
+  requestNumber     String    @unique           // format MR-YYYYMM-NNNN
+  title             String
+  description       String?
+  priority          String    @default("medium") // low, medium, high, urgent
+  category          String?                      // mechanical, electrical, hydraulic, etc.
+  status            String    @default("pending") // pending, in_progress, approved, rejected, converted
+  workflowStatus    String    @default("pending") // pending, supervisor_review, approved, rejected, assigned_to_planner, work_order_created, technician_completed, planner_confirmed, satisfactory, supervisor_rejected, closed
+  machineDownStatus Boolean?  @default(false)
+  assetId           String?
+  departmentId      String?
+  requestedBy       String                      // → User
+  supervisorId      String?                     // → User
+  approvedBy        String?                     // → User
+  assignedPlannerId String?                     // → User
+  workOrderId       String?   @unique           // → WorkOrder
+  plantId           String?
+  plannedStart      DateTime?
+  plannedEnd        DateTime?
+  estimatedHours    Float?
+  slaHours          Float?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  @@map("departments")
+  // User relations
+  requester     User?       @relation("MRRequester", fields: [requestedBy], references: [id])
+  supervisor    User?       @relation("MRSupervisor", fields: [supervisorId], references: [id])
+  approver      User?       @relation("MRApprover", fields: [approvedBy], references: [id])
+  assignedPlanner User?     @relation("MRPlanner", fields: [assignedPlannerId], references: [id])
+
+  // Work Order relation
+  workOrder     WorkOrder?
+
+  @@map("maintenance_requests")
 }
 
 // ============================================================================
-// AUDIT
+// 5. WORK ORDERS
+// ============================================================================
+
+model WorkOrder {
+  id                  String    @id @default(cuid())
+  woNumber            String    @unique           // format WO-YYYYMM-NNNN
+  title               String
+  description         String?
+  type                String    @default("corrective") // preventive, corrective, predictive, inspection, project, emergency
+  priority            String    @default("medium")     // low, medium, high, critical
+  status              String    @default("draft")       // draft, requested, approved, planned, assigned, in_progress, waiting_parts, on_hold, completed, closed, cancelled
+  maintenanceRequestId String?  @unique
+  assetId             String?
+  assetName           String?
+  departmentId        String?
+  assignedTo          String?                       // → User
+  teamLeaderId        String?                       // → User
+  assignedSupervisorId String?                      // → User
+  assignedBy          String?                       // → User
+  assignmentType      String?                       // direct, via_supervisor
+  plannerId           String?                       // → User
+  estimatedHours      Float?
+  actualHours         Float?
+  plannedStart        DateTime?
+  plannedEnd          DateTime?
+  actualStart         DateTime?
+  actualEnd           DateTime?
+  totalCost           Float     @default(0)
+  laborCost           Float     @default(0)
+  partsCost           Float     @default(0)
+  contractorCost      Float     @default(0)
+  failureDescription  String?
+  causeDescription    String?
+  actionDescription   String?
+  plantId             String?
+  notes               String?
+  isLocked            Boolean   @default(false)
+  lockedBy            String?                        // → User
+  lockedAt            DateTime?
+  lockReason          String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Maintenance Request relation
+  maintenanceRequest MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id])
+
+  // User relations
+  assignee           User?  @relation("WOAssignedTo", fields: [assignedTo], references: [id])
+  teamLeader         User?  @relation("WOTeamLeader", fields: [teamLeaderId], references: [id])
+  assignedSupervisor User?  @relation("WOSupervisor", fields: [assignedSupervisorId], references: [id])
+  assigner           User?  @relation("WOAssignedBy", fields: [assignedBy], references: [id])
+  planner            User?  @relation("WOPlanner", fields: [plannerId], references: [id])
+  locker             User?  @relation("WOLocker", fields: [lockedBy], references: [id])
+
+  // Sub-table relations
+  teamMembers        WorkOrderTeamMember[]
+  timeLogs           WorkOrderTimeLog[]
+  materials          WorkOrderMaterial[]
+  comments           WorkOrderComment[]
+
+  @@map("work_orders")
+}
+
+model WorkOrderTeamMember {
+  id          String   @id @default(cuid())
+  workOrderId String
+  userId      String
+  role        String   @default("assistant")  // team_leader, assistant, specialist
+  assignedAt  DateTime @default(now())
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("wo_team_members")
+}
+
+model WorkOrderTimeLog {
+  id          String   @id @default(cuid())
+  workOrderId String
+  userId      String
+  action      String                         // start, pause, resume, complete
+  notes       String?
+  timestamp   DateTime @default(now())
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("wo_time_logs")
+}
+
+model WorkOrderMaterial {
+  id          String   @id @default(cuid())
+  workOrderId String
+  itemId      String?
+  itemName    String?
+  quantity    Float?
+  unitCost    Float?
+  totalCost   Float?
+  status      String   @default("requested")  // requested, approved, issued, returned
+  requestedBy String?                         // → User
+  approvedBy  String?                         // → User
+  issuedBy    String?                         // → User
+  createdAt   DateTime @default(now())
+
+  workOrder          WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  requester          User?     @relation("WOMatRequested", fields: [requestedBy], references: [id])
+  approver           User?     @relation("WOMatApproved", fields: [approvedBy], references: [id])
+  issuer             User?     @relation("WOMatIssued", fields: [issuedBy], references: [id])
+
+  @@map("wo_materials")
+}
+
+model WorkOrderComment {
+  id          String   @id @default(cuid())
+  workOrderId String
+  userId      String
+  content     String
+  createdAt   DateTime @default(now())
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("wo_comments")
+}
+
+// ============================================================================
+// 6. STATUS TRANSITIONS (DB-driven state machine)
+// ============================================================================
+
+model StatusTransition {
+  id               String   @id @default(cuid())
+  entityType       String                       // maintenance_request, work_order
+  fromStatus       String?                      // null = initial state
+  toStatus         String
+  allowedRoleSlugs String                       // JSON string array, e.g. ["supervisor","admin"]
+  requiresApproval Boolean  @default(false)
+  requiresReason   Boolean  @default(false)
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  @@map("status_transitions")
+}
+
+// ============================================================================
+// 7. AUDIT LOG
 // ============================================================================
 
 model AuditLog {
   id         String   @id @default(cuid())
   userId     String
-  action     String   // login, logout, create, update, delete
+  action     String                       // create, update, delete, view
   entityType String?
   entityId   String?
-  details    String?  // JSON string
+  oldValues  String?                      // JSON string of previous field values
+  newValues  String?                      // JSON string of new field values
   ipAddress  String?
   createdAt  DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("audit_logs")
-}
-
-// ============================================================================
-// MAINTENANCE REQUESTS
-// ============================================================================
-
-model MaintenanceRequest {
-  id              String   @id @default(cuid())
-  requestNumber   String   @unique
-  title           String
-  description     String?
-  priority        String   @default("medium") // low, medium, high, urgent
-  machineDown     Boolean  @default(false)
-  assetId         String?
-  assetName       String?
-  location        String?
-  status          String   @default("pending") // pending, approved, rejected, converted
-  workflowStatus  String   @default("pending") // pending, supervisor_review, approved, assigned_to_planner, work_order_created, in_progress, technician_completed, planner_confirmed, satisfactory, closed
-  category        String?  // mechanical, electrical, hydraulic, etc.
-  requestedById   String
-  supervisorId    String?
-  approvedById    String?
-  approvedAt      DateTime?
-  reviewNotes     String?
-  plannerId       String?
-  workOrderId     String?  @unique
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  requester   User?              @relation("Requester", fields: [requestedById], references: [id])
-  reviewer    User?              @relation("Reviewer", fields: [approvedById], references: [id])
-  workOrder   WorkOrder?         @relation(fields: [workOrderId], references: [id])
-  comments    MRComment[]
-  statusHistory MRStatusHistory[]
-
-  @@map("maintenance_requests")
-}
-
-model MRComment {
-  id                 String   @id @default(cuid())
-  maintenanceRequestId String
-  userId             String
-  content            String
-  createdAt          DateTime @default(now())
-
-  request MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade)
-
-  @@map("mr_comments")
-}
-
-model MRStatusHistory {
-  id                 String   @id @default(cuid())
-  maintenanceRequestId String
-  fromStatus         String?
-  toStatus           String
-  changedById        String?
-  reason             String?
-  createdAt          DateTime @default(now())
-
-  request MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade)
-
-  @@map("mr_status_history")
-}
-
-// ============================================================================
-// WORK ORDERS
-// ============================================================================
-
-model WorkOrder {
-  id              String    @id @default(cuid())
-  woNumber        String    @unique
-  title           String
-  description     String?
-  type            String    @default("corrective") // preventive, corrective, predictive, inspection, emergency, project
-  priority        String    @default("medium") // low, medium, high, critical, emergency
-  status          String    @default("draft") // draft, requested, approved, planned, assigned, in_progress, waiting_parts, on_hold, completed, verified, closed, cancelled
-  assetId         String?
-  assetName       String?
-  departmentId    String?
-  requestId       String?
-
-  // Assignment
-  assignedToId    String?
-  assignedToName  String?
-  teamLeaderId    String?
-  supervisorId    String?
-  plannerId       String?
-  assignedById    String?
-  assignedAt      DateTime?
-  assignmentType  String?   // direct, via_supervisor
-
-  // Planning
-  estimatedHours  Float?
-  plannedStart    DateTime?
-  plannedEnd      DateTime?
-
-  // Execution
-  actualStart     DateTime?
-  actualEnd       DateTime?
-  actualHours     Float?
-
-  // Cost
-  totalCost       Float     @default(0)
-  materialCost    Float     @default(0)
-  laborCost       Float     @default(0)
-
-  // SLA
-  slaHours        Float?
-  slaStartedAt    DateTime?
-  slaBreached     Boolean   @default(false)
-  responseDue     DateTime?
-  resolutionDue   DateTime?
-
-  // Failure Analysis
-  failureDescription String?
-  causeDescription   String?
-  actionDescription  String?
-
-  // Lock
-  isLocked        Boolean   @default(false)
-  lockedBy        String?
-  lockedAt        DateTime?
-  lockReason      String?
-
-  // Meta
-  createdById     String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  request      MaintenanceRequest?
-  creator      User?               @relation("WOCreator", fields: [createdById], references: [id])
-  teamMembers  WOTeamMember[]
-  timeLogs     WOTimeLog[]
-  materials    WOMaterial[]
-  comments     WOComment[]
-  statusHistory WOStatusHistory[]
-
-  @@map("work_orders")
-}
-
-model WOTeamMember {
-  id          String  @id @default(cuid())
-  workOrderId String
-  userId      String?
-  userName    String?
-  role        String  @default("member") // leader, member, assistant, specialist
-  hours       Float?
-  createdAt   DateTime @default(now())
-
-  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-
-  @@map("wo_team_members")
-}
-
-model WOTimeLog {
-  id          String    @id @default(cuid())
-  workOrderId String
-  userId      String?
-  userName    String?
-  action      String    // start, pause, resume, complete
-  startTime   DateTime?
-  endTime     DateTime?
-  duration    Float?
-  note        String?
-  createdAt   DateTime  @default(now())
-
-  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-
-  @@map("wo_time_logs")
-}
-
-model WOMaterial {
-  id          String  @id @default(cuid())
-  workOrderId String
-  itemName    String?
-  quantity    Float?
-  unit        String?
-  unitCost    Float?
-  totalCost   Float?
-  status      String  @default("requested") // requested, approved, issued, returned
-  createdAt   DateTime @default(now())
-
-  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-
-  @@map("wo_materials")
-}
-
-model WOComment {
-  id          String   @id @default(cuid())
-  workOrderId String
-  userId      String?
-  userName    String?
-  content     String
-  createdAt   DateTime @default(now())
-
-  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-
-  @@map("wo_comments")
-}
-
-model WOStatusHistory {
-  id          String   @id @default(cuid())
-  workOrderId String
-  fromStatus  String?
-  toStatus    String
-  changedById String?
-  changedByName String?
-  reason      String?
-  createdAt   DateTime @default(now())
-
-  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-
-  @@map("wo_status_history")
 }

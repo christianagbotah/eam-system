@@ -46,3 +46,73 @@
 ---
 
 
+
+## Session 2 - EAM Frontend & API Build
+
+- **Date:** 2026-04-10
+- **Context:** Build complete frontend SPA and API routes for the EAM system.
+
+### Task 1: Shared Session Store
+- **Status:** ✅ Completed
+- Created `/src/lib/sessions.ts` — shared in-memory session store with 24h expiry
+- Refactored `/api/auth/login`, `/api/auth/logout`, `/api/auth/me` to use shared session module (fixed module import issues)
+
+### Task 2: API Routes - Maintenance Requests
+- **Status:** ✅ Completed
+- `GET /api/maintenance-requests` — list with status/priority/category filters, includes requester, reviewer, comments, status history
+- `POST /api/maintenance-requests` — create new request (authenticated), auto-generates MR number, creates status history entry
+- `GET /api/maintenance-requests/[id]` — full detail with all relations
+- `PATCH /api/maintenance-requests/[id]` — actions: approve, reject, convert (to work order), comment. Convert action creates a draft WO and links it
+
+### Task 3: API Routes - Work Orders
+- **Status:** ✅ Completed
+- `GET /api/work-orders` — list with status/priority/type/assignedToId filters
+- `POST /api/work-orders` — create new WO (authenticated), auto-generates WO number
+- `GET /api/work-orders/[id]` — full detail with team, time logs, materials, comments, status history, source request
+- `PATCH /api/work-orders/[id]` — actions: approve, assign, start, complete, verify, close, cancel, comment. Each action creates status history and time logs as appropriate
+
+### Task 4: Existing API Routes (Already Built)
+- **Status:** ✅ Verified
+- Auth: login, logout, me
+- Dashboard stats
+- Users (GET, POST)
+- Roles (GET)
+- Permissions (GET)
+- Modules (GET, PATCH)
+
+### Task 5: Theme & Layout
+- **Status:** ✅ Completed
+- Updated `globals.css` with emerald green primary color scheme (oklch-based)
+- Dark theme uses deep emerald sidebar
+- Updated `layout.tsx` with Sonner Toaster (richColors, closeButton, position top-right)
+- Metadata updated for GTP EAM branding
+
+### Task 6: Frontend SPA (page.tsx)
+- **Status:** ✅ Completed
+- **Architecture:** Single-page app with Zustand-based routing via `useNavigationStore`
+- **Login Page:** Emerald-branded login with gradient background, demo account hints
+- **Sidebar:** Dark emerald sidebar with collapsible navigation, permission-based item visibility, mobile responsive with overlay
+- **Top Bar:** Mobile menu toggle, notification bell
+- **Dashboard:** 4 stat cards (open requests, active WOs, completed, overdue), recent requests table, recent work orders table
+- **Maintenance Requests:** Filterable list (status, priority), sortable table, create modal with full form (title, description, priority, category, asset, location, machine-down flag), detail page with description, comments, status history, approve/reject/convert actions
+- **Work Orders:** Filterable list (status), sortable table, create modal (title, description, type, priority, asset, est. hours), detail page with description, comments, activity timeline, actions dropdown (approve, assign, start, complete, verify, close), assign dialog with user selector, complete dialog with failure analysis fields, cost summary, team members panel
+- **Settings - Users:** Table view with avatar, roles (colored badges), department, plant, status
+- **Settings - Modules:** Card grid with toggle switches, core module protection, version display
+
+### Task 7: Seed Data Fix
+- **Status:** ✅ Completed
+- Fixed bcryptjs `hash()` calls (missing salt rounds parameter)
+- Fixed Prisma model name casing: `wOTeamMember`, `wOStatusHistory` (camelCase conversion)
+
+### Components Used
+- shadcn/ui: Button, Card, Input, Label, Textarea, Badge, Separator, ScrollArea, Skeleton, Avatar, Select, Switch, Dialog, Table, DropdownMenu
+- Lucide: LayoutDashboard, Wrench, ClipboardList, Settings, Users, Boxes, LogOut, Menu, X, Plus, ArrowLeft, CheckCircle2, XCircle, Clock, AlertTriangle, Play, Check, Lock, Eye, MessageSquare, Factory, Bell, etc.
+- Utilities: date-fns (format, formatDistanceToNow), sonner (toast)
+- State: Zustand (authStore, navigationStore)
+
+### Build Result
+- ✅ `next build` successful — all 17 routes compiled
+- ✅ Database seeded with 7 roles, 54 permissions, 7 users, 10 modules, sample MR and WO data
+
+---
+

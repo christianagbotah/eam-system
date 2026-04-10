@@ -45,6 +45,13 @@ export interface Permission {
   description?: string;
 }
 
+export interface UserRole {
+  id: string;
+  userId: string;
+  roleId: string;
+  role: Role;
+}
+
 // Organization
 export interface Plant {
   id: string;
@@ -106,6 +113,7 @@ export interface MaintenanceRequest {
   reviewer?: { id: string; fullName: string; username: string };
   comments?: MRComment[];
   statusHistory?: MRStatusHistory[];
+  workOrder?: { id: string; woNumber: string; title: string; status: string };
 }
 
 export interface MRComment {
@@ -177,6 +185,12 @@ export interface WorkOrder {
   comments?: WOComment[];
   statusHistory?: WOStatusHistory[];
   creator?: { id: string; fullName: string };
+  request?: {
+    id: string;
+    requestNumber: string;
+    title: string;
+    requester?: { id: string; fullName: string };
+  };
 }
 
 export interface WOTeamMember {
