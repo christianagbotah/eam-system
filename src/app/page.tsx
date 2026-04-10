@@ -2950,8 +2950,9 @@ function SettingsRolesPage() {
   const selectedPermCount = rolePerms.length;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1800px] mx-auto">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+      {/* Page header — shrinks, never scrolls */}
+      <div className="flex items-center justify-between flex-wrap gap-3 px-6 lg:px-8 py-5 shrink-0">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Roles & Permissions</h1>
           <p className="text-muted-foreground text-sm mt-1">Manage system roles and their associated permissions</p>
@@ -2959,11 +2960,11 @@ function SettingsRolesPage() {
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Create Role</Button>
       </div>
 
-      {/* Two-column layout: Roles (left) | Permissions (right) */}
-      <div className="flex gap-5 min-h-[calc(100vh-14rem)]">
+      {/* Two-column layout: fills remaining height, each column scrolls independently */}
+      <div className="flex gap-4 flex-1 min-h-0 mx-6 lg:mx-8 mb-6 lg:mb-8">
 
-        {/* ─── Left Column: Role List ─── */}
-        <Card className="border-0 shadow-sm w-64 shrink-0 flex flex-col overflow-hidden">
+        {/* ─── Left Column: Role List (viewport height, own scroll) ─── */}
+        <Card className="border-0 shadow-sm w-60 shrink-0 flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b bg-muted/30 shrink-0">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Roles ({roles.length})</p>
           </div>
@@ -3005,8 +3006,8 @@ function SettingsRolesPage() {
           </div>
         </Card>
 
-        {/* ─── Right Column: Permissions for Selected Role ─── */}
-        <div className="flex-1 min-w-0 overflow-y-auto space-y-4">
+        {/* ─── Right Column: Permissions (scrolls vertically) ─── */}
+        <div className="flex-1 min-w-0 overflow-y-auto space-y-4 pr-1">
           {selectedRoleData && (
             <div className="flex items-center gap-3 mb-1">
               <div className="h-9 w-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: (selectedRoleData.color || '#10b981') + '18', color: selectedRoleData.color || '#10b981' }}>
