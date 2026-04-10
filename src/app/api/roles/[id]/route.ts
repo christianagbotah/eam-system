@@ -31,6 +31,15 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Role not found' }, { status: 404 });
     }
 
+    // Admin role has no explicit RolePermission rows — it gets ALL permissions implicitly
+    let permissions = role.rolePermissions.map((rp) => rp.permission);
+    if (role.isSystem && role.slug === 'admin' && permissions.length === 0) {
+      const allPermissions = await db.permission.findMany({
+        select: { id: true, slug: true, name: true, module: true, action: true },
+      });
+      permissions = allPermissions;
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -40,8 +49,8 @@ export async function GET(
         description: role.description,
         level: role.level,
         isSystem: role.isSystem,
-        permissionCount: role.rolePermissions.length,
-        permissions: role.rolePermissions.map((rp) => rp.permission),
+        permissionCount: permissions.length,
+        permissions,
       },
     });
   } catch (error: unknown) {

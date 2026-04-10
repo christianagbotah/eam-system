@@ -109,8 +109,8 @@
   --sidebar-border: oklch(0.26 0.02 260);
   --sidebar-ring: oklch(0.508 0.16 163);
 
-  /* ===== HEADER — Clean white with separation ===== */
-  --header: oklch(0.99 0.002 155);
+  /* ===== HEADER — Subtle tinted surface for visual identity ===== */
+  --header: oklch(0.975 0.008 163);
   --header-foreground: oklch(0.17 0.02 260);
   --header-border: oklch(0.91 0.01 155);
 }
@@ -175,8 +175,8 @@
   --sidebar-border: oklch(1 0 0 / 7%);
   --sidebar-ring: oklch(0.62 0.17 163);
 
-  /* ===== HEADER — Elevated dark surface ===== */
-  --header: oklch(0.17 0.015 260);
+  /* ===== HEADER — Elevated dark surface with subtle tint ===== */
+  --header: oklch(0.16 0.02 163);
   --header-foreground: oklch(0.95 0.008 155);
   --header-border: oklch(1 0 0 / 8%);
 }
