@@ -9883,35 +9883,37 @@ function ProductionWorkCentersPage() {
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [filterType, setFilterType] = useState('all');
-  const [form, setForm] = useState({ name: '', type: 'production', location: '', description: '', capacity: '', status: 'active' });
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ code: '', name: '', type: 'production_line', department: 'Production', capacity: '', description: '' });
   const wcData = [
-    { id: 'WC-001', name: 'Main Assembly Line', type: 'assembly', location: 'Building A', status: 'active', capacity: 95, equipmentCount: 12, oee: 87.3 },
-    { id: 'WC-002', name: 'CNC Machining Center', type: 'production', location: 'Building B', status: 'active', capacity: 88, equipmentCount: 8, oee: 82.1 },
-    { id: 'WC-003', name: 'Paint & Coating Bay', type: 'production', location: 'Building C', status: 'active', capacity: 72, equipmentCount: 6, oee: 79.5 },
-    { id: 'WC-004', name: 'Packaging Line 1', type: 'packaging', location: 'Building D', status: 'active', capacity: 91, equipmentCount: 10, oee: 91.2 },
-    { id: 'WC-005', name: 'Welding Station', type: 'production', location: 'Building A', status: 'active', capacity: 80, equipmentCount: 5, oee: 85.6 },
-    { id: 'WC-006', name: 'Final Inspection Bay', type: 'assembly', location: 'Building E', status: 'active', capacity: 65, equipmentCount: 4, oee: 93.8 },
-    { id: 'WC-007', name: 'Raw Material Prep', type: 'production', location: 'Building B', status: 'inactive', capacity: 0, equipmentCount: 7, oee: 0 },
-    { id: 'WC-008', name: 'Packaging Line 2', type: 'packaging', location: 'Building D', status: 'inactive', capacity: 0, equipmentCount: 9, oee: 0 },
+    { code: 'WC-001', name: 'Main Assembly Line', type: 'production_line', department: 'Assembly', capacity: 120, utilization: 94, status: 'active', equipmentCount: 12 },
+    { code: 'WC-002', name: 'CNC Machining Center', type: 'work_cell', department: 'Production', capacity: 85, utilization: 88, status: 'active', equipmentCount: 8 },
+    { code: 'WC-003', name: 'Paint & Coating Bay', type: 'work_cell', department: 'Production', capacity: 60, utilization: 72, status: 'active', equipmentCount: 6 },
+    { code: 'WC-004', name: 'Packaging Line 1', type: 'production_line', department: 'Packaging', capacity: 150, utilization: 91, status: 'active', equipmentCount: 10 },
+    { code: 'WC-005', name: 'Welding Station', type: 'work_cell', department: 'Assembly', capacity: 45, utilization: 83, status: 'active', equipmentCount: 5 },
+    { code: 'WC-006', name: 'Final Inspection Bay', type: 'assembly', department: 'Production', capacity: 80, utilization: 65, status: 'idle', equipmentCount: 4 },
+    { code: 'WC-007', name: 'Raw Material Prep', type: 'warehouse', department: 'Warehouse', capacity: 200, utilization: 0, status: 'maintenance', equipmentCount: 7 },
+    { code: 'WC-008', name: 'Shipping Dock', type: 'warehouse', department: 'Warehouse', capacity: 300, utilization: 78, status: 'active', equipmentCount: 3 },
   ];
-  const statusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', inactive: 'bg-slate-100 text-slate-600 border-slate-200' };
-  const typeColors: Record<string, string> = { production: 'bg-sky-50 text-sky-700', assembly: 'bg-violet-50 text-violet-700', packaging: 'bg-amber-50 text-amber-700' };
+  const statusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', idle: 'bg-amber-50 text-amber-700 border-amber-200', maintenance: 'bg-slate-100 text-slate-600 border-slate-200' };
+  const typeColors: Record<string, string> = { production_line: 'bg-sky-50 text-sky-700', work_cell: 'bg-violet-50 text-violet-700', assembly: 'bg-amber-50 text-amber-700', warehouse: 'bg-teal-50 text-teal-700' };
   const filtered = wcData.filter(r => {
     if (filterType !== 'all' && r.type !== filterType) return false;
-    if (search && !r.name.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.name.toLowerCase().includes(search.toLowerCase()) && !r.code.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
-  const totalWC = wcData.length;
-  const activeWC = wcData.filter(w => w.status === 'active').length;
-  const inactiveWC = wcData.filter(w => w.status === 'inactive').length;
-  const avgUtil = wcData.filter(w => w.status === 'active').reduce((a, b) => a + b.capacity, 0) / activeWC;
+  const totalWC = 12;
+  const activeWC = 10;
+  const idleWC = 1;
+  const maintenanceWC = 1;
   const kpis = [
     { label: 'Total Work Centers', value: totalWC, icon: Factory, color: 'text-emerald-600 bg-emerald-50' },
     { label: 'Active', value: activeWC, icon: Play, color: 'text-sky-600 bg-sky-50' },
-    { label: 'Inactive', value: inactiveWC, icon: Pause, color: 'text-slate-600 bg-slate-100' },
-    { label: 'Avg Utilization', value: `${avgUtil.toFixed(1)}%`, icon: Gauge, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Idle', value: idleWC, icon: Pause, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Under Maintenance', value: maintenanceWC, icon: Wrench, color: 'text-slate-600 bg-slate-100' },
   ];
-  const handleCreate = () => { if (!form.name) { toast.error('Name is required'); return; } toast.success('Work center created'); setCreateOpen(false); setForm({ name: '', type: 'production', location: '', description: '', capacity: '', status: 'active' }); };
+  const handleCreate = () => { if (!form.code || !form.name) { toast.error('Code and name are required'); return; } toast.success('Work center created'); setCreateOpen(false); setForm({ code: '', name: '', type: 'production_line', department: 'Production', capacity: '', description: '' }); };
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -9923,38 +9925,41 @@ function ProductionWorkCentersPage() {
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search work centers..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
-        <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="production">Production</SelectItem><SelectItem value="assembly">Assembly</SelectItem><SelectItem value="packaging">Packaging</SelectItem></SelectContent></Select>
+        <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="production_line">Production Line</SelectItem><SelectItem value="work_cell">Work Cell</SelectItem><SelectItem value="assembly">Assembly</SelectItem><SelectItem value="warehouse">Warehouse</SelectItem></SelectContent></Select>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="idle">Idle</SelectItem><SelectItem value="maintenance">Maintenance</SelectItem></SelectContent></Select>
       </div>
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
-        <Table><TableHeader><TableRow><TableHead className="w-[100px]">ID</TableHead><TableHead>Name</TableHead><TableHead>Type</TableHead><TableHead>Location</TableHead><TableHead>Status</TableHead><TableHead>Capacity</TableHead><TableHead>Equipment</TableHead><TableHead>OEE</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
-          {filtered.map(r => (
-            <TableRow key={r.id}>
-              <TableCell className="font-mono text-xs">{r.id}</TableCell>
-              <TableCell className="font-medium text-sm">{r.name}</TableCell>
-              <TableCell><Badge variant="secondary" className={`text-[11px] ${typeColors[r.type] || ''}`}>{r.type}</Badge></TableCell>
-              <TableCell className="text-sm"><div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-muted-foreground" />{r.location}</div></TableCell>
-              <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.toUpperCase()}</Badge></TableCell>
-              <TableCell className="text-sm font-medium">{r.capacity}%</TableCell>
-              <TableCell className="text-sm">{r.equipmentCount}</TableCell>
-              <TableCell className="text-sm"><span className={r.oee >= 85 ? 'text-emerald-600 font-semibold' : r.oee >= 70 ? 'text-amber-600' : 'text-muted-foreground'}>{r.oee}%</span></TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
-            </TableRow>
-          ))}
-        </TableBody></Table>
+        <div className="overflow-x-auto">
+          <Table><TableHeader><TableRow><TableHead className="w-[100px]">Code</TableHead><TableHead>Name</TableHead><TableHead>Type</TableHead><TableHead>Department</TableHead><TableHead className="text-right">Capacity (units/hr)</TableHead><TableHead>Utilization</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Equipment</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+            {filtered.map(r => (
+              <TableRow key={r.code}>
+                <TableCell className="font-mono text-xs font-medium">{r.code}</TableCell>
+                <TableCell className="font-medium text-sm">{r.name}</TableCell>
+                <TableCell><Badge variant="secondary" className={`text-[11px] ${typeColors[r.type] || ''}`}>{r.type.replace(/_/g, ' ')}</Badge></TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.department}</TableCell>
+                <TableCell className="text-right text-sm font-medium">{r.capacity}</TableCell>
+                <TableCell><div className="flex items-center gap-2"><div className="w-20 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${r.utilization > 90 ? 'bg-amber-500' : r.utilization > 70 ? 'bg-emerald-500' : 'bg-slate-400'}`} style={{ width: `${r.utilization}%` }} /></div><span className="text-xs font-medium w-8">{r.utilization}%</span></div></TableCell>
+                <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.toUpperCase()}</Badge></TableCell>
+                <TableCell className="text-right text-sm">{r.equipmentCount}</TableCell>
+                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
       </CardContent></Card>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent><DialogHeader><DialogTitle>New Work Center</DialogTitle><DialogDescription>Add a new production work center.</DialogDescription></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Work center name" /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Code *</Label><Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="WC-XXX" /></div>
+              <div className="space-y-2"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Work center name" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="production_line">Production Line</SelectItem><SelectItem value="work_cell">Work Cell</SelectItem><SelectItem value="assembly">Assembly</SelectItem><SelectItem value="warehouse">Warehouse</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Department</Label><Select value={form.department} onValueChange={v => setForm(f => ({ ...f, department: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Production">Production</SelectItem><SelectItem value="Packaging">Packaging</SelectItem><SelectItem value="Assembly">Assembly</SelectItem><SelectItem value="Warehouse">Warehouse</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="space-y-2"><Label>Capacity (units/hr)</Label><Input type="number" value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: e.target.value }))} placeholder="0" /></div>
             <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Description..." rows={2} /></div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="production">Production</SelectItem><SelectItem value="assembly">Assembly</SelectItem><SelectItem value="packaging">Packaging</SelectItem></SelectContent></Select></div>
-              <div className="space-y-2"><Label>Location</Label><Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} placeholder="Building / Area" /></div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Capacity (%)</Label><Input type="number" value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: e.target.value }))} placeholder="100" /></div>
-              <div className="space-y-2"><Label>Status</Label><Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent></Select></div>
-            </div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create</Button></DialogFooter>
         </DialogContent>
@@ -9964,255 +9969,256 @@ function ProductionWorkCentersPage() {
 }
 function ProductionResourcePlanningPage() {
   const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
   const [filterType, setFilterType] = useState('all');
+  const [form, setForm] = useState({ resource: '', type: 'labor', assignedTo: '', allocation: '', shift: 'Day', startDate: '', endDate: '' });
   const resourceData = [
-    { id: 'RES-001', name: 'CNC Operator – Shift A', type: 'labor', assignedTo: 'PO-2025-003', qtyAvailable: 3, qtyUsed: 3, status: 'allocated' },
-    { id: 'RES-002', name: 'CNC Machine #4', type: 'equipment', assignedTo: 'PO-2025-003', qtyAvailable: 1, qtyUsed: 1, status: 'allocated' },
-    { id: 'RES-003', name: 'Steel Sheet 4mm', type: 'material', assignedTo: 'PO-2025-001', qtyAvailable: 500, qtyUsed: 350, status: 'allocated' },
-    { id: 'RES-004', name: 'Welding Robot WR-02', type: 'equipment', assignedTo: 'PO-2025-005', qtyAvailable: 1, qtyUsed: 1, status: 'allocated' },
-    { id: 'RES-005', name: 'Paint Booth PB-1', type: 'equipment', assignedTo: 'PO-2025-002', qtyAvailable: 1, qtyUsed: 1, status: 'allocated' },
-    { id: 'RES-006', name: 'Assembly Technician B', type: 'labor', assignedTo: 'PO-2025-004', qtyAvailable: 4, qtyUsed: 2, status: 'available' },
-    { id: 'RES-007', name: 'Aluminum Extrusion', type: 'material', assignedTo: 'PO-2025-006', qtyAvailable: 200, qtyUsed: 200, status: 'allocated' },
-    { id: 'RES-008', name: 'Packaging Operator', type: 'labor', assignedTo: 'PO-2025-007', qtyAvailable: 6, qtyUsed: 6, status: 'overallocated' },
-    { id: 'RES-009', name: 'Injection Molder IM-3', type: 'equipment', assignedTo: 'PO-2025-008', qtyAvailable: 1, qtyUsed: 1, status: 'allocated' },
-    { id: 'RES-010', name: 'Epoxy Resin 2-Part', type: 'material', assignedTo: 'PO-2025-002', qtyAvailable: 80, qtyUsed: 95, status: 'overallocated' },
+    { id: 'RES-001', name: 'CNC Operator Team A', type: 'labor', assignedTo: 'PO-2025-003', allocation: 95, available: 8, status: 'over-allocated', shift: 'Day' },
+    { id: 'RES-002', name: 'CNC Machine #4', type: 'machine', assignedTo: 'PO-2025-003', allocation: 100, available: 40, status: 'allocated', shift: 'Day' },
+    { id: 'RES-003', name: 'Steel Sheet 4mm', type: 'material', assignedTo: 'PO-2025-001', allocation: 70, available: 500, status: 'allocated', shift: 'All' },
+    { id: 'RES-004', name: 'Welding Robot WR-02', type: 'machine', assignedTo: 'PO-2025-005', allocation: 100, available: 40, status: 'allocated', shift: 'Night' },
+    { id: 'RES-005', name: 'Paint Booth PB-1', type: 'machine', assignedTo: 'PO-2025-002', allocation: 85, available: 40, status: 'allocated', shift: 'Day' },
+    { id: 'RES-006', name: 'Assembly Technician B', type: 'labor', assignedTo: 'Unassigned', allocation: 50, available: 40, status: 'available', shift: 'Day' },
+    { id: 'RES-007', name: 'Aluminum Extrusion', type: 'material', assignedTo: 'PO-2025-006', allocation: 100, available: 200, status: 'over-allocated', shift: 'All' },
+    { id: 'RES-008', name: 'Packaging Operator', type: 'labor', assignedTo: 'Unassigned', allocation: 30, available: 40, status: 'under-utilized', shift: 'Night' },
   ];
-  const statusColors: Record<string, string> = { allocated: 'bg-emerald-50 text-emerald-700 border-emerald-200', available: 'bg-sky-50 text-sky-700 border-sky-200', overallocated: 'bg-red-50 text-red-700 border-red-200' };
-  const typeColors: Record<string, string> = { labor: 'bg-violet-50 text-violet-700', equipment: 'bg-sky-50 text-sky-700', material: 'bg-amber-50 text-amber-700' };
+  const statusColors: Record<string, string> = { allocated: 'bg-emerald-50 text-emerald-700 border-emerald-200', available: 'bg-sky-50 text-sky-700 border-sky-200', 'over-allocated': 'bg-red-50 text-red-700 border-red-200', 'under-utilized': 'bg-amber-50 text-amber-700 border-amber-200' };
+  const typeColors: Record<string, string> = { labor: 'bg-violet-50 text-violet-700', machine: 'bg-sky-50 text-sky-700', material: 'bg-amber-50 text-amber-700' };
   const filtered = resourceData.filter(r => {
     if (filterType !== 'all' && r.type !== filterType) return false;
     if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
-  const allocated = resourceData.filter(r => r.status === 'allocated').length;
-  const available = resourceData.filter(r => r.status === 'available').length;
-  const overallocated = resourceData.filter(r => r.status === 'overallocated').length;
-  const utilization = ((allocated / resourceData.length) * 100).toFixed(1);
   const kpis = [
-    { label: 'Allocated', value: allocated, icon: Layers, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Available', value: available, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50' },
-    { label: 'Overallocated', value: overallocated, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
-    { label: 'Utilization', value: `${utilization}%`, icon: Gauge, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Resources Planned', value: 28, icon: Layers, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Over-Allocated', value: 4, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
+    { label: 'Under-Utilized', value: 6, icon: TrendingDown, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Utilization', value: '84%', icon: Gauge, color: 'text-sky-600 bg-sky-50' },
   ];
+  const handleCreate = () => { if (!form.resource || !form.allocation) { toast.error('Resource and allocation are required'); return; } toast.success('Resource planned'); setCreateOpen(false); setForm({ resource: '', type: 'labor', assignedTo: '', allocation: '', shift: 'Day', startDate: '', endDate: '' }); };
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Resource Planning</h1><p className="text-muted-foreground text-sm mt-1">Plan and allocate resources for production orders</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Plan Resource</Button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search resources..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
-        <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="labor">Labor</SelectItem><SelectItem value="equipment">Equipment</SelectItem><SelectItem value="material">Material</SelectItem></SelectContent></Select>
+        <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="labor">Labor</SelectItem><SelectItem value="machine">Machine</SelectItem><SelectItem value="material">Material</SelectItem></SelectContent></Select>
       </div>
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
-        <Table><TableHeader><TableRow><TableHead className="w-[100px]">ID</TableHead><TableHead>Resource Name</TableHead><TableHead>Type</TableHead><TableHead>Assigned To</TableHead><TableHead className="text-right">Qty Available</TableHead><TableHead className="text-right">Qty Used</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
-          {filtered.map(r => {
-            const pct = Math.round((r.qtyUsed / r.qtyAvailable) * 100);
-            return (
+        <div className="overflow-x-auto">
+          <Table><TableHeader><TableRow><TableHead className="w-[100px]">ID</TableHead><TableHead>Resource</TableHead><TableHead>Type</TableHead><TableHead>Assigned To</TableHead><TableHead>Allocation</TableHead><TableHead>Available</TableHead><TableHead>Status</TableHead><TableHead>Shift</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.map(r => (
               <TableRow key={r.id}>
                 <TableCell className="font-mono text-xs">{r.id}</TableCell>
                 <TableCell className="font-medium text-sm">{r.name}</TableCell>
                 <TableCell><Badge variant="secondary" className={`text-[11px] ${typeColors[r.type] || ''}`}>{r.type}</Badge></TableCell>
-                <TableCell className="font-mono text-xs">{r.assignedTo}</TableCell>
-                <TableCell className="text-right text-sm">{r.qtyAvailable}</TableCell>
-                <TableCell className="text-right text-sm">{r.qtyUsed}</TableCell>
-                <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.toUpperCase()}</Badge></TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{r.assignedTo}</TableCell>
+                <TableCell><div className="flex items-center gap-2"><div className="w-20 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${r.allocation > 100 ? 'bg-red-500' : r.allocation > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(r.allocation, 100)}%` }} /></div><span className={`text-xs font-medium w-8 ${r.allocation > 100 ? 'text-red-600' : ''}`}>{r.allocation}%</span></div></TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.available} hrs</TableCell>
+                <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell className="text-sm">{r.shift}</TableCell>
               </TableRow>
-            );
-          })}
-        </TableBody></Table>
+            ))}
+          </TableBody></Table>
+        </div>
       </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>Plan Resource</DialogTitle><DialogDescription>Allocate a resource to a production task.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Resource *</Label><Input value={form.resource} onChange={e => setForm(f => ({ ...f, resource: e.target.value }))} placeholder="Resource name" /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="labor">Labor</SelectItem><SelectItem value="machine">Machine</SelectItem><SelectItem value="material">Material</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Allocation (%) *</Label><Input type="number" value={form.allocation} onChange={e => setForm(f => ({ ...f, allocation: e.target.value }))} placeholder="0" /></div>
+            </div>
+            <div className="space-y-2"><Label>Assigned To</Label><Input value={form.assignedTo} onChange={e => setForm(f => ({ ...f, assignedTo: e.target.value }))} placeholder="Order or task ID" /></div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2"><Label>Shift</Label><Select value={form.shift} onValueChange={v => setForm(f => ({ ...f, shift: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Day">Day</SelectItem><SelectItem value="Night">Night</SelectItem><SelectItem value="All">All</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>End Date</Label><Input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} /></div>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Plan Resource</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 function ProductionSchedulingPage() {
+  const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState({ product: '', workCenter: '', startDate: '', endDate: '', priority: 'medium', quantity: '' });
   const scheduleData = [
-    { id: 'SCH-001', order: 'PO-2025-001', workCenter: 'Main Assembly Line', startDate: '2025-01-20', endDate: '2025-01-25', progress: 100, status: 'completed' },
-    { id: 'SCH-002', order: 'PO-2025-002', workCenter: 'Paint & Coating Bay', startDate: '2025-01-22', endDate: '2025-01-28', progress: 75, status: 'in_progress' },
-    { id: 'SCH-003', order: 'PO-2025-003', workCenter: 'CNC Machining Center', startDate: '2025-01-21', endDate: '2025-01-27', progress: 60, status: 'in_progress' },
-    { id: 'SCH-004', order: 'PO-2025-004', workCenter: 'Final Inspection Bay', startDate: '2025-01-24', endDate: '2025-01-30', progress: 30, status: 'in_progress' },
-    { id: 'SCH-005', order: 'PO-2025-005', workCenter: 'Welding Station', startDate: '2025-01-26', endDate: '2025-02-01', progress: 10, status: 'delayed' },
-    { id: 'SCH-006', order: 'PO-2025-006', workCenter: 'Packaging Line 1', startDate: '2025-01-28', endDate: '2025-02-03', progress: 0, status: 'planned' },
-    { id: 'SCH-007', order: 'PO-2025-007', workCenter: 'Main Assembly Line', startDate: '2025-01-30', endDate: '2025-02-05', progress: 0, status: 'planned' },
-    { id: 'SCH-008', order: 'PO-2025-008', workCenter: 'CNC Machining Center', startDate: '2025-01-25', endDate: '2025-01-31', progress: 45, status: 'delayed' },
+    { id: 'JOB-001', product: 'Hydraulic Pump HP-300', workCenter: 'Main Assembly Line', startDate: '2025-01-20', endDate: '2025-01-25', progress: 100, status: 'completed', priority: 'high' },
+    { id: 'JOB-002', product: 'Control Valve CV-200', workCenter: 'Paint & Coating Bay', startDate: '2025-01-22', endDate: '2025-01-28', progress: 75, status: 'in_progress', priority: 'high' },
+    { id: 'JOB-003', product: 'Actuator Arm AA-150', workCenter: 'CNC Machining Center', startDate: '2025-01-21', endDate: '2025-01-27', progress: 60, status: 'in_progress', priority: 'medium' },
+    { id: 'JOB-004', product: 'Sensor Housing SH-400', workCenter: 'Final Inspection Bay', startDate: '2025-01-24', endDate: '2025-01-30', progress: 30, status: 'in_progress', priority: 'low' },
+    { id: 'JOB-005', product: 'Bearing Assembly BA-100', workCenter: 'Welding Station', startDate: '2025-01-16', endDate: '2025-01-22', progress: 45, status: 'delayed', priority: 'critical' },
+    { id: 'JOB-006', product: 'Gearbox GB-250', workCenter: 'CNC Machining Center', startDate: '2025-01-18', endDate: '2025-01-24', progress: 55, status: 'delayed', priority: 'high' },
+    { id: 'JOB-007', product: 'Packaging Line 1 Run', workCenter: 'Packaging Line 1', startDate: '2025-01-28', endDate: '2025-02-03', progress: 0, status: 'scheduled', priority: 'medium' },
+    { id: 'JOB-008', product: 'Seal Kit SK-50', workCenter: 'Main Assembly Line', startDate: '2025-01-30', endDate: '2025-02-05', progress: 0, status: 'scheduled', priority: 'low' },
+    { id: 'JOB-009', product: 'Motor Mount MM-400', workCenter: 'Welding Station', startDate: '2025-01-25', endDate: '2025-01-31', progress: 40, status: 'delayed', priority: 'high' },
+    { id: 'JOB-010', product: 'Filter Assembly FA-300', workCenter: 'Paint & Coating Bay', startDate: '2025-02-01', endDate: '2025-02-06', progress: 0, status: 'scheduled', priority: 'medium' },
   ];
-  const statusColors: Record<string, string> = { completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', planned: 'bg-slate-100 text-slate-600 border-slate-200', delayed: 'bg-red-50 text-red-700 border-red-200' };
-  const progressColors: Record<string, string> = { completed: 'bg-emerald-500', in_progress: 'bg-sky-500', delayed: 'bg-red-500', planned: 'bg-slate-300' };
+  const statusColors: Record<string, string> = { scheduled: 'bg-slate-100 text-slate-600 border-slate-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', delayed: 'bg-red-50 text-red-700 border-red-200' };
+  const priorityColors: Record<string, string> = { low: 'bg-sky-50 text-sky-700', medium: 'bg-amber-50 text-amber-700', high: 'bg-orange-50 text-orange-700', critical: 'bg-red-50 text-red-700' };
+  const progressColors: Record<string, string> = { scheduled: 'bg-slate-300', in_progress: 'bg-sky-500', completed: 'bg-emerald-500', delayed: 'bg-red-500' };
   const filtered = scheduleData.filter(r => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.product.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
-  const active = scheduleData.filter(s => s.status === 'in_progress').length;
-  const delayed = scheduleData.filter(s => s.status === 'delayed').length;
-  const onTrack = scheduleData.filter(s => s.status === 'in_progress' || s.status === 'completed').length;
-  const completionRate = ((scheduleData.reduce((a, b) => a + b.progress, 0) / (scheduleData.length * 100)) * 100).toFixed(0);
+  const getDuration = (s: string, e: string) => { const diff = (new Date(e).getTime() - new Date(s).getTime()) / 86400000; return Math.max(Math.round(diff), 1); };
   const kpis = [
-    { label: 'Active Schedules', value: active, icon: Play, color: 'text-sky-600 bg-sky-50' },
-    { label: 'Delayed', value: delayed, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
-    { label: 'On Track', value: onTrack, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Completion Rate', value: `${completionRate}%`, icon: Target, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Jobs Scheduled', value: 24, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'In Progress', value: 8, icon: Play, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Delayed', value: 3, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
+    { label: 'On Track', value: 21, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
   ];
-  const totalDays = 7;
-  const getLeftOffset = (dateStr: string) => {
-    const d = new Date(dateStr);
-    const start = new Date('2025-01-20');
-    return ((d.getTime() - start.getTime()) / (totalDays * 86400000)) * 100;
-  };
-  const getWidth = (startStr: string, endStr: string) => {
-    const s = new Date(startStr);
-    const e = new Date(endStr);
-    return Math.max(((e.getTime() - s.getTime()) / (totalDays * 86400000)) * 100, 8);
-  };
-  const ganttDays = ['Jan 20', 'Jan 21', 'Jan 22', 'Jan 23', 'Jan 24', 'Jan 25', 'Jan 26', 'Jan 27', 'Jan 28', 'Jan 29', 'Jan 30', 'Jan 31', 'Feb 1', 'Feb 2', 'Feb 3', 'Feb 4', 'Feb 5'];
+  const handleCreate = () => { if (!form.product || !form.workCenter) { toast.error('Product and work center are required'); return; } toast.success('Job scheduled'); setCreateOpen(false); setForm({ product: '', workCenter: '', startDate: '', endDate: '', priority: 'medium', quantity: '' }); };
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Production Scheduling</h1><p className="text-muted-foreground text-sm mt-1">Create and manage production schedules and sequencing</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Schedule Job</Button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
       <div className="flex items-center gap-3 flex-wrap">
-        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="delayed">Delayed</SelectItem></SelectContent></Select>
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search jobs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="delayed">Delayed</SelectItem></SelectContent></Select>
       </div>
-      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm overflow-hidden">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <div className="min-w-[800px]">
-              <div className="flex border-b border-border/60 px-4 py-2 bg-muted/30">
-                <div className="w-[180px] shrink-0 text-xs font-semibold text-muted-foreground">ORDER</div>
-                <div className="w-[160px] shrink-0 text-xs font-semibold text-muted-foreground">WORK CENTER</div>
-                <div className="w-[180px] shrink-0 text-xs font-semibold text-muted-foreground">DATES</div>
-                <div className="flex-1 text-xs font-semibold text-muted-foreground">SCHEDULE</div>
-                <div className="w-[100px] shrink-0 text-xs font-semibold text-muted-foreground">PROGRESS</div>
-                <div className="w-[80px] shrink-0 text-xs font-semibold text-muted-foreground">STATUS</div>
-              </div>
-              {filtered.map(r => (
-                <div key={r.id} className="flex items-center border-b border-border/40 px-4 py-3 hover:bg-muted/20 transition-colors">
-                  <div className="w-[180px] shrink-0 font-mono text-xs font-medium">{r.order}</div>
-                  <div className="w-[160px] shrink-0 text-sm text-muted-foreground">{r.workCenter}</div>
-                  <div className="w-[180px] shrink-0 text-xs text-muted-foreground">{formatDate(r.startDate)} – {formatDate(r.endDate)}</div>
-                  <div className="flex-1 relative h-8 bg-muted/30 rounded-md overflow-hidden">
-                    <div className="absolute h-full rounded-md opacity-30" style={{ left: `${getLeftOffset(r.startDate)}%`, width: `${getWidth(r.startDate, r.endDate)}%`, backgroundColor: r.status === 'completed' ? '#10b981' : r.status === 'in_progress' ? '#0ea5e9' : r.status === 'delayed' ? '#ef4444' : '#94a3b8' }} />
-                    <div className="absolute h-full rounded-md" style={{ left: `${getLeftOffset(r.startDate)}%`, width: `${getWidth(r.startDate, r.endDate) * (r.progress / 100)}%`, backgroundColor: r.status === 'completed' ? '#10b981' : r.status === 'in_progress' ? '#0ea5e9' : r.status === 'delayed' ? '#ef4444' : '#94a3b8' }} />
-                  </div>
-                  <div className="w-[100px] shrink-0 px-2"><div className="flex items-center gap-2"><div className="flex-1 h-2 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full transition-all ${progressColors[r.status] || 'bg-slate-400'}`} style={{ width: `${r.progress}%` }} /></div><span className="text-xs font-medium w-8 text-right">{r.progress}%</span></div></div>
-                  <div className="w-[80px] shrink-0"><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></div>
-                </div>
-              ))}
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table><TableHeader><TableRow><TableHead className="w-[100px]">Job #</TableHead><TableHead>Product</TableHead><TableHead>Work Center</TableHead><TableHead>Start</TableHead><TableHead>End</TableHead><TableHead className="text-right">Duration</TableHead><TableHead>Progress</TableHead><TableHead>Priority</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.map(r => (
+              <TableRow key={r.id} className={r.status === 'delayed' ? 'bg-red-50/30' : ''}>
+                <TableCell className="font-mono text-xs font-medium">{r.id}</TableCell>
+                <TableCell className="font-medium text-sm">{r.product}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.workCenter}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{formatDate(r.startDate)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{formatDate(r.endDate)}</TableCell>
+                <TableCell className="text-right text-sm">{getDuration(r.startDate, r.endDate)} days</TableCell>
+                <TableCell><div className="flex items-center gap-2"><div className="w-16 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${progressColors[r.status] || 'bg-slate-400'}`} style={{ width: `${r.progress}%` }} /></div><span className="text-xs font-medium w-8">{r.progress}%</span></div></TableCell>
+                <TableCell><Badge variant="secondary" className={`text-[11px] ${priorityColors[r.priority] || ''}`}>{r.priority}</Badge></TableCell>
+                <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>Schedule New Job</DialogTitle><DialogDescription>Create a new production schedule entry.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Product *</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Product name" /></div>
+              <div className="space-y-2"><Label>Work Center *</Label><Input value={form.workCenter} onChange={e => setForm(f => ({ ...f, workCenter: e.target.value }))} placeholder="Work center" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>End Date</Label><Input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Priority</Label><Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Quantity</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" /></div>
             </div>
           </div>
-        </CardContent>
-      </Card>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Schedule</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 function ProductionCapacityPage() {
+  const [search, setSearch] = useState('');
   const capacityData = [
-    { name: 'Main Assembly', planned: 500, actual: 465, utilization: 93, trend: 'up' },
-    { name: 'CNC Machining', planned: 350, actual: 310, utilization: 89, trend: 'stable' },
-    { name: 'Paint & Coating', planned: 200, actual: 195, utilization: 98, trend: 'up' },
-    { name: 'Packaging L1', planned: 600, actual: 420, utilization: 70, trend: 'down' },
-    { name: 'Welding', planned: 280, actual: 290, utilization: 104, trend: 'up' },
-    { name: 'Inspection', planned: 150, actual: 148, utilization: 99, trend: 'stable' },
+    { name: 'Main Assembly Line', totalCapacity: 480, planned: 450, actual: 420, utilization: 88, efficiency: 93, trend: 'up' as const, status: 'optimal' },
+    { name: 'CNC Machining Center', totalCapacity: 400, planned: 380, actual: 355, utilization: 89, efficiency: 94, trend: 'up' as const, status: 'optimal' },
+    { name: 'Paint & Coating Bay', totalCapacity: 320, planned: 310, actual: 305, utilization: 95, efficiency: 98, trend: 'stable' as const, status: 'warning' },
+    { name: 'Packaging Line 1', totalCapacity: 500, planned: 400, actual: 310, utilization: 62, efficiency: 78, trend: 'down' as const, status: 'warning' },
+    { name: 'Welding Station', totalCapacity: 280, planned: 290, actual: 310, utilization: 111, efficiency: 107, trend: 'up' as const, status: 'critical' },
+    { name: 'Final Inspection Bay', totalCapacity: 200, planned: 180, actual: 175, utilization: 88, efficiency: 97, trend: 'stable' as const, status: 'optimal' },
+    { name: 'Raw Material Prep', totalCapacity: 350, planned: 0, actual: 0, utilization: 0, efficiency: 0, trend: 'stable' as const, status: 'optimal' },
+    { name: 'Shipping Dock', totalCapacity: 400, planned: 362, actual: 348, utilization: 87, efficiency: 96, trend: 'up' as const, status: 'optimal' },
   ];
-  const totalCapacity = capacityData.reduce((a, b) => a + b.planned, 0);
-  const totalUsed = capacityData.reduce((a, b) => a + b.actual, 0);
-  const totalAvailable = totalCapacity - totalUsed;
-  const overloadCount = capacityData.filter(c => c.utilization > 100).length;
-  const overallUtil = ((totalUsed / totalCapacity) * 100).toFixed(1);
-  const kpis = [
-    { label: 'Total Capacity', value: totalCapacity.toLocaleString(), icon: Box, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Used', value: totalUsed.toLocaleString(), icon: BarChart3, color: 'text-sky-600 bg-sky-50' },
-    { label: 'Available', value: totalAvailable.toLocaleString(), icon: CheckCircle2, color: 'text-amber-600 bg-amber-50' },
-    { label: 'Overload Count', value: overloadCount, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
-  ];
-  const chartData = capacityData.map(c => ({ name: c.name, planned: c.planned, actual: c.actual }));
+  const filtered = capacityData.filter(r => {
+    if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const overallUtil = 78;
+  const availableCapacity = 2400;
+  const usedCapacity = 1872;
+  const bottleneckLines = 2;
+  const statusColors: Record<string, string> = { optimal: 'bg-emerald-50 text-emerald-700 border-emerald-200', warning: 'bg-amber-50 text-amber-700 border-amber-200', critical: 'bg-red-50 text-red-700 border-red-200' };
   const trendIcons: Record<string, React.ReactNode> = { up: <TrendingUp className="h-4 w-4 text-emerald-600" />, down: <TrendingDown className="h-4 w-4 text-red-600" />, stable: <Minus className="h-4 w-4 text-slate-400" /> };
+  const kpis = [
+    { label: 'Overall Utilization', value: `${overallUtil}%`, icon: Gauge, color: overallUtil > 85 ? 'text-red-600 bg-red-50' : 'text-emerald-600 bg-emerald-50' },
+    { label: 'Available Capacity', value: `${availableCapacity.toLocaleString()} hrs/wk`, icon: Box, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Used', value: `${usedCapacity.toLocaleString()} hrs`, icon: BarChart3, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Bottleneck Lines', value: bottleneckLines, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
+  ];
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       <div><h1 className="text-2xl font-bold tracking-tight">Capacity Management</h1><p className="text-muted-foreground text-sm mt-1">Monitor and manage production capacity utilization</p></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
-          <CardHeader><CardTitle className="text-base">Capacity by Work Center</CardTitle><CardDescription className="text-xs">Planned vs Actual output</CardDescription></CardHeader>
-          <CardContent>
-            <ChartContainer config={{ planned: { label: 'Planned', color: '#0ea5e9' }, actual: { label: 'Actual', color: '#10b981' } }} className="h-[300px] w-full">
-              <BarChart data={chartData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
-                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="planned" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="actual" fill="#10b981" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ChartContainer>
-          </CardContent>
-        </Card>
-        <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
-          <CardHeader><CardTitle className="text-base">Overall Utilization</CardTitle><CardDescription className="text-xs">Current production utilization rate</CardDescription></CardHeader>
-          <CardContent className="flex flex-col items-center justify-center py-8">
-            <div className="relative h-44 w-44">
-              <svg className="h-44 w-44 -rotate-90" viewBox="0 0 120 120">
-                <circle cx="60" cy="60" r="50" fill="none" stroke="currentColor" className="text-muted/30" strokeWidth="10" />
-                <circle cx="60" cy="60" r="50" fill="none" stroke={parseFloat(overallUtil) > 95 ? '#ef4444' : parseFloat(overallUtil) > 80 ? '#f59e0b' : '#10b981'} strokeWidth="10" strokeDasharray={`${(parseFloat(overallUtil) / 100) * 314} 314`} strokeLinecap="round" />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-bold">{overallUtil}%</span>
-                <span className="text-xs text-muted-foreground">Utilization</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search work centers..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
       </div>
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
-        <Table><TableHeader><TableRow><TableHead>Work Center</TableHead><TableHead className="text-right">Planned Output</TableHead><TableHead className="text-right">Actual Output</TableHead><TableHead>Utilization</TableHead><TableHead>Trend</TableHead></TableRow></TableHeader><TableBody>
-          {capacityData.map((r, i) => (
-            <TableRow key={i}>
-              <TableCell className="font-medium text-sm">{r.name}</TableCell>
-              <TableCell className="text-right text-sm">{r.planned.toLocaleString()}</TableCell>
-              <TableCell className="text-right text-sm">{r.actual.toLocaleString()}</TableCell>
-              <TableCell><div className="flex items-center gap-2"><div className="w-20 h-2 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${r.utilization > 100 ? 'bg-red-500' : r.utilization > 90 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(r.utilization, 100)}%` }} /></div><span className={`text-sm font-medium ${r.utilization > 100 ? 'text-red-600' : r.utilization > 90 ? 'text-amber-600' : 'text-emerald-600'}`}>{r.utilization}%</span></div></TableCell>
-              <TableCell>{trendIcons[r.trend]}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody></Table>
+        <div className="overflow-x-auto">
+          <Table><TableHeader><TableRow><TableHead>Work Center</TableHead><TableHead className="text-right">Total (hrs)</TableHead><TableHead className="text-right">Planned (hrs)</TableHead><TableHead className="text-right">Actual (hrs)</TableHead><TableHead>Utilization</TableHead><TableHead>Efficiency</TableHead><TableHead>Trend</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.map((r, i) => (
+              <TableRow key={i}>
+                <TableCell className="font-medium text-sm">{r.name}</TableCell>
+                <TableCell className="text-right text-sm">{r.totalCapacity.toLocaleString()}</TableCell>
+                <TableCell className="text-right text-sm">{r.planned.toLocaleString()}</TableCell>
+                <TableCell className="text-right text-sm">{r.actual.toLocaleString()}</TableCell>
+                <TableCell><div className="flex items-center gap-2"><div className="w-20 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${r.utilization > 100 ? 'bg-red-500' : r.utilization > 90 ? 'bg-amber-500' : r.utilization > 60 ? 'bg-emerald-500' : 'bg-slate-400'}`} style={{ width: `${Math.min(r.utilization, 100)}%` }} /></div><span className={`text-sm font-medium ${r.utilization > 100 ? 'text-red-600' : r.utilization > 90 ? 'text-amber-600' : 'text-emerald-600'}`}>{r.utilization}%</span></div></TableCell>
+                <TableCell><span className={`text-sm font-medium ${r.efficiency > 95 ? 'text-emerald-600' : r.efficiency > 85 ? 'text-amber-600' : r.efficiency > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>{r.efficiency > 0 ? `${r.efficiency}%` : '—'}</span></TableCell>
+                <TableCell>{trendIcons[r.trend]}</TableCell>
+                <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.toUpperCase()}</Badge></TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
       </CardContent></Card>
     </div>
   );
 }
 function ProductionEfficiencyPage() {
-  const dailyData = [
-    { day: 'Mon', oee: 84.2, availability: 92.1, performance: 88.5, quality: 97.3 },
-    { day: 'Tue', oee: 86.7, availability: 94.3, performance: 90.2, quality: 96.8 },
-    { day: 'Wed', oee: 82.1, availability: 89.5, performance: 86.8, quality: 98.1 },
-    { day: 'Thu', oee: 88.9, availability: 95.2, performance: 91.7, quality: 97.6 },
-    { day: 'Fri', oee: 85.4, availability: 93.0, performance: 89.1, quality: 97.9 },
-    { day: 'Sat', oee: 79.3, availability: 87.4, performance: 84.2, quality: 96.5 },
-    { day: 'Sun', oee: 80.8, availability: 88.9, performance: 85.6, quality: 97.0 },
+  const monthlyData = [
+    { month: 'Aug 2024', unitsProduced: 4200, target: 4500, achievement: 93.3, oee: 80.1, downtime: 42, rejectRate: 2.8 },
+    { month: 'Sep 2024', unitsProduced: 4650, target: 4500, achievement: 103.3, oee: 83.5, downtime: 38, rejectRate: 2.4 },
+    { month: 'Oct 2024', unitsProduced: 4400, target: 4600, achievement: 95.7, oee: 81.2, downtime: 45, rejectRate: 3.1 },
+    { month: 'Nov 2024', unitsProduced: 4800, target: 4700, achievement: 102.1, oee: 84.8, downtime: 32, rejectRate: 2.1 },
+    { month: 'Dec 2024', unitsProduced: 5100, target: 5000, achievement: 102.0, oee: 86.2, downtime: 28, rejectRate: 1.9 },
+    { month: 'Jan 2025', unitsProduced: 4950, target: 4800, achievement: 103.1, oee: 82.4, downtime: 35, rejectRate: 2.5 },
   ];
-  const wcEfficiency = [
-    { name: 'Main Assembly', oee: 87.3, availability: 94.2, performance: 90.1, quality: 97.8 },
-    { name: 'CNC Machining', oee: 82.1, availability: 90.5, performance: 86.3, quality: 96.4 },
-    { name: 'Paint & Coating', oee: 79.5, availability: 88.0, performance: 84.2, quality: 97.1 },
-    { name: 'Packaging L1', oee: 91.2, availability: 96.1, performance: 93.5, quality: 98.2 },
-    { name: 'Welding', oee: 85.6, availability: 91.8, performance: 88.7, quality: 96.9 },
-    { name: 'Inspection', oee: 93.8, availability: 97.3, performance: 95.1, quality: 99.1 },
+  const topPerformers = [
+    { name: 'Inspection Bay', oee: 93.8 },
+    { name: 'Packaging Line 1', oee: 91.2 },
+    { name: 'Main Assembly Line', oee: 87.3 },
+    { name: 'Welding Station', oee: 85.6 },
+    { name: 'CNC Machining Center', oee: 82.1 },
   ];
-  const avgOee = (dailyData.reduce((a, b) => a + b.oee, 0) / dailyData.length).toFixed(1);
-  const avgAvail = (dailyData.reduce((a, b) => a + b.availability, 0) / dailyData.length).toFixed(1);
-  const avgPerf = (dailyData.reduce((a, b) => a + b.performance, 0) / dailyData.length).toFixed(1);
-  const avgQual = (dailyData.reduce((a, b) => a + b.quality, 0) / dailyData.length).toFixed(1);
+  const bottomPerformers = [
+    { name: 'Paint & Coating Bay', oee: 79.5 },
+    { name: 'Raw Material Prep', oee: 65.0 },
+    { name: 'Shipping Dock', oee: 61.2 },
+  ];
   const kpis = [
-    { label: 'OEE', value: `${avgOee}%`, icon: Gauge, color: parseFloat(avgOee) >= 85 ? 'text-emerald-600 bg-emerald-50' : 'text-amber-600 bg-amber-50' },
-    { label: 'Availability', value: `${avgAvail}%`, icon: Activity, color: 'text-sky-600 bg-sky-50' },
-    { label: 'Performance', value: `${avgPerf}%`, icon: Zap, color: 'text-violet-600 bg-violet-50' },
-    { label: 'Quality', value: `${avgQual}%`, icon: ShieldCheck, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'OEE', value: '82.4%', icon: Gauge, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Availability', value: '91%', icon: Activity, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Performance', value: '93%', icon: Zap, color: 'text-violet-600 bg-violet-50' },
+    { label: 'Quality', value: '97.5%', icon: ShieldCheck, color: 'text-amber-600 bg-amber-50' },
   ];
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
@@ -10220,133 +10226,139 @@ function ProductionEfficiencyPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
-        <CardHeader><CardTitle className="text-base">Efficiency Trends (7-Day)</CardTitle><CardDescription className="text-xs">OEE, Availability, Performance, and Quality over the past week</CardDescription></CardHeader>
-        <CardContent>
-          <ChartContainer config={{ oee: { label: 'OEE', color: '#10b981' }, availability: { label: 'Availability', color: '#0ea5e9' }, performance: { label: 'Performance', color: '#8b5cf6' }, quality: { label: 'Quality', color: '#f59e0b' } }} className="h-[300px] w-full">
-            <AreaChart data={dailyData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-              <defs><linearGradient id="oeeGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3} /><stop offset="95%" stopColor="#10b981" stopOpacity={0} /></linearGradient></defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
-              <XAxis dataKey="day" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
-              <YAxis domain={[70, 100]} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Area type="monotone" dataKey="oee" stroke="#10b981" fill="url(#oeeGrad)" strokeWidth={2} />
-              <Area type="monotone" dataKey="availability" stroke="#0ea5e9" fillOpacity={0} strokeWidth={2} strokeDasharray="5 5" />
-              <Area type="monotone" dataKey="performance" stroke="#8b5cf6" fillOpacity={0} strokeWidth={2} strokeDasharray="5 5" />
-              <Area type="monotone" dataKey="quality" stroke="#f59e0b" fillOpacity={0} strokeWidth={2} strokeDasharray="5 5" />
-            </AreaChart>
-          </ChartContainer>
-        </CardContent>
-      </Card>
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
-        <Table><TableHeader><TableRow><TableHead>Work Center</TableHead><TableHead>OEE</TableHead><TableHead>Availability</TableHead><TableHead>Performance</TableHead><TableHead>Quality</TableHead></TableRow></TableHeader><TableBody>
-          {wcEfficiency.map((r, i) => (
-            <TableRow key={i}>
-              <TableCell className="font-medium text-sm">{r.name}</TableCell>
-              <TableCell><div className="flex items-center gap-2"><div className="w-16 h-2 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${r.oee >= 85 ? 'bg-emerald-500' : r.oee >= 75 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${r.oee}%` }} /></div><span className={`text-sm font-medium ${r.oee >= 85 ? 'text-emerald-600' : r.oee >= 75 ? 'text-amber-600' : 'text-red-600'}`}>{r.oee}%</span></div></TableCell>
-              <TableCell><span className={`text-sm ${r.availability >= 92 ? 'text-emerald-600' : 'text-amber-600'}`}>{r.availability}%</span></TableCell>
-              <TableCell><span className={`text-sm ${r.performance >= 88 ? 'text-emerald-600' : 'text-amber-600'}`}>{r.performance}%</span></TableCell>
-              <TableCell><span className={`text-sm ${r.quality >= 97 ? 'text-emerald-600' : 'text-amber-600'}`}>{r.quality}%</span></TableCell>
-            </TableRow>
-          ))}
-        </TableBody></Table>
+        <div className="px-5 pt-5 pb-3"><h3 className="text-base font-semibold">Monthly Summary</h3><p className="text-xs text-muted-foreground">Production output and efficiency by month</p></div>
+        <div className="overflow-x-auto">
+          <Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Units Produced</TableHead><TableHead className="text-right">Target</TableHead><TableHead>Achievement</TableHead><TableHead>OEE</TableHead><TableHead className="text-right">Downtime (hrs)</TableHead><TableHead>Reject Rate</TableHead></TableRow></TableHeader><TableBody>
+            {monthlyData.map((r, i) => (
+              <TableRow key={i}>
+                <TableCell className="font-medium text-sm">{r.month}</TableCell>
+                <TableCell className="text-right text-sm font-medium">{r.unitsProduced.toLocaleString()}</TableCell>
+                <TableCell className="text-right text-sm text-muted-foreground">{r.target.toLocaleString()}</TableCell>
+                <TableCell><div className="flex items-center gap-2"><div className="w-16 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${r.achievement >= 100 ? 'bg-emerald-500' : r.achievement >= 95 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${Math.min(r.achievement, 100)}%` }} /></div><span className={`text-sm font-medium ${r.achievement >= 100 ? 'text-emerald-600' : r.achievement >= 95 ? 'text-amber-600' : 'text-red-600'}`}>{r.achievement}%</span></div></TableCell>
+                <TableCell><span className={`text-sm font-medium ${r.oee >= 85 ? 'text-emerald-600' : r.oee >= 80 ? 'text-amber-600' : 'text-red-600'}`}>{r.oee}%</span></TableCell>
+                <TableCell className="text-right text-sm">{r.downtime}</TableCell>
+                <TableCell><span className={`text-sm ${r.rejectRate <= 2.0 ? 'text-emerald-600' : r.rejectRate <= 3.0 ? 'text-amber-600' : 'text-red-600'}`}>{r.rejectRate}%</span></TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
       </CardContent></Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+          <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><TrendingUp className="h-4 w-4 text-emerald-600" />Top Performers</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {topPerformers.map((wc, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <span className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold flex items-center justify-center">{i + 1}</span>
+                  <span className="flex-1 text-sm font-medium">{wc.name}</span>
+                  <div className="flex items-center gap-2"><div className="w-20 h-2 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${wc.oee}%` }} /></div><span className="text-sm font-semibold text-emerald-600 w-12 text-right">{wc.oee}%</span></div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+          <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-red-600" />Needs Attention</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {bottomPerformers.map((wc, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <span className="w-6 h-6 rounded-full bg-red-50 text-red-700 text-xs font-bold flex items-center justify-center">{i + 1}</span>
+                  <span className="flex-1 text-sm font-medium">{wc.name}</span>
+                  <div className="flex items-center gap-2"><div className="w-20 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${wc.oee >= 80 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${wc.oee}%` }} /></div><span className={`text-sm font-semibold w-12 text-right ${wc.oee >= 80 ? 'text-amber-600' : 'text-red-600'}`}>{wc.oee}%</span></div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
 function ProductionBottlenecksPage() {
+  const [search, setSearch] = useState('');
   const [filterSeverity, setFilterSeverity] = useState('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState({ workCenter: '', type: 'capacity', severity: 'medium', impact: '', rootCause: '', proposedAction: '' });
   const bottleneckData = [
-    { id: 'BN-001', station: 'CNC Machine #4', issue: 'Spindle overheating causing frequent stops', duration: '4h 30m', severity: 'critical', impactLevel: 9.2, status: 'active' },
-    { id: 'BN-002', station: 'Paint Booth PB-1', issue: 'Insufficient drying time between coats', duration: '2h 15m', severity: 'high', impactLevel: 7.8, status: 'active' },
-    { id: 'BN-003', station: 'Packaging L1', issue: 'Conveyor belt speed mismatch', duration: '1h 45m', severity: 'medium', impactLevel: 5.4, status: 'resolved' },
-    { id: 'BN-004', station: 'Welding Station', issue: 'Wire feed mechanism jamming', duration: '3h 10m', severity: 'critical', impactLevel: 8.5, status: 'active' },
-    { id: 'BN-005', station: 'Main Assembly', issue: 'Parts shortage from upstream', duration: '5h 00m', severity: 'high', impactLevel: 8.1, status: 'investigating' },
-    { id: 'BN-006', station: 'Inspection Bay', issue: 'Calibration drift on CMM', duration: '1h 20m', severity: 'medium', impactLevel: 4.3, status: 'resolved' },
-    { id: 'BN-007', station: 'CNC Machine #2', issue: 'Tool changer misalignment', duration: '2h 50m', severity: 'high', impactLevel: 7.2, status: 'active' },
-    { id: 'BN-008', station: 'Paint Booth PB-2', issue: 'Ventilation fan failure', duration: '6h 00m', severity: 'critical', impactLevel: 9.8, status: 'investigating' },
+    { id: 'BN-001', workCenter: 'Welding Station', type: 'capacity', severity: 'high', impact: 180, rootCause: 'Exceeding planned capacity by 11%, causing overtime and quality issues', status: 'active', detectedDate: '2025-01-18' },
+    { id: 'BN-002', workCenter: 'Paint & Coating Bay', type: 'maintenance', severity: 'high', impact: 120, rootCause: 'Ventilation system degradation reducing drying throughput', status: 'active', detectedDate: '2025-01-20' },
+    { id: 'BN-003', workCenter: 'Main Assembly Line', type: 'material', severity: 'medium', impact: 85, rootCause: 'Intermittent steel sheet supply delays from vendor', status: 'investigating', detectedDate: '2025-01-15' },
+    { id: 'BN-004', workCenter: 'CNC Machining Center', type: 'labor', severity: 'low', impact: 35, rootCause: 'Operator skill gap on new CNC programs', status: 'resolved', detectedDate: '2025-01-10' },
+    { id: 'BN-005', workCenter: 'Packaging Line 1', type: 'quality', severity: 'medium', impact: 60, rootCause: 'High reject rate from misaligned label applicator', status: 'investigating', detectedDate: '2025-01-17' },
+    { id: 'BN-006', workCenter: 'Final Inspection Bay', type: 'capacity', severity: 'low', impact: 20, rootCause: 'Seasonal demand spike exceeding inspection throughput', status: 'resolved', detectedDate: '2025-01-08' },
+    { id: 'BN-007', workCenter: 'Raw Material Prep', type: 'maintenance', severity: 'medium', impact: 75, rootCause: 'Conveyor belt misalignment causing material jams', status: 'resolved', detectedDate: '2025-01-12' },
+    { id: 'BN-008', workCenter: 'CNC Machining Center', type: 'quality', severity: 'low', impact: 25, rootCause: 'Tool wear exceeding tolerance on tight-spec parts', status: 'resolved', detectedDate: '2025-01-05' },
   ];
-  const sevColors: Record<string, string> = { critical: 'bg-red-50 text-red-700 border-red-200', high: 'bg-orange-50 text-orange-700 border-orange-200', medium: 'bg-amber-50 text-amber-700 border-amber-200', low: 'bg-sky-50 text-sky-700 border-sky-200' };
+  const sevColors: Record<string, string> = { high: 'bg-red-50 text-red-700 border-red-200', medium: 'bg-amber-50 text-amber-700 border-amber-200', low: 'bg-slate-100 text-slate-600 border-slate-200' };
   const statusColors: Record<string, string> = { active: 'bg-red-50 text-red-700 border-red-200', investigating: 'bg-amber-50 text-amber-700 border-amber-200', resolved: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  const typeColors: Record<string, string> = { capacity: 'bg-sky-50 text-sky-700', maintenance: 'bg-violet-50 text-violet-700', material: 'bg-amber-50 text-amber-700', labor: 'bg-teal-50 text-teal-700', quality: 'bg-rose-50 text-rose-700' };
   const filtered = bottleneckData.filter(r => {
     if (filterSeverity !== 'all' && r.severity !== filterSeverity) return false;
+    if (search && !r.workCenter.toLowerCase().includes(search.toLowerCase()) && !r.rootCause.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
-  const active = bottleneckData.filter(b => b.status === 'active').length;
-  const resolvedToday = bottleneckData.filter(b => b.status === 'resolved').length;
-  const avgResTime = '3.2h';
-  const avgImpact = (bottleneckData.reduce((a, b) => a + b.impactLevel, 0) / bottleneckData.length).toFixed(1);
+  const activeCount = bottleneckData.filter(b => b.status === 'active').length;
+  const resolvedMonth = 5;
+  const avgWait = '23 min';
+  const totalImpact = 450;
   const kpis = [
-    { label: 'Active Bottlenecks', value: active, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
-    { label: 'Resolved Today', value: resolvedToday, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Avg Resolution', value: avgResTime, icon: Timer, color: 'text-sky-600 bg-sky-50' },
-    { label: 'Impact Score', value: avgImpact, icon: Target, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Active Bottlenecks', value: activeCount, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
+    { label: 'Avg Wait Time', value: avgWait, icon: Timer, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Impact', value: `${totalImpact} units`, icon: TrendingDown, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Resolved This Month', value: resolvedMonth, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
   ];
-  const stationFreq = bottleneckData.reduce<Record<string, number>>((acc, b) => { acc[b.station] = (acc[b.station] || 0) + 1; return acc; }, {});
-  const paretoData = Object.entries(stationFreq).map(([station, count]) => ({ station: station.split(' ').slice(0, 2).join(' '), count })).sort((a, b) => b.count - a.count);
+  const handleCreate = () => { if (!form.workCenter || !form.rootCause) { toast.error('Work center and root cause are required'); return; } toast.success('Bottleneck reported'); setCreateOpen(false); setForm({ workCenter: '', type: 'capacity', severity: 'medium', impact: '', rootCause: '', proposedAction: '' }); };
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
-      <div><h1 className="text-2xl font-bold tracking-tight">Bottleneck Analysis</h1><p className="text-muted-foreground text-sm mt-1">Identify and analyze production bottlenecks to optimize throughput</p></div>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Bottleneck Analysis</h1><p className="text-muted-foreground text-sm mt-1">Identify and analyze production bottlenecks to optimize throughput</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Report Bottleneck</Button>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
-          <CardHeader><CardTitle className="text-base">Bottleneck Frequency by Station</CardTitle><CardDescription className="text-xs">Pareto analysis of bottleneck distribution</CardDescription></CardHeader>
-          <CardContent>
-            <ChartContainer config={{ count: { label: 'Occurrences', color: '#ef4444' } }} className="h-[280px] w-full">
-              <BarChart data={paretoData} layout="vertical" margin={{ left: 0, right: 16 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="station" tick={{ fontSize: 10 }} width={110} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="count" fill="#ef4444" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ChartContainer>
-          </CardContent>
-        </Card>
-        <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
-          <div className="px-5 pt-5 pb-3"><h3 className="text-base font-semibold">Active Issues</h3><p className="text-xs text-muted-foreground">Current bottleneck items requiring attention</p></div>
-          <div className="max-h-[340px] overflow-y-auto">
-            {bottleneckData.filter(b => b.status !== 'resolved').map(b => (
-              <div key={b.id} className="px-5 py-3 border-t border-border/40 hover:bg-muted/20 transition-colors">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono text-xs text-muted-foreground">{b.id}</span>
-                      <Badge variant="outline" className={sevColors[b.severity] || ''}>{b.severity.toUpperCase()}</Badge>
-                    </div>
-                    <p className="text-sm font-medium truncate">{b.issue}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{b.station} · {b.duration}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className={`text-sm font-bold ${b.impactLevel >= 8 ? 'text-red-600' : b.impactLevel >= 6 ? 'text-amber-600' : 'text-slate-600'}`}>{b.impactLevel}</p>
-                    <Badge variant="outline" className={statusColors[b.status] || ''}>{b.status.toUpperCase()}</Badge>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent></Card>
-      </div>
-      <div className="flex items-center gap-3">
-        <Select value={filterSeverity} onValueChange={setFilterSeverity}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Severity" /></SelectTrigger><SelectContent><SelectItem value="all">All Severity</SelectItem><SelectItem value="critical">Critical</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="low">Low</SelectItem></SelectContent></Select>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search bottlenecks..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterSeverity} onValueChange={setFilterSeverity}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Severity" /></SelectTrigger><SelectContent><SelectItem value="all">All Severity</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="low">Low</SelectItem></SelectContent></Select>
       </div>
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
-        <Table><TableHeader><TableRow><TableHead className="w-[100px]">ID</TableHead><TableHead>Station</TableHead><TableHead>Issue</TableHead><TableHead>Duration</TableHead><TableHead>Severity</TableHead><TableHead>Impact</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
-          {filtered.map(r => (
-            <TableRow key={r.id}>
-              <TableCell className="font-mono text-xs">{r.id}</TableCell>
-              <TableCell className="font-medium text-sm">{r.station}</TableCell>
-              <TableCell className="text-sm max-w-[250px] truncate">{r.issue}</TableCell>
-              <TableCell className="text-sm"><Timer className="h-3.5 w-3.5 inline mr-1 text-muted-foreground" />{r.duration}</TableCell>
-              <TableCell><Badge variant="outline" className={sevColors[r.severity] || ''}>{r.severity.toUpperCase()}</Badge></TableCell>
-              <TableCell><span className={`text-sm font-semibold ${r.impactLevel >= 8 ? 'text-red-600' : r.impactLevel >= 6 ? 'text-amber-600' : 'text-slate-600'}`}>{r.impactLevel}</span></TableCell>
-              <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.toUpperCase()}</Badge></TableCell>
-            </TableRow>
-          ))}
-        </TableBody></Table>
+        <div className="overflow-x-auto">
+          <Table><TableHeader><TableRow><TableHead className="w-[100px]">ID</TableHead><TableHead>Work Center</TableHead><TableHead>Type</TableHead><TableHead>Severity</TableHead><TableHead className="text-right">Impact</TableHead><TableHead className="max-w-[250px]">Root Cause</TableHead><TableHead>Status</TableHead><TableHead>Detected</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.map(r => (
+              <TableRow key={r.id}>
+                <TableCell className="font-mono text-xs">{r.id}</TableCell>
+                <TableCell className="font-medium text-sm">{r.workCenter}</TableCell>
+                <TableCell><Badge variant="secondary" className={`text-[11px] ${typeColors[r.type] || ''}`}>{r.type}</Badge></TableCell>
+                <TableCell><Badge variant="outline" className={sevColors[r.severity] || ''}>{r.severity.toUpperCase()}</Badge></TableCell>
+                <TableCell className="text-right text-sm font-medium">{r.impact}</TableCell>
+                <TableCell className="text-sm max-w-[250px] truncate">{r.rootCause}</TableCell>
+                <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.toUpperCase()}</Badge></TableCell>
+                <TableCell className="text-sm text-muted-foreground">{formatDate(r.detectedDate)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
       </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>Report Bottleneck</DialogTitle><DialogDescription>Report a new production bottleneck.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Work Center *</Label><Input value={form.workCenter} onChange={e => setForm(f => ({ ...f, workCenter: e.target.value }))} placeholder="Work center name" /></div>
+              <div className="space-y-2"><Label>Impact (units lost)</Label><Input type="number" value={form.impact} onChange={e => setForm(f => ({ ...f, impact: e.target.value }))} placeholder="0" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="capacity">Capacity</SelectItem><SelectItem value="maintenance">Maintenance</SelectItem><SelectItem value="material">Material</SelectItem><SelectItem value="labor">Labor</SelectItem><SelectItem value="quality">Quality</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Severity</Label><Select value={form.severity} onValueChange={v => setForm(f => ({ ...f, severity: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="high">High</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="low">Low</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="space-y-2"><Label>Root Cause *</Label><Textarea value={form.rootCause} onChange={e => setForm(f => ({ ...f, rootCause: e.target.value }))} placeholder="Describe the root cause..." rows={2} /></div>
+            <div className="space-y-2"><Label>Proposed Action</Label><Textarea value={form.proposedAction} onChange={e => setForm(f => ({ ...f, proposedAction: e.target.value }))} placeholder="Suggested resolution..." rows={2} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Report</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -10354,40 +10366,34 @@ function ProductionOrdersPage() {
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState('all');
-  const [form, setForm] = useState({ product: '', quantity: '', workCenter: '', startDate: '', dueDate: '', priority: 'medium', notes: '' });
+  const [form, setForm] = useState({ product: '', quantity: '', workCenter: '', priority: 'medium', dueDate: '', notes: '' });
   const [orders, setOrders] = useState([
-    { id: 'PO-2025-001', product: 'Hydraulic Pump HP-300', quantity: 120, workCenter: 'Main Assembly', startDate: '2025-01-10', dueDate: '2025-01-25', progress: 100, status: 'completed', priority: 'high' },
-    { id: 'PO-2025-002', product: 'Control Valve CV-200', quantity: 85, workCenter: 'CNC Machining', startDate: '2025-01-12', dueDate: '2025-01-28', progress: 72, status: 'in_progress', priority: 'high' },
-    { id: 'PO-2025-003', product: 'Actuator Arm AA-150', quantity: 200, workCenter: 'Welding Station', startDate: '2025-01-14', dueDate: '2025-01-30', progress: 55, status: 'in_progress', priority: 'medium' },
-    { id: 'PO-2025-004', product: 'Sensor Housing SH-400', quantity: 500, workCenter: 'Paint & Coating', startDate: '2025-01-15', dueDate: '2025-02-01', progress: 30, status: 'in_progress', priority: 'low' },
-    { id: 'PO-2025-005', product: 'Bearing Assembly BA-100', quantity: 300, workCenter: 'Main Assembly', startDate: '2025-01-16', dueDate: '2025-01-27', progress: 45, status: 'delayed', priority: 'high' },
-    { id: 'PO-2025-006', product: 'Gearbox GB-250', quantity: 60, workCenter: 'CNC Machining', startDate: '2025-01-18', dueDate: '2025-02-05', progress: 15, status: 'in_progress', priority: 'medium' },
-    { id: 'PO-2025-007', product: 'Seal Kit SK-50', quantity: 1000, workCenter: 'Packaging L1', startDate: '2025-01-20', dueDate: '2025-02-03', progress: 10, status: 'delayed', priority: 'medium' },
-    { id: 'PO-2025-008', product: 'Filter Assembly FA-300', quantity: 150, workCenter: 'Main Assembly', startDate: '2025-01-22', dueDate: '2025-02-06', progress: 0, status: 'planned', priority: 'low' },
-    { id: 'PO-2025-009', product: 'Piston Set PS-200', quantity: 250, workCenter: 'CNC Machining', startDate: '2025-01-24', dueDate: '2025-02-08', progress: 0, status: 'planned', priority: 'medium' },
-    { id: 'PO-2025-010', product: 'Coupling Assembly CA-100', quantity: 400, workCenter: 'Welding Station', startDate: '2025-01-08', dueDate: '2025-01-20', progress: 100, status: 'completed', priority: 'high' },
-    { id: 'PO-2025-011', product: 'Pressure Plate PP-300', quantity: 80, workCenter: 'Paint & Coating', startDate: '2025-01-11', dueDate: '2025-01-22', progress: 0, status: 'cancelled', priority: 'low' },
-    { id: 'PO-2025-012', product: 'Motor Mount MM-400', quantity: 175, workCenter: 'Main Assembly', startDate: '2025-01-25', dueDate: '2025-02-10', progress: 0, status: 'planned', priority: 'medium' },
+    { id: 'PO-2025-001', product: 'Hydraulic Pump HP-300', quantity: 120, workCenter: 'Main Assembly', status: 'completed', startDate: '2025-01-10', dueDate: '2025-01-25', progress: 100, priority: 'high' },
+    { id: 'PO-2025-002', product: 'Control Valve CV-200', quantity: 85, workCenter: 'CNC Machining', status: 'in_progress', startDate: '2025-01-12', dueDate: '2025-01-28', progress: 72, priority: 'high' },
+    { id: 'PO-2025-003', product: 'Actuator Arm AA-150', quantity: 200, workCenter: 'Welding Station', status: 'in_progress', startDate: '2025-01-14', dueDate: '2025-01-30', progress: 55, priority: 'medium' },
+    { id: 'PO-2025-004', product: 'Sensor Housing SH-400', quantity: 500, workCenter: 'Paint & Coating', status: 'in_progress', startDate: '2025-01-15', dueDate: '2025-02-01', progress: 30, priority: 'low' },
+    { id: 'PO-2025-005', product: 'Bearing Assembly BA-100', quantity: 300, workCenter: 'Main Assembly', status: 'in_progress', startDate: '2025-01-16', dueDate: '2025-01-27', progress: 45, priority: 'high' },
+    { id: 'PO-2025-006', product: 'Gearbox GB-250', quantity: 60, workCenter: 'CNC Machining', status: 'in_progress', startDate: '2025-01-18', dueDate: '2025-02-05', progress: 15, priority: 'medium' },
+    { id: 'PO-2025-007', product: 'Seal Kit SK-50', quantity: 1000, workCenter: 'Packaging L1', status: 'completed', startDate: '2025-01-05', dueDate: '2025-01-15', progress: 100, priority: 'low' },
+    { id: 'PO-2025-008', product: 'Filter Assembly FA-300', quantity: 150, workCenter: 'Main Assembly', status: 'planned', startDate: '2025-01-22', dueDate: '2025-02-06', progress: 0, priority: 'medium' },
+    { id: 'PO-2025-009', product: 'Piston Set PS-200', quantity: 250, workCenter: 'CNC Machining', status: 'completed', startDate: '2025-01-02', dueDate: '2025-01-12', progress: 100, priority: 'high' },
+    { id: 'PO-2025-010', product: 'Coupling Assembly CA-100', quantity: 400, workCenter: 'Welding Station', status: 'cancelled', startDate: '2025-01-08', dueDate: '2025-01-20', progress: 0, priority: 'low' },
   ]);
-  const statusColors: Record<string, string> = { planned: 'bg-slate-100 text-slate-600 border-slate-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', delayed: 'bg-red-50 text-red-700 border-red-200', cancelled: 'bg-gray-100 text-gray-500 border-gray-200' };
-  const progressColors: Record<string, string> = { planned: 'bg-slate-300', in_progress: 'bg-sky-500', completed: 'bg-emerald-500', delayed: 'bg-red-500', cancelled: 'bg-gray-300' };
-  const priorityColors: Record<string, string> = { high: 'bg-red-50 text-red-700', medium: 'bg-amber-50 text-amber-700', low: 'bg-sky-50 text-sky-700' };
+  const statusColors: Record<string, string> = { draft: 'bg-slate-100 text-slate-600 border-slate-200', planned: 'bg-sky-50 text-sky-700 border-sky-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', cancelled: 'bg-gray-100 text-gray-500 border-gray-200' };
+  const progressColors: Record<string, string> = { draft: 'bg-slate-300', planned: 'bg-sky-400', in_progress: 'bg-amber-500', completed: 'bg-emerald-500', cancelled: 'bg-gray-300' };
+  const priorityColors: Record<string, string> = { low: 'bg-sky-50 text-sky-700', medium: 'bg-amber-50 text-amber-700', high: 'bg-orange-50 text-orange-700', critical: 'bg-red-50 text-red-700' };
   const filtered = orders.filter(r => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search && !r.product.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
-  const total = orders.length;
-  const inProgress = orders.filter(o => o.status === 'in_progress').length;
-  const completed = orders.filter(o => o.status === 'completed').length;
-  const delayed = orders.filter(o => o.status === 'delayed').length;
   const kpis = [
-    { label: 'Total Orders', value: total, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'In Progress', value: inProgress, icon: Play, color: 'text-sky-600 bg-sky-50' },
-    { label: 'Completed', value: completed, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Delayed', value: delayed, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
+    { label: 'Total Orders', value: 42, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'In Progress', value: 12, icon: Play, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Completed', value: 26, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Cancelled', value: 4, icon: XCircle, color: 'text-slate-600 bg-slate-100' },
   ];
-  const handleCreate = () => { if (!form.product || !form.quantity) { toast.error('Product and quantity are required'); return; } toast.success('Production order created'); setCreateOpen(false); setForm({ product: '', quantity: '', workCenter: '', startDate: '', dueDate: '', priority: 'medium', notes: '' }); };
+  const handleCreate = () => { if (!form.product || !form.quantity) { toast.error('Product and quantity are required'); return; } toast.success('Production order created'); setCreateOpen(false); setForm({ product: '', quantity: '', workCenter: '', priority: 'medium', dueDate: '', notes: '' }); };
   const handleDelete = (id: string) => { setOrders(prev => prev.filter(o => o.id !== id)); toast.success('Order deleted'); };
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
@@ -10400,25 +10406,27 @@ function ProductionOrdersPage() {
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search orders..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
-        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="delayed">Delayed</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
       </div>
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
-        <Table><TableHeader><TableRow><TableHead className="w-[120px]">Order #</TableHead><TableHead>Product</TableHead><TableHead className="text-right">Qty</TableHead><TableHead>Work Center</TableHead><TableHead>Start Date</TableHead><TableHead>Due Date</TableHead><TableHead>Progress</TableHead><TableHead>Priority</TableHead><TableHead>Status</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
-          {filtered.map(r => (
-            <TableRow key={r.id}>
-              <TableCell className="font-mono text-xs font-medium">{r.id}</TableCell>
-              <TableCell className="font-medium text-sm">{r.product}</TableCell>
-              <TableCell className="text-right text-sm">{r.quantity.toLocaleString()}</TableCell>
-              <TableCell className="text-sm text-muted-foreground">{r.workCenter}</TableCell>
-              <TableCell className="text-sm text-muted-foreground">{formatDate(r.startDate)}</TableCell>
-              <TableCell className="text-sm text-muted-foreground">{formatDate(r.dueDate)}</TableCell>
-              <TableCell><div className="flex items-center gap-2"><div className="w-16 h-2 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${progressColors[r.status] || 'bg-slate-400'}`} style={{ width: `${r.progress}%` }} /></div><span className="text-xs font-medium w-8">{r.progress}%</span></div></TableCell>
-              <TableCell><Badge variant="secondary" className={`text-[11px] ${priorityColors[r.priority] || ''}`}>{r.priority}</Badge></TableCell>
-              <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
-            </TableRow>
-          ))}
-        </TableBody></Table>
+        <div className="overflow-x-auto">
+          <Table><TableHeader><TableRow><TableHead className="w-[120px]">Order #</TableHead><TableHead>Product</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead>Work Center</TableHead><TableHead>Status</TableHead><TableHead>Start Date</TableHead><TableHead>Due Date</TableHead><TableHead>Progress</TableHead><TableHead>Priority</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+            {filtered.map(r => (
+              <TableRow key={r.id}>
+                <TableCell className="font-mono text-xs font-medium">{r.id}</TableCell>
+                <TableCell className="font-medium text-sm">{r.product}</TableCell>
+                <TableCell className="text-right text-sm">{r.quantity.toLocaleString()}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.workCenter}</TableCell>
+                <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell className="text-sm text-muted-foreground">{formatDate(r.startDate)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{formatDate(r.dueDate)}</TableCell>
+                <TableCell><div className="flex items-center gap-2"><div className="w-16 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${progressColors[r.status] || 'bg-slate-400'}`} style={{ width: `${r.progress}%` }} /></div><span className="text-xs font-medium w-8">{r.progress}%</span></div></TableCell>
+                <TableCell><Badge variant="secondary" className={`text-[11px] ${priorityColors[r.priority] || ''}`}>{r.priority}</Badge></TableCell>
+                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
       </CardContent></Card>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent><DialogHeader><DialogTitle>New Production Order</DialogTitle><DialogDescription>Create a new production order.</DialogDescription></DialogHeader>
@@ -10426,11 +10434,10 @@ function ProductionOrdersPage() {
             <div className="space-y-2"><Label>Product *</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Product name" /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Quantity *</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" /></div>
-              <div className="space-y-2"><Label>Priority</Label><Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Priority</Label><Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></div>
             </div>
-            <div className="space-y-2"><Label>Work Center</Label><Select value={form.workCenter} onValueChange={v => setForm(f => ({ ...f, workCenter: v }))}><SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger><SelectContent><SelectItem value="Main Assembly">Main Assembly</SelectItem><SelectItem value="CNC Machining">CNC Machining</SelectItem><SelectItem value="Welding Station">Welding Station</SelectItem><SelectItem value="Paint & Coating">Paint & Coating</SelectItem><SelectItem value="Packaging L1">Packaging L1</SelectItem></SelectContent></Select></div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>Work Center</Label><Input value={form.workCenter} onChange={e => setForm(f => ({ ...f, workCenter: e.target.value }))} placeholder="Work center name" /></div>
               <div className="space-y-2"><Label>Due Date</Label><Input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} /></div>
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional notes..." rows={2} /></div>
@@ -10445,35 +10452,31 @@ function ProductionBatchesPage() {
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState('all');
-  const [form, setForm] = useState({ product: '', orderRef: '', quantity: '', startDate: '', notes: '' });
+  const [form, setForm] = useState({ product: '', order: '', quantity: '', startDate: '', notes: '' });
   const [batches, setBatches] = useState([
-    { id: 'BATCH-001', product: 'Hydraulic Pump HP-300', orderRef: 'PO-2025-001', quantity: 120, startDate: '2025-01-10', endDate: '2025-01-24', yieldPct: 98.3, status: 'completed' },
-    { id: 'BATCH-002', product: 'Control Valve CV-200', orderRef: 'PO-2025-002', quantity: 85, startDate: '2025-01-12', endDate: '', yieldPct: 0, status: 'in_progress' },
-    { id: 'BATCH-003', product: 'Actuator Arm AA-150', orderRef: 'PO-2025-003', quantity: 200, startDate: '2025-01-14', endDate: '', yieldPct: 0, status: 'in_progress' },
-    { id: 'BATCH-004', product: 'Sensor Housing SH-400', orderRef: 'PO-2025-004', quantity: 500, startDate: '2025-01-15', endDate: '', yieldPct: 0, status: 'in_progress' },
-    { id: 'BATCH-005', product: 'Bearing Assembly BA-100', orderRef: 'PO-2025-005', quantity: 300, startDate: '2025-01-16', endDate: '', yieldPct: 95.2, status: 'in_progress' },
-    { id: 'BATCH-006', product: 'Coupling Assembly CA-100', orderRef: 'PO-2025-010', quantity: 400, startDate: '2025-01-08', endDate: '2025-01-19', yieldPct: 99.1, status: 'completed' },
-    { id: 'BATCH-007', product: 'Gearbox GB-250', orderRef: 'PO-2025-006', quantity: 60, startDate: '2025-01-18', endDate: '', yieldPct: 0, status: 'planned' },
-    { id: 'BATCH-008', product: 'Seal Kit SK-50', orderRef: 'PO-2025-007', quantity: 1000, startDate: '2025-01-20', endDate: '', yieldPct: 0, status: 'on_hold' },
+    { id: 'BATCH-001', product: 'Hydraulic Pump HP-300', order: 'PO-2025-001', quantity: 120, startDate: '2025-01-10', endDate: '2025-01-24', status: 'completed', qualityStatus: 'passed', yieldPct: 98.3 },
+    { id: 'BATCH-002', product: 'Control Valve CV-200', order: 'PO-2025-002', quantity: 85, startDate: '2025-01-12', endDate: '', status: 'in_progress', qualityStatus: 'pending', yieldPct: 0 },
+    { id: 'BATCH-003', product: 'Actuator Arm AA-150', order: 'PO-2025-003', quantity: 200, startDate: '2025-01-14', endDate: '', status: 'in_progress', qualityStatus: 'pending', yieldPct: 0 },
+    { id: 'BATCH-004', product: 'Sensor Housing SH-400', order: 'PO-2025-004', quantity: 500, startDate: '2025-01-15', endDate: '', status: 'in_progress', qualityStatus: 'pending', yieldPct: 0 },
+    { id: 'BATCH-005', product: 'Bearing Assembly BA-100', order: 'PO-2025-005', quantity: 300, startDate: '2025-01-16', endDate: '', status: 'on_hold', qualityStatus: 'pending', yieldPct: 95.2 },
+    { id: 'BATCH-006', product: 'Coupling Assembly CA-100', order: 'PO-2025-010', quantity: 400, startDate: '2025-01-08', endDate: '2025-01-19', status: 'completed', qualityStatus: 'passed', yieldPct: 99.1 },
+    { id: 'BATCH-007', product: 'Gearbox GB-250', order: 'PO-2025-006', quantity: 60, startDate: '2025-01-18', endDate: '', status: 'planned', qualityStatus: 'pending', yieldPct: 0 },
+    { id: 'BATCH-008', product: 'Piston Set PS-200', order: 'PO-2025-009', quantity: 250, startDate: '2025-01-03', endDate: '2025-01-11', status: 'completed', qualityStatus: 'failed', yieldPct: 88.5 },
   ]);
-  const statusColors: Record<string, string> = { planned: 'bg-slate-100 text-slate-600 border-slate-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', on_hold: 'bg-amber-50 text-amber-700 border-amber-200' };
+  const statusColors: Record<string, string> = { planned: 'bg-slate-100 text-slate-600 border-slate-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', on_hold: 'bg-amber-50 text-amber-700 border-amber-200', quarantine: 'bg-red-50 text-red-700 border-red-200' };
+  const qualityColors: Record<string, string> = { pending: 'bg-slate-100 text-slate-600 border-slate-200', passed: 'bg-emerald-50 text-emerald-700 border-emerald-200', failed: 'bg-red-50 text-red-700 border-red-200' };
   const filtered = batches.filter(r => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search && !r.product.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
-  const active = batches.filter(b => b.status === 'in_progress').length;
-  const totalProduced = batches.filter(b => b.status === 'completed').reduce((a, b) => a + b.quantity, 0);
-  const completedBatches = batches.filter(b => b.status === 'completed');
-  const qualityRate = completedBatches.length > 0 ? (completedBatches.reduce((a, b) => a + b.yieldPct, 0) / completedBatches.length).toFixed(1) : '0.0';
-  const avgDuration = '8.5 days';
   const kpis = [
-    { label: 'Active Batches', value: active, icon: Play, color: 'text-sky-600 bg-sky-50' },
-    { label: 'Total Produced', value: totalProduced.toLocaleString(), icon: Package, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Quality Rate', value: `${qualityRate}%`, icon: ShieldCheck, color: 'text-amber-600 bg-amber-50' },
-    { label: 'Avg Duration', value: avgDuration, icon: Clock, color: 'text-violet-600 bg-violet-50' },
+    { label: 'Total Batches', value: 58, icon: Package, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'In Progress', value: 8, icon: Play, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Completed', value: 45, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'On Hold', value: 5, icon: Pause, color: 'text-amber-600 bg-amber-50' },
   ];
-  const handleCreate = () => { if (!form.product || !form.quantity) { toast.error('Product and quantity are required'); return; } toast.success('Batch created'); setCreateOpen(false); setForm({ product: '', orderRef: '', quantity: '', startDate: '', notes: '' }); };
+  const handleCreate = () => { if (!form.product || !form.quantity) { toast.error('Product and quantity are required'); return; } toast.success('Batch created'); setCreateOpen(false); setForm({ product: '', order: '', quantity: '', startDate: '', notes: '' }); };
   const handleDelete = (id: string) => { setBatches(prev => prev.filter(b => b.id !== id)); toast.success('Batch deleted'); };
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
@@ -10486,34 +10489,39 @@ function ProductionBatchesPage() {
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search batches..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
-        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="on_hold">On Hold</SelectItem></SelectContent></Select>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="on_hold">On Hold</SelectItem><SelectItem value="quarantine">Quarantine</SelectItem></SelectContent></Select>
       </div>
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
-        <Table><TableHeader><TableRow><TableHead className="w-[110px]">Batch #</TableHead><TableHead>Product</TableHead><TableHead>Order Ref</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead>Start</TableHead><TableHead>End</TableHead><TableHead>Yield</TableHead><TableHead>Status</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
-          {filtered.map(r => (
-            <TableRow key={r.id}>
-              <TableCell className="font-mono text-xs font-medium">{r.id}</TableCell>
-              <TableCell className="font-medium text-sm">{r.product}</TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">{r.orderRef}</TableCell>
-              <TableCell className="text-right text-sm">{r.quantity.toLocaleString()}</TableCell>
-              <TableCell className="text-sm text-muted-foreground">{formatDate(r.startDate)}</TableCell>
-              <TableCell className="text-sm text-muted-foreground">{r.endDate ? formatDate(r.endDate) : '—'}</TableCell>
-              <TableCell><span className={`text-sm font-medium ${r.yieldPct >= 97 ? 'text-emerald-600' : r.yieldPct > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>{r.yieldPct > 0 ? `${r.yieldPct}%` : '—'}</span></TableCell>
-              <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
-            </TableRow>
-          ))}
-        </TableBody></Table>
+        <div className="overflow-x-auto">
+          <Table><TableHeader><TableRow><TableHead className="w-[110px]">Batch #</TableHead><TableHead>Product</TableHead><TableHead>Order #</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead>Start</TableHead><TableHead>End</TableHead><TableHead>Status</TableHead><TableHead>Quality</TableHead><TableHead>Yield</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+            {filtered.map(r => (
+              <TableRow key={r.id}>
+                <TableCell className="font-mono text-xs font-medium">{r.id}</TableCell>
+                <TableCell className="font-medium text-sm">{r.product}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{r.order}</TableCell>
+                <TableCell className="text-right text-sm">{r.quantity.toLocaleString()}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{formatDate(r.startDate)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.endDate ? formatDate(r.endDate) : '—'}</TableCell>
+                <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell><Badge variant="outline" className={qualityColors[r.qualityStatus] || ''}>{r.qualityStatus.toUpperCase()}</Badge></TableCell>
+                <TableCell><div className="flex items-center gap-2"><div className="w-14 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${r.yieldPct >= 97 ? 'bg-emerald-500' : r.yieldPct > 0 ? 'bg-amber-500' : 'bg-slate-300'}`} style={{ width: `${r.yieldPct > 0 ? Math.min(r.yieldPct, 100) : 0}%` }} /></div><span className={`text-xs font-medium w-10 ${r.yieldPct >= 97 ? 'text-emerald-600' : r.yieldPct > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>{r.yieldPct > 0 ? `${r.yieldPct}%` : '—'}</span></div></TableCell>
+                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
       </CardContent></Card>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent><DialogHeader><DialogTitle>New Batch</DialogTitle><DialogDescription>Start a new production batch.</DialogDescription></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label>Product *</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Product name" /></div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Order Reference</Label><Input value={form.orderRef} onChange={e => setForm(f => ({ ...f, orderRef: e.target.value }))} placeholder="PO-2025-XXX" /></div>
-              <div className="space-y-2"><Label>Quantity *</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" /></div>
+              <div className="space-y-2"><Label>Product *</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Product name" /></div>
+              <div className="space-y-2"><Label>Order #</Label><Input value={form.order} onChange={e => setForm(f => ({ ...f, order: e.target.value }))} placeholder="PO-2025-XXX" /></div>
             </div>
-            <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Quantity *</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" /></div>
+              <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
+            </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Batch notes..." rows={2} /></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Batch</Button></DialogFooter>
@@ -10522,6 +10530,8 @@ function ProductionBatchesPage() {
     </div>
   );
 }
+
+
 
 // ============================================================================
 // QUALITY SUBPAGES
