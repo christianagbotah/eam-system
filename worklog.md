@@ -1021,3 +1021,31 @@ Stage Summary:
 - Proper light/dark mode support with CSS variable architecture
 - All components (sidebar, header, cards, tables, dialogs) enhanced
 - Files modified: `src/app/globals.css`, `src/app/page.tsx`
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Header colored bg, user avatar dropdown, Admin permissions fix, sticky role column
+
+Work Log:
+- Added subtle emerald-tinted background to header via CSS variables (light: oklch 0.975 hue 163, dark: oklch 0.16 hue 163)
+- Replaced static user avatar display with DropdownMenu trigger
+- Added user dropdown menu with: user info header, Dashboard link, Company Profile link, Audit Logs link, Sign Out (red)
+- Added ChevronDown indicator on avatar, hover:bg-muted interaction
+- Fixed Admin 0-permissions bug: modified GET /api/roles/[id] to detect admin role with no RolePermission rows and return all permissions from DB
+- Completely redesigned Role Management page layout from card-based to permission matrix table
+- Implemented sticky left column (w-52) for role names using CSS sticky positioning with z-index layering
+- Role names stay fixed while permission columns scroll horizontally
+- Added background color matching for sticky cells (bg-card) so content doesn't show through
+- Added allRolePerms state to load all roles' permissions in background for summary counts
+- Non-selected rows show per-module permission counts (e.g., "3/8")
+- Selected row shows interactive Switch toggles for each permission
+- Added DropdownMenuLabel import for user dropdown
+- Saving indicator bar at bottom of matrix
+
+Stage Summary:
+- Header has emerald-tinted bg in both light/dark modes
+- User avatar in header has professional dropdown menu
+- Admin role correctly shows all permissions (fixed in API)
+- Role management page uses sticky column matrix layout
+- Files modified: src/app/globals.css, src/app/page.tsx, src/app/api/roles/[id]/route.ts
