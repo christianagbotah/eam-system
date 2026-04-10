@@ -105,6 +105,16 @@ model User {
   auditLogs       AuditLog[]
   notifications   Notification[]
 
+  // Asset Management relations
+  assetsCreated        Asset[]                   @relation("AssetCreatedBy")
+  assetsAssigned       Asset[]                   @relation("AssetAssignedTo")
+  inventoryItemsCreated InventoryItem[]          @relation("InventoryItemCreatedBy")
+  stockMovements       StockMovement[]
+  pmSchedulesAssigned  PmSchedule[]              @relation("PmScheduleAssignedTo")
+  pmSchedulesCreated   PmSchedule[]              @relation("PmScheduleCreatedBy")
+  woStatusHistory      WorkOrderStatusHistory[]
+  mrComments           MaintenanceRequestComment[]
+
   @@map("users")
 }
 
@@ -195,8 +205,10 @@ model Plant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  departments Department[]
-  plantAccess UserPlant[]
+  departments   Department[]
+  plantAccess   UserPlant[]
+  assets        Asset[]
+  inventoryItems InventoryItem[]
 
   @@map("plants")
 }
@@ -215,6 +227,8 @@ model Department {
   parent     Department? @relation("DeptHierarchy", fields: [parentId], references: [id])
   children   Department[] @relation("DeptHierarchy")
   supervisor User?       @relation("DeptSupervisor", fields: [supervisorId], references: [id])
+  assets       Asset[]
+  pmSchedules  PmSchedule[]
 
   @@map("departments")
 }
@@ -272,6 +286,9 @@ model MaintenanceRequest {
 
   // Work Order relation
   workOrder     WorkOrder?
+
+  // Comments
+  comments      MaintenanceRequestComment[]
 
   @@map("maintenance_requests")
 }
@@ -336,6 +353,9 @@ model WorkOrder {
   timeLogs           WorkOrderTimeLog[]
   materials          WorkOrderMaterial[]
   comments           WorkOrderComment[]
+
+  // Status History relations
+  statusHistory      WorkOrderStatusHistory[]
 
   @@map("work_orders")
 }
@@ -491,3 +511,200 @@ model Notification {
 
   @@map("notifications")
 }
+
+// ============================================================================
+// 10. ASSET MANAGEMENT
+// ============================================================================
+
+model AssetCategory {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  description String?
+  parentId    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent   AssetCategory?  @relation("AssetCategoryHierarchy", fields: [parentId], references: [id])
+  children AssetCategory[] @relation("AssetCategoryHierarchy")
+  assets   Asset[]
+
+  @@map("asset_categories")
+}
+
+model Asset {
+  id                String    @id @default(cuid())
+  name              String
+  assetTag          String    @unique
+  description       String?
+  categoryId        String
+  serialNumber      String?   @unique
+  manufacturer      String?
+  model             String?
+  yearManufactured  Int?
+  condition         String    @default("new")           // new, good, fair, poor, out_of_service
+  status            String    @default("operational")   // operational, standby, under_maintenance, decommissioned, disposed
+  criticality       String    @default("medium")        // low, medium, high, critical
+  location          String?
+  building          String?
+  floor             String?
+  area              String?
+  plantId           String
+  departmentId      String?
+  purchaseDate      DateTime?
+  purchaseCost      Float?
+  warrantyExpiry    DateTime?
+  installedDate     DateTime?
+  expectedLifeYears Int?
+  currentValue      Float?
+  depreciationRate  Float?
+  imageUrl          String?
+  drawingsUrl       String?
+  manualUrl         String?
+  specification     String                            // JSON text for flexible specs
+  parentId          String?
+  isActive          Boolean   @default(true)
+  createdById       String
+  assignedToId      String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  category           AssetCategory       @relation(fields: [categoryId], references: [id])
+  parent             Asset?              @relation("AssetHierarchy", fields: [parentId], references: [id])
+  children           Asset[]             @relation("AssetHierarchy")
+  plant              Plant               @relation(fields: [plantId], references: [id])
+  department         Department?         @relation(fields: [departmentId], references: [id])
+  createdBy          User                @relation("AssetCreatedBy", fields: [createdById], references: [id])
+  assignedTo         User?               @relation("AssetAssignedTo", fields: [assignedToId], references: [id])
+  pmSchedules        PmSchedule[]
+
+  @@map("assets")
+}
+
+// ============================================================================
+// 11. INVENTORY MANAGEMENT
+// ============================================================================
+
+model InventoryItem {
+  id                String   @id @default(cuid())
+  itemCode          String   @unique
+  name              String
+  description       String?
+  category          String   @default("other")       // spare_part, consumable, tool, material, other
+  unitOfMeasure     String   @default("each")        // each, kg, liter, meter, set, box, roll
+  currentStock      Float    @default(0)
+  minStockLevel     Float    @default(0)
+  maxStockLevel     Float?
+  reorderQuantity   Float?
+  unitCost          Float?
+  supplier          String?
+  supplierPartNumber String?
+  location          String?
+  binLocation       String?
+  shelfLocation     String?
+  plantId           String
+  isActive          Boolean  @default(true)
+  specification     String                            // JSON text
+  imageUrls         String                            // JSON text array
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  plant           Plant           @relation(fields: [plantId], references: [id])
+  createdBy       User            @relation("InventoryItemCreatedBy", fields: [createdById], references: [id])
+  stockMovements  StockMovement[]
+
+  @@map("inventory_items")
+}
+
+model StockMovement {
+  id            String   @id @default(cuid())
+  itemId        String
+  type          String                                // in, out, adjustment, transfer
+  quantity      Float
+  previousStock Float
+  newStock      Float
+  reason        String?
+  referenceType String?                               // work_order, requisition, return, audit
+  referenceId   String?
+  performedById String
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  item         InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  performedBy  User          @relation(fields: [performedById], references: [id])
+
+  @@map("stock_movements")
+}
+
+// ============================================================================
+// 12. PREVENTIVE MAINTENANCE
+// ============================================================================
+
+model PmSchedule {
+  id                String    @id @default(cuid())
+  title             String
+  description       String?
+  assetId           String
+  frequencyType     String                           // daily, weekly, biweekly, monthly, quarterly, semiannual, annual, custom_hours, custom_days, meter_based
+  frequencyValue    Int
+  lastCompletedDate DateTime?
+  nextDueDate       DateTime?
+  estimatedDuration Float                            // hours
+  priority          String    @default("medium")     // low, medium, high, critical
+  assignedToId      String?
+  departmentId      String?
+  isActive          Boolean   @default(true)
+  autoGenerateWO    Boolean   @default(true)
+  leadDays          Int       @default(3)
+  woTypeId          String?
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  asset       Asset       @relation(fields: [assetId], references: [id])
+  assignedTo  User?       @relation("PmScheduleAssignedTo", fields: [assignedToId], references: [id])
+  department  Department? @relation(fields: [departmentId], references: [id])
+  createdBy   User        @relation("PmScheduleCreatedBy", fields: [createdById], references: [id])
+
+  @@map("pm_schedules")
+}
+
+// ============================================================================
+// 13. WORK ORDER STATUS HISTORY
+// ============================================================================
+
+model WorkOrderStatusHistory {
+  id            String   @id @default(cuid())
+  workOrderId   String
+  fromStatus    String?
+  toStatus      String
+  performedById String
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  workOrder    WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  performedBy  User      @relation(fields: [performedById], references: [id])
+
+  @@map("wo_status_history")
+}
+
+// ============================================================================
+// 14. MAINTENANCE REQUEST COMMENTS
+// ============================================================================
+
+model MaintenanceRequestComment {
+  id                    String   @id @default(cuid())
+  maintenanceRequestId  String
+  userId                String
+  content               String
+  createdAt             DateTime @default(now())
+
+  maintenanceRequest MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade)
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mr_comments")
+}
+
+

@@ -62,6 +62,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Menu,
   X,
   Plus,
@@ -92,6 +93,20 @@ import {
   Sun,
   Moon,
   Monitor,
+  Filter,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  MapPin,
+  Target,
+  Activity,
+  Gauge,
+  UserPlus,
+  CircleDot,
+  Hash,
+  Timer,
+  Key,
+  UserMinus,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area,
@@ -615,10 +630,10 @@ function SidebarContent() {
     { page: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view' },
     { page: 'maintenance-requests', label: 'Maintenance Requests', icon: ClipboardList, perm: 'maintenance_requests.view' },
     { page: 'work-orders', label: 'Work Orders', icon: Wrench, perm: 'work_orders.view' },
-    { page: 'assets', label: 'Assets', icon: Building2, perm: 'assets.view', comingSoon: true },
-    { page: 'inventory', label: 'Inventory', icon: Package, perm: 'inventory.view', comingSoon: true },
+    { page: 'assets', label: 'Assets', icon: Building2, perm: 'assets.view' },
+    { page: 'inventory', label: 'Inventory', icon: Package, perm: 'inventory.view' },
     { page: 'production', label: 'Production', icon: Zap, perm: 'production.view', comingSoon: true },
-    { page: 'analytics', label: 'Analytics', icon: BarChart3, perm: 'analytics.view', comingSoon: true },
+    { page: 'analytics', label: 'Analytics', icon: BarChart3, perm: 'analytics.view' },
   ];
 
   const settingsItems: { page: PageName; label: string; icon: React.ElementType; perm: string }[] = [
@@ -626,6 +641,9 @@ function SidebarContent() {
     { page: 'settings-roles', label: 'Roles & Permissions', icon: Shield, perm: 'roles.view' },
     { page: 'settings-modules', label: 'Module Management', icon: Boxes, perm: 'modules.manage' },
     { page: 'settings-company', label: 'Company Profile', icon: Building2, perm: 'settings.update' },
+    { page: 'settings-plants', label: 'Plants', icon: Factory, perm: 'plants.view' },
+    { page: 'settings-departments', label: 'Departments', icon: Building2, perm: 'departments.view' },
+    { page: 'settings-audit', label: 'Audit Logs', icon: Eye, perm: 'audit.view' },
   ];
 
   const visibleNavItems = navItems.filter(item => item.comingSoon || hasPermission(item.perm));
@@ -2327,17 +2345,36 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
 }
 
 // ============================================================================
-// SETTINGS - USERS
+// SETTINGS - USERS (Full CRUD)
 // ============================================================================
 
 function SettingsUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [resetPwd, setResetPwd] = useState('');
+
+  const emptyForm = { fullName: '', username: '', email: '', phone: '', department: '', password: '', status: 'active' as string, roleIds: [] as string[] };
+  const [createForm, setCreateForm] = useState(emptyForm);
+  const [editForm, setEditForm] = useState(emptyForm);
+
+  const loadUsers = useCallback(() => {
+    api.get<User[]>('/api/users').then(res => { if (res.success && res.data) setUsers(res.data); setLoading(false); });
+  }, []);
 
   useEffect(() => {
-    api.get<User[]>('/api/users').then(res => {
-      if (res.success && res.data) setUsers(res.data);
+    Promise.all([
+      api.get<User[]>('/api/users'),
+      api.get<Role[]>('/api/roles'),
+    ]).then(([usersRes, rolesRes]) => {
+      if (usersRes.success && usersRes.data) setUsers(usersRes.data);
+      if (rolesRes.success && rolesRes.data) setRoles(Array.isArray(rolesRes.data) ? rolesRes.data : []);
       setLoading(false);
     });
   }, []);
@@ -2345,12 +2382,45 @@ function SettingsUsersPage() {
   const filteredUsers = useMemo(() => {
     if (!searchText.trim()) return users;
     const q = searchText.toLowerCase();
-    return users.filter(u =>
-      u.fullName.toLowerCase().includes(q) ||
-      u.username.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q)
-    );
+    return users.filter(u => u.fullName.toLowerCase().includes(q) || u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
   }, [users, searchText]);
+
+  const handleCreate = async () => {
+    if (!createForm.fullName || !createForm.username || !createForm.email || !createForm.password) { toast.error('Please fill required fields'); return; }
+    setSaving(true);
+    const res = await api.post('/api/users', createForm);
+    if (res.success) { toast.success('User created'); setCreateOpen(false); setCreateForm(emptyForm); loadUsers(); } else { toast.error(res.error || 'Failed'); }
+    setSaving(false);
+  };
+
+  const handleEdit = async () => {
+    if (!selectedUser) return;
+    setSaving(true);
+    const { password: _, ...data } = editForm;
+    const res = await api.put(`/api/users/${selectedUser.id}`, data);
+    if (res.success) { toast.success('User updated'); setEditOpen(false); setSelectedUser(null); loadUsers(); } else { toast.error(res.error || 'Failed'); }
+    setSaving(false);
+  };
+
+  const openEdit = (u: User) => {
+    setSelectedUser(u);
+    setEditForm({ fullName: u.fullName, username: u.username, email: u.email, phone: u.phone || '', department: u.departmentId || '', password: '', status: u.status, roleIds: (u.userRoles as UserRole[])?.map(ur => ur.roleId) || [] });
+    setEditOpen(true);
+  };
+
+  const handleResetPassword = async () => {
+    if (!selectedUser || !resetPwd) { toast.error('Enter a new password'); return; }
+    setSaving(true);
+    const res = await api.post(`/api/users/${selectedUser.id}/reset-password`, { password: resetPwd });
+    if (res.success) { toast.success('Password reset'); setResetOpen(false); setResetPwd(''); setSelectedUser(null); } else { toast.error(res.error || 'Failed'); }
+    setSaving(false);
+  };
+
+  const toggleStatus = async (u: User) => {
+    const newStatus = u.status === 'active' ? 'inactive' : 'active';
+    const res = await api.put(`/api/users/${u.id}`, { status: newStatus });
+    if (res.success) { toast.success(`User ${newStatus}`); loadUsers(); } else { toast.error(res.error || 'Failed'); }
+  };
 
   if (loading) return <LoadingSkeleton />;
 
@@ -2358,16 +2428,19 @@ function SettingsUsersPage() {
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Users</h1>
-          <p className="text-muted-foreground text-sm">{users.length} user(s)</p>
+          <h1 className="text-2xl font-bold tracking-tight">Users</h1>
+          <p className="text-muted-foreground text-sm mt-1">{users.length} user(s)</p>
         </div>
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search users..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
+        <div className="flex items-center gap-3">
+          <div className="relative min-w-[200px] max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search users..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
+          </div>
+          <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add User</Button>
         </div>
       </div>
 
-      <Card className="border-0 shadow-sm overflow-hidden">
+      <Card className="border-0 shadow-sm overflow-hidden dark:bg-card">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -2377,15 +2450,13 @@ function SettingsUsersPage() {
                 <TableHead className="hidden md:table-cell">Email</TableHead>
                 <TableHead className="hidden lg:table-cell">Department</TableHead>
                 <TableHead className="hidden md:table-cell">Roles</TableHead>
-                <TableHead className="hidden xl:table-cell">Plant</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="w-10">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredUsers.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="h-48">
-                  <EmptyState icon={Users} title="No users found" description="No users match your search criteria." />
-                </TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} className="h-48"><EmptyState icon={Users} title="No users found" description="No users match your search criteria." /></TableCell></TableRow>
               ) : filteredUsers.map(u => (
                 <TableRow key={u.id}>
                   <TableCell>
@@ -2399,26 +2470,21 @@ function SettingsUsersPage() {
                   <TableCell className="text-sm hidden lg:table-cell">{u.department?.name || '-'}</TableCell>
                   <TableCell className="hidden md:table-cell">
                     <div className="flex gap-1 flex-wrap">
-                      {u.userRoles ? (
-                        (u.userRoles as UserRole[]).map((ur: UserRole) => (
-                          <Badge key={ur.role.id} variant="outline" style={{ borderColor: ur.role.color || undefined, color: ur.role.color || undefined }} className="text-[10px]">
-                            {ur.role.name}
-                          </Badge>
-                        ))
-                      ) : (
-                        u.roles?.map(r => (
-                          <Badge key={r.id} variant="outline" style={{ borderColor: r.color || undefined, color: r.color || undefined }} className="text-[10px]">
-                            {r.name}
-                          </Badge>
-                        ))
-                      )}
+                      {u.roles?.map(r => (<Badge key={r.id} variant="outline" style={{ borderColor: r.color || undefined, color: r.color || undefined }} className="text-[10px]">{r.name}</Badge>))}
                     </div>
                   </TableCell>
-                  <TableCell className="text-sm hidden xl:table-cell">{u.plant?.name || '-'}</TableCell>
                   <TableCell>
-                    <Badge variant={u.status === 'active' ? 'default' : 'secondary'} className={u.status === 'active' ? 'bg-emerald-100 text-emerald-700' : ''}>
-                      {u.status}
-                    </Badge>
+                    <Badge variant={u.status === 'active' ? 'default' : 'secondary'} className={u.status === 'active' ? 'bg-emerald-100 text-emerald-700' : ''}>{u.status}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEdit(u)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => { setSelectedUser(u); setResetPwd(''); setResetOpen(true); }}><Key className="h-3.5 w-3.5 mr-2" />Reset Password</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toggleStatus(u)}>{u.status === 'active' ? <UserPlus className="h-3.5 w-3.5 mr-2" /> : <UserMinus className="h-3.5 w-3.5 mr-2" />}{u.status === 'active' ? 'Deactivate' : 'Activate'}</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               ))}
@@ -2426,26 +2492,127 @@ function SettingsUsersPage() {
           </Table>
         </div>
       </Card>
+
+      {/* Create Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Create User</DialogTitle><DialogDescription>Add a new user to the system.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Full Name *</Label><Input value={createForm.fullName} onChange={e => setCreateForm(f => ({ ...f, fullName: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Username *</Label><Input value={createForm.username} onChange={e => setCreateForm(f => ({ ...f, username: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Email *</Label><Input type="email" value={createForm.email} onChange={e => setCreateForm(f => ({ ...f, email: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Phone</Label><Input value={createForm.phone} onChange={e => setCreateForm(f => ({ ...f, phone: e.target.value }))} /></div>
+            </div>
+            <div className="space-y-1.5"><Label>Password *</Label><Input type="password" value={createForm.password} onChange={e => setCreateForm(f => ({ ...f, password: e.target.value }))} /></div>
+            <div className="space-y-1.5">
+              <Label>Roles</Label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {roles.map(r => (
+                  <label key={r.id} className="flex items-center gap-2 text-sm p-2 rounded-md bg-muted/30 cursor-pointer">
+                    <input type="checkbox" checked={createForm.roleIds.includes(r.id)} onChange={e => setCreateForm(f => ({ ...f, roleIds: e.target.checked ? [...f.roleIds, r.id] : f.roleIds.filter(id => id !== r.id) }))} className="rounded" />
+                    <span>{r.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={createForm.status} onValueChange={v => setCreateForm(f => ({ ...f, status: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}Create User</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Edit User</DialogTitle><DialogDescription>Update user information.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Full Name *</Label><Input value={editForm.fullName} onChange={e => setEditForm(f => ({ ...f, fullName: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Username</Label><Input value={editForm.username} disabled className="bg-muted" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Email *</Label><Input type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Phone</Label><Input value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} /></div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Roles</Label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {roles.map(r => (
+                  <label key={r.id} className="flex items-center gap-2 text-sm p-2 rounded-md bg-muted/30 cursor-pointer">
+                    <input type="checkbox" checked={editForm.roleIds.includes(r.id)} onChange={e => setEditForm(f => ({ ...f, roleIds: e.target.checked ? [...f.roleIds, r.id] : f.roleIds.filter(id => id !== r.id) }))} className="rounded" />
+                    <span>{r.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={editForm.status} onValueChange={v => setEditForm(f => ({ ...f, status: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={handleEdit} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Password Dialog */}
+      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Reset Password</DialogTitle><DialogDescription>Set a new password for {selectedUser?.fullName}.</DialogDescription></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5"><Label>New Password *</Label><Input type="password" value={resetPwd} onChange={e => setResetPwd(e.target.value)} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetOpen(false)}>Cancel</Button>
+            <Button onClick={handleResetPassword} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}Reset</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 // ============================================================================
-// SETTINGS - ROLES
+// SETTINGS - ROLES (Full CRUD + Permission Matrix)
 // ============================================================================
 
 function SettingsRolesPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedRoleId, setSelectedRoleId] = useState<string>('');
+  const [rolePerms, setRolePerms] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [savingPerm, setSavingPerm] = useState(false);
+
+  const emptyRoleForm = { name: '', slug: '', description: '', level: 1 };
+  const [createForm, setCreateForm] = useState(emptyRoleForm);
+  const [editForm, setEditForm] = useState(emptyRoleForm);
 
   const permissionsByModule = useMemo(() => {
     const map: Record<string, Permission[]> = {};
     if (!Array.isArray(permissions)) return map;
-    permissions.forEach(p => {
-      if (!map[p.module]) map[p.module] = [];
-      map[p.module].push(p);
-    });
+    permissions.forEach(p => { if (!map[p.module]) map[p.module] = []; map[p.module].push(p); });
     return map;
   }, [permissions]);
 
@@ -2454,7 +2621,7 @@ function SettingsRolesPage() {
       api.get<Role[]>('/api/roles'),
       api.get<Permission[]>('/api/permissions'),
     ]).then(([rolesRes, permsRes]) => {
-      if (rolesRes.success && rolesRes.data) setRoles(Array.isArray(rolesRes.data) ? rolesRes.data : []);
+      if (rolesRes.success && rolesRes.data) { const r = Array.isArray(rolesRes.data) ? rolesRes.data : []; setRoles(r); if (r[0]) setSelectedRoleId(r[0].id); }
       if (permsRes.success && permsRes.data) {
         const perms = Array.isArray(permsRes.data) ? permsRes.data : (permsRes.data as { all?: Permission[] }).all || [];
         setPermissions(perms);
@@ -2463,65 +2630,181 @@ function SettingsRolesPage() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!selectedRoleId) return;
+    api.get<{ permissions: Permission[] }>(`/api/roles/${selectedRoleId}`).then(res => {
+      if (res.success && res.data) {
+        const p = (res.data as any).permissions || (res.data as any).rolePermissions || [];
+        setRolePerms(Array.isArray(p) ? p.map((x: any) => typeof x === 'string' ? x : x.id) : []);
+      }
+    });
+  }, [selectedRoleId]);
+
+  const selectedRoleData = roles.find(r => r.id === selectedRoleId);
+
+  const togglePermission = async (permId: string) => {
+    const newPerms = rolePerms.includes(permId) ? rolePerms.filter(id => id !== permId) : [...rolePerms, permId];
+    setRolePerms(newPerms);
+    setSavingPerm(true);
+    await api.put(`/api/roles/${selectedRoleId}/permissions`, { permissionIds: newPerms });
+    setSavingPerm(false);
+  };
+
+  const handleCreateRole = async () => {
+    if (!createForm.name || !createForm.slug) { toast.error('Name and slug required'); return; }
+    setSaving(true);
+    const res = await api.post('/api/roles', createForm);
+    if (res.success) { toast.success('Role created'); setCreateOpen(false); setCreateForm(emptyRoleForm); api.get<Role[]>('/api/roles').then(r => { if (r.success && r.data) setRoles(Array.isArray(r.data) ? r.data : []); }); } else { toast.error(res.error || 'Failed'); }
+    setSaving(false);
+  };
+
+  const openEditRole = (role: Role) => {
+    setSelectedRole(role);
+    setEditForm({ name: role.name, slug: role.slug, description: role.description || '', level: role.level });
+    setEditOpen(true);
+  };
+
+  const handleEditRole = async () => {
+    if (!selectedRole) return;
+    setSaving(true);
+    const res = await api.put(`/api/roles/${selectedRole.id}`, { name: editForm.name, description: editForm.description, level: editForm.level });
+    if (res.success) { toast.success('Role updated'); setEditOpen(false); api.get<Role[]>('/api/roles').then(r => { if (r.success && r.data) setRoles(Array.isArray(r.data) ? r.data : []); }); } else { toast.error(res.error || 'Failed'); }
+    setSaving(false);
+  };
+
+  const handleDeleteRole = async (role: Role) => {
+    if (role.isSystem) { toast.error('Cannot delete system role'); return; }
+    const res = await api.delete(`/api/roles/${role.id}`);
+    if (res.success) { toast.success('Role deleted'); if (selectedRoleId === role.id && roles[0]) setSelectedRoleId(roles[0].id); api.get<Role[]>('/api/roles').then(r => { if (r.success && r.data) setRoles(Array.isArray(r.data) ? r.data : []); }); } else { toast.error(res.error || 'Failed'); }
+  };
+
   if (loading) return <LoadingSkeleton />;
 
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold">Roles & Permissions</h1>
-        <p className="text-muted-foreground text-sm">Manage system roles and their associated permissions</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Roles & Permissions</h1>
+          <p className="text-muted-foreground text-sm mt-1">Manage system roles and their associated permissions</p>
+        </div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Create Role</Button>
       </div>
 
-      <Tabs defaultValue={roles[0]?.id || ''}>
-        <TabsList className="flex-wrap h-auto gap-1 bg-muted/50 p-1">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Role Cards */}
+        <div className="space-y-3">
           {roles.map(role => (
-            <TabsTrigger key={role.id} value={role.id} className="text-xs">
-              {role.name}
-              {role.permissionCount !== undefined && (
-                <Badge variant="secondary" className="ml-1.5 text-[9px] px-1 py-0 h-4">{role.permissionCount}</Badge>
-              )}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        {roles.map(role => (
-          <TabsContent key={role.id} value={role.id} className="mt-4">
-            <Card className="border-0 shadow-sm">
-              <CardHeader>
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: (role.color || '#10b981') + '20', color: role.color || '#10b981' }}>
-                    <Shield className="h-5 w-5" />
+            <Card key={role.id} className={`border-0 shadow-sm cursor-pointer transition-all dark:bg-card ${selectedRoleId === role.id ? 'ring-2 ring-emerald-500 shadow-emerald-100 dark:shadow-emerald-900/20' : 'hover:shadow-md'}`} onClick={() => setSelectedRoleId(role.id)}>
+              <CardHeader className="pb-2 pt-4 px-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: (role.color || '#10b981') + '20', color: role.color || '#10b981' }}>
+                      <Shield className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-sm">{role.name}</CardTitle>
+                      <CardDescription className="text-[11px]">{role.description || `Level ${role.level}`}</CardDescription>
+                    </div>
                   </div>
-                  <div>
-                    <CardTitle className="text-lg">{role.name}</CardTitle>
-                    <CardDescription>{role.description || `Level ${role.level} role`}</CardDescription>
+                  <div className="flex items-center gap-1">
+                    {role.isSystem && <Badge variant="outline" className="text-[9px] px-1.5 py-0">SYSTEM</Badge>}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEditRole(role); }}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                        {!role.isSystem && <DropdownMenuItem className="text-red-600" onClick={(e) => { e.stopPropagation(); handleDeleteRole(role); }}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                  {role.isSystem && <Badge variant="outline" className="text-[10px]">SYSTEM</Badge>}
                 </div>
               </CardHeader>
-              <CardContent>
-                <ScrollArea className="max-h-96">
-                  <div className="space-y-4">
-                    {Object.entries(permissionsByModule).map(([module, perms]) => (
-                      <div key={module}>
-                        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">{module.replace(/_/g, ' ')}</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                          {perms.map(p => (
-                            <div key={p.id} className="flex items-center gap-2 p-2 rounded-md bg-muted/30">
-                              <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                              <span className="text-xs">{p.name}</span>
-                              <span className="text-[10px] text-muted-foreground ml-auto font-mono">{p.action}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
+              <CardContent className="px-4 pb-3">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="font-mono">{role.slug}</span>
+                  <span>·</span>
+                  <span>Lvl {role.level}</span>
+                  {role.permissionCount !== undefined && <><span>·</span><span>{role.permissionCount} perms</span></>}
+                </div>
               </CardContent>
             </Card>
-          </TabsContent>
-        ))}
-      </Tabs>
+          ))}
+        </div>
+
+        {/* Permission Matrix */}
+        <div className="lg:col-span-2">
+          <Card className="border-0 shadow-sm dark:bg-card">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Permissions — {selectedRoleData?.name}</CardTitle>
+                  <CardDescription className="text-xs mt-0.5">{rolePerms.length} permission(s) enabled</CardDescription>
+                </div>
+                {savingPerm && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="max-h-[500px]">
+                <div className="space-y-5">
+                  {Object.entries(permissionsByModule).map(([module, perms]) => (
+                    <div key={module}>
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2.5">{module.replace(/_/g, ' ')}</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {perms.map(p => {
+                          const isOn = rolePerms.includes(p.id);
+                          return (
+                            <div key={p.id} className={`flex items-center justify-between p-2.5 rounded-lg border transition-colors cursor-pointer ${isOn ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800' : 'bg-muted/30 border-transparent hover:bg-muted/50'}`} onClick={() => togglePermission(p.id)}>
+                              <div className="flex items-center gap-2.5">
+                                <div className={`h-1.5 w-1.5 rounded-full ${isOn ? 'bg-emerald-500' : 'bg-muted-foreground/30'}`} />
+                                <span className="text-sm">{p.name}</span>
+                                <span className="text-[10px] text-muted-foreground font-mono">{p.action}</span>
+                              </div>
+                              <Switch checked={isOn} onCheckedChange={() => togglePermission(p.id)} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Create Role Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Create Role</DialogTitle><DialogDescription>Add a new role to the system.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-1.5"><Label>Name *</Label><Input value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Slug *</Label><Input value={createForm.slug} onChange={e => setCreateForm(f => ({ ...f, slug: e.target.value }))} placeholder="e.g. technician" /></div>
+            <div className="space-y-1.5"><Label>Description</Label><Input value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Level</Label><Input type="number" min={1} max={100} value={createForm.level} onChange={e => setCreateForm(f => ({ ...f, level: parseInt(e.target.value) || 1 }))} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateRole} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Role Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Edit Role</DialogTitle><DialogDescription>Update role information.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-1.5"><Label>Name *</Label><Input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Slug</Label><Input value={editForm.slug} disabled={selectedRole?.isSystem} onChange={e => setEditForm(f => ({ ...f, slug: e.target.value }))} className={selectedRole?.isSystem ? 'bg-muted' : ''} /></div>
+            <div className="space-y-1.5"><Label>Description</Label><Input value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} /></div>
+            <div className="space-y-1.5"><Label>Level</Label><Input type="number" min={1} max={100} value={editForm.level} onChange={e => setEditForm(f => ({ ...f, level: parseInt(e.target.value) || 1 }))} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={handleEditRole} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -2947,11 +3230,1068 @@ function CompanyProfilePage() {
 }
 
 // ============================================================================
+// SETTINGS - PLANTS
+// ============================================================================
+
+function SettingsPlantsPage() {
+  const [plants, setPlants] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: '', code: '', location: '', country: '', city: '' });
+
+  const loadPlants = useCallback(() => {
+    api.get<any[]>('/api/plants').then(res => { if (res.success && res.data) setPlants(Array.isArray(res.data) ? res.data : []); setLoading(false); });
+  }, []);
+
+  useEffect(() => { loadPlants(); }, [loadPlants]);
+
+  const openCreate = () => { setEditId(null); setForm({ name: '', code: '', location: '', country: '', city: '' }); setDialogOpen(true); };
+  const openEdit = (p: any) => { setEditId(p.id); setForm({ name: p.name, code: p.code, location: p.location || '', country: p.country || '', city: p.city || '' }); setDialogOpen(true); };
+
+  const handleSave = async () => {
+    if (!form.name || !form.code) { toast.error('Name and code required'); return; }
+    setSaving(true);
+    const res = editId ? await api.put(`/api/plants/${editId}`, form) : await api.post('/api/plants', form);
+    if (res.success) { toast.success(editId ? 'Plant updated' : 'Plant created'); setDialogOpen(false); loadPlants(); } else { toast.error(res.error || 'Failed'); }
+    setSaving(false);
+  };
+
+  const handleDelete = async (p: any) => {
+    const res = await api.delete(`/api/plants/${p.id}`);
+    if (res.success) { toast.success('Plant deleted'); loadPlants(); } else { toast.error(res.error || 'Failed'); }
+  };
+
+  if (loading) return <LoadingSkeleton />;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Plants</h1>
+          <p className="text-muted-foreground text-sm mt-1">Manage plant locations and facilities</p>
+        </div>
+        <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Plant</Button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {plants.length === 0 ? (
+          <div className="col-span-full"><EmptyState icon={Factory} title="No plants" description="Create your first plant to get started." /></div>
+        ) : plants.map(p => (
+          <Card key={p.id} className="border-0 shadow-sm dark:bg-card">
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center dark:bg-emerald-900/30 dark:text-emerald-400"><Factory className="h-5 w-5" /></div>
+                  <div>
+                    <CardTitle className="text-sm">{p.name}</CardTitle>
+                    <CardDescription className="text-xs font-mono">{p.code}</CardDescription>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Badge variant="outline" className={p.isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800' : 'bg-slate-50 text-slate-500 border-slate-200'}>
+                    {p.isActive ? 'Active' : 'Inactive'}
+                  </Badge>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => openEdit(p)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                      <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(p)}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1.5 text-xs text-muted-foreground">
+                {p.location && <div className="flex items-center gap-1.5"><MapPin className="h-3 w-3" />{p.location}</div>}
+                {(p.city || p.country) && <div>{p.city}{p.city && p.country ? ', ' : ''}{p.country}</div>}
+                <div className="flex items-center gap-2 pt-1">
+                  {(p as any)._count?.departments !== undefined && (
+                    <Badge variant="outline" className="text-[10px]"><Building2 className="h-2.5 w-2.5 mr-1" />{(p as any)._count.departments} Dept(s)</Badge>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>{editId ? 'Edit Plant' : 'Create Plant'}</DialogTitle><DialogDescription>{editId ? 'Update plant details.' : 'Add a new plant location.'}</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Code *</Label><Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} /></div>
+            </div>
+            <div className="space-y-1.5"><Label>Location</Label><Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} placeholder="Street address" /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>City</Label><Input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Country</Label><Input value={form.country} onChange={e => setForm(f => ({ ...f, country: e.target.value }))} /></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}{editId ? 'Save' : 'Create'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ============================================================================
+// SETTINGS - DEPARTMENTS
+// ============================================================================
+
+function SettingsDepartmentsPage() {
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [plants, setPlants] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: '', code: '', plantId: '', parentId: '', supervisorId: '' });
+
+  const loadData = useCallback(() => {
+    Promise.all([api.get<any[]>('/api/departments'), api.get<any[]>('/api/plants')]).then(([deptRes, plantRes]) => {
+      if (deptRes.success && deptRes.data) setDepartments(Array.isArray(deptRes.data) ? deptRes.data : []);
+      if (plantRes.success && plantRes.data) setPlants(Array.isArray(plantRes.data) ? plantRes.data : []);
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const openCreate = () => { setEditId(null); setForm({ name: '', code: '', plantId: '', parentId: '', supervisorId: '' }); setDialogOpen(true); };
+  const openEdit = (d: any) => { setEditId(d.id); setForm({ name: d.name, code: d.code, plantId: d.plantId || '', parentId: d.parentId || '', supervisorId: d.supervisorId || '' }); setDialogOpen(true); };
+
+  const handleSave = async () => {
+    if (!form.name || !form.code) { toast.error('Name and code required'); return; }
+    setSaving(true);
+    const res = editId ? await api.put(`/api/departments/${editId}`, form) : await api.post('/api/departments', form);
+    if (res.success) { toast.success(editId ? 'Department updated' : 'Department created'); setDialogOpen(false); loadData(); } else { toast.error(res.error || 'Failed'); }
+    setSaving(false);
+  };
+
+  const handleDelete = async (d: any) => {
+    if (d._count?.children > 0) { toast.error('Cannot delete department with children'); return; }
+    const res = await api.delete(`/api/departments/${d.id}`);
+    if (res.success) { toast.success('Department deleted'); loadData(); } else { toast.error(res.error || 'Failed'); }
+  };
+
+  if (loading) return <LoadingSkeleton />;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Departments</h1>
+          <p className="text-muted-foreground text-sm mt-1">Manage organizational departments</p>
+        </div>
+        <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Department</Button>
+      </div>
+      <Card className="border-0 shadow-sm dark:bg-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Code</TableHead>
+                <TableHead className="hidden md:table-cell">Plant</TableHead>
+                <TableHead className="hidden lg:table-cell">Supervisor</TableHead>
+                <TableHead className="hidden md:table-cell">Children</TableHead>
+                <TableHead className="w-10">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {departments.length === 0 ? (
+                <TableRow><TableCell colSpan={6} className="h-48"><EmptyState icon={Building2} title="No departments" description="Create your first department." /></TableCell></TableRow>
+              ) : departments.map(d => (
+                <TableRow key={d.id}>
+                  <TableCell className="font-medium text-sm">{d.name}</TableCell>
+                  <TableCell className="font-mono text-xs">{d.code}</TableCell>
+                  <TableCell className="text-sm hidden md:table-cell">{d.plant?.name || '-'}</TableCell>
+                  <TableCell className="text-sm hidden lg:table-cell">{(d as any).supervisor?.fullName || d.supervisorId || '-'}</TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    {(d as any)._count?.children !== undefined ? (
+                      <Badge variant="outline" className="text-[10px]">{(d as any)._count.children}</Badge>
+                    ) : '-'}
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEdit(d)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                        <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(d)}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>{editId ? 'Edit Department' : 'Create Department'}</DialogTitle><DialogDescription>{editId ? 'Update department details.' : 'Add a new department.'}</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Code *</Label><Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} /></div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Plant</Label>
+              <Select value={form.plantId} onValueChange={v => setForm(f => ({ ...f, plantId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select plant" /></SelectTrigger>
+                <SelectContent>{plants.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Parent Department</Label>
+              <Select value={form.parentId} onValueChange={v => setForm(f => ({ ...f, parentId: v }))}>
+                <SelectTrigger><SelectValue placeholder="None (top-level)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {departments.filter(d => d.id !== editId).map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5"><Label>Supervisor ID</Label><Input value={form.supervisorId} onChange={e => setForm(f => ({ ...f, supervisorId: e.target.value }))} placeholder="User ID" /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}{editId ? 'Save' : 'Create'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ============================================================================
+// NOTIFICATIONS
+// ============================================================================
+
+function NotificationsPage() {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadNotifications = useCallback(() => {
+    api.get<Notification[]>('/api/notifications').then(res => { if (res.success && res.data) setNotifications(Array.isArray(res.data) ? res.data : []); setLoading(false); });
+  }, []);
+
+  useEffect(() => { loadNotifications(); }, [loadNotifications]);
+
+  const markAllRead = async () => {
+    await api.put('/api/notifications/read-all');
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    toast.success('All notifications marked as read');
+  };
+
+  const markRead = async (n: Notification) => {
+    if (n.isRead) return;
+    await api.put(`/api/notifications/${n.id}`);
+    setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true } : x));
+    if (n.actionUrl) {
+      // Navigate based on actionUrl if possible
+    }
+  };
+
+  const typeColors: Record<string, string> = {
+    mr_assigned: 'bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400',
+    wo_assigned: 'bg-sky-50 text-sky-500 dark:bg-sky-950/30 dark:text-sky-300',
+    wo_completed: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
+    system: 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400',
+    info: 'bg-slate-50 text-slate-500 dark:bg-slate-800/30 dark:text-slate-400',
+  };
+
+  const typeIcons: Record<string, React.ElementType> = {
+    mr_assigned: ClipboardList,
+    wo_assigned: Wrench,
+    wo_completed: CheckCircle2,
+    system: Settings,
+    info: MessageSquare,
+  };
+
+  if (loading) return <LoadingSkeleton />;
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Notifications</h1>
+          <p className="text-muted-foreground text-sm mt-1">{unreadCount > 0 ? `${unreadCount} unread notification(s)` : 'All caught up!'}</p>
+        </div>
+        {unreadCount > 0 && (
+          <Button variant="outline" onClick={markAllRead} className="gap-1.5"><Check className="h-4 w-4" />Mark All Read</Button>
+        )}
+      </div>
+      <div className="space-y-2">
+        {notifications.length === 0 ? (
+          <EmptyState icon={Bell} title="No notifications" description="You're all caught up!" />
+        ) : notifications.map(n => {
+          const Icon = typeIcons[n.type] || MessageSquare;
+          const colorClass = typeColors[n.type] || typeColors.info;
+          return (
+            <Card key={n.id} className={`border-0 shadow-sm cursor-pointer transition-all hover:shadow-md dark:bg-card ${!n.isRead ? 'border-l-4 border-l-emerald-500 dark:border-l-emerald-400' : 'opacity-70'}`} onClick={() => markRead(n)}>
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${colorClass}`}>
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{n.title}</p>
+                      {!n.isRead && <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
+                    <p className="text-[11px] text-muted-foreground/60 mt-1">{timeAgo(n.createdAt)}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// AUDIT LOGS
+// ============================================================================
+
+function AuditLogsPage() {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [entityFilter, setEntityFilter] = useState('all');
+  const [actionFilter, setActionFilter] = useState('all');
+
+  const fetchLogs = useCallback((entity: string, action: string) => {
+    let url = '/api/audit-logs';
+    const params: string[] = [];
+    if (entity !== 'all') params.push(`entityType=${entity}`);
+    if (action !== 'all') params.push(`action=${action}`);
+    if (params.length) url += '?' + params.join('&');
+    api.get<any[]>(url).then(res => { if (res.success && res.data) setLogs(Array.isArray(res.data) ? res.data : []); setLoading(false); });
+  }, []);
+
+  useEffect(() => { fetchLogs(entityFilter, actionFilter); }, [entityFilter, actionFilter, fetchLogs]);
+
+  const handleEntityChange = (value: string) => { setLoading(true); setEntityFilter(value); };
+  const handleActionChange = (value: string) => { setLoading(true); setActionFilter(value); };
+
+  const actionColors: Record<string, string> = {
+    create: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
+    update: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+    delete: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  };
+
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  if (loading) return <LoadingSkeleton />;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Audit Logs</h1>
+        <p className="text-muted-foreground text-sm mt-1">Track all system changes and actions</p>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <Select value={entityFilter} onValueChange={handleEntityChange}>
+          <SelectTrigger className="w-[180px]"><SelectValue placeholder="Entity Type" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Entities</SelectItem>
+            <SelectItem value="maintenance_request">Maintenance Request</SelectItem>
+            <SelectItem value="work_order">Work Order</SelectItem>
+            <SelectItem value="user">User</SelectItem>
+            <SelectItem value="role">Role</SelectItem>
+            <SelectItem value="plant">Plant</SelectItem>
+            <SelectItem value="department">Department</SelectItem>
+            <SelectItem value="asset">Asset</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={actionFilter} onValueChange={handleActionChange}>
+          <SelectTrigger className="w-[150px]"><SelectValue placeholder="Action" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Actions</SelectItem>
+            <SelectItem value="create">Create</SelectItem>
+            <SelectItem value="update">Update</SelectItem>
+            <SelectItem value="delete">Delete</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <Card className="border-0 shadow-sm dark:bg-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Timestamp</TableHead>
+                <TableHead>User</TableHead>
+                <TableHead>Action</TableHead>
+                <TableHead className="hidden md:table-cell">Entity Type</TableHead>
+                <TableHead className="hidden md:table-cell">Entity ID</TableHead>
+                <TableHead className="w-10"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {logs.length === 0 ? (
+                <TableRow><TableCell colSpan={6} className="h-48"><EmptyState icon={Eye} title="No audit logs" description="No logs match your filter criteria." /></TableCell></TableRow>
+              ) : logs.map(log => (
+                <React.Fragment key={log.id}>
+                  <TableRow className="cursor-pointer" onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}>
+                    <TableCell className="text-xs text-muted-foreground">{formatDateTime(log.createdAt)}</TableCell>
+                    <TableCell className="text-sm">{(log as any).user?.fullName || log.userId || '-'}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`text-[10px] ${actionColors[log.action] || ''}`}>{log.action?.toUpperCase()}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs font-mono hidden md:table-cell">{log.entityType || '-'}</TableCell>
+                    <TableCell className="text-xs font-mono hidden md:table-cell">{log.entityId ? log.entityId.slice(0, 8) + '...' : '-'}</TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon" className="h-7 w-7">
+                        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expandedId === log.id ? 'rotate-180' : ''}`} />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                  {expandedId === log.id && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="bg-muted/30 px-8 py-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {log.oldValues && (
+                            <div>
+                              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Old Values</p>
+                              <pre className="text-xs bg-background rounded-lg p-3 overflow-x-auto max-h-40 dark:bg-card">{typeof log.oldValues === 'string' ? log.oldValues : JSON.stringify(log.oldValues, null, 2)}</pre>
+                            </div>
+                          )}
+                          {log.newValues && (
+                            <div>
+                              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">New Values</p>
+                              <pre className="text-xs bg-background rounded-lg p-3 overflow-x-auto max-h-40 dark:bg-card">{typeof log.newValues === 'string' ? log.newValues : JSON.stringify(log.newValues, null, 2)}</pre>
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================================
+// ASSETS PAGE
+// ============================================================================
+
+function AssetsPage() {
+  const [assets, setAssets] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [plantList, setPlantList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [conditionFilter, setConditionFilter] = useState('all');
+  const [criticalityFilter, setCriticalityFilter] = useState('all');
+
+  const emptyForm = { name: '', assetTag: '', serialNumber: '', categoryId: '', manufacturer: '', model: '', yearManufactured: '', condition: 'new', status: 'operational', criticality: 'medium', location: '', building: '', floor: '', area: '', plantId: '', departmentId: '', description: '', purchaseDate: '', purchaseCost: '', expectedLifeYears: '' };
+  const [form, setForm] = useState(emptyForm);
+
+  const loadData = useCallback(() => {
+    Promise.all([api.get<any[]>('/api/assets'), api.get<any[]>('/api/asset-categories'), api.get<any[]>('/api/plants')]).then(([aRes, cRes, pRes]) => {
+      if (aRes.success && aRes.data) setAssets(Array.isArray(aRes.data) ? aRes.data : []);
+      if (cRes.success && cRes.data) setCategories(Array.isArray(cRes.data) ? cRes.data : []);
+      if (pRes.success && pRes.data) setPlantList(Array.isArray(pRes.data) ? pRes.data : []);
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const filteredAssets = useMemo(() => {
+    return assets.filter(a => {
+      if (searchText) { const q = searchText.toLowerCase(); if (!a.name.toLowerCase().includes(q) && !a.assetTag.toLowerCase().includes(q)) return false; }
+      if (statusFilter !== 'all' && a.status !== statusFilter) return false;
+      if (conditionFilter !== 'all' && a.condition !== conditionFilter) return false;
+      if (criticalityFilter !== 'all' && a.criticality !== criticalityFilter) return false;
+      return true;
+    });
+  }, [assets, searchText, statusFilter, conditionFilter, criticalityFilter]);
+
+  const stats = useMemo(() => ({
+    total: assets.length,
+    operational: assets.filter(a => a.status === 'operational').length,
+    maintenance: assets.filter(a => a.status === 'under_maintenance').length,
+    critical: assets.filter(a => a.criticality === 'critical').length,
+  }), [assets]);
+
+  const openCreate = () => { setEditId(null); setForm(emptyForm); setDialogOpen(true); };
+  const openEdit = (a: any) => { setEditId(a.id); setForm({ name: a.name, assetTag: a.assetTag, serialNumber: a.serialNumber || '', categoryId: a.categoryId || '', manufacturer: a.manufacturer || '', model: a.model || '', yearManufactured: a.yearManufactured?.toString() || '', condition: a.condition || 'new', status: a.status || 'operational', criticality: a.criticality || 'medium', location: a.location || '', building: a.building || '', floor: a.floor || '', area: a.area || '', plantId: a.plantId || '', departmentId: a.departmentId || '', description: a.description || '', purchaseDate: a.purchaseDate ? a.purchaseDate.slice(0, 10) : '', purchaseCost: a.purchaseCost?.toString() || '', expectedLifeYears: a.expectedLifeYears?.toString() || '' }); setDialogOpen(true); };
+
+  const handleSave = async () => {
+    if (!form.name || !form.assetTag) { toast.error('Name and asset tag required'); return; }
+    setSaving(true);
+    const payload: any = { ...form, purchaseCost: form.purchaseCost ? parseFloat(form.purchaseCost) : undefined, yearManufactured: form.yearManufactured ? parseInt(form.yearManufactured) : undefined, expectedLifeYears: form.expectedLifeYears ? parseInt(form.expectedLifeYears) : undefined, purchaseDate: form.purchaseDate || undefined };
+    const res = editId ? await api.put(`/api/assets/${editId}`, payload) : await api.post('/api/assets', payload);
+    if (res.success) { toast.success(editId ? 'Asset updated' : 'Asset created'); setDialogOpen(false); loadData(); } else { toast.error(res.error || 'Failed'); }
+    setSaving(false);
+  };
+
+  const statusColors: Record<string, string> = { operational: 'bg-emerald-100 text-emerald-700', under_maintenance: 'bg-amber-100 text-amber-700', decommissioned: 'bg-slate-100 text-slate-500', disposed: 'bg-red-100 text-red-600' };
+  const criticalityColors: Record<string, string> = { low: 'bg-slate-100 text-slate-600', medium: 'bg-sky-100 text-sky-700', high: 'bg-amber-100 text-amber-700', critical: 'bg-red-100 text-red-700' };
+
+  if (loading) return <LoadingSkeleton />;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Asset Register</h1>
+          <p className="text-muted-foreground text-sm mt-1">Manage all physical assets and equipment</p>
+        </div>
+        <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Asset</Button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Assets', value: stats.total, icon: Building2, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+          { label: 'Operational', value: stats.operational, icon: CheckCircle2, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' },
+          { label: 'Under Maintenance', value: stats.maintenance, icon: Wrench, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+          { label: 'Critical', value: stats.critical, icon: AlertTriangle, color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+        ].map(s => (
+          <Card key={s.label} className="border-0 shadow-sm dark:bg-card">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${s.color}`}><s.icon className="h-5 w-5" /></div>
+              <div><p className="text-xl font-bold">{s.value}</p><p className="text-xs text-muted-foreground">{s.label}</p></div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="relative min-w-[200px] flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Search assets..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="operational">Operational</SelectItem><SelectItem value="under_maintenance">Under Maintenance</SelectItem><SelectItem value="decommissioned">Decommissioned</SelectItem></SelectContent>
+        </Select>
+        <Select value={conditionFilter} onValueChange={setConditionFilter}>
+          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Condition" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All Condition</SelectItem><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent>
+        </Select>
+        <Select value={criticalityFilter} onValueChange={setCriticalityFilter}>
+          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Criticality" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All Criticality</SelectItem><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent>
+        </Select>
+      </div>
+
+      <Card className="border-0 shadow-sm dark:bg-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Asset Tag</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead className="hidden md:table-cell">Category</TableHead>
+                <TableHead className="hidden lg:table-cell">Location</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="hidden md:table-cell">Criticality</TableHead>
+                <TableHead className="hidden xl:table-cell">Condition</TableHead>
+                <TableHead className="w-10">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredAssets.length === 0 ? (
+                <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={Building2} title="No assets found" description="Try adjusting your filters." /></TableCell></TableRow>
+              ) : filteredAssets.map(a => (
+                <TableRow key={a.id}>
+                  <TableCell className="font-mono text-xs">{a.assetTag}</TableCell>
+                  <TableCell className="font-medium text-sm">{a.name}</TableCell>
+                  <TableCell className="text-sm hidden md:table-cell">{a.category?.name || '-'}</TableCell>
+                  <TableCell className="text-sm hidden lg:table-cell">{a.location || '-'}</TableCell>
+                  <TableCell><Badge variant="outline" className={`text-[10px] ${statusColors[a.status] || ''}`}>{(a.status || '').replace(/_/g, ' ')}</Badge></TableCell>
+                  <TableCell className="hidden md:table-cell"><Badge variant="outline" className={`text-[10px] ${criticalityColors[a.criticality] || ''}`}>{(a.criticality || '').toUpperCase()}</Badge></TableCell>
+                  <TableCell className="text-xs hidden xl:table-cell capitalize">{a.condition || '-'}</TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEdit(a)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{editId ? 'Edit Asset' : 'Create Asset'}</DialogTitle><DialogDescription>{editId ? 'Update asset information.' : 'Register a new asset.'}</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Asset Tag *</Label><Input value={form.assetTag} onChange={e => setForm(f => ({ ...f, assetTag: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Serial Number</Label><Input value={form.serialNumber} onChange={e => setForm(f => ({ ...f, serialNumber: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Category</Label>
+                <Select value={form.categoryId} onValueChange={v => setForm(f => ({ ...f, categoryId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                  <SelectContent>{categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5"><Label>Manufacturer</Label><Input value={form.manufacturer} onChange={e => setForm(f => ({ ...f, manufacturer: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Model</Label><Input value={form.model} onChange={e => setForm(f => ({ ...f, model: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Year</Label><Input value={form.yearManufactured} onChange={e => setForm(f => ({ ...f, yearManufactured: e.target.value }))} placeholder="2024" /></div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5"><Label>Condition</Label>
+                <Select value={form.condition} onValueChange={v => setForm(f => ({ ...f, condition: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5"><Label>Status</Label>
+                <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="operational">Operational</SelectItem><SelectItem value="under_maintenance">Under Maintenance</SelectItem><SelectItem value="decommissioned">Decommissioned</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5"><Label>Criticality</Label>
+                <Select value={form.criticality} onValueChange={v => setForm(f => ({ ...f, criticality: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-4 gap-3">
+              <div className="space-y-1.5"><Label>Location</Label><Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Building</Label><Input value={form.building} onChange={e => setForm(f => ({ ...f, building: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Floor</Label><Input value={form.floor} onChange={e => setForm(f => ({ ...f, floor: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Area</Label><Input value={form.area} onChange={e => setForm(f => ({ ...f, area: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Plant</Label>
+                <Select value={form.plantId} onValueChange={v => setForm(f => ({ ...f, plantId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select plant" /></SelectTrigger>
+                  <SelectContent>{plantList.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5"><Label>Department ID</Label><Input value={form.departmentId} onChange={e => setForm(f => ({ ...f, departmentId: e.target.value }))} /></div>
+            </div>
+            <div className="space-y-1.5"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} /></div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5"><Label>Purchase Date</Label><Input type="date" value={form.purchaseDate} onChange={e => setForm(f => ({ ...f, purchaseDate: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Purchase Cost</Label><Input type="number" value={form.purchaseCost} onChange={e => setForm(f => ({ ...f, purchaseCost: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Expected Life (years)</Label><Input type="number" value={form.expectedLifeYears} onChange={e => setForm(f => ({ ...f, expectedLifeYears: e.target.value }))} /></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}{editId ? 'Save Changes' : 'Create Asset'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ============================================================================
+// INVENTORY PAGE
+// ============================================================================
+
+function InventoryPage() {
+  const [items, setItems] = useState<any[]>([]);
+  const [plantList, setPlantList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+
+  const emptyForm = { itemCode: '', name: '', description: '', category: 'spare_part', unitOfMeasure: 'each', currentStock: '', minStockLevel: '', maxStockLevel: '', reorderQuantity: '', unitCost: '', supplier: '', location: '', binLocation: '', plantId: '' };
+  const [form, setForm] = useState(emptyForm);
+
+  const loadData = useCallback(() => {
+    Promise.all([api.get<any[]>('/api/inventory'), api.get<any[]>('/api/plants')]).then(([iRes, pRes]) => {
+      if (iRes.success && iRes.data) setItems(Array.isArray(iRes.data) ? iRes.data : []);
+      if (pRes.success && pRes.data) setPlantList(Array.isArray(pRes.data) ? pRes.data : []);
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const filteredItems = useMemo(() => {
+    return items.filter(i => {
+      if (searchText) { const q = searchText.toLowerCase(); if (!i.name.toLowerCase().includes(q) && !i.itemCode.toLowerCase().includes(q)) return false; }
+      if (categoryFilter !== 'all' && i.category !== categoryFilter) return false;
+      if (lowStockOnly && i.currentStock > i.minStockLevel) return false;
+      return true;
+    });
+  }, [items, searchText, categoryFilter, lowStockOnly]);
+
+  const stats = useMemo(() => {
+    const lowStock = items.filter(i => i.currentStock <= i.minStockLevel).length;
+    const totalValue = items.reduce((sum, i) => sum + (i.currentStock * (i.unitCost || 0)), 0);
+    return { total: items.length, lowStock, totalValue };
+  }, [items]);
+
+  const openCreate = () => { setEditId(null); setForm(emptyForm); setDialogOpen(true); };
+  const openEdit = (i: any) => { setEditId(i.id); setForm({ itemCode: i.itemCode, name: i.name, description: i.description || '', category: i.category || 'spare_part', unitOfMeasure: i.unitOfMeasure || 'each', currentStock: i.currentStock?.toString() || '', minStockLevel: i.minStockLevel?.toString() || '', maxStockLevel: i.maxStockLevel?.toString() || '', reorderQuantity: i.reorderQuantity?.toString() || '', unitCost: i.unitCost?.toString() || '', supplier: i.supplier || '', location: i.location || '', binLocation: i.binLocation || '', plantId: i.plantId || '' }); setDialogOpen(true); };
+
+  const handleSave = async () => {
+    if (!form.name || !form.itemCode) { toast.error('Name and item code required'); return; }
+    setSaving(true);
+    const payload: any = { ...form, currentStock: form.currentStock ? parseFloat(form.currentStock) : 0, minStockLevel: form.minStockLevel ? parseFloat(form.minStockLevel) : 0, maxStockLevel: form.maxStockLevel ? parseFloat(form.maxStockLevel) : undefined, reorderQuantity: form.reorderQuantity ? parseFloat(form.reorderQuantity) : undefined, unitCost: form.unitCost ? parseFloat(form.unitCost) : undefined };
+    const res = editId ? await api.put(`/api/inventory/${editId}`, payload) : await api.post('/api/inventory', payload);
+    if (res.success) { toast.success(editId ? 'Item updated' : 'Item created'); setDialogOpen(false); loadData(); } else { toast.error(res.error || 'Failed'); }
+    setSaving(false);
+  };
+
+  if (loading) return <LoadingSkeleton />;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Inventory</h1>
+          <p className="text-muted-foreground text-sm mt-1">Manage spare parts, consumables, and supplies</p>
+        </div>
+        <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Item</Button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {[
+          { label: 'Total Items', value: stats.total, icon: Package, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+          { label: 'Low Stock Alerts', value: stats.lowStock, icon: AlertTriangle, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+          { label: 'Total Value', value: `$${stats.totalValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, icon: TrendingUp, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' },
+        ].map(s => (
+          <Card key={s.label} className="border-0 shadow-sm dark:bg-card">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${s.color}`}><s.icon className="h-5 w-5" /></div>
+              <div><p className="text-xl font-bold">{s.value}</p><p className="text-xs text-muted-foreground">{s.label}</p></div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="relative min-w-[200px] flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Search inventory..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
+        </div>
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-[170px]"><SelectValue placeholder="Category" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All Categories</SelectItem><SelectItem value="spare_part">Spare Part</SelectItem><SelectItem value="consumable">Consumable</SelectItem><SelectItem value="tool">Tool</SelectItem><SelectItem value="material">Material</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent>
+        </Select>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" checked={lowStockOnly} onChange={e => setLowStockOnly(e.target.checked)} className="rounded" />
+          <span>Low Stock Only</span>
+        </label>
+      </div>
+
+      <Card className="border-0 shadow-sm dark:bg-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Item Code</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead className="hidden md:table-cell">Category</TableHead>
+                <TableHead>Stock Level</TableHead>
+                <TableHead className="hidden md:table-cell">Unit Cost</TableHead>
+                <TableHead className="hidden lg:table-cell">Location</TableHead>
+                <TableHead className="w-10">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredItems.length === 0 ? (
+                <TableRow><TableCell colSpan={7} className="h-48"><EmptyState icon={Package} title="No items found" description="Try adjusting your filters." /></TableCell></TableRow>
+              ) : filteredItems.map(i => {
+                const isLow = i.currentStock <= i.minStockLevel;
+                const max = i.maxStockLevel || Math.max(i.minStockLevel * 2, i.currentStock, 100);
+                const pct = Math.min(100, (i.currentStock / max) * 100);
+                return (
+                  <TableRow key={i.id} className={isLow ? 'bg-amber-50/50 dark:bg-amber-950/10' : ''}>
+                    <TableCell className="font-mono text-xs">{i.itemCode}</TableCell>
+                    <TableCell className="font-medium text-sm">{i.name}</TableCell>
+                    <TableCell className="text-sm hidden md:table-cell capitalize">{i.category?.replace(/_/g, ' ')}</TableCell>
+                    <TableCell>
+                      <div className="w-24">
+                        <div className="flex justify-between text-[10px] text-muted-foreground mb-0.5"><span>{i.currentStock}</span><span>{i.maxStockLevel || '—'}</span></div>
+                        <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${isLow ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">Min: {i.minStockLevel}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm hidden md:table-cell">{i.unitCost ? `$${i.unitCost.toLocaleString()}` : '-'}</TableCell>
+                    <TableCell className="text-sm hidden lg:table-cell">{i.location || '-'}</TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEdit(i)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{editId ? 'Edit Item' : 'Add Inventory Item'}</DialogTitle><DialogDescription>{editId ? 'Update inventory item.' : 'Add a new item to inventory.'}</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Item Code *</Label><Input value={form.itemCode} onChange={e => setForm(f => ({ ...f, itemCode: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+            </div>
+            <div className="space-y-1.5"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} /></div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5"><Label>Category</Label>
+                <Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="spare_part">Spare Part</SelectItem><SelectItem value="consumable">Consumable</SelectItem><SelectItem value="tool">Tool</SelectItem><SelectItem value="material">Material</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5"><Label>Unit of Measure</Label>
+                <Select value={form.unitOfMeasure} onValueChange={v => setForm(f => ({ ...f, unitOfMeasure: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="each">Each</SelectItem><SelectItem value="kg">Kg</SelectItem><SelectItem value="liter">Liter</SelectItem><SelectItem value="meter">Meter</SelectItem><SelectItem value="set">Set</SelectItem><SelectItem value="box">Box</SelectItem><SelectItem value="roll">Roll</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5"><Label>Plant</Label>
+                <Select value={form.plantId} onValueChange={v => setForm(f => ({ ...f, plantId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectContent>{plantList.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-4 gap-3">
+              <div className="space-y-1.5"><Label>Current Stock</Label><Input type="number" value={form.currentStock} onChange={e => setForm(f => ({ ...f, currentStock: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Min Stock Level</Label><Input type="number" value={form.minStockLevel} onChange={e => setForm(f => ({ ...f, minStockLevel: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Max Stock Level</Label><Input type="number" value={form.maxStockLevel} onChange={e => setForm(f => ({ ...f, maxStockLevel: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Reorder Qty</Label><Input type="number" value={form.reorderQuantity} onChange={e => setForm(f => ({ ...f, reorderQuantity: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Unit Cost ($)</Label><Input type="number" value={form.unitCost} onChange={e => setForm(f => ({ ...f, unitCost: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Supplier</Label><Input value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Location</Label><Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Bin Location</Label><Input value={form.binLocation} onChange={e => setForm(f => ({ ...f, binLocation: e.target.value }))} /></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}{editId ? 'Save Changes' : 'Add Item'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ============================================================================
+// ANALYTICS PAGE
+// ============================================================================
+
+function AnalyticsPage() {
+  const kpiData = [
+    { label: 'MTTR', value: '4.2 hrs', change: '-12%', icon: Timer, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'MTBF', value: '168 hrs', change: '+8%', icon: Activity, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Asset Utilization', value: '87%', change: '+3%', icon: Gauge, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'PM Compliance', value: '92%', change: '+5%', icon: Target, color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' },
+  ];
+
+  const woStatusData = [
+    { status: 'Draft', count: 5, fill: 'var(--color-draft)' },
+    { status: 'Requested', count: 12, fill: 'var(--color-requested)' },
+    { status: 'In Progress', count: 18, fill: 'var(--color-in_progress)' },
+    { status: 'Completed', count: 42, fill: 'var(--color-completed)' },
+    { status: 'Closed', count: 28, fill: 'var(--color-closed)' },
+  ];
+
+  const woStatusConfig = {
+    draft: { label: 'Draft', color: '#94a3b8' },
+    requested: { label: 'Requested', color: '#06b6d4' },
+    in_progress: { label: 'In Progress', color: '#f59e0b' },
+    completed: { label: 'Completed', color: '#10b981' },
+    closed: { label: 'Closed', color: '#6b7280' },
+  } as const;
+
+  const conditionData = [
+    { name: 'New', value: 15, fill: '#10b981' },
+    { name: 'Good', value: 45, fill: '#059669' },
+    { name: 'Fair', value: 25, fill: '#f59e0b' },
+    { name: 'Poor', value: 8, fill: '#ef4444' },
+  ];
+
+  const conditionConfig = {
+    New: { label: 'New', color: '#10b981' },
+    Good: { label: 'Good', color: '#059669' },
+    Fair: { label: 'Fair', color: '#f59e0b' },
+    Poor: { label: 'Poor', color: '#ef4444' },
+  } as const;
+
+  const costTrendData = [
+    { month: 'Jul', corrective: 45000, preventive: 28000 },
+    { month: 'Aug', corrective: 38000, preventive: 32000 },
+    { month: 'Sep', corrective: 52000, preventive: 30000 },
+    { month: 'Oct', corrective: 41000, preventive: 35000 },
+    { month: 'Nov', corrective: 36000, preventive: 38000 },
+    { month: 'Dec', corrective: 33000, preventive: 40000 },
+  ];
+
+  const costConfig = {
+    corrective: { label: 'Corrective', color: '#f59e0b' },
+    preventive: { label: 'Preventive', color: '#10b981' },
+  } as const;
+
+  const topAssetsData = [
+    { name: 'Compressor C-101', hours: 142 },
+    { name: 'Pump P-205', hours: 118 },
+    { name: 'Motor M-302', hours: 96 },
+    { name: 'Valve V-108', hours: 84 },
+    { name: 'Conveyor CV-401', hours: 72 },
+  ];
+
+  const topAssetsConfig = {
+    hours: { label: 'Hours', color: '#10b981' },
+  } as const;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
+        <p className="text-muted-foreground text-sm mt-1">Maintenance performance insights and KPIs</p>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {kpiData.map(kpi => (
+          <Card key={kpi.label} className="border-0 shadow-sm dark:bg-card">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${kpi.color}`}><kpi.icon className="h-4.5 w-4.5" /></div>
+                <span className={`text-xs font-medium ${kpi.change.startsWith('+') ? 'text-emerald-600' : 'text-red-500'}`}>{kpi.change}</span>
+              </div>
+              <p className="text-2xl font-bold">{kpi.value}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{kpi.label}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* WO Status Distribution */}
+        <Card className="border-0 shadow-sm dark:bg-card">
+          <CardHeader className="pb-2"><CardTitle className="text-base">Work Order Status</CardTitle><CardDescription className="text-xs">Current distribution</CardDescription></CardHeader>
+          <CardContent>
+            <ChartContainer config={woStatusConfig} className="h-[260px] w-full">
+              <BarChart data={woStatusData} layout="vertical" margin={{ left: 0, right: 16 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="status" tick={{ fontSize: 11 }} width={80} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="count" radius={[0, 4, 4, 0]} fill="var(--color-status)" />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+
+        {/* Asset Condition Distribution */}
+        <Card className="border-0 shadow-sm dark:bg-card">
+          <CardHeader className="pb-2"><CardTitle className="text-base">Asset Condition</CardTitle><CardDescription className="text-xs">Distribution by condition</CardDescription></CardHeader>
+          <CardContent>
+            <ChartContainer config={conditionConfig} className="h-[260px] w-full">
+              <PieChart>
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Pie data={conditionData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} dataKey="value" nameKey="name" strokeWidth={2} stroke="hsl(var(--background))">
+                  {conditionData.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
+                </Pie>
+              </PieChart>
+            </ChartContainer>
+            <div className="grid grid-cols-4 gap-2 mt-2">
+              {conditionData.map(c => (
+                <div key={c.name} className="flex items-center gap-1.5 text-xs">
+                  <div className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: c.fill }} />
+                  <span className="text-muted-foreground">{c.name}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Maintenance Cost Trend */}
+        <Card className="border-0 shadow-sm dark:bg-card">
+          <CardHeader className="pb-2"><CardTitle className="text-base">Maintenance Cost Trend</CardTitle><CardDescription className="text-xs">Last 6 months</CardDescription></CardHeader>
+          <CardContent>
+            <ChartContainer config={costConfig} className="h-[260px] w-full">
+              <AreaChart data={costTrendData} margin={{ left: 0, right: 16 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Area type="monotone" dataKey="corrective" stackId="1" stroke="var(--color-corrective)" fill="var(--color-corrective)" fillOpacity={0.6} />
+                <Area type="monotone" dataKey="preventive" stackId="1" stroke="var(--color-preventive)" fill="var(--color-preventive)" fillOpacity={0.6} />
+              </AreaChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+
+        {/* Top Maintained Assets */}
+        <Card className="border-0 shadow-sm dark:bg-card">
+          <CardHeader className="pb-2"><CardTitle className="text-base">Top Maintained Assets</CardTitle><CardDescription className="text-xs">By maintenance hours</CardDescription></CardHeader>
+          <CardContent>
+            <ChartContainer config={topAssetsConfig} className="h-[260px] w-full">
+              <BarChart data={topAssetsData} layout="vertical" margin={{ left: 0, right: 16 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={120} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="hours" radius={[0, 4, 4, 0]} fill="var(--color-hours)" />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // MAIN APP SHELL
 // ============================================================================
 
 function AppShell() {
-  const { currentPage, toggleSidebar, setMobileSidebarOpen } = useNavigationStore();
+  const { currentPage, navigate, toggleSidebar, setMobileSidebarOpen } = useNavigationStore();
   const { user, isAuthenticated, isLoading, fetchMe } = useAuthStore();
 
   useEffect(() => {
@@ -2974,10 +4314,18 @@ function AppShell() {
       case 'create-mr': return <MaintenanceRequestsPage />;
       case 'work-orders':
       case 'wo-detail': return <WorkOrdersPage />;
+      case 'assets':
+      case 'asset-detail': return <AssetsPage />;
+      case 'inventory': return <InventoryPage />;
+      case 'analytics': return <AnalyticsPage />;
+      case 'notifications': return <NotificationsPage />;
       case 'settings-users': return <SettingsUsersPage />;
       case 'settings-roles': return <SettingsRolesPage />;
       case 'settings-modules': return <SettingsModulesPage />;
       case 'settings-company': return <CompanyProfilePage />;
+      case 'settings-plants': return <SettingsPlantsPage />;
+      case 'settings-departments': return <SettingsDepartmentsPage />;
+      case 'settings-audit': return <AuditLogsPage />;
       default: return <DashboardPage />;
     }
   };
@@ -2989,10 +4337,18 @@ function AppShell() {
     'create-mr': 'New Request',
     'work-orders': 'Work Orders',
     'wo-detail': 'Work Order Details',
+    'assets': 'Asset Register',
+    'asset-detail': 'Asset Details',
+    'inventory': 'Inventory',
+    'analytics': 'Analytics',
+    'notifications': 'Notifications',
     'settings-users': 'Users',
     'settings-roles': 'Roles & Permissions',
     'settings-modules': 'Module Management',
     'settings-company': 'Company Profile',
+    'settings-plants': 'Plants',
+    'settings-departments': 'Departments',
+    'settings-audit': 'Audit Logs',
   };
 
   return (
@@ -3044,7 +4400,7 @@ function AppShell() {
             <TooltipProvider delayDuration={0}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="relative h-9 w-9 hover:bg-muted transition-colors">
+                  <Button variant="ghost" size="icon" className="relative h-9 w-9 hover:bg-muted transition-colors" onClick={() => navigate('notifications')}>
                     <Bell className="h-4 w-4 text-muted-foreground" />
                     <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-background" />
                   </Button>

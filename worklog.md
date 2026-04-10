@@ -677,3 +677,84 @@ Stage Summary:
 ### Commit: `6c0541f`
 ### Build: ✅ Lint clean, dev server compiles, pushed to GitHub
 
+---
+
+## Session 11 - Prisma Schema Expansion: Asset, Inventory & PM Modules
+
+- **Date:** 2026-04-11
+- **Context:** Expand Prisma schema with 7 new models for Asset Management, Inventory Management, and Preventive Maintenance modules.
+
+### Task 2: Schema Expansion
+- **Status:** ✅ Completed
+
+#### New Models Added (7)
+
+**1. AssetCategory** — Hierarchical asset classification (table: `asset_categories`)
+- Fields: id, name, code (unique), description, parentId (self-reference), isActive, createdAt, updatedAt
+- Self-referential relation via `"AssetCategoryHierarchy"` for parent/children
+
+**2. Asset** — Core asset register (table: `assets`)
+- Fields: id, name, assetTag (unique), description, categoryId, serialNumber (unique), manufacturer, model, yearManufactured, condition (new/good/fair/poor/out_of_service), status (operational/standby/under_maintenance/decommissioned/disposed), criticality (low/medium/high/critical), location, building, floor, area, plantId, departmentId, purchaseDate, purchaseCost, warrantyExpiry, installedDate, expectedLifeYears, currentValue, depreciationRate, imageUrl, drawingsUrl, manualUrl, specification (JSON), parentId (self-reference for asset hierarchy), isActive, createdById, assignedToId, createdAt, updatedAt
+- Relations: category, parent/children (`"AssetHierarchy"`), plant, department, createdBy (`"AssetCreatedBy"`), assignedTo (`"AssetAssignedTo"`), maintenanceRequests, workOrders, pmSchedules
+
+**3. InventoryItem** — Spare parts & consumables (table: `inventory_items`)
+- Fields: id, itemCode (unique), name, description, category (spare_part/consumable/tool/material/other), unitOfMeasure (each/kg/liter/meter/set/box/roll), currentStock, minStockLevel, maxStockLevel, reorderQuantity, unitCost, supplier, supplierPartNumber, location, binLocation, shelfLocation, plantId, isActive, specification (JSON), imageUrls (JSON array), createdById, createdAt, updatedAt
+- Relations: plant, createdBy (`"InventoryItemCreatedBy"`), stockMovements, requisitions (WorkOrderMaterial)
+
+**4. StockMovement** — Inventory transaction log (table: `stock_movements`)
+- Fields: id, itemId, type (in/out/adjustment/transfer), quantity, previousStock, newStock, reason, referenceType (work_order/requisition/return/audit), referenceId, performedById, notes, createdAt
+- Relations: item (Cascade delete), performedBy
+
+**5. PmSchedule** — Preventive maintenance scheduling (table: `pm_schedules`)
+- Fields: id, title, description, assetId, frequencyType (daily/weekly/biweekly/monthly/quarterly/semiannual/annual/custom_hours/custom_days/meter_based), frequencyValue, lastCompletedDate, nextDueDate, estimatedDuration (hours), priority (low/medium/high/critical), assignedToId, departmentId, isActive, autoGenerateWO (default true), leadDays (default 3), woTypeId, createdById, createdAt, updatedAt
+- Relations: asset, assignedTo (`"PmScheduleAssignedTo"`), department, createdBy (`"PmScheduleCreatedBy"`), workOrders
+
+**6. WorkOrderStatusHistory** — WO status audit trail (table: `wo_status_history`)
+- Fields: id, workOrderId, fromStatus, toStatus, performedById, notes, createdAt
+- Relations: workOrder (Cascade delete), performedBy
+
+**7. MaintenanceRequestComment** — MR comment thread (table: `mr_comments`)
+- Fields: id, maintenanceRequestId, userId, content, createdAt
+- Relations: maintenanceRequest (Cascade delete), user
+
+#### Reverse Relations Added to Existing Models
+- **User**: assetsCreated, assetsAssigned, inventoryItemsCreated, stockMovements, pmSchedulesAssigned, pmSchedulesCreated, woStatusHistory, mrComments
+- **Plant**: assets, inventoryItems
+- **Department**: assets, pmSchedules
+- **WorkOrder**: pmSchedules, statusHistory
+- **MaintenanceRequest**: comments
+
+### Validation & Database
+- ✅ `prisma validate` — schema is valid
+- ✅ `prisma db push` — database synced in 23ms
+- ✅ Prisma Client generated (v6.19.2)
+
+### File Modified
+- `prisma/schema.prisma` — 715 lines (was 494 lines), 7 new models + reverse relations on 5 existing models
+
+---
+Task ID: 3
+Agent: general-purpose
+Task: Build API routes for Assets, Inventory, PM Schedules
+
+Work Log:
+- Verified all existing API routes for asset-categories, assets, inventory, and pm-schedules list/create patterns
+- Found all routes already implemented except PM Schedules detail route (`[id]/route.ts`)
+- Fixed assets list route default limit from 20 to 50 per spec
+- Created `/src/app/api/pm-schedules/[id]/route.ts` with GET (full detail with asset, assignedTo, department, createdBy), PUT (update with allowed fields, date handling, audit log), DELETE (soft delete, admin only, audit log)
+- Ran `bun run lint` — 0 errors, 0 warnings
+- Ran TypeScript check — no errors in API route files
+
+Stage Summary:
+- All API routes created and lint passing
+- Routes verified:
+  - `/api/asset-categories` (GET list, POST create) ✅
+  - `/api/asset-categories/[id]` (GET detail, PUT, DELETE soft) ✅
+  - `/api/assets` (GET list with filters, default limit 50, POST create) ✅
+  - `/api/assets/[id]` (GET full detail, PUT, DELETE soft) ✅
+  - `/api/inventory` (GET list with lowStock filter, POST create with itemCode uniqueness) ✅
+  - `/api/inventory/[id]` (GET with stockMovements, PUT, DELETE soft) ✅
+  - `/api/inventory/[id]/stock-movements` (GET list, POST with auto-update currentStock, negative stock validation) ✅
+  - `/api/pm-schedules` (GET list with dueSoon filter, POST create) ✅
+  - `/api/pm-schedules/[id]` (GET full detail, PUT, DELETE soft) ✅ — NEW
+
