@@ -1724,7 +1724,7 @@ function MaintenanceRequestsPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -1760,7 +1760,7 @@ function MaintenanceRequestsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="filter-row flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -2002,7 +2002,7 @@ function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
   if (!mr) return <div className="p-6">Request not found</div>;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       {/* Header */}
       <div className="flex items-start gap-3 flex-wrap">
         <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
@@ -2206,7 +2206,7 @@ function WorkOrdersPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -2242,7 +2242,7 @@ function WorkOrdersPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="filter-row flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search work orders..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
@@ -2536,7 +2536,7 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
   const canEdit = !['closed', 'cancelled'].includes(wo.status);
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       {/* Header */}
       <div className="flex items-start gap-3 flex-wrap">
         <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
@@ -2968,7 +2968,7 @@ function SettingsUsersPage() {
   if (loading) return <LoadingSkeleton />;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Users</h1>
@@ -3554,7 +3554,7 @@ function SettingsModulesPage() {
   if (loading) return <LoadingSkeleton />;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Module Management</h1>
@@ -3921,7 +3921,7 @@ function CompanyProfilePage() {
   if (loading) return <LoadingSkeleton />;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Company Profile</h1>
         <p className="text-muted-foreground text-sm mt-1">Manage your organization details and information</p>
@@ -4216,7 +4216,7 @@ function SettingsPlantsPage() {
   if (loading) return <LoadingSkeleton />;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Plants</h1>
@@ -4334,7 +4334,7 @@ function SettingsDepartmentsPage() {
   if (loading) return <LoadingSkeleton />;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Departments</h1>
@@ -4473,7 +4473,7 @@ function NotificationsPage() {
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Notifications</h1>
@@ -4549,12 +4549,12 @@ function AuditLogsPage() {
   if (loading) return <LoadingSkeleton />;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Audit Logs</h1>
         <p className="text-muted-foreground text-sm mt-1">Track all system changes and actions</p>
       </div>
-      <div className="flex flex-wrap gap-3">
+      <div className="filter-row flex flex-wrap gap-3">
         <Select value={entityFilter} onValueChange={handleEntityChange}>
           <SelectTrigger className="w-[180px]"><SelectValue placeholder="Entity Type" /></SelectTrigger>
           <SelectContent>
@@ -4723,7 +4723,7 @@ function AssetsPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Asset Register</h1>
@@ -4748,7 +4748,7 @@ function AssetsPage() {
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="filter-row flex flex-wrap gap-3 items-center">
         <div className="relative min-w-[200px] flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search assets..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
@@ -4918,7 +4918,7 @@ function AssetDetailPage({ id, onBack }: { id: string; onBack: () => void }) {
   const specs: Record<string, string> = asset.specification || {};
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       {/* Header */}
       <div className="flex items-start gap-3 flex-wrap">
         <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
@@ -5132,7 +5132,7 @@ function InventoryPage() {
   if (loading) return <LoadingSkeleton />;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Inventory</h1>
@@ -5159,7 +5159,7 @@ function InventoryPage() {
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="filter-row flex flex-wrap gap-3 items-center">
         <div className="relative min-w-[200px] flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search inventory..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
@@ -5168,7 +5168,7 @@ function InventoryPage() {
           <SelectTrigger className="w-[170px]"><SelectValue placeholder="Category" /></SelectTrigger>
           <SelectContent><SelectItem value="all">All Categories</SelectItem><SelectItem value="spare_part">Spare Part</SelectItem><SelectItem value="consumable">Consumable</SelectItem><SelectItem value="tool">Tool</SelectItem><SelectItem value="material">Material</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent>
         </Select>
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
+        <label className="filter-row-checkbox flex items-center gap-2 text-sm cursor-pointer">
           <input type="checkbox" checked={lowStockOnly} onChange={e => setLowStockOnly(e.target.checked)} className="rounded" />
           <span>Low Stock Only</span>
         </label>
@@ -5511,7 +5511,7 @@ function PmSchedulesPage() {
   const overdueCount = activeSchedules.filter(s => isOverdue(s.nextDueDate)).length;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -5842,7 +5842,7 @@ function AnalyticsPage() {
   const mrCatConfig = Object.fromEntries(mrCategoryData.map((c: any, i: number) => [c.category.toLowerCase().replace(/ /g, '_'), { label: c.category, color: CHART_COLORS[i % CHART_COLORS.length] }])) as any;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
@@ -6266,7 +6266,7 @@ function NotificationPopover() {
 
 function ComingSoonPage({ title, description, icon: Icon, features }: { title: string; description: string; icon: React.ElementType; features?: string[] }) {
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
         <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/40 dark:to-teal-900/40 flex items-center justify-center mb-4">
           <Icon className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
@@ -6296,7 +6296,7 @@ function ComingSoonPage({ title, description, icon: Icon, features }: { title: s
 function AssetsMachinesPage() {
   const { navigate } = useNavigationStore();
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Machines</h1>
         <p className="text-muted-foreground mt-1">View and manage all registered machines and equipment</p>
@@ -6347,7 +6347,7 @@ function AssetsHierarchyPage() {
   if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Asset Hierarchy</h1>
         <p className="text-muted-foreground mt-1">Visualize the parent-child relationships between assets</p>
@@ -6439,7 +6439,7 @@ function AssetHealthPage() {
   if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Asset Health</h1>
         <p className="text-muted-foreground mt-1">Overview of asset conditions, criticality, and operational status</p>
@@ -6622,7 +6622,7 @@ function AssetsBomPage() {
   const statusColor = (s: string) => s === 'active' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : s === 'pending' ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-red-600 bg-red-50 border-red-200';
   const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ parentAsset: '', component: '', partNumber: '', quantity: '', unit: 'ea', specification: '', revision: '' }); toast.success('BOM component added successfully'); }, 800); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Bill of Materials</h1><p className="text-muted-foreground mt-1">Manage hierarchical parts lists for each asset</p></div>
         <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />Add Component</Button>
@@ -6716,7 +6716,7 @@ function AssetsConditionMonitoringPage() {
   const barColor = (s: string) => s === 'normal' ? 'bg-emerald-400' : s === 'warning' ? 'bg-amber-400' : 'bg-red-400';
   const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ asset: '', parameter: 'vibration', normalMin: '', normalMax: '', alertThreshold: '' }); toast.success('Monitoring point added successfully'); }, 800); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Condition Monitoring</h1><p className="text-muted-foreground mt-1">Real-time monitoring of asset health parameters</p></div>
         <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />Add Monitoring Point</Button>
@@ -6854,7 +6854,7 @@ function AssetsDigitalTwinPage() {
   const healthRingColor = (score: number) => score >= 80 ? 'text-emerald-500' : score >= 60 ? 'text-amber-500' : 'text-red-500';
   const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ name: '', asset: '', type: 'pump', syncInterval: '1min' }); toast.success('Digital twin created successfully'); }, 800); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Digital Twin</h1><p className="text-muted-foreground mt-1">Create and manage digital replicas of physical assets</p></div>
         <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />Create Twin</Button>
@@ -6938,7 +6938,7 @@ function AssetsDigitalTwinPage() {
 function MaintenanceWorkOrdersPage() {
   const { navigate } = useNavigationStore();
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Work Orders</h1>
         <p className="text-muted-foreground mt-1">Create, track, and manage all maintenance work orders</p>
@@ -6964,7 +6964,7 @@ function MaintenanceDashboardPage() {
     { label: 'Created Today', value: stats?.createdTodayWO ?? '-', icon: Plus, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
   ];
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Dashboard</h1><p className="text-muted-foreground mt-1">Maintenance operations overview and KPIs</p></div>
       {loading ? <LoadingSkeleton /> : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -7025,7 +7025,7 @@ function MaintenanceAnalyticsPage() {
   ];
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Analytics</h1><p className="text-muted-foreground mt-1">Advanced analytics for maintenance operations including MTTR, MTBF, and cost trends</p></div>
       {loading ? <LoadingSkeleton /> : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -7127,7 +7127,7 @@ function MaintenanceCalibrationPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Calibration</h1><p className="text-muted-foreground mt-1">Manage instrument calibration schedules, records, and compliance tracking</p></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (
@@ -7161,9 +7161,9 @@ function MaintenanceCalibrationPage() {
               </DialogContent>
             </Dialog>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2 mt-3">
+          <div className="filter-row flex flex-col sm:flex-row gap-2 mt-3">
             <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="Search instruments, serial numbers..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} /></div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-36 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="calibrated">Calibrated</SelectItem><SelectItem value="due_soon">Due Soon</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="in_progress">In Progress</SelectItem></SelectContent></Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="calibrated">Calibrated</SelectItem><SelectItem value="due_soon">Due Soon</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="in_progress">In Progress</SelectItem></SelectContent></Select>
           </div>
         </CardHeader>
         <CardContent className="pt-0">
@@ -7236,7 +7236,7 @@ function MaintenanceRiskAssessmentPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Risk Assessment</h1><p className="text-muted-foreground mt-1">Evaluate and manage risks associated with asset failures and maintenance activities</p></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (
@@ -7265,9 +7265,9 @@ function MaintenanceRiskAssessmentPage() {
               </DialogContent>
             </Dialog>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2 mt-3">
+          <div className="filter-row flex flex-col sm:flex-row gap-2 mt-3">
             <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="Search assets, assessment IDs..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} /></div>
-            <Select value={levelFilter} onValueChange={setLevelFilter}><SelectTrigger className="w-full sm:w-36 h-8 text-xs"><SelectValue placeholder="Risk Level" /></SelectTrigger><SelectContent><SelectItem value="all">All Levels</SelectItem><SelectItem value="critical">Critical</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="low">Low</SelectItem></SelectContent></Select>
+            <Select value={levelFilter} onValueChange={setLevelFilter}><SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Risk Level" /></SelectTrigger><SelectContent><SelectItem value="all">All Levels</SelectItem><SelectItem value="critical">Critical</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="low">Low</SelectItem></SelectContent></Select>
           </div>
         </CardHeader>
         <CardContent className="pt-0">
@@ -7341,7 +7341,7 @@ function MaintenanceToolsPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Tools</h1><p className="text-muted-foreground mt-1">Manage maintenance tool inventory, assignments, and condition tracking</p></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (
@@ -7370,9 +7370,9 @@ function MaintenanceToolsPage() {
               </DialogContent>
             </Dialog>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2 mt-3">
+          <div className="filter-row flex flex-col sm:flex-row gap-2 mt-3">
             <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="Search tools, locations..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} /></div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-36 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="available">Available</SelectItem><SelectItem value="checked_out">Checked Out</SelectItem><SelectItem value="in_repair">In Repair</SelectItem><SelectItem value="lost">Lost</SelectItem></SelectContent></Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="available">Available</SelectItem><SelectItem value="checked_out">Checked Out</SelectItem><SelectItem value="in_repair">In Repair</SelectItem><SelectItem value="lost">Lost</SelectItem></SelectContent></Select>
           </div>
         </CardHeader>
         <CardContent className="pt-0">
@@ -7404,7 +7404,7 @@ function MaintenanceToolsPage() {
 
 function InventoryItemsPage() {
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Inventory Items</h1><p className="text-muted-foreground mt-1">Manage spare parts, consumables, and supply inventory</p></div>
       <InventoryPage />
     </div>
@@ -7511,7 +7511,7 @@ function InventoryCategoriesPage() {
   if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Inventory Categories</h1>
@@ -7641,7 +7641,7 @@ function InventoryLocationsPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Inventory Locations</h1>
@@ -7654,9 +7654,9 @@ function InventoryLocationsPage() {
           <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
         ); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search locations..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
-        <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-40"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent>{locationTypes.map(t => <SelectItem key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>)}</SelectContent></Select>
+        <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent>{locationTypes.map(t => <SelectItem key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>)}</SelectContent></Select>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent></Select>
       </div>
       <Card className="border-0 shadow-sm">
@@ -7737,11 +7737,11 @@ function InventoryTransactionsPage() {
   ];
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Inventory Transactions</h1><p className="text-muted-foreground mt-1">View complete transaction history for all inventory movements</p></div>
         <Select value={filterType} onValueChange={setFilterType}>
-          <SelectTrigger className="w-40"><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Type" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
             <SelectItem value="received">Received</SelectItem>
@@ -7816,7 +7816,7 @@ function InventoryAdjustmentsPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Inventory Adjustments</h1><p className="text-muted-foreground mt-1">Record stock adjustments, write-offs, and corrections</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Adjustment</Button>
@@ -7826,7 +7826,7 @@ function InventoryAdjustmentsPage() {
           <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
         ); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search adjustments..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent></Select>
       </div>
@@ -7917,7 +7917,7 @@ function InventoryRequestsPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Inventory Requests</h1><p className="text-muted-foreground mt-1">Submit and track material requisitions from work orders</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Request</Button>
@@ -7927,7 +7927,7 @@ function InventoryRequestsPage() {
           <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
         ); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search requests..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="partially_fulfilled">Partial</SelectItem><SelectItem value="fulfilled">Fulfilled</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent></Select>
         <Select value={filterPriority} onValueChange={setFilterPriority}><SelectTrigger className="w-36"><SelectValue placeholder="Priority" /></SelectTrigger><SelectContent><SelectItem value="all">All Priority</SelectItem><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="urgent">Urgent</SelectItem></SelectContent></Select>
@@ -8017,7 +8017,7 @@ function InventoryTransfersPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Inventory Transfers</h1><p className="text-muted-foreground mt-1">Transfer inventory items between locations</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Transfer</Button>
@@ -8027,7 +8027,7 @@ function InventoryTransfersPage() {
           <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
         ); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search transfers..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="in_transit">In Transit</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
       </div>
@@ -8114,7 +8114,7 @@ function InventorySuppliersPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Suppliers</h1><p className="text-muted-foreground mt-1">Manage supplier information, contacts, and performance metrics</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />Add Supplier</Button>
@@ -8124,7 +8124,7 @@ function InventorySuppliersPage() {
           <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
         ); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search suppliers..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="on_hold">On Hold</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent></Select>
       </div>
@@ -8216,7 +8216,7 @@ function InventoryPurchaseOrdersPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Purchase Orders</h1><p className="text-muted-foreground mt-1">Create and manage purchase orders for inventory replenishment</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New PO</Button>
@@ -8226,7 +8226,7 @@ function InventoryPurchaseOrdersPage() {
           <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
         ); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search purchase orders..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-48"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="partially_received">Partial</SelectItem><SelectItem value="received">Received</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
       </div>
@@ -8311,7 +8311,7 @@ function InventoryReceivingPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Receiving</h1><p className="text-muted-foreground mt-1">Receive delivered items and update inventory stock levels</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New GRN</Button>
@@ -8321,7 +8321,7 @@ function InventoryReceivingPage() {
           <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
         ); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search GRNs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending_inspection">Pending</SelectItem><SelectItem value="accepted">Accepted</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent></Select>
       </div>
@@ -8427,7 +8427,7 @@ function IotDevicesPage() {
   const generateReadingData = (baseVal: number, variance: number) => Array.from({ length: 24 }, (_, i) => ({ hour: `${String(i).padStart(2, '0')}:00`, value: +(baseVal + (Math.sin(i * 0.5) * variance) + (Math.random() * variance * 0.3)).toFixed(1) }));
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">IoT Devices</h1><p className="text-muted-foreground text-sm mt-1">Register and manage IoT sensors, gateways, and connected devices</p></div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -8462,7 +8462,7 @@ function IotDevicesPage() {
         ); })}
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="filter-row flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search devices..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
@@ -8561,7 +8561,7 @@ function IotMonitoringPage() {
   const severityIcon: Record<string, any> = { critical: AlertCircle, warning: AlertTriangle, info: Info };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">IoT Monitoring</h1><p className="text-muted-foreground text-sm mt-1">Real-time monitoring dashboard for all connected IoT devices and sensor data</p></div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -8700,7 +8700,7 @@ function IotRulesPage() {
   const actionIcon: Record<string, any> = { alert: Bell, email: Mail, webhook: Globe, shutdown: StopCircle };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">IoT Rules</h1><p className="text-muted-foreground text-sm mt-1">Configure automation rules and alert thresholds for IoT sensor data</p></div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -8826,7 +8826,7 @@ function AnalyticsKpiPage() {
   const recentMRs = [...requests].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">KPI Dashboard</h1><p className="text-muted-foreground mt-1">Organization-wide key performance indicators for maintenance, reliability, and operations</p></div>
       {loading ? <LoadingSkeleton /> : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -8933,7 +8933,7 @@ function AnalyticsOeePage() {
   if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">OEE Dashboard</h1>
         <p className="text-muted-foreground mt-1">Overall Equipment Effectiveness — Availability × Performance × Quality</p>
@@ -9101,7 +9101,7 @@ function AnalyticsDowntimePage() {
   ];
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Downtime Analysis</h1><p className="text-muted-foreground mt-1">Track and analyze equipment downtime events, causes, and patterns</p></div>
       {loading ? <LoadingSkeleton /> : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -9213,7 +9213,7 @@ function AnalyticsEnergyPage() {
   if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Energy Analytics</h1>
         <p className="text-muted-foreground mt-1">Monitor energy consumption patterns and optimize usage across assets</p>
@@ -9335,7 +9335,7 @@ function OperationsMeterReadingsPage() {
   const statusColor = (s: string) => s === 'normal' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : s === 'warning' ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-red-600 bg-red-50 border-red-200';
   const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ meter: '', value: '', unit: 'kWh', notes: '', readingDate: '' }); toast.success('Reading recorded successfully'); }, 800); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Meter Readings</h1><p className="text-muted-foreground mt-1">Record and track meter/gauge readings for utility meters and equipment</p></div>
         <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />Record Reading</Button>
@@ -9416,7 +9416,7 @@ function OperationsTrainingPage() {
   const categoryColor = (c: string) => c === 'safety' ? 'text-red-600 bg-red-50 border-red-200' : c === 'technical' ? 'text-sky-600 bg-sky-50 border-sky-200' : c === 'compliance' ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-violet-600 bg-violet-50 border-violet-200';
   const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ name: '', category: 'safety', instructor: '', duration: '', description: '' }); toast.success('Course created successfully'); }, 800); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Training</h1><p className="text-muted-foreground mt-1">Manage employee training records, certifications, and compliance</p></div>
         <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Course</Button>
@@ -9501,7 +9501,7 @@ function OperationsSurveysPage() {
   const typeColor = (t: string) => t === 'safety' ? 'text-red-600 bg-red-50 border-red-200' : t === 'compliance' ? 'text-amber-600 bg-amber-50 border-amber-200' : t === 'audit' ? 'text-sky-600 bg-sky-50 border-sky-200' : 'text-violet-600 bg-violet-50 border-violet-200';
   const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ title: '', type: 'safety', description: '', questions: '', expiryDate: '' }); toast.success('Survey created successfully'); }, 800); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Surveys</h1><p className="text-muted-foreground mt-1">Create and conduct safety, compliance, and operational surveys</p></div>
         <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Survey</Button>
@@ -9597,7 +9597,7 @@ function OperationsTimeLogsPage() {
   ];
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Time Logs</h1><p className="text-muted-foreground mt-1">Track employee work hours, shifts, and labor allocation</p></div>
         <div className="relative min-w-[200px] max-w-xs">
@@ -9656,7 +9656,7 @@ function OperationsShiftHandoverPage() {
   const shiftColor = (s: string) => s === 'Morning' ? 'text-amber-600 bg-amber-50 border-amber-200' : s === 'Afternoon' ? 'text-sky-600 bg-sky-50 border-sky-200' : 'text-indigo-600 bg-indigo-50 border-indigo-200';
   const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ shift: 'Morning', fromOperator: '', toOperator: '', tasksCompleted: '', pendingItems: '', issues: '', escalations: '' }); toast.success('Handover recorded successfully'); }, 800); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Shift Handover</h1><p className="text-muted-foreground mt-1">Manage shift-to-shift handover notes, pending tasks, and critical information</p></div>
         <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Handover</Button>
@@ -9781,7 +9781,7 @@ function OperationsChecklistsPage() {
   if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Checklists</h1>
@@ -9915,7 +9915,7 @@ function ProductionWorkCentersPage() {
   ];
   const handleCreate = () => { if (!form.code || !form.name) { toast.error('Code and name are required'); return; } toast.success('Work center created'); setCreateOpen(false); setForm({ code: '', name: '', type: 'production_line', department: 'Production', capacity: '', description: '' }); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Work Centers</h1><p className="text-muted-foreground text-sm mt-1">Define and manage production work centers, lines, and cells</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Work Center</Button>
@@ -9923,7 +9923,7 @@ function ProductionWorkCentersPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search work centers..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="production_line">Production Line</SelectItem><SelectItem value="work_cell">Work Cell</SelectItem><SelectItem value="assembly">Assembly</SelectItem><SelectItem value="warehouse">Warehouse</SelectItem></SelectContent></Select>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="idle">Idle</SelectItem><SelectItem value="maintenance">Maintenance</SelectItem></SelectContent></Select>
@@ -9997,7 +9997,7 @@ function ProductionResourcePlanningPage() {
   ];
   const handleCreate = () => { if (!form.resource || !form.allocation) { toast.error('Resource and allocation are required'); return; } toast.success('Resource planned'); setCreateOpen(false); setForm({ resource: '', type: 'labor', assignedTo: '', allocation: '', shift: 'Day', startDate: '', endDate: '' }); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Resource Planning</h1><p className="text-muted-foreground text-sm mt-1">Plan and allocate resources for production orders</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Plan Resource</Button>
@@ -10005,7 +10005,7 @@ function ProductionResourcePlanningPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search resources..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="labor">Labor</SelectItem><SelectItem value="machine">Machine</SelectItem><SelectItem value="material">Material</SelectItem></SelectContent></Select>
       </div>
@@ -10082,7 +10082,7 @@ function ProductionSchedulingPage() {
   ];
   const handleCreate = () => { if (!form.product || !form.workCenter) { toast.error('Product and work center are required'); return; } toast.success('Job scheduled'); setCreateOpen(false); setForm({ product: '', workCenter: '', startDate: '', endDate: '', priority: 'medium', quantity: '' }); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Production Scheduling</h1><p className="text-muted-foreground text-sm mt-1">Create and manage production schedules and sequencing</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Schedule Job</Button>
@@ -10090,7 +10090,7 @@ function ProductionSchedulingPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search jobs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="delayed">Delayed</SelectItem></SelectContent></Select>
       </div>
@@ -10164,12 +10164,12 @@ function ProductionCapacityPage() {
     { label: 'Bottleneck Lines', value: bottleneckLines, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
   ];
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Capacity Management</h1><p className="text-muted-foreground text-sm mt-1">Monitor and manage production capacity utilization</p></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search work centers..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
       </div>
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
@@ -10221,7 +10221,7 @@ function ProductionEfficiencyPage() {
     { label: 'Quality', value: '97.5%', icon: ShieldCheck, color: 'text-amber-600 bg-amber-50' },
   ];
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Production Efficiency</h1><p className="text-muted-foreground text-sm mt-1">Track production efficiency metrics and improvement opportunities</p></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
@@ -10312,7 +10312,7 @@ function ProductionBottlenecksPage() {
   ];
   const handleCreate = () => { if (!form.workCenter || !form.rootCause) { toast.error('Work center and root cause are required'); return; } toast.success('Bottleneck reported'); setCreateOpen(false); setForm({ workCenter: '', type: 'capacity', severity: 'medium', impact: '', rootCause: '', proposedAction: '' }); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Bottleneck Analysis</h1><p className="text-muted-foreground text-sm mt-1">Identify and analyze production bottlenecks to optimize throughput</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Report Bottleneck</Button>
@@ -10320,7 +10320,7 @@ function ProductionBottlenecksPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search bottlenecks..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterSeverity} onValueChange={setFilterSeverity}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Severity" /></SelectTrigger><SelectContent><SelectItem value="all">All Severity</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="low">Low</SelectItem></SelectContent></Select>
       </div>
@@ -10396,7 +10396,7 @@ function ProductionOrdersPage() {
   const handleCreate = () => { if (!form.product || !form.quantity) { toast.error('Product and quantity are required'); return; } toast.success('Production order created'); setCreateOpen(false); setForm({ product: '', quantity: '', workCenter: '', priority: 'medium', dueDate: '', notes: '' }); };
   const handleDelete = (id: string) => { setOrders(prev => prev.filter(o => o.id !== id)); toast.success('Order deleted'); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Production Orders</h1><p className="text-muted-foreground text-sm mt-1">Create and manage production orders from planning through completion</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Order</Button>
@@ -10404,7 +10404,7 @@ function ProductionOrdersPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search orders..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
       </div>
@@ -10479,7 +10479,7 @@ function ProductionBatchesPage() {
   const handleCreate = () => { if (!form.product || !form.quantity) { toast.error('Product and quantity are required'); return; } toast.success('Batch created'); setCreateOpen(false); setForm({ product: '', order: '', quantity: '', startDate: '', notes: '' }); };
   const handleDelete = (id: string) => { setBatches(prev => prev.filter(b => b.id !== id)); toast.success('Batch deleted'); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Batch Management</h1><p className="text-muted-foreground text-sm mt-1">Track production batches, lot numbers, and traceability</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Batch</Button>
@@ -10487,7 +10487,7 @@ function ProductionBatchesPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search batches..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="on_hold">On Hold</SelectItem><SelectItem value="quarantine">Quarantine</SelectItem></SelectContent></Select>
       </div>
@@ -10566,7 +10566,7 @@ function QualityInspectionsPage() {
   ];
   const handleCreate = () => { if (!form.title) { toast.error('Title is required'); return; } toast.success('Inspection created'); setCreateOpen(false); setForm({ title: '', description: '', type: 'incoming', product: '', inspector: '', date: '' }); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Quality Inspections</h1><p className="text-muted-foreground text-sm mt-1">Schedule, conduct, and track quality inspections</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Inspection</Button>
@@ -10574,7 +10574,7 @@ function QualityInspectionsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search inspections..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="failed">Failed</SelectItem></SelectContent></Select>
       </div>
@@ -10644,7 +10644,7 @@ function QualityNcrPage() {
   ];
   const handleCreate = () => { if (!form.title) { toast.error('Title is required'); return; } toast.success('NCR created'); setCreateOpen(false); setForm({ title: '', description: '', severity: 'minor', source: 'inspection', product: '', quantity: '' }); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Non-Conformance Reports</h1><p className="text-muted-foreground text-sm mt-1">Manage non-conformances, investigations, and dispositions</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New NCR</Button>
@@ -10652,7 +10652,7 @@ function QualityNcrPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search NCRs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="open">Open</SelectItem><SelectItem value="investigating">Investigating</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select>
       </div>
@@ -10722,7 +10722,7 @@ function QualityAuditsPage() {
   ];
   const handleCreate = () => { if (!form.title) { toast.error('Title is required'); return; } toast.success('Audit scheduled'); setCreateOpen(false); setForm({ title: '', type: 'internal', scope: '', auditor: '', scheduledDate: '', department: 'Quality' }); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Quality Audits</h1><p className="text-muted-foreground text-sm mt-1">Plan and execute internal, external, and supplier audits</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Audit</Button>
@@ -10730,7 +10730,7 @@ function QualityAuditsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search audits..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem></SelectContent></Select>
       </div>
@@ -10800,7 +10800,7 @@ function QualityControlPlansPage() {
   ];
   const handleCreate = () => { if (!form.name) { toast.error('Plan name is required'); return; } toast.success('Control plan created'); setCreateOpen(false); setForm({ name: '', product: '', description: '', revision: '', department: 'Quality', inspectionPoints: '' }); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Quality Control Plans</h1><p className="text-muted-foreground text-sm mt-1">Define and manage control plans for products and processes</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Plan</Button>
@@ -10808,7 +10808,7 @@ function QualityControlPlansPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search control plans..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="under_review">Under Review</SelectItem><SelectItem value="archived">Archived</SelectItem></SelectContent></Select>
       </div>
@@ -10877,7 +10877,7 @@ function QualitySpcPage() {
   ];
   const handleCreate = () => { if (!form.process) { toast.error('Process name is required'); return; } toast.success('SPC process added'); setCreateOpen(false); setForm({ process: '', characteristic: '', usl: '', lsl: '', target: '' }); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Statistical Process Control</h1><p className="text-muted-foreground text-sm mt-1">Monitor process stability with SPC charts and capability indices</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Process</Button>
@@ -10885,7 +10885,7 @@ function QualitySpcPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search processes..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="in_control">In Control</SelectItem><SelectItem value="warning">Warning</SelectItem><SelectItem value="out_of_control">Out of Control</SelectItem></SelectContent></Select>
       </div>
@@ -10961,7 +10961,7 @@ function QualityCapaPage() {
   ];
   const handleCreate = () => { if (!form.title) { toast.error('Title is required'); return; } toast.success('CAPA created'); setCreateOpen(false); setForm({ title: '', description: '', type: 'corrective', source: 'ncr', priority: 'medium', owner: '', dueDate: '' }); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Corrective & Preventive Actions</h1><p className="text-muted-foreground text-sm mt-1">Manage CAPAs for continuous quality improvement</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New CAPA</Button>
@@ -10969,7 +10969,7 @@ function QualityCapaPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search CAPAs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
         <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="open">Open</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="implemented">Implemented</SelectItem><SelectItem value="verified">Verified</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select>
       </div>
@@ -11090,7 +11090,7 @@ function SafetyIncidentsPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Safety Incidents</h1>
@@ -11179,10 +11179,10 @@ function SafetyIncidentsPage() {
 
         <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm lg:col-span-3">
           <CardContent className="p-4 sm:p-6">
-            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+            <div className="filter-row mb-4">
               <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search incidents..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
-              <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="near_miss">Near Miss</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="recordable">Recordable</SelectItem><SelectItem value="serious">Serious</SelectItem><SelectItem value="fatal">Fatal</SelectItem></SelectContent></Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="reported">Reported</SelectItem><SelectItem value="investigating">Investigating</SelectItem><SelectItem value="corrective">Corrective</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select>
+              <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="near_miss">Near Miss</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="recordable">Recordable</SelectItem><SelectItem value="serious">Serious</SelectItem><SelectItem value="fatal">Fatal</SelectItem></SelectContent></Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="reported">Reported</SelectItem><SelectItem value="investigating">Investigating</SelectItem><SelectItem value="corrective">Corrective</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select>
             </div>
             <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
               <Table>
@@ -11263,7 +11263,7 @@ function SafetyInspectionsPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Safety Inspections</h1>
@@ -11327,10 +11327,10 @@ function SafetyInspectionsPage() {
 
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
         <CardContent className="p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+          <div className="filter-row mb-4">
             <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search inspections..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
-            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="routine">Routine</SelectItem><SelectItem value="special">Special</SelectItem><SelectItem value="emergency">Emergency</SelectItem></SelectContent></Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="failed">Failed</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem></SelectContent></Select>
+            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="routine">Routine</SelectItem><SelectItem value="special">Special</SelectItem><SelectItem value="emergency">Emergency</SelectItem></SelectContent></Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="failed">Failed</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem></SelectContent></Select>
           </div>
           <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
             <Table>
@@ -11421,7 +11421,7 @@ function SafetyTrainingPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Safety Training</h1>
@@ -11491,9 +11491,9 @@ function SafetyTrainingPage() {
 
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
         <CardContent className="p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+          <div className="filter-row mb-4">
             <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search courses..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="not_started">Not Started</SelectItem></SelectContent></Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="not_started">Not Started</SelectItem></SelectContent></Select>
           </div>
           <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
             <Table>
@@ -11583,7 +11583,7 @@ function SafetyEquipmentPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Safety Equipment</h1>
@@ -11631,10 +11631,10 @@ function SafetyEquipmentPage() {
 
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
         <CardContent className="p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+          <div className="filter-row mb-4">
             <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search equipment..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
-            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="ppe">PPE</SelectItem><SelectItem value="fire_extinguisher">Fire Extinguisher</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="guard">Guard</SelectItem><SelectItem value="device">Device</SelectItem></SelectContent></Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="valid">Valid</SelectItem><SelectItem value="expiring">Expiring</SelectItem><SelectItem value="expired">Expired</SelectItem><SelectItem value="not_inspected">Not Inspected</SelectItem></SelectContent></Select>
+            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="ppe">PPE</SelectItem><SelectItem value="fire_extinguisher">Fire Extinguisher</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="guard">Guard</SelectItem><SelectItem value="device">Device</SelectItem></SelectContent></Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="valid">Valid</SelectItem><SelectItem value="expiring">Expiring</SelectItem><SelectItem value="expired">Expired</SelectItem><SelectItem value="not_inspected">Not Inspected</SelectItem></SelectContent></Select>
           </div>
           <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
             <Table>
@@ -11714,7 +11714,7 @@ function SafetyPermitsPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Safety Permits</h1>
@@ -11780,10 +11780,10 @@ function SafetyPermitsPage() {
 
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
         <CardContent className="p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+          <div className="filter-row mb-4">
             <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search permits..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
-            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-full sm:w-[170px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="hot_work">Hot Work</SelectItem><SelectItem value="confined_space">Confined Space</SelectItem><SelectItem value="height">Working at Height</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="excavation">Excavation</SelectItem></SelectContent></Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="expired">Expired</SelectItem><SelectItem value="revoked">Revoked</SelectItem></SelectContent></Select>
+            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-[170px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="hot_work">Hot Work</SelectItem><SelectItem value="confined_space">Confined Space</SelectItem><SelectItem value="height">Working at Height</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="excavation">Excavation</SelectItem></SelectContent></Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="expired">Expired</SelectItem><SelectItem value="revoked">Revoked</SelectItem></SelectContent></Select>
           </div>
           <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
             <Table>
@@ -11858,7 +11858,7 @@ function ReportsAssetPage() {
   ];
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Asset Reports</h1><p className="text-muted-foreground mt-1">Comprehensive reports on asset register, conditions, and lifecycle</p></div>
       {loading ? <LoadingSkeleton /> : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -11866,7 +11866,7 @@ function ReportsAssetPage() {
             <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
           ); })}
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="filter-row flex items-center gap-2 flex-wrap">
           <Select value={filterCondition} onValueChange={setFilterCondition}><SelectTrigger className="w-40"><SelectValue placeholder="Condition" /></SelectTrigger><SelectContent><SelectItem value="all">All Conditions</SelectItem>{Object.keys(byCondition).map(c => <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</SelectItem>)}</SelectContent></Select>
           <Select value={filterCriticality} onValueChange={setFilterCriticality}><SelectTrigger className="w-40"><SelectValue placeholder="Criticality" /></SelectTrigger><SelectContent><SelectItem value="all">All Criticality</SelectItem>{Object.keys(byCriticality).map(c => <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</SelectItem>)}</SelectContent></Select>
           <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem>{Object.keys(byStatus).map(s => <SelectItem key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</SelectItem>)}</SelectContent></Select>
@@ -11940,7 +11940,7 @@ function ReportsMaintenancePage() {
   ];
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Reports</h1><p className="text-muted-foreground mt-1">Reports on work orders, PM compliance, costs, and maintenance performance</p></div>
       {loading ? <LoadingSkeleton /> : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -12028,7 +12028,7 @@ function ReportsInventoryPage() {
   ];
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Inventory Reports</h1><p className="text-muted-foreground mt-1">Reports on stock levels, movements, values, and procurement</p></div>
         <div className="relative min-w-[200px] max-w-xs">
@@ -12090,11 +12090,11 @@ function ReportsProductionPage() {
   ];
   const months = ['Aug 2024', 'Sep 2024', 'Oct 2024', 'Nov 2024', 'Dec 2024', 'Jan 2025'];
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Production Reports</h1><p className="text-muted-foreground mt-1">Reports on production output, efficiency, and resource utilization</p></div>
-        <div className="flex items-center gap-2">
-          <Select value={monthFilter} onValueChange={setMonthFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Filter month" /></SelectTrigger><SelectContent><SelectItem value="all">All Months</SelectItem>{months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select>
+        <div className="w-full sm:w-auto">
+          <Select value={monthFilter} onValueChange={setMonthFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Filter month" /></SelectTrigger><SelectContent><SelectItem value="all">All Months</SelectItem>{months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select>
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -12168,10 +12168,10 @@ function ReportsQualityPage() {
   ];
   const months = ['Aug 2024', 'Sep 2024', 'Oct 2024', 'Nov 2024', 'Dec 2024', 'Jan 2025'];
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Quality Reports</h1><p className="text-muted-foreground mt-1">Reports on inspections, NCRs, CAPAs, and quality KPIs</p></div>
-        <Select value={monthFilter} onValueChange={setMonthFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Filter month" /></SelectTrigger><SelectContent><SelectItem value="all">All Months</SelectItem>{months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select>
+        <Select value={monthFilter} onValueChange={setMonthFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Filter month" /></SelectTrigger><SelectContent><SelectItem value="all">All Months</SelectItem>{months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {summaryCards.map(k => { const I = k.icon; return (
@@ -12243,10 +12243,10 @@ function ReportsSafetyPage() {
     { label: 'Training Compliance', value: '92%', icon: GraduationCap, color: 'bg-sky-50 text-sky-600' },
   ];
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Safety Reports</h1><p className="text-muted-foreground mt-1">Reports on incidents, inspections, training, and safety KPIs</p></div>
-        <Select value={yearFilter} onValueChange={setYearFilter}><SelectTrigger className="w-[120px]"><SelectValue placeholder="Year" /></SelectTrigger><SelectContent><SelectItem value="2024">2024</SelectItem><SelectItem value="2025">2025</SelectItem></SelectContent></Select>
+        <Select value={yearFilter} onValueChange={setYearFilter}><SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder="Year" /></SelectTrigger><SelectContent><SelectItem value="2024">2024</SelectItem><SelectItem value="2025">2025</SelectItem></SelectContent></Select>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {summaryCards.map(k => { const I = k.icon; return (
@@ -12329,7 +12329,7 @@ function ReportsFinancialPage() {
   ];
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Financial Reports</h1><p className="text-muted-foreground mt-1">Financial reports on maintenance costs, asset values, and budgets</p></div>
       {loading ? <LoadingSkeleton /> : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -12403,7 +12403,7 @@ function ReportsCustomPage() {
   const handleRun = (name: string) => { toast.success(`Running "${name}"...`); };
   const handleDelete = (name: string) => { toast.success(`"${name}" deleted`); };
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Custom Reports</h1><p className="text-muted-foreground mt-1">Build and save custom reports with flexible filters and formatting</p></div>
         <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Report</Button>
@@ -12481,7 +12481,7 @@ function SettingsGeneralPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">General Settings</h1><p className="text-muted-foreground mt-1">Configure system-wide preferences and defaults</p></div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
@@ -12539,7 +12539,7 @@ function SettingsNotificationsPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Notification Preferences</h1>
         <p className="text-muted-foreground mt-1">Configure how and when you receive notifications</p>
@@ -12662,7 +12662,7 @@ function SettingsIntegrationsPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Integrations</h1>
         <p className="text-muted-foreground mt-1">Connect with third-party systems and external services</p>
@@ -12774,7 +12774,7 @@ function SettingsBackupPage() {
   };
 
   return (
-    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="page-content">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Backup & Restore</h1>
         <p className="text-muted-foreground mt-1">Manage system backups, data exports, and disaster recovery</p>

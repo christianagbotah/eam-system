@@ -384,3 +384,56 @@ header[class*="bg-header"] {
   background-color: oklch(0.17 0.02 260) !important;
   border-color: oklch(1 0 0 / 10%) !important;
 }
+
+/* ============================================================================
+   MOBILE-RESPONSIVE FILTER ROW
+   - On mobile: stacks all filter fields vertically at equal full width
+   - On desktop (sm+): keeps the existing flex-row layout
+   ============================================================================ */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+@media (max-width: 639px) {
+  .filter-row {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .filter-row > * {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    flex: none !important;
+  }
+  .filter-row > .filter-row-checkbox {
+    width: auto !important;
+  }
+}
+
+/* ============================================================================
+   MOBILE-RESPONSIVE PAGE CONTENT
+   - Minimal horizontal margins on mobile for full-width cards
+   - Progressive padding increase on larger screens
+   ============================================================================ */
+.page-content {
+  max-width: 1600px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 1rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+@media (min-width: 640px) {
+  .page-content {
+    padding: 1.5rem 1.5rem;
+    gap: 1.5rem;
+  }
+}
+@media (min-width: 1024px) {
+  .page-content {
+    padding: 2rem;
+  }
+}
