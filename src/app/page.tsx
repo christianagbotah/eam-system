@@ -6459,7 +6459,7 @@ function AssetHealthPage() {
   const categories = useMemo(() => {
     const map = new Map<string, { total: number; good: number; fair: number; poor: number; critical: number }>();
     assets.forEach((a: any) => {
-      const cat = a.category || 'Uncategorized';
+      const cat = typeof a.category === 'object' && a.category ? (a.category.name || a.category.code || 'Uncategorized') : (a.category || 'Uncategorized');
       if (!map.has(cat)) map.set(cat, { total: 0, good: 0, fair: 0, poor: 0, critical: 0 });
       const c = map.get(cat)!;
       c.total++;
