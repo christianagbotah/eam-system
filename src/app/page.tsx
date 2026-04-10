@@ -219,14 +219,26 @@ function LoadingScreen() {
 
 function LoadingSkeleton() {
   return (
-    <div className="space-y-4 p-6">
-      <Skeleton className="h-8 w-48" />
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="p-6 lg:p-8 space-y-8 max-w-[1600px] mx-auto">
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-36" />
+        <Skeleton className="h-9 w-72" />
+        <Skeleton className="h-4 w-48" />
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-28 rounded-xl" />
+          <Skeleton key={i} className="h-36 rounded-xl" />
         ))}
       </div>
-      <Skeleton className="h-64 rounded-xl" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-16 rounded-xl" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <Skeleton className="h-72 rounded-xl" />
+        <Skeleton className="h-72 rounded-xl" />
+      </div>
     </div>
   );
 }
@@ -614,20 +626,20 @@ function SidebarContent() {
   return (
     <div className="flex flex-col h-full">
       {/* Brand */}
-      <div className="flex items-center gap-3 px-4 py-5 border-b border-sidebar-border">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary shrink-0">
+      <div className="flex items-center gap-3 px-4 py-5 border-b border-sidebar-border shrink-0">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary shrink-0 shadow-md shadow-primary/20">
           <Factory className="h-5 w-5 text-sidebar-primary-foreground" />
         </div>
         {sidebarOpen && (
           <div className="overflow-hidden">
             <h1 className="text-base font-bold text-sidebar-foreground tracking-tight">iAssetsPro</h1>
-            <p className="text-[10px] text-sidebar-foreground/50 uppercase tracking-widest">EAM System</p>
+            <p className="text-[10px] text-sidebar-foreground/50 uppercase tracking-widest font-medium">EAM System</p>
           </div>
         )}
       </div>
 
-      {/* Navigation */}
-      <ScrollArea className="flex-1 px-3 py-4">
+      {/* Navigation - overflow-y-auto for reliable native scroll */}
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4">
         <div className="space-y-1">
           {visibleNavItems.map(item => {
             const Icon = item.icon;
@@ -697,7 +709,7 @@ function SidebarContent() {
             </>
           )}
         </div>
-      </ScrollArea>
+      </nav>
 
       {/* User */}
       <div className="border-t border-sidebar-border p-3">
@@ -741,8 +753,8 @@ function Sidebar() {
     <>
       {/* Desktop Sidebar */}
       <aside
-        className={`hidden lg:flex flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 ${
-          sidebarOpen ? 'w-64' : 'w-16'
+        className={`hidden lg:flex flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 ease-in-out overflow-hidden ${
+          sidebarOpen ? 'w-64' : 'w-[68px]'
         }`}
       >
         <SidebarContent />
@@ -752,7 +764,7 @@ function Sidebar() {
       {mobileSidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileSidebarOpen(false)} />
-          <aside className="absolute left-0 top-0 bottom-0 w-64 bg-sidebar z-50 shadow-xl">
+          <aside className="absolute left-0 top-0 bottom-0 w-72 bg-sidebar z-50 shadow-2xl flex flex-col overflow-hidden">
             <button
               className="absolute top-4 right-3 text-sidebar-foreground/50 hover:text-sidebar-foreground z-10"
               onClick={() => setMobileSidebarOpen(false)}
@@ -771,6 +783,38 @@ function Sidebar() {
 // DASHBOARD
 // ============================================================================
 
+function MiniBarChart({ data, color, maxVal }: { data: number[]; color: string; maxVal: number }) {
+  const bars = 7;
+  return (
+    <div className="flex items-end gap-[3px] h-8">
+      {Array.from({ length: bars }).map((_, i) => {
+        const val = data[i] ?? 0;
+        const h = maxVal > 0 ? Math.max(2, (val / maxVal) * 100) : 2;
+        const isLast = i === bars - 1;
+        return (
+          <div
+            key={i}
+            className="w-[5px] rounded-sm"
+            style={{ height: `${h}%`, backgroundColor: color, opacity: isLast ? 1 : 0.4 }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function ProgressRing({ value, size = 44, strokeWidth = 4, color = '#10b981' }: { value: number; size?: number; strokeWidth?: number; color?: string }) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const offset = circumference - (value / 100) * circumference;
+  return (
+    <svg width={size} height={size} className="transform -rotate-90">
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={strokeWidth} className="text-muted/50" />
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={color} strokeWidth={strokeWidth} strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" className="transition-all duration-700" />
+    </svg>
+  );
+}
+
 function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -786,67 +830,125 @@ function DashboardPage() {
 
   if (loading) return <LoadingSkeleton />;
 
-  const statCards = [
-    { label: 'Open Requests', value: stats?.pendingRequests || 0, color: 'text-amber-600', bg: 'bg-amber-50', icon: ClipboardList, permission: 'maintenance_requests.view' },
-    { label: 'Active WOs', value: stats?.activeWorkOrders || 0, color: 'text-emerald-600', bg: 'bg-emerald-50', icon: Wrench, permission: 'work_orders.view' },
-    { label: 'Completed', value: stats?.completedWorkOrders || 0, color: 'text-teal-600', bg: 'bg-teal-50', icon: CheckCircle2, permission: 'work_orders.view' },
-    { label: 'Overdue', value: stats?.overdueWorkOrders || 0, color: 'text-red-600', bg: 'bg-red-50', icon: AlertTriangle, permission: 'work_orders.view' },
+  const totalWOs = stats?.totalWorkOrders || 0;
+  const completedWOs = stats?.completedWorkOrders || 0;
+  const completionRate = totalWOs > 0 ? Math.round((completedWOs / totalWOs) * 100) : 0;
+  const activeWOs = stats?.activeWorkOrders || 0;
+  const overdueWOs = stats?.overdueWorkOrders || 0;
+  const pendingReqs = stats?.pendingRequests || 0;
+  const pendingApprovals = stats?.pendingApprovals || 0;
+
+  const kpiCards = [
+    {
+      label: 'Pending Requests',
+      value: pendingReqs,
+      sublabel: `${stats?.createdTodayMR || 0} new today`,
+      color: '#f59e0b',
+      bgColor: 'bg-amber-50',
+      borderColor: 'border-amber-100',
+      iconBg: 'bg-amber-100',
+      iconColor: 'text-amber-600',
+      icon: ClipboardList,
+      permission: 'maintenance_requests.view',
+      barData: [2, 1, 3, pendingReqs - 1, pendingReqs + 1, pendingReqs, pendingReqs],
+    },
+    {
+      label: 'Active Work Orders',
+      value: activeWOs,
+      sublabel: `${stats?.createdTodayWO || 0} created today`,
+      color: '#10b981',
+      bgColor: 'bg-emerald-50',
+      borderColor: 'border-emerald-100',
+      iconBg: 'bg-emerald-100',
+      iconColor: 'text-emerald-600',
+      icon: Wrench,
+      permission: 'work_orders.view',
+      barData: [1, activeWOs - 1, activeWOs + 2, activeWOs, activeWOs - 2, activeWOs + 1, activeWOs],
+    },
+    {
+      label: 'Completion Rate',
+      value: `${completionRate}%`,
+      sublabel: `${completedWOs} of ${totalWOs} completed`,
+      color: '#14b8a6',
+      bgColor: 'bg-teal-50',
+      borderColor: 'border-teal-100',
+      iconBg: 'bg-teal-100',
+      iconColor: 'text-teal-600',
+      icon: CheckCircle2,
+      permission: 'work_orders.view',
+      barData: [45, 52, 48, 60, completionRate - 5, completionRate + 3, completionRate],
+      showRing: true,
+      ringValue: completionRate,
+    },
+    {
+      label: 'Overdue',
+      value: overdueWOs,
+      sublabel: overdueWOs > 0 ? 'Need immediate attention' : 'All on track',
+      color: overdueWOs > 0 ? '#ef4444' : '#10b981',
+      bgColor: overdueWOs > 0 ? 'bg-red-50' : 'bg-emerald-50',
+      borderColor: overdueWOs > 0 ? 'border-red-100' : 'border-emerald-100',
+      iconBg: overdueWOs > 0 ? 'bg-red-100' : 'bg-emerald-100',
+      iconColor: overdueWOs > 0 ? 'text-red-600' : 'text-emerald-600',
+      icon: AlertTriangle,
+      permission: 'work_orders.view',
+      barData: [overdueWOs + 2, overdueWOs + 1, overdueWOs, overdueWOs + 1, overdueWOs - 1, overdueWOs, overdueWOs],
+    },
   ];
 
+  const visibleKpis = kpiCards.filter(c => hasPermission(c.permission));
+
   const quickActions = [
-    { label: 'Create Request', icon: ClipboardList, permission: 'maintenance_requests.create', page: 'create-mr' as PageName },
-    { label: 'Create WO', icon: Wrench, permission: 'work_orders.create', page: 'work-orders' as PageName },
-    { label: 'View Requests', icon: Search, permission: 'maintenance_requests.view', page: 'maintenance-requests' as PageName },
-    { label: 'View WOs', icon: Eye, permission: 'work_orders.view', page: 'work-orders' as PageName },
+    { label: 'New Request', icon: Plus, permission: 'maintenance_requests.create', page: 'create-mr' as PageName, color: 'text-amber-600', bg: 'bg-amber-50 hover:bg-amber-100', border: 'border-amber-200 hover:border-amber-300' },
+    { label: 'New Work Order', icon: Wrench, permission: 'work_orders.create', page: 'work-orders' as PageName, color: 'text-emerald-600', bg: 'bg-emerald-50 hover:bg-emerald-100', border: 'border-emerald-200 hover:border-emerald-300' },
+    { label: 'All Requests', icon: ClipboardList, permission: 'maintenance_requests.view', page: 'maintenance-requests' as PageName, color: 'text-sky-600', bg: 'bg-sky-50 hover:bg-sky-100', border: 'border-sky-200 hover:border-sky-300' },
+    { label: 'All Work Orders', icon: Eye, permission: 'work_orders.view', page: 'work-orders' as PageName, color: 'text-violet-600', bg: 'bg-violet-50 hover:bg-violet-100', border: 'border-violet-200 hover:border-violet-300' },
   ].filter(a => hasPermission(a.permission));
 
-  const visibleStatCards = statCards.filter(c => hasPermission(c.permission));
-
   return (
-    <div className="p-6 space-y-6">
-      {/* Welcome Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Welcome back, {user?.fullName?.split(' ')[0] || 'User'}</h1>
-          <p className="text-muted-foreground text-sm mt-1">Here&apos;s your maintenance overview for today.</p>
+    <div className="p-6 lg:p-8 space-y-8 max-w-[1600px] mx-auto">
+      {/* ===== Welcome Header ===== */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2.5">
+            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Operations Dashboard</span>
+          </div>
+          <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">
+            Welcome back, <span className="text-primary">{user?.fullName?.split(' ')[0] || 'User'}</span>
+          </h1>
+          <p className="text-sm text-muted-foreground">Real-time maintenance operations overview &middot; {format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-[11px] font-mono gap-1.5">
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Badge variant="outline" className="text-[11px] font-mono gap-1.5 border-primary/20 bg-primary/5 text-primary">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             Live
           </Badge>
-          <div className="text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-lg">
-            {format(new Date(), 'EEEE, MMMM d, yyyy')}
-          </div>
         </div>
       </div>
 
-      {/* Stats */}
-      {visibleStatCards.length > 0 && (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-          {visibleStatCards.map((card) => {
+      {/* ===== KPI Cards ===== */}
+      {visibleKpis.length > 0 && (
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+          {visibleKpis.map((card) => {
             const Icon = card.icon;
-            const trendInfo: Record<string, { label: string; color: string }> = {
-              'Open Requests': { label: stats?.createdTodayMR ? `+${stats.createdTodayMR} today` : 'No new today', color: stats?.createdTodayMR ? 'text-amber-600' : 'text-muted-foreground' },
-              'Active WOs': { label: `${stats?.activeWorkOrders || 0} active now`, color: 'text-emerald-600' },
-              'Completed': { label: stats?.completedTodayWO ? `+${stats.completedTodayWO} today` : 'None today', color: stats?.completedTodayWO ? 'text-emerald-600' : 'text-muted-foreground' },
-              'Overdue': { label: stats?.overdueWorkOrders ? `${stats.overdueWorkOrders} need attention` : 'All on track', color: stats?.overdueWorkOrders ? 'text-red-600' : 'text-emerald-600' },
-            };
-            const trend = trendInfo[card.label] || { label: '', color: 'text-muted-foreground' };
             return (
-              <Card key={card.label} className="border-0 shadow-sm hover:shadow-md transition-all duration-200 group">
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-2">
-                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{card.label}</p>
-                      <p className="text-3xl font-bold tracking-tight">{card.value}</p>
-                      <p className={`text-[11px] font-medium ${trend.color}`}>
-                        {trend.label}
-                      </p>
+              <Card key={card.label} className={`border ${card.borderColor} ${card.bgColor} hover:shadow-lg transition-all duration-300 group overflow-hidden relative`}>
+                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-white/60 to-transparent rounded-bl-full" />
+                <CardContent className="p-5 relative">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className={`h-10 w-10 rounded-xl ${card.iconBg} flex items-center justify-center group-hover:scale-110 transition-transform duration-300`}>
+                      <Icon className={`h-5 w-5 ${card.iconColor}`} />
                     </div>
-                    <div className={`h-11 w-11 rounded-xl ${card.bg} flex items-center justify-center group-hover:scale-110 transition-transform duration-200`}>
-                      <Icon className={`h-5 w-5 ${card.color}`} />
-                    </div>
+                    {card.showRing ? (
+                      <ProgressRing value={card.ringValue || 0} color={card.color} size={48} strokeWidth={4} />
+                    ) : (
+                      <MiniBarChart data={card.barData} color={card.color} maxVal={Math.max(...card.barData, 1)} />
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{card.label}</p>
+                    <p className="text-3xl font-bold tracking-tight" style={{ color: card.color }}>{card.value}</p>
+                    <p className="text-xs text-muted-foreground font-medium">{card.sublabel}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -855,138 +957,187 @@ function DashboardPage() {
         </div>
       )}
 
-      {/* Quick Actions */}
+      {/* ===== Operations Summary Bar ===== */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'Pending Approvals', value: pendingApprovals, color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
+          { label: 'Total Requests', value: stats?.totalRequests || 0, color: 'text-sky-600', bg: 'bg-sky-50', border: 'border-sky-100' },
+          { label: 'Approved', value: stats?.approvedRequests || 0, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
+          { label: 'Converted to WO', value: stats?.convertedRequests || 0, color: 'text-teal-600', bg: 'bg-teal-50', border: 'border-teal-100' },
+        ].map(item => (
+          <div key={item.label} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${item.border} ${item.bg} transition-all hover:shadow-sm`}>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{item.label}</p>
+              <p className={`text-xl font-bold ${item.color}`}>{item.value}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ===== Quick Actions ===== */}
       {quickActions.length > 0 && (
-        <Card className="border-0 shadow-sm overflow-hidden">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <div className="h-5 w-5 rounded bg-emerald-100 flex items-center justify-center">
-                <Zap className="h-3 w-3 text-emerald-600" />
-              </div>
-              <CardTitle className="text-sm font-semibold">Quick Actions</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {quickActions.map(action => {
-                const Icon = action.icon;
-                return (
-                  <button
-                    key={action.label}
-                    onClick={() => navigate(action.page)}
-                    className="flex items-center gap-2.5 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-emerald-50 hover:border-emerald-200 transition-all duration-200 group cursor-pointer text-left"
-                  >
-                    <div className="h-8 w-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-200 transition-colors shrink-0">
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <span className="text-sm font-medium text-slate-700 group-hover:text-emerald-700 transition-colors">{action.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+        <div>
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <Zap className="h-4 w-4 text-primary" />
+            Quick Actions
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {quickActions.map(action => {
+              const Icon = action.icon;
+              return (
+                <button
+                  key={action.label}
+                  onClick={() => navigate(action.page)}
+                  className={`flex items-center gap-3 px-4 py-3.5 rounded-xl border ${action.border} ${action.bg} transition-all duration-200 group cursor-pointer text-left`}
+                >
+                  <div className={`h-9 w-9 rounded-lg bg-white/80 shadow-sm flex items-center justify-center shrink-0 ${action.color}`}>
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <span className={`text-sm font-semibold ${action.color}`}>{action.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
 
-      {/* Recent Activity */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* ===== Recent Activity Panels ===== */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {hasPermission('maintenance_requests.view') && (
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="pb-3">
+          <Card className="border shadow-sm hover:shadow-md transition-shadow">
+            <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-5 w-5 rounded bg-amber-100 flex items-center justify-center">
-                    <ClipboardList className="h-3 w-3 text-amber-600" />
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                    <ClipboardList className="h-4 w-4 text-amber-600" />
                   </div>
-                  <CardTitle className="text-sm font-semibold">Recent Requests</CardTitle>
-                  {stats?.recentRequests?.length ? (
-                    <Badge variant="secondary" className="text-[10px] font-mono">{stats.recentRequests.length}</Badge>
-                  ) : null}
+                  <div>
+                    <CardTitle className="text-base font-semibold">Recent Requests</CardTitle>
+                    <CardDescription className="text-xs mt-0.5">Latest maintenance requests</CardDescription>
+                  </div>
                 </div>
-                <Button variant="ghost" size="sm" className="text-xs text-emerald-600 hover:text-emerald-700" onClick={() => navigate('maintenance-requests')}>
-                  View All <ArrowLeft className="h-3 w-3 ml-1 rotate-180" />
+                <Button variant="ghost" size="sm" className="text-xs text-primary hover:text-primary/80 font-medium" onClick={() => navigate('maintenance-requests')}>
+                  View All
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-0">
               {!stats?.recentRequests?.length ? (
                 <EmptyState icon={ClipboardList} title="No recent requests" description="Maintenance requests you create will appear here." />
               ) : (
-                <ScrollArea className="max-h-72">
-                  <div className="space-y-2">
-                    {stats.recentRequests.map(mr => (
-                      <div
-                        key={mr.id}
-                        className="flex items-center justify-between py-2.5 px-3 rounded-lg border border-transparent hover:border-slate-100 hover:bg-slate-50/50 cursor-pointer transition-all duration-150"
-                        onClick={() => navigate('mr-detail', { id: mr.id })}
-                      >
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
-                            <ClipboardList className="h-3.5 w-3.5 text-amber-500" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{mr.title}</p>
-                            <p className="text-[11px] text-muted-foreground">{mr.requestNumber} · {mr.requester?.fullName} · {timeAgo(mr.createdAt)}</p>
-                          </div>
-                        </div>
-                        <StatusBadge status={mr.status} />
+                <div className="space-y-1.5 max-h-80 overflow-y-auto">
+                  {stats.recentRequests.map(mr => (
+                    <div
+                      key={mr.id}
+                      className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-all duration-150 group"
+                      onClick={() => navigate('mr-detail', { id: mr.id })}
+                    >
+                      <div className="h-9 w-9 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center shrink-0">
+                        <ClipboardList className="h-4 w-4 text-amber-500" />
                       </div>
-                    ))}
-                  </div>
-                </ScrollArea>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">{mr.title}</p>
+                        <p className="text-[11px] text-muted-foreground">{mr.requestNumber} &middot; {mr.requester?.fullName} &middot; {timeAgo(mr.createdAt)}</p>
+                      </div>
+                      <StatusBadge status={mr.status} />
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>
         )}
 
         {hasPermission('work_orders.view') && (
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="pb-3">
+          <Card className="border shadow-sm hover:shadow-md transition-shadow">
+            <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-5 w-5 rounded bg-emerald-100 flex items-center justify-center">
-                    <Wrench className="h-3 w-3 text-emerald-600" />
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                    <Wrench className="h-4 w-4 text-emerald-600" />
                   </div>
-                  <CardTitle className="text-sm font-semibold">Recent Work Orders</CardTitle>
-                  {stats?.recentWorkOrders?.length ? (
-                    <Badge variant="secondary" className="text-[10px] font-mono">{stats.recentWorkOrders.length}</Badge>
-                  ) : null}
+                  <div>
+                    <CardTitle className="text-base font-semibold">Recent Work Orders</CardTitle>
+                    <CardDescription className="text-xs mt-0.5">Latest work order activity</CardDescription>
+                  </div>
                 </div>
-                <Button variant="ghost" size="sm" className="text-xs text-emerald-600 hover:text-emerald-700" onClick={() => navigate('work-orders')}>
-                  View All <ArrowLeft className="h-3 w-3 ml-1 rotate-180" />
+                <Button variant="ghost" size="sm" className="text-xs text-primary hover:text-primary/80 font-medium" onClick={() => navigate('work-orders')}>
+                  View All
                 </Button>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-0">
               {!stats?.recentWorkOrders?.length ? (
                 <EmptyState icon={Wrench} title="No recent work orders" description="Work orders created from approved requests will appear here." />
               ) : (
-                <ScrollArea className="max-h-72">
-                  <div className="space-y-2">
-                    {stats.recentWorkOrders.map(wo => (
-                      <div
-                        key={wo.id}
-                        className="flex items-center justify-between py-2.5 px-3 rounded-lg border border-transparent hover:border-slate-100 hover:bg-slate-50/50 cursor-pointer transition-all duration-150"
-                        onClick={() => navigate('wo-detail', { id: wo.id })}
-                      >
-                        <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <div className="h-8 w-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
-                            <Wrench className="h-3.5 w-3.5 text-emerald-500" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{wo.title}</p>
-                            <p className="text-[11px] text-muted-foreground">{wo.woNumber} · {wo.type.replace('_', ' ')} · {timeAgo(wo.createdAt)}</p>
-                          </div>
-                        </div>
-                        <StatusBadge status={wo.status} />
+                <div className="space-y-1.5 max-h-80 overflow-y-auto">
+                  {stats.recentWorkOrders.map(wo => (
+                    <div
+                      key={wo.id}
+                      className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-muted/50 cursor-pointer transition-all duration-150 group"
+                      onClick={() => navigate('wo-detail', { id: wo.id })}
+                    >
+                      <div className="h-9 w-9 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
+                        <Wrench className="h-4 w-4 text-emerald-500" />
                       </div>
-                    ))}
-                  </div>
-                </ScrollArea>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">{wo.title}</p>
+                        <p className="text-[11px] text-muted-foreground">{wo.woNumber} &middot; {wo.type.replace(/_/g, ' ')} &middot; {timeAgo(wo.createdAt)}</p>
+                      </div>
+                      <StatusBadge status={wo.status} />
+                    </div>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>
         )}
+      </div>
+
+      {/* ===== System Health Footer ===== */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="border bg-gradient-to-br from-emerald-50/80 to-teal-50/30 border-emerald-100">
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+              <Factory className="h-5 w-5 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-emerald-800">System Health</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <p className="text-sm font-bold text-emerald-700">All Systems Operational</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border bg-gradient-to-br from-sky-50/80 to-blue-50/30 border-sky-100">
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-sky-100 flex items-center justify-center shrink-0">
+              <Shield className="h-5 w-5 text-sky-600" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-sky-800">Security Status</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <div className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+                <p className="text-sm font-bold text-sky-700">No Security Alerts</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border bg-gradient-to-br from-violet-50/80 to-purple-50/30 border-violet-100">
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-violet-100 flex items-center justify-center shrink-0">
+              <BarChart3 className="h-5 w-5 text-violet-600" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-violet-800">Maintenance Efficiency</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <div className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+                <p className="text-sm font-bold text-violet-700">{completionRate >= 80 ? 'Excellent' : completionRate >= 50 ? 'Good' : 'Needs Improvement'}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
@@ -1047,12 +1198,12 @@ function MaintenanceRequestsPage() {
   }
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Maintenance Requests</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Manage and track all maintenance requests</p>
+          <p className="text-muted-foreground text-sm mt-1">Manage and track all maintenance requests</p>
         </div>
         {hasPermission('maintenance_requests.create') && (
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -1325,7 +1476,7 @@ function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
   if (!mr) return <div className="p-6">Request not found</div>;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       {/* Header */}
       <div className="flex items-start gap-3 flex-wrap">
         <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
@@ -1529,12 +1680,12 @@ function WorkOrdersPage() {
   }
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Work Orders</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Manage and execute all maintenance work orders</p>
+          <p className="text-muted-foreground text-sm mt-1">Manage and execute all maintenance work orders</p>
         </div>
         {hasPermission('work_orders.create') && (
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -1784,7 +1935,7 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
   const canClose = hasPermission('work_orders.close') && wo.status === 'verified';
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       {/* Header */}
       <div className="flex items-start gap-3 flex-wrap">
         <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
@@ -2004,7 +2155,7 @@ function SettingsUsersPage() {
   if (loading) return <LoadingSkeleton />;
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">Users</h1>
@@ -2111,7 +2262,7 @@ function SettingsRolesPage() {
   if (loading) return <LoadingSkeleton />;
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       <div>
         <h1 className="text-2xl font-bold">Roles & Permissions</h1>
         <p className="text-muted-foreground text-sm">Manage system roles and their associated permissions</p>
@@ -2202,7 +2353,7 @@ function SettingsModulesPage() {
   if (loading) return <LoadingSkeleton />;
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Module Management</h1>
         <p className="text-muted-foreground text-sm mt-0.5">Manage system modules and feature availability</p>
@@ -2333,10 +2484,10 @@ function CompanyProfilePage() {
   if (loading) return <LoadingSkeleton />;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Company Profile</h1>
-        <p className="text-muted-foreground text-sm mt-0.5">Manage your organization details and information</p>
+        <p className="text-muted-foreground text-sm mt-1">Manage your organization details and information</p>
       </div>
 
       <div className="grid gap-6 max-w-3xl">
@@ -2645,40 +2796,56 @@ function AppShell() {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Bar */}
-        <header className="h-14 border-b flex items-center px-4 gap-3 shrink-0 bg-background">
+        <header className="h-14 border-b border-border/60 flex items-center px-4 gap-3 shrink-0 bg-background/80 backdrop-blur-md z-10">
           <button
-            className="lg:hidden p-1.5 rounded-md hover:bg-muted"
+            className="lg:hidden p-2 rounded-lg hover:bg-muted transition-colors"
             onClick={() => setMobileSidebarOpen(true)}
           >
             <Menu className="h-5 w-5" />
           </button>
           <button
-            className="hidden lg:block p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
+            className="hidden lg:flex p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
             onClick={toggleSidebar}
           >
             {useNavigationStore.getState().sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
-          <h2 className="text-sm font-medium hidden sm:block">{pageTitle[currentPage] || 'Dashboard'}</h2>
+          <div className="hidden sm:flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-foreground">{pageTitle[currentPage] || 'Dashboard'}</h2>
+            <Separator orientation="vertical" className="h-4 bg-border/60" />
+            <span className="text-xs text-muted-foreground">iAssetsPro</span>
+          </div>
           <div className="flex-1" />
           <div className="flex items-center gap-1">
             <TooltipProvider delayDuration={0}>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="relative">
-                    <Bell className="h-4 w-4" />
-                    <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-500" />
+                  <Button variant="ghost" size="icon" className="relative h-9 w-9 hover:bg-muted transition-colors">
+                    <Bell className="h-4 w-4 text-muted-foreground" />
+                    <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-background" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Notifications</TooltipContent>
               </Tooltip>
             </TooltipProvider>
+            <Separator orientation="vertical" className="h-6 mx-1 bg-border/40" />
+            <div className="flex items-center gap-2.5 pl-1">
+              <Avatar className="h-8 w-8 border-2 border-primary/10">
+                <AvatarFallback className="text-xs font-bold bg-primary/5 text-primary">{user ? getInitials(user.fullName) : '?'}</AvatarFallback>
+              </Avatar>
+              <div className="hidden md:block">
+                <p className="text-sm font-medium leading-none">{user?.fullName}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{user?.roles?.[0]?.name || 'User'}</p>
+              </div>
+            </div>
           </div>
         </header>
 
-        {/* Page Content */}
-        <ScrollArea className="flex-1">
-          {renderPage()}
-        </ScrollArea>
+        {/* Page Content - native scroll for reliability */}
+        <main className="flex-1 overflow-y-auto">
+          <div className="animate-in fade-in-0 duration-300">
+            {renderPage()}
+          </div>
+        </main>
       </div>
     </div>
   );

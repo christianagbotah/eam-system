@@ -120,3 +120,56 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Professional Scrollbar Styling */
+@layer base {
+  /* Main content scrollbar */
+  .overflow-y-auto,
+  .overflow-auto {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.82 0.02 155) transparent;
+  }
+  .overflow-y-auto:hover,
+  .overflow-auto:hover {
+    scrollbar-color: oklch(0.72 0.03 155) transparent;
+  }
+
+  /* Webkit scrollbar */
+  .overflow-y-auto::-webkit-scrollbar,
+  .overflow-auto::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .overflow-y-auto::-webkit-scrollbar-track,
+  .overflow-auto::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .overflow-y-auto::-webkit-scrollbar-thumb,
+  .overflow-auto::-webkit-scrollbar-thumb {
+    background: oklch(0.85 0.02 155);
+    border-radius: 3px;
+  }
+  .overflow-y-auto::-webkit-scrollbar-thumb:hover,
+  .overflow-auto::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.72 0.03 155);
+  }
+
+  /* Sidebar scrollbar */
+  nav.overflow-y-auto {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0.35 0.04 163) transparent;
+  }
+  nav.overflow-y-auto::-webkit-scrollbar {
+    width: 4px;
+  }
+  nav.overflow-y-auto::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  nav.overflow-y-auto::-webkit-scrollbar-thumb {
+    background: oklch(0.35 0.04 163);
+    border-radius: 2px;
+  }
+  nav.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.45 0.05 163);
+  }
+}
