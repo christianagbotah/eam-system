@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
-import type { PageName, User, MaintenanceRequest, WorkOrder, DashboardStats, Module, Role, Permission, UserRole, Notification } from '@/types';
+import type { PageName, User, MaintenanceRequest, WorkOrder, DashboardStats, Module, Role, Permission, UserRole, Notification, CompanyProfile } from '@/types';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -2272,59 +2272,65 @@ function SettingsModulesPage() {
 // COMPANY PROFILE PAGE
 // ============================================================================
 
-interface CompanyProfile {
-  companyName: string;
-  address: string;
-  city: string;
-  country: string;
-  postalCode: string;
-  phone: string;
-  email: string;
-  website: string;
-  industry: string;
-  numberOfEmployees: string;
-}
-
 const defaultCompanyProfile: CompanyProfile = {
-  companyName: 'iAssetsPro Inc.',
+  id: '',
+  companyName: '',
+  tradingName: '',
   address: '',
   city: '',
-  country: '',
+  region: '',
+  country: 'Ghana',
   postalCode: '',
   phone: '',
   email: '',
   website: '',
-  industry: 'manufacturing',
-  numberOfEmployees: '',
+  industry: '',
+  employeeCount: '',
+  fiscalYearStart: 'January',
+  timezone: 'Africa/Accra',
+  currency: 'GHS',
+  dateFormat: 'DD/MM/YYYY',
+  isSetupComplete: false,
+  createdAt: '',
+  updatedAt: '',
 };
 
 function CompanyProfilePage() {
-  const [form, setForm] = useState<CompanyProfile>(() => {
-    if (typeof window === 'undefined') return defaultCompanyProfile;
-    try {
-      const stored = localStorage.getItem('iassetspro_company_profile');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        return { ...defaultCompanyProfile, ...parsed };
-      }
-    } catch {
-      // ignore parse errors
-    }
-    return defaultCompanyProfile;
-  });
+  const [form, setForm] = useState<CompanyProfile>(defaultCompanyProfile);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get<CompanyProfile>('/api/company-profile').then(res => {
+      if (res.success && res.data) setForm(res.data);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
 
   const handleChange = (field: keyof CompanyProfile, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
   const handleSave = async () => {
+    if (!form.companyName.trim()) {
+      toast.error('Company name is required');
+      return;
+    }
     setSaving(true);
-    await new Promise(r => setTimeout(r, 500));
-    localStorage.setItem('iassetspro_company_profile', JSON.stringify(form));
+    const res = await api.put<CompanyProfile>('/api/company-profile', {
+      ...form,
+      isSetupComplete: true,
+    });
+    if (res.success && res.data) {
+      setForm(res.data);
+      toast.success('Company profile saved successfully');
+    } else {
+      toast.error(res.error || 'Failed to save company profile');
+    }
     setSaving(false);
-    toast.success('Company profile saved successfully');
   };
+
+  if (loading) return <LoadingSkeleton />;
 
   return (
     <div className="p-6 space-y-6">
@@ -2334,7 +2340,7 @@ function CompanyProfilePage() {
       </div>
 
       <div className="grid gap-6 max-w-3xl">
-        {/* Logo Placeholder */}
+        {/* Company Logo Card */}
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-4">
             <CardTitle className="text-base">Company Logo</CardTitle>
@@ -2342,8 +2348,12 @@ function CompanyProfilePage() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-4">
-              <div className="h-20 w-20 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0">
-                <Factory className="h-8 w-8 text-white" />
+              <div className="h-20 w-20 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0 overflow-hidden">
+                {form.logo ? (
+                  <img src={form.logo} alt="Company Logo" className="h-full w-full object-cover" />
+                ) : (
+                  <Factory className="h-8 w-8 text-white" />
+                )}
               </div>
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">Logo upload will be available in a future update</p>
@@ -2361,13 +2371,23 @@ function CompanyProfilePage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="sm:col-span-2 space-y-2">
-                <Label htmlFor="companyName" className="text-sm font-medium">Company Name</Label>
+              <div className="space-y-2">
+                <Label htmlFor="companyName" className="text-sm font-medium">Company Name *</Label>
                 <Input
                   id="companyName"
                   value={form.companyName}
                   onChange={e => handleChange('companyName', e.target.value)}
-                  placeholder="Enter company name"
+                  placeholder="Enter legal company name"
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="tradingName" className="text-sm font-medium">Trading Name</Label>
+                <Input
+                  id="tradingName"
+                  value={form.tradingName || ''}
+                  onChange={e => handleChange('tradingName', e.target.value)}
+                  placeholder="Enter trading/brand name"
                   className="h-10"
                 />
               </div>
@@ -2375,7 +2395,7 @@ function CompanyProfilePage() {
                 <Label htmlFor="address" className="text-sm font-medium">Address</Label>
                 <Textarea
                   id="address"
-                  value={form.address}
+                  value={form.address || ''}
                   onChange={e => handleChange('address', e.target.value)}
                   placeholder="Enter street address"
                   rows={2}
@@ -2385,9 +2405,19 @@ function CompanyProfilePage() {
                 <Label htmlFor="city" className="text-sm font-medium">City</Label>
                 <Input
                   id="city"
-                  value={form.city}
+                  value={form.city || ''}
                   onChange={e => handleChange('city', e.target.value)}
                   placeholder="Enter city"
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="region" className="text-sm font-medium">Region / State</Label>
+                <Input
+                  id="region"
+                  value={form.region || ''}
+                  onChange={e => handleChange('region', e.target.value)}
+                  placeholder="Enter region or state"
                   className="h-10"
                 />
               </div>
@@ -2395,7 +2425,7 @@ function CompanyProfilePage() {
                 <Label htmlFor="country" className="text-sm font-medium">Country</Label>
                 <Input
                   id="country"
-                  value={form.country}
+                  value={form.country || ''}
                   onChange={e => handleChange('country', e.target.value)}
                   placeholder="Enter country"
                   className="h-10"
@@ -2405,7 +2435,7 @@ function CompanyProfilePage() {
                 <Label htmlFor="postalCode" className="text-sm font-medium">Postal Code</Label>
                 <Input
                   id="postalCode"
-                  value={form.postalCode}
+                  value={form.postalCode || ''}
                   onChange={e => handleChange('postalCode', e.target.value)}
                   placeholder="Enter postal code"
                   className="h-10"
@@ -2427,18 +2457,18 @@ function CompanyProfilePage() {
                 <Label htmlFor="phone" className="text-sm font-medium">Phone</Label>
                 <Input
                   id="phone"
-                  value={form.phone}
+                  value={form.phone || ''}
                   onChange={e => handleChange('phone', e.target.value)}
-                  placeholder="+1 (555) 000-0000"
+                  placeholder="+233 XX XXX XXXX"
                   className="h-10"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium">Email</Label>
+                <Label htmlFor="cemail" className="text-sm font-medium">Email</Label>
                 <Input
-                  id="email"
+                  id="cemail"
                   type="email"
-                  value={form.email}
+                  value={form.email || ''}
                   onChange={e => handleChange('email', e.target.value)}
                   placeholder="info@company.com"
                   className="h-10"
@@ -2448,7 +2478,7 @@ function CompanyProfilePage() {
                 <Label htmlFor="website" className="text-sm font-medium">Website</Label>
                 <Input
                   id="website"
-                  value={form.website}
+                  value={form.website || ''}
                   onChange={e => handleChange('website', e.target.value)}
                   placeholder="https://www.company.com"
                   className="h-10"
@@ -2458,46 +2488,82 @@ function CompanyProfilePage() {
           </CardContent>
         </Card>
 
-        {/* Additional Info */}
+        {/* Industry & Size */}
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-4">
-            <CardTitle className="text-base">Additional Information</CardTitle>
+            <CardTitle className="text-base">Industry &amp; Organization</CardTitle>
             <CardDescription>Industry and organization size details</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="industry" className="text-sm font-medium">Industry</Label>
-                <Select value={form.industry} onValueChange={v => handleChange('industry', v)}>
+                <Label className="text-sm font-medium">Industry</Label>
+                <Select value={form.industry || ''} onValueChange={v => handleChange('industry', v)}>
                   <SelectTrigger className="h-10">
                     <SelectValue placeholder="Select industry" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="manufacturing">Manufacturing</SelectItem>
-                    <SelectItem value="energy">Energy & Utilities</SelectItem>
+                    <SelectItem value="energy">Energy &amp; Utilities</SelectItem>
                     <SelectItem value="construction">Construction</SelectItem>
                     <SelectItem value="healthcare">Healthcare</SelectItem>
-                    <SelectItem value="transportation">Transportation & Logistics</SelectItem>
-                    <SelectItem value="mining">Mining & Resources</SelectItem>
-                    <SelectItem value="oil_gas">Oil & Gas</SelectItem>
+                    <SelectItem value="transportation">Transportation &amp; Logistics</SelectItem>
+                    <SelectItem value="mining">Mining &amp; Resources</SelectItem>
+                    <SelectItem value="oil_gas">Oil &amp; Gas</SelectItem>
                     <SelectItem value="telecommunications">Telecommunications</SelectItem>
-                    <SelectItem value="food_beverage">Food & Beverage</SelectItem>
+                    <SelectItem value="food_beverage">Food &amp; Beverage</SelectItem>
                     <SelectItem value="pharmaceutical">Pharmaceutical</SelectItem>
-                    <SelectItem value="real_estate">Real Estate & Facilities</SelectItem>
-                    <SelectItem value="government">Government & Public Sector</SelectItem>
+                    <SelectItem value="real_estate">Real Estate &amp; Facilities</SelectItem>
+                    <SelectItem value="government">Government &amp; Public Sector</SelectItem>
                     <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="numberOfEmployees" className="text-sm font-medium">Number of Employees</Label>
-                <Input
-                  id="numberOfEmployees"
-                  value={form.numberOfEmployees}
-                  onChange={e => handleChange('numberOfEmployees', e.target.value)}
-                  placeholder="e.g. 500"
-                  className="h-10"
-                />
+                <Label className="text-sm font-medium">Number of Employees</Label>
+                <Select value={form.employeeCount || ''} onValueChange={v => handleChange('employeeCount', v)}>
+                  <SelectTrigger className="h-10">
+                    <SelectValue placeholder="Select range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1-10">1 - 10</SelectItem>
+                    <SelectItem value="11-50">11 - 50</SelectItem>
+                    <SelectItem value="51-200">51 - 200</SelectItem>
+                    <SelectItem value="201-500">201 - 500</SelectItem>
+                    <SelectItem value="501-1000">501 - 1,000</SelectItem>
+                    <SelectItem value="1001-5000">1,001 - 5,000</SelectItem>
+                    <SelectItem value="5001+">5,001+</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Currency</Label>
+                <Select value={form.currency || 'GHS'} onValueChange={v => handleChange('currency', v)}>
+                  <SelectTrigger className="h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GHS">GHS - Ghana Cedi</SelectItem>
+                    <SelectItem value="USD">USD - US Dollar</SelectItem>
+                    <SelectItem value="EUR">EUR - Euro</SelectItem>
+                    <SelectItem value="GBP">GBP - British Pound</SelectItem>
+                    <SelectItem value="NGN">NGN - Nigerian Naira</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Timezone</Label>
+                <Select value={form.timezone || 'Africa/Accra'} onValueChange={v => handleChange('timezone', v)}>
+                  <SelectTrigger className="h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Africa/Accra">GMT (Africa/Accra)</SelectItem>
+                    <SelectItem value="Africa/Lagos">WAT (Africa/Lagos)</SelectItem>
+                    <SelectItem value="UTC">UTC</SelectItem>
+                    <SelectItem value="Europe/London">GMT (Europe/London)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </CardContent>
