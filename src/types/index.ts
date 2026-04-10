@@ -352,6 +352,7 @@ export type PageName =
   | 'assets'
   | 'asset-detail'
   | 'inventory'
+  | 'pm-schedules'
   | 'reports'
   | 'analytics'
   | 'notifications'

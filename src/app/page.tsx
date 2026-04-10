@@ -634,6 +634,7 @@ function SidebarContent() {
     { page: 'work-orders', label: 'Work Orders', icon: Wrench, perm: 'work_orders.view' },
     { page: 'assets', label: 'Assets', icon: Building2, perm: 'assets.view' },
     { page: 'inventory', label: 'Inventory', icon: Package, perm: 'inventory.view' },
+    { page: 'pm-schedules', label: 'PM Schedules', icon: Timer, perm: 'work_orders.view' },
     { page: 'production', label: 'Production', icon: Zap, perm: 'production.view', comingSoon: true },
     { page: 'analytics', label: 'Analytics', icon: BarChart3, perm: 'analytics.view' },
   ];
@@ -4651,6 +4652,398 @@ function InventoryPage() {
 }
 
 // ============================================================================
+// PM SCHEDULES PAGE
+// ============================================================================
+
+function PmSchedulesPage() {
+  const [schedules, setSchedules] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [dueSoonFilter, setDueSoonFilter] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const { hasPermission } = useAuthStore();
+
+  // Form state
+  const [formTitle, setFormTitle] = useState('');
+  const [formDesc, setFormDesc] = useState('');
+  const [formAssetId, setFormAssetId] = useState('');
+  const [formFreqType, setFormFreqType] = useState('monthly');
+  const [formFreqValue, setFormFreqValue] = useState('1');
+  const [formPriority, setFormPriority] = useState('medium');
+  const [formEstDuration, setFormEstDuration] = useState('');
+  const [formAssignedToId, setFormAssignedToId] = useState('');
+  const [formAutoGenWO, setFormAutoGenWO] = useState(true);
+  const [formLeadDays, setFormLeadDays] = useState('3');
+  const [formNextDueDate, setFormNextDueDate] = useState('');
+
+  const [assets, setAssets] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+
+  const fetchSchedules = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (dueSoonFilter) params.set('dueSoon', 'true');
+      const res = await api.get(`/api/pm-schedules?${params.toString()}`);
+      if (res.success) setSchedules(res.data || []);
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, [dueSoonFilter]);
+
+  const fetchLookups = useCallback(async () => {
+    try {
+      const [assetRes, userRes] = await Promise.all([
+        api.get('/api/assets?limit=200'),
+        api.get('/api/users'),
+      ]);
+      if (assetRes.success) setAssets(assetRes.data || []);
+      if (userRes.success) setUsers((userRes.data || []).filter((u: any) => u.status === 'active'));
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { fetchSchedules(); }, [fetchSchedules]);
+  useEffect(() => { fetchLookups(); }, [fetchLookups]);
+
+  const resetForm = () => {
+    setFormTitle(''); setFormDesc(''); setFormAssetId('');
+    setFormFreqType('monthly'); setFormFreqValue('1');
+    setFormPriority('medium'); setFormEstDuration('');
+    setFormAssignedToId(''); setFormAutoGenWO(true);
+    setFormLeadDays('3'); setFormNextDueDate('');
+  };
+
+  const openCreate = () => { resetForm(); setCreateOpen(true); };
+  const openEdit = (item: any) => {
+    setFormTitle(item.title || '');
+    setFormDesc(item.description || '');
+    setFormAssetId(item.assetId || '');
+    setFormFreqType(item.frequencyType || 'monthly');
+    setFormFreqValue(String(item.frequencyValue || 1));
+    setFormPriority(item.priority || 'medium');
+    setFormEstDuration(item.estimatedDuration ? String(item.estimatedDuration) : '');
+    setFormAssignedToId(item.assignedToId || '');
+    setFormAutoGenWO(item.autoGenerateWO !== false);
+    setFormLeadDays(String(item.leadDays || 3));
+    setFormNextDueDate(item.nextDueDate ? item.nextDueDate.split('T')[0] : '');
+    setEditItem(item);
+  };
+
+  const handleSave = async () => {
+    if (!formTitle || !formAssetId) { toast.error('Title and asset are required'); return; }
+    setSaving(true);
+    try {
+      const payload: any = {
+        title: formTitle, description: formDesc || null,
+        assetId: formAssetId, frequencyType: formFreqType,
+        frequencyValue: parseInt(formFreqValue, 10) || 1,
+        priority: formPriority,
+        estimatedDuration: formEstDuration ? parseFloat(formEstDuration) : null,
+        assignedToId: formAssignedToId || null,
+        autoGenerateWO: formAutoGenWO,
+        leadDays: parseInt(formLeadDays, 10) || 3,
+        nextDueDate: formNextDueDate || null,
+      };
+
+      if (editItem) {
+        const res = await api.put(`/api/pm-schedules/${editItem.id}`, payload);
+        if (res.success) { toast.success('Schedule updated'); setEditItem(null); fetchSchedules(); }
+        else toast.error(res.error || 'Update failed');
+      } else {
+        const res = await api.post('/api/pm-schedules', payload);
+        if (res.success) { toast.success('Schedule created'); setCreateOpen(false); resetForm(); fetchSchedules(); }
+        else toast.error(res.error || 'Create failed');
+      }
+    } catch { toast.error('Operation failed'); }
+    setSaving(false);
+  };
+
+  const handleDeactivate = async (id: string) => {
+    try {
+      const res = await api.delete(`/api/pm-schedules/${id}`);
+      if (res.success) { toast.success('Schedule deactivated'); fetchSchedules(); }
+      else toast.error(res.error || 'Failed');
+    } catch { toast.error('Failed'); }
+  };
+
+  const freqLabel = (type: string, val: number) => {
+    const map: Record<string, string> = {
+      daily: `Every ${val} day${val > 1 ? 's' : ''}`,
+      weekly: `Every ${val} week${val > 1 ? 's' : ''}`,
+      biweekly: `Every ${val * 2} weeks`,
+      monthly: `Every ${val} month${val > 1 ? 's' : ''}`,
+      quarterly: `Every ${val * 3} months`,
+      semiannual: `Every ${val * 6} months`,
+      annual: `Every ${val} year${val > 1 ? 's' : ''}`,
+      custom_hours: `Every ${val} hours`,
+      custom_days: `Every ${val} days`,
+      meter_based: `Every ${val} units`,
+    };
+    return map[type] || `${type}/${val}`;
+  };
+
+  const isDueSoon = (d?: string) => {
+    if (!d) return false;
+    const due = new Date(d);
+    const week = new Date(Date.now() + 7 * 86400000);
+    return due <= week;
+  };
+
+  const isOverdue = (d?: string) => {
+    if (!d) return false;
+    return new Date(d) < new Date();
+  };
+
+  const activeSchedules = schedules.filter(s => s.isActive);
+  const dueSoonCount = activeSchedules.filter(s => isDueSoon(s.nextDueDate)).length;
+  const overdueCount = activeSchedules.filter(s => isOverdue(s.nextDueDate)).length;
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Preventive Maintenance</p>
+          <h1 className="text-2xl font-bold tracking-tight">PM Schedules</h1>
+          <p className="text-sm text-muted-foreground mt-1">Manage preventive maintenance schedules for your assets</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => { setDueSoonFilter(!dueSoonFilter); }}
+            className={dueSoonFilter ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/40' : ''}>
+            <AlertTriangle className="h-3.5 w-3.5 mr-1.5" />
+            Due Soon
+          </Button>
+          {hasPermission('work_orders.create') && (
+            <Button size="sm" onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              <Plus className="h-3.5 w-3.5 mr-1.5" /> New Schedule
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'Total Schedules', value: schedules.length, icon: Timer, color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' },
+          { label: 'Active', value: activeSchedules.length, icon: Activity, color: 'bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400' },
+          { label: 'Due Soon', value: dueSoonCount, icon: AlertCircle, color: 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400' },
+          { label: 'Overdue', value: overdueCount, icon: AlertTriangle, color: 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400' },
+        ].map(s => (
+          <div key={s.label} className="flex items-center gap-3 p-3 rounded-xl border bg-card">
+            <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${s.color}`}>
+              <s.icon className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-lg font-bold">{s.value}</p>
+              <p className="text-[11px] text-muted-foreground">{s.label}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Table */}
+      <Card className="border-0 shadow-sm">
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-xs font-semibold">Schedule</TableHead>
+                <TableHead className="text-xs font-semibold">Asset</TableHead>
+                <TableHead className="text-xs font-semibold hidden md:table-cell">Frequency</TableHead>
+                <TableHead className="text-xs font-semibold">Priority</TableHead>
+                <TableHead className="text-xs font-semibold">Next Due</TableHead>
+                <TableHead className="text-xs font-semibold hidden lg:table-cell">Assigned To</TableHead>
+                <TableHead className="text-xs font-semibold">Status</TableHead>
+                <TableHead className="text-xs font-semibold w-10"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                  <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                  <TableCell></TableCell>
+                </TableRow>
+              )) : schedules.length === 0 ? (
+                <TableRow><TableCell colSpan={8}>
+                  <EmptyState icon={Timer} title="No schedules found" description={dueSoonFilter ? "No schedules due in the next 7 days" : "Create your first PM schedule to get started"} />
+                </TableCell></TableRow>
+              ) : schedules.map(s => (
+                <TableRow key={s.id} className="group">
+                  <TableCell>
+                    <div>
+                      <p className="font-medium text-sm">{s.title}</p>
+                      {s.description && <p className="text-xs text-muted-foreground mt-0.5 max-w-[200px] truncate">{s.description}</p>}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1.5">
+                      <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <div>
+                        <p className="text-xs font-medium">{s.asset?.name || '—'}</p>
+                        <p className="text-[10px] text-muted-foreground">{s.asset?.assetTag || ''}</p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <Badge variant="outline" className="text-[10px] font-medium">
+                      {freqLabel(s.frequencyType, s.frequencyValue)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell><PriorityBadge priority={s.priority} /></TableCell>
+                  <TableCell>
+                    <div>
+                      <p className={`text-xs font-medium ${isOverdue(s.nextDueDate) ? 'text-red-600 dark:text-red-400' : isDueSoon(s.nextDueDate) ? 'text-amber-600 dark:text-amber-400' : ''}`}>
+                        {s.nextDueDate ? formatDate(s.nextDueDate) : '—'}
+                      </p>
+                      {isOverdue(s.nextDueDate) && <p className="text-[10px] text-red-500">OVERDUE</p>}
+                      {isDueSoon(s.nextDueDate) && !isOverdue(s.nextDueDate) && <p className="text-[10px] text-amber-500">DUE SOON</p>}
+                    </div>
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell">
+                    <p className="text-xs">{s.assignedTo?.fullName || 'Unassigned'}</p>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={s.isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/40' : 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-800/50 dark:text-slate-400 dark:border-slate-700'}>
+                      {s.isActive ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {s.isActive && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEdit(s)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                          {hasPermission('roles.update') && (
+                            <DropdownMenuItem onClick={() => handleDeactivate(s.id)} className="text-red-600">
+                              <Trash2 className="h-3.5 w-3.5 mr-2" />Deactivate
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Create/Edit Dialog */}
+      <Dialog open={createOpen || !!editItem} onOpenChange={(open) => { if (!open) { setCreateOpen(false); setEditItem(null); } }}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editItem ? 'Edit PM Schedule' : 'New PM Schedule'}</DialogTitle>
+            <DialogDescription>
+              {editItem ? 'Update preventive maintenance schedule' : 'Define a new preventive maintenance schedule for an asset'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Title *</Label>
+              <Input value={formTitle} onChange={e => setFormTitle(e.target.value)} placeholder="e.g., Monthly Motor Inspection" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Description</Label>
+              <Textarea value={formDesc} onChange={e => setFormDesc(e.target.value)} placeholder="Describe the maintenance tasks..." rows={2} />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Asset *</Label>
+              <Select value={formAssetId} onValueChange={setFormAssetId}>
+                <SelectTrigger><SelectValue placeholder="Select asset" /></SelectTrigger>
+                <SelectContent className="max-h-60">
+                  {assets.map(a => (
+                    <SelectItem key={a.id} value={a.id}>{a.name} ({a.assetTag})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Frequency Type *</Label>
+                <Select value={formFreqType} onValueChange={setFormFreqType}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['daily', 'weekly', 'biweekly', 'monthly', 'quarterly', 'semiannual', 'annual', 'custom_hours', 'custom_days', 'meter_based'].map(f => (
+                      <SelectItem key={f} value={f}>{f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Frequency Value *</Label>
+                <Input type="number" min="1" value={formFreqValue} onChange={e => setFormFreqValue(e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Priority</Label>
+                <Select value={formPriority} onValueChange={setFormPriority}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['low', 'medium', 'high', 'critical'].map(p => (
+                      <SelectItem key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Est. Duration (hrs)</Label>
+                <Input type="number" min="0" step="0.5" value={formEstDuration} onChange={e => setFormEstDuration(e.target.value)} placeholder="0" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Assigned To</Label>
+              <Select value={formAssignedToId} onValueChange={setFormAssignedToId}>
+                <SelectTrigger><SelectValue placeholder="Select technician" /></SelectTrigger>
+                <SelectContent className="max-h-60">
+                  {users.map(u => (
+                    <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Next Due Date</Label>
+              <Input type="date" value={formNextDueDate} onChange={e => setFormNextDueDate(e.target.value)} />
+            </div>
+            <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+              <div>
+                <p className="text-sm font-medium">Auto-generate Work Order</p>
+                <p className="text-[11px] text-muted-foreground">Automatically create WO when schedule is due</p>
+              </div>
+              <Switch checked={formAutoGenWO} onCheckedChange={setFormAutoGenWO} />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Lead Days</Label>
+              <Input type="number" min="0" value={formLeadDays} onChange={e => setFormLeadDays(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground">Days before due date to generate WO</p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setCreateOpen(false); setEditItem(null); }}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              {saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}
+              {editItem ? 'Update Schedule' : 'Create Schedule'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ============================================================================
 // ANALYTICS PAGE
 // ============================================================================
 
@@ -4941,6 +5334,7 @@ function AppShell() {
       case 'assets':
       case 'asset-detail': return <AssetsPage />;
       case 'inventory': return <InventoryPage />;
+      case 'pm-schedules': return <PmSchedulesPage />;
       case 'analytics': return <AnalyticsPage />;
       case 'notifications': return <NotificationsPage />;
       case 'settings-users': return <SettingsUsersPage />;
@@ -4964,6 +5358,7 @@ function AppShell() {
     'assets': 'Asset Register',
     'asset-detail': 'Asset Details',
     'inventory': 'Inventory',
+    'pm-schedules': 'PM Schedules',
     'analytics': 'Analytics',
     'notifications': 'Notifications',
     'settings-users': 'Users',
