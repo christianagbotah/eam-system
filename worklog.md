@@ -679,6 +679,83 @@ Stage Summary:
 
 ---
 
+## Session 11 - Full System Migration: Assets, Inventory, CRUD Pages, Analytics
+
+- **Date:** 2026-04-11
+- **Context:** User requested complete migration of all features from the original reference project (865+ files, 180 tables, 130+ models). Previous sessions had built core MR/WO workflows and settings view-only pages.
+
+### Phase 1: Schema Expansion (7 New Models)
+- **Status:** ✅ Completed (commit `95e75df`)
+- Added to `prisma/schema.prisma` (494 → 715 lines):
+  - `AssetCategory` — hierarchical asset classification
+  - `Asset` — core asset register with 35+ fields, hierarchy, financials, specs
+  - `InventoryItem` — spare parts/consumables with stock levels and reorder points
+  - `StockMovement` — inventory transaction audit trail (in/out/adjustment/transfer)
+  - `PmSchedule` — preventive maintenance scheduling with auto-WO generation support
+  - `WorkOrderStatusHistory` — WO status change audit trail
+  - `MaintenanceRequestComment` — comment thread for MRs
+- Added reverse relations to 5 existing models (User, Plant, Department, WorkOrder, MaintenanceRequest)
+- `prisma db push` successful — all 7 new tables created
+
+### Phase 2: API Routes (9 New Route Files)
+- **Status:** ✅ Completed (commit `95e75df`)
+- `/api/asset-categories` — CRUD with hierarchy (GET list, POST, GET/[id], PUT/[id], DELETE/[id])
+- `/api/assets` — CRUD with 6 filters, search, pagination
+- `/api/inventory` — CRUD with lowStock filter, stock movement tracking
+- `/api/inventory/[id]/stock-movements` — atomic stock update + movement creation
+- `/api/pm-schedules` — CRUD with dueSoon filter (7-day window)
+- All routes follow existing patterns (session auth, response format, error handling)
+- Lint: 0 errors
+
+### Phase 3: Frontend Pages (page.tsx: 3085 → 4441 lines)
+- **Status:** ✅ Completed (commit `95e75df`, fixes in `97c1542`)
+
+#### Enhanced Settings Pages:
+- **Users Page (CRUD)** — Create/Edit/Reset Password/Deactivate dialogs, search, role assignment checkboxes
+- **Roles Page (CRUD + Permission Matrix)** — Interactive Switch toggles per permission, auto-save via API, create/edit/delete role dialogs, system role protection
+- **Plants Page (NEW)** — Card grid with CRUD, department count badges
+- **Departments Page (NEW)** — Table with plant/parent selects, supervisor assignment
+- **Audit Logs Page (NEW)** — Filterable table with entity type/action filters, expandable JSON values
+
+#### New Module Pages:
+- **Asset Register (NEW)** — Stats bar (Total/Operational/Maintenance/Critical), 3 filters, comprehensive create/edit dialog (20+ fields), category/plant selects
+- **Inventory Management (NEW)** — Stats bar (Total/Low Stock/Total Value), stock progress bars (min→current→max), low stock amber highlighting, create/edit dialogs
+- **Analytics Page (NEW)** — 4 KPI cards (MTTR/MTBF/Utilization/PM Compliance), WO Status Bar chart, Asset Condition Donut chart, Maintenance Cost Area chart, Top Assets Horizontal Bar chart
+- **Notification Center (NEW)** — Card list with type-based icons/colors, read/mark-all-read, relative timestamps
+
+#### Navigation Updates:
+- Removed `comingSoon` from Assets, Inventory, Analytics (Production remains)
+- Added Plants, Departments, Audit Logs to settings section
+- Notification bell now navigates to Notifications page
+- 7 new router cases added
+- 9 new page titles added
+
+### Bug Fixes:
+- **405 on GET /api/roles/[id]** — Added missing GET handler returning role with permissions
+- **500 on PUT /api/roles/[id]/permissions** — Added FK validation to filter invalid permission IDs before createMany
+- **analytics API** — Created `/api/analytics` endpoint for dashboard metrics
+
+### API Route Count: 55+ total endpoints
+- Previous: 40 endpoints across 7 modules
+- New: 15+ endpoints for asset categories, assets, inventory, stock movements, PM schedules, analytics
+
+### Files Modified/Created:
+- `prisma/schema.prisma` — 7 new models, 221 lines added
+- `src/app/page.tsx` — 1540 lines added (3085 → 4441 lines)
+- `src/types/index.ts` — 17 lines added (new interfaces, page names)
+- 9 new API route files created
+- `src/app/api/roles/[id]/route.ts` — GET handler added
+- `src/app/api/roles/[id]/permissions/route.ts` — FK validation added
+- `src/app/api/analytics/route.ts` — NEW analytics endpoint
+
+### Commits:
+- `95e75df` — Full migration (schema, APIs, frontend pages)
+- `97c1542` — Bug fixes (role GET, permission validation, analytics API)
+
+### Build: ✅ Lint clean (0 errors, 0 warnings), dev server compiling, pushed to GitHub
+
+---
+
 ## Session 11 - Prisma Schema Expansion: Asset, Inventory & PM Modules
 
 - **Date:** 2026-04-11
