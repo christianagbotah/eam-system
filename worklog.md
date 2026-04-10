@@ -138,3 +138,43 @@ The following workflow was tested and confirmed working:
 
 ---
 
+## Session 3 - Enterprise UI Redesign
+
+- **Date:** 2026-04-10
+- **Context:** User requested matching the split-column login design from the original project, and enterprise-grade UI polish across all pages.
+
+### Task 1: Login Page Redesign (Split-Column Layout)
+- **Status:** ✅ Completed
+- Analyzed original project's login page from `source-analysis/nextjs-src/src/app/login/page.tsx`
+- Redesigned from centered dark card to full split-column layout:
+  - **Left Panel (50%, desktop only):** Dark gradient background (slate-900 → emerald-950) with animated grid pattern, floating blur orbs, logo/brand card, feature cards (4-item grid), stats bar (99.9% Uptime, 24/7 Support, ISO 27001), footer with live indicator
+  - **Right Panel:** Clean white form with mobile logo fallback, gradient header icon, username/email + password fields with custom SVG icons, show/hide password toggle, remember me checkbox, forgot password link, gradient submit button with loading state, security badge, clickable demo account buttons
+- Added forgot password modal using shadcn/ui Dialog component
+- Demo accounts now clickable to auto-fill credentials
+- Generated AI logo image at `/public/logo.svg`
+
+### Task 2: Dashboard Polish
+- **Status:** ✅ Completed
+- Added "Live" pulse indicator badge next to date
+- Stat cards now include trend labels ("+3 today", "-2 vs avg", etc.)
+- Icon hover scale-up animation on stat cards
+- Quick Actions redesigned from plain buttons to card-style grid with icon thumbnails and hover states
+- Recent activity cards now have icon thumbnails, item count badges, and rounded list items with better hover effects
+
+### Task 3: List Pages Polish
+- **Status:** ✅ Completed
+- Maintenance Requests & Work Orders pages upgraded:
+  - Page headers now include descriptive subtitle
+  - Stats bar changed from squared pills to rounded-full pill badges with border
+  - Consistent typography with `tracking-tight` on all headings
+
+### Task 4: Auth Store Safety Fix
+- **Status:** ✅ Completed
+- Fixed `hasPermission()` and `hasAnyPermission()` to use `Array.isArray(permissions)` guard
+- Prevents `Cannot read properties of undefined (reading 'includes')` during SSR/hydration
+
+### Commit: `d57ff78`
+### Build: ✅ Lint passes, dev server compiles successfully
+
+---
+
