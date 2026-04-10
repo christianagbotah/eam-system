@@ -625,3 +625,55 @@ Stage Summary:
 ### Commit: `c3e1eac`
 ### Build: ✅ Lint clean, dev server compiles, pushed to GitHub
 
+
+---
+
+## Session 10 - Theme Selection, Dark Mode & Dashboard Charts
+
+- **Date:** 2026-04-11
+- **Context:** User requested theme selection (dark/light mode), colorful dashboard with charts, bars, and graphs.
+
+### TASK 1: Theme System
+- **Status:** ✅ Completed
+- Created `src/components/theme-provider.tsx` using `next-themes`
+- Added ThemeProvider to `layout.tsx` (attribute="class", defaultTheme="light", enableSystem)
+- Sun/Moon toggle button in Top Bar with CSS rotation animation
+- Theme persists via localStorage
+
+### TASK 2: Dashboard Charts (Recharts)
+- **Status:** ✅ Completed
+- **WO Status Bar Chart**: Multi-color vertical bars showing distribution across draft/requested/approved/assigned/in_progress/completed/closed
+- **WO Type Donut Chart**: Inner/outer ring PieChart with legend for preventive/corrective/emergency/inspection/predictive types
+- **MR Status Horizontal Bar Chart**: Pending/approved/rejected/converted breakdown
+- **Priority Mix Stacked Bar**: Red/amber/green horizontal progress bar with count labels
+- **Completion Progress Bar**: Animated gradient bar showing overall WO completion rate
+- All charts use `ChartContainer` from shadcn/ui for consistent theming
+- All chart data comes from real API endpoint
+
+### TASK 3: API Enhancement
+- **Status:** ✅ Completed
+- Added to `/api/dashboard/stats`: WO type counts (preventive, corrective, emergency, inspection, predictive), MR priority counts (high/urgent, medium, low), approvedRequests/rejectedRequests/convertedRequests aliases
+- Updated `DashboardStats` type with 12 new fields
+
+### TASK 4: Full Dark Mode
+- **Status:** ✅ Completed
+- All KPI cards have dark variants (bg-amber-950/30, dark:border-amber-900/40, dark:text-amber-400)
+- All chart cards dark-aware (dark:bg-emerald-900/50 for icon backgrounds)
+- Quick action buttons have dark hover states
+- Recent activity cards use dark backgrounds
+- System health footer cards use dark gradient variants
+- Scrollbar styling adapts to dark mode
+- Chart tooltip dark background override in globals.css
+- Dark mode custom scrollbar colors
+
+### Files Modified
+- `src/components/theme-provider.tsx` — NEW: next-themes wrapper
+- `src/app/layout.tsx` — ThemeProvider integration
+- `src/app/page.tsx` — Theme toggle, Recharts imports, chart configs, dashboard redesign
+- `src/app/globals.css` — Dark scrollbar, dark chart tooltip overrides
+- `src/app/api/dashboard/stats/route.ts` — WO type/priority breakdown data
+- `src/types/index.ts` — DashboardStats extended with 12 new fields
+
+### Commit: `6c0541f`
+### Build: ✅ Lint clean, dev server compiles, pushed to GitHub
+
