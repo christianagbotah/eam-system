@@ -557,3 +557,71 @@ Stage Summary:
 
 ### Build: ✅ Lint clean (0 errors, 0 warnings), dev server compiling successfully
 
+---
+
+## Session 9 - Enterprise UI Overhaul: Scrolling Fix, Dashboard Redesign, Polish
+
+- **Date:** 2026-04-11
+- **Context:** User reported critical issues: pages don't scroll, sidebar doesn't scroll, dashboard design not professional. Full enterprise-grade overhaul required.
+
+### FIX 1: Scrolling Issue (CRITICAL)
+- **Status:** ✅ Completed
+- **Root Cause:** Radix `ScrollArea` component didn't properly constrain height in flex context. `flex-1` alone wasn't enough to establish containing height for the viewport.
+- **Fix:** Replaced `ScrollArea` with native `overflow-y-auto` div in both main content area and sidebar navigation.
+  - AppShell: `<ScrollArea className="flex-1">` → `<main className="flex-1 overflow-y-auto">`
+  - Sidebar nav: `<ScrollArea className="flex-1 px-3 py-4">` → `<nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4">`
+  - Sidebar container: Added `overflow-hidden` to both desktop and mobile sidebar `<aside>` elements
+
+### FIX 2: Professional Scrollbar Styling
+- **Status:** ✅ Completed
+- Added custom CSS scrollbar styles to `globals.css`:
+  - Thin scrollbar (6px width, 4px in sidebar)
+  - Transparent track, visible only on hover
+  - Emerald-tinted thumb matching theme
+  - Webkit + Firefox support
+
+### TASK 2: Dashboard Enterprise Redesign
+- **Status:** ✅ Completed
+- Complete rewrite of `DashboardPage` component with:
+  - **Welcome header** with "Operations Dashboard" label, live pulse indicator, date display
+  - **4 KPI Cards** with:
+    - MiniBarChart sparkline visualization (7-bar chart with colored bars)
+    - ProgressRing SVG for completion rate (animated circular progress)
+    - Gradient corner accent, colored borders, hover shadow
+    - Trend labels with real data ("N new today", "need attention", "all on track")
+  - **Operations Summary Bar**: 4 compact metric tiles (Pending Approvals, Total Requests, Approved, Converted)
+  - **Quick Actions**: Color-coded buttons (amber, emerald, sky, violet) with icon cards
+  - **Recent Activity Panels**: MR and WO lists with bordered icon thumbnails, max-h-80 scroll
+  - **System Health Footer**: 3 gradient cards (System Health, Security Status, Maintenance Efficiency)
+- New helper components: `MiniBarChart`, `ProgressRing`
+- Loading skeleton updated to match new dashboard layout structure
+
+### TASK 3: Top Bar Polish
+- **Status:** ✅ Completed
+- Backdrop blur header with `bg-background/80 backdrop-blur-md`
+- Page breadcrumb with separator: Page Title | iAssetsPro
+- User avatar with initials in top-right corner
+- User name and role display (visible on md+ screens)
+- Notification bell with ring highlight
+
+### TASK 4: Sidebar Polish
+- **Status:** ✅ Completed
+- Brand icon with shadow: `shadow-md shadow-primary/20`
+- Smooth collapse transition: `transition-all duration-300 ease-in-out`
+- Desktop collapsed width: `w-[68px]` (slightly wider for better touch targets)
+- Mobile sidebar: `w-72` (wider), `shadow-2xl` for depth
+- Native scroll for nav items (replaced Radix ScrollArea)
+
+### TASK 5: Consistent Page Styling
+- **Status:** ✅ Completed
+- All pages updated to use consistent container: `p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto`
+- Pages updated: Dashboard, MR List, MR Detail, WO List, WO Detail, Users, Roles, Modules, Company Profile
+- Subtitle spacing normalized: `mt-1` throughout
+
+### Files Modified
+- `src/app/page.tsx` — Layout scrolling, dashboard redesign, sidebar, topbar, all page containers
+- `src/app/globals.css` — Custom scrollbar styling
+
+### Commit: `c3e1eac`
+### Build: ✅ Lint clean, dev server compiles, pushed to GitHub
+
