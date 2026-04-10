@@ -1068,3 +1068,47 @@ Stage Summary:
 - Admin now correctly shows 61/61 permissions on role management page
 - Role name column is properly sticky with shadow separator when scrolling permission columns
 - Files modified: `src/app/globals.css`, `src/app/page.tsx`
+
+---
+
+## Session 12 - Bug Fixes: Logout Error, Header Color, Admin Permissions
+
+- **Date:** 2026-04-12
+- **Context:** Runtime error on `logout is not defined` in AppShell component. User reported header still lacked visible color, admin showing 0 permissions, and wanting sticky role column.
+
+### FIX 1: `logout is not defined` Runtime Error
+- **Status:** ✅ Completed
+- **Root Cause:** `AppShell` component (line 5359) destructured `useAuthStore()` as `{ user, isAuthenticated, isLoading, fetchMe }` but the avatar dropdown menu (line 5513) called `logout` which was not included in the destructuring.
+- **Fix:** Added `logout` to the destructuring: `const { user, isAuthenticated, isLoading, fetchMe, logout } = useAuthStore();`
+- `logout` was already available in `SidebarContent` but `AppShell` (which renders the header) didn't have it.
+
+### FIX 2: Header Colored Background
+- **Status:** ✅ Completed
+- **Problem:** Header was too subtle (`oklch(0.968 0.014 163)` in light mode — almost white, barely distinguishable from content bg `oklch(0.97)`)
+- **Fix in `src/app/globals.css`:**
+  - Light mode: `--header: oklch(0.93 0.035 163)` (was `0.968 0.014`) — clearly emerald-tinted surface
+  - Light mode border: `--header-border: oklch(0.86 0.04 163)` (was `0.90 0.018`) — stronger border
+  - Dark mode: `--header: oklch(0.18 0.03 163)` (was `0.16 0.02`) — more emerald glow
+  - Dark mode border: `--header-border: oklch(0.26 0.03 163 / 60%)` — visible emerald border
+  - Header shadow increased from `3px` to `4px` spread
+
+### FIX 3: Admin Role Showing 0 Permissions
+- **Status:** ✅ Completed
+- **Root Cause:** Admin role has no `RolePermission` records in DB (by design — admin gets all permissions implicitly). The individual role API (`GET /api/roles/[id]`) had special handling for this case, but the roles list API (`GET /api/roles`) did NOT.
+- **Fix in `src/app/api/roles/route.ts`:**
+  - Added `allPermissions` query (fetches all permissions once)
+  - Added admin detection in the `safeRoles` mapping: if `r.isSystem && r.slug === 'admin' && permissions.length === 0`, substitute `allPermissions`
+  - `permissionCount` now correctly reflects total permissions for admin
+- Now consistent with the individual role API behavior
+
+### VERIFY: Avatar Dropdown & Sticky Column
+- **Status:** ✅ Already Implemented
+- Avatar dropdown menu was already added in a previous session with full profile section, navigation links (Dashboard, Notifications, Company Profile, Audit Logs), and Sign Out button
+- Sticky role name column was already implemented with `position: sticky`, proper z-index layering, shadow separator, and bg-[var(--header)] background
+
+### Files Modified
+- `src/app/page.tsx` — Added `logout` to AppShell's useAuthStore destructuring
+- `src/app/globals.css` — Enhanced header colors (more emerald tint), stronger shadow
+- `src/app/api/roles/route.ts` — Admin role special handling in list endpoint
+
+### Build: ✅ Lint clean (0 errors, 0 warnings), dev server compiling

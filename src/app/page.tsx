@@ -5357,7 +5357,7 @@ function AnalyticsPage() {
 
 function AppShell() {
   const { currentPage, navigate, toggleSidebar, setMobileSidebarOpen } = useNavigationStore();
-  const { user, isAuthenticated, isLoading, fetchMe } = useAuthStore();
+  const { user, isAuthenticated, isLoading, fetchMe, logout } = useAuthStore();
 
   useEffect(() => {
     fetchMe();

@@ -109,10 +109,10 @@
   --sidebar-border: oklch(0.26 0.02 260);
   --sidebar-ring: oklch(0.508 0.16 163);
 
-  /* ===== HEADER — Subtle emerald-tinted surface for brand identity ===== */
-  --header: oklch(0.968 0.014 163);
+  /* ===== HEADER — Emerald-tinted branded surface ===== */
+  --header: oklch(0.93 0.035 163);
   --header-foreground: oklch(0.15 0.02 260);
-  --header-border: oklch(0.90 0.018 163);
+  --header-border: oklch(0.86 0.04 163);
 }
 
 /* ============================================================================
@@ -175,10 +175,10 @@
   --sidebar-border: oklch(1 0 0 / 7%);
   --sidebar-ring: oklch(0.62 0.17 163);
 
-  /* ===== HEADER — Elevated dark surface with subtle tint ===== */
-  --header: oklch(0.16 0.02 163);
+  /* ===== HEADER — Elevated dark surface with emerald tint ===== */
+  --header: oklch(0.18 0.03 163);
   --header-foreground: oklch(0.95 0.008 155);
-  --header-border: oklch(1 0 0 / 8%);
+  --header-border: oklch(0.26 0.03 163 / 60%);
 }
 
 @layer base {
@@ -202,10 +202,10 @@ aside {
 
 /* Header shadow — subtle in light, deeper in dark */
 header[class*="bg-header"] {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 .dark header[class*="bg-header"] {
-  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25);
 }
 
 /* ============================================================================

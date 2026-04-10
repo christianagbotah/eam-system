@@ -23,23 +23,35 @@ export async function GET() {
       orderBy: { level: 'desc' },
     });
 
-    const safeRoles = roles.map((r) => ({
-      id: r.id,
-      name: r.name,
-      slug: r.slug,
-      description: r.description,
-      level: r.level,
-      isSystem: r.isSystem,
-      permissionCount: r._count.rolePermissions,
-      userCount: r._count.userRoles,
-      permissions: r.rolePermissions.map((rp) => ({
+    // Fetch all permissions once for admin role special handling
+    const allPermissions = await db.permission.findMany({
+      select: { id: true, slug: true, name: true, module: true, action: true },
+    });
+
+    const safeRoles = roles.map((r) => {
+      // Admin role has no explicit RolePermission rows — it gets ALL permissions implicitly
+      let permissions = r.rolePermissions.map((rp) => ({
         id: rp.permission.id,
         slug: rp.permission.slug,
         name: rp.permission.name,
         module: rp.permission.module,
         action: rp.permission.action,
-      })),
-    }));
+      }));
+      if (r.isSystem && r.slug === 'admin' && permissions.length === 0) {
+        permissions = allPermissions;
+      }
+      return {
+        id: r.id,
+        name: r.name,
+        slug: r.slug,
+        description: r.description,
+        level: r.level,
+        isSystem: r.isSystem,
+        permissionCount: permissions.length,
+        userCount: r._count.userRoles,
+        permissions,
+      };
+    });
 
     return NextResponse.json({ success: true, data: safeRoles });
   } catch (error: unknown) {
