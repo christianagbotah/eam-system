@@ -6362,8 +6362,8 @@ function AssetsHierarchyPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await api.get('/api/assets');
-        if (res.data) setAssets(res.data.assets || res.data || []);
+        const res = await api.get('/api/assets?limit=9999');
+        if (res.data) setAssets(res.data.data || []);
       } catch { /* empty */ }
       setLoading(false);
     })();
