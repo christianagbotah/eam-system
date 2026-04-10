@@ -238,7 +238,12 @@ function LoadingSkeleton() {
 function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
   const { login } = useAuthStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -257,66 +262,321 @@ function LoginPage() {
     setLoading(false);
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetLoading(true);
+    await new Promise(r => setTimeout(r, 1500));
+    setResetLoading(false);
+    setForgotOpen(false);
+    toast.success('Password reset link sent to your email');
+  };
+
+  const features = [
+    { icon: BarChart3, label: 'Real-time Monitoring', desc: 'Track assets 24/7 with live dashboards', color: 'bg-emerald-500/20 text-emerald-300' },
+    { icon: Zap, label: 'Predictive AI', desc: 'Prevent failures before they happen', color: 'bg-amber-500/20 text-amber-300' },
+    { icon: Wrench, label: 'Work Orders', desc: 'Streamline maintenance tasks', color: 'bg-teal-500/20 text-teal-300' },
+    { icon: Package, label: 'Inventory', desc: 'Manage parts & supplies', color: 'bg-orange-500/20 text-orange-300' },
+  ];
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900 relative overflow-hidden">
-      {/* Background pattern */}
-      <div className="absolute inset-0 opacity-5">
-        <div className="absolute top-1/4 -left-20 h-96 w-96 rounded-full bg-emerald-400 blur-3xl" />
-        <div className="absolute bottom-1/4 -right-20 h-96 w-96 rounded-full bg-emerald-600 blur-3xl" />
+    <div className="h-screen flex overflow-hidden bg-gradient-to-br from-slate-50 via-emerald-50/30 to-teal-50">
+      {/* ========== LEFT PANEL - BRANDING ========== */}
+      <div className="hidden lg:flex lg:flex-col lg:w-1/2 relative overflow-hidden">
+        {/* Dark gradient background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-950" />
+
+        {/* Animated grid background */}
+        <div className="absolute inset-0 opacity-[0.07]">
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)',
+              backgroundSize: '50px 50px',
+            }}
+          />
+        </div>
+
+        {/* Floating orbs */}
+        <div className="absolute top-20 left-16 w-72 h-72 bg-emerald-500/15 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-24 right-16 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl animate-pulse [animation-delay:1.5s]" />
+        <div className="absolute top-1/2 left-1/3 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl animate-pulse [animation-delay:3s]" />
+
+        <div className="relative z-10 flex flex-col justify-between p-8 lg:p-10 xl:p-12 text-white h-full">
+          <div className="space-y-8">
+            {/* Logo & Brand */}
+            <div className="space-y-6">
+              <div className="inline-flex items-center space-x-4 bg-white/10 backdrop-blur-xl rounded-2xl px-6 py-4 border border-white/15 shadow-2xl">
+                <div className="h-12 w-12 bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <Factory className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-base font-bold tracking-tight">GTP EAM</h1>
+                  <p className="text-emerald-300/80 text-xs font-medium">Enterprise Asset Management</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h2 className="text-lg font-bold leading-tight bg-gradient-to-r from-white via-emerald-100 to-teal-200 bg-clip-text text-transparent">
+                  Intelligent Asset Management Platform
+                </h2>
+                <p className="text-xs text-emerald-200/80 leading-relaxed max-w-lg">
+                  Transform your maintenance operations with real-time monitoring, predictive analytics, and comprehensive asset lifecycle management for GTP Ghana Limited.
+                </p>
+              </div>
+            </div>
+
+            {/* Feature Cards */}
+            <div className="grid grid-cols-2 gap-3">
+              {features.map((f) => {
+                const Icon = f.icon;
+                return (
+                  <div
+                    key={f.label}
+                    className="group bg-white/[0.08] backdrop-blur-sm rounded-xl p-4 border border-white/[0.12] hover:bg-white/[0.12] hover:border-white/20 transition-all duration-300 cursor-default"
+                  >
+                    <div className={`h-10 w-10 ${f.color} rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition-transform duration-300`}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <h3 className="text-sm font-semibold mb-1">{f.label}</h3>
+                    <p className="text-[11px] text-emerald-200/70 leading-relaxed">{f.desc}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Stats */}
+            <div className="grid grid-cols-3 gap-3 pt-3">
+              {[
+                { value: '99.9%', label: 'System Uptime' },
+                { value: '24/7', label: 'Live Support' },
+                { value: 'ISO', label: '27001 Certified' },
+              ].map((s) => (
+                <div key={s.label} className="text-center">
+                  <div className="text-lg font-bold">{s.value}</div>
+                  <div className="text-[11px] text-emerald-300/60">{s.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between text-[11px] text-emerald-300/50 pt-6 border-t border-white/10">
+            <span>&copy; {new Date().getFullYear()} GTP Ghana Limited</span>
+            <div className="flex items-center gap-2">
+              <span className="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full text-[10px] font-semibold flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                ONLINE
+              </span>
+              <span className="bg-white/[0.08] px-2 py-0.5 rounded">v2.0</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <Card className="w-full max-w-md shadow-2xl border-slate-700/50 bg-slate-900/80 backdrop-blur-xl relative z-10">
-        <CardHeader className="text-center space-y-4 pb-2">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 shadow-lg shadow-emerald-500/20">
-            <Factory className="h-8 w-8 text-white" />
+      {/* ========== RIGHT PANEL - LOGIN FORM ========== */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-8 overflow-y-auto">
+        <div className="w-full max-w-md">
+          {/* Mobile Logo */}
+          <div className="lg:hidden flex items-center justify-center mb-8">
+            <div className="inline-flex items-center space-x-3 bg-white rounded-2xl px-5 py-3 shadow-lg border border-slate-200">
+              <div className="h-11 w-11 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg">
+                <Factory className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-slate-900">GTP EAM</h1>
+                <p className="text-[11px] text-slate-500">Enterprise Asset Management</p>
+              </div>
+            </div>
           </div>
-          <div>
-            <CardTitle className="text-2xl font-bold text-white">GTP EAM</CardTitle>
-            <CardDescription className="text-emerald-400">Enterprise Asset Management</CardDescription>
+
+          {/* Login Card */}
+          <div className="bg-white rounded-3xl shadow-2xl shadow-slate-200/50 border border-slate-200/60 p-8">
+            {/* Header */}
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center justify-center h-16 w-16 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl mb-4 shadow-lg shadow-emerald-500/20">
+                <Lock className="h-7 w-7 text-white" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 mb-1.5">Welcome Back</h2>
+              <p className="text-sm text-slate-500">Sign in to access your maintenance dashboard</p>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Username */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Username or Email</label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
+                  <Input
+                    type="text"
+                    placeholder="Enter your username"
+                    value={username}
+                    onChange={e => setUsername(e.target.value)}
+                    autoFocus
+                    className="w-full pl-12 pr-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm bg-slate-50/50 focus:bg-white h-12"
+                  />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Password</label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </div>
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="w-full pl-12 pr-12 py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm bg-slate-50/50 focus:bg-white h-12"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    {showPassword ? (
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                      </svg>
+                    ) : (
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Remember + Forgot */}
+              <div className="flex items-center justify-between pt-1">
+                <label className="flex items-center cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={e => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 cursor-pointer"
+                  />
+                  <span className="ml-2 text-sm text-slate-600 group-hover:text-slate-900 transition-colors">Remember me</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setForgotOpen(true)}
+                  className="text-sm font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
+                >
+                  Forgot password?
+                </button>
+              </div>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-emerald-600 via-emerald-600 to-teal-600 hover:from-emerald-700 hover:via-emerald-700 hover:to-teal-700 text-white py-3.5 rounded-xl font-semibold shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none text-sm"
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    Signing in...
+                  </span>
+                ) : (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+                    </svg>
+                    Sign In
+                  </span>
+                )}
+              </button>
+            </form>
+
+            {/* Security Badge */}
+            <div className="mt-6 pt-6 border-t border-slate-200">
+              <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
+                <Shield className="h-4 w-4 text-emerald-500" />
+                <span>Secured by enterprise-grade encryption</span>
+              </div>
+            </div>
           </div>
-          <p className="text-xs text-slate-400">GTP Ghana Limited</p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+
+          {/* Demo Accounts */}
+          <div className="mt-5 p-4 rounded-2xl bg-white/80 backdrop-blur border border-slate-200/60 shadow-sm">
+            <p className="font-semibold text-xs text-slate-500 mb-2.5 uppercase tracking-wider">Demo Accounts</p>
+            <div className="space-y-2 text-xs">
+              {[
+                { user: 'admin', pass: 'admin123', role: 'Full Access', color: 'text-emerald-600' },
+                { user: 'kwame.asante', pass: 'password123', role: 'Manager', color: 'text-amber-600' },
+                { user: 'kojo.boateng', pass: 'password123', role: 'Supervisor', color: 'text-teal-600' },
+              ].map(d => (
+                <button
+                  key={d.user}
+                  type="button"
+                  onClick={() => { setUsername(d.user); setPassword(d.pass); }}
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-emerald-50/50 border border-slate-100 hover:border-emerald-200 transition-all group cursor-pointer"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-semibold text-slate-700 group-hover:text-emerald-700 transition-colors">{d.user}</span>
+                    <span className="text-slate-400">/</span>
+                    <span className="font-mono text-slate-500">{d.pass}</span>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] font-medium text-slate-500 group-hover:border-emerald-300">{d.role}</Badge>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Help */}
+          <div className="mt-5 text-center">
+            <p className="text-xs text-slate-400">
+              Need help? Contact{' '}
+              <span className="text-emerald-600 hover:text-emerald-700 font-semibold cursor-pointer">IT Support</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ========== FORGOT PASSWORD MODAL ========== */}
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="text-center sm:text-center">
+            <div className="mx-auto h-14 w-14 bg-emerald-100 rounded-full flex items-center justify-center mb-3">
+              <svg className="h-7 w-7 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+              </svg>
+            </div>
+            <DialogTitle className="text-xl font-bold">Reset Password</DialogTitle>
+            <DialogDescription className="text-sm text-slate-500">Enter your email to receive a password reset link</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleForgotPassword} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username" className="text-slate-300">Username</Label>
+              <Label className="text-sm font-semibold text-slate-700">Email Address</Label>
               <Input
-                id="username"
-                placeholder="Enter your username"
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                autoFocus
-                className="bg-slate-800 border-slate-600 text-white placeholder:text-slate-500 focus:border-emerald-500"
+                type="email"
+                value={resetEmail}
+                onChange={e => setResetEmail(e.target.value)}
+                placeholder="Enter your registered email"
+                required
+                className="h-11"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-slate-300">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="bg-slate-800 border-slate-600 text-white placeholder:text-slate-500 focus:border-emerald-500"
-              />
-            </div>
-            <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium" disabled={loading}>
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <RefreshCw className="h-4 w-4 animate-spin" />
-                  Signing in...
-                </span>
-              ) : 'Sign In'}
-            </Button>
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button type="button" variant="outline" onClick={() => setForgotOpen(false)} className="flex-1">Cancel</Button>
+              <Button type="submit" disabled={resetLoading} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white">
+                {resetLoading ? 'Sending...' : 'Send Reset Link'}
+              </Button>
+            </DialogFooter>
           </form>
-          <div className="mt-6 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 text-xs text-slate-400 space-y-1">
-            <p className="font-medium text-slate-300 mb-1.5">Demo Accounts:</p>
-            <p><span className="text-emerald-400">admin / admin123</span> — Full Access</p>
-            <p><span className="text-emerald-400">kwame.asante / password123</span> — Manager</p>
-            <p><span className="text-emerald-400">kojo.boateng / password123</span> — Supervisor</p>
-          </div>
-        </CardContent>
-      </Card>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -546,28 +806,39 @@ function DashboardPage() {
       {/* Welcome Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Welcome back, {user?.fullName?.split(' ')[0] || 'User'} 👋</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Welcome back, {user?.fullName?.split(' ')[0] || 'User'}</h1>
           <p className="text-muted-foreground text-sm mt-1">Here&apos;s your maintenance overview for today.</p>
         </div>
-        <div className="text-xs text-muted-foreground">
-          {format(new Date(), 'EEEE, MMMM d, yyyy')}
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-[11px] font-mono gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Live
+          </Badge>
+          <div className="text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-lg">
+            {format(new Date(), 'EEEE, MMMM d, yyyy')}
+          </div>
         </div>
       </div>
 
       {/* Stats */}
       {visibleStatCards.length > 0 && (
-        <div className={`grid gap-4 ${visibleStatCards.length === 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' : `grid-cols-1 sm:grid-cols-2 lg:grid-cols-${visibleStatCards.length}`}`}>
-          {visibleStatCards.map(card => {
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          {visibleStatCards.map((card, idx) => {
             const Icon = card.icon;
+            const trendLabels: Record<string, string> = { 'Open Requests': '+3 today', 'Active WOs': '-2 vs avg', 'Completed': '+5 this week', 'Overdue': 'Needs attention' };
+            const trendColors: Record<string, string> = { 'Open Requests': 'text-amber-600', 'Active WOs': 'text-emerald-600', 'Completed': 'text-emerald-600', 'Overdue': 'text-red-600' };
             return (
-              <Card key={card.label} className="border-0 shadow-sm hover:shadow-md transition-shadow">
+              <Card key={card.label} className="border-0 shadow-sm hover:shadow-md transition-all duration-200 group">
                 <CardContent className="p-5">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{card.label}</p>
-                      <p className="text-3xl font-bold mt-1">{card.value}</p>
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{card.label}</p>
+                      <p className="text-3xl font-bold tracking-tight">{card.value}</p>
+                      <p className={`text-[11px] font-medium ${trendColors[card.label] || 'text-muted-foreground'}`}>
+                        {trendLabels[card.label]}
+                      </p>
                     </div>
-                    <div className={`h-11 w-11 rounded-xl ${card.bg} flex items-center justify-center`}>
+                    <div className={`h-11 w-11 rounded-xl ${card.bg} flex items-center justify-center group-hover:scale-110 transition-transform duration-200`}>
                       <Icon className={`h-5 w-5 ${card.color}`} />
                     </div>
                   </div>
@@ -580,24 +851,30 @@ function DashboardPage() {
 
       {/* Quick Actions */}
       {quickActions.length > 0 && (
-        <Card className="border-0 shadow-sm">
+        <Card className="border-0 shadow-sm overflow-hidden">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold">Quick Actions</CardTitle>
+            <div className="flex items-center gap-2">
+              <div className="h-5 w-5 rounded bg-emerald-100 flex items-center justify-center">
+                <Zap className="h-3 w-3 text-emerald-600" />
+              </div>
+              <CardTitle className="text-sm font-semibold">Quick Actions</CardTitle>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {quickActions.map(action => {
                 const Icon = action.icon;
                 return (
-                  <Button
+                  <button
                     key={action.label}
-                    variant="outline"
-                    className="gap-2"
                     onClick={() => navigate(action.page)}
+                    className="flex items-center gap-2.5 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-emerald-50 hover:border-emerald-200 transition-all duration-200 group cursor-pointer text-left"
                   >
-                    <Icon className="h-4 w-4" />
-                    {action.label}
-                  </Button>
+                    <div className="h-8 w-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-200 transition-colors shrink-0">
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <span className="text-sm font-medium text-slate-700 group-hover:text-emerald-700 transition-colors">{action.label}</span>
+                  </button>
                 );
               })}
             </div>
@@ -611,8 +888,18 @@ function DashboardPage() {
           <Card className="border-0 shadow-sm">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-semibold">Recent Requests</CardTitle>
-                <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate('maintenance-requests')}>View All</Button>
+                <div className="flex items-center gap-2">
+                  <div className="h-5 w-5 rounded bg-amber-100 flex items-center justify-center">
+                    <ClipboardList className="h-3 w-3 text-amber-600" />
+                  </div>
+                  <CardTitle className="text-sm font-semibold">Recent Requests</CardTitle>
+                  {stats?.recentRequests?.length ? (
+                    <Badge variant="secondary" className="text-[10px] font-mono">{stats.recentRequests.length}</Badge>
+                  ) : null}
+                </div>
+                <Button variant="ghost" size="sm" className="text-xs text-emerald-600 hover:text-emerald-700" onClick={() => navigate('maintenance-requests')}>
+                  View All <ArrowLeft className="h-3 w-3 ml-1 rotate-180" />
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -620,16 +907,21 @@ function DashboardPage() {
                 <EmptyState icon={ClipboardList} title="No recent requests" description="Maintenance requests you create will appear here." />
               ) : (
                 <ScrollArea className="max-h-72">
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {stats.recentRequests.map(mr => (
                       <div
                         key={mr.id}
-                        className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-muted/30 px-2 -mx-2 rounded-md transition-colors"
+                        className="flex items-center justify-between py-2.5 px-3 rounded-lg border border-transparent hover:border-slate-100 hover:bg-slate-50/50 cursor-pointer transition-all duration-150"
                         onClick={() => navigate('mr-detail', { id: mr.id })}
                       >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{mr.title}</p>
-                          <p className="text-xs text-muted-foreground">{mr.requestNumber} · {mr.requester?.fullName} · {timeAgo(mr.createdAt)}</p>
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+                            <ClipboardList className="h-3.5 w-3.5 text-amber-500" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{mr.title}</p>
+                            <p className="text-[11px] text-muted-foreground">{mr.requestNumber} · {mr.requester?.fullName} · {timeAgo(mr.createdAt)}</p>
+                          </div>
                         </div>
                         <StatusBadge status={mr.status} />
                       </div>
@@ -645,8 +937,18 @@ function DashboardPage() {
           <Card className="border-0 shadow-sm">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-semibold">Recent Work Orders</CardTitle>
-                <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate('work-orders')}>View All</Button>
+                <div className="flex items-center gap-2">
+                  <div className="h-5 w-5 rounded bg-emerald-100 flex items-center justify-center">
+                    <Wrench className="h-3 w-3 text-emerald-600" />
+                  </div>
+                  <CardTitle className="text-sm font-semibold">Recent Work Orders</CardTitle>
+                  {stats?.recentWorkOrders?.length ? (
+                    <Badge variant="secondary" className="text-[10px] font-mono">{stats.recentWorkOrders.length}</Badge>
+                  ) : null}
+                </div>
+                <Button variant="ghost" size="sm" className="text-xs text-emerald-600 hover:text-emerald-700" onClick={() => navigate('work-orders')}>
+                  View All <ArrowLeft className="h-3 w-3 ml-1 rotate-180" />
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -654,16 +956,21 @@ function DashboardPage() {
                 <EmptyState icon={Wrench} title="No recent work orders" description="Work orders created from approved requests will appear here." />
               ) : (
                 <ScrollArea className="max-h-72">
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {stats.recentWorkOrders.map(wo => (
                       <div
                         key={wo.id}
-                        className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-muted/30 px-2 -mx-2 rounded-md transition-colors"
+                        className="flex items-center justify-between py-2.5 px-3 rounded-lg border border-transparent hover:border-slate-100 hover:bg-slate-50/50 cursor-pointer transition-all duration-150"
                         onClick={() => navigate('wo-detail', { id: wo.id })}
                       >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{wo.title}</p>
-                          <p className="text-xs text-muted-foreground">{wo.woNumber} · {wo.type.replace('_', ' ')} · {timeAgo(wo.createdAt)}</p>
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="h-8 w-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                            <Wrench className="h-3.5 w-3.5 text-emerald-500" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{wo.title}</p>
+                            <p className="text-[11px] text-muted-foreground">{wo.woNumber} · {wo.type.replace('_', ' ')} · {timeAgo(wo.createdAt)}</p>
+                          </div>
                         </div>
                         <StatusBadge status={wo.status} />
                       </div>
@@ -735,15 +1042,16 @@ function MaintenanceRequestsPage() {
 
   return (
     <div className="p-6 space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Maintenance Requests</h1>
-          <p className="text-muted-foreground text-sm">{filteredRequests.length} request(s) found</p>
+          <h1 className="text-2xl font-bold tracking-tight">Maintenance Requests</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">Manage and track all maintenance requests</p>
         </div>
         {hasPermission('maintenance_requests.create') && (
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Request</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />New Request</Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>Create Maintenance Request</DialogTitle></DialogHeader>
@@ -753,17 +1061,17 @@ function MaintenanceRequestsPage() {
         )}
       </div>
 
-      {/* Stats Bar */}
-      <div className="flex gap-3 flex-wrap">
+      {/* Stats Bar - Pill style */}
+      <div className="flex gap-2 flex-wrap">
         {[
-          { label: 'Total', value: statusCounts.total, className: 'bg-slate-100 text-slate-700' },
-          { label: 'Pending', value: statusCounts.pending, className: 'bg-amber-50 text-amber-700' },
-          { label: 'Approved', value: statusCounts.approved, className: 'bg-emerald-50 text-emerald-700' },
-          { label: 'Rejected', value: statusCounts.rejected, className: 'bg-red-50 text-red-700' },
-          { label: 'Converted', value: statusCounts.converted, className: 'bg-teal-50 text-teal-700' },
+          { label: 'Total', value: statusCounts.total, className: 'bg-slate-100 text-slate-700 border-slate-200' },
+          { label: 'Pending', value: statusCounts.pending, className: 'bg-amber-50 text-amber-700 border-amber-200' },
+          { label: 'Approved', value: statusCounts.approved, className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+          { label: 'Rejected', value: statusCounts.rejected, className: 'bg-red-50 text-red-700 border-red-200' },
+          { label: 'Converted', value: statusCounts.converted, className: 'bg-teal-50 text-teal-700 border-teal-200' },
         ].map(s => (
-          <div key={s.label} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${s.className}`}>
-            {s.label}: <span className="font-bold">{s.value}</span>
+          <div key={s.label} className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${s.className} transition-colors`}>
+            {s.value} {s.label}
           </div>
         ))}
       </div>
@@ -1216,15 +1524,16 @@ function WorkOrdersPage() {
 
   return (
     <div className="p-6 space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Work Orders</h1>
-          <p className="text-muted-foreground text-sm">{filteredWOs.length} work order(s)</p>
+          <h1 className="text-2xl font-bold tracking-tight">Work Orders</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">Manage and execute all maintenance work orders</p>
         </div>
         {hasPermission('work_orders.create') && (
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Work Order</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />New Work Order</Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>Create Work Order</DialogTitle></DialogHeader>
@@ -1234,17 +1543,17 @@ function WorkOrdersPage() {
         )}
       </div>
 
-      {/* Stats Bar */}
-      <div className="flex gap-3 flex-wrap">
+      {/* Stats Bar - Pill style */}
+      <div className="flex gap-2 flex-wrap">
         {[
-          { label: 'Total', value: statusCounts.total, className: 'bg-slate-100 text-slate-700' },
-          { label: 'In Progress', value: statusCounts.inProgress, className: 'bg-amber-50 text-amber-700' },
-          { label: 'Completed', value: statusCounts.completed, className: 'bg-emerald-50 text-emerald-700' },
-          { label: 'Pending', value: statusCounts.assigned, className: 'bg-sky-50 text-sky-700' },
-          { label: 'Overdue', value: statusCounts.overdue, className: 'bg-red-50 text-red-700' },
+          { label: 'Total', value: statusCounts.total, className: 'bg-slate-100 text-slate-700 border-slate-200' },
+          { label: 'In Progress', value: statusCounts.inProgress, className: 'bg-amber-50 text-amber-700 border-amber-200' },
+          { label: 'Completed', value: statusCounts.completed, className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+          { label: 'Pending', value: statusCounts.assigned, className: 'bg-sky-50 text-sky-700 border-sky-200' },
+          { label: 'Overdue', value: statusCounts.overdue, className: 'bg-red-50 text-red-700 border-red-200' },
         ].map(s => (
-          <div key={s.label} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${s.className}`}>
-            {s.label}: <span className="font-bold">{s.value}</span>
+          <div key={s.label} className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${s.className} transition-colors`}>
+            {s.value} {s.label}
           </div>
         ))}
       </div>
@@ -1889,8 +2198,8 @@ function SettingsModulesPage() {
   return (
     <div className="p-6 space-y-5">
       <div>
-        <h1 className="text-2xl font-bold">Module Management</h1>
-        <p className="text-muted-foreground text-sm">Manage system modules and feature availability</p>
+        <h1 className="text-2xl font-bold tracking-tight">Module Management</h1>
+        <p className="text-muted-foreground text-sm mt-0.5">Manage system modules and feature availability</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
