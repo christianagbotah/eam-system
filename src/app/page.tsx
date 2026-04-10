@@ -6626,7 +6626,7 @@ function AssetHealthPage() {
                       </TableCell>
                       <TableCell className="hidden lg:table-cell"><span className={`capitalize text-sm font-medium ${critColors[a.criticality] || ''}`}>{a.criticality || '-'}</span></TableCell>
                       <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{a.location || '-'}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">{a.category || '-'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">{typeof a.category === 'object' && a.category ? (a.category.name || a.category.code || '-') : (a.category || '-')}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -7325,7 +7325,7 @@ function MaintenanceRiskAssessmentPage() {
                 <TableRow key={a.id} className="hover:bg-muted/30">
                   <TableCell className="font-mono text-xs">{a.id}</TableCell>
                   <TableCell className="font-medium text-sm">{a.asset}</TableCell>
-                  <TableCell className="text-xs capitalize hidden md:table-cell">{a.category}</TableCell>
+                  <TableCell className="text-xs capitalize hidden md:table-cell">{typeof a.category === 'object' && a.category ? (a.category.name || a.category.code || '-') : (a.category || '-')}</TableCell>
                   <TableCell className="text-xs text-center font-medium">{a.likelihood}</TableCell>
                   <TableCell className="text-xs text-center font-medium">{a.consequence}</TableCell>
                   <TableCell className="text-center"><Badge variant="outline" className={`text-[10px] font-bold ${riskScoreColor(a.riskScore)}`}>{a.riskScore}</Badge></TableCell>
@@ -9095,7 +9095,7 @@ function AnalyticsOeePage() {
                   return (
                     <TableRow key={a.id}>
                       <TableCell className="font-medium text-sm">{a.name || a.assetTag}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{a.category || '-'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{typeof a.category === 'object' && a.category ? (a.category.name || a.category.code || '-') : (a.category || '-')}</TableCell>
                       <TableCell><Badge variant="outline" className="text-[11px] capitalize">{a.status?.replace(/_/g, ' ')}</Badge></TableCell>
                       <TableCell className="hidden lg:table-cell"><Badge variant="outline" className="text-[11px] capitalize">{a.condition}</Badge></TableCell>
                       <TableCell>
