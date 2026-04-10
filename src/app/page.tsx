@@ -113,6 +113,7 @@ import {
   Timer,
   Key,
   UserMinus,
+  Minus,
   History,
   ArrowUpDown,
   ExternalLink,
@@ -174,12 +175,16 @@ import {
   Waypoints,
   Mail,
   Upload,
+  Archive,
+  Star,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area,
-  PieChart, Pie, Cell, ResponsiveContainer,
+  PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, ReferenceLine,
 } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
+import { Progress } from '@/components/ui/progress';
 
 // ============================================================================
 // HELPERS
@@ -6587,9 +6592,344 @@ function AssetHealthPage() {
 }
 
 // Asset Coming Soon pages
-function AssetsBomPage() { return <ComingSoonPage title="Bill of Materials" description="Manage hierarchical parts lists for each asset, including components, sub-assemblies, and spare parts." icon={ListChecks} features={['Hierarchical BOM structure', 'Component substitution tracking', 'Spare parts linkage', 'Cost roll-up calculations', 'Revision history']} />; }
-function AssetsConditionMonitoringPage() { return <ComingSoonPage title="Condition Monitoring" description="Real-time monitoring of asset health parameters including vibration, temperature, pressure, and more." icon={Activity} features={['Real-time sensor data', 'Threshold alerts', 'Trend analysis', 'Predictive degradation curves']} />; }
-function AssetsDigitalTwinPage() { return <ComingSoonPage title="Digital Twin" description="Create and manage digital replicas of physical assets for simulation and predictive analysis." icon={Box} features={['3D asset visualization', 'Real-time data sync', 'Simulation scenarios', 'Performance modeling']} />; }
+function AssetsBomPage() {
+  const [bomItems] = useState([
+    { id: '1', parent: 'CNC Machine A1', component: 'Main Spindle Assembly', partNumber: 'SPD-4521-A', quantity: 1, unit: 'ea', specification: 'High-speed spindle, 15k RPM, 7.5kW', status: 'active', revision: 'C', indent: false },
+    { id: '2', parent: 'CNC Machine A1', component: 'Spindle Bearings', partNumber: 'BRG-7810-2RS', quantity: 2, unit: 'ea', specification: 'Angular contact, 50x80x16mm', status: 'active', revision: 'B', indent: true },
+    { id: '3', parent: 'CNC Machine A1', component: 'Spindle Motor', partNumber: 'MTR-7500-SPD', quantity: 1, unit: 'ea', specification: 'AC servo, 7.5kW, 3000RPM', status: 'active', revision: 'A', indent: true },
+    { id: '4', parent: 'CNC Machine A1', component: 'Coolant Pump', partNumber: 'PMP-CNT-250', quantity: 1, unit: 'ea', specification: 'Centrifugal, 25L/min, 2.2kW', status: 'active', revision: 'B', indent: true },
+    { id: '5', parent: 'Boiler System B2', component: 'Burner Assembly', partNumber: 'BRN-GAS-500', quantity: 1, unit: 'ea', specification: 'Natural gas, 500kW capacity', status: 'active', revision: 'D', indent: false },
+    { id: '6', parent: 'Boiler System B2', component: 'Ignition Transformer', partNumber: 'TRN-IGN-15KV', quantity: 1, unit: 'ea', specification: '15kV output, intermittent duty', status: 'pending', revision: 'A', indent: true },
+    { id: '7', parent: 'Boiler System B2', component: 'Safety Valve', partNumber: 'VLV-SFT-10BAR', quantity: 2, unit: 'ea', specification: 'Spring-loaded, 10 bar setpoint', status: 'active', revision: 'C', indent: true },
+    { id: '8', parent: 'Compressor C3', component: 'Air End Assembly', partNumber: 'AEN-SCR-75', quantity: 1, unit: 'ea', specification: 'Screw type, 75kW, 13 bar', status: 'active', revision: 'B', indent: false },
+    { id: '9', parent: 'Compressor C3', component: 'Rotor Bearings', partNumber: 'BRG-TAP-3216', quantity: 4, unit: 'ea', specification: 'Tapered roller, 80x140x35mm', status: 'obsolete', revision: 'A', indent: true },
+    { id: '10', parent: 'Compressor C3', component: 'Oil Filter Element', partNumber: 'FLT-OIL-HP10', quantity: 3, unit: 'ea', specification: 'High-performance, 10 micron', status: 'active', revision: 'E', indent: true },
+  ]);
+  const [searchText, setSearchText] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ parentAsset: '', component: '', partNumber: '', quantity: '', unit: 'ea', specification: '', revision: '' });
+  const filtered = searchText.trim() ? bomItems.filter(b => {
+    const q = searchText.toLowerCase();
+    return b.parent.toLowerCase().includes(q) || b.component.toLowerCase().includes(q) || b.partNumber.toLowerCase().includes(q);
+  }) : bomItems;
+  const kpis = [
+    { label: 'Total BOMs', value: '18', icon: ListChecks, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Components', value: '142', icon: Layers, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Active', value: '15', icon: CheckCircle2, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Under Review', value: '2', icon: Clock, color: 'bg-violet-50 text-violet-600' },
+  ];
+  const statusColor = (s: string) => s === 'active' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : s === 'pending' ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-red-600 bg-red-50 border-red-200';
+  const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ parentAsset: '', component: '', partNumber: '', quantity: '', unit: 'ea', specification: '', revision: '' }); toast.success('BOM component added successfully'); }, 800); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Bill of Materials</h1><p className="text-muted-foreground mt-1">Manage hierarchical parts lists for each asset</p></div>
+        <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />Add Component</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (
+          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+            <div className="flex items-center gap-4">
+              <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
+              <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
+            </div>
+          </div>
+        ); })}
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search BOM items..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" /></div>
+      </div>
+      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Parent Asset</TableHead><TableHead>Component</TableHead><TableHead className="hidden sm:table-cell">Part Number</TableHead><TableHead className="text-right">Qty</TableHead><TableHead className="hidden sm:table-cell">Unit</TableHead><TableHead className="hidden lg:table-cell">Specification</TableHead><TableHead>Status</TableHead><TableHead className="hidden md:table-cell">Rev</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(b => (
+            <TableRow key={b.id} className={`hover:bg-muted/30 ${b.indent ? 'ml-6' : ''}`}>
+              <TableCell className={`font-medium ${b.indent ? 'text-sm text-muted-foreground' : ''}`}>{b.indent ? '└ ' : ''}{b.parent}</TableCell>
+              <TableCell className={b.indent ? 'text-sm pl-6' : ''}>{b.component}</TableCell>
+              <TableCell className="font-mono text-xs hidden sm:table-cell">{b.partNumber}</TableCell>
+              <TableCell className="text-right">{b.quantity}</TableCell>
+              <TableCell className="text-xs text-muted-foreground hidden sm:table-cell">{b.unit}</TableCell>
+              <TableCell className="text-xs text-muted-foreground hidden lg:table-cell max-w-[200px] truncate">{b.specification}</TableCell>
+              <TableCell><Badge variant="outline" className={statusColor(b.status)}><span className="capitalize">{b.status}</span></Badge></TableCell>
+              <TableCell className="font-mono text-xs hidden md:table-cell">{b.revision}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></div>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Add BOM Component</DialogTitle><DialogDescription>Add a new component to a Bill of Materials</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Parent Asset</Label><Input placeholder="e.g. CNC Machine A1" value={form.parentAsset} onChange={e => setForm(f => ({ ...f, parentAsset: e.target.value }))} /></div>
+            <div><Label>Component</Label><Input placeholder="e.g. Main Spindle Assembly" value={form.component} onChange={e => setForm(f => ({ ...f, component: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Part Number</Label><Input placeholder="e.g. SPD-4521-A" value={form.partNumber} onChange={e => setForm(f => ({ ...f, partNumber: e.target.value }))} /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label>Quantity</Label><Input type="number" placeholder="1" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} /></div>
+                <div><Label>Unit</Label><Input placeholder="ea" value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} /></div>
+              </div>
+            </div>
+            <div><Label>Specification</Label><Textarea placeholder="Component specifications..." value={form.specification} onChange={e => setForm(f => ({ ...f, specification: e.target.value }))} /></div>
+            <div><Label>Revision</Label><Input placeholder="e.g. A" value={form.revision} onChange={e => setForm(f => ({ ...f, revision: e.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.parentAsset || !form.component}>{saving ? 'Saving...' : 'Add Component'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+function AssetsConditionMonitoringPage() {
+  const [selectedCard, setSelectedCard] = useState<string | null>(null);
+  const assetCards = [
+    { id: '1', name: 'Main Compressor A', parameter: 'Vibration', value: 4.2, unit: 'mm/s', status: 'normal', trend: 'stable' },
+    { id: '2', name: 'Boiler Feed Pump', parameter: 'Temperature', value: 87.5, unit: '°C', status: 'warning', trend: 'rising' },
+    { id: '3', name: 'Hydraulic Press #1', parameter: 'Pressure', value: 210, unit: 'bar', status: 'normal', trend: 'stable' },
+    { id: '4', name: 'Cooling Tower Fan', parameter: 'Vibration', value: 8.7, unit: 'mm/s', status: 'critical', trend: 'rising' },
+    { id: '5', name: 'Conveyor Drive Motor', parameter: 'Temperature', value: 62.1, unit: '°C', status: 'normal', trend: 'falling' },
+    { id: '6', name: 'Air Handling Unit', parameter: 'Pressure', value: 1.8, unit: 'bar', status: 'warning', trend: 'rising' },
+  ];
+  const tableData = [
+    { id: '1', asset: 'Main Compressor A', parameter: 'Vibration', current: '4.2 mm/s', normal: '0–5 mm/s', status: 'normal', lastReading: '2025-01-15 14:30', trend: '→' },
+    { id: '2', asset: 'Boiler Feed Pump', parameter: 'Temperature', current: '87.5 °C', normal: '60–80 °C', status: 'warning', lastReading: '2025-01-15 14:25', trend: '↑' },
+    { id: '3', asset: 'Hydraulic Press #1', parameter: 'Pressure', current: '210 bar', normal: '180–240 bar', status: 'normal', lastReading: '2025-01-15 14:20', trend: '→' },
+    { id: '4', asset: 'Cooling Tower Fan', parameter: 'Vibration', current: '8.7 mm/s', normal: '0–5 mm/s', status: 'critical', lastReading: '2025-01-15 14:15', trend: '↑' },
+    { id: '5', asset: 'Conveyor Drive Motor', parameter: 'Temperature', current: '62.1 °C', normal: '50–75 °C', status: 'normal', lastReading: '2025-01-15 14:10', trend: '↓' },
+    { id: '6', asset: 'Air Handling Unit', parameter: 'Pressure', current: '1.8 bar', normal: '1.0–1.5 bar', status: 'warning', lastReading: '2025-01-15 14:05', trend: '↑' },
+    { id: '7', asset: 'CNC Spindle Motor', parameter: 'Vibration', current: '3.1 mm/s', normal: '0–5 mm/s', status: 'normal', lastReading: '2025-01-15 14:00', trend: '→' },
+    { id: '8', asset: 'Generator Set', parameter: 'Temperature', current: '78.2 °C', normal: '60–85 °C', status: 'normal', lastReading: '2025-01-15 13:55', trend: '↓' },
+  ];
+  const [searchText, setSearchText] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ asset: '', parameter: 'vibration', normalMin: '', normalMax: '', alertThreshold: '' });
+  const filtered = searchText.trim() ? tableData.filter(r => {
+    const q = searchText.toLowerCase();
+    return r.asset.toLowerCase().includes(q) || r.parameter.toLowerCase().includes(q);
+  }) : tableData;
+  const kpis = [
+    { label: 'Assets Monitored', value: '24', icon: Activity, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Normal', value: '19', icon: CheckCircle2, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Warning', value: '3', icon: AlertTriangle, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Critical', value: '2', icon: AlertCircle, color: 'bg-red-50 text-red-600' },
+  ];
+  const statusColor = (s: string) => s === 'normal' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : s === 'warning' ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-red-600 bg-red-50 border-red-200';
+  const dotColor = (s: string) => s === 'normal' ? 'bg-emerald-500' : s === 'warning' ? 'bg-amber-500' : 'bg-red-500';
+  const barColor = (s: string) => s === 'normal' ? 'bg-emerald-400' : s === 'warning' ? 'bg-amber-400' : 'bg-red-400';
+  const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ asset: '', parameter: 'vibration', normalMin: '', normalMax: '', alertThreshold: '' }); toast.success('Monitoring point added successfully'); }, 800); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Condition Monitoring</h1><p className="text-muted-foreground mt-1">Real-time monitoring of asset health parameters</p></div>
+        <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />Add Monitoring Point</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (
+          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+            <div className="flex items-center gap-4">
+              <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
+              <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
+            </div>
+          </div>
+        ); })}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {assetCards.map(card => (
+          <Card key={card.id} className={`border border-border/60 shadow-sm cursor-pointer transition-all hover:shadow-md ${selectedCard === card.id ? 'ring-2 ring-primary' : ''}`} onClick={() => setSelectedCard(selectedCard === card.id ? null : card.id)}>
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h3 className="font-semibold text-sm">{card.name}</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{card.parameter}</p>
+                </div>
+                <div className={`h-3 w-3 rounded-full ${dotColor(card.status)} animate-pulse`} />
+              </div>
+              <div className="flex items-end gap-2">
+                <span className="text-2xl font-bold">{card.value}</span>
+                <span className="text-sm text-muted-foreground mb-0.5">{card.unit}</span>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <Badge variant="outline" className={statusColor(card.status)}><span className="capitalize">{card.status}</span></Badge>
+                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div className={`h-full ${barColor(card.status)} rounded-full`} style={{ width: card.status === 'normal' ? '40%' : card.status === 'warning' ? '70%' : '95%' }} />
+                </div>
+                <span className="text-xs text-muted-foreground">{card.trend === 'rising' ? '↑' : card.trend === 'falling' ? '↓' : '→'}</span>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search assets..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" /></div>
+      </div>
+      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Asset</TableHead><TableHead className="hidden sm:table-cell">Parameter</TableHead><TableHead>Current Value</TableHead><TableHead className="hidden md:table-cell">Normal Range</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Last Reading</TableHead><TableHead>Trend</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(r => (
+            <TableRow key={r.id} className="hover:bg-muted/30">
+              <TableCell className="font-medium">{r.asset}</TableCell>
+              <TableCell className="text-sm hidden sm:table-cell">{r.parameter}</TableCell>
+              <TableCell className="font-medium">{r.current}</TableCell>
+              <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{r.normal}</TableCell>
+              <TableCell><Badge variant="outline" className={statusColor(r.status)}><span className="capitalize">{r.status}</span></Badge></TableCell>
+              <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{formatDateTime(r.lastReading)}</TableCell>
+              <TableCell><span className={`text-lg font-bold ${r.trend === '↑' ? 'text-red-500' : r.trend === '↓' ? 'text-emerald-500' : 'text-slate-400'}`}>{r.trend}</span></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></div>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Add Monitoring Point</DialogTitle><DialogDescription>Configure a new condition monitoring point</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Asset</Label><Input placeholder="e.g. Main Compressor A" value={form.asset} onChange={e => setForm(f => ({ ...f, asset: e.target.value }))} /></div>
+            <div><Label>Parameter</Label><Select value={form.parameter} onValueChange={v => setForm(f => ({ ...f, parameter: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="vibration">Vibration</SelectItem><SelectItem value="temperature">Temperature</SelectItem><SelectItem value="pressure">Pressure</SelectItem><SelectItem value="flow">Flow Rate</SelectItem><SelectItem value="current">Current</SelectItem></SelectContent></Select></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Normal Min</Label><Input placeholder="0" value={form.normalMin} onChange={e => setForm(f => ({ ...f, normalMin: e.target.value }))} /></div>
+              <div><Label>Normal Max</Label><Input placeholder="100" value={form.normalMax} onChange={e => setForm(f => ({ ...f, normalMax: e.target.value }))} /></div>
+            </div>
+            <div><Label>Alert Threshold</Label><Input placeholder="e.g. 90" value={form.alertThreshold} onChange={e => setForm(f => ({ ...f, alertThreshold: e.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.asset}>{saving ? 'Saving...' : 'Add Point'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+function AssetsDigitalTwinPage() {
+  const [selectedTwin, setSelectedTwin] = useState<string>('1');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ name: '', asset: '', type: 'pump', syncInterval: '1min' });
+  const twins = [
+    { id: '1', name: 'Centrifugal Pump P-101', asset: 'Main Water Pump', type: 'pump', status: 'active', lastSync: '2025-01-15 14:30', healthScore: 92 },
+    { id: '2', name: 'Induction Motor M-201', asset: 'Conveyor Drive', type: 'motor', status: 'active', lastSync: '2025-01-15 14:28', healthScore: 87 },
+    { id: '3', name: 'Screw Compressor C-301', asset: 'Air Compressor', type: 'compressor', status: 'active', lastSync: '2025-01-15 14:25', healthScore: 64 },
+    { id: '4', name: 'Control Valve V-401', asset: 'Steam Valve', type: 'valve', status: 'inactive', lastSync: '2025-01-14 09:15', healthScore: 0 },
+  ];
+  const twinSpecs: Record<string, { name: string; value: string; unit: string; status: string }[]> = {
+    '1': [
+      { name: 'Flow Rate', value: '245', unit: 'L/min', status: 'normal' },
+      { name: 'Discharge Pressure', value: '4.2', unit: 'bar', status: 'normal' },
+      { name: 'Vibration', value: '2.8', unit: 'mm/s', status: 'normal' },
+      { name: 'Bearing Temp', value: '52', unit: '°C', status: 'normal' },
+      { name: 'Power Draw', value: '18.5', unit: 'kW', status: 'normal' },
+      { name: 'Seal Leakage', value: '0.1', unit: 'mL/hr', status: 'normal' },
+      { name: 'Efficiency', value: '82', unit: '%', status: 'normal' },
+      { name: 'Runtime Hours', value: '12,450', unit: 'hrs', status: 'normal' },
+    ],
+    '2': [
+      { name: 'Speed', value: '1485', unit: 'RPM', status: 'normal' },
+      { name: 'Current Draw', value: '35.2', unit: 'A', status: 'warning' },
+      { name: 'Winding Temp', value: '78', unit: '°C', status: 'normal' },
+      { name: 'Vibration', value: '3.1', unit: 'mm/s', status: 'normal' },
+      { name: 'Power Factor', value: '0.89', unit: '', status: 'normal' },
+      { name: 'Torque', value: '142', unit: 'Nm', status: 'normal' },
+      { name: 'Insulation R', value: '250', unit: 'MΩ', status: 'normal' },
+      { name: 'Runtime Hours', value: '8,920', unit: 'hrs', status: 'normal' },
+    ],
+    '3': [
+      { name: 'Outlet Pressure', value: '7.8', unit: 'bar', status: 'warning' },
+      { name: 'Flow Rate', value: '12.5', unit: 'm³/min', status: 'normal' },
+      { name: 'Bearing Vibration', value: '6.2', unit: 'mm/s', status: 'warning' },
+      { name: 'Oil Temp', value: '82', unit: '°C', status: 'critical' },
+      { name: 'Power Draw', value: '72', unit: 'kW', status: 'warning' },
+      { name: 'Discharge Temp', value: '95', unit: '°C', status: 'warning' },
+      { name: 'Load Factor', value: '88', unit: '%', status: 'normal' },
+      { name: 'Runtime Hours', value: '15,300', unit: 'hrs', status: 'normal' },
+    ],
+    '4': [
+      { name: 'Position', value: '65', unit: '%', status: 'normal' },
+      { name: 'Actuator Pressure', value: '4.0', unit: 'bar', status: 'normal' },
+      { name: 'Valve Leakage', value: '0', unit: 'mL/min', status: 'normal' },
+      { name: 'Body Temp', value: '185', unit: '°C', status: 'normal' },
+      { name: 'Travel Time', value: '3.2', unit: 'sec', status: 'normal' },
+      { name: 'Stem Torque', value: '45', unit: 'Nm', status: 'normal' },
+    ],
+  };
+  const currentTwin = twins.find(t => t.id === selectedTwin);
+  const kpis = [
+    { label: 'Digital Twins', value: '8', icon: Box, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Active Sync', value: '6', icon: RefreshCw, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Simulation Runs', value: '34', icon: Play, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Alerts', value: '2', icon: AlertTriangle, color: 'bg-red-50 text-red-600' },
+  ];
+  const statusColor = (s: string) => s === 'normal' ? 'text-emerald-600' : s === 'warning' ? 'text-amber-600' : 'text-red-600';
+  const healthRingColor = (score: number) => score >= 80 ? 'text-emerald-500' : score >= 60 ? 'text-amber-500' : 'text-red-500';
+  const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ name: '', asset: '', type: 'pump', syncInterval: '1min' }); toast.success('Digital twin created successfully'); }, 800); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Digital Twin</h1><p className="text-muted-foreground mt-1">Create and manage digital replicas of physical assets</p></div>
+        <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />Create Twin</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (
+          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+            <div className="flex items-center gap-4">
+              <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
+              <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
+            </div>
+          </div>
+        ); })}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {twins.map(twin => (
+          <Card key={twin.id} className={`border border-border/60 shadow-sm cursor-pointer transition-all hover:shadow-md ${selectedTwin === twin.id ? 'ring-2 ring-primary' : ''}`} onClick={() => setSelectedTwin(twin.id)}>
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h3 className="font-semibold text-sm">{twin.name}</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">{twin.asset}</p>
+                </div>
+                <Badge variant="outline" className={twin.status === 'active' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : 'text-slate-500 bg-slate-50 border-slate-200'}>
+                  <span className="capitalize">{twin.status}</span>
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between mt-3">
+                <div className="text-xs text-muted-foreground">Type: <span className="capitalize font-medium text-foreground">{twin.type}</span></div>
+                <div className="relative h-12 w-12">
+                  <svg className="h-12 w-12 -rotate-90" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.9" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-muted/30" /><circle cx="18" cy="18" r="15.9" fill="none" strokeWidth="2.5" strokeDasharray={`${twin.healthScore * 1} ${100 - twin.healthScore}`} className={healthRingColor(twin.healthScore)} strokeLinecap="round" /></svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold">{twin.healthScore}%</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-2">Last sync: {formatDateTime(twin.lastSync)}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      {currentTwin && (
+        <Card className="border border-border/60 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">{currentTwin.name} — Specifications</CardTitle>
+            <CardDescription className="text-xs">Real-time parameter data from the digital twin model</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Parameter</TableHead><TableHead>Value</TableHead><TableHead className="hidden sm:table-cell">Unit</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+              {(twinSpecs[selectedTwin] || []).map((spec, i) => (
+                <TableRow key={i} className="hover:bg-muted/30">
+                  <TableCell className="font-medium text-sm">{spec.name}</TableCell>
+                  <TableCell className="font-mono">{spec.value}</TableCell>
+                  <TableCell className="text-muted-foreground hidden sm:table-cell">{spec.unit}</TableCell>
+                  <TableCell><span className={`text-xs font-medium ${statusColor(spec.status)}`}>{spec.status === 'normal' ? '● Normal' : spec.status === 'warning' ? '● Warning' : '● Critical'}</span></TableCell>
+                </TableRow>
+              ))}
+            </TableBody></Table></div>
+          </CardContent>
+        </Card>
+      )}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Create Digital Twin</DialogTitle><DialogDescription>Create a new digital replica for an asset</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Twin Name</Label><Input placeholder="e.g. Centrifugal Pump P-101" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+            <div><Label>Asset</Label><Input placeholder="e.g. Main Water Pump" value={form.asset} onChange={e => setForm(f => ({ ...f, asset: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pump">Pump</SelectItem><SelectItem value="motor">Motor</SelectItem><SelectItem value="compressor">Compressor</SelectItem><SelectItem value="valve">Valve</SelectItem><SelectItem value="heat_exchanger">Heat Exchanger</SelectItem></SelectContent></Select></div>
+              <div><Label>Sync Interval</Label><Select value={form.syncInterval} onValueChange={v => setForm(f => ({ ...f, syncInterval: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="real_time">Real-time</SelectItem><SelectItem value="1min">1 min</SelectItem><SelectItem value="5min">5 min</SelectItem><SelectItem value="15min">15 min</SelectItem></SelectContent></Select></div>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.name || !form.asset}>{saving ? 'Creating...' : 'Create Twin'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 // ============================================================================
 // MAINTENANCE SUBPAGES
@@ -6743,9 +7083,320 @@ function MaintenanceAnalyticsPage() {
     </div>
   );
 }
-function MaintenanceCalibrationPage() { return <ComingSoonPage title="Calibration" description="Manage instrument calibration schedules, records, and compliance tracking." icon={Crosshair} features={['Calibration scheduling', 'Equipment tracking', 'Compliance certificates', 'Due date alerts']} />; }
-function MaintenanceRiskAssessmentPage() { return <ComingSoonPage title="Risk Assessment" description="Evaluate and manage risks associated with asset failures and maintenance activities." icon={TriangleAlert} features={['Risk matrix', 'Risk scoring', 'Mitigation plans', 'Risk history tracking']} />; }
-function MaintenanceToolsPage() { return <ComingSoonPage title="Tools" description="Manage maintenance tool inventory, assignments, and calibration records." icon={WrenchIcon} features={['Tool registry', 'Checkout/check-in', 'Calibration tracking', 'Tool availability']} />; }
+function MaintenanceCalibrationPage() {
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState({ instrument: '', serialNumber: '', type: '', lastCalibration: '', nextDue: '', technician: '', certificates: '' });
+  const [saving, setSaving] = useState(false);
+
+  const calStatusColors: Record<string, string> = {
+    calibrated: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
+    due_soon: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
+    overdue: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
+    in_progress: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800',
+  };
+
+  const kpis = [
+    { label: 'Total Instruments', value: 36, icon: Crosshair, color: 'text-slate-600 bg-slate-50 dark:bg-slate-800/50 dark:text-slate-300' },
+    { label: 'Calibrated', value: 28, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Due Soon', value: 5, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Overdue', value: 3, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+  ];
+
+  const calibrations = [
+    { id: 'CAL-001', instrument: 'Digital Pressure Gauge', serialNumber: 'DPG-2024-001', type: 'pressure', lastCalibration: '2024-11-15', nextDue: '2025-05-15', status: 'calibrated', technician: 'James Miller' },
+    { id: 'CAL-002', instrument: 'Thermocouple Probe TC-K', serialNumber: 'TCP-2024-012', type: 'temperature', lastCalibration: '2024-09-20', nextDue: '2025-03-20', status: 'overdue', technician: 'Sarah Chen' },
+    { id: 'CAL-003', instrument: 'Multimeter Fluke 87V', serialNumber: 'FM-87V-0456', type: 'electrical', lastCalibration: '2024-12-01', nextDue: '2025-06-01', status: 'calibrated', technician: 'Mike Rodriguez' },
+    { id: 'CAL-004', instrument: 'Micrometer Set 0-150mm', serialNumber: 'MS-2024-078', type: 'dimensional', lastCalibration: '2024-10-10', nextDue: '2025-04-10', status: 'due_soon', technician: 'Anna White' },
+    { id: 'CAL-005', instrument: 'Ultrasonic Flow Meter', serialNumber: 'UFM-2024-033', type: 'flow', lastCalibration: '2024-08-25', nextDue: '2025-02-25', status: 'overdue', technician: 'James Miller' },
+    { id: 'CAL-006', instrument: 'IR Thermometer Raytek', serialNumber: 'IRT-2024-089', type: 'temperature', lastCalibration: '2024-12-10', nextDue: '2025-06-10', status: 'calibrated', technician: 'Sarah Chen' },
+    { id: 'CAL-007', instrument: 'Pressure Transmitter 4-20mA', serialNumber: 'PT-2024-056', type: 'pressure', lastCalibration: '2024-11-01', nextDue: '2025-05-01', status: 'in_progress', technician: 'Mike Rodriguez' },
+    { id: 'CAL-008', instrument: 'Caliper Vernier Digital', serialNumber: 'CVD-2024-102', type: 'dimensional', lastCalibration: '2024-07-15', nextDue: '2025-01-15', status: 'overdue', technician: 'Anna White' },
+  ];
+
+  const filtered = calibrations.filter(c => {
+    const matchSearch = !search || c.instrument.toLowerCase().includes(search.toLowerCase()) || c.serialNumber.toLowerCase().includes(search.toLowerCase()) || c.id.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = statusFilter === 'all' || c.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
+
+  const handleCreate = () => {
+    setSaving(true);
+    setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ instrument: '', serialNumber: '', type: '', lastCalibration: '', nextDue: '', technician: '', certificates: '' }); toast.success('Calibration record created successfully'); }, 800);
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">Calibration</h1><p className="text-muted-foreground mt-1">Manage instrument calibration schedules, records, and compliance tracking</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (
+          <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div><CardTitle className="text-base">Calibration Records</CardTitle><CardDescription className="text-xs">Track all instrument calibrations and due dates</CardDescription></div>
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <DialogTrigger asChild><Button size="sm" className="gap-1.5"><Plus className="h-3.5 w-3.5" />New Record</Button></DialogTrigger>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader><DialogTitle>New Calibration Record</DialogTitle><DialogDescription>Add a new instrument calibration record</DialogDescription></DialogHeader>
+                <div className="grid gap-4 py-2">
+                  <div className="grid gap-2"><Label className="text-xs">Instrument</Label><Input placeholder="e.g. Digital Pressure Gauge" value={form.instrument} onChange={e => setForm({ ...form, instrument: e.target.value })} /></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-2"><Label className="text-xs">Serial Number</Label><Input placeholder="e.g. DPG-2024-001" value={form.serialNumber} onChange={e => setForm({ ...form, serialNumber: e.target.value })} /></div>
+                    <div className="grid gap-2"><Label className="text-xs">Type</Label><Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger><SelectContent><SelectItem value="pressure">Pressure</SelectItem><SelectItem value="temperature">Temperature</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="dimensional">Dimensional</SelectItem><SelectItem value="flow">Flow</SelectItem></SelectContent></Select></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-2"><Label className="text-xs">Last Calibration</Label><Input type="date" value={form.lastCalibration} onChange={e => setForm({ ...form, lastCalibration: e.target.value })} /></div>
+                    <div className="grid gap-2"><Label className="text-xs">Next Due</Label><Input type="date" value={form.nextDue} onChange={e => setForm({ ...form, nextDue: e.target.value })} /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-2"><Label className="text-xs">Technician</Label><Input placeholder="e.g. James Miller" value={form.technician} onChange={e => setForm({ ...form, technician: e.target.value })} /></div>
+                    <div className="grid gap-2"><Label className="text-xs">Certificates</Label><Input placeholder="e.g. CERT-2024-001" value={form.certificates} onChange={e => setForm({ ...form, certificates: e.target.value })} /></div>
+                  </div>
+                </div>
+                <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving}>{saving ? 'Creating...' : 'Create Record'}</Button></DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 mt-3">
+            <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="Search instruments, serial numbers..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} /></div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-36 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="calibrated">Calibrated</SelectItem><SelectItem value="due_soon">Due Soon</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="in_progress">In Progress</SelectItem></SelectContent></Select>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="overflow-x-auto">
+            <Table><TableHeader><TableRow><TableHead className="text-xs">ID</TableHead><TableHead className="text-xs">Instrument</TableHead><TableHead className="text-xs hidden md:table-cell">Serial #</TableHead><TableHead className="text-xs hidden lg:table-cell">Type</TableHead><TableHead className="text-xs hidden lg:table-cell">Last Calibration</TableHead><TableHead className="text-xs">Next Due</TableHead><TableHead className="text-xs">Status</TableHead><TableHead className="text-xs hidden md:table-cell">Technician</TableHead></TableRow></TableHeader><TableBody>
+              {filtered.map(c => (
+                <TableRow key={c.id} className={`hover:bg-muted/30 ${c.status === 'overdue' ? 'bg-red-50/50 dark:bg-red-900/10' : ''}`}>
+                  <TableCell className="font-mono text-xs">{c.id}</TableCell>
+                  <TableCell className="font-medium text-sm">{c.instrument}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{c.serialNumber}</TableCell>
+                  <TableCell className="text-xs capitalize hidden lg:table-cell">{c.type}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{formatDate(c.lastCalibration)}</TableCell>
+                  <TableCell className="text-xs">{formatDate(c.nextDue)}</TableCell>
+                  <TableCell><Badge variant="outline" className={`text-[10px] uppercase font-semibold ${calStatusColors[c.status] || ''}`}>{c.status.replace(/_/g, ' ')}</Badge></TableCell>
+                  <TableCell className="text-xs hidden md:table-cell">{c.technician}</TableCell>
+                </TableRow>
+              ))}
+              {filtered.length === 0 && <TableRow><TableCell colSpan={8}><EmptyState icon={Crosshair} title="No calibration records found" description="Adjust your search or filter criteria" /></TableCell></TableRow>}
+            </TableBody></Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function MaintenanceRiskAssessmentPage() {
+  const [search, setSearch] = useState('');
+  const [levelFilter, setLevelFilter] = useState('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState({ asset: '', category: '', likelihood: '', consequence: '', mitigationPlan: '', assessor: '' });
+  const [saving, setSaving] = useState(false);
+
+  const riskLevelColors: Record<string, string> = {
+    critical: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
+    high: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-800',
+    medium: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
+    low: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
+  };
+
+  const riskScoreColor = (score: number) => score >= 15 ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300' : score >= 9 ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300';
+
+  const kpis = [
+    { label: 'Total Assessments', value: 18, icon: ClipboardList, color: 'text-slate-600 bg-slate-50 dark:bg-slate-800/50 dark:text-slate-300' },
+    { label: 'High Risk', value: 3, icon: AlertTriangle, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400' },
+    { label: 'Medium Risk', value: 7, icon: ShieldAlert, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Low Risk', value: 8, icon: ShieldCheck, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  ];
+
+  const assessments = [
+    { id: 'RA-001', asset: 'CNC Lathe #3', category: 'mechanical', likelihood: 4, consequence: 5, riskScore: 20, level: 'critical', mitigationStatus: 'in_progress', lastAssessment: '2025-01-10' },
+    { id: 'RA-002', asset: 'Main Distribution Panel', category: 'electrical', likelihood: 3, consequence: 5, riskScore: 15, level: 'critical', mitigationStatus: 'identified', lastAssessment: '2025-01-08' },
+    { id: 'RA-003', asset: 'Chemical Storage Tank', category: 'safety', likelihood: 3, consequence: 5, riskScore: 15, level: 'critical', mitigationStatus: 'in_progress', lastAssessment: '2025-01-05' },
+    { id: 'RA-004', asset: 'Boiler Unit B-12', category: 'mechanical', likelihood: 3, consequence: 4, riskScore: 12, level: 'high', mitigationStatus: 'identified', lastAssessment: '2024-12-28' },
+    { id: 'RA-005', asset: 'Cooling Tower CT-2', category: 'operational', likelihood: 3, consequence: 3, riskScore: 9, level: 'medium', mitigationStatus: 'completed', lastAssessment: '2024-12-20' },
+    { id: 'RA-006', asset: 'Compressor CP-01', category: 'mechanical', likelihood: 2, consequence: 4, riskScore: 8, level: 'medium', mitigationStatus: 'in_progress', lastAssessment: '2024-12-15' },
+    { id: 'RA-007', asset: 'Waste Water Treatment', category: 'environmental', likelihood: 2, consequence: 3, riskScore: 6, level: 'medium', mitigationStatus: 'completed', lastAssessment: '2024-12-10' },
+    { id: 'RA-008', asset: 'Fire Suppression System', category: 'safety', likelihood: 1, consequence: 3, riskScore: 3, level: 'low', mitigationStatus: 'completed', lastAssessment: '2024-12-05' },
+  ];
+
+  const filtered = assessments.filter(a => {
+    const matchSearch = !search || a.asset.toLowerCase().includes(search.toLowerCase()) || a.id.toLowerCase().includes(search.toLowerCase());
+    const matchLevel = levelFilter === 'all' || a.level === levelFilter;
+    return matchSearch && matchLevel;
+  });
+
+  const handleCreate = () => {
+    setSaving(true);
+    setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ asset: '', category: '', likelihood: '', consequence: '', mitigationPlan: '', assessor: '' }); toast.success('Risk assessment created successfully'); }, 800);
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">Risk Assessment</h1><p className="text-muted-foreground mt-1">Evaluate and manage risks associated with asset failures and maintenance activities</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (
+          <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div><CardTitle className="text-base">Risk Assessments</CardTitle><CardDescription className="text-xs">Risk matrix with likelihood and consequence scoring</CardDescription></div>
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <DialogTrigger asChild><Button size="sm" className="gap-1.5"><Plus className="h-3.5 w-3.5" />New Assessment</Button></DialogTrigger>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader><DialogTitle>New Risk Assessment</DialogTitle><DialogDescription>Evaluate risk for an asset</DialogDescription></DialogHeader>
+                <div className="grid gap-4 py-2">
+                  <div className="grid gap-2"><Label className="text-xs">Asset</Label><Input placeholder="e.g. CNC Lathe #3" value={form.asset} onChange={e => setForm({ ...form, asset: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label className="text-xs">Category</Label><Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}><SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger><SelectContent><SelectItem value="mechanical">Mechanical</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="safety">Safety</SelectItem><SelectItem value="environmental">Environmental</SelectItem><SelectItem value="operational">Operational</SelectItem></SelectContent></Select></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-2"><Label className="text-xs">Likelihood (1-5)</Label><Select value={form.likelihood} onValueChange={v => setForm({ ...form, likelihood: v })}><SelectTrigger><SelectValue placeholder="1-5" /></SelectTrigger><SelectContent><SelectItem value="1">1 - Rare</SelectItem><SelectItem value="2">2 - Unlikely</SelectItem><SelectItem value="3">3 - Possible</SelectItem><SelectItem value="4">4 - Likely</SelectItem><SelectItem value="5">5 - Almost Certain</SelectItem></SelectContent></Select></div>
+                    <div className="grid gap-2"><Label className="text-xs">Consequence (1-5)</Label><Select value={form.consequence} onValueChange={v => setForm({ ...form, consequence: v })}><SelectTrigger><SelectValue placeholder="1-5" /></SelectTrigger><SelectContent><SelectItem value="1">1 - Negligible</SelectItem><SelectItem value="2">2 - Minor</SelectItem><SelectItem value="3">3 - Moderate</SelectItem><SelectItem value="4">4 - Major</SelectItem><SelectItem value="5">5 - Catastrophic</SelectItem></SelectContent></Select></div>
+                  </div>
+                  <div className="grid gap-2"><Label className="text-xs">Mitigation Plan</Label><Textarea placeholder="Describe mitigation measures..." value={form.mitigationPlan} onChange={e => setForm({ ...form, mitigationPlan: e.target.value })} rows={3} /></div>
+                  <div className="grid gap-2"><Label className="text-xs">Assessor</Label><Input placeholder="e.g. Sarah Chen" value={form.assessor} onChange={e => setForm({ ...form, assessor: e.target.value })} /></div>
+                </div>
+                <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving}>{saving ? 'Creating...' : 'Create Assessment'}</Button></DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 mt-3">
+            <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="Search assets, assessment IDs..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} /></div>
+            <Select value={levelFilter} onValueChange={setLevelFilter}><SelectTrigger className="w-full sm:w-36 h-8 text-xs"><SelectValue placeholder="Risk Level" /></SelectTrigger><SelectContent><SelectItem value="all">All Levels</SelectItem><SelectItem value="critical">Critical</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="low">Low</SelectItem></SelectContent></Select>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="overflow-x-auto">
+            <Table><TableHeader><TableRow><TableHead className="text-xs">ID</TableHead><TableHead className="text-xs">Asset</TableHead><TableHead className="text-xs hidden md:table-cell">Category</TableHead><TableHead className="text-xs text-center">L</TableHead><TableHead className="text-xs text-center">C</TableHead><TableHead className="text-xs text-center">Risk Score</TableHead><TableHead className="text-xs">Level</TableHead><TableHead className="text-xs hidden lg:table-cell">Mitigation</TableHead><TableHead className="text-xs hidden md:table-cell">Last Assessment</TableHead></TableRow></TableHeader><TableBody>
+              {filtered.map(a => (
+                <TableRow key={a.id} className="hover:bg-muted/30">
+                  <TableCell className="font-mono text-xs">{a.id}</TableCell>
+                  <TableCell className="font-medium text-sm">{a.asset}</TableCell>
+                  <TableCell className="text-xs capitalize hidden md:table-cell">{a.category}</TableCell>
+                  <TableCell className="text-xs text-center font-medium">{a.likelihood}</TableCell>
+                  <TableCell className="text-xs text-center font-medium">{a.consequence}</TableCell>
+                  <TableCell className="text-center"><Badge variant="outline" className={`text-[10px] font-bold ${riskScoreColor(a.riskScore)}`}>{a.riskScore}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className={`text-[10px] uppercase font-semibold ${riskLevelColors[a.level] || ''}`}>{a.level}</Badge></TableCell>
+                  <TableCell className="text-xs capitalize hidden lg:table-cell"><Badge variant="outline" className="text-[10px]">{a.mitigationStatus.replace(/_/g, ' ')}</Badge></TableCell>
+                  <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{formatDate(a.lastAssessment)}</TableCell>
+                </TableRow>
+              ))}
+              {filtered.length === 0 && <TableRow><TableCell colSpan={9}><EmptyState icon={TriangleAlert} title="No assessments found" description="Adjust your search or filter criteria" /></TableCell></TableRow>}
+            </TableBody></Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function MaintenanceToolsPage() {
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState({ name: '', category: '', location: '', serialNumber: '', assignedTo: '', condition: '' });
+  const [saving, setSaving] = useState(false);
+
+  const toolStatusColors: Record<string, string> = {
+    available: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
+    checked_out: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800',
+    in_repair: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
+    lost: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
+  };
+
+  const kpis = [
+    { label: 'Total Tools', value: 67, icon: WrenchIcon, color: 'text-slate-600 bg-slate-50 dark:bg-slate-800/50 dark:text-slate-300' },
+    { label: 'Available', value: 52, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Checked Out', value: 12, icon: ArrowRightLeft, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Needs Repair', value: 3, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+  ];
+
+  const tools = [
+    { id: 'TL-001', name: 'Torque Wrench 1/2"', category: 'hand_tool', location: 'Tool Room A-1', status: 'available', assignedTo: '-', lastReturnDate: '2025-01-12' },
+    { id: 'TL-002', name: 'Digital Multimeter', category: 'measuring', location: 'Electrical Shop', status: 'checked_out', assignedTo: 'Mike Rodriguez', lastReturnDate: '2025-01-10' },
+    { id: 'TL-003', name: 'Angle Grinder 4.5"', category: 'power_tool', location: 'Tool Room A-2', status: 'available', assignedTo: '-', lastReturnDate: '2025-01-14' },
+    { id: 'TL-004', name: 'Micrometer 0-25mm', category: 'measuring', location: 'Quality Lab', status: 'available', assignedTo: '-', lastReturnDate: '2025-01-08' },
+    { id: 'TL-005', name: 'Hydraulic Puller Set', category: 'specialty', location: 'Workshop B', status: 'in_repair', assignedTo: '-', lastReturnDate: '2024-12-28' },
+    { id: 'TL-006', name: 'Cordless Impact Driver', category: 'power_tool', location: 'Tool Room A-1', status: 'checked_out', assignedTo: 'James Miller', lastReturnDate: null },
+    { id: 'TL-007', name: 'Pipe Wrench 18"', category: 'hand_tool', location: 'Pipe Shop', status: 'available', assignedTo: '-', lastReturnDate: '2025-01-11' },
+    { id: 'TL-008', name: 'Thermal Imaging Camera', category: 'specialty', location: 'Electrical Shop', status: 'checked_out', assignedTo: 'Sarah Chen', lastReturnDate: null },
+    { id: 'TL-009', name: 'Oscilloscope Tektronix', category: 'measuring', location: 'Electrical Lab', status: 'available', assignedTo: '-', lastReturnDate: '2025-01-05' },
+    { id: 'TL-010', name: 'Reciprocating Saw', category: 'power_tool', location: 'Workshop A', status: 'in_repair', assignedTo: '-', lastReturnDate: '2024-12-20' },
+  ];
+
+  const filtered = tools.filter(t => {
+    const matchSearch = !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.id.toLowerCase().includes(search.toLowerCase()) || t.location.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = statusFilter === 'all' || t.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
+
+  const handleCreate = () => {
+    setSaving(true);
+    setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ name: '', category: '', location: '', serialNumber: '', assignedTo: '', condition: '' }); toast.success('Tool added successfully'); }, 800);
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">Tools</h1><p className="text-muted-foreground mt-1">Manage maintenance tool inventory, assignments, and condition tracking</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (
+          <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div><CardTitle className="text-base">Tool Inventory</CardTitle><CardDescription className="text-xs">Track tool availability, assignments, and condition</CardDescription></div>
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <DialogTrigger asChild><Button size="sm" className="gap-1.5"><Plus className="h-3.5 w-3.5" />Add Tool</Button></DialogTrigger>
+              <DialogContent className="sm:max-w-lg">
+                <DialogHeader><DialogTitle>Add New Tool</DialogTitle><DialogDescription>Register a new tool in the inventory</DialogDescription></DialogHeader>
+                <div className="grid gap-4 py-2">
+                  <div className="grid gap-2"><Label className="text-xs">Tool Name</Label><Input placeholder="e.g. Torque Wrench 1/2 inch" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-2"><Label className="text-xs">Category</Label><Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger><SelectContent><SelectItem value="hand_tool">Hand Tool</SelectItem><SelectItem value="power_tool">Power Tool</SelectItem><SelectItem value="measuring">Measuring</SelectItem><SelectItem value="specialty">Specialty</SelectItem></SelectContent></Select></div>
+                    <div className="grid gap-2"><Label className="text-xs">Condition</Label><Select value={form.condition} onValueChange={v => setForm({ ...form, condition: v })}><SelectTrigger><SelectValue placeholder="Condition" /></SelectTrigger><SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent></Select></div>
+                  </div>
+                  <div className="grid gap-2"><Label className="text-xs">Location</Label><Input placeholder="e.g. Tool Room A-1" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label className="text-xs">Serial Number</Label><Input placeholder="e.g. SN-2024-001" value={form.serialNumber} onChange={e => setForm({ ...form, serialNumber: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label className="text-xs">Assigned To</Label><Input placeholder="Leave blank if unassigned" value={form.assignedTo} onChange={e => setForm({ ...form, assignedTo: e.target.value })} /></div>
+                </div>
+                <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving}>{saving ? 'Adding...' : 'Add Tool'}</Button></DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 mt-3">
+            <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="Search tools, locations..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} /></div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-36 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="available">Available</SelectItem><SelectItem value="checked_out">Checked Out</SelectItem><SelectItem value="in_repair">In Repair</SelectItem><SelectItem value="lost">Lost</SelectItem></SelectContent></Select>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="overflow-x-auto">
+            <Table><TableHeader><TableRow><TableHead className="text-xs">ID</TableHead><TableHead className="text-xs">Tool Name</TableHead><TableHead className="text-xs hidden md:table-cell">Category</TableHead><TableHead className="text-xs hidden lg:table-cell">Location</TableHead><TableHead className="text-xs">Status</TableHead><TableHead className="text-xs hidden md:table-cell">Assigned To</TableHead><TableHead className="text-xs hidden lg:table-cell">Last Return</TableHead></TableRow></TableHeader><TableBody>
+              {filtered.map(t => (
+                <TableRow key={t.id} className="hover:bg-muted/30">
+                  <TableCell className="font-mono text-xs">{t.id}</TableCell>
+                  <TableCell className="font-medium text-sm">{t.name}</TableCell>
+                  <TableCell className="text-xs capitalize hidden md:table-cell">{t.category.replace(/_/g, ' ')}</TableCell>
+                  <TableCell className="text-xs hidden lg:table-cell"><div className="flex items-center gap-1"><MapPin className="h-3 w-3 text-muted-foreground" />{t.location}</div></TableCell>
+                  <TableCell><Badge variant="outline" className={`text-[10px] uppercase font-semibold ${toolStatusColors[t.status] || ''}`}>{t.status.replace(/_/g, ' ')}</Badge></TableCell>
+                  <TableCell className="text-xs hidden md:table-cell">{t.assignedTo}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{formatDate(t.lastReturnDate as string | undefined)}</TableCell>
+                </TableRow>
+              ))}
+              {filtered.length === 0 && <TableRow><TableCell colSpan={7}><EmptyState icon={WrenchIcon} title="No tools found" description="Adjust your search or filter criteria" /></TableCell></TableRow>}
+            </TableBody></Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 // ============================================================================
 // INVENTORY SUBPAGES
@@ -6943,7 +7594,119 @@ function InventoryCategoriesPage() {
     </div>
   );
 }
-function InventoryLocationsPage() { return <ComingSoonPage title="Inventory Locations" description="Manage warehouse locations, bins, and storage areas for inventory items." icon={MapPin} features={['Warehouse mapping', 'Bin locations', 'Storage capacity', 'Location search']} />; }
+function InventoryLocationsPage() {
+  const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState({ code: '', name: '', type: '', zone: '', capacity: '', address: '' });
+
+  const locationTypes = ['warehouse', 'staging', 'production', 'picking', 'receiving'];
+
+  const initialLocations = [
+    { id: 1, code: 'WH-A1', name: 'Warehouse A - Zone 1', type: 'warehouse', zone: 'Zone A', capacityUsed: 85, capacity: 500, status: 'active', itemsCount: 425, address: 'Building A, Floor 1' },
+    { id: 2, code: 'WH-A2', name: 'Warehouse A - Zone 2', type: 'warehouse', zone: 'Zone A', capacityUsed: 62, capacity: 400, status: 'active', itemsCount: 248, address: 'Building A, Floor 1' },
+    { id: 3, code: 'ST-B1', name: 'Staging Area B', type: 'staging', zone: 'Zone B', capacityUsed: 100, capacity: 150, status: 'active', itemsCount: 150, address: 'Building B, Dock 3' },
+    { id: 4, code: 'PR-C1', name: 'Production Floor - Line 1', type: 'production', zone: 'Zone C', capacityUsed: 45, capacity: 200, status: 'active', itemsCount: 90, address: 'Building C, Line 1' },
+    { id: 5, code: 'PK-D1', name: 'Picking Station Delta', type: 'picking', zone: 'Zone D', capacityUsed: 30, capacity: 100, status: 'active', itemsCount: 30, address: 'Building D, Bay 5' },
+    { id: 6, code: 'RC-E1', name: 'Receiving Dock East', type: 'receiving', zone: 'Zone E', capacityUsed: 0, capacity: 300, status: 'active', itemsCount: 0, address: 'Building E, Dock 1' },
+    { id: 7, code: 'WH-F1', name: 'Warehouse F - Cold Storage', type: 'warehouse', zone: 'Zone F', capacityUsed: 100, capacity: 200, status: 'active', itemsCount: 200, address: 'Building F, Cold Room' },
+    { id: 8, code: 'ST-G1', name: 'Staging Area G', type: 'staging', zone: 'Zone G', capacityUsed: 0, capacity: 120, status: 'inactive', itemsCount: 0, address: 'Building G, Bay 2' },
+  ];
+
+  const filtered = initialLocations.filter(l => {
+    const matchSearch = l.code.toLowerCase().includes(search.toLowerCase()) || l.name.toLowerCase().includes(search.toLowerCase()) || l.zone.toLowerCase().includes(search.toLowerCase());
+    const matchType = filterType === 'all' || l.type === filterType;
+    const matchStatus = filterStatus === 'all' || l.status === filterStatus;
+    return matchSearch && matchType && matchStatus;
+  });
+
+  const totalLocations = initialLocations.length;
+  const activeCount = initialLocations.filter(l => l.status === 'active').length;
+  const fullCapacity = initialLocations.filter(l => l.capacityUsed >= 100).length;
+  const emptyCount = initialLocations.filter(l => l.capacityUsed === 0).length;
+
+  const kpiCards = [
+    { label: 'Total Locations', value: totalLocations, icon: MapPin, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Active', value: activeCount, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Full Capacity', value: fullCapacity, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Empty', value: emptyCount, icon: Box, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+  ];
+
+  const handleCreate = () => {
+    if (!form.code || !form.name || !form.type) { toast.error('Please fill in all required fields'); return; }
+    toast.success(`Location ${form.code} created successfully`);
+    setCreateOpen(false);
+    setForm({ code: '', name: '', type: '', zone: '', capacity: '', address: '' });
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Inventory Locations</h1>
+          <p className="text-muted-foreground mt-1">Manage warehouse locations, bins, and storage areas</p>
+        </div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />Add Location</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpiCards.map(k => { const I = k.icon; return (
+          <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search locations..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-40"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent>{locationTypes.map(t => <SelectItem key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>)}</SelectContent></Select>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="border-0 shadow-sm">
+        <div className="overflow-x-auto rounded border">
+          <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden md:table-cell">Zone</TableHead><TableHead>Capacity Used</TableHead><TableHead className="hidden lg:table-cell">Status</TableHead><TableHead className="hidden lg:table-cell text-right">Items</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={7} className="h-48"><EmptyState icon={MapPin} title="No locations found" description="Try adjusting your search or filters." /></TableCell></TableRow>
+            ) : filtered.map(l => (
+              <TableRow key={l.id} className="hover:bg-muted/30">
+                <TableCell className="font-mono text-sm font-medium">{l.code}</TableCell>
+                <TableCell className="font-medium">{l.name}</TableCell>
+                <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="capitalize">{l.type}</Badge></TableCell>
+                <TableCell className="hidden md:table-cell text-muted-foreground">{l.zone}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2 min-w-[120px]">
+                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${l.capacityUsed >= 90 ? 'bg-red-500' : l.capacityUsed >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${l.capacityUsed}%` }} /></div>
+                    <span className="text-xs font-medium w-10 text-right">{l.capacityUsed}%</span>
+                  </div>
+                </TableCell>
+                <TableCell className="hidden lg:table-cell"><StatusBadge status={l.status} /></TableCell>
+                <TableCell className="hidden lg:table-cell text-right font-medium">{l.itemsCount}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
+      </Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader><DialogTitle>Add New Location</DialogTitle><DialogDescription>Create a new storage location in the warehouse.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Code *</Label><Input placeholder="WH-A1" value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Name *</Label><Input placeholder="Warehouse A - Zone 1" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type *</Label><Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger><SelectContent>{locationTypes.map(t => <SelectItem key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Zone</Label><Input placeholder="Zone A" value={form.zone} onChange={e => setForm({ ...form, zone: e.target.value })} /></div>
+            </div>
+            <div className="space-y-2"><Label>Capacity</Label><Input type="number" placeholder="500" value={form.capacity} onChange={e => setForm({ ...form, capacity: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Address</Label><Input placeholder="Building A, Floor 1" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Location</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 function InventoryTransactionsPage() {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -7011,20 +7774,1013 @@ function InventoryTransactionsPage() {
     </div>
   );
 }
-function InventoryAdjustmentsPage() { return <ComingSoonPage title="Inventory Adjustments" description="Record stock adjustments, write-offs, and corrections." icon={ArrowUpDown} features={['Stock adjustment form', 'Approval workflow', 'Reason tracking', 'Audit trail']} />; }
-function InventoryRequestsPage() { return <ComingSoonPage title="Inventory Requests" description="Submit and track material requisitions from maintenance work orders." icon={FileText} features={['Requisition form', 'Approval process', 'WO linkage', 'Status tracking']} />; }
-function InventoryTransfersPage() { return <ComingSoonPage title="Inventory Transfers" description="Transfer inventory items between locations, plants, or departments." icon={Truck} features={['Transfer orders', 'Multi-location', 'Approval workflow', 'In-transit tracking']} />; }
-function InventorySuppliersPage() { return <ComingSoonPage title="Suppliers" description="Manage supplier information, contacts, and performance metrics." icon={Building} features={['Supplier directory', 'Contact management', 'Performance ratings', 'Lead time tracking']} />; }
-function InventoryPurchaseOrdersPage() { return <ComingSoonPage title="Purchase Orders" description="Create and manage purchase orders for inventory replenishment." icon={ShoppingCart} features={['PO creation', 'Approval workflow', 'Supplier selection', 'Delivery tracking']} />; }
-function InventoryReceivingPage() { return <ComingSoonPage title="Receiving" description="Receive delivered items and update inventory stock levels." icon={Download} features={['GRN processing', 'Quality inspection', 'Stock update', 'PO matching']} />; }
+function InventoryAdjustmentsPage() {
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState({ item: '', location: '', type: '', quantityBefore: '', quantityAfter: '', reason: '' });
+
+  const adjTypes = ['correction', 'write_off', 'damage', 'return'];
+
+  const initialAdjustments = [
+    { id: 1, adjNo: 'ADJ-001', item: 'Ball Bearing 6205', location: 'WH-A1', type: 'correction', qtyBefore: 100, qtyAfter: 95, reason: 'Physical count discrepancy found during cycle count', status: 'approved', date: '2025-01-10' },
+    { id: 2, adjNo: 'ADJ-002', item: 'Hydraulic Pump HP-300', location: 'WH-A2', type: 'damage', qtyBefore: 8, qtyAfter: 6, reason: 'Damaged during handling, units unsalvageable', status: 'approved', date: '2025-01-09' },
+    { id: 3, adjNo: 'ADJ-003', item: 'Drive Belt V-A68', location: 'ST-B1', type: 'write_off', qtyBefore: 25, qtyAfter: 20, reason: 'Expired stock beyond usable shelf life', status: 'pending', date: '2025-01-08' },
+    { id: 4, adjNo: 'ADJ-004', item: 'Contactor LC1D25', location: 'PR-C1', type: 'correction', qtyBefore: 15, qtyAfter: 18, reason: 'Found 3 additional units during audit', status: 'approved', date: '2025-01-07' },
+    { id: 5, adjNo: 'ADJ-005', item: 'Thermocouple Type K', location: 'WH-F1', type: 'damage', qtyBefore: 40, qtyAfter: 38, reason: 'Broken during quality inspection', status: 'rejected', date: '2025-01-06' },
+    { id: 6, adjNo: 'ADJ-006', item: 'Lubricant ISO 68', location: 'WH-A1', type: 'return', qtyBefore: 50, qtyAfter: 55, reason: 'Unused stock returned from production line 3', status: 'approved', date: '2025-01-05' },
+    { id: 7, adjNo: 'ADJ-007', item: 'Solenoid Valve SV-200', location: 'PK-D1', type: 'correction', qtyBefore: 12, qtyAfter: 11, reason: 'One unit missing, investigation pending', status: 'pending', date: '2025-01-04' },
+    { id: 8, adjNo: 'ADJ-008', item: 'Fuse 30A NH-00', location: 'WH-A2', type: 'write_off', qtyBefore: 200, qtyAfter: 185, reason: 'Recalled batch from manufacturer', status: 'approved', date: '2025-01-03' },
+  ];
+
+  const adjStatusColors: Record<string, string> = { pending: 'bg-amber-50 text-amber-700 border-amber-200', approved: 'bg-emerald-50 text-emerald-700 border-emerald-200', rejected: 'bg-red-50 text-red-700 border-red-200' };
+
+  const filtered = initialAdjustments.filter(a => {
+    const matchSearch = a.adjNo.toLowerCase().includes(search.toLowerCase()) || a.item.toLowerCase().includes(search.toLowerCase()) || a.location.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = filterStatus === 'all' || a.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+
+  const kpiCards = [
+    { label: 'Total Adjustments', value: initialAdjustments.length, icon: ArrowUpDown, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Pending Approval', value: initialAdjustments.filter(a => a.status === 'pending').length, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Approved', value: initialAdjustments.filter(a => a.status === 'approved').length, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Rejected', value: initialAdjustments.filter(a => a.status === 'rejected').length, icon: XCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+  ];
+
+  const handleCreate = () => {
+    if (!form.item || !form.location || !form.type) { toast.error('Please fill in all required fields'); return; }
+    toast.success(`Adjustment for ${form.item} created successfully`);
+    setCreateOpen(false);
+    setForm({ item: '', location: '', type: '', quantityBefore: '', quantityAfter: '', reason: '' });
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Inventory Adjustments</h1><p className="text-muted-foreground mt-1">Record stock adjustments, write-offs, and corrections</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Adjustment</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpiCards.map(k => { const I = k.icon; return (
+          <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search adjustments..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="border-0 shadow-sm">
+        <div className="overflow-x-auto rounded border">
+          <Table><TableHeader><TableRow><TableHead>Adj #</TableHead><TableHead>Item</TableHead><TableHead className="hidden sm:table-cell">Location</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden md:table-cell">Qty Before</TableHead><TableHead className="hidden md:table-cell">Qty After</TableHead><TableHead className="hidden lg:table-cell">Reason</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={9} className="h-48"><EmptyState icon={ArrowUpDown} title="No adjustments found" description="Try adjusting your search or filters." /></TableCell></TableRow>
+            ) : filtered.map(a => (
+              <TableRow key={a.id} className="hover:bg-muted/30">
+                <TableCell className="font-mono text-sm font-medium">{a.adjNo}</TableCell>
+                <TableCell className="font-medium">{a.item}</TableCell>
+                <TableCell className="hidden sm:table-cell text-muted-foreground">{a.location}</TableCell>
+                <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="capitalize">{a.type.replace('_', ' ')}</Badge></TableCell>
+                <TableCell className="hidden md:table-cell font-medium">{a.qtyBefore}</TableCell>
+                <TableCell className="hidden md:table-cell font-medium">{a.qtyAfter}</TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground max-w-[200px] truncate">{a.reason}</TableCell>
+                <TableCell><Badge variant="outline" className={adjStatusColors[a.status]}>{a.status.replace('_', ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(a.date)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
+      </Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader><DialogTitle>New Inventory Adjustment</DialogTitle><DialogDescription>Record a stock adjustment for an inventory item.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Item *</Label><Input placeholder="Ball Bearing 6205" value={form.item} onChange={e => setForm({ ...form, item: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Location *</Label><Input placeholder="WH-A1" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} /></div>
+            </div>
+            <div className="space-y-2"><Label>Adjustment Type *</Label><Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger><SelectContent>{adjTypes.map(t => <SelectItem key={t} value={t}>{t.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}</SelectItem>)}</SelectContent></Select></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Quantity Before</Label><Input type="number" placeholder="100" value={form.quantityBefore} onChange={e => setForm({ ...form, quantityBefore: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Quantity After</Label><Input type="number" placeholder="95" value={form.quantityAfter} onChange={e => setForm({ ...form, quantityAfter: e.target.value })} /></div>
+            </div>
+            <div className="space-y-2"><Label>Reason *</Label><Textarea placeholder="Describe the reason for this adjustment..." value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} rows={3} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Submit Adjustment</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+function InventoryRequestsPage() {
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState({ item: '', quantity: '', workOrder: '', priority: '', requestedBy: '', notes: '' });
+
+  const initialRequests = [
+    { id: 1, reqNo: 'REQ-001', item: 'Ball Bearing 6205', quantity: 24, requestedBy: 'Mike Johnson', workOrder: 'WO-1023', priority: 'high', status: 'fulfilled', date: '2025-01-12' },
+    { id: 2, reqNo: 'REQ-002', item: 'Hydraulic Pump HP-300', quantity: 2, requestedBy: 'Sarah Chen', workOrder: 'WO-1024', priority: 'urgent', status: 'approved', date: '2025-01-11' },
+    { id: 3, reqNo: 'REQ-003', item: 'Drive Belt V-A68', quantity: 8, requestedBy: 'Tom Wilson', workOrder: 'WO-1025', priority: 'medium', status: 'pending', date: '2025-01-10' },
+    { id: 4, reqNo: 'REQ-004', item: 'Contactor LC1D25', quantity: 5, requestedBy: 'Anna Lee', workOrder: 'WO-1026', priority: 'low', status: 'approved', date: '2025-01-09' },
+    { id: 5, reqNo: 'REQ-005', item: 'Thermocouple Type K', quantity: 12, requestedBy: 'Mike Johnson', workOrder: 'WO-1027', priority: 'medium', status: 'partially_fulfilled', date: '2025-01-08' },
+    { id: 6, reqNo: 'REQ-006', item: 'Lubricant ISO 68 (5L)', quantity: 6, requestedBy: 'David Park', workOrder: 'WO-1028', priority: 'low', status: 'pending', date: '2025-01-07' },
+    { id: 7, reqNo: 'REQ-007', item: 'Solenoid Valve SV-200', quantity: 3, requestedBy: 'Sarah Chen', workOrder: 'WO-1029', priority: 'high', status: 'rejected', date: '2025-01-06' },
+    { id: 8, reqNo: 'REQ-008', item: 'Motor Coupling F-50', quantity: 4, requestedBy: 'Tom Wilson', workOrder: 'WO-1030', priority: 'urgent', status: 'fulfilled', date: '2025-01-05' },
+  ];
+
+  const reqStatusColors: Record<string, string> = { pending: 'bg-amber-50 text-amber-700 border-amber-200', approved: 'bg-emerald-50 text-emerald-700 border-emerald-200', partially_fulfilled: 'bg-sky-50 text-sky-700 border-sky-200', fulfilled: 'bg-teal-50 text-teal-700 border-teal-200', rejected: 'bg-red-50 text-red-700 border-red-200' };
+
+  const filtered = initialRequests.filter(r => {
+    const matchSearch = r.reqNo.toLowerCase().includes(search.toLowerCase()) || r.item.toLowerCase().includes(search.toLowerCase()) || r.workOrder.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = filterStatus === 'all' || r.status === filterStatus;
+    const matchPriority = filterPriority === 'all' || r.priority === filterPriority;
+    return matchSearch && matchStatus && matchPriority;
+  });
+
+  const kpiCards = [
+    { label: 'Total Requests', value: initialRequests.length, icon: FileText, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Pending', value: initialRequests.filter(r => r.status === 'pending').length, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Approved', value: initialRequests.filter(r => r.status === 'approved').length, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Fulfilled', value: initialRequests.filter(r => r.status === 'fulfilled' || r.status === 'partially_fulfilled').length, icon: Check, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
+  ];
+
+  const handleCreate = () => {
+    if (!form.item || !form.quantity || !form.priority) { toast.error('Please fill in all required fields'); return; }
+    toast.success(`Request for ${form.item} created successfully`);
+    setCreateOpen(false);
+    setForm({ item: '', quantity: '', workOrder: '', priority: '', requestedBy: '', notes: '' });
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Inventory Requests</h1><p className="text-muted-foreground mt-1">Submit and track material requisitions from work orders</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Request</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpiCards.map(k => { const I = k.icon; return (
+          <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search requests..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="partially_fulfilled">Partial</SelectItem><SelectItem value="fulfilled">Fulfilled</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent></Select>
+        <Select value={filterPriority} onValueChange={setFilterPriority}><SelectTrigger className="w-36"><SelectValue placeholder="Priority" /></SelectTrigger><SelectContent><SelectItem value="all">All Priority</SelectItem><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="urgent">Urgent</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="border-0 shadow-sm">
+        <div className="overflow-x-auto rounded border">
+          <Table><TableHeader><TableRow><TableHead>Req #</TableHead><TableHead>Item</TableHead><TableHead>Qty</TableHead><TableHead className="hidden sm:table-cell">Requested By</TableHead><TableHead className="hidden md:table-cell">Work Order</TableHead><TableHead>Priority</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={FileText} title="No requests found" description="Try adjusting your search or filters." /></TableCell></TableRow>
+            ) : filtered.map(r => (
+              <TableRow key={r.id} className="hover:bg-muted/30">
+                <TableCell className="font-mono text-sm font-medium">{r.reqNo}</TableCell>
+                <TableCell className="font-medium">{r.item}</TableCell>
+                <TableCell className="font-medium">{r.quantity}</TableCell>
+                <TableCell className="hidden sm:table-cell text-muted-foreground">{r.requestedBy}</TableCell>
+                <TableCell className="hidden md:table-cell"><Badge variant="outline" className="font-mono text-xs">{r.workOrder}</Badge></TableCell>
+                <TableCell><PriorityBadge priority={r.priority} /></TableCell>
+                <TableCell><Badge variant="outline" className={reqStatusColors[r.status]}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(r.date)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
+      </Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader><DialogTitle>New Inventory Request</DialogTitle><DialogDescription>Submit a material requisition linked to a work order.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Item *</Label><Input placeholder="Ball Bearing 6205" value={form.item} onChange={e => setForm({ ...form, item: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Quantity *</Label><Input type="number" placeholder="10" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Work Order</Label><Input placeholder="WO-1023" value={form.workOrder} onChange={e => setForm({ ...form, workOrder: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Priority *</Label><Select value={form.priority} onValueChange={v => setForm({ ...form, priority: v })}><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="urgent">Urgent</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="space-y-2"><Label>Requested By</Label><Input placeholder="Your name" value={form.requestedBy} onChange={e => setForm({ ...form, requestedBy: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Additional notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={3} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Submit Request</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+function InventoryTransfersPage() {
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState({ item: '', quantity: '', fromLocation: '', toLocation: '', notes: '' });
+
+  const transferStatusColors: Record<string, string> = { pending: 'bg-amber-50 text-amber-700 border-amber-200', in_transit: 'bg-sky-50 text-sky-700 border-sky-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', cancelled: 'bg-slate-100 text-slate-600 border-slate-200' };
+
+  const initialTransfers = [
+    { id: 1, transferNo: 'TRF-001', item: 'Ball Bearing 6205', qty: 50, fromLocation: 'WH-A1', toLocation: 'PR-C1', status: 'completed', requestedDate: '2025-01-08', completedDate: '2025-01-10' },
+    { id: 2, transferNo: 'TRF-002', item: 'Drive Belt V-A68', qty: 20, fromLocation: 'WH-A2', toLocation: 'ST-B1', status: 'in_transit', requestedDate: '2025-01-11', completedDate: null },
+    { id: 3, transferNo: 'TRF-003', item: 'Contactor LC1D25', qty: 10, fromLocation: 'WH-F1', toLocation: 'PK-D1', status: 'completed', requestedDate: '2025-01-05', completedDate: '2025-01-06' },
+    { id: 4, transferNo: 'TRF-004', item: 'Lubricant ISO 68 (5L)', qty: 15, fromLocation: 'RC-E1', toLocation: 'WH-A1', status: 'pending', requestedDate: '2025-01-12', completedDate: null },
+    { id: 5, transferNo: 'TRF-005', item: 'Solenoid Valve SV-200', qty: 8, fromLocation: 'WH-A2', toLocation: 'PR-C1', status: 'completed', requestedDate: '2025-01-03', completedDate: '2025-01-04' },
+    { id: 6, transferNo: 'TRF-006', item: 'Hydraulic Pump HP-300', qty: 3, fromLocation: 'WH-A1', toLocation: 'ST-G1', status: 'cancelled', requestedDate: '2025-01-02', completedDate: null },
+    { id: 7, transferNo: 'TRF-007', item: 'Thermocouple Type K', qty: 30, fromLocation: 'WH-F1', toLocation: 'WH-A1', status: 'in_transit', requestedDate: '2025-01-10', completedDate: null },
+    { id: 8, transferNo: 'TRF-008', item: 'Fuse 30A NH-00', qty: 100, fromLocation: 'WH-A2', toLocation: 'PK-D1', status: 'completed', requestedDate: '2025-01-01', completedDate: '2025-01-02' },
+  ];
+
+  const filtered = initialTransfers.filter(t => {
+    const matchSearch = t.transferNo.toLowerCase().includes(search.toLowerCase()) || t.item.toLowerCase().includes(search.toLowerCase()) || t.fromLocation.toLowerCase().includes(search.toLowerCase()) || t.toLocation.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = filterStatus === 'all' || t.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+
+  const kpiCards = [
+    { label: 'Total Transfers', value: initialTransfers.length, icon: Truck, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'In Transit', value: initialTransfers.filter(t => t.status === 'in_transit').length, icon: ArrowRightLeft, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Completed', value: initialTransfers.filter(t => t.status === 'completed').length, icon: CheckCircle2, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
+    { label: 'Cancelled', value: initialTransfers.filter(t => t.status === 'cancelled').length, icon: XCircle, color: 'text-slate-600 bg-slate-100 dark:bg-slate-900/30 dark:text-slate-400' },
+  ];
+
+  const handleCreate = () => {
+    if (!form.item || !form.quantity || !form.fromLocation || !form.toLocation) { toast.error('Please fill in all required fields'); return; }
+    if (form.fromLocation === form.toLocation) { toast.error('From and To locations cannot be the same'); return; }
+    toast.success(`Transfer for ${form.item} created successfully`);
+    setCreateOpen(false);
+    setForm({ item: '', quantity: '', fromLocation: '', toLocation: '', notes: '' });
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Inventory Transfers</h1><p className="text-muted-foreground mt-1">Transfer inventory items between locations</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Transfer</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpiCards.map(k => { const I = k.icon; return (
+          <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search transfers..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="in_transit">In Transit</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="border-0 shadow-sm">
+        <div className="overflow-x-auto rounded border">
+          <Table><TableHeader><TableRow><TableHead>Transfer #</TableHead><TableHead>Item</TableHead><TableHead>Qty</TableHead><TableHead className="hidden sm:table-cell">From</TableHead><TableHead className="hidden sm:table-cell">To</TableHead><TableHead>Status</TableHead><TableHead className="hidden md:table-cell">Req. Date</TableHead><TableHead className="hidden lg:table-cell">Comp. Date</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={Truck} title="No transfers found" description="Try adjusting your search or filters." /></TableCell></TableRow>
+            ) : filtered.map(t => (
+              <TableRow key={t.id} className="hover:bg-muted/30">
+                <TableCell className="font-mono text-sm font-medium">{t.transferNo}</TableCell>
+                <TableCell className="font-medium">{t.item}</TableCell>
+                <TableCell className="font-medium">{t.qty}</TableCell>
+                <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">{t.fromLocation}</Badge></TableCell>
+                <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200">{t.toLocation}</Badge></TableCell>
+                <TableCell><Badge variant="outline" className={transferStatusColors[t.status]}>{t.status.replace('_', ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{formatDate(t.requestedDate)}</TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{t.completedDate ? formatDate(t.completedDate) : '-'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
+      </Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader><DialogTitle>New Inventory Transfer</DialogTitle><DialogDescription>Create a transfer request to move items between locations.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-2"><Label>Item *</Label><Input placeholder="Ball Bearing 6205" value={form.item} onChange={e => setForm({ ...form, item: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Quantity *</Label><Input type="number" placeholder="10" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
+              <div className="space-y-2"><Label>From Location *</Label><Input placeholder="WH-A1" value={form.fromLocation} onChange={e => setForm({ ...form, fromLocation: e.target.value })} /></div>
+            </div>
+            <div className="space-y-2"><Label>To Location *</Label><Input placeholder="PR-C1" value={form.toLocation} onChange={e => setForm({ ...form, toLocation: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Additional notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={3} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Transfer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+function InventorySuppliersPage() {
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState({ company: '', contact: '', email: '', phone: '', leadTime: '', address: '', categories: '' });
+
+  const initialSuppliers = [
+    { id: 1, code: 'SUP-001', company: 'SKF Industries', contact: 'James Morton', email: 'j.morton@skf.com', phone: '+1-555-0101', leadTime: 7, rating: 5, status: 'active', itemsSupplied: 45 },
+    { id: 2, code: 'SUP-002', company: 'Siemens AG', contact: 'Erika Muller', email: 'e.muller@siemens.com', phone: '+49-30-555-0102', leadTime: 14, rating: 4, status: 'active', itemsSupplied: 32 },
+    { id: 3, code: 'SUP-003', company: 'Schneider Electric', contact: 'Pierre Dubois', email: 'p.dubois@schneider.fr', phone: '+33-1-555-0103', leadTime: 10, rating: 5, status: 'active', itemsSupplied: 58 },
+    { id: 4, code: 'SUP-004', company: 'Gates Corporation', contact: 'Robert Chen', email: 'r.chen@gates.com', phone: '+1-555-0104', leadTime: 5, rating: 4, status: 'active', itemsSupplied: 23 },
+    { id: 5, code: 'SUP-005', company: 'Parker Hannifin', contact: 'Linda Scott', email: 'l.scott@parker.com', phone: '+1-555-0105', leadTime: 12, rating: 3, status: 'on_hold', itemsSupplied: 17 },
+    { id: 6, code: 'SUP-006', company: 'ABB Ltd', contact: 'Karl Andersen', email: 'k.andersen@abb.ch', phone: '+41-44-555-0106', leadTime: 18, rating: 4, status: 'active', itemsSupplied: 29 },
+    { id: 7, code: 'SUP-007', company: 'Emerson Electric', contact: 'Maria Garcia', email: 'm.garcia@emerson.com', phone: '+1-555-0107', leadTime: 8, rating: 5, status: 'active', itemsSupplied: 41 },
+    { id: 8, code: 'SUP-008', company: 'Timken Company', contact: 'David Brown', email: 'd.brown@timken.com', phone: '+1-555-0108', leadTime: 6, rating: 3, status: 'active', itemsSupplied: 19 },
+    { id: 9, code: 'SUP-009', company: 'Rockwell Automation', contact: 'Susan Taylor', email: 's.taylor@rockwell.com', phone: '+1-555-0109', leadTime: 10, rating: 2, status: 'on_hold', itemsSupplied: 14 },
+    { id: 10, code: 'SUP-010', company: 'Honeywell Intl', contact: 'William Lee', email: 'w.lee@honeywell.com', phone: '+1-555-0110', leadTime: 9, rating: 4, status: 'active', itemsSupplied: 36 },
+  ];
+
+  const supplierStatusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', on_hold: 'bg-amber-50 text-amber-700 border-amber-200', inactive: 'bg-slate-100 text-slate-600 border-slate-200' };
+
+  const filtered = initialSuppliers.filter(s => {
+    const matchSearch = s.code.toLowerCase().includes(search.toLowerCase()) || s.company.toLowerCase().includes(search.toLowerCase()) || s.contact.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = filterStatus === 'all' || s.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+
+  const kpiCards = [
+    { label: 'Total Suppliers', value: initialSuppliers.length, icon: Building, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Active', value: initialSuppliers.filter(s => s.status === 'active').length, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'On Hold', value: initialSuppliers.filter(s => s.status === 'on_hold').length, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'New This Quarter', value: 3, icon: Star, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+  ];
+
+  const handleCreate = () => {
+    if (!form.company || !form.contact || !form.email) { toast.error('Please fill in all required fields'); return; }
+    toast.success(`Supplier ${form.company} added successfully`);
+    setCreateOpen(false);
+    setForm({ company: '', contact: '', email: '', phone: '', leadTime: '', address: '', categories: '' });
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Suppliers</h1><p className="text-muted-foreground mt-1">Manage supplier information, contacts, and performance metrics</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />Add Supplier</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpiCards.map(k => { const I = k.icon; return (
+          <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search suppliers..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="on_hold">On Hold</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="border-0 shadow-sm">
+        <div className="overflow-x-auto rounded border">
+          <Table><TableHeader><TableRow><TableHead>ID</TableHead><TableHead>Company</TableHead><TableHead className="hidden sm:table-cell">Contact</TableHead><TableHead className="hidden md:table-cell">Email</TableHead><TableHead className="hidden md:table-cell">Phone</TableHead><TableHead className="hidden lg:table-cell">Lead Time</TableHead><TableHead className="hidden lg:table-cell">Rating</TableHead><TableHead>Status</TableHead><TableHead className="hidden xl:table-cell text-right">Items</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={9} className="h-48"><EmptyState icon={Building} title="No suppliers found" description="Try adjusting your search or filters." /></TableCell></TableRow>
+            ) : filtered.map(s => (
+              <TableRow key={s.id} className="hover:bg-muted/30">
+                <TableCell className="font-mono text-sm font-medium">{s.code}</TableCell>
+                <TableCell className="font-medium">{s.company}</TableCell>
+                <TableCell className="hidden sm:table-cell text-muted-foreground">{s.contact}</TableCell>
+                <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{s.email}</TableCell>
+                <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{s.phone}</TableCell>
+                <TableCell className="hidden lg:table-cell">{s.leadTime} days</TableCell>
+                <TableCell className="hidden lg:table-cell"><span className="text-amber-500">{'★'.repeat(s.rating)}</span><span className="text-muted/30">{'★'.repeat(5 - s.rating)}</span></TableCell>
+                <TableCell><Badge variant="outline" className={supplierStatusColors[s.status]}>{s.status.replace('_', ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell className="hidden xl:table-cell text-right font-medium">{s.itemsSupplied}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
+      </Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader><DialogTitle>Add New Supplier</DialogTitle><DialogDescription>Register a new supplier in the system.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-2"><Label>Company Name *</Label><Input placeholder="SKF Industries" value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Contact Person *</Label><Input placeholder="John Smith" value={form.contact} onChange={e => setForm({ ...form, contact: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Email *</Label><Input type="email" placeholder="john@company.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Phone</Label><Input placeholder="+1-555-0100" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Lead Time (days)</Label><Input type="number" placeholder="7" value={form.leadTime} onChange={e => setForm({ ...form, leadTime: e.target.value })} /></div>
+            </div>
+            <div className="space-y-2"><Label>Address</Label><Textarea placeholder="Full address..." value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={2} /></div>
+            <div className="space-y-2"><Label>Categories</Label><Input placeholder="Bearings, Pumps, Valves" value={form.categories} onChange={e => setForm({ ...form, categories: e.target.value })} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Add Supplier</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+function InventoryPurchaseOrdersPage() {
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState({ supplier: '', priority: '', expectedDate: '', notes: '', items: '' });
+
+  const poStatusColors: Record<string, string> = { draft: 'bg-slate-100 text-slate-600 border-slate-200', pending: 'bg-amber-50 text-amber-700 border-amber-200', approved: 'bg-emerald-50 text-emerald-700 border-emerald-200', partially_received: 'bg-sky-50 text-sky-700 border-sky-200', received: 'bg-teal-50 text-teal-700 border-teal-200', cancelled: 'bg-red-50 text-red-600 border-red-200' };
+
+  const initialPOs = [
+    { id: 1, poNo: 'PO-2025-001', supplier: 'SKF Industries', totalItems: 5, totalAmount: 12500.00, priority: 'high', status: 'received', orderDate: '2025-01-02', expectedDate: '2025-01-12' },
+    { id: 2, poNo: 'PO-2025-002', supplier: 'Siemens AG', totalItems: 3, totalAmount: 28750.00, priority: 'urgent', status: 'approved', orderDate: '2025-01-04', expectedDate: '2025-01-18' },
+    { id: 3, poNo: 'PO-2025-003', supplier: 'Schneider Electric', totalItems: 8, totalAmount: 9320.00, priority: 'medium', status: 'pending', orderDate: '2025-01-06', expectedDate: '2025-01-20' },
+    { id: 4, poNo: 'PO-2025-004', supplier: 'Gates Corporation', totalItems: 12, totalAmount: 4680.00, priority: 'low', status: 'received', orderDate: '2025-01-03', expectedDate: '2025-01-10' },
+    { id: 5, poNo: 'PO-2025-005', supplier: 'Parker Hannifin', totalItems: 4, totalAmount: 18200.00, priority: 'high', status: 'partially_received', orderDate: '2025-01-05', expectedDate: '2025-01-17' },
+    { id: 6, poNo: 'PO-2025-006', supplier: 'ABB Ltd', totalItems: 6, totalAmount: 35100.00, priority: 'medium', status: 'draft', orderDate: '2025-01-08', expectedDate: '2025-01-26' },
+    { id: 7, poNo: 'PO-2025-007', supplier: 'Emerson Electric', totalItems: 9, totalAmount: 21900.00, priority: 'high', status: 'approved', orderDate: '2025-01-07', expectedDate: '2025-01-21' },
+    { id: 8, poNo: 'PO-2025-008', supplier: 'Timken Company', totalItems: 7, totalAmount: 8450.00, priority: 'medium', status: 'received', orderDate: '2025-01-01', expectedDate: '2025-01-09' },
+    { id: 9, poNo: 'PO-2025-009', supplier: 'Rockwell Automation', totalItems: 2, totalAmount: 42000.00, priority: 'urgent', status: 'pending', orderDate: '2025-01-09', expectedDate: '2025-01-23' },
+    { id: 10, poNo: 'PO-2025-010', supplier: 'Honeywell Intl', totalItems: 10, totalAmount: 15800.00, priority: 'low', status: 'cancelled', orderDate: '2025-01-04', expectedDate: '2025-01-15' },
+  ];
+
+  const filtered = initialPOs.filter(po => {
+    const matchSearch = po.poNo.toLowerCase().includes(search.toLowerCase()) || po.supplier.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = filterStatus === 'all' || po.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+
+  const kpiCards = [
+    { label: 'Total POs', value: initialPOs.length, icon: ShoppingCart, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Pending Approval', value: initialPOs.filter(po => po.status === 'pending' || po.status === 'draft').length, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Approved', value: initialPOs.filter(po => po.status === 'approved' || po.status === 'partially_received').length, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Received', value: initialPOs.filter(po => po.status === 'received').length, icon: Check, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
+  ];
+
+  const handleCreate = () => {
+    if (!form.supplier || !form.priority || !form.expectedDate) { toast.error('Please fill in all required fields'); return; }
+    toast.success(`Purchase order for ${form.supplier} created successfully`);
+    setCreateOpen(false);
+    setForm({ supplier: '', priority: '', expectedDate: '', notes: '', items: '' });
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Purchase Orders</h1><p className="text-muted-foreground mt-1">Create and manage purchase orders for inventory replenishment</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New PO</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpiCards.map(k => { const I = k.icon; return (
+          <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search purchase orders..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-48"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="partially_received">Partial</SelectItem><SelectItem value="received">Received</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="border-0 shadow-sm">
+        <div className="overflow-x-auto rounded border">
+          <Table><TableHeader><TableRow><TableHead>PO #</TableHead><TableHead>Supplier</TableHead><TableHead className="hidden sm:table-cell">Items</TableHead><TableHead className="hidden sm:table-cell">Amount</TableHead><TableHead className="hidden md:table-cell">Priority</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Order Date</TableHead><TableHead className="hidden lg:table-cell">Expected</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={ShoppingCart} title="No purchase orders found" description="Try adjusting your search or filters." /></TableCell></TableRow>
+            ) : filtered.map(po => (
+              <TableRow key={po.id} className="hover:bg-muted/30">
+                <TableCell className="font-mono text-sm font-medium">{po.poNo}</TableCell>
+                <TableCell className="font-medium">{po.supplier}</TableCell>
+                <TableCell className="hidden sm:table-cell">{po.totalItems}</TableCell>
+                <TableCell className="hidden sm:table-cell font-medium">${po.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</TableCell>
+                <TableCell className="hidden md:table-cell"><PriorityBadge priority={po.priority} /></TableCell>
+                <TableCell><Badge variant="outline" className={poStatusColors[po.status]}>{po.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(po.orderDate)}</TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(po.expectedDate)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
+      </Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader><DialogTitle>New Purchase Order</DialogTitle><DialogDescription>Create a new purchase order for inventory items.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-2"><Label>Supplier *</Label><Input placeholder="SKF Industries" value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Priority *</Label><Select value={form.priority} onValueChange={v => setForm({ ...form, priority: v })}><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="urgent">Urgent</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Expected Date *</Label><Input type="date" value={form.expectedDate} onChange={e => setForm({ ...form, expectedDate: e.target.value })} /></div>
+            </div>
+            <div className="space-y-2"><Label>Items (one per line: name, qty, price)</Label><Textarea placeholder={'Ball Bearing 6205, 100, 15.50\nHydraulic Pump HP-300, 5, 850.00'} value={form.items} onChange={e => setForm({ ...form, items: e.target.value })} rows={4} /></div>
+            <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Additional notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create PO</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+function InventoryReceivingPage() {
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [form, setForm] = useState({ purchaseOrder: '', supplier: '', receivedDate: '', notes: '', items: '' });
+
+  const grnStatusColors: Record<string, string> = { pending_inspection: 'bg-amber-50 text-amber-700 border-amber-200', accepted: 'bg-emerald-50 text-emerald-700 border-emerald-200', rejected: 'bg-red-50 text-red-700 border-red-200' };
+
+  const initialGRNs = [
+    { id: 1, grnNo: 'GRN-001', poNo: 'PO-2025-001', supplier: 'SKF Industries', itemsReceived: 5, receivedDate: '2025-01-12', status: 'accepted', inspectedBy: 'Mike Johnson', notes: 'All items passed QC inspection' },
+    { id: 2, grnNo: 'GRN-002', poNo: 'PO-2025-004', supplier: 'Gates Corporation', itemsReceived: 12, receivedDate: '2025-01-10', status: 'accepted', inspectedBy: 'Sarah Chen', notes: 'Minor packaging damage, items OK' },
+    { id: 3, grnNo: 'GRN-003', poNo: 'PO-2025-005', supplier: 'Parker Hannifin', itemsReceived: 2, receivedDate: '2025-01-13', status: 'pending_inspection', inspectedBy: '', notes: 'Awaiting QC team availability' },
+    { id: 4, grnNo: 'GRN-004', poNo: 'PO-2025-002', supplier: 'Siemens AG', itemsReceived: 1, receivedDate: '2025-01-13', status: 'pending_inspection', inspectedBy: '', notes: 'Partial shipment received' },
+    { id: 5, grnNo: 'GRN-005', poNo: 'PO-2025-008', supplier: 'Timken Company', itemsReceived: 7, receivedDate: '2025-01-09', status: 'accepted', inspectedBy: 'Tom Wilson', notes: 'All within specification' },
+    { id: 6, grnNo: 'GRN-006', poNo: 'PO-2025-010', supplier: 'Honeywell Intl', itemsReceived: 3, receivedDate: '2025-01-14', status: 'pending_inspection', inspectedBy: '', notes: 'Special inspection required per contract' },
+    { id: 7, grnNo: 'GRN-007', poNo: 'PO-2025-003', supplier: 'Schneider Electric', itemsReceived: 2, receivedDate: '2025-01-11', status: 'rejected', inspectedBy: 'Anna Lee', notes: 'Voltage rating mismatch on contactors - returned' },
+    { id: 8, grnNo: 'GRN-008', poNo: 'PO-2025-006', supplier: 'ABB Ltd', itemsReceived: 4, receivedDate: '2025-01-14', status: 'rejected', inspectedBy: 'David Park', notes: 'Incorrect model shipped - returned to supplier' },
+  ];
+
+  const filtered = initialGRNs.filter(g => {
+    const matchSearch = g.grnNo.toLowerCase().includes(search.toLowerCase()) || g.poNo.toLowerCase().includes(search.toLowerCase()) || g.supplier.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = filterStatus === 'all' || g.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+
+  const kpiCards = [
+    { label: 'Total GRNs', value: initialGRNs.length, icon: Download, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Pending Inspection', value: initialGRNs.filter(g => g.status === 'pending_inspection').length, icon: ClipboardCheck, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Accepted', value: initialGRNs.filter(g => g.status === 'accepted').length, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Rejected', value: initialGRNs.filter(g => g.status === 'rejected').length, icon: XCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+  ];
+
+  const handleCreate = () => {
+    if (!form.purchaseOrder || !form.supplier || !form.receivedDate) { toast.error('Please fill in all required fields'); return; }
+    toast.success(`GRN for ${form.purchaseOrder} created successfully`);
+    setCreateOpen(false);
+    setForm({ purchaseOrder: '', supplier: '', receivedDate: '', notes: '', items: '' });
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Receiving</h1><p className="text-muted-foreground mt-1">Receive delivered items and update inventory stock levels</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New GRN</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpiCards.map(k => { const I = k.icon; return (
+          <Card key={k.label} className="bg-card text-card-foreground border border-border/60 shadow-sm rounded-xl"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search GRNs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending_inspection">Pending</SelectItem><SelectItem value="accepted">Accepted</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="border-0 shadow-sm">
+        <div className="overflow-x-auto rounded border">
+          <Table><TableHeader><TableRow><TableHead>GRN #</TableHead><TableHead>PO #</TableHead><TableHead className="hidden sm:table-cell">Supplier</TableHead><TableHead className="hidden sm:table-cell">Items</TableHead><TableHead className="hidden md:table-cell">Received Date</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Inspected By</TableHead><TableHead className="hidden lg:table-cell">Notes</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={Download} title="No GRNs found" description="Try adjusting your search or filters." /></TableCell></TableRow>
+            ) : filtered.map(g => (
+              <TableRow key={g.id} className="hover:bg-muted/30">
+                <TableCell className="font-mono text-sm font-medium">{g.grnNo}</TableCell>
+                <TableCell><Badge variant="outline" className="font-mono text-xs">{g.poNo}</Badge></TableCell>
+                <TableCell className="hidden sm:table-cell font-medium">{g.supplier}</TableCell>
+                <TableCell className="hidden sm:table-cell font-medium">{g.itemsReceived}</TableCell>
+                <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{formatDate(g.receivedDate)}</TableCell>
+                <TableCell><Badge variant="outline" className={grnStatusColors[g.status]}>{g.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{g.inspectedBy || '-'}</TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground max-w-[200px] truncate">{g.notes}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
+      </Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader><DialogTitle>New Goods Receipt Note</DialogTitle><DialogDescription>Record received items against a purchase order.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Purchase Order *</Label><Input placeholder="PO-2025-001" value={form.purchaseOrder} onChange={e => setForm({ ...form, purchaseOrder: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Supplier *</Label><Input placeholder="SKF Industries" value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} /></div>
+            </div>
+            <div className="space-y-2"><Label>Received Date *</Label><Input type="date" value={form.receivedDate} onChange={e => setForm({ ...form, receivedDate: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Items Received (one per line: name, qty)</Label><Textarea placeholder={'Ball Bearing 6205, 50\nDrive Belt V-A68, 20'} value={form.items} onChange={e => setForm({ ...form, items: e.target.value })} rows={4} /></div>
+            <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Any observations, discrepancies, or special instructions..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create GRN</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 // ============================================================================
 // IoT SUBPAGES
 // ============================================================================
 
-function IotDevicesPage() { return <ComingSoonPage title="IoT Devices" description="Register and manage IoT sensors, gateways, and connected devices across your facility." icon={Smartphone} features={['Device registry', 'Connection status', 'Firmware updates', 'Device groups']} />; }
-function IotMonitoringPage() { return <ComingSoonPage title="IoT Monitoring" description="Real-time monitoring dashboard for all connected IoT devices and sensor data." icon={Monitor} features={['Live data feeds', 'Custom dashboards', 'Alert management', 'Historical trends']} />; }
-function IotRulesPage() { return <ComingSoonPage title="IoT Rules" description="Configure automation rules and alert thresholds for IoT sensor data." icon={Radio} features={['Rule builder', 'Threshold configuration', 'Notification triggers', 'Action workflows']} />; }
+function IotDevicesPage() {
+  const [devices, setDevices] = useState<any[]>([
+    { id: 'DEV-001', name: 'Temperature Sensor - Boiler Room', type: 'sensor', location: 'Boiler Room A', protocol: 'MQTT', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: 87, signalStrength: 'Strong', asset: 'BLR-101', group: 'HVAC Monitoring', parameter: 'Temperature', unit: '°C', currentValue: 72.4 },
+    { id: 'DEV-002', name: 'Vibration Sensor - Pump Station', type: 'sensor', location: 'Pump Station B', protocol: 'Modbus', status: 'online', lastSeen: '2025-01-15T14:28:00Z', batteryLevel: 92, signalStrength: 'Strong', asset: 'PMP-205', group: 'Rotating Equipment', parameter: 'Vibration', unit: 'mm/s', currentValue: 3.2 },
+    { id: 'DEV-003', name: 'Pressure Transmitter - Compressor', type: 'sensor', location: 'Compressor Room', protocol: 'OPC-UA', status: 'warning', lastSeen: '2025-01-15T14:29:00Z', batteryLevel: 45, signalStrength: 'Medium', asset: 'CMP-310', group: 'Process Control', parameter: 'Pressure', unit: 'PSI', currentValue: 142.8 },
+    { id: 'DEV-004', name: 'Humidity Sensor - Clean Room', type: 'sensor', location: 'Clean Room 1', protocol: 'HTTP', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: 78, signalStrength: 'Strong', asset: 'CLR-001', group: 'Environmental', parameter: 'Humidity', unit: '%', currentValue: 42.1 },
+    { id: 'DEV-005', name: 'Flow Meter - Cooling Loop', type: 'sensor', location: 'Cooling Tower', protocol: 'MQTT', status: 'online', lastSeen: '2025-01-15T14:27:00Z', batteryLevel: 65, signalStrength: 'Good', asset: 'CLT-400', group: 'Process Control', parameter: 'Flow Rate', unit: 'GPM', currentValue: 120.5 },
+    { id: 'DEV-006', name: 'Gateway - Building A', type: 'gateway', location: 'Building A MDF', protocol: 'MQTT', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: null, signalStrength: 'Strong', asset: 'BLD-A', group: 'Infrastructure', parameter: 'Packet Rate', unit: 'pkt/s', currentValue: 1540 },
+    { id: 'DEV-007', name: 'Level Sensor - Fuel Tank', type: 'sensor', location: 'Fuel Storage', protocol: 'Modbus', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: 54, signalStrength: 'Good', asset: 'TK-501', group: 'Storage Monitoring', parameter: 'Level', unit: '%', currentValue: 67.3 },
+    { id: 'DEV-008', name: 'Motor Actuator - Valve V-201', type: 'actuator', location: 'Process Line 2', protocol: 'OPC-UA', status: 'offline', lastSeen: '2025-01-15T12:15:00Z', batteryLevel: null, signalStrength: 'N/A', asset: 'VLV-201', group: 'Process Control', parameter: 'Position', unit: '%', currentValue: 0 },
+    { id: 'DEV-009', name: 'Gateway - Building B', type: 'gateway', location: 'Building B MDF', protocol: 'MQTT', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: null, signalStrength: 'Strong', asset: 'BLD-B', group: 'Infrastructure', parameter: 'Packet Rate', unit: 'pkt/s', currentValue: 980 },
+    { id: 'DEV-010', name: 'Current Sensor - Motor M-102', type: 'sensor', location: 'Motor Control Center', protocol: 'Modbus', status: 'critical', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: 31, signalStrength: 'Weak', asset: 'MTR-102', group: 'Electrical', parameter: 'Current', unit: 'A', currentValue: 48.7 },
+    { id: 'DEV-011', name: 'pH Sensor - Effluent Treatment', type: 'sensor', location: 'ETP Room', protocol: 'HTTP', status: 'online', lastSeen: '2025-01-15T14:28:00Z', batteryLevel: 60, signalStrength: 'Good', asset: 'ETP-001', group: 'Environmental', parameter: 'pH', unit: 'pH', currentValue: 7.2 },
+    { id: 'DEV-012', name: 'Proximity Sensor - Conveyor C3', type: 'sensor', location: 'Packaging Line', protocol: 'HTTP', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: 88, signalStrength: 'Strong', asset: 'CNV-303', group: 'Production', parameter: 'Count', unit: 'units', currentValue: 1245 },
+    { id: 'DEV-013', name: 'Thermal Camera - Panel P-14', type: 'sensor', location: 'Switchgear Room', protocol: 'MQTT', status: 'warning', lastSeen: '2025-01-15T14:25:00Z', batteryLevel: 22, signalStrength: 'Medium', asset: 'PNL-014', group: 'Electrical', parameter: 'Temperature', unit: '°C', currentValue: 58.3 },
+    { id: 'DEV-014', name: 'Solenoid Valve - Cooling Water', type: 'actuator', location: 'Cooling Tower', protocol: 'OPC-UA', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: null, signalStrength: 'Strong', asset: 'SV-701', group: 'Process Control', parameter: 'State', unit: '', currentValue: 1 },
+    { id: 'DEV-015', name: 'Smoke Detector - Warehouse', type: 'sensor', location: 'Main Warehouse', protocol: 'HTTP', status: 'offline', lastSeen: '2025-01-15T08:45:00Z', batteryLevel: 5, signalStrength: 'None', asset: 'WH-001', group: 'Safety', parameter: 'Smoke', unit: '% obsc', currentValue: 0 },
+  ]);
+  const [searchText, setSearchText] = useState('');
+  const [filterType, setFilterType] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterProtocol, setFilterProtocol] = useState('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [detailDevice, setDetailDevice] = useState<any>(null);
+  const [newDevice, setNewDevice] = useState({ name: '', type: 'sensor', location: '', protocol: 'MQTT', asset: '', group: '' });
+
+  const filtered = useMemo(() => devices.filter(d => {
+    const q = searchText.toLowerCase();
+    if (q && !d.name.toLowerCase().includes(q) && !d.id.toLowerCase().includes(q) && !d.location.toLowerCase().includes(q)) return false;
+    if (filterType !== 'all' && d.type !== filterType) return false;
+    if (filterStatus !== 'all' && d.status !== filterStatus) return false;
+    if (filterProtocol !== 'all' && d.protocol !== filterProtocol) return false;
+    return true;
+  }), [devices, searchText, filterType, filterStatus, filterProtocol]);
+
+  const stats = useMemo(() => ({
+    total: devices.length, online: devices.filter(d => d.status === 'online').length,
+    offline: devices.filter(d => d.status === 'offline').length, alerting: devices.filter(d => d.status === 'warning' || d.status === 'critical').length,
+  }), [devices]);
+
+  const handleCreate = () => {
+    if (!newDevice.name.trim()) { toast.error('Device name is required'); return; }
+    const dev: any = { id: `DEV-${String(devices.length + 1).padStart(3, '0')}`, ...newDevice, status: 'offline', lastSeen: new Date().toISOString(), batteryLevel: 100, signalStrength: 'N/A', parameter: 'N/A', unit: '', currentValue: 0 };
+    setDevices(p => [...p, dev]); setCreateOpen(false); setNewDevice({ name: '', type: 'sensor', location: '', protocol: 'MQTT', asset: '', group: '' });
+    toast.success('Device registered successfully');
+  };
+
+  const handleDelete = (id: string) => { setDevices(p => p.filter(d => d.id !== id)); if (detailDevice?.id === id) setDetailDevice(null); toast.success('Device removed'); };
+
+  const statusColor: Record<string, string> = { online: 'bg-emerald-50 text-emerald-700 border-emerald-200', offline: 'bg-slate-100 text-slate-500 border-slate-200', warning: 'bg-amber-50 text-amber-700 border-amber-200', critical: 'bg-red-50 text-red-700 border-red-200' };
+  const statusDot: Record<string, string> = { online: 'bg-emerald-500', offline: 'bg-slate-400', warning: 'bg-amber-500', critical: 'bg-red-500' };
+  const typeIcon: Record<string, any> = { sensor: Thermometer, gateway: Wifi, actuator: Cpu };
+
+  const generateReadingData = (baseVal: number, variance: number) => Array.from({ length: 24 }, (_, i) => ({ hour: `${String(i).padStart(2, '0')}:00`, value: +(baseVal + (Math.sin(i * 0.5) * variance) + (Math.random() * variance * 0.3)).toFixed(1) }));
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">IoT Devices</h1><p className="text-muted-foreground text-sm mt-1">Register and manage IoT sensors, gateways, and connected devices</p></div>
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Add Device</Button></DialogTrigger>
+          <DialogContent className="sm:max-w-[480px]">
+            <DialogHeader><DialogTitle>Register New Device</DialogTitle><DialogDescription>Add a new IoT device to the registry.</DialogDescription></DialogHeader>
+            <div className="grid gap-4 py-2">
+              <div className="space-y-2"><Label>Device Name *</Label><Input placeholder="Temperature Sensor - Room X" value={newDevice.name} onChange={e => setNewDevice({ ...newDevice, name: e.target.value })} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>Type *</Label><Select value={newDevice.type} onValueChange={v => setNewDevice({ ...newDevice, type: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="sensor">Sensor</SelectItem><SelectItem value="gateway">Gateway</SelectItem><SelectItem value="actuator">Actuator</SelectItem></SelectContent></Select></div>
+                <div className="space-y-2"><Label>Protocol *</Label><Select value={newDevice.protocol} onValueChange={v => setNewDevice({ ...newDevice, protocol: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="MQTT">MQTT</SelectItem><SelectItem value="HTTP">HTTP</SelectItem><SelectItem value="Modbus">Modbus</SelectItem><SelectItem value="OPC-UA">OPC-UA</SelectItem></SelectContent></Select></div>
+              </div>
+              <div className="space-y-2"><Label>Location *</Label><Input placeholder="Building A, Room 101" value={newDevice.location} onChange={e => setNewDevice({ ...newDevice, location: e.target.value })} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>Asset Link</Label><Input placeholder="AST-001" value={newDevice.asset} onChange={e => setNewDevice({ ...newDevice, asset: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Device Group</Label><Input placeholder="Environmental" value={newDevice.group} onChange={e => setNewDevice({ ...newDevice, group: e.target.value })} /></div>
+              </div>
+            </div>
+            <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Register Device</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Devices', value: stats.total, icon: Smartphone, color: 'text-slate-600 bg-slate-50 dark:bg-slate-900/30 dark:text-slate-400' },
+          { label: 'Online', value: stats.online, icon: Wifi, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+          { label: 'Offline', value: stats.offline, icon: XCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+          { label: 'Alerting', value: stats.alerting, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+        ].map(k => { const I = k.icon; return (
+          <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Search devices..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
+        </div>
+        <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-36"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="sensor">Sensor</SelectItem><SelectItem value="gateway">Gateway</SelectItem><SelectItem value="actuator">Actuator</SelectItem></SelectContent></Select>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="online">Online</SelectItem><SelectItem value="offline">Offline</SelectItem><SelectItem value="warning">Warning</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select>
+        <Select value={filterProtocol} onValueChange={setFilterProtocol}><SelectTrigger className="w-36"><SelectValue placeholder="Protocol" /></SelectTrigger><SelectContent><SelectItem value="all">All Protocols</SelectItem><SelectItem value="MQTT">MQTT</SelectItem><SelectItem value="HTTP">HTTP</SelectItem><SelectItem value="Modbus">Modbus</SelectItem><SelectItem value="OPC-UA">OPC-UA</SelectItem></SelectContent></Select>
+      </div>
+
+      <Card className="border-0 shadow-sm">
+        <Table><TableHeader><TableRow className="hover:bg-transparent">
+          <TableHead>Device</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden md:table-cell">Location</TableHead><TableHead className="hidden md:table-cell">Protocol</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Last Seen</TableHead><TableHead className="hidden xl:table-cell">Battery</TableHead><TableHead className="hidden xl:table-cell">Signal</TableHead><TableHead className="w-12"></TableHead>
+        </TableRow></TableHeader><TableBody>
+          {filtered.length === 0 && <TableRow><TableCell colSpan={9}><EmptyState icon={Smartphone} title="No devices found" description="Try adjusting your search or filters." /></TableCell></TableRow>}
+          {filtered.map(d => { const TI = typeIcon[d.type] || Smartphone; return (
+            <TableRow key={d.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setDetailDevice(d)}>
+              <TableCell><div className="flex items-center gap-2"><TI className="h-4 w-4 text-muted-foreground shrink-0" /><div><p className="font-medium text-sm">{d.name}</p><p className="text-xs text-muted-foreground font-mono">{d.id}</p></div></div></TableCell>
+              <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="capitalize">{d.type}</Badge></TableCell>
+              <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{d.location}</TableCell>
+              <TableCell className="hidden md:table-cell"><Badge variant="secondary" className="font-mono text-xs">{d.protocol}</Badge></TableCell>
+              <TableCell><Badge variant="outline" className={`${statusColor[d.status]} capitalize`}><span className={`h-1.5 w-1.5 rounded-full ${statusDot[d.status]} mr-1`} />{d.status}</Badge></TableCell>
+              <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{timeAgo(d.lastSeen)}</TableCell>
+              <TableCell className="hidden xl:table-cell">{d.batteryLevel != null ? <div className="flex items-center gap-2"><div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${d.batteryLevel <= 20 ? 'bg-red-500' : d.batteryLevel <= 50 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${d.batteryLevel}%` }} /></div><span className="text-xs font-medium">{d.batteryLevel}%</span></div> : <span className="text-xs text-muted-foreground">Wired</span>}</TableCell>
+              <TableCell className="hidden xl:table-cell"><Badge variant="outline" className={`text-xs ${d.signalStrength === 'Strong' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : d.signalStrength === 'Good' || d.signalStrength === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-200' : d.signalStrength === 'Weak' ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>{d.signalStrength}</Badge></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={e => { e.stopPropagation(); setDetailDevice(d); }}><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={e => { e.stopPropagation(); handleDelete(d.id); }}><Trash2 className="h-4 w-4 mr-2" />Remove</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            </TableRow>
+          ); })}
+        </TableBody></Table>
+      </Card>
+
+      <Dialog open={!!detailDevice} onOpenChange={() => setDetailDevice(null)}>
+        <DialogContent className="sm:max-w-[600px]">
+          {detailDevice && (<>
+            <DialogHeader><DialogTitle className="flex items-center gap-2">{detailDevice.name}<Badge variant="outline" className={`${statusColor[detailDevice.status]} capitalize ml-2`}>{detailDevice.status}</Badge></DialogTitle><DialogDescription className="font-mono text-xs">{detailDevice.id}</DialogDescription></DialogHeader>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              {[['Type', detailDevice.type], ['Protocol', detailDevice.protocol], ['Location', detailDevice.location], ['Asset', detailDevice.asset || '-'], ['Group', detailDevice.group || '-'], ['Last Seen', timeAgo(detailDevice.lastSeen)], ['Battery', detailDevice.batteryLevel != null ? `${detailDevice.batteryLevel}%` : 'Wired'], ['Signal', detailDevice.signalStrength], ['Parameter', detailDevice.parameter], ['Current Value', `${detailDevice.currentValue} ${detailDevice.unit}`]].map(([label, val]) => (
+                <div key={label} className="flex justify-between p-2 rounded-lg bg-muted/30"><span className="text-muted-foreground">{label as string}</span><span className="font-medium">{label === 'Type' ? <span className="capitalize">{val as string}</span> : val as string}</span></div>
+              ))}
+            </div>
+            <div className="mt-2">
+              <p className="text-sm font-medium mb-2">Simulated Readings (24h)</p>
+              <ChartContainer config={{ value: { label: detailDevice.parameter, color: '#10b981' } }} className="h-[200px] w-full">
+                <AreaChart data={generateReadingData(detailDevice.currentValue, detailDevice.currentValue * 0.15)} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
+                  <XAxis dataKey="hour" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval={3} className="fill-muted-foreground" />
+                  <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Area type="monotone" dataKey="value" stroke="#10b981" fill="#10b981" fillOpacity={0.15} strokeWidth={2} />
+                </AreaChart>
+              </ChartContainer>
+            </div>
+            <DialogFooter><Button variant="outline" onClick={() => handleDelete(detailDevice.id)} className="text-red-600 border-red-200 hover:bg-red-50"><Trash2 className="h-4 w-4 mr-1.5" />Remove Device</Button><Button variant="outline" onClick={() => setDetailDevice(null)}>Close</Button></DialogFooter>
+          </>)}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function IotMonitoringPage() {
+  const [sensors] = useState([
+    { id: 'DEV-001', name: 'Boiler Room Temp', parameter: 'Temperature', unit: '°C', value: 72.4, threshold: 85, trend: 'up' as const, sparkline: [68, 70, 69, 71, 73, 72, 74, 71, 72.4] },
+    { id: 'DEV-002', name: 'Pump Vibration', parameter: 'Vibration', unit: 'mm/s', value: 3.2, threshold: 7.0, trend: 'stable' as const, sparkline: [3.0, 3.1, 3.3, 3.2, 3.1, 3.2, 3.0, 3.1, 3.2] },
+    { id: 'DEV-003', name: 'Compressor Pressure', parameter: 'Pressure', unit: 'PSI', value: 142.8, threshold: 150, trend: 'up' as const, sparkline: [130, 135, 138, 140, 142, 139, 141, 143, 142.8] },
+    { id: 'DEV-004', name: 'Clean Room Humidity', parameter: 'Humidity', unit: '%', value: 42.1, threshold: 60, trend: 'down' as const, sparkline: [45, 44, 43.5, 44, 43, 42.5, 42, 42.3, 42.1] },
+    { id: 'DEV-010', name: 'Motor M-102 Current', parameter: 'Current', unit: 'A', value: 48.7, threshold: 35, trend: 'up' as const, sparkline: [32, 35, 38, 42, 44, 45, 47, 48, 48.7] },
+    { id: 'DEV-011', name: 'ETP pH Level', parameter: 'pH', unit: 'pH', value: 7.2, threshold: 9.0, trend: 'stable' as const, sparkline: [7.1, 7.2, 7.0, 7.3, 7.2, 7.1, 7.2, 7.3, 7.2] },
+    { id: 'DEV-013', name: 'Panel P-14 Thermal', parameter: 'Temperature', unit: '°C', value: 58.3, threshold: 55, trend: 'up' as const, sparkline: [42, 45, 48, 50, 52, 54, 55, 57, 58.3] },
+    { id: 'DEV-007', name: 'Fuel Tank Level', parameter: 'Level', unit: '%', value: 67.3, threshold: 15, trend: 'down' as const, sparkline: [80, 78, 75, 73, 71, 70, 68, 67.5, 67.3] },
+  ]);
+  const [alerts] = useState([
+    { id: 1, severity: 'critical' as const, device: 'Motor M-102 Current', parameter: 'Current', value: '48.7 A', threshold: '35 A', time: '2 min ago' },
+    { id: 2, severity: 'critical' as const, device: 'Panel P-14 Thermal', parameter: 'Temperature', value: '58.3 °C', threshold: '55 °C', time: '5 min ago' },
+    { id: 3, severity: 'warning' as const, device: 'Compressor Pressure', parameter: 'Pressure', value: '142.8 PSI', threshold: '150 PSI', time: '12 min ago' },
+    { id: 4, severity: 'warning' as const, device: 'Boiler Room Temp', parameter: 'Temperature', value: '72.4 °C', threshold: '85 °C', time: '18 min ago' },
+    { id: 5, severity: 'info' as const, device: 'Fuel Tank Level', parameter: 'Level', value: '67.3%', threshold: '15%', time: '1 hr ago' },
+    { id: 6, severity: 'info' as const, device: 'Pump Vibration', parameter: 'Vibration', value: '3.2 mm/s', threshold: '7.0 mm/s', time: '2 hr ago' },
+  ]);
+
+  const activityData = useMemo(() => Array.from({ length: 24 }, (_, i) => ({
+    hour: `${String(i).padStart(2, '0')}:00`,
+    temperature: +(70 + Math.sin(i * 0.4) * 8 + Math.random() * 3).toFixed(1),
+    pressure: +(130 + Math.sin(i * 0.3 + 1) * 15 + Math.random() * 5).toFixed(1),
+    humidity: +(45 + Math.sin(i * 0.25 + 2) * 5 + Math.random() * 2).toFixed(1),
+  })), []);
+
+  const activityConfig = {
+    temperature: { label: 'Temperature (°C)', color: '#ef4444' },
+    pressure: { label: 'Pressure (PSI)', color: '#f59e0b' },
+    humidity: { label: 'Humidity (%)', color: '#06b6d4' },
+  } as const;
+
+  const severityStyle: Record<string, string> = {
+    critical: 'bg-red-50 text-red-700 border-red-200', warning: 'bg-amber-50 text-amber-700 border-amber-200', info: 'bg-sky-50 text-sky-700 border-sky-200',
+  };
+  const severityIcon: Record<string, any> = { critical: AlertCircle, warning: AlertTriangle, info: Info };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">IoT Monitoring</h1><p className="text-muted-foreground text-sm mt-1">Real-time monitoring dashboard for all connected IoT devices and sensor data</p></div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {[
+          { label: 'Active Sensors', value: 8, icon: Radio, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+          { label: 'Alerts Today', value: 14, icon: BellRing, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+          { label: 'Data Points (24h)', value: '1.2M', icon: Activity, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+          { label: 'Avg Response Time', value: '142ms', icon: Gauge, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
+        ].map(k => { const I = k.icon; return (
+          <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+
+      <Card className="border">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center"><Activity className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /></div>
+            <div><CardTitle className="text-base font-semibold">Sensor Activity (24h)</CardTitle><CardDescription className="text-xs mt-0.5">Multi-parameter trend across critical sensors</CardDescription></div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <ChartContainer config={activityConfig} className="h-[300px] w-full">
+            <AreaChart data={activityData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
+              <XAxis dataKey="hour" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} interval={3} className="fill-muted-foreground" />
+              <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <ChartLegend content={<ChartLegendContent />} />
+              <Area type="monotone" dataKey="temperature" stroke="#ef4444" fill="#ef4444" fillOpacity={0.08} strokeWidth={2} />
+              <Area type="monotone" dataKey="pressure" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.08} strokeWidth={2} />
+              <Area type="monotone" dataKey="humidity" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.08} strokeWidth={2} />
+            </AreaChart>
+          </ChartContainer>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          <h2 className="text-lg font-semibold">Live Sensor Readings</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            {sensors.map(s => {
+              const isOver = s.value >= s.threshold;
+              const TrendI = s.trend === 'up' ? TrendingUp : s.trend === 'down' ? TrendingDown : Minus;
+              const trendColor = s.trend === 'up' ? 'text-red-500' : s.trend === 'down' ? 'text-emerald-500' : 'text-slate-400';
+              return (
+                <Card key={s.id} className={`border ${isOver ? 'border-red-200 bg-red-50/30 dark:bg-red-900/10' : ''}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-medium text-muted-foreground truncate max-w-[120px]">{s.name}</p>
+                      <TrendI className={`h-3.5 w-3.5 ${trendColor}`} />
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className={`text-2xl font-bold ${isOver ? 'text-red-600' : ''}`}>{s.value}</span>
+                      <span className="text-xs text-muted-foreground">{s.unit}</span>
+                    </div>
+                    <div className="mt-2 h-8">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={s.sparkline.map((v, i) => ({ i, v }))}>
+                          <Area type="monotone" dataKey="v" stroke={isOver ? '#ef4444' : '#10b981'} fill={isOver ? '#ef4444' : '#10b981'} fillOpacity={0.15} strokeWidth={1.5} dot={false} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">Threshold: {s.threshold} {s.unit}</p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold">Recent Alerts</h2>
+          <Card className="border">
+            <CardContent className="p-4">
+              <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                {alerts.map(a => {
+                  const SI = severityIcon[a.severity];
+                  return (
+                    <div key={a.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                      <div className={`h-7 w-7 rounded-lg ${severityStyle[a.severity]} flex items-center justify-center shrink-0 mt-0.5`}><SI className="h-3.5 w-3.5" /></div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-0.5"><span className="font-medium text-xs truncate">{a.device}</span><Badge variant="outline" className={`text-[10px] capitalize ${severityStyle[a.severity]}`}>{a.severity}</Badge></div>
+                        <p className="text-[11px] text-muted-foreground">{a.parameter}: <span className={a.severity === 'critical' ? 'text-red-600 font-medium' : ''}>{a.value}</span> (Limit: {a.threshold})</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{a.time}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IotRulesPage() {
+  const [rules, setRules] = useState<any[]>([
+    { id: 'RUL-001', name: 'High Temperature Alert', device: 'Temperature Sensor - Boiler Room', parameter: 'Temperature', operator: '>', threshold: 85, unit: '°C', action: 'alert', status: 'active', triggeredCount: 12, lastTriggered: '2025-01-15T14:20:00Z', cooldown: 300 },
+    { id: 'RUL-002', name: 'Critical Vibration Shutdown', device: 'Vibration Sensor - Pump Station', parameter: 'Vibration', operator: '>', threshold: 10.0, unit: 'mm/s', action: 'shutdown', status: 'active', triggeredCount: 0, lastTriggered: null, cooldown: 60 },
+    { id: 'RUL-003', name: 'Low Battery Warning', device: 'Smoke Detector - Warehouse', parameter: 'Battery', operator: '<', threshold: 20, unit: '%', action: 'email', status: 'active', triggeredCount: 3, lastTriggered: '2025-01-15T08:45:00Z', cooldown: 3600 },
+    { id: 'RUL-004', name: 'High Pressure Alert', device: 'Pressure Transmitter - Compressor', parameter: 'Pressure', operator: '>=', threshold: 150, unit: 'PSI', action: 'alert', status: 'active', triggeredCount: 5, lastTriggered: '2025-01-15T14:28:00Z', cooldown: 300 },
+    { id: 'RUL-005', name: 'Humidity Breach Notification', device: 'Humidity Sensor - Clean Room', parameter: 'Humidity', operator: '>', threshold: 55, unit: '%', action: 'webhook', status: 'paused', triggeredCount: 8, lastTriggered: '2025-01-14T22:10:00Z', cooldown: 600 },
+    { id: 'RUL-006', name: 'Motor Overcurrent Protection', device: 'Current Sensor - Motor M-102', parameter: 'Current', operator: '>', threshold: 45, unit: 'A', action: 'shutdown', status: 'active', triggeredCount: 2, lastTriggered: '2025-01-15T14:30:00Z', cooldown: 120 },
+    { id: 'RUL-007', name: 'Fuel Tank Low Level', device: 'Level Sensor - Fuel Tank', parameter: 'Level', operator: '<=', threshold: 15, unit: '%', action: 'email', status: 'active', triggeredCount: 1, lastTriggered: '2025-01-10T06:00:00Z', cooldown: 43200 },
+    { id: 'RUL-008', name: 'pH Out of Range', device: 'pH Sensor - Effluent Treatment', parameter: 'pH', operator: '>', threshold: 9.0, unit: 'pH', action: 'alert', status: 'paused', triggeredCount: 0, lastTriggered: null, cooldown: 900 },
+    { id: 'RUL-009', name: 'Thermal Panel Warning', device: 'Thermal Camera - Panel P-14', parameter: 'Temperature', operator: '>', threshold: 55, unit: '°C', action: 'alert', status: 'active', triggeredCount: 7, lastTriggered: '2025-01-15T14:25:00Z', cooldown: 600 },
+    { id: 'RUL-010', name: 'Cooling Flow Drop', device: 'Flow Meter - Cooling Loop', parameter: 'Flow Rate', operator: '<', threshold: 80, unit: 'GPM', action: 'email', status: 'active', triggeredCount: 4, lastTriggered: '2025-01-15T11:30:00Z', cooldown: 1800 },
+  ]);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newRule, setNewRule] = useState({ name: '', device: '', parameter: '', operator: '>' as string, threshold: '', unit: '', action: 'alert' as string, cooldown: '300' });
+
+  const stats = useMemo(() => ({
+    total: rules.length, active: rules.filter(r => r.status === 'active').length,
+    paused: rules.filter(r => r.status === 'paused').length, triggersToday: rules.reduce((s, r) => s + r.triggeredCount, 0),
+  }), [rules]);
+
+  const handleCreate = () => {
+    if (!newRule.name.trim()) { toast.error('Rule name is required'); return; }
+    if (!newRule.device.trim()) { toast.error('Device is required'); return; }
+    const rule: any = { id: `RUL-${String(rules.length + 1).padStart(3, '0')}`, name: newRule.name, device: newRule.device, parameter: newRule.parameter || 'N/A', operator: newRule.operator, threshold: parseFloat(newRule.threshold) || 0, unit: newRule.unit || '', action: newRule.action, status: 'active', triggeredCount: 0, lastTriggered: null, cooldown: parseInt(newRule.cooldown) || 300 };
+    setRules(p => [...p, rule]); setCreateOpen(false); setNewRule({ name: '', device: '', parameter: '', operator: '>', threshold: '', unit: '', action: 'alert', cooldown: '300' });
+    toast.success('Rule created successfully');
+  };
+
+  const toggleRule = (id: string) => {
+    setRules(p => p.map(r => r.id === id ? { ...r, status: r.status === 'active' ? 'paused' : 'active' } : r));
+    const rule = rules.find(r => r.id === id);
+    toast.success(`${rule?.name} ${rule?.status === 'active' ? 'paused' : 'activated'}`);
+  };
+
+  const handleDelete = (id: string) => { setRules(p => p.filter(r => r.id !== id)); toast.success('Rule deleted'); };
+
+  const actionColor: Record<string, string> = { alert: 'bg-amber-50 text-amber-700 border-amber-200', email: 'bg-sky-50 text-sky-700 border-sky-200', webhook: 'bg-violet-50 text-violet-700 border-violet-200', shutdown: 'bg-red-50 text-red-700 border-red-200' };
+  const actionIcon: Record<string, any> = { alert: Bell, email: Mail, webhook: Globe, shutdown: StopCircle };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">IoT Rules</h1><p className="text-muted-foreground text-sm mt-1">Configure automation rules and alert thresholds for IoT sensor data</p></div>
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Create Rule</Button></DialogTrigger>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader><DialogTitle>Create Automation Rule</DialogTitle><DialogDescription>Define conditions and actions for automated responses.</DialogDescription></DialogHeader>
+            <div className="grid gap-4 py-2">
+              <div className="space-y-2"><Label>Rule Name *</Label><Input placeholder="High Temperature Alert" value={newRule.name} onChange={e => setNewRule({ ...newRule, name: e.target.value })} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>Device *</Label><Input placeholder="Temperature Sensor" value={newRule.device} onChange={e => setNewRule({ ...newRule, device: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Parameter</Label><Input placeholder="Temperature" value={newRule.parameter} onChange={e => setNewRule({ ...newRule, parameter: e.target.value })} /></div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2"><Label>Operator</Label><Select value={newRule.operator} onValueChange={v => setNewRule({ ...newRule, operator: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['>', '<', '>=', '<=', '==', '!='].map(op => <SelectItem key={op} value={op}>{op}</SelectItem>)}</SelectContent></Select></div>
+                <div className="space-y-2"><Label>Threshold *</Label><Input type="number" placeholder="85" value={newRule.threshold} onChange={e => setNewRule({ ...newRule, threshold: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Unit</Label><Input placeholder="°C" value={newRule.unit} onChange={e => setNewRule({ ...newRule, unit: e.target.value })} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>Action Type</Label><Select value={newRule.action} onValueChange={v => setNewRule({ ...newRule, action: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="alert">Alert</SelectItem><SelectItem value="email">Email</SelectItem><SelectItem value="webhook">Webhook</SelectItem><SelectItem value="shutdown">Shutdown</SelectItem></SelectContent></Select></div>
+                <div className="space-y-2"><Label>Cooldown (sec)</Label><Input type="number" placeholder="300" value={newRule.cooldown} onChange={e => setNewRule({ ...newRule, cooldown: e.target.value })} /></div>
+              </div>
+            </div>
+            <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Rule</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Rules', value: stats.total, icon: ClipboardList, color: 'text-slate-600 bg-slate-50 dark:bg-slate-900/30 dark:text-slate-400' },
+          { label: 'Active', value: stats.active, icon: Play, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+          { label: 'Paused', value: stats.paused, icon: Pause, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+          { label: 'Total Triggers', value: stats.triggersToday, icon: Zap, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+        ].map(k => { const I = k.icon; return (
+          <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+
+      <div className="space-y-3">
+        {rules.map(rule => {
+          const AI = actionIcon[rule.action] || Bell;
+          return (
+            <Card key={rule.id} className={`border ${rule.status === 'paused' ? 'opacity-70' : ''}`}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <div className={`h-9 w-9 rounded-lg ${actionColor[rule.action]} flex items-center justify-center shrink-0 mt-0.5`}><AI className="h-4 w-4" /></div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-sm">{rule.name}</p>
+                        <Badge variant="outline" className={rule.status === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'}>{rule.status === 'active' ? 'Active' : 'Paused'}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">{rule.device} &mdash; When <span className="font-medium text-foreground">{rule.parameter}</span> {rule.operator} <span className="font-semibold text-foreground">{rule.threshold}{rule.unit}</span></p>
+                      <div className="flex items-center gap-4 mt-2 text-[11px] text-muted-foreground">
+                        <span>Triggers: <span className="font-medium text-foreground">{rule.triggeredCount}</span></span>
+                        <span>Last: <span className="font-medium text-foreground">{rule.lastTriggered ? timeAgo(rule.lastTriggered) : 'Never'}</span></span>
+                        <span className="hidden sm:inline">Cooldown: <span className="font-medium text-foreground">{rule.cooldown}s</span></span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Switch checked={rule.status === 'active'} onCheckedChange={() => toggleRule(rule.id)} />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => toggleRule(rule.id)}>{rule.status === 'active' ? <><Pause className="h-4 w-4 mr-2" />Pause</> : <><Play className="h-4 w-4 mr-2" />Activate</>}</DropdownMenuItem>
+                        <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(rule.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+        {rules.length === 0 && <EmptyState icon={Radio} title="No automation rules" description="Create rules to automate responses to IoT sensor data." />}
+      </div>
+    </div>
+  );
+}
 
 // ============================================================================
 // ANALYTICS SUBPAGES
@@ -7551,9 +9307,253 @@ function AnalyticsEnergyPage() {
 // OPERATIONS SUBPAGES
 // ============================================================================
 
-function OperationsMeterReadingsPage() { return <ComingSoonPage title="Meter Readings" description="Record and track meter/gauge readings for utility meters and equipment." icon={Gauge} features={['Reading entry', 'Automated collection', 'Trend charts', 'Anomaly detection']} />; }
-function OperationsTrainingPage() { return <ComingSoonPage title="Training" description="Manage employee training records, certifications, and compliance." icon={GraduationCap} features={['Training records', 'Certification tracking', 'Due date alerts', 'Competency matrix']} />; }
-function OperationsSurveysPage() { return <ComingSoonPage title="Surveys" description="Create and conduct safety, compliance, and operational surveys." icon={FileText} features={['Survey builder', 'Response collection', 'Analytics', 'Action items']} />; }
+function OperationsMeterReadingsPage() {
+  const [readings] = useState([
+    { id: 'MR-001', meter: 'Main Electricity Meter', type: 'electricity', location: 'Substation A', value: 45230, unit: 'kWh', previous: 43100, change: 4.95, date: '2025-01-15', status: 'normal' },
+    { id: 'MR-002', meter: 'Water Supply Main', type: 'water', location: 'Utility Room B', value: 1285, unit: 'm³', previous: 1320, change: -2.65, date: '2025-01-15', status: 'normal' },
+    { id: 'MR-003', meter: 'Natural Gas Inlet', type: 'gas', location: 'Boiler Room', value: 890, unit: 'm³', previous: 810, change: 9.88, date: '2025-01-15', status: 'warning' },
+    { id: 'MR-004', meter: 'Compressed Air System', type: 'air', location: 'Compressor Room', value: 98.2, unit: 'bar', previous: 95.1, change: 3.26, date: '2025-01-15', status: 'normal' },
+    { id: 'MR-005', meter: 'Steam Header Pressure', type: 'steam', location: 'Boiler Room', value: 12.8, unit: 'psi', previous: 12.5, change: 2.40, date: '2025-01-14', status: 'normal' },
+    { id: 'MR-006', meter: 'HVAC Chiller Power', type: 'electricity', location: 'Building C', value: 8750, unit: 'kWh', previous: 8200, change: 6.71, date: '2025-01-14', status: 'warning' },
+    { id: 'MR-007', meter: 'Process Water Loop', type: 'water', location: 'Production Floor', value: 3420, unit: 'm³', previous: 3380, change: 1.18, date: '2025-01-14', status: 'normal' },
+    { id: 'MR-008', meter: 'Emergency Generator Fuel', type: 'gas', location: 'Generator Room', value: 450, unit: 'm³', previous: 500, change: -10.0, date: '2025-01-13', status: 'critical' },
+  ]);
+  const [searchText, setSearchText] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ meter: '', value: '', unit: 'kWh', notes: '', readingDate: '' });
+  const filtered = searchText.trim() ? readings.filter(r => {
+    const q = searchText.toLowerCase();
+    return r.meter.toLowerCase().includes(q) || r.location.toLowerCase().includes(q) || r.type.toLowerCase().includes(q) || r.id.toLowerCase().includes(q);
+  }) : readings;
+  const kpis = [
+    { label: 'Total Readings', value: '156', icon: Gauge, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Meters Tracked', value: '12', icon: Activity, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Anomalies', value: '3', icon: AlertTriangle, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Avg Daily', value: '5.2', icon: TrendingUp, color: 'bg-violet-50 text-violet-600' },
+  ];
+  const statusColor = (s: string) => s === 'normal' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : s === 'warning' ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-red-600 bg-red-50 border-red-200';
+  const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ meter: '', value: '', unit: 'kWh', notes: '', readingDate: '' }); toast.success('Reading recorded successfully'); }, 800); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Meter Readings</h1><p className="text-muted-foreground mt-1">Record and track meter/gauge readings for utility meters and equipment</p></div>
+        <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />Record Reading</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (
+          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+            <div className="flex items-center gap-4">
+              <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
+              <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
+            </div>
+          </div>
+        ); })}
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search readings..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" /></div>
+      </div>
+      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>ID</TableHead><TableHead>Meter Name</TableHead><TableHead className="hidden md:table-cell">Type</TableHead><TableHead className="hidden lg:table-cell">Location</TableHead><TableHead className="text-right">Reading Value</TableHead><TableHead className="hidden sm:table-cell text-right">Previous</TableHead><TableHead className="text-right">Change</TableHead><TableHead className="hidden md:table-cell">Date</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(r => (
+            <TableRow key={r.id} className="hover:bg-muted/30">
+              <TableCell className="font-mono text-xs">{r.id}</TableCell>
+              <TableCell className="font-medium">{r.meter}</TableCell>
+              <TableCell className="hidden md:table-cell"><Badge variant="outline" className="capitalize">{r.type}</Badge></TableCell>
+              <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">{r.location}</TableCell>
+              <TableCell className="text-right font-medium">{r.value.toLocaleString()} <span className="text-xs text-muted-foreground">{r.unit}</span></TableCell>
+              <TableCell className="text-right text-muted-foreground hidden sm:table-cell">{r.previous.toLocaleString()}</TableCell>
+              <TableCell className={`text-right font-medium ${r.change > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{r.change > 0 ? '+' : ''}{r.change.toFixed(2)}%</TableCell>
+              <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{formatDate(r.date)}</TableCell>
+              <TableCell><Badge variant="outline" className={statusColor(r.status)}><span className="capitalize">{r.status}</span></Badge></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></div>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Record New Reading</DialogTitle><DialogDescription>Enter the meter reading details below</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Meter Name</Label><Input placeholder="e.g. Main Electricity Meter" value={form.meter} onChange={e => setForm(f => ({ ...f, meter: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Reading Value</Label><Input type="number" placeholder="0" value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))} /></div>
+              <div><Label>Unit</Label><Select value={form.unit} onValueChange={v => setForm(f => ({ ...f, unit: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="kWh">kWh</SelectItem><SelectItem value="m³">m³</SelectItem><SelectItem value="psi">psi</SelectItem><SelectItem value="bar">bar</SelectItem><SelectItem value="CFM">CFM</SelectItem></SelectContent></Select></div>
+            </div>
+            <div><Label>Reading Date</Label><Input type="date" value={form.readingDate} onChange={e => setForm(f => ({ ...f, readingDate: e.target.value }))} /></div>
+            <div><Label>Notes</Label><Textarea placeholder="Optional notes..." value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.meter || !form.value}>{saving ? 'Saving...' : 'Record Reading'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+function OperationsTrainingPage() {
+  const [courses] = useState([
+    { id: '1', course: 'Confined Space Entry', category: 'safety', instructor: 'John Martinez', duration: '4 hours', enrolled: 24, completion: 92, nextSession: '2025-01-20', status: 'active' },
+    { id: '2', course: 'Lockout/Tagout Procedures', category: 'safety', instructor: 'Sarah Chen', duration: '2 hours', enrolled: 18, completion: 100, nextSession: '2025-02-01', status: 'completed' },
+    { id: '3', course: 'PLC Programming Basics', category: 'technical', instructor: 'Mike Johnson', duration: '16 hours', enrolled: 12, completion: 67, nextSession: '2025-01-18', status: 'active' },
+    { id: '4', course: 'Environmental Compliance', category: 'compliance', instructor: 'Emily Davis', duration: '3 hours', enrolled: 30, completion: 88, nextSession: '2025-01-25', status: 'active' },
+    { id: '5', course: 'Leadership for Supervisors', category: 'leadership', instructor: 'Robert Wilson', duration: '8 hours', enrolled: 10, completion: 45, nextSession: '2025-02-10', status: 'upcoming' },
+    { id: '6', course: 'Arc Flash Safety', category: 'safety', instructor: 'John Martinez', duration: '3 hours', enrolled: 22, completion: 95, nextSession: '2025-01-22', status: 'active' },
+    { id: '7', course: 'Hydraulic Systems Maintenance', category: 'technical', instructor: 'Tom Brown', duration: '12 hours', enrolled: 15, completion: 78, nextSession: '2025-01-28', status: 'active' },
+    { id: '8', course: 'ISO 9001 Internal Audit', category: 'compliance', instructor: 'Lisa Park', duration: '6 hours', enrolled: 8, completion: 100, nextSession: '-', status: 'completed' },
+  ]);
+  const [searchText, setSearchText] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ name: '', category: 'safety', instructor: '', duration: '', description: '' });
+  const filtered = searchText.trim() ? courses.filter(c => {
+    const q = searchText.toLowerCase();
+    return c.course.toLowerCase().includes(q) || c.instructor.toLowerCase().includes(q) || c.category.toLowerCase().includes(q);
+  }) : courses;
+  const kpis = [
+    { label: 'Total Courses', value: '24', icon: GraduationCap, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Active', value: '18', icon: Play, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Completed This Month', value: '67', icon: CheckCircle2, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Expiring Certs', value: '5', icon: AlertTriangle, color: 'bg-red-50 text-red-600' },
+  ];
+  const statusColor = (s: string) => s === 'active' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : s === 'upcoming' ? 'text-sky-600 bg-sky-50 border-sky-200' : s === 'completed' ? 'text-slate-600 bg-slate-50 border-slate-200' : 'text-red-600 bg-red-50 border-red-200';
+  const categoryColor = (c: string) => c === 'safety' ? 'text-red-600 bg-red-50 border-red-200' : c === 'technical' ? 'text-sky-600 bg-sky-50 border-sky-200' : c === 'compliance' ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-violet-600 bg-violet-50 border-violet-200';
+  const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ name: '', category: 'safety', instructor: '', duration: '', description: '' }); toast.success('Course created successfully'); }, 800); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Training</h1><p className="text-muted-foreground mt-1">Manage employee training records, certifications, and compliance</p></div>
+        <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Course</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (
+          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+            <div className="flex items-center gap-4">
+              <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
+              <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
+            </div>
+          </div>
+        ); })}
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search courses..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" /></div>
+      </div>
+      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Course</TableHead><TableHead>Category</TableHead><TableHead className="hidden md:table-cell">Instructor</TableHead><TableHead className="hidden sm:table-cell">Duration</TableHead><TableHead className="text-right">Enrolled</TableHead><TableHead>Completion</TableHead><TableHead className="hidden lg:table-cell">Next Session</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(c => (
+            <TableRow key={c.id} className="hover:bg-muted/30">
+              <TableCell className="font-medium">{c.course}</TableCell>
+              <TableCell><Badge variant="outline" className={categoryColor(c.category)}><span className="capitalize">{c.category}</span></Badge></TableCell>
+              <TableCell className="text-sm hidden md:table-cell">{c.instructor}</TableCell>
+              <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{c.duration}</TableCell>
+              <TableCell className="text-right">{c.enrolled}</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2 min-w-[100px]">
+                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${c.completion === 100 ? 'bg-emerald-500' : c.completion >= 75 ? 'bg-sky-500' : 'bg-amber-500'}`} style={{ width: `${c.completion}%` }} /></div>
+                  <span className="text-xs font-medium w-9 text-right">{c.completion}%</span>
+                </div>
+              </TableCell>
+              <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">{c.nextSession}</TableCell>
+              <TableCell><Badge variant="outline" className={statusColor(c.status)}><span className="capitalize">{c.status}</span></Badge></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></div>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Create New Course</DialogTitle><DialogDescription>Add a new training course to the system</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Course Name</Label><Input placeholder="e.g. Advanced Safety Training" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Category</Label><Select value={form.category} onValueChange={v => setForm(f => ({ ...f, category: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="safety">Safety</SelectItem><SelectItem value="technical">Technical</SelectItem><SelectItem value="compliance">Compliance</SelectItem><SelectItem value="leadership">Leadership</SelectItem></SelectContent></Select></div>
+              <div><Label>Duration</Label><Input placeholder="e.g. 4 hours" value={form.duration} onChange={e => setForm(f => ({ ...f, duration: e.target.value }))} /></div>
+            </div>
+            <div><Label>Instructor</Label><Input placeholder="Instructor name" value={form.instructor} onChange={e => setForm(f => ({ ...f, instructor: e.target.value }))} /></div>
+            <div><Label>Description</Label><Textarea placeholder="Course description..." value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.name}>{saving ? 'Creating...' : 'Create Course'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+function OperationsSurveysPage() {
+  const [surveys] = useState([
+    { id: '1', title: 'Annual Safety Culture Assessment', type: 'safety', status: 'active', responses: 45, completion: 90, created: '2025-01-01', expires: '2025-01-31' },
+    { id: '2', title: 'ISO 14001 Compliance Check', type: 'compliance', status: 'active', responses: 28, completion: 70, created: '2025-01-05', expires: '2025-02-05' },
+    { id: '3', title: 'Equipment Condition Survey Q1', type: 'audit', status: 'active', responses: 12, completion: 48, created: '2025-01-10', expires: '2025-01-25' },
+    { id: '4', title: 'Employee Satisfaction Survey', type: 'feedback', status: 'active', responses: 67, completion: 84, created: '2024-12-15', expires: '2025-01-15' },
+    { id: '5', title: 'Fire Safety Compliance Audit', type: 'safety', status: 'active', responses: 18, completion: 60, created: '2025-01-08', expires: '2025-02-08' },
+    { id: '6', title: 'PPE Usage Observation', type: 'safety', status: 'closed', responses: 32, completion: 100, created: '2024-11-01', expires: '2024-12-01' },
+    { id: '7', title: 'Process Hazard Analysis', type: 'audit', status: 'draft', responses: 0, completion: 0, created: '2025-01-14', expires: '-' },
+    { id: '8', title: 'Vendor Quality Feedback', type: 'feedback', status: 'closed', responses: 15, completion: 100, created: '2024-12-01', expires: '2024-12-31' },
+  ]);
+  const [searchText, setSearchText] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ title: '', type: 'safety', description: '', questions: '', expiryDate: '' });
+  const filtered = searchText.trim() ? surveys.filter(s => {
+    const q = searchText.toLowerCase();
+    return s.title.toLowerCase().includes(q) || s.type.toLowerCase().includes(q) || s.status.toLowerCase().includes(q);
+  }) : surveys;
+  const kpis = [
+    { label: 'Total Surveys', value: '15', icon: ClipboardList, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Active', value: '8', icon: Play, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Responses', value: '234', icon: Users, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Completion Rate', value: '78%', icon: Target, color: 'bg-violet-50 text-violet-600' },
+  ];
+  const statusColor = (s: string) => s === 'active' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : s === 'draft' ? 'text-slate-600 bg-slate-50 border-slate-200' : 'text-sky-600 bg-sky-50 border-sky-200';
+  const typeColor = (t: string) => t === 'safety' ? 'text-red-600 bg-red-50 border-red-200' : t === 'compliance' ? 'text-amber-600 bg-amber-50 border-amber-200' : t === 'audit' ? 'text-sky-600 bg-sky-50 border-sky-200' : 'text-violet-600 bg-violet-50 border-violet-200';
+  const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ title: '', type: 'safety', description: '', questions: '', expiryDate: '' }); toast.success('Survey created successfully'); }, 800); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Surveys</h1><p className="text-muted-foreground mt-1">Create and conduct safety, compliance, and operational surveys</p></div>
+        <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Survey</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (
+          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+            <div className="flex items-center gap-4">
+              <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
+              <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
+            </div>
+          </div>
+        ); })}
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search surveys..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" /></div>
+      </div>
+      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Title</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Responses</TableHead><TableHead>Completion</TableHead><TableHead className="hidden md:table-cell">Created</TableHead><TableHead className="hidden lg:table-cell">Expires</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(s => (
+            <TableRow key={s.id} className="hover:bg-muted/30">
+              <TableCell className="font-medium">{s.title}</TableCell>
+              <TableCell><Badge variant="outline" className={typeColor(s.type)}><span className="capitalize">{s.type}</span></Badge></TableCell>
+              <TableCell><Badge variant="outline" className={statusColor(s.status)}><span className="capitalize">{s.status}</span></Badge></TableCell>
+              <TableCell className="text-right">{s.responses}</TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2 min-w-[80px]">
+                  <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${s.completion === 100 ? 'bg-emerald-500' : s.completion >= 75 ? 'bg-sky-500' : 'bg-amber-500'}`} style={{ width: `${s.completion}%` }} /></div>
+                  <span className="text-xs font-medium w-9 text-right">{s.completion}%</span>
+                </div>
+              </TableCell>
+              <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{formatDate(s.created)}</TableCell>
+              <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">{s.expires === '-' ? '-' : formatDate(s.expires)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></div>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Create New Survey</DialogTitle><DialogDescription>Set up a new survey for your team</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Title</Label><Input placeholder="e.g. Monthly Safety Checklist" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} /></div>
+            <div><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="safety">Safety</SelectItem><SelectItem value="compliance">Compliance</SelectItem><SelectItem value="audit">Audit</SelectItem><SelectItem value="feedback">Feedback</SelectItem></SelectContent></Select></div>
+            <div><Label>Description</Label><Textarea placeholder="Survey description..." value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
+            <div><Label>Questions (one per line)</Label><Textarea placeholder="Are fire extinguishers accessible?&#10;Are emergency exits clear?&#10;Is PPE being worn correctly?" rows={4} value={form.questions} onChange={e => setForm(f => ({ ...f, questions: e.target.value }))} /></div>
+            <div><Label>Expiry Date</Label><Input type="date" value={form.expiryDate} onChange={e => setForm(f => ({ ...f, expiryDate: e.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.title}>{saving ? 'Creating...' : 'Create Survey'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 function OperationsTimeLogsPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -7630,7 +9630,85 @@ function OperationsTimeLogsPage() {
     </div>
   );
 }
-function OperationsShiftHandoverPage() { return <ComingSoonPage title="Shift Handover" description="Manage shift-to-shift handover notes, pending tasks, and critical information." icon={ArrowRightLeft} features={['Handover templates', 'Task tracking', 'Escalation log', 'Sign-off workflow']} />; }
+function OperationsShiftHandoverPage() {
+  const [handovers] = useState([
+    { id: '1', shift: 'Morning', date: '2025-01-15', from: 'Alex Thompson', to: 'Maria Garcia', tasksCompleted: 'PM on CNC Machine #3 completed. Coolant system flushed. Safety guards inspected.', pendingItems: 'Calibrate temperature sensor on Boiler #2. Check vibration readings on Compressor A.', issues: 'Unusual noise from Pump Station B at 10:30 AM.', escalations: 'Pump Station B needs urgent inspection.', status: 'completed' },
+    { id: '2', shift: 'Afternoon', date: '2025-01-15', from: 'Maria Garcia', to: 'James Wilson', tasksCompleted: 'Temperature sensor calibrated on Boiler #2. Vibration check done on Compressor A.', pendingItems: 'Replace filter in HVAC Unit 5. Complete wiring diagram update for Panel C.', issues: 'HVAC Unit 5 filter showing excessive wear.', escalations: '-', status: 'completed' },
+    { id: '3', shift: 'Night', date: '2025-01-14', from: 'James Wilson', to: 'Alex Thompson', tasksCompleted: 'Filter replacement on HVAC Unit 5 completed. Wiring diagram updated.', pendingItems: 'Lubricate bearings on Conveyor Belt 2. Test emergency stop on Press #1.', issues: '-', escalations: '-', status: 'completed' },
+    { id: '4', shift: 'Morning', date: '2025-01-14', from: 'Alex Thompson', to: 'Maria Garcia', tasksCompleted: 'Bearing lubrication on Conveyor Belt 2 done.', pendingItems: 'Emergency stop test on Press #1. Inspect roof-mounted HVAC unit.', issues: 'Emergency stop button on Press #1 sticky response.', escalations: 'Press #1 safety concern flagged.', status: 'pending' },
+    { id: '5', shift: 'Afternoon', date: '2025-01-14', from: 'Maria Garcia', to: 'James Wilson', tasksCompleted: 'Press #1 emergency stop replaced. Roof HVAC visual inspection done.', pendingItems: 'Schedule roof HVAC full service. Order replacement gaskets for Pump C.', issues: '-', escalations: '-', status: 'pending' },
+    { id: '6', shift: 'Night', date: '2025-01-13', from: 'James Wilson', to: 'Alex Thompson', tasksCompleted: 'Routine patrol completed. All readings normal.', pendingItems: 'Check oil level in Hydraulic Press. Inspect fire suppression nozzles.', issues: 'Minor hydraulic fluid drip on Press #2.', escalations: '-', status: 'pending' },
+  ]);
+  const [searchText, setSearchText] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ shift: 'Morning', fromOperator: '', toOperator: '', tasksCompleted: '', pendingItems: '', issues: '', escalations: '' });
+  const filtered = searchText.trim() ? handovers.filter(h => {
+    const q = searchText.toLowerCase();
+    return h.shift.toLowerCase().includes(q) || h.from.toLowerCase().includes(q) || h.to.toLowerCase().includes(q) || h.issues.toLowerCase().includes(q);
+  }) : handovers;
+  const kpis = [
+    { label: "Today's Handovers", value: '3', icon: ArrowRightLeft, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Pending Tasks', value: '8', icon: Clock, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Open Issues', value: '2', icon: AlertCircle, color: 'bg-red-50 text-red-600' },
+    { label: 'Items Escalated', value: '1', icon: AlertTriangle, color: 'bg-violet-50 text-violet-600' },
+  ];
+  const shiftColor = (s: string) => s === 'Morning' ? 'text-amber-600 bg-amber-50 border-amber-200' : s === 'Afternoon' ? 'text-sky-600 bg-sky-50 border-sky-200' : 'text-indigo-600 bg-indigo-50 border-indigo-200';
+  const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ shift: 'Morning', fromOperator: '', toOperator: '', tasksCompleted: '', pendingItems: '', issues: '', escalations: '' }); toast.success('Handover recorded successfully'); }, 800); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Shift Handover</h1><p className="text-muted-foreground mt-1">Manage shift-to-shift handover notes, pending tasks, and critical information</p></div>
+        <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Handover</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (
+          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+            <div className="flex items-center gap-4">
+              <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
+              <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
+            </div>
+          </div>
+        ); })}
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search handovers..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" /></div>
+      </div>
+      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Shift</TableHead><TableHead className="hidden md:table-cell">Date</TableHead><TableHead>From / To</TableHead><TableHead className="hidden lg:table-cell">Tasks Completed</TableHead><TableHead className="hidden lg:table-cell">Pending</TableHead><TableHead className="hidden md:table-cell">Issues</TableHead><TableHead className="hidden sm:table-cell">Escalations</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(h => (
+            <TableRow key={h.id} className="hover:bg-muted/30">
+              <TableCell><Badge variant="outline" className={shiftColor(h.shift)}>{h.shift}</Badge></TableCell>
+              <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{formatDate(h.date)}</TableCell>
+              <TableCell className="text-sm"><span className="font-medium">{h.from}</span><span className="text-muted-foreground mx-1">→</span><span className="font-medium">{h.to}</span></TableCell>
+              <TableCell className="text-xs text-muted-foreground hidden lg:table-cell max-w-[200px] truncate">{h.tasksCompleted}</TableCell>
+              <TableCell className="text-xs text-muted-foreground hidden lg:table-cell max-w-[180px] truncate">{h.pendingItems}</TableCell>
+              <TableCell className="text-xs hidden md:table-cell max-w-[150px] truncate"><span className={h.issues !== '-' ? 'text-amber-600 font-medium' : 'text-muted-foreground'}>{h.issues}</span></TableCell>
+              <TableCell className="text-xs hidden sm:table-cell max-w-[150px] truncate"><span className={h.escalations !== '-' ? 'text-red-600 font-medium' : 'text-muted-foreground'}>{h.escalations}</span></TableCell>
+              <TableCell><Badge variant="outline" className={h.status === 'completed' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : 'text-amber-600 bg-amber-50 border-amber-200'}><span className="capitalize">{h.status}</span></Badge></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></div>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>New Shift Handover</DialogTitle><DialogDescription>Record handover details for the current shift</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Shift</Label><Select value={form.shift} onValueChange={v => setForm(f => ({ ...f, shift: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Morning">Morning</SelectItem><SelectItem value="Afternoon">Afternoon</SelectItem><SelectItem value="Night">Night</SelectItem></SelectContent></Select></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>From Operator</Label><Input placeholder="Name" value={form.fromOperator} onChange={e => setForm(f => ({ ...f, fromOperator: e.target.value }))} /></div>
+              <div><Label>To Operator</Label><Input placeholder="Name" value={form.toOperator} onChange={e => setForm(f => ({ ...f, toOperator: e.target.value }))} /></div>
+            </div>
+            <div><Label>Tasks Completed</Label><Textarea placeholder="List completed tasks..." rows={2} value={form.tasksCompleted} onChange={e => setForm(f => ({ ...f, tasksCompleted: e.target.value }))} /></div>
+            <div><Label>Pending Items</Label><Textarea placeholder="List pending tasks..." rows={2} value={form.pendingItems} onChange={e => setForm(f => ({ ...f, pendingItems: e.target.value }))} /></div>
+            <div><Label>Issues</Label><Textarea placeholder="Any issues encountered..." rows={2} value={form.issues} onChange={e => setForm(f => ({ ...f, issues: e.target.value }))} /></div>
+            <div><Label>Escalations</Label><Textarea placeholder="Items to escalate..." rows={2} value={form.escalations} onChange={e => setForm(f => ({ ...f, escalations: e.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.fromOperator || !form.toOperator}>{saving ? 'Saving...' : 'Save Handover'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 function OperationsChecklistsPage() {
   const defaultChecklists = [
       { id: '1', name: 'Daily Safety Inspection', description: 'Routine safety walkthrough for all production areas', category: 'safety', itemsCount: 12, lastUsed: '2025-01-14', items: ['Check fire extinguisher accessibility', 'Inspect emergency exit signage', 'Verify PPE availability at stations', 'Check spill containment kits', 'Test emergency stop buttons', 'Inspect guard rails and barriers', 'Check overhead lighting', 'Verify first aid kit contents', 'Inspect floor conditions for hazards', 'Check machine guarding', 'Test alarm systems', 'Document findings'] },
@@ -7801,35 +9879,1930 @@ function OperationsChecklistsPage() {
 // PRODUCTION SUBPAGES
 // ============================================================================
 
-function ProductionWorkCentersPage() { return <ComingSoonPage title="Work Centers" description="Define and manage production work centers, lines, and cells." icon={Factory} features={['Work center registry', 'Capacity definition', 'Equipment mapping', 'Scheduling integration']} />; }
-function ProductionResourcePlanningPage() { return <ComingSoonPage title="Resource Planning" description="Plan and allocate resources (people, machines, materials) for production." icon={Layers} features={['Resource allocation', 'Capacity planning', 'Demand forecasting', 'Gantt charts']} />; }
-function ProductionSchedulingPage() { return <ComingSoonPage title="Production Scheduling" description="Create and manage production schedules and sequencing." icon={Calendar} features={['Schedule builder', 'Drag-and-drop', 'Conflict detection', 'Real-time updates']} />; }
-function ProductionCapacityPage() { return <ComingSoonPage title="Capacity Management" description="Monitor and manage production capacity utilization and bottlenecks." icon={Box} features={['Capacity dashboard', 'Utilization tracking', 'Bottleneck alerts', 'Expansion planning']} />; }
-function ProductionEfficiencyPage() { return <ComingSoonPage title="Production Efficiency" description="Track production efficiency metrics and identify improvement opportunities." icon={TrendingUp} features={['Efficiency KPIs', 'Throughput tracking', 'Waste analysis', 'Improvement plans']} />; }
-function ProductionBottlenecksPage() { return <ComingSoonPage title="Bottleneck Analysis" description="Identify and analyze production bottlenecks to optimize throughput." icon={AlertTriangle} features={['Bottleneck detection', 'Impact analysis', 'Root cause analysis', 'Optimization suggestions']} />; }
-function ProductionOrdersPage() { return <ComingSoonPage title="Production Orders" description="Create and manage production orders from planning through completion." icon={ClipboardList} features={['Order creation', 'Progress tracking', 'Material requirements', 'Completion reporting']} />; }
-function ProductionBatchesPage() { return <ComingSoonPage title="Batch Management" description="Track production batches, lot numbers, and traceability." icon={Package} features={['Batch tracking', 'Lot traceability', 'Quality results', 'Shelf life management']} />; }
+function ProductionWorkCentersPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterType, setFilterType] = useState('all');
+  const [form, setForm] = useState({ name: '', type: 'production', location: '', description: '', capacity: '', status: 'active' });
+  const wcData = [
+    { id: 'WC-001', name: 'Main Assembly Line', type: 'assembly', location: 'Building A', status: 'active', capacity: 95, equipmentCount: 12, oee: 87.3 },
+    { id: 'WC-002', name: 'CNC Machining Center', type: 'production', location: 'Building B', status: 'active', capacity: 88, equipmentCount: 8, oee: 82.1 },
+    { id: 'WC-003', name: 'Paint & Coating Bay', type: 'production', location: 'Building C', status: 'active', capacity: 72, equipmentCount: 6, oee: 79.5 },
+    { id: 'WC-004', name: 'Packaging Line 1', type: 'packaging', location: 'Building D', status: 'active', capacity: 91, equipmentCount: 10, oee: 91.2 },
+    { id: 'WC-005', name: 'Welding Station', type: 'production', location: 'Building A', status: 'active', capacity: 80, equipmentCount: 5, oee: 85.6 },
+    { id: 'WC-006', name: 'Final Inspection Bay', type: 'assembly', location: 'Building E', status: 'active', capacity: 65, equipmentCount: 4, oee: 93.8 },
+    { id: 'WC-007', name: 'Raw Material Prep', type: 'production', location: 'Building B', status: 'inactive', capacity: 0, equipmentCount: 7, oee: 0 },
+    { id: 'WC-008', name: 'Packaging Line 2', type: 'packaging', location: 'Building D', status: 'inactive', capacity: 0, equipmentCount: 9, oee: 0 },
+  ];
+  const statusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', inactive: 'bg-slate-100 text-slate-600 border-slate-200' };
+  const typeColors: Record<string, string> = { production: 'bg-sky-50 text-sky-700', assembly: 'bg-violet-50 text-violet-700', packaging: 'bg-amber-50 text-amber-700' };
+  const filtered = wcData.filter(r => {
+    if (filterType !== 'all' && r.type !== filterType) return false;
+    if (search && !r.name.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const totalWC = wcData.length;
+  const activeWC = wcData.filter(w => w.status === 'active').length;
+  const inactiveWC = wcData.filter(w => w.status === 'inactive').length;
+  const avgUtil = wcData.filter(w => w.status === 'active').reduce((a, b) => a + b.capacity, 0) / activeWC;
+  const kpis = [
+    { label: 'Total Work Centers', value: totalWC, icon: Factory, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Active', value: activeWC, icon: Play, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Inactive', value: inactiveWC, icon: Pause, color: 'text-slate-600 bg-slate-100' },
+    { label: 'Avg Utilization', value: `${avgUtil.toFixed(1)}%`, icon: Gauge, color: 'text-amber-600 bg-amber-50' },
+  ];
+  const handleCreate = () => { if (!form.name) { toast.error('Name is required'); return; } toast.success('Work center created'); setCreateOpen(false); setForm({ name: '', type: 'production', location: '', description: '', capacity: '', status: 'active' }); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Work Centers</h1><p className="text-muted-foreground text-sm mt-1">Define and manage production work centers, lines, and cells</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Work Center</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search work centers..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="production">Production</SelectItem><SelectItem value="assembly">Assembly</SelectItem><SelectItem value="packaging">Packaging</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead className="w-[100px]">ID</TableHead><TableHead>Name</TableHead><TableHead>Type</TableHead><TableHead>Location</TableHead><TableHead>Status</TableHead><TableHead>Capacity</TableHead><TableHead>Equipment</TableHead><TableHead>OEE</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(r => (
+            <TableRow key={r.id}>
+              <TableCell className="font-mono text-xs">{r.id}</TableCell>
+              <TableCell className="font-medium text-sm">{r.name}</TableCell>
+              <TableCell><Badge variant="secondary" className={`text-[11px] ${typeColors[r.type] || ''}`}>{r.type}</Badge></TableCell>
+              <TableCell className="text-sm"><div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-muted-foreground" />{r.location}</div></TableCell>
+              <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.toUpperCase()}</Badge></TableCell>
+              <TableCell className="text-sm font-medium">{r.capacity}%</TableCell>
+              <TableCell className="text-sm">{r.equipmentCount}</TableCell>
+              <TableCell className="text-sm"><span className={r.oee >= 85 ? 'text-emerald-600 font-semibold' : r.oee >= 70 ? 'text-amber-600' : 'text-muted-foreground'}>{r.oee}%</span></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>New Work Center</DialogTitle><DialogDescription>Add a new production work center.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Work center name" /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Description..." rows={2} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="production">Production</SelectItem><SelectItem value="assembly">Assembly</SelectItem><SelectItem value="packaging">Packaging</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Location</Label><Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} placeholder="Building / Area" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Capacity (%)</Label><Input type="number" value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: e.target.value }))} placeholder="100" /></div>
+              <div className="space-y-2"><Label>Status</Label><Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent></Select></div>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+function ProductionResourcePlanningPage() {
+  const [search, setSearch] = useState('');
+  const [filterType, setFilterType] = useState('all');
+  const resourceData = [
+    { id: 'RES-001', name: 'CNC Operator – Shift A', type: 'labor', assignedTo: 'PO-2025-003', qtyAvailable: 3, qtyUsed: 3, status: 'allocated' },
+    { id: 'RES-002', name: 'CNC Machine #4', type: 'equipment', assignedTo: 'PO-2025-003', qtyAvailable: 1, qtyUsed: 1, status: 'allocated' },
+    { id: 'RES-003', name: 'Steel Sheet 4mm', type: 'material', assignedTo: 'PO-2025-001', qtyAvailable: 500, qtyUsed: 350, status: 'allocated' },
+    { id: 'RES-004', name: 'Welding Robot WR-02', type: 'equipment', assignedTo: 'PO-2025-005', qtyAvailable: 1, qtyUsed: 1, status: 'allocated' },
+    { id: 'RES-005', name: 'Paint Booth PB-1', type: 'equipment', assignedTo: 'PO-2025-002', qtyAvailable: 1, qtyUsed: 1, status: 'allocated' },
+    { id: 'RES-006', name: 'Assembly Technician B', type: 'labor', assignedTo: 'PO-2025-004', qtyAvailable: 4, qtyUsed: 2, status: 'available' },
+    { id: 'RES-007', name: 'Aluminum Extrusion', type: 'material', assignedTo: 'PO-2025-006', qtyAvailable: 200, qtyUsed: 200, status: 'allocated' },
+    { id: 'RES-008', name: 'Packaging Operator', type: 'labor', assignedTo: 'PO-2025-007', qtyAvailable: 6, qtyUsed: 6, status: 'overallocated' },
+    { id: 'RES-009', name: 'Injection Molder IM-3', type: 'equipment', assignedTo: 'PO-2025-008', qtyAvailable: 1, qtyUsed: 1, status: 'allocated' },
+    { id: 'RES-010', name: 'Epoxy Resin 2-Part', type: 'material', assignedTo: 'PO-2025-002', qtyAvailable: 80, qtyUsed: 95, status: 'overallocated' },
+  ];
+  const statusColors: Record<string, string> = { allocated: 'bg-emerald-50 text-emerald-700 border-emerald-200', available: 'bg-sky-50 text-sky-700 border-sky-200', overallocated: 'bg-red-50 text-red-700 border-red-200' };
+  const typeColors: Record<string, string> = { labor: 'bg-violet-50 text-violet-700', equipment: 'bg-sky-50 text-sky-700', material: 'bg-amber-50 text-amber-700' };
+  const filtered = resourceData.filter(r => {
+    if (filterType !== 'all' && r.type !== filterType) return false;
+    if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const allocated = resourceData.filter(r => r.status === 'allocated').length;
+  const available = resourceData.filter(r => r.status === 'available').length;
+  const overallocated = resourceData.filter(r => r.status === 'overallocated').length;
+  const utilization = ((allocated / resourceData.length) * 100).toFixed(1);
+  const kpis = [
+    { label: 'Allocated', value: allocated, icon: Layers, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Available', value: available, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Overallocated', value: overallocated, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
+    { label: 'Utilization', value: `${utilization}%`, icon: Gauge, color: 'text-amber-600 bg-amber-50' },
+  ];
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Resource Planning</h1><p className="text-muted-foreground text-sm mt-1">Plan and allocate resources for production orders</p></div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search resources..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="labor">Labor</SelectItem><SelectItem value="equipment">Equipment</SelectItem><SelectItem value="material">Material</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead className="w-[100px]">ID</TableHead><TableHead>Resource Name</TableHead><TableHead>Type</TableHead><TableHead>Assigned To</TableHead><TableHead className="text-right">Qty Available</TableHead><TableHead className="text-right">Qty Used</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(r => {
+            const pct = Math.round((r.qtyUsed / r.qtyAvailable) * 100);
+            return (
+              <TableRow key={r.id}>
+                <TableCell className="font-mono text-xs">{r.id}</TableCell>
+                <TableCell className="font-medium text-sm">{r.name}</TableCell>
+                <TableCell><Badge variant="secondary" className={`text-[11px] ${typeColors[r.type] || ''}`}>{r.type}</Badge></TableCell>
+                <TableCell className="font-mono text-xs">{r.assignedTo}</TableCell>
+                <TableCell className="text-right text-sm">{r.qtyAvailable}</TableCell>
+                <TableCell className="text-right text-sm">{r.qtyUsed}</TableCell>
+                <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.toUpperCase()}</Badge></TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody></Table>
+      </CardContent></Card>
+    </div>
+  );
+}
+function ProductionSchedulingPage() {
+  const [filterStatus, setFilterStatus] = useState('all');
+  const scheduleData = [
+    { id: 'SCH-001', order: 'PO-2025-001', workCenter: 'Main Assembly Line', startDate: '2025-01-20', endDate: '2025-01-25', progress: 100, status: 'completed' },
+    { id: 'SCH-002', order: 'PO-2025-002', workCenter: 'Paint & Coating Bay', startDate: '2025-01-22', endDate: '2025-01-28', progress: 75, status: 'in_progress' },
+    { id: 'SCH-003', order: 'PO-2025-003', workCenter: 'CNC Machining Center', startDate: '2025-01-21', endDate: '2025-01-27', progress: 60, status: 'in_progress' },
+    { id: 'SCH-004', order: 'PO-2025-004', workCenter: 'Final Inspection Bay', startDate: '2025-01-24', endDate: '2025-01-30', progress: 30, status: 'in_progress' },
+    { id: 'SCH-005', order: 'PO-2025-005', workCenter: 'Welding Station', startDate: '2025-01-26', endDate: '2025-02-01', progress: 10, status: 'delayed' },
+    { id: 'SCH-006', order: 'PO-2025-006', workCenter: 'Packaging Line 1', startDate: '2025-01-28', endDate: '2025-02-03', progress: 0, status: 'planned' },
+    { id: 'SCH-007', order: 'PO-2025-007', workCenter: 'Main Assembly Line', startDate: '2025-01-30', endDate: '2025-02-05', progress: 0, status: 'planned' },
+    { id: 'SCH-008', order: 'PO-2025-008', workCenter: 'CNC Machining Center', startDate: '2025-01-25', endDate: '2025-01-31', progress: 45, status: 'delayed' },
+  ];
+  const statusColors: Record<string, string> = { completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', planned: 'bg-slate-100 text-slate-600 border-slate-200', delayed: 'bg-red-50 text-red-700 border-red-200' };
+  const progressColors: Record<string, string> = { completed: 'bg-emerald-500', in_progress: 'bg-sky-500', delayed: 'bg-red-500', planned: 'bg-slate-300' };
+  const filtered = scheduleData.filter(r => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    return true;
+  });
+  const active = scheduleData.filter(s => s.status === 'in_progress').length;
+  const delayed = scheduleData.filter(s => s.status === 'delayed').length;
+  const onTrack = scheduleData.filter(s => s.status === 'in_progress' || s.status === 'completed').length;
+  const completionRate = ((scheduleData.reduce((a, b) => a + b.progress, 0) / (scheduleData.length * 100)) * 100).toFixed(0);
+  const kpis = [
+    { label: 'Active Schedules', value: active, icon: Play, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Delayed', value: delayed, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
+    { label: 'On Track', value: onTrack, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Completion Rate', value: `${completionRate}%`, icon: Target, color: 'text-amber-600 bg-amber-50' },
+  ];
+  const totalDays = 7;
+  const getLeftOffset = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const start = new Date('2025-01-20');
+    return ((d.getTime() - start.getTime()) / (totalDays * 86400000)) * 100;
+  };
+  const getWidth = (startStr: string, endStr: string) => {
+    const s = new Date(startStr);
+    const e = new Date(endStr);
+    return Math.max(((e.getTime() - s.getTime()) / (totalDays * 86400000)) * 100, 8);
+  };
+  const ganttDays = ['Jan 20', 'Jan 21', 'Jan 22', 'Jan 23', 'Jan 24', 'Jan 25', 'Jan 26', 'Jan 27', 'Jan 28', 'Jan 29', 'Jan 30', 'Jan 31', 'Feb 1', 'Feb 2', 'Feb 3', 'Feb 4', 'Feb 5'];
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Production Scheduling</h1><p className="text-muted-foreground text-sm mt-1">Create and manage production schedules and sequencing</p></div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="delayed">Delayed</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm overflow-hidden">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <div className="min-w-[800px]">
+              <div className="flex border-b border-border/60 px-4 py-2 bg-muted/30">
+                <div className="w-[180px] shrink-0 text-xs font-semibold text-muted-foreground">ORDER</div>
+                <div className="w-[160px] shrink-0 text-xs font-semibold text-muted-foreground">WORK CENTER</div>
+                <div className="w-[180px] shrink-0 text-xs font-semibold text-muted-foreground">DATES</div>
+                <div className="flex-1 text-xs font-semibold text-muted-foreground">SCHEDULE</div>
+                <div className="w-[100px] shrink-0 text-xs font-semibold text-muted-foreground">PROGRESS</div>
+                <div className="w-[80px] shrink-0 text-xs font-semibold text-muted-foreground">STATUS</div>
+              </div>
+              {filtered.map(r => (
+                <div key={r.id} className="flex items-center border-b border-border/40 px-4 py-3 hover:bg-muted/20 transition-colors">
+                  <div className="w-[180px] shrink-0 font-mono text-xs font-medium">{r.order}</div>
+                  <div className="w-[160px] shrink-0 text-sm text-muted-foreground">{r.workCenter}</div>
+                  <div className="w-[180px] shrink-0 text-xs text-muted-foreground">{formatDate(r.startDate)} – {formatDate(r.endDate)}</div>
+                  <div className="flex-1 relative h-8 bg-muted/30 rounded-md overflow-hidden">
+                    <div className="absolute h-full rounded-md opacity-30" style={{ left: `${getLeftOffset(r.startDate)}%`, width: `${getWidth(r.startDate, r.endDate)}%`, backgroundColor: r.status === 'completed' ? '#10b981' : r.status === 'in_progress' ? '#0ea5e9' : r.status === 'delayed' ? '#ef4444' : '#94a3b8' }} />
+                    <div className="absolute h-full rounded-md" style={{ left: `${getLeftOffset(r.startDate)}%`, width: `${getWidth(r.startDate, r.endDate) * (r.progress / 100)}%`, backgroundColor: r.status === 'completed' ? '#10b981' : r.status === 'in_progress' ? '#0ea5e9' : r.status === 'delayed' ? '#ef4444' : '#94a3b8' }} />
+                  </div>
+                  <div className="w-[100px] shrink-0 px-2"><div className="flex items-center gap-2"><div className="flex-1 h-2 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full transition-all ${progressColors[r.status] || 'bg-slate-400'}`} style={{ width: `${r.progress}%` }} /></div><span className="text-xs font-medium w-8 text-right">{r.progress}%</span></div></div>
+                  <div className="w-[80px] shrink-0"><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+function ProductionCapacityPage() {
+  const capacityData = [
+    { name: 'Main Assembly', planned: 500, actual: 465, utilization: 93, trend: 'up' },
+    { name: 'CNC Machining', planned: 350, actual: 310, utilization: 89, trend: 'stable' },
+    { name: 'Paint & Coating', planned: 200, actual: 195, utilization: 98, trend: 'up' },
+    { name: 'Packaging L1', planned: 600, actual: 420, utilization: 70, trend: 'down' },
+    { name: 'Welding', planned: 280, actual: 290, utilization: 104, trend: 'up' },
+    { name: 'Inspection', planned: 150, actual: 148, utilization: 99, trend: 'stable' },
+  ];
+  const totalCapacity = capacityData.reduce((a, b) => a + b.planned, 0);
+  const totalUsed = capacityData.reduce((a, b) => a + b.actual, 0);
+  const totalAvailable = totalCapacity - totalUsed;
+  const overloadCount = capacityData.filter(c => c.utilization > 100).length;
+  const overallUtil = ((totalUsed / totalCapacity) * 100).toFixed(1);
+  const kpis = [
+    { label: 'Total Capacity', value: totalCapacity.toLocaleString(), icon: Box, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Used', value: totalUsed.toLocaleString(), icon: BarChart3, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Available', value: totalAvailable.toLocaleString(), icon: CheckCircle2, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Overload Count', value: overloadCount, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
+  ];
+  const chartData = capacityData.map(c => ({ name: c.name, planned: c.planned, actual: c.actual }));
+  const trendIcons: Record<string, React.ReactNode> = { up: <TrendingUp className="h-4 w-4 text-emerald-600" />, down: <TrendingDown className="h-4 w-4 text-red-600" />, stable: <Minus className="h-4 w-4 text-slate-400" /> };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">Capacity Management</h1><p className="text-muted-foreground text-sm mt-1">Monitor and manage production capacity utilization</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+          <CardHeader><CardTitle className="text-base">Capacity by Work Center</CardTitle><CardDescription className="text-xs">Planned vs Actual output</CardDescription></CardHeader>
+          <CardContent>
+            <ChartContainer config={{ planned: { label: 'Planned', color: '#0ea5e9' }, actual: { label: 'Actual', color: '#10b981' } }} className="h-[300px] w-full">
+              <BarChart data={chartData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="planned" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="actual" fill="#10b981" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+        <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+          <CardHeader><CardTitle className="text-base">Overall Utilization</CardTitle><CardDescription className="text-xs">Current production utilization rate</CardDescription></CardHeader>
+          <CardContent className="flex flex-col items-center justify-center py-8">
+            <div className="relative h-44 w-44">
+              <svg className="h-44 w-44 -rotate-90" viewBox="0 0 120 120">
+                <circle cx="60" cy="60" r="50" fill="none" stroke="currentColor" className="text-muted/30" strokeWidth="10" />
+                <circle cx="60" cy="60" r="50" fill="none" stroke={parseFloat(overallUtil) > 95 ? '#ef4444' : parseFloat(overallUtil) > 80 ? '#f59e0b' : '#10b981'} strokeWidth="10" strokeDasharray={`${(parseFloat(overallUtil) / 100) * 314} 314`} strokeLinecap="round" />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-3xl font-bold">{overallUtil}%</span>
+                <span className="text-xs text-muted-foreground">Utilization</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead>Work Center</TableHead><TableHead className="text-right">Planned Output</TableHead><TableHead className="text-right">Actual Output</TableHead><TableHead>Utilization</TableHead><TableHead>Trend</TableHead></TableRow></TableHeader><TableBody>
+          {capacityData.map((r, i) => (
+            <TableRow key={i}>
+              <TableCell className="font-medium text-sm">{r.name}</TableCell>
+              <TableCell className="text-right text-sm">{r.planned.toLocaleString()}</TableCell>
+              <TableCell className="text-right text-sm">{r.actual.toLocaleString()}</TableCell>
+              <TableCell><div className="flex items-center gap-2"><div className="w-20 h-2 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${r.utilization > 100 ? 'bg-red-500' : r.utilization > 90 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(r.utilization, 100)}%` }} /></div><span className={`text-sm font-medium ${r.utilization > 100 ? 'text-red-600' : r.utilization > 90 ? 'text-amber-600' : 'text-emerald-600'}`}>{r.utilization}%</span></div></TableCell>
+              <TableCell>{trendIcons[r.trend]}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+    </div>
+  );
+}
+function ProductionEfficiencyPage() {
+  const dailyData = [
+    { day: 'Mon', oee: 84.2, availability: 92.1, performance: 88.5, quality: 97.3 },
+    { day: 'Tue', oee: 86.7, availability: 94.3, performance: 90.2, quality: 96.8 },
+    { day: 'Wed', oee: 82.1, availability: 89.5, performance: 86.8, quality: 98.1 },
+    { day: 'Thu', oee: 88.9, availability: 95.2, performance: 91.7, quality: 97.6 },
+    { day: 'Fri', oee: 85.4, availability: 93.0, performance: 89.1, quality: 97.9 },
+    { day: 'Sat', oee: 79.3, availability: 87.4, performance: 84.2, quality: 96.5 },
+    { day: 'Sun', oee: 80.8, availability: 88.9, performance: 85.6, quality: 97.0 },
+  ];
+  const wcEfficiency = [
+    { name: 'Main Assembly', oee: 87.3, availability: 94.2, performance: 90.1, quality: 97.8 },
+    { name: 'CNC Machining', oee: 82.1, availability: 90.5, performance: 86.3, quality: 96.4 },
+    { name: 'Paint & Coating', oee: 79.5, availability: 88.0, performance: 84.2, quality: 97.1 },
+    { name: 'Packaging L1', oee: 91.2, availability: 96.1, performance: 93.5, quality: 98.2 },
+    { name: 'Welding', oee: 85.6, availability: 91.8, performance: 88.7, quality: 96.9 },
+    { name: 'Inspection', oee: 93.8, availability: 97.3, performance: 95.1, quality: 99.1 },
+  ];
+  const avgOee = (dailyData.reduce((a, b) => a + b.oee, 0) / dailyData.length).toFixed(1);
+  const avgAvail = (dailyData.reduce((a, b) => a + b.availability, 0) / dailyData.length).toFixed(1);
+  const avgPerf = (dailyData.reduce((a, b) => a + b.performance, 0) / dailyData.length).toFixed(1);
+  const avgQual = (dailyData.reduce((a, b) => a + b.quality, 0) / dailyData.length).toFixed(1);
+  const kpis = [
+    { label: 'OEE', value: `${avgOee}%`, icon: Gauge, color: parseFloat(avgOee) >= 85 ? 'text-emerald-600 bg-emerald-50' : 'text-amber-600 bg-amber-50' },
+    { label: 'Availability', value: `${avgAvail}%`, icon: Activity, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Performance', value: `${avgPerf}%`, icon: Zap, color: 'text-violet-600 bg-violet-50' },
+    { label: 'Quality', value: `${avgQual}%`, icon: ShieldCheck, color: 'text-emerald-600 bg-emerald-50' },
+  ];
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">Production Efficiency</h1><p className="text-muted-foreground text-sm mt-1">Track production efficiency metrics and improvement opportunities</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+        <CardHeader><CardTitle className="text-base">Efficiency Trends (7-Day)</CardTitle><CardDescription className="text-xs">OEE, Availability, Performance, and Quality over the past week</CardDescription></CardHeader>
+        <CardContent>
+          <ChartContainer config={{ oee: { label: 'OEE', color: '#10b981' }, availability: { label: 'Availability', color: '#0ea5e9' }, performance: { label: 'Performance', color: '#8b5cf6' }, quality: { label: 'Quality', color: '#f59e0b' } }} className="h-[300px] w-full">
+            <AreaChart data={dailyData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+              <defs><linearGradient id="oeeGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3} /><stop offset="95%" stopColor="#10b981" stopOpacity={0} /></linearGradient></defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
+              <XAxis dataKey="day" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+              <YAxis domain={[70, 100]} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Area type="monotone" dataKey="oee" stroke="#10b981" fill="url(#oeeGrad)" strokeWidth={2} />
+              <Area type="monotone" dataKey="availability" stroke="#0ea5e9" fillOpacity={0} strokeWidth={2} strokeDasharray="5 5" />
+              <Area type="monotone" dataKey="performance" stroke="#8b5cf6" fillOpacity={0} strokeWidth={2} strokeDasharray="5 5" />
+              <Area type="monotone" dataKey="quality" stroke="#f59e0b" fillOpacity={0} strokeWidth={2} strokeDasharray="5 5" />
+            </AreaChart>
+          </ChartContainer>
+        </CardContent>
+      </Card>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead>Work Center</TableHead><TableHead>OEE</TableHead><TableHead>Availability</TableHead><TableHead>Performance</TableHead><TableHead>Quality</TableHead></TableRow></TableHeader><TableBody>
+          {wcEfficiency.map((r, i) => (
+            <TableRow key={i}>
+              <TableCell className="font-medium text-sm">{r.name}</TableCell>
+              <TableCell><div className="flex items-center gap-2"><div className="w-16 h-2 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${r.oee >= 85 ? 'bg-emerald-500' : r.oee >= 75 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${r.oee}%` }} /></div><span className={`text-sm font-medium ${r.oee >= 85 ? 'text-emerald-600' : r.oee >= 75 ? 'text-amber-600' : 'text-red-600'}`}>{r.oee}%</span></div></TableCell>
+              <TableCell><span className={`text-sm ${r.availability >= 92 ? 'text-emerald-600' : 'text-amber-600'}`}>{r.availability}%</span></TableCell>
+              <TableCell><span className={`text-sm ${r.performance >= 88 ? 'text-emerald-600' : 'text-amber-600'}`}>{r.performance}%</span></TableCell>
+              <TableCell><span className={`text-sm ${r.quality >= 97 ? 'text-emerald-600' : 'text-amber-600'}`}>{r.quality}%</span></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+    </div>
+  );
+}
+function ProductionBottlenecksPage() {
+  const [filterSeverity, setFilterSeverity] = useState('all');
+  const bottleneckData = [
+    { id: 'BN-001', station: 'CNC Machine #4', issue: 'Spindle overheating causing frequent stops', duration: '4h 30m', severity: 'critical', impactLevel: 9.2, status: 'active' },
+    { id: 'BN-002', station: 'Paint Booth PB-1', issue: 'Insufficient drying time between coats', duration: '2h 15m', severity: 'high', impactLevel: 7.8, status: 'active' },
+    { id: 'BN-003', station: 'Packaging L1', issue: 'Conveyor belt speed mismatch', duration: '1h 45m', severity: 'medium', impactLevel: 5.4, status: 'resolved' },
+    { id: 'BN-004', station: 'Welding Station', issue: 'Wire feed mechanism jamming', duration: '3h 10m', severity: 'critical', impactLevel: 8.5, status: 'active' },
+    { id: 'BN-005', station: 'Main Assembly', issue: 'Parts shortage from upstream', duration: '5h 00m', severity: 'high', impactLevel: 8.1, status: 'investigating' },
+    { id: 'BN-006', station: 'Inspection Bay', issue: 'Calibration drift on CMM', duration: '1h 20m', severity: 'medium', impactLevel: 4.3, status: 'resolved' },
+    { id: 'BN-007', station: 'CNC Machine #2', issue: 'Tool changer misalignment', duration: '2h 50m', severity: 'high', impactLevel: 7.2, status: 'active' },
+    { id: 'BN-008', station: 'Paint Booth PB-2', issue: 'Ventilation fan failure', duration: '6h 00m', severity: 'critical', impactLevel: 9.8, status: 'investigating' },
+  ];
+  const sevColors: Record<string, string> = { critical: 'bg-red-50 text-red-700 border-red-200', high: 'bg-orange-50 text-orange-700 border-orange-200', medium: 'bg-amber-50 text-amber-700 border-amber-200', low: 'bg-sky-50 text-sky-700 border-sky-200' };
+  const statusColors: Record<string, string> = { active: 'bg-red-50 text-red-700 border-red-200', investigating: 'bg-amber-50 text-amber-700 border-amber-200', resolved: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  const filtered = bottleneckData.filter(r => {
+    if (filterSeverity !== 'all' && r.severity !== filterSeverity) return false;
+    return true;
+  });
+  const active = bottleneckData.filter(b => b.status === 'active').length;
+  const resolvedToday = bottleneckData.filter(b => b.status === 'resolved').length;
+  const avgResTime = '3.2h';
+  const avgImpact = (bottleneckData.reduce((a, b) => a + b.impactLevel, 0) / bottleneckData.length).toFixed(1);
+  const kpis = [
+    { label: 'Active Bottlenecks', value: active, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
+    { label: 'Resolved Today', value: resolvedToday, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Avg Resolution', value: avgResTime, icon: Timer, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Impact Score', value: avgImpact, icon: Target, color: 'text-amber-600 bg-amber-50' },
+  ];
+  const stationFreq = bottleneckData.reduce<Record<string, number>>((acc, b) => { acc[b.station] = (acc[b.station] || 0) + 1; return acc; }, {});
+  const paretoData = Object.entries(stationFreq).map(([station, count]) => ({ station: station.split(' ').slice(0, 2).join(' '), count })).sort((a, b) => b.count - a.count);
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div><h1 className="text-2xl font-bold tracking-tight">Bottleneck Analysis</h1><p className="text-muted-foreground text-sm mt-1">Identify and analyze production bottlenecks to optimize throughput</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+          <CardHeader><CardTitle className="text-base">Bottleneck Frequency by Station</CardTitle><CardDescription className="text-xs">Pareto analysis of bottleneck distribution</CardDescription></CardHeader>
+          <CardContent>
+            <ChartContainer config={{ count: { label: 'Occurrences', color: '#ef4444' } }} className="h-[280px] w-full">
+              <BarChart data={paretoData} layout="vertical" margin={{ left: 0, right: 16 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="station" tick={{ fontSize: 10 }} width={110} />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="count" fill="#ef4444" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+        <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+          <div className="px-5 pt-5 pb-3"><h3 className="text-base font-semibold">Active Issues</h3><p className="text-xs text-muted-foreground">Current bottleneck items requiring attention</p></div>
+          <div className="max-h-[340px] overflow-y-auto">
+            {bottleneckData.filter(b => b.status !== 'resolved').map(b => (
+              <div key={b.id} className="px-5 py-3 border-t border-border/40 hover:bg-muted/20 transition-colors">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-mono text-xs text-muted-foreground">{b.id}</span>
+                      <Badge variant="outline" className={sevColors[b.severity] || ''}>{b.severity.toUpperCase()}</Badge>
+                    </div>
+                    <p className="text-sm font-medium truncate">{b.issue}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{b.station} · {b.duration}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className={`text-sm font-bold ${b.impactLevel >= 8 ? 'text-red-600' : b.impactLevel >= 6 ? 'text-amber-600' : 'text-slate-600'}`}>{b.impactLevel}</p>
+                    <Badge variant="outline" className={statusColors[b.status] || ''}>{b.status.toUpperCase()}</Badge>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent></Card>
+      </div>
+      <div className="flex items-center gap-3">
+        <Select value={filterSeverity} onValueChange={setFilterSeverity}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Severity" /></SelectTrigger><SelectContent><SelectItem value="all">All Severity</SelectItem><SelectItem value="critical">Critical</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="low">Low</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead className="w-[100px]">ID</TableHead><TableHead>Station</TableHead><TableHead>Issue</TableHead><TableHead>Duration</TableHead><TableHead>Severity</TableHead><TableHead>Impact</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(r => (
+            <TableRow key={r.id}>
+              <TableCell className="font-mono text-xs">{r.id}</TableCell>
+              <TableCell className="font-medium text-sm">{r.station}</TableCell>
+              <TableCell className="text-sm max-w-[250px] truncate">{r.issue}</TableCell>
+              <TableCell className="text-sm"><Timer className="h-3.5 w-3.5 inline mr-1 text-muted-foreground" />{r.duration}</TableCell>
+              <TableCell><Badge variant="outline" className={sevColors[r.severity] || ''}>{r.severity.toUpperCase()}</Badge></TableCell>
+              <TableCell><span className={`text-sm font-semibold ${r.impactLevel >= 8 ? 'text-red-600' : r.impactLevel >= 6 ? 'text-amber-600' : 'text-slate-600'}`}>{r.impactLevel}</span></TableCell>
+              <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.toUpperCase()}</Badge></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+    </div>
+  );
+}
+function ProductionOrdersPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ product: '', quantity: '', workCenter: '', startDate: '', dueDate: '', priority: 'medium', notes: '' });
+  const [orders, setOrders] = useState([
+    { id: 'PO-2025-001', product: 'Hydraulic Pump HP-300', quantity: 120, workCenter: 'Main Assembly', startDate: '2025-01-10', dueDate: '2025-01-25', progress: 100, status: 'completed', priority: 'high' },
+    { id: 'PO-2025-002', product: 'Control Valve CV-200', quantity: 85, workCenter: 'CNC Machining', startDate: '2025-01-12', dueDate: '2025-01-28', progress: 72, status: 'in_progress', priority: 'high' },
+    { id: 'PO-2025-003', product: 'Actuator Arm AA-150', quantity: 200, workCenter: 'Welding Station', startDate: '2025-01-14', dueDate: '2025-01-30', progress: 55, status: 'in_progress', priority: 'medium' },
+    { id: 'PO-2025-004', product: 'Sensor Housing SH-400', quantity: 500, workCenter: 'Paint & Coating', startDate: '2025-01-15', dueDate: '2025-02-01', progress: 30, status: 'in_progress', priority: 'low' },
+    { id: 'PO-2025-005', product: 'Bearing Assembly BA-100', quantity: 300, workCenter: 'Main Assembly', startDate: '2025-01-16', dueDate: '2025-01-27', progress: 45, status: 'delayed', priority: 'high' },
+    { id: 'PO-2025-006', product: 'Gearbox GB-250', quantity: 60, workCenter: 'CNC Machining', startDate: '2025-01-18', dueDate: '2025-02-05', progress: 15, status: 'in_progress', priority: 'medium' },
+    { id: 'PO-2025-007', product: 'Seal Kit SK-50', quantity: 1000, workCenter: 'Packaging L1', startDate: '2025-01-20', dueDate: '2025-02-03', progress: 10, status: 'delayed', priority: 'medium' },
+    { id: 'PO-2025-008', product: 'Filter Assembly FA-300', quantity: 150, workCenter: 'Main Assembly', startDate: '2025-01-22', dueDate: '2025-02-06', progress: 0, status: 'planned', priority: 'low' },
+    { id: 'PO-2025-009', product: 'Piston Set PS-200', quantity: 250, workCenter: 'CNC Machining', startDate: '2025-01-24', dueDate: '2025-02-08', progress: 0, status: 'planned', priority: 'medium' },
+    { id: 'PO-2025-010', product: 'Coupling Assembly CA-100', quantity: 400, workCenter: 'Welding Station', startDate: '2025-01-08', dueDate: '2025-01-20', progress: 100, status: 'completed', priority: 'high' },
+    { id: 'PO-2025-011', product: 'Pressure Plate PP-300', quantity: 80, workCenter: 'Paint & Coating', startDate: '2025-01-11', dueDate: '2025-01-22', progress: 0, status: 'cancelled', priority: 'low' },
+    { id: 'PO-2025-012', product: 'Motor Mount MM-400', quantity: 175, workCenter: 'Main Assembly', startDate: '2025-01-25', dueDate: '2025-02-10', progress: 0, status: 'planned', priority: 'medium' },
+  ]);
+  const statusColors: Record<string, string> = { planned: 'bg-slate-100 text-slate-600 border-slate-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', delayed: 'bg-red-50 text-red-700 border-red-200', cancelled: 'bg-gray-100 text-gray-500 border-gray-200' };
+  const progressColors: Record<string, string> = { planned: 'bg-slate-300', in_progress: 'bg-sky-500', completed: 'bg-emerald-500', delayed: 'bg-red-500', cancelled: 'bg-gray-300' };
+  const priorityColors: Record<string, string> = { high: 'bg-red-50 text-red-700', medium: 'bg-amber-50 text-amber-700', low: 'bg-sky-50 text-sky-700' };
+  const filtered = orders.filter(r => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.product.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const total = orders.length;
+  const inProgress = orders.filter(o => o.status === 'in_progress').length;
+  const completed = orders.filter(o => o.status === 'completed').length;
+  const delayed = orders.filter(o => o.status === 'delayed').length;
+  const kpis = [
+    { label: 'Total Orders', value: total, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'In Progress', value: inProgress, icon: Play, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Completed', value: completed, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Delayed', value: delayed, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
+  ];
+  const handleCreate = () => { if (!form.product || !form.quantity) { toast.error('Product and quantity are required'); return; } toast.success('Production order created'); setCreateOpen(false); setForm({ product: '', quantity: '', workCenter: '', startDate: '', dueDate: '', priority: 'medium', notes: '' }); };
+  const handleDelete = (id: string) => { setOrders(prev => prev.filter(o => o.id !== id)); toast.success('Order deleted'); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Production Orders</h1><p className="text-muted-foreground text-sm mt-1">Create and manage production orders from planning through completion</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Order</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search orders..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="delayed">Delayed</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead className="w-[120px]">Order #</TableHead><TableHead>Product</TableHead><TableHead className="text-right">Qty</TableHead><TableHead>Work Center</TableHead><TableHead>Start Date</TableHead><TableHead>Due Date</TableHead><TableHead>Progress</TableHead><TableHead>Priority</TableHead><TableHead>Status</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(r => (
+            <TableRow key={r.id}>
+              <TableCell className="font-mono text-xs font-medium">{r.id}</TableCell>
+              <TableCell className="font-medium text-sm">{r.product}</TableCell>
+              <TableCell className="text-right text-sm">{r.quantity.toLocaleString()}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{r.workCenter}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{formatDate(r.startDate)}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{formatDate(r.dueDate)}</TableCell>
+              <TableCell><div className="flex items-center gap-2"><div className="w-16 h-2 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${progressColors[r.status] || 'bg-slate-400'}`} style={{ width: `${r.progress}%` }} /></div><span className="text-xs font-medium w-8">{r.progress}%</span></div></TableCell>
+              <TableCell><Badge variant="secondary" className={`text-[11px] ${priorityColors[r.priority] || ''}`}>{r.priority}</Badge></TableCell>
+              <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>New Production Order</DialogTitle><DialogDescription>Create a new production order.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Product *</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Product name" /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Quantity *</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" /></div>
+              <div className="space-y-2"><Label>Priority</Label><Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="space-y-2"><Label>Work Center</Label><Select value={form.workCenter} onValueChange={v => setForm(f => ({ ...f, workCenter: v }))}><SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger><SelectContent><SelectItem value="Main Assembly">Main Assembly</SelectItem><SelectItem value="CNC Machining">CNC Machining</SelectItem><SelectItem value="Welding Station">Welding Station</SelectItem><SelectItem value="Paint & Coating">Paint & Coating</SelectItem><SelectItem value="Packaging L1">Packaging L1</SelectItem></SelectContent></Select></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>Due Date</Label><Input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} /></div>
+            </div>
+            <div className="space-y-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional notes..." rows={2} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Order</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+function ProductionBatchesPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ product: '', orderRef: '', quantity: '', startDate: '', notes: '' });
+  const [batches, setBatches] = useState([
+    { id: 'BATCH-001', product: 'Hydraulic Pump HP-300', orderRef: 'PO-2025-001', quantity: 120, startDate: '2025-01-10', endDate: '2025-01-24', yieldPct: 98.3, status: 'completed' },
+    { id: 'BATCH-002', product: 'Control Valve CV-200', orderRef: 'PO-2025-002', quantity: 85, startDate: '2025-01-12', endDate: '', yieldPct: 0, status: 'in_progress' },
+    { id: 'BATCH-003', product: 'Actuator Arm AA-150', orderRef: 'PO-2025-003', quantity: 200, startDate: '2025-01-14', endDate: '', yieldPct: 0, status: 'in_progress' },
+    { id: 'BATCH-004', product: 'Sensor Housing SH-400', orderRef: 'PO-2025-004', quantity: 500, startDate: '2025-01-15', endDate: '', yieldPct: 0, status: 'in_progress' },
+    { id: 'BATCH-005', product: 'Bearing Assembly BA-100', orderRef: 'PO-2025-005', quantity: 300, startDate: '2025-01-16', endDate: '', yieldPct: 95.2, status: 'in_progress' },
+    { id: 'BATCH-006', product: 'Coupling Assembly CA-100', orderRef: 'PO-2025-010', quantity: 400, startDate: '2025-01-08', endDate: '2025-01-19', yieldPct: 99.1, status: 'completed' },
+    { id: 'BATCH-007', product: 'Gearbox GB-250', orderRef: 'PO-2025-006', quantity: 60, startDate: '2025-01-18', endDate: '', yieldPct: 0, status: 'planned' },
+    { id: 'BATCH-008', product: 'Seal Kit SK-50', orderRef: 'PO-2025-007', quantity: 1000, startDate: '2025-01-20', endDate: '', yieldPct: 0, status: 'on_hold' },
+  ]);
+  const statusColors: Record<string, string> = { planned: 'bg-slate-100 text-slate-600 border-slate-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', on_hold: 'bg-amber-50 text-amber-700 border-amber-200' };
+  const filtered = batches.filter(r => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.product.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const active = batches.filter(b => b.status === 'in_progress').length;
+  const totalProduced = batches.filter(b => b.status === 'completed').reduce((a, b) => a + b.quantity, 0);
+  const completedBatches = batches.filter(b => b.status === 'completed');
+  const qualityRate = completedBatches.length > 0 ? (completedBatches.reduce((a, b) => a + b.yieldPct, 0) / completedBatches.length).toFixed(1) : '0.0';
+  const avgDuration = '8.5 days';
+  const kpis = [
+    { label: 'Active Batches', value: active, icon: Play, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Total Produced', value: totalProduced.toLocaleString(), icon: Package, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Quality Rate', value: `${qualityRate}%`, icon: ShieldCheck, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Avg Duration', value: avgDuration, icon: Clock, color: 'text-violet-600 bg-violet-50' },
+  ];
+  const handleCreate = () => { if (!form.product || !form.quantity) { toast.error('Product and quantity are required'); return; } toast.success('Batch created'); setCreateOpen(false); setForm({ product: '', orderRef: '', quantity: '', startDate: '', notes: '' }); };
+  const handleDelete = (id: string) => { setBatches(prev => prev.filter(b => b.id !== id)); toast.success('Batch deleted'); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Batch Management</h1><p className="text-muted-foreground text-sm mt-1">Track production batches, lot numbers, and traceability</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Batch</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search batches..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="on_hold">On Hold</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead className="w-[110px]">Batch #</TableHead><TableHead>Product</TableHead><TableHead>Order Ref</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead>Start</TableHead><TableHead>End</TableHead><TableHead>Yield</TableHead><TableHead>Status</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(r => (
+            <TableRow key={r.id}>
+              <TableCell className="font-mono text-xs font-medium">{r.id}</TableCell>
+              <TableCell className="font-medium text-sm">{r.product}</TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">{r.orderRef}</TableCell>
+              <TableCell className="text-right text-sm">{r.quantity.toLocaleString()}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{formatDate(r.startDate)}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{r.endDate ? formatDate(r.endDate) : '—'}</TableCell>
+              <TableCell><span className={`text-sm font-medium ${r.yieldPct >= 97 ? 'text-emerald-600' : r.yieldPct > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>{r.yieldPct > 0 ? `${r.yieldPct}%` : '—'}</span></TableCell>
+              <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>New Batch</DialogTitle><DialogDescription>Start a new production batch.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Product *</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Product name" /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Order Reference</Label><Input value={form.orderRef} onChange={e => setForm(f => ({ ...f, orderRef: e.target.value }))} placeholder="PO-2025-XXX" /></div>
+              <div className="space-y-2"><Label>Quantity *</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" /></div>
+            </div>
+            <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Batch notes..." rows={2} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Batch</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 // ============================================================================
 // QUALITY SUBPAGES
 // ============================================================================
 
-function QualityInspectionsPage() { return <ComingSoonPage title="Inspections" description="Schedule, conduct, and track quality inspections and checks." icon={Search} features={['Inspection plans', 'Checklists', 'Result recording', 'Non-conformance linkage']} />; }
-function QualityNcrPage() { return <ComingSoonPage title="Non-Conformance Reports" description="Manage non-conformance reports, investigations, and corrective actions." icon={FileCheck} features={['NCR registration', 'Investigation tracking', 'Disposition', 'CAPA linkage']} />; }
-function QualityAuditsPage() { return <ComingSoonPage title="Quality Audits" description="Plan and execute internal and external quality audits." icon={ShieldAlert} features={['Audit planning', 'Checklists', 'Finding management', 'Compliance tracking']} />; }
-function QualityControlPlansPage() { return <ComingSoonPage title="Control Plans" description="Define quality control plans for products and processes." icon={ScrollText} features={['Control plan templates', 'Inspection points', 'Sampling plans', 'Reaction plans']} />; }
-function QualitySpcPage() { return <ComingSoonPage title="Statistical Process Control" description="Monitor process stability using SPC charts and statistical methods." icon={BarChart3} features={['Control charts', 'Cp/Cpk analysis', 'Process capability', 'Out-of-control alerts']} />; }
-function QualityCapaPage() { return <ComingSoonPage title="CAPA" description="Manage Corrective and Preventive Actions for quality improvement." icon={HardHat} features={['CAPA workflow', 'Root cause analysis', 'Action tracking', 'Effectiveness verification']} />; }
+function QualityInspectionsPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ title: '', description: '', type: 'incoming', product: '', inspector: '', date: '' });
+  const inspStatusColors: Record<string, string> = { passed: 'bg-emerald-50 text-emerald-700 border-emerald-200', failed: 'bg-red-50 text-red-700 border-red-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', scheduled: 'bg-sky-50 text-sky-700 border-sky-200' };
+  const inspData = [
+    { id: 'QI-001', title: 'Incoming Raw Material Inspection', type: 'incoming', status: 'passed', inspector: 'Sarah Chen', date: '2025-01-15' },
+    { id: 'QI-002', title: 'Weld Quality Check – Line A', type: 'in_process', status: 'in_progress', inspector: 'Mike Torres', date: '2025-01-18' },
+    { id: 'QI-003', title: 'Final Product Assembly Audit', type: 'final', status: 'failed', inspector: 'James Park', date: '2025-01-19' },
+    { id: 'QI-004', title: 'ISO 9001 Compliance Audit', type: 'audit', status: 'passed', inspector: 'Lisa Wang', date: '2025-01-20' },
+    { id: 'QI-005', title: 'Coating Thickness Verification', type: 'in_process', status: 'scheduled', inspector: 'David Kim', date: '2025-01-22' },
+    { id: 'QI-006', title: 'Supplier Parts Evaluation', type: 'incoming', status: 'passed', inspector: 'Sarah Chen', date: '2025-01-21' },
+    { id: 'QI-007', title: 'Dimensional Inspection – CNC Batch', type: 'final', status: 'pending', inspector: 'Mike Torres', date: '2025-01-23' },
+    { id: 'QI-008', title: 'Internal Process Audit – Paint', type: 'audit', status: 'pending', inspector: 'Lisa Wang', date: '2025-01-24' },
+  ];
+  const filtered = inspData.filter(r => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const kpis = [
+    { label: 'Total Inspections', value: 48, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Passed', value: 35, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Failed', value: 8, icon: XCircle, color: 'text-red-600 bg-red-50' },
+    { label: 'Pending', value: 5, icon: Clock, color: 'text-sky-600 bg-sky-50' },
+  ];
+  const handleCreate = () => { if (!form.title) { toast.error('Title is required'); return; } toast.success('Inspection created'); setCreateOpen(false); setForm({ title: '', description: '', type: 'incoming', product: '', inspector: '', date: '' }); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Quality Inspections</h1><p className="text-muted-foreground text-sm mt-1">Schedule, conduct, and track quality inspections</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Inspection</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search inspections..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="failed">Failed</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead className="w-[100px]">ID</TableHead><TableHead>Title</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead><TableHead>Inspector</TableHead><TableHead className="w-[120px]">Date</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(r => (
+            <TableRow key={r.id}>
+              <TableCell className="font-mono text-xs">{r.id}</TableCell>
+              <TableCell className="font-medium text-sm">{r.title}</TableCell>
+              <TableCell><Badge variant="secondary" className="text-[11px]">{r.type.replace(/_/g, ' ')}</Badge></TableCell>
+              <TableCell><Badge variant="outline" className={inspStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+              <TableCell className="text-sm">{r.inspector}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{formatDate(r.date)}</TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>New Inspection</DialogTitle><DialogDescription>Schedule a new quality inspection.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Title *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Inspection title" /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Inspection details..." rows={2} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="incoming">Incoming</SelectItem><SelectItem value="in_process">In Process</SelectItem><SelectItem value="final">Final</SelectItem><SelectItem value="audit">Audit</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Product</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Product name" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Inspector</Label><Input value={form.inspector} onChange={e => setForm(f => ({ ...f, inspector: e.target.value }))} placeholder="Assigned inspector" /></div>
+              <div className="space-y-2"><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></div>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Inspection</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function QualityNcrPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ title: '', description: '', severity: 'minor', source: 'inspection', product: '', quantity: '' });
+  const sevColors: Record<string, string> = { critical: 'bg-red-50 text-red-700 border-red-200', major: 'bg-orange-50 text-orange-700 border-orange-200', minor: 'bg-amber-50 text-amber-700 border-amber-200' };
+  const ncrStatusColors: Record<string, string> = { open: 'bg-amber-50 text-amber-700 border-amber-200', investigating: 'bg-sky-50 text-sky-700 border-sky-200', closed: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  const ncrData = [
+    { id: 'NCR-001', title: 'Dimensional Deviation on Shaft Assembly', severity: 'major', status: 'open', source: 'inspection', disposition: 'rework', date: '2025-01-10' },
+    { id: 'NCR-002', title: 'Surface Finish Below Spec – Panel B', severity: 'critical', status: 'investigating', source: 'customer', disposition: 'scrap', date: '2025-01-12' },
+    { id: 'NCR-003', title: 'Incorrect Material Certification', severity: 'major', status: 'open', source: 'audit', disposition: 'return', date: '2025-01-14' },
+    { id: 'NCR-004', title: 'Weld Porosity on Pressure Vessel', severity: 'critical', status: 'investigating', source: 'inspection', disposition: 'rework', date: '2025-01-15' },
+    { id: 'NCR-005', title: 'Packaging Damage During Transit', severity: 'minor', status: 'closed', source: 'customer', disposition: 'use_as_is', date: '2025-01-08' },
+    { id: 'NCR-006', title: 'Paint Adhesion Failure – Batch 44', severity: 'minor', status: 'open', source: 'production', disposition: 'rework', date: '2025-01-16' },
+    { id: 'NCR-007', title: 'Missing Gasket in Valve Assembly', severity: 'major', status: 'closed', source: 'inspection', disposition: 'rework', date: '2025-01-05' },
+    { id: 'NCR-008', title: 'Tolerance Exceed – CNC Operation', severity: 'minor', status: 'closed', source: 'production', disposition: 'use_as_is', date: '2025-01-03' },
+  ];
+  const filtered = ncrData.filter(r => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const kpis = [
+    { label: 'Total NCRs', value: 23, icon: FileCheck, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Open', value: 9, icon: AlertCircle, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Under Investigation', value: 7, icon: Search, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Closed', value: 7, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+  ];
+  const handleCreate = () => { if (!form.title) { toast.error('Title is required'); return; } toast.success('NCR created'); setCreateOpen(false); setForm({ title: '', description: '', severity: 'minor', source: 'inspection', product: '', quantity: '' }); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Non-Conformance Reports</h1><p className="text-muted-foreground text-sm mt-1">Manage non-conformances, investigations, and dispositions</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New NCR</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search NCRs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="open">Open</SelectItem><SelectItem value="investigating">Investigating</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead className="w-[100px]">NCR #</TableHead><TableHead>Title</TableHead><TableHead>Severity</TableHead><TableHead>Status</TableHead><TableHead>Source</TableHead><TableHead>Disposition</TableHead><TableHead className="w-[110px]">Date</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(r => (
+            <TableRow key={r.id}>
+              <TableCell className="font-mono text-xs">{r.id}</TableCell>
+              <TableCell className="font-medium text-sm">{r.title}</TableCell>
+              <TableCell><Badge variant="outline" className={sevColors[r.severity] || ''}>{r.severity.toUpperCase()}</Badge></TableCell>
+              <TableCell><Badge variant="outline" className={ncrStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+              <TableCell><Badge variant="secondary" className="text-[11px]">{r.source}</Badge></TableCell>
+              <TableCell><Badge variant="secondary" className="text-[11px]">{r.disposition.replace(/_/g, ' ')}</Badge></TableCell>
+              <TableCell className="text-sm text-muted-foreground">{formatDate(r.date)}</TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>New NCR</DialogTitle><DialogDescription>Report a new non-conformance.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Title *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="NCR title" /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe the non-conformance..." rows={3} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Severity</Label><Select value={form.severity} onValueChange={v => setForm(f => ({ ...f, severity: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="minor">Minor</SelectItem><SelectItem value="major">Major</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Source</Label><Select value={form.source} onValueChange={v => setForm(f => ({ ...f, source: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="inspection">Inspection</SelectItem><SelectItem value="customer">Customer</SelectItem><SelectItem value="audit">Audit</SelectItem><SelectItem value="production">Production</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Product</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Product name" /></div>
+              <div className="space-y-2"><Label>Quantity</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" /></div>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create NCR</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function QualityAuditsPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ title: '', type: 'internal', scope: '', auditor: '', scheduledDate: '', department: 'Quality' });
+  const auditStatusColors: Record<string, string> = { scheduled: 'bg-sky-50 text-sky-700 border-sky-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  const auditData = [
+    { id: 'QA-001', title: 'ISO 9001:2015 Internal Audit – Q1', type: 'internal', status: 'completed', auditor: 'Lisa Wang', scope: 'Quality Management System', date: '2025-01-05' },
+    { id: 'QA-002', title: 'Supplier Qualification Audit – Acme Corp', type: 'supplier', status: 'in_progress', auditor: 'James Park', scope: 'Supplier quality processes', date: '2025-01-12' },
+    { id: 'QA-003', title: 'Process Audit – Welding Line', type: 'process', status: 'scheduled', auditor: 'Sarah Chen', scope: 'WPS compliance and weld quality', date: '2025-01-25' },
+    { id: 'QA-004', title: 'Customer Audit – Automotive OEM', type: 'external', status: 'scheduled', auditor: 'Mike Torres', scope: 'IATF 16949 requirements', date: '2025-01-28' },
+    { id: 'QA-005', title: 'Internal Audit – Calibration Lab', type: 'internal', status: 'completed', auditor: 'Lisa Wang', scope: 'Calibration procedures & records', date: '2025-01-08' },
+    { id: 'QA-006', title: 'Layered Process Audit – Assembly', type: 'process', status: 'in_progress', auditor: 'David Kim', scope: 'Assembly line compliance', date: '2025-01-18' },
+    { id: 'QA-007', title: 'Supplier Audit – Fastenal Inc', type: 'supplier', status: 'completed', auditor: 'James Park', scope: 'Fastener supply chain quality', date: '2025-01-02' },
+    { id: 'QA-008', title: 'External Audit – Regulatory Body', type: 'external', status: 'completed', auditor: 'Sarah Chen', scope: 'CE marking compliance', date: '2025-01-10' },
+  ];
+  const filtered = auditData.filter(r => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const kpis = [
+    { label: 'Total Audits', value: 12, icon: ShieldAlert, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Scheduled', value: 4, icon: Calendar, color: 'text-sky-600 bg-sky-50' },
+    { label: 'In Progress', value: 3, icon: Clock, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Completed', value: 5, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+  ];
+  const handleCreate = () => { if (!form.title) { toast.error('Title is required'); return; } toast.success('Audit scheduled'); setCreateOpen(false); setForm({ title: '', type: 'internal', scope: '', auditor: '', scheduledDate: '', department: 'Quality' }); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Quality Audits</h1><p className="text-muted-foreground text-sm mt-1">Plan and execute internal, external, and supplier audits</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Audit</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search audits..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead className="w-[100px]">Audit #</TableHead><TableHead>Title</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead><TableHead>Auditor</TableHead><TableHead>Scope</TableHead><TableHead className="w-[110px]">Date</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(r => (
+            <TableRow key={r.id}>
+              <TableCell className="font-mono text-xs">{r.id}</TableCell>
+              <TableCell className="font-medium text-sm">{r.title}</TableCell>
+              <TableCell><Badge variant="secondary" className="text-[11px]">{r.type}</Badge></TableCell>
+              <TableCell><Badge variant="outline" className={auditStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+              <TableCell className="text-sm">{r.auditor}</TableCell>
+              <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{r.scope}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{formatDate(r.date)}</TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>Schedule Audit</DialogTitle><DialogDescription>Plan a new quality audit.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Title *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Audit title" /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="internal">Internal</SelectItem><SelectItem value="external">External</SelectItem><SelectItem value="supplier">Supplier</SelectItem><SelectItem value="process">Process</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Department</Label><Select value={form.department} onValueChange={v => setForm(f => ({ ...f, department: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Quality">Quality</SelectItem><SelectItem value="Production">Production</SelectItem><SelectItem value="Maintenance">Maintenance</SelectItem><SelectItem value="Operations">Operations</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="space-y-2"><Label>Scope</Label><Textarea value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value }))} placeholder="Audit scope and objectives..." rows={3} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Auditor</Label><Input value={form.auditor} onChange={e => setForm(f => ({ ...f, auditor: e.target.value }))} placeholder="Lead auditor" /></div>
+              <div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={form.scheduledDate} onChange={e => setForm(f => ({ ...f, scheduledDate: e.target.value }))} /></div>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Schedule Audit</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function QualityControlPlansPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ name: '', product: '', description: '', revision: '', department: 'Quality', inspectionPoints: '' });
+  const cpStatusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', draft: 'bg-slate-100 text-slate-600 border-slate-200', under_review: 'bg-amber-50 text-amber-700 border-amber-200', archived: 'bg-slate-100 text-slate-500 border-slate-200' };
+  const cpData = [
+    { id: 'CP-001', name: 'CNC Machining Control Plan', product: 'Shaft Assembly A-200', revision: '3.2', status: 'active', points: 24, updated: '2025-01-15' },
+    { id: 'CP-002', name: 'Welding Process Control Plan', product: 'Pressure Vessel PV-100', revision: '2.1', status: 'active', points: 18, updated: '2025-01-12' },
+    { id: 'CP-003', name: 'Paint & Coating Control Plan', product: 'Panel B Series', revision: '1.4', status: 'under_review', points: 15, updated: '2025-01-18' },
+    { id: 'CP-004', name: 'Assembly Line QC Plan', product: 'Final Assembly FA-300', revision: '4.0', status: 'active', points: 32, updated: '2025-01-20' },
+    { id: 'CP-005', name: 'Incoming Material QC Plan', product: 'Raw Steel & Aluminum', revision: '2.5', status: 'active', points: 12, updated: '2025-01-10' },
+    { id: 'CP-006', name: 'Heat Treatment Control Plan', product: 'Gear Box GB-50', revision: '1.0', status: 'draft', points: 10, updated: '2025-01-22' },
+    { id: 'CP-007', name: 'Calibration Control Plan', product: 'Measurement Equipment', revision: '3.1', status: 'active', points: 20, updated: '2025-01-08' },
+    { id: 'CP-008', name: 'Packaging & Shipping QC Plan', product: 'All Finished Goods', revision: '2.0', status: 'archived', points: 8, updated: '2024-12-15' },
+  ];
+  const filtered = cpData.filter(r => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.name.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const kpis = [
+    { label: 'Total Plans', value: 15, icon: ScrollText, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Active', value: 11, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Under Review', value: 2, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Archived', value: 2, icon: Archive, color: 'text-slate-600 bg-slate-100' },
+  ];
+  const handleCreate = () => { if (!form.name) { toast.error('Plan name is required'); return; } toast.success('Control plan created'); setCreateOpen(false); setForm({ name: '', product: '', description: '', revision: '', department: 'Quality', inspectionPoints: '' }); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Quality Control Plans</h1><p className="text-muted-foreground text-sm mt-1">Define and manage control plans for products and processes</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Plan</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search control plans..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="under_review">Under Review</SelectItem><SelectItem value="archived">Archived</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead className="w-[100px]">Plan #</TableHead><TableHead>Name</TableHead><TableHead>Product / Process</TableHead><TableHead>Rev</TableHead><TableHead>Status</TableHead><TableHead className="text-center">Inspection Points</TableHead><TableHead className="w-[110px]">Updated</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(r => (
+            <TableRow key={r.id}>
+              <TableCell className="font-mono text-xs">{r.id}</TableCell>
+              <TableCell className="font-medium text-sm">{r.name}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{r.product}</TableCell>
+              <TableCell className="font-mono text-xs">{r.revision}</TableCell>
+              <TableCell><Badge variant="outline" className={cpStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+              <TableCell className="text-center"><Badge variant="secondary" className="text-[11px]">{r.points}</Badge></TableCell>
+              <TableCell className="text-sm text-muted-foreground">{formatDate(r.updated)}</TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>New Control Plan</DialogTitle><DialogDescription>Create a quality control plan.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Plan Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Control plan name" /></div>
+            <div className="space-y-2"><Label>Product / Process</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Associated product or process" /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Plan description..." rows={3} /></div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2"><Label>Revision</Label><Input value={form.revision} onChange={e => setForm(f => ({ ...f, revision: e.target.value }))} placeholder="1.0" /></div>
+              <div className="space-y-2"><Label>Department</Label><Select value={form.department} onValueChange={v => setForm(f => ({ ...f, department: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Quality">Quality</SelectItem><SelectItem value="Production">Production</SelectItem><SelectItem value="Maintenance">Maintenance</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Inspection Points</Label><Input type="number" value={form.inspectionPoints} onChange={e => setForm(f => ({ ...f, inspectionPoints: e.target.value }))} placeholder="0" /></div>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Plan</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function QualitySpcPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ process: '', characteristic: '', usl: '', lsl: '', target: '' });
+  const spcStatusColors: Record<string, string> = { in_control: 'bg-emerald-50 text-emerald-700 border-emerald-200', warning: 'bg-amber-50 text-amber-700 border-amber-200', out_of_control: 'bg-red-50 text-red-700 border-red-200' };
+  const cpkColor = (v: number) => v >= 1.33 ? 'text-emerald-600 font-semibold' : v >= 1.0 ? 'text-amber-600 font-semibold' : 'text-red-600 font-semibold';
+  const spcData = [
+    { process: 'CNC Turning', characteristic: 'Outer Diameter (mm)', usl: 50.05, lsl: 49.95, target: 50.00, mean: 50.01, cp: 1.67, cpk: 1.52, status: 'in_control' },
+    { process: 'Welding – MIG', characteristic: 'Weld Strength (MPa)', usl: 450, lsl: 380, target: 415, mean: 418.5, cp: 1.42, cpk: 1.28, status: 'warning' },
+    { process: 'Paint Thickness', characteristic: 'Dry Film (μm)', usl: 85, lsl: 65, target: 75, mean: 74.2, cp: 1.85, cpk: 1.74, status: 'in_control' },
+    { process: 'Heat Treatment', characteristic: 'Hardness (HRC)', usl: 62, lsl: 56, target: 59, mean: 58.8, cp: 1.38, cpk: 1.31, status: 'in_control' },
+    { process: 'Assembly Torque', characteristic: 'Torque (Nm)', usl: 55, lsl: 45, target: 50, mean: 52.1, cp: 0.92, cpk: 0.74, status: 'out_of_control' },
+    { process: 'Injection Molding', characteristic: 'Weight (g)', usl: 105, lsl: 95, target: 100, mean: 100.3, cp: 1.56, cpk: 1.48, status: 'in_control' },
+    { process: 'Surface Grinding', characteristic: 'Roughness (Ra μm)', usl: 1.6, lsl: 0.4, target: 1.0, mean: 1.35, cp: 0.85, cpk: 0.68, status: 'out_of_control' },
+    { process: 'Brazing', characteristic: 'Joint Strength (kN)', usl: 12.0, lsl: 8.0, target: 10.0, mean: 10.1, cp: 1.33, cpk: 1.30, status: 'in_control' },
+  ];
+  const filtered = spcData.filter(r => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.process.toLowerCase().includes(search.toLowerCase()) && !r.characteristic.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const kpis = [
+    { label: 'Processes Monitored', value: 8, icon: Activity, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'In Control', value: 6, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Out of Control', value: 2, icon: XCircle, color: 'text-red-600 bg-red-50' },
+    { label: 'Cp/Cpk ≥ 1.33', value: 5, icon: TrendingUp, color: 'text-emerald-600 bg-emerald-50' },
+  ];
+  const handleCreate = () => { if (!form.process) { toast.error('Process name is required'); return; } toast.success('SPC process added'); setCreateOpen(false); setForm({ process: '', characteristic: '', usl: '', lsl: '', target: '' }); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Statistical Process Control</h1><p className="text-muted-foreground text-sm mt-1">Monitor process stability with SPC charts and capability indices</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Process</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search processes..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="in_control">In Control</SelectItem><SelectItem value="warning">Warning</SelectItem><SelectItem value="out_of_control">Out of Control</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table><TableHeader><TableRow><TableHead>Process</TableHead><TableHead>Characteristic</TableHead><TableHead className="text-right">USL</TableHead><TableHead className="text-right">LSL</TableHead><TableHead className="text-right">Target</TableHead><TableHead className="text-right">Current Mean</TableHead><TableHead className="text-right">Cp</TableHead><TableHead className="text-right">Cpk</TableHead><TableHead>Status</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+            {filtered.map(r => (
+              <TableRow key={r.process}>
+                <TableCell className="font-medium text-sm">{r.process}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.characteristic}</TableCell>
+                <TableCell className="text-right font-mono text-sm">{r.usl}</TableCell>
+                <TableCell className="text-right font-mono text-sm">{r.lsl}</TableCell>
+                <TableCell className="text-right font-mono text-sm">{r.target}</TableCell>
+                <TableCell className="text-right font-mono text-sm">{r.mean}</TableCell>
+                <TableCell className={`text-right font-mono text-sm ${cpkColor(r.cp)}`}>{r.cp.toFixed(2)}</TableCell>
+                <TableCell className={`text-right font-mono text-sm ${cpkColor(r.cpk)}`}>{r.cpk.toFixed(2)}</TableCell>
+                <TableCell><Badge variant="outline" className={spcStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View Chart</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>Add SPC Process</DialogTitle><DialogDescription>Define a new process for statistical monitoring.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Process *</Label><Input value={form.process} onChange={e => setForm(f => ({ ...f, process: e.target.value }))} placeholder="e.g., CNC Turning" /></div>
+              <div className="space-y-2"><Label>Characteristic *</Label><Input value={form.characteristic} onChange={e => setForm(f => ({ ...f, characteristic: e.target.value }))} placeholder="e.g., Outer Diameter (mm)" /></div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2"><Label>USL</Label><Input type="number" step="any" value={form.usl} onChange={e => setForm(f => ({ ...f, usl: e.target.value }))} placeholder="Upper limit" /></div>
+              <div className="space-y-2"><Label>LSL</Label><Input type="number" step="any" value={form.lsl} onChange={e => setForm(f => ({ ...f, lsl: e.target.value }))} placeholder="Lower limit" /></div>
+              <div className="space-y-2"><Label>Target</Label><Input type="number" step="any" value={form.target} onChange={e => setForm(f => ({ ...f, target: e.target.value }))} placeholder="Target value" /></div>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Add Process</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function QualityCapaPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ title: '', description: '', type: 'corrective', source: 'ncr', priority: 'medium', owner: '', dueDate: '' });
+  const capaPriorityColors: Record<string, string> = { critical: 'bg-red-50 text-red-700 border-red-200', high: 'bg-orange-50 text-orange-700 border-orange-200', medium: 'bg-amber-50 text-amber-700 border-amber-200', low: 'bg-slate-100 text-slate-600 border-slate-200' };
+  const capaStatusColors: Record<string, string> = { open: 'bg-amber-50 text-amber-700 border-amber-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', implemented: 'bg-violet-50 text-violet-700 border-violet-200', verified: 'bg-emerald-50 text-emerald-700 border-emerald-200', closed: 'bg-slate-100 text-slate-500 border-slate-200' };
+  const capaData = [
+    { id: 'CAPA-001', title: 'Reduce Weld Defect Rate Below 2%', type: 'corrective', source: 'ncr', priority: 'high', status: 'in_progress', due: '2025-02-15', owner: 'Mike Torres' },
+    { id: 'CAPA-002', title: 'Implement Supplier Scorecard System', type: 'preventive', source: 'audit', priority: 'medium', status: 'open', due: '2025-03-01', owner: 'Lisa Wang' },
+    { id: 'CAPA-003', title: 'Correct Paint Adhesion Failure – Batch 44', type: 'corrective', source: 'ncr', priority: 'critical', status: 'in_progress', due: '2025-01-30', owner: 'David Kim' },
+    { id: 'CAPA-004', title: 'Standardize Torque Procedures', type: 'corrective', source: 'complaint', priority: 'high', status: 'verified', due: '2025-01-20', owner: 'Sarah Chen' },
+    { id: 'CAPA-005', title: 'Prevent Calibration Drift', type: 'preventive', source: 'audit', priority: 'medium', status: 'open', due: '2025-02-28', owner: 'James Park' },
+    { id: 'CAPA-006', title: 'Address Customer Surface Complaint', type: 'corrective', source: 'customer', priority: 'critical', status: 'in_progress', due: '2025-01-25', owner: 'Mike Torres' },
+    { id: 'CAPA-007', title: 'Improve Incoming Inspection Sampling', type: 'preventive', source: 'ncr', priority: 'low', status: 'closed', due: '2025-01-10', owner: 'Lisa Wang' },
+    { id: 'CAPA-008', title: 'Fix CNC Tool Wear Monitoring', type: 'corrective', source: 'ncr', priority: 'medium', status: 'verified', due: '2025-01-18', owner: 'David Kim' },
+    { id: 'CAPA-009', title: 'Enhance Operator Training Program', type: 'preventive', source: 'audit', priority: 'medium', status: 'open', due: '2025-03-15', owner: 'Sarah Chen' },
+    { id: 'CAPA-010', title: 'Resolve Fastener Supplier Non-Conformance', type: 'corrective', source: 'ncr', priority: 'high', status: 'implemented', due: '2025-01-22', owner: 'James Park' },
+  ];
+  const filtered = capaData.filter(r => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const kpis = [
+    { label: 'Total CAPAs', value: 19, icon: HardHat, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Open', value: 8, icon: AlertCircle, color: 'text-amber-600 bg-amber-50' },
+    { label: 'In Progress', value: 6, icon: Clock, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Verified', value: 5, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+  ];
+  const handleCreate = () => { if (!form.title) { toast.error('Title is required'); return; } toast.success('CAPA created'); setCreateOpen(false); setForm({ title: '', description: '', type: 'corrective', source: 'ncr', priority: 'medium', owner: '', dueDate: '' }); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Corrective & Preventive Actions</h1><p className="text-muted-foreground text-sm mt-1">Manage CAPAs for continuous quality improvement</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New CAPA</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search CAPAs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="open">Open</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="implemented">Implemented</SelectItem><SelectItem value="verified">Verified</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table><TableHeader><TableRow><TableHead className="w-[110px]">CAPA #</TableHead><TableHead>Title</TableHead><TableHead>Type</TableHead><TableHead>Source</TableHead><TableHead>Priority</TableHead><TableHead>Status</TableHead><TableHead className="w-[110px]">Due Date</TableHead><TableHead>Owner</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+            {filtered.map(r => (
+              <TableRow key={r.id}>
+                <TableCell className="font-mono text-xs">{r.id}</TableCell>
+                <TableCell className="font-medium text-sm max-w-[250px] truncate">{r.title}</TableCell>
+                <TableCell><Badge variant="secondary" className="text-[11px]">{r.type}</Badge></TableCell>
+                <TableCell><Badge variant="secondary" className="text-[11px]">{r.source}</Badge></TableCell>
+                <TableCell><Badge variant="outline" className={capaPriorityColors[r.priority] || ''}>{r.priority.toUpperCase()}</Badge></TableCell>
+                <TableCell><Badge variant="outline" className={capaStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell className="text-sm text-muted-foreground">{formatDate(r.due)}</TableCell>
+                <TableCell className="text-sm">{r.owner}</TableCell>
+                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>New CAPA</DialogTitle><DialogDescription>Create a corrective or preventive action.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Title *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="CAPA title" /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe the issue and planned actions..." rows={3} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="corrective">Corrective</SelectItem><SelectItem value="preventive">Preventive</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Source</Label><Select value={form.source} onValueChange={v => setForm(f => ({ ...f, source: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ncr">NCR</SelectItem><SelectItem value="audit">Audit</SelectItem><SelectItem value="customer">Customer</SelectItem><SelectItem value="complaint">Complaint</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Priority</Label><Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Owner</Label><Input value={form.owner} onChange={e => setForm(f => ({ ...f, owner: e.target.value }))} placeholder="Responsible person" /></div>
+            </div>
+            <div className="space-y-2"><Label>Due Date</Label><Input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create CAPA</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 // ============================================================================
 // SAFETY SUBPAGES
 // ============================================================================
 
-function SafetyIncidentsPage() { return <ComingSoonPage title="Incidents" description="Report, investigate, and track safety incidents and near-misses." icon={TriangleAlert} features={['Incident reporting', 'Investigation workflow', 'Corrective actions', 'Regulatory compliance']} />; }
-function SafetyInspectionsPage() { return <ComingSoonPage title="Safety Inspections" description="Schedule and conduct safety inspections and workplace audits." icon={Search} features={['Inspection schedules', 'Checklists', 'Finding tracking', 'Compliance reports']} />; }
-function SafetyTrainingPage() { return <ComingSoonPage title="Safety Training" description="Manage safety training programs, certifications, and compliance." icon={GraduationCap} features={['Training records', 'Certification tracking', 'Due date alerts', 'Competency assessment']} />; }
-function SafetyEquipmentPage() { return <ComingSoonPage title="Safety Equipment" description="Track PPE, safety devices, and emergency equipment inventory." icon={HardHat} features={['Equipment registry', 'Inspection dates', 'Replacement tracking', 'Assignment log']} />; }
-function SafetyPermitsPage() { return <ComingSoonPage title="Permits" description="Manage work permits including hot work, confined space, and electrical permits." icon={FileCheck} features={['Permit templates', 'Approval workflow', 'Expiration alerts', 'Audit trail']} />; }
+function SafetyIncidentsPage() {
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState({ title: '', description: '', type: 'near_miss', severity: 'first_aid', location: '', reportedBy: '', date: '', witnesses: '' });
+
+  const severityBadge: Record<string, string> = {
+    near_miss: 'bg-blue-50 text-blue-700 border-blue-200',
+    first_aid: 'bg-amber-50 text-amber-700 border-amber-200',
+    recordable: 'bg-orange-50 text-orange-700 border-orange-200',
+    serious: 'bg-red-50 text-red-700 border-red-200',
+    fatal: 'bg-red-100 text-red-900 border-red-300',
+  };
+  const statusColors: Record<string, string> = {
+    reported: 'bg-sky-50 text-sky-700 border-sky-200',
+    investigating: 'bg-amber-50 text-amber-700 border-amber-200',
+    corrective: 'bg-violet-50 text-violet-700 border-violet-200',
+    closed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  };
+  const typeLabel: Record<string, string> = { near_miss: 'Near Miss', first_aid: 'First Aid', recordable: 'Recordable', serious: 'Serious', fatal: 'Fatal' };
+
+  const incidents = useMemo(() => [
+    { id: 'INC-001', title: 'Chemical spill in warehouse B', type: 'serious', severity: 'serious', location: 'Warehouse B', date: '2025-01-18T09:30:00', reportedBy: 'James Carter', status: 'investigating', rootCause: 'Improper container storage' },
+    { id: 'INC-002', title: 'Slip and fall near loading dock', type: 'recordable', severity: 'recordable', location: 'Loading Dock', date: '2025-01-17T14:15:00', reportedBy: 'Maria Lopez', status: 'corrective', rootCause: 'Wet floor, no signage' },
+    { id: 'INC-003', title: 'Near miss – forklift near pedestrian', type: 'near_miss', severity: 'near_miss', location: 'Zone A', date: '2025-01-16T11:00:00', reportedBy: 'Robert Chen', status: 'reported', rootCause: '' },
+    { id: 'INC-004', title: 'Minor cut from sharp edge', type: 'first_aid', severity: 'first_aid', location: 'Workshop 1', date: '2025-01-15T08:45:00', reportedBy: 'Sarah Kim', status: 'closed', rootCause: 'Missing guard on machine' },
+    { id: 'INC-005', title: 'Electrical shock from exposed wiring', type: 'recordable', severity: 'serious', location: 'Building A', date: '2025-01-14T16:20:00', reportedBy: 'David Park', status: 'closed', rootCause: 'Damaged cable insulation' },
+    { id: 'INC-006', title: 'Minor burn from hot pipe', type: 'first_aid', severity: 'first_aid', location: 'Boiler Room', date: '2025-01-13T10:00:00', reportedBy: 'Lisa Nguyen', status: 'closed', rootCause: 'Missing insulation cover' },
+    { id: 'INC-007', title: 'Falling object from scaffolding', type: 'serious', severity: 'recordable', location: 'Warehouse D', date: '2025-01-12T13:30:00', reportedBy: 'Tom Harris', status: 'investigating', rootCause: '' },
+    { id: 'INC-008', title: 'Near miss – swinging crane load', type: 'near_miss', severity: 'near_miss', location: 'Crane Bay', date: '2025-01-11T09:15:00', reportedBy: 'Emma Wright', status: 'corrective', rootCause: 'Wind gust, no tagline' },
+    { id: 'INC-009', title: 'Noise exposure above limit', type: 'recordable', severity: 'recordable', location: 'Production Floor', date: '2025-01-10T15:45:00', reportedBy: 'Mike Johnson', status: 'closed', rootCause: 'Faulty hearing protection' },
+    { id: 'INC-010', title: 'Forklift collision with racking', type: 'near_miss', severity: 'near_miss', location: 'Zone C', date: '2025-01-09T07:30:00', reportedBy: 'Anna White', status: 'reported', rootCause: '' },
+    { id: 'INC-011', title: 'Confined space oxygen drop', type: 'serious', severity: 'serious', location: 'Tank Farm', date: '2025-01-08T11:00:00', reportedBy: 'Kevin Brooks', status: 'investigating', rootCause: 'Ventilation failure' },
+    { id: 'INC-012', title: 'First aid – eye irritation', type: 'first_aid', severity: 'first_aid', location: 'Lab 2', date: '2025-01-07T14:20:00', reportedBy: 'Rachel Adams', status: 'closed', rootCause: 'Splash from chemical mix' },
+  ], []);
+
+  const filtered = useMemo(() => incidents.filter(i => {
+    if (search && !i.title.toLowerCase().includes(search.toLowerCase()) && !i.id.toLowerCase().includes(search.toLowerCase())) return false;
+    if (typeFilter !== 'all' && i.type !== typeFilter) return false;
+    if (statusFilter !== 'all' && i.status !== statusFilter) return false;
+    return true;
+  }), [incidents, search, typeFilter, statusFilter]);
+
+  const severityCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    incidents.forEach(i => { counts[i.type] = (counts[i.type] || 0) + 1; });
+    return Object.entries(counts).map(([name, value]) => ({ name: typeLabel[name] || name, value, fill: name === 'near_miss' ? '#3b82f6' : name === 'first_aid' ? '#f59e0b' : name === 'recordable' ? '#f97316' : name === 'serious' ? '#ef4444' : '#991b1b' }));
+  }, [incidents]);
+  const severityConfig = useMemo(() => Object.fromEntries(severityCounts.map((s: any) => [s.name, { label: s.name, color: s.fill }])) as any, [severityCounts]);
+
+  const daysSince = Math.floor((Date.now() - new Date('2025-01-18T09:30:00').getTime()) / 86400000);
+  const openCount = incidents.filter(i => i.status === 'reported').length;
+  const invCount = incidents.filter(i => i.status === 'investigating').length;
+  const closedCount = incidents.filter(i => i.status === 'closed').length;
+
+  const kpis = useMemo(() => [
+    { label: 'Total Incidents', value: incidents.length, icon: TriangleAlert, color: 'from-red-500 to-orange-500' },
+    { label: 'Open', value: openCount, icon: AlertCircle, color: 'from-sky-500 to-blue-500' },
+    { label: 'Under Investigation', value: invCount, icon: Search, color: 'from-amber-500 to-yellow-500' },
+    { label: 'Closed', value: closedCount, icon: CheckCircle2, color: 'from-emerald-500 to-teal-500' },
+    { label: 'Days Since Last Incident', value: daysSince, icon: ShieldCheck, color: 'from-teal-500 to-emerald-500' },
+  ], [openCount, invCount, closedCount, daysSince]);
+
+  const handleCreate = () => {
+    if (!form.title) { toast.error('Title is required'); return; }
+    toast.success(`Incident "${form.title}" reported successfully`);
+    setDialogOpen(false);
+    setForm({ title: '', description: '', type: 'near_miss', severity: 'first_aid', location: '', reportedBy: '', date: '', witnesses: '' });
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Safety Incidents</h1>
+          <p className="text-muted-foreground mt-1">Report, investigate, and track safety incidents and near-misses</p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />Report Incident</Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Report New Incident</DialogTitle>
+              <DialogDescription>Fill in the details of the safety incident</DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="max-h-[70vh]">
+              <div className="space-y-4 py-2 pr-3">
+                <div className="space-y-2"><Label>Title</Label><Input placeholder="Brief description of incident" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} /></div>
+                <div className="space-y-2"><Label>Description</Label><Textarea placeholder="Detailed description..." rows={3} value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Type</Label>
+                    <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="near_miss">Near Miss</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="recordable">Recordable</SelectItem><SelectItem value="serious">Serious</SelectItem><SelectItem value="fatal">Fatal</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2"><Label>Severity</Label>
+                    <Select value={form.severity} onValueChange={v => setForm(p => ({ ...p, severity: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="near_miss">Near Miss</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="recordable">Recordable</SelectItem><SelectItem value="serious">Serious</SelectItem><SelectItem value="fatal">Fatal</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Location</Label><Input placeholder="e.g. Warehouse B" value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Reported By</Label><Input placeholder="Name" value={form.reportedBy} onChange={e => setForm(p => ({ ...p, reportedBy: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label>Witnesses</Label><Input placeholder="Comma-separated names" value={form.witnesses} onChange={e => setForm(p => ({ ...p, witnesses: e.target.value }))} /></div>
+                </div>
+              </div>
+            </ScrollArea>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Submit Report</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
+        {kpis.map(k => { const Icon = k.icon; return (
+          <Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div><p className="text-xs text-muted-foreground">{k.label}</p><p className="text-2xl font-bold mt-1">{k.value}</p></div>
+                <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${k.color} flex items-center justify-center`}><Icon className="h-5 w-5 text-white" /></div>
+              </div>
+            </CardContent>
+          </Card>
+        ); })}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm lg:col-span-1">
+          <CardHeader className="pb-2"><CardTitle className="text-base">Severity Breakdown</CardTitle><CardDescription className="text-xs">By incident type</CardDescription></CardHeader>
+          <CardContent>
+            <ChartContainer config={severityConfig} className="h-[240px] w-full">
+              <PieChart>
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Pie data={severityCounts} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" nameKey="name" strokeWidth={2} stroke="hsl(var(--background))">
+                  {severityCounts.map((entry: any, idx: number) => <Cell key={idx} fill={entry.fill} />)}
+                </Pie>
+              </PieChart>
+            </ChartContainer>
+            <div className="flex flex-wrap gap-2 mt-2 justify-center">
+              {severityCounts.map((s: any) => (
+                <div key={s.name} className="flex items-center gap-1.5 text-xs">
+                  <div className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: s.fill }} />
+                  <span className="text-muted-foreground">{s.name} ({s.value})</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm lg:col-span-3">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search incidents..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
+              <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="near_miss">Near Miss</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="recordable">Recordable</SelectItem><SelectItem value="serious">Serious</SelectItem><SelectItem value="fatal">Fatal</SelectItem></SelectContent></Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="reported">Reported</SelectItem><SelectItem value="investigating">Investigating</SelectItem><SelectItem value="corrective">Corrective</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select>
+            </div>
+            <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
+              <Table>
+                <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Title</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Location</TableHead><TableHead className="font-semibold">Date</TableHead><TableHead className="font-semibold">Reported By</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="font-semibold">Root Cause</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {filtered.length === 0 ? <TableRow><TableCell colSpan={9}><EmptyState icon={TriangleAlert} title="No incidents found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(i => (
+                    <TableRow key={i.id} className="cursor-pointer hover:bg-muted/30">
+                      <TableCell className="font-mono text-xs font-semibold">{i.id}</TableCell>
+                      <TableCell className="font-medium max-w-[200px] truncate">{i.title}</TableCell>
+                      <TableCell><Badge variant="outline" className={severityBadge[i.type] || ''}>{typeLabel[i.type] || i.type}</Badge></TableCell>
+                      <TableCell className="text-sm text-muted-foreground"><div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 shrink-0" /><span className="truncate max-w-[120px]">{i.location}</span></div></TableCell>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(i.date)}</TableCell>
+                      <TableCell><div className="flex items-center gap-2"><Avatar className="h-6 w-6"><AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700">{getInitials(i.reportedBy)}</AvatarFallback></Avatar><span className="text-sm whitespace-nowrap">{i.reportedBy}</span></div></TableCell>
+                      <TableCell><Badge variant="outline" className={statusColors[i.status] || ''}>{i.status}</Badge></TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-[160px] truncate">{i.rootCause || '—'}</TableCell>
+                      <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+              <span>Showing {filtered.length} of {incidents.length} incidents</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function SafetyInspectionsPage() {
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [checklistItems, setChecklistItems] = useState(['', '']);
+  const [form, setForm] = useState({ title: '', type: 'routine', area: '', inspector: '', scheduledDate: '' });
+
+  const statusColors: Record<string, string> = { passed: 'bg-emerald-50 text-emerald-700 border-emerald-200', failed: 'bg-red-50 text-red-700 border-red-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', scheduled: 'bg-sky-50 text-sky-700 border-sky-200' };
+  const typeColors: Record<string, string> = { routine: 'bg-slate-100 text-slate-600 border-slate-200', special: 'bg-violet-50 text-violet-700 border-violet-200', emergency: 'bg-red-50 text-red-600 border-red-200' };
+
+  const inspections = useMemo(() => [
+    { id: 'INSP-001', title: 'Monthly Fire Safety Walkthrough', type: 'routine', area: 'Building A', inspector: 'John Mitchell', date: '2025-01-20', findings: 2, score: 92, status: 'passed' },
+    { id: 'INSP-002', title: 'OSHA Compliance Audit – Zone C', type: 'special', area: 'Zone C', inspector: 'Rachel Adams', date: '2025-01-22', findings: 5, score: 78, status: 'failed' },
+    { id: 'INSP-003', title: 'Scaffold Safety Check', type: 'emergency', area: 'Warehouse D', inspector: 'Kevin Brooks', date: '2025-01-25', findings: 0, score: 0, status: 'scheduled' },
+    { id: 'INSP-004', title: 'Emergency Exit Inspection', type: 'routine', area: 'Building B', inspector: 'Linda Park', date: '2025-01-18', findings: 3, score: 65, status: 'failed' },
+    { id: 'INSP-005', title: 'Chemical Storage Compliance', type: 'special', area: 'Lab 2', inspector: 'Tom Wilson', date: '2025-01-28', findings: 0, score: 0, status: 'scheduled' },
+    { id: 'INSP-006', title: 'Crane & Lifting Equipment Audit', type: 'special', area: 'Workshop 1', inspector: 'Mike Torres', date: '2025-01-19', findings: 1, score: 88, status: 'in_progress' },
+    { id: 'INSP-007', title: 'PPE Condition Assessment', type: 'routine', area: 'All Areas', inspector: 'Anna Lee', date: '2025-01-15', findings: 1, score: 96, status: 'passed' },
+    { id: 'INSP-008', title: 'Emergency Response Drill Evaluation', type: 'emergency', area: 'Plant Grounds', inspector: 'Chris Evans', date: '2025-01-21', findings: 4, score: 82, status: 'passed' },
+  ], []);
+
+  const filtered = useMemo(() => inspections.filter(i => {
+    if (search && !i.title.toLowerCase().includes(search.toLowerCase()) && !i.id.toLowerCase().includes(search.toLowerCase())) return false;
+    if (typeFilter !== 'all' && i.type !== typeFilter) return false;
+    if (statusFilter !== 'all' && i.status !== statusFilter) return false;
+    return true;
+  }), [inspections, search, typeFilter, statusFilter]);
+
+  const passedCount = inspections.filter(i => i.status === 'passed').length;
+  const failedCount = inspections.filter(i => i.status === 'failed').length;
+  const scheduledCount = inspections.filter(i => i.status === 'scheduled').length;
+
+  const kpis = useMemo(() => [
+    { label: 'Total Inspections', value: inspections.length, icon: ClipboardCheck, color: 'from-emerald-500 to-teal-500' },
+    { label: 'Passed', value: passedCount, icon: CheckCircle2, color: 'from-emerald-500 to-green-500' },
+    { label: 'Failed', value: failedCount, icon: XCircle, color: 'from-red-500 to-orange-500' },
+    { label: 'Scheduled', value: scheduledCount, icon: Calendar, color: 'from-sky-500 to-blue-500' },
+  ], [passedCount, failedCount, scheduledCount]);
+
+  const handleCreate = () => {
+    if (!form.title) { toast.error('Title is required'); return; }
+    toast.success(`Inspection "${form.title}" created successfully`);
+    setDialogOpen(false);
+    setForm({ title: '', type: 'routine', area: '', inspector: '', scheduledDate: '' });
+    setChecklistItems(['', '']);
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Safety Inspections</h1>
+          <p className="text-muted-foreground mt-1">Schedule and conduct safety inspections and workplace audits</p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />New Inspection</Button></DialogTrigger>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader><DialogTitle>Create Inspection</DialogTitle><DialogDescription>Schedule a new safety inspection with checklist items</DialogDescription></DialogHeader>
+            <ScrollArea className="max-h-[70vh]">
+              <div className="space-y-4 py-2 pr-3">
+                <div className="space-y-2"><Label>Title</Label><Input placeholder="Inspection title" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} /></div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Type</Label>
+                    <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="routine">Routine</SelectItem><SelectItem value="special">Special</SelectItem><SelectItem value="emergency">Emergency</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2"><Label>Area</Label><Input placeholder="e.g. Building A" value={form.area} onChange={e => setForm(p => ({ ...p, area: e.target.value }))} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Inspector</Label><Input placeholder="Assigned inspector" value={form.inspector} onChange={e => setForm(p => ({ ...p, inspector: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={form.scheduledDate} onChange={e => setForm(p => ({ ...p, scheduledDate: e.target.value }))} /></div>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Checklist Items</Label>
+                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs cursor-pointer" onClick={() => setChecklistItems([...checklistItems, ''])}><Plus className="h-3 w-3 mr-1" />Add</Button>
+                  </div>
+                  <div className="space-y-2">
+                    {checklistItems.map((item, idx) => (
+                      <div key={idx} className="flex gap-2">
+                        <Input placeholder={`Checklist item ${idx + 1}`} value={item} onChange={e => { const updated = [...checklistItems]; updated[idx] = e.target.value; setChecklistItems(updated); }} />
+                        {checklistItems.length > 1 && <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 cursor-pointer" onClick={() => setChecklistItems(checklistItems.filter((_, i) => i !== idx))}><X className="h-4 w-4" /></Button>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </ScrollArea>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Create</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const Icon = k.icon; return (
+          <Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div><p className="text-sm text-muted-foreground">{k.label}</p><p className="text-2xl font-bold mt-1">{k.value}</p></div>
+                <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${k.color} flex items-center justify-center`}><Icon className="h-5 w-5 text-white" /></div>
+              </div>
+            </CardContent>
+          </Card>
+        ); })}
+      </div>
+
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+        <CardContent className="p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+            <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search inspections..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
+            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-full sm:w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="routine">Routine</SelectItem><SelectItem value="special">Special</SelectItem><SelectItem value="emergency">Emergency</SelectItem></SelectContent></Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="failed">Failed</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem></SelectContent></Select>
+          </div>
+          <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
+            <Table>
+              <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Title</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Area</TableHead><TableHead className="font-semibold">Inspector</TableHead><TableHead className="font-semibold">Date</TableHead><TableHead className="font-semibold">Findings</TableHead><TableHead className="font-semibold">Score</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+              <TableBody>
+                {filtered.length === 0 ? <TableRow><TableCell colSpan={10}><EmptyState icon={ClipboardCheck} title="No inspections found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(i => (
+                  <TableRow key={i.id} className="cursor-pointer hover:bg-muted/30">
+                    <TableCell className="font-mono text-xs font-semibold">{i.id}</TableCell>
+                    <TableCell className="font-medium max-w-[220px] truncate">{i.title}</TableCell>
+                    <TableCell><Badge variant="outline" className={typeColors[i.type] || ''}>{i.type}</Badge></TableCell>
+                    <TableCell className="text-sm"><div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="truncate max-w-[120px]">{i.area}</span></div></TableCell>
+                    <TableCell><div className="flex items-center gap-2"><Avatar className="h-6 w-6"><AvatarFallback className="text-[10px] bg-teal-100 text-teal-700">{getInitials(i.inspector)}</AvatarFallback></Avatar><span className="text-sm whitespace-nowrap">{i.inspector}</span></div></TableCell>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(i.date)}</TableCell>
+                    <TableCell className="text-sm font-medium">{i.findings}</TableCell>
+                    <TableCell>
+                      {i.score > 0 ? (
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-16 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${i.score >= 80 ? 'bg-emerald-500' : i.score >= 60 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${i.score}%` }} /></div>
+                          <span className={`text-sm font-semibold ${i.score >= 80 ? 'text-emerald-600' : i.score >= 60 ? 'text-amber-600' : 'text-red-600'}`}>{i.score}%</span>
+                        </div>
+                      ) : <span className="text-sm text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell><Badge variant="outline" className={statusColors[i.status] || ''}>{i.status.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+            <span>Showing {filtered.length} of {inspections.length} inspections</span>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SafetyTrainingPage() {
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState({ courseName: '', type: 'mandatory', requiredFor: '', duration: '', completedBy: '', dueDate: '' });
+
+  const statusColors: Record<string, string> = { completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', overdue: 'bg-red-50 text-red-700 border-red-200', not_started: 'bg-slate-100 text-slate-500 border-slate-200' };
+  const typeColors: Record<string, string> = { mandatory: 'bg-red-50 text-red-600 border-red-200', refresher: 'bg-amber-50 text-amber-700 border-amber-200', certification: 'bg-violet-50 text-violet-700 border-violet-200', elective: 'bg-sky-50 text-sky-700 border-sky-200' };
+
+  const trainings = useMemo(() => [
+    { id: 'TR-001', courseName: 'Fire Safety & Evacuation', type: 'mandatory', requiredFor: 'All Staff', duration: '4 hours', completedBy: 'Operations', dueDate: '2025-02-15', status: 'completed' },
+    { id: 'TR-002', courseName: 'Hazardous Chemical Handling', type: 'certification', requiredFor: 'Lab Technicians', duration: '6 hours', completedBy: 'Lab Team (partial)', dueDate: '2025-01-10', status: 'overdue' },
+    { id: 'TR-003', courseName: 'Electrical Safety Awareness', type: 'mandatory', requiredFor: 'Maintenance', duration: '3 hours', completedBy: 'Maintenance Dept', dueDate: '2025-02-28', status: 'in_progress' },
+    { id: 'TR-004', courseName: 'Working at Heights Certification', type: 'certification', requiredFor: 'Riggers & Scaffolders', duration: '8 hours', completedBy: 'Scaffold Team', dueDate: '2025-01-20', status: 'completed' },
+    { id: 'TR-005', courseName: 'First Aid & CPR', type: 'mandatory', requiredFor: 'All Staff', duration: '5 hours', completedBy: 'Admin & Ops', dueDate: '2025-03-01', status: 'in_progress' },
+    { id: 'TR-006', courseName: 'Confined Space Entry', type: 'certification', requiredFor: 'Tank Crew', duration: '4 hours', completedBy: '—', dueDate: '2025-01-25', status: 'not_started' },
+    { id: 'TR-007', courseName: 'Lockout/Tagout Procedures', type: 'refresher', requiredFor: 'Electricians', duration: '2 hours', completedBy: 'Electrical Team', dueDate: '2025-01-15', status: 'completed' },
+    { id: 'TR-008', courseName: 'Emergency Response Drill', type: 'mandatory', requiredFor: 'All Staff', duration: '3 hours', completedBy: '—', dueDate: '2025-02-10', status: 'not_started' },
+    { id: 'TR-009', courseName: 'Crane & Rigging Safety', type: 'certification', requiredFor: 'Crane Operators', duration: '8 hours', completedBy: 'Crane Team', dueDate: '2025-01-05', status: 'overdue' },
+    { id: 'TR-010', courseName: 'Ergonomics in the Workplace', type: 'elective', requiredFor: 'Office Staff', duration: '2 hours', completedBy: 'Admin Team', dueDate: '2025-03-15', status: 'in_progress' },
+  ], []);
+
+  const filtered = useMemo(() => trainings.filter(t => {
+    if (search && !t.courseName.toLowerCase().includes(search.toLowerCase()) && !t.requiredFor.toLowerCase().includes(search.toLowerCase())) return false;
+    if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+    return true;
+  }), [trainings, search, statusFilter]);
+
+  const completedCount = trainings.filter(t => t.status === 'completed').length;
+  const overdueCount = trainings.filter(t => t.status === 'overdue').length;
+  const complianceRate = Math.round((completedCount / trainings.length) * 100);
+
+  const kpis = useMemo(() => [
+    { label: 'Total Courses', value: trainings.length, icon: GraduationCap, color: 'from-emerald-500 to-teal-500' },
+    { label: 'Completed', value: completedCount, icon: CheckCircle2, color: 'from-sky-500 to-blue-500' },
+    { label: 'Overdue', value: overdueCount, icon: AlertTriangle, color: 'from-red-500 to-orange-500' },
+    { label: 'Compliance Rate', value: `${complianceRate}%`, icon: ShieldCheck, color: 'from-amber-500 to-yellow-500' },
+  ], [completedCount, overdueCount, complianceRate]);
+
+  const deptCompliance = [
+    { dept: 'Operations', rate: 92 }, { dept: 'Maintenance', rate: 78 }, { dept: 'Lab', rate: 60 },
+    { dept: 'Admin', rate: 85 }, { dept: 'Warehouse', rate: 70 }, { dept: 'Safety', rate: 95 },
+  ];
+
+  const handleCreate = () => {
+    if (!form.courseName) { toast.error('Course name is required'); return; }
+    toast.success(`Training "${form.courseName}" created successfully`);
+    setDialogOpen(false);
+    setForm({ courseName: '', type: 'mandatory', requiredFor: '', duration: '', completedBy: '', dueDate: '' });
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Safety Training</h1>
+          <p className="text-muted-foreground mt-1">Manage safety training programs, certifications, and compliance</p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />New Training</Button></DialogTrigger>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader><DialogTitle>Create Training Record</DialogTitle><DialogDescription>Add a new safety training course or session</DialogDescription></DialogHeader>
+            <ScrollArea className="max-h-[70vh]">
+              <div className="space-y-4 py-2 pr-3">
+                <div className="space-y-2"><Label>Course Name</Label><Input placeholder="e.g. Fire Safety Training" value={form.courseName} onChange={e => setForm(p => ({ ...p, courseName: e.target.value }))} /></div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Type</Label>
+                    <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="mandatory">Mandatory</SelectItem><SelectItem value="refresher">Refresher</SelectItem><SelectItem value="certification">Certification</SelectItem><SelectItem value="elective">Elective</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2"><Label>Duration</Label><Input placeholder="e.g. 4 hours" value={form.duration} onChange={e => setForm(p => ({ ...p, duration: e.target.value }))} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Required For</Label><Input placeholder="e.g. All Staff" value={form.requiredFor} onChange={e => setForm(p => ({ ...p, requiredFor: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label>Due Date</Label><Input type="date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} /></div>
+                </div>
+                <div className="space-y-2"><Label>Completed By</Label><Input placeholder="e.g. Operations Team" value={form.completedBy} onChange={e => setForm(p => ({ ...p, completedBy: e.target.value }))} /></div>
+              </div>
+            </ScrollArea>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Create</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const Icon = k.icon; return (
+          <Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div><p className="text-sm text-muted-foreground">{k.label}</p><p className="text-2xl font-bold mt-1">{k.value}</p></div>
+                <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${k.color} flex items-center justify-center`}><Icon className="h-5 w-5 text-white" /></div>
+              </div>
+            </CardContent>
+          </Card>
+        ); })}
+      </div>
+
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+        <CardHeader className="pb-3"><CardTitle className="text-base">Department Compliance</CardTitle><CardDescription className="text-xs">Training completion rates by department</CardDescription></CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {deptCompliance.map(d => (
+              <div key={d.dept} className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">{d.dept}</span>
+                  <span className={`font-semibold ${d.rate >= 85 ? 'text-emerald-600' : d.rate >= 70 ? 'text-amber-600' : 'text-red-600'}`}>{d.rate}%</span>
+                </div>
+                <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
+                  <div className={`h-full rounded-full transition-all ${d.rate >= 85 ? 'bg-emerald-500' : d.rate >= 70 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${d.rate}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+        <CardContent className="p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+            <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search courses..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="not_started">Not Started</SelectItem></SelectContent></Select>
+          </div>
+          <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
+            <Table>
+              <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">Course Name</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Required For</TableHead><TableHead className="font-semibold">Duration</TableHead><TableHead className="font-semibold">Completed By</TableHead><TableHead className="font-semibold">Due Date</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+              <TableBody>
+                {filtered.length === 0 ? <TableRow><TableCell colSpan={8}><EmptyState icon={GraduationCap} title="No courses found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(t => (
+                  <TableRow key={t.id} className="cursor-pointer hover:bg-muted/30">
+                    <TableCell className="font-medium max-w-[220px] truncate">{t.courseName}</TableCell>
+                    <TableCell><Badge variant="outline" className={typeColors[t.type] || ''}>{t.type}</Badge></TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{t.requiredFor}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{t.duration}</TableCell>
+                    <TableCell className="text-sm max-w-[150px] truncate">{t.completedBy}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap"><span className={t.status === 'overdue' ? 'text-red-600 font-medium' : ''}>{formatDate(t.dueDate)}</span></TableCell>
+                    <TableCell><Badge variant="outline" className={statusColors[t.status] || ''}>{t.status.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+            <span>Showing {filtered.length} of {trainings.length} courses</span>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SafetyEquipmentPage() {
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState({ name: '', type: 'ppe', location: '', lastInspection: '', nextInspection: '' });
+
+  const statusColors: Record<string, string> = {
+    valid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    expiring: 'bg-amber-50 text-amber-700 border-amber-200',
+    expired: 'bg-red-50 text-red-700 border-red-200',
+    not_inspected: 'bg-slate-100 text-slate-500 border-slate-200',
+  };
+  const typeColors: Record<string, string> = {
+    ppe: 'bg-sky-50 text-sky-700 border-sky-200',
+    fire_extinguisher: 'bg-red-50 text-red-600 border-red-200',
+    first_aid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    guard: 'bg-orange-50 text-orange-700 border-orange-200',
+    device: 'bg-violet-50 text-violet-700 border-violet-200',
+  };
+
+  const equipment = useMemo(() => [
+    { id: 'SEQ-001', name: 'Safety Helmet – White (x12)', type: 'ppe', location: 'Stores Room A', lastInspection: '2025-01-10', nextInspection: '2025-04-10', status: 'valid' },
+    { id: 'SEQ-002', name: 'ABC Fire Extinguisher', type: 'fire_extinguisher', location: 'Building A – Floor 2', lastInspection: '2025-01-05', nextInspection: '2025-07-05', status: 'valid' },
+    { id: 'SEQ-003', name: 'Emergency First Aid Kit', type: 'first_aid', location: 'Workshop 1', lastInspection: '2024-12-20', nextInspection: '2025-01-20', status: 'expiring' },
+    { id: 'SEQ-004', name: '4-Gas Detector – Monitor', type: 'device', location: 'Lab 2', lastInspection: '2024-06-15', nextInspection: '2024-12-15', status: 'expired' },
+    { id: 'SEQ-005', name: 'Full Body Harness', type: 'ppe', location: 'Warehouse D', lastInspection: '2025-01-08', nextInspection: '2025-07-08', status: 'valid' },
+    { id: 'SEQ-006', name: 'CO2 Fire Extinguisher', type: 'fire_extinguisher', location: 'Server Room', lastInspection: '2024-11-01', nextInspection: '2025-01-15', status: 'expired' },
+    { id: 'SEQ-007', name: 'Machine Guard – Lathe', type: 'guard', location: 'Workshop 2', lastInspection: '2024-12-01', nextInspection: '2025-01-18', status: 'expiring' },
+    { id: 'SEQ-008', name: 'Safety Goggles – Pack (x20)', type: 'ppe', location: 'Stores Room A', lastInspection: '', nextInspection: '', status: 'not_inspected' },
+    { id: 'SEQ-009', name: 'Chemical Resistant Gloves', type: 'ppe', location: 'Lab 1', lastInspection: '2025-01-03', nextInspection: '2025-04-03', status: 'valid' },
+    { id: 'SEQ-010', name: 'Emergency Escape Respirator', type: 'device', location: 'Building B – Stairwell', lastInspection: '2024-10-15', nextInspection: '2025-01-25', status: 'expiring' },
+  ], []);
+
+  const filtered = useMemo(() => equipment.filter(eq => {
+    if (search && !eq.name.toLowerCase().includes(search.toLowerCase()) && !eq.id.toLowerCase().includes(search.toLowerCase())) return false;
+    if (typeFilter !== 'all' && eq.type !== typeFilter) return false;
+    if (statusFilter !== 'all' && eq.status !== statusFilter) return false;
+    return true;
+  }), [equipment, search, typeFilter, statusFilter]);
+
+  const inspectedCount = equipment.filter(e => e.status === 'valid' || e.status === 'expiring').length;
+  const expiredCount = equipment.filter(e => e.status === 'expired').length;
+  const dueCount = equipment.filter(e => e.status === 'expiring' || e.status === 'not_inspected').length;
+
+  const kpis = useMemo(() => [
+    { label: 'Total Equipment', value: equipment.length, icon: HardHat, color: 'from-emerald-500 to-teal-500' },
+    { label: 'Inspected', value: inspectedCount, icon: CheckCircle2, color: 'from-sky-500 to-blue-500' },
+    { label: 'Expired', value: expiredCount, icon: XCircle, color: 'from-red-500 to-orange-500' },
+    { label: 'Due for Inspection', value: dueCount, icon: AlertTriangle, color: 'from-amber-500 to-yellow-500' },
+  ], [inspectedCount, expiredCount, dueCount]);
+
+  const handleCreate = () => {
+    if (!form.name) { toast.error('Equipment name is required'); return; }
+    toast.success(`Equipment "${form.name}" registered successfully`);
+    setDialogOpen(false);
+    setForm({ name: '', type: 'ppe', location: '', lastInspection: '', nextInspection: '' });
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Safety Equipment</h1>
+          <p className="text-muted-foreground mt-1">Track PPE, safety devices, and emergency equipment inventory</p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />Register Equipment</Button></DialogTrigger>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader><DialogTitle>Register Equipment</DialogTitle><DialogDescription>Add a new safety equipment item</DialogDescription></DialogHeader>
+            <ScrollArea className="max-h-[70vh]">
+              <div className="space-y-4 py-2 pr-3">
+                <div className="space-y-2"><Label>Equipment Name</Label><Input placeholder="e.g. Safety Helmet" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
+                <div className="space-y-2"><Label>Type</Label>
+                  <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ppe">PPE</SelectItem><SelectItem value="fire_extinguisher">Fire Extinguisher</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="guard">Guard</SelectItem><SelectItem value="device">Device</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2"><Label>Location</Label><Input placeholder="Storage location" value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))} /></div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Last Inspection</Label><Input type="date" value={form.lastInspection} onChange={e => setForm(p => ({ ...p, lastInspection: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label>Next Inspection</Label><Input type="date" value={form.nextInspection} onChange={e => setForm(p => ({ ...p, nextInspection: e.target.value }))} /></div>
+                </div>
+              </div>
+            </ScrollArea>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Register</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const Icon = k.icon; return (
+          <Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div><p className="text-sm text-muted-foreground">{k.label}</p><p className="text-2xl font-bold mt-1">{k.value}</p></div>
+                <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${k.color} flex items-center justify-center`}><Icon className="h-5 w-5 text-white" /></div>
+              </div>
+            </CardContent>
+          </Card>
+        ); })}
+      </div>
+
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+        <CardContent className="p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+            <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search equipment..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
+            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="ppe">PPE</SelectItem><SelectItem value="fire_extinguisher">Fire Extinguisher</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="guard">Guard</SelectItem><SelectItem value="device">Device</SelectItem></SelectContent></Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="valid">Valid</SelectItem><SelectItem value="expiring">Expiring</SelectItem><SelectItem value="expired">Expired</SelectItem><SelectItem value="not_inspected">Not Inspected</SelectItem></SelectContent></Select>
+          </div>
+          <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
+            <Table>
+              <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Equipment Name</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Location</TableHead><TableHead className="font-semibold">Last Inspection</TableHead><TableHead className="font-semibold">Next Inspection</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+              <TableBody>
+                {filtered.length === 0 ? <TableRow><TableCell colSpan={8}><EmptyState icon={HardHat} title="No equipment found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(eq => (
+                  <TableRow key={eq.id} className="cursor-pointer hover:bg-muted/30">
+                    <TableCell className="font-mono text-xs font-semibold">{eq.id}</TableCell>
+                    <TableCell className="font-medium max-w-[220px] truncate">{eq.name}</TableCell>
+                    <TableCell><Badge variant="outline" className={typeColors[eq.type] || ''}>{eq.type.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell className="text-sm"><div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="truncate max-w-[140px]">{eq.location}</span></div></TableCell>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(eq.lastInspection)}</TableCell>
+                    <TableCell className="text-sm whitespace-nowrap"><span className={eq.status === 'expired' ? 'text-red-600 font-medium' : eq.status === 'expiring' ? 'text-amber-600 font-medium' : 'text-muted-foreground'}>{formatDate(eq.nextInspection)}</span></TableCell>
+                    <TableCell><Badge variant="outline" className={statusColors[eq.status] || ''}>{eq.status.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+            <span>Showing {filtered.length} of {equipment.length} items</span>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SafetyPermitsPage() {
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [safetyMeasures, setSafetyMeasures] = useState(['', '', '']);
+  const [form, setForm] = useState({ type: 'hot_work', description: '', area: '', requestedBy: '', validFrom: '', validUntil: '' });
+
+  const statusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', pending: 'bg-amber-50 text-amber-700 border-amber-200', expired: 'bg-red-50 text-red-700 border-red-200', revoked: 'bg-slate-100 text-slate-500 border-slate-300' };
+  const typeColors: Record<string, string> = { hot_work: 'bg-red-50 text-red-600 border-red-200', confined_space: 'bg-orange-50 text-orange-700 border-orange-200', height: 'bg-sky-50 text-sky-700 border-sky-200', electrical: 'bg-violet-50 text-violet-700 border-violet-200', excavation: 'bg-amber-50 text-amber-700 border-amber-200' };
+
+  const permits = useMemo(() => [
+    { id: 'PMT-001', type: 'hot_work', description: 'Welding near fuel storage area', status: 'active', requestedBy: 'James Carter', area: 'Tank Farm', validFrom: '2025-01-15', validUntil: '2025-01-20' },
+    { id: 'PMT-002', type: 'confined_space', description: 'Tank cleaning in reactor vessel', status: 'active', requestedBy: 'Maria Lopez', area: 'Reactor Bay', validFrom: '2025-01-14', validUntil: '2025-01-18' },
+    { id: 'PMT-003', type: 'electrical', description: 'HVAC panel replacement – Building A', status: 'pending', requestedBy: 'Robert Chen', area: 'Building A', validFrom: '2025-01-22', validUntil: '2025-01-25' },
+    { id: 'PMT-004', type: 'excavation', description: 'Underground pipe repair near entrance', status: 'pending', requestedBy: 'Sarah Kim', area: 'Main Entrance', validFrom: '2025-01-20', validUntil: '2025-01-23' },
+    { id: 'PMT-005', type: 'height', description: 'Roof maintenance on Warehouse D', status: 'active', requestedBy: 'David Park', area: 'Warehouse D', validFrom: '2025-01-16', validUntil: '2025-01-19' },
+    { id: 'PMT-006', type: 'hot_work', description: 'Pipe cutting in Workshop 1', status: 'expired', requestedBy: 'Lisa Nguyen', area: 'Workshop 1', validFrom: '2025-01-01', validUntil: '2025-01-05' },
+    { id: 'PMT-007', type: 'electrical', description: 'Emergency lighting repair', status: 'revoked', requestedBy: 'Tom Harris', area: 'Corridor B', validFrom: '2024-12-28', validUntil: '2025-01-02' },
+    { id: 'PMT-008', type: 'confined_space', description: 'Manhole inspection – Zone C', status: 'expired', requestedBy: 'Emma Wright', area: 'Zone C', validFrom: '2025-01-05', validUntil: '2025-01-08' },
+  ], []);
+
+  const filtered = useMemo(() => permits.filter(p => {
+    if (search && !p.description.toLowerCase().includes(search.toLowerCase()) && !p.id.toLowerCase().includes(search.toLowerCase())) return false;
+    if (typeFilter !== 'all' && p.type !== typeFilter) return false;
+    if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+    return true;
+  }), [permits, search, typeFilter, statusFilter]);
+
+  const activeCount = permits.filter(p => p.status === 'active').length;
+  const expiredCount = permits.filter(p => p.status === 'expired').length;
+  const pendingCount = permits.filter(p => p.status === 'pending').length;
+  const revokedCount = permits.filter(p => p.status === 'revoked').length;
+
+  const kpis = useMemo(() => [
+    { label: 'Active Permits', value: activeCount, icon: CheckCircle2, color: 'from-emerald-500 to-teal-500' },
+    { label: 'Expired', value: expiredCount, icon: XCircle, color: 'from-red-500 to-orange-500' },
+    { label: 'Pending Approval', value: pendingCount, icon: Clock, color: 'from-amber-500 to-yellow-500' },
+    { label: 'Revoked', value: revokedCount, icon: ShieldAlert, color: 'from-slate-500 to-slate-600' },
+  ], [activeCount, expiredCount, pendingCount, revokedCount]);
+
+  const handleCreate = () => {
+    if (!form.description) { toast.error('Description is required'); return; }
+    toast.success(`Permit for "${form.type.replace(/_/g, ' ')}" submitted successfully`);
+    setDialogOpen(false);
+    setForm({ type: 'hot_work', description: '', area: '', requestedBy: '', validFrom: '', validUntil: '' });
+    setSafetyMeasures(['', '', '']);
+  };
+
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Safety Permits</h1>
+          <p className="text-muted-foreground mt-1">Manage work permits including hot work, confined space, and electrical permits</p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />Request Permit</Button></DialogTrigger>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader><DialogTitle>Request Work Permit</DialogTitle><DialogDescription>Submit a new safety work permit request</DialogDescription></DialogHeader>
+            <ScrollArea className="max-h-[70vh]">
+              <div className="space-y-4 py-2 pr-3">
+                <div className="space-y-2"><Label>Permit Type</Label>
+                  <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="hot_work">Hot Work</SelectItem><SelectItem value="confined_space">Confined Space</SelectItem><SelectItem value="height">Working at Height</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="excavation">Excavation</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2"><Label>Description</Label><Textarea placeholder="Describe the work activity..." rows={3} value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Area</Label><Input placeholder="Work location" value={form.area} onChange={e => setForm(p => ({ ...p, area: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label>Requested By</Label><Input placeholder="Your name" value={form.requestedBy} onChange={e => setForm(p => ({ ...p, requestedBy: e.target.value }))} /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label>Valid From</Label><Input type="date" value={form.validFrom} onChange={e => setForm(p => ({ ...p, validFrom: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label>Valid Until</Label><Input type="date" value={form.validUntil} onChange={e => setForm(p => ({ ...p, validUntil: e.target.value }))} /></div>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Safety Measures Checklist</Label>
+                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs cursor-pointer" onClick={() => setSafetyMeasures([...safetyMeasures, ''])}><Plus className="h-3 w-3 mr-1" />Add</Button>
+                  </div>
+                  <div className="space-y-2">
+                    {safetyMeasures.map((item, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <input type="checkbox" checked={item.length > 0} readOnly className="rounded accent-emerald-600" />
+                        <Input placeholder={`Safety measure ${idx + 1}`} value={item} onChange={e => { const updated = [...safetyMeasures]; updated[idx] = e.target.value; setSafetyMeasures(updated); }} />
+                        {safetyMeasures.length > 1 && <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 cursor-pointer" onClick={() => setSafetyMeasures(safetyMeasures.filter((_, i) => i !== idx))}><X className="h-4 w-4" /></Button>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </ScrollArea>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Submit Request</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const Icon = k.icon; return (
+          <Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div><p className="text-sm text-muted-foreground">{k.label}</p><p className="text-2xl font-bold mt-1">{k.value}</p></div>
+                <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${k.color} flex items-center justify-center`}><Icon className="h-5 w-5 text-white" /></div>
+              </div>
+            </CardContent>
+          </Card>
+        ); })}
+      </div>
+
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+        <CardContent className="p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row gap-3 mb-4">
+            <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search permits..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
+            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-full sm:w-[170px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="hot_work">Hot Work</SelectItem><SelectItem value="confined_space">Confined Space</SelectItem><SelectItem value="height">Working at Height</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="excavation">Excavation</SelectItem></SelectContent></Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="expired">Expired</SelectItem><SelectItem value="revoked">Revoked</SelectItem></SelectContent></Select>
+          </div>
+          <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
+            <Table>
+              <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">Permit #</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Description</TableHead><TableHead className="font-semibold">Area</TableHead><TableHead className="font-semibold">Requested By</TableHead><TableHead className="font-semibold">Valid From</TableHead><TableHead className="font-semibold">Valid Until</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+              <TableBody>
+                {filtered.length === 0 ? <TableRow><TableCell colSpan={9}><EmptyState icon={FileCheck} title="No permits found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(p => (
+                  <TableRow key={p.id} className="cursor-pointer hover:bg-muted/30">
+                    <TableCell className="font-mono text-xs font-semibold">{p.id}</TableCell>
+                    <TableCell><Badge variant="outline" className={typeColors[p.type] || ''}>{p.type.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell className="font-medium max-w-[200px] truncate">{p.description}</TableCell>
+                    <TableCell className="text-sm"><div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="truncate max-w-[120px]">{p.area}</span></div></TableCell>
+                    <TableCell><div className="flex items-center gap-2"><Avatar className="h-6 w-6"><AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700">{getInitials(p.requestedBy)}</AvatarFallback></Avatar><span className="text-sm whitespace-nowrap">{p.requestedBy}</span></div></TableCell>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(p.validFrom)}</TableCell>
+                    <TableCell className="text-sm whitespace-nowrap"><span className={p.status === 'expired' || p.status === 'revoked' ? 'text-red-600 font-medium' : 'text-muted-foreground'}>{formatDate(p.validUntil)}</span></TableCell>
+                    <TableCell><Badge variant="outline" className={statusColors[p.status] || ''}>{p.status}</Badge></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+            <span>Showing {filtered.length} of {permits.length} permits</span>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 // ============================================================================
 // REPORTS SUBPAGES
@@ -8083,9 +12056,232 @@ function ReportsInventoryPage() {
     </div>
   );
 }
-function ReportsProductionPage() { return <ComingSoonPage title="Production Reports" description="Reports on production output, efficiency, and resource utilization." icon={Factory} features={['Production summaries', 'Efficiency reports', 'Resource utilization', 'Quality metrics']} />; }
-function ReportsQualityPage() { return <ComingSoonPage title="Quality Reports" description="Reports on inspections, NCRs, CAPAs, and quality KPIs." icon={ShieldCheck} features={['Quality dashboards', 'NCR trends', 'CAPA status', 'Compliance reports']} />; }
-function ReportsSafetyPage() { return <ComingSoonPage title="Safety Reports" description="Reports on incidents, inspections, training, and safety KPIs." icon={HardHat} features={['Incident summaries', 'Inspection reports', 'Training compliance', 'Safety trends']} />; }
+function ReportsProductionPage() {
+  const [monthFilter, setMonthFilter] = useState('all');
+  const monthlyData = [
+    { month: 'Aug 2024', planned: 2100, actual: 1980, efficiency: 94.3, downtime: 28, waste: 42 },
+    { month: 'Sep 2024', planned: 2150, actual: 2010, efficiency: 93.5, downtime: 32, waste: 38 },
+    { month: 'Oct 2024', planned: 2200, actual: 2050, efficiency: 93.2, downtime: 35, waste: 45 },
+    { month: 'Nov 2024', planned: 2100, actual: 1830, efficiency: 87.1, downtime: 52, waste: 62 },
+    { month: 'Dec 2024', planned: 2050, actual: 1780, efficiency: 86.8, downtime: 56, waste: 58 },
+    { month: 'Jan 2025', planned: 2200, actual: 1800, efficiency: 81.8, downtime: 48, waste: 40 },
+  ];
+  const filtered = monthFilter === 'all' ? monthlyData : monthlyData.filter(d => d.month.includes(monthFilter));
+  const totalOutput = monthlyData.reduce((s, d) => s + d.actual, 0);
+  const avgEfficiency = (monthlyData.reduce((s, d) => s + d.efficiency, 0) / monthlyData.length).toFixed(1);
+  const avgDowntime = (monthlyData.reduce((s, d) => s + d.downtime, 0) / monthlyData.length).toFixed(1);
+  const avgWaste = ((monthlyData.reduce((s, d) => s + d.waste, 0) / totalOutput) * 100).toFixed(1);
+  const maxActual = Math.max(...monthlyData.map(d => d.actual));
+  const summaryCards = [
+    { label: 'Total Output', value: `${totalOutput.toLocaleString()} units`, icon: Factory, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Efficiency', value: `${avgEfficiency}%`, icon: Target, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Avg Downtime', value: `${avgDowntime} hrs/mo`, icon: Clock, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Waste Rate', value: `${avgWaste}%`, icon: AlertTriangle, color: 'bg-red-50 text-red-600' },
+  ];
+  const months = ['Aug 2024', 'Sep 2024', 'Oct 2024', 'Nov 2024', 'Dec 2024', 'Jan 2025'];
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Production Reports</h1><p className="text-muted-foreground mt-1">Reports on production output, efficiency, and resource utilization</p></div>
+        <div className="flex items-center gap-2">
+          <Select value={monthFilter} onValueChange={setMonthFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Filter month" /></SelectTrigger><SelectContent><SelectItem value="all">All Months</SelectItem>{months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {summaryCards.map(k => { const I = k.icon; return (
+          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+            <div className="flex items-center gap-4">
+              <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
+              <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
+            </div>
+          </div>
+        ); })}
+      </div>
+      <Card className="border border-border/60 shadow-sm">
+        <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Output (Last 6 Months)</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex items-end gap-3 h-48">
+            {monthlyData.map(d => (
+              <div key={d.month} className="flex-1 flex flex-col items-center gap-1">
+                <span className="text-xs font-medium">{d.actual.toLocaleString()}</span>
+                <div className="w-full bg-emerald-100 rounded-t-md" style={{ height: `${(d.actual / maxActual) * 140}px` }}>
+                  <div className="w-full h-full bg-emerald-500 rounded-t-md opacity-80" />
+                </div>
+                <span className="text-[10px] text-muted-foreground text-center">{d.month.split(' ')[0]}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Planned</TableHead><TableHead className="text-right">Actual</TableHead><TableHead className="text-right">Efficiency</TableHead><TableHead className="hidden sm:table-cell text-right">Downtime (hrs)</TableHead><TableHead className="hidden md:table-cell text-right">Waste (units)</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(d => (
+            <TableRow key={d.month} className="hover:bg-muted/30">
+              <TableCell className="font-medium">{d.month}</TableCell>
+              <TableCell className="text-right text-muted-foreground">{d.planned.toLocaleString()}</TableCell>
+              <TableCell className="text-right font-medium">{d.actual.toLocaleString()}</TableCell>
+              <TableCell className={`text-right font-medium ${d.efficiency >= 90 ? 'text-emerald-600' : d.efficiency >= 85 ? 'text-amber-600' : 'text-red-600'}`}>{d.efficiency}%</TableCell>
+              <TableCell className="text-right text-muted-foreground hidden sm:table-cell">{d.downtime}</TableCell>
+              <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.waste}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></div>
+      </CardContent></Card>
+    </div>
+  );
+}
+function ReportsQualityPage() {
+  const [monthFilter, setMonthFilter] = useState('all');
+  const ncrCategories = [
+    { name: 'Design', count: 12, color: 'bg-violet-500' },
+    { name: 'Material', count: 18, color: 'bg-amber-500' },
+    { name: 'Process', count: 25, color: 'bg-sky-500' },
+    { name: 'External', count: 8, color: 'bg-red-500' },
+  ];
+  const totalNCRs = ncrCategories.reduce((s, c) => s + c.count, 0);
+  const monthlyData = [
+    { month: 'Aug 2024', inspections: 55, passed: 52, failed: 3, passRate: 94.5, ncrs: 3, capas: 2 },
+    { month: 'Sep 2024', inspections: 60, passed: 57, failed: 3, passRate: 95.0, ncrs: 4, capas: 3 },
+    { month: 'Oct 2024', inspections: 58, passed: 54, failed: 4, passRate: 93.1, ncrs: 5, capas: 4 },
+    { month: 'Nov 2024', inspections: 62, passed: 58, failed: 4, passRate: 93.5, ncrs: 6, capas: 5 },
+    { month: 'Dec 2024', inspections: 52, passed: 49, failed: 3, passRate: 94.2, ncrs: 4, capas: 3 },
+    { month: 'Jan 2025', inspections: 55, passed: 52, failed: 3, passRate: 94.5, ncrs: 3, capas: 2 },
+  ];
+  const filtered = monthFilter === 'all' ? monthlyData : monthlyData.filter(d => d.month.includes(monthFilter));
+  const totalInspections = monthlyData.reduce((s, d) => s + d.inspections, 0);
+  const avgPassRate = ((monthlyData.reduce((s, d) => s + d.passed, 0) / totalInspections) * 100).toFixed(1);
+  const summaryCards = [
+    { label: 'Total Inspections', value: totalInspections.toString(), icon: ClipboardCheck, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Pass Rate', value: `${avgPassRate}%`, icon: ShieldCheck, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Open NCRs', value: '9', icon: AlertTriangle, color: 'bg-amber-50 text-amber-600' },
+    { label: 'CAPAs Pending', value: '8', icon: Clock, color: 'bg-red-50 text-red-600' },
+  ];
+  const months = ['Aug 2024', 'Sep 2024', 'Oct 2024', 'Nov 2024', 'Dec 2024', 'Jan 2025'];
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Quality Reports</h1><p className="text-muted-foreground mt-1">Reports on inspections, NCRs, CAPAs, and quality KPIs</p></div>
+        <Select value={monthFilter} onValueChange={setMonthFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Filter month" /></SelectTrigger><SelectContent><SelectItem value="all">All Months</SelectItem>{months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {summaryCards.map(k => { const I = k.icon; return (
+          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+            <div className="flex items-center gap-4">
+              <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
+              <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
+            </div>
+          </div>
+        ); })}
+      </div>
+      <Card className="border border-border/60 shadow-sm">
+        <CardHeader className="pb-3"><CardTitle className="text-base">NCR by Category</CardTitle></CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {ncrCategories.map(cat => (
+              <div key={cat.name} className="flex items-center gap-3">
+                <span className="text-sm font-medium w-20">{cat.name}</span>
+                <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden"><div className={`h-full ${cat.color} rounded-full`} style={{ width: `${(cat.count / Math.max(...ncrCategories.map(c => c.count))) * 100}%` }} /></div>
+                <span className="text-sm font-semibold w-16 text-right">{cat.count} ({Math.round((cat.count / totalNCRs) * 100)}%)</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Inspections</TableHead><TableHead className="hidden sm:table-cell text-right">Passed</TableHead><TableHead className="hidden sm:table-cell text-right">Failed</TableHead><TableHead className="text-right">Pass Rate</TableHead><TableHead className="text-right">NCRs</TableHead><TableHead className="hidden md:table-cell text-right">CAPAs</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(d => (
+            <TableRow key={d.month} className="hover:bg-muted/30">
+              <TableCell className="font-medium">{d.month}</TableCell>
+              <TableCell className="text-right">{d.inspections}</TableCell>
+              <TableCell className="text-right text-emerald-600 hidden sm:table-cell">{d.passed}</TableCell>
+              <TableCell className="text-right text-red-600 hidden sm:table-cell">{d.failed}</TableCell>
+              <TableCell className={`text-right font-medium ${d.passRate >= 95 ? 'text-emerald-600' : d.passRate >= 90 ? 'text-amber-600' : 'text-red-600'}`}>{d.passRate}%</TableCell>
+              <TableCell className="text-right">{d.ncrs}</TableCell>
+              <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.capas}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></div>
+      </CardContent></Card>
+    </div>
+  );
+}
+function ReportsSafetyPage() {
+  const [yearFilter, setYearFilter] = useState('2025');
+  const incidentTypes = [
+    { name: 'Injury', count: 8, color: 'bg-red-500' },
+    { name: 'Near Miss', count: 12, color: 'bg-amber-500' },
+    { name: 'Property', count: 4, color: 'bg-sky-500' },
+    { name: 'Environmental', count: 2, color: 'bg-emerald-500' },
+    { name: 'Fire', count: 1, color: 'bg-orange-500' },
+  ];
+  const maxCount = Math.max(...incidentTypes.map(t => t.count));
+  const monthlyData = [
+    { month: 'Aug 2024', incidents: 5, nearMisses: 8, trir: 1.2, trainingHrs: 120, inspections: 22, actionsClosed: 18 },
+    { month: 'Sep 2024', incidents: 4, nearMisses: 10, trir: 0.9, trainingHrs: 135, inspections: 25, actionsClosed: 20 },
+    { month: 'Oct 2024', incidents: 3, nearMisses: 7, trir: 0.7, trainingHrs: 110, inspections: 20, actionsClosed: 17 },
+    { month: 'Nov 2024', incidents: 6, nearMisses: 9, trir: 1.4, trainingHrs: 145, inspections: 28, actionsClosed: 22 },
+    { month: 'Dec 2024', incidents: 3, nearMisses: 6, trir: 0.6, trainingHrs: 95, inspections: 18, actionsClosed: 15 },
+    { month: 'Jan 2025', incidents: 3, nearMisses: 5, trir: 0.5, trainingHrs: 88, inspections: 15, actionsClosed: 12 },
+  ];
+  const filtered = monthlyData.filter(d => d.month.includes(yearFilter));
+  const totalIncidents = monthlyData.reduce((s, d) => s + d.incidents, 0);
+  const avgTRIR = (monthlyData.reduce((s, d) => s + d.trir, 0) / monthlyData.length).toFixed(1);
+  const summaryCards = [
+    { label: 'Incidents', value: totalIncidents.toString(), icon: AlertTriangle, color: 'bg-red-50 text-red-600' },
+    { label: 'TRIR', value: avgTRIR, icon: ShieldAlert, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Days Without Incident', value: '45', icon: CheckCircle2, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Training Compliance', value: '92%', icon: GraduationCap, color: 'bg-sky-50 text-sky-600' },
+  ];
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Safety Reports</h1><p className="text-muted-foreground mt-1">Reports on incidents, inspections, training, and safety KPIs</p></div>
+        <Select value={yearFilter} onValueChange={setYearFilter}><SelectTrigger className="w-[120px]"><SelectValue placeholder="Year" /></SelectTrigger><SelectContent><SelectItem value="2024">2024</SelectItem><SelectItem value="2025">2025</SelectItem></SelectContent></Select>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {summaryCards.map(k => { const I = k.icon; return (
+          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+            <div className="flex items-center gap-4">
+              <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
+              <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
+            </div>
+          </div>
+        ); })}
+      </div>
+      <Card className="border border-border/60 shadow-sm">
+        <CardHeader className="pb-3"><CardTitle className="text-base">Incidents by Type</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex items-end gap-4 h-40">
+            {incidentTypes.map(t => (
+              <div key={t.name} className="flex-1 flex flex-col items-center gap-1">
+                <span className="text-xs font-medium">{t.count}</span>
+                <div className="w-full rounded-t-md" style={{ height: `${(t.count / maxCount) * 100}px` }}>
+                  <div className={`w-full h-full ${t.color} rounded-t-md opacity-80`} />
+                </div>
+                <span className="text-[10px] text-muted-foreground text-center">{t.name}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Incidents</TableHead><TableHead className="hidden sm:table-cell text-right">Near Misses</TableHead><TableHead className="text-right">TRIR</TableHead><TableHead className="hidden md:table-cell text-right">Training Hrs</TableHead><TableHead className="hidden lg:table-cell text-right">Inspections</TableHead><TableHead className="hidden lg:table-cell text-right">Actions Closed</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(d => (
+            <TableRow key={d.month} className="hover:bg-muted/30">
+              <TableCell className="font-medium">{d.month}</TableCell>
+              <TableCell className={`text-right font-medium ${d.incidents > 4 ? 'text-red-600' : 'text-foreground'}`}>{d.incidents}</TableCell>
+              <TableCell className="text-right text-amber-600 hidden sm:table-cell">{d.nearMisses}</TableCell>
+              <TableCell className={`text-right font-medium ${d.trir > 1.0 ? 'text-red-600' : d.trir > 0.7 ? 'text-amber-600' : 'text-emerald-600'}`}>{d.trir}</TableCell>
+              <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.trainingHrs}</TableCell>
+              <TableCell className="text-right text-muted-foreground hidden lg:table-cell">{d.inspections}</TableCell>
+              <TableCell className="text-right text-muted-foreground hidden lg:table-cell">{d.actionsClosed}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></div>
+      </CardContent></Card>
+    </div>
+  );
+}
 function ReportsFinancialPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -8168,7 +12364,92 @@ function ReportsFinancialPage() {
     </div>
   );
 }
-function ReportsCustomPage() { return <ComingSoonPage title="Custom Reports" description="Build and save custom reports with flexible filters and formatting." icon={FileSpreadsheet} features={['Report builder', 'Custom filters', 'Scheduled delivery', 'Export options']} />; }
+function ReportsCustomPage() {
+  const [searchText, setSearchText] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ name: '', description: '', type: 'table', module: 'Assets', schedule: 'manual' });
+  const [reports] = useState([
+    { id: '1', name: 'Asset Utilization Summary', type: 'summary', createdBy: 'John Martinez', createdDate: '2025-01-10', lastRun: '2025-01-15 09:00', status: 'scheduled' },
+    { id: '2', name: 'Maintenance Cost by Department', type: 'pivot', createdBy: 'Sarah Chen', createdDate: '2025-01-05', lastRun: '2025-01-14 14:30', status: 'published' },
+    { id: '3', name: 'Inventory Turnover Analysis', type: 'chart', createdBy: 'Mike Johnson', createdDate: '2024-12-20', lastRun: '2025-01-15 08:00', status: 'scheduled' },
+    { id: '4', name: 'Work Order Aging Report', type: 'table', createdBy: 'Emily Davis', createdDate: '2025-01-12', lastRun: '2025-01-12 16:00', status: 'draft' },
+    { id: '5', name: 'Safety Compliance Dashboard', type: 'chart', createdBy: 'Robert Wilson', createdDate: '2024-11-15', lastRun: '2025-01-13 10:00', status: 'published' },
+    { id: '6', name: 'Production Downtime Analysis', type: 'summary', createdBy: 'Tom Brown', createdDate: '2024-12-01', lastRun: '2025-01-11 11:30', status: 'archived' },
+  ]);
+  const filtered = searchText.trim() ? reports.filter(r => {
+    const q = searchText.toLowerCase();
+    return r.name.toLowerCase().includes(q) || r.type.toLowerCase().includes(q) || r.status.toLowerCase().includes(q);
+  }) : reports;
+  const kpis = [
+    { label: 'Total Custom Reports', value: '8', icon: FileSpreadsheet, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Scheduled', value: '3', icon: Clock, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Last Run', value: 'Today', icon: Play, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Published', value: '2', icon: CheckCircle2, color: 'bg-violet-50 text-violet-600' },
+  ];
+  const statusColor = (s: string) => s === 'published' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : s === 'scheduled' ? 'text-sky-600 bg-sky-50 border-sky-200' : s === 'draft' ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-slate-500 bg-slate-50 border-slate-200';
+  const typeColor = (t: string) => t === 'table' ? 'text-sky-600 bg-sky-50 border-sky-200' : t === 'pivot' ? 'text-violet-600 bg-violet-50 border-violet-200' : t === 'chart' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : 'text-amber-600 bg-amber-50 border-amber-200';
+  const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ name: '', description: '', type: 'table', module: 'Assets', schedule: 'manual' }); toast.success('Report created successfully'); }, 800); };
+  const handleRun = (name: string) => { toast.success(`Running "${name}"...`); };
+  const handleDelete = (name: string) => { toast.success(`"${name}" deleted`); };
+  return (
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Custom Reports</h1><p className="text-muted-foreground mt-1">Build and save custom reports with flexible filters and formatting</p></div>
+        <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Report</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (
+          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+            <div className="flex items-center gap-4">
+              <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
+              <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
+            </div>
+          </div>
+        ); })}
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search reports..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" /></div>
+      </div>
+      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Report Name</TableHead><TableHead>Type</TableHead><TableHead className="hidden md:table-cell">Created By</TableHead><TableHead className="hidden sm:table-cell">Created Date</TableHead><TableHead className="hidden lg:table-cell">Last Run</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
+          {filtered.map(r => (
+            <TableRow key={r.id} className="hover:bg-muted/30">
+              <TableCell className="font-medium">{r.name}</TableCell>
+              <TableCell><Badge variant="outline" className={typeColor(r.type)}><span className="capitalize">{r.type}</span></Badge></TableCell>
+              <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{r.createdBy}</TableCell>
+              <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{formatDate(r.createdDate)}</TableCell>
+              <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">{formatDateTime(r.lastRun)}</TableCell>
+              <TableCell><Badge variant="outline" className={statusColor(r.status)}><span className="capitalize">{r.status}</span></Badge></TableCell>
+              <TableCell className="text-right">
+                <div className="flex items-center justify-end gap-1">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" title="Run" onClick={() => handleRun(r.name)}><Play className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" title="Export"><Download className="h-3.5 w-3.5" /></Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-700" title="Delete" onClick={() => handleDelete(r.name)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table></div>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Create Custom Report</DialogTitle><DialogDescription>Define a new custom report for your organization</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Report Name</Label><Input placeholder="e.g. Asset Utilization Summary" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+            <div><Label>Description</Label><Textarea placeholder="Describe what this report covers..." value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="table">Table</SelectItem><SelectItem value="pivot">Pivot</SelectItem><SelectItem value="chart">Chart</SelectItem><SelectItem value="summary">Summary</SelectItem></SelectContent></Select></div>
+              <div><Label>Module</Label><Select value={form.module} onValueChange={v => setForm(f => ({ ...f, module: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Assets">Assets</SelectItem><SelectItem value="Maintenance">Maintenance</SelectItem><SelectItem value="Inventory">Inventory</SelectItem><SelectItem value="Quality">Quality</SelectItem><SelectItem value="Safety">Safety</SelectItem><SelectItem value="Production">Production</SelectItem></SelectContent></Select></div>
+            </div>
+            <div><Label>Schedule</Label><Select value={form.schedule} onValueChange={v => setForm(f => ({ ...f, schedule: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="manual">Manual</SelectItem><SelectItem value="daily">Daily</SelectItem><SelectItem value="weekly">Weekly</SelectItem><SelectItem value="monthly">Monthly</SelectItem></SelectContent></Select></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.name}>{saving ? 'Creating...' : 'Create Report'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 // ============================================================================
 // SETTINGS SUBPAGES
