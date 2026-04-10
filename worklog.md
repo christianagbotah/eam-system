@@ -987,3 +987,37 @@ Stage Summary:
 - PM Schedules page fully functional with CRUD operations
 - All 16 frontend pages operational with consistent enterprise theming
 
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Enterprise-grade theming overhaul — fix white-on-white UI, add visual hierarchy
+
+Work Log:
+- Audited existing theme: sidebar (oklch 0.98), header (oklch 0.985), background (oklch 0.985) were all near-white
+- Designed enterprise color system with 3 distinct visual zones
+- Added new `--header`, `--header-foreground`, `--header-border` CSS variables and Tailwind theme mappings
+- Redesigned light mode: dark charcoal sidebar (oklch 0.17), white header, warm gray content background
+- Redesigned dark mode: deeper sidebar (oklch 0.11), elevated header surface, deep dark background
+- Updated sidebar brand section with gradient logo and "Enterprise EAM" subtitle
+- Added active nav item left indicator bar (3px emerald bar)
+- Improved nav item hover states with better opacity transitions
+- Replaced Badge-based "SOON" label with plain span for consistency
+- Replaced Button-based logout with plain button for consistent styling on dark sidebar
+- Updated user section with gradient avatar and ring border
+- Added CSS-based sidebar shadow (light and dark mode aware)
+- Added CSS-based header shadow (light and dark mode aware)
+- Enhanced card shadows via `data-slot="card"` selectors (elevation + hover)
+- Enhanced table headers with uppercase tracking, muted color
+- Enhanced table row borders and cell text color
+- Enhanced dialog/popover shadows for floating panel elevation
+- Updated header in page.tsx to use `bg-header border-header-border`
+- Updated notification badge ring color to use `ring-header`
+- Updated sidebar scrollbar colors to work with dark sidebar in both modes
+- ESLint clean, dev server compiled successfully
+
+Stage Summary:
+- Complete enterprise theming system with 3 visual zones: dark sidebar, white header, gray content
+- Proper light/dark mode support with CSS variable architecture
+- All components (sidebar, header, cards, tables, dialogs) enhanced
+- Files modified: `src/app/globals.css`, `src/app/page.tsx`

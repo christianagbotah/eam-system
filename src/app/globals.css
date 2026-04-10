@@ -16,6 +16,9 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-header: var(--header);
+  --color-header-foreground: var(--header-foreground);
+  --color-header-border: var(--header-border);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -43,73 +46,139 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* ============================================================================
+   ENTERPRISE LIGHT MODE
+   - Dark sidebar (charcoal) for strong visual hierarchy
+   - White header with border for clear separation
+   - Subtle warm-gray content area
+   - White cards that pop against the background
+   ============================================================================ */
 :root {
   --radius: 0.625rem;
-  --background: oklch(0.985 0.002 155);
-  --foreground: oklch(0.185 0.02 155);
+
+  /* Main content background — subtle warm gray */
+  --background: oklch(0.97 0.003 155);
+  --foreground: oklch(0.17 0.02 260);
+
+  /* Cards — pure white to stand out from the gray background */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.185 0.02 155);
+  --card-foreground: oklch(0.17 0.02 260);
+
+  /* Popover — white floating panels */
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.185 0.02 155);
+  --popover-foreground: oklch(0.17 0.02 260);
+
+  /* Primary — emerald accent */
   --primary: oklch(0.508 0.16 163);
   --primary-foreground: oklch(0.99 0.002 155);
-  --secondary: oklch(0.955 0.02 155);
-  --secondary-foreground: oklch(0.26 0.05 155);
-  --muted: oklch(0.955 0.01 155);
-  --muted-foreground: oklch(0.50 0.03 155);
-  --accent: oklch(0.93 0.035 163);
-  --accent-foreground: oklch(0.26 0.06 163);
+
+  /* Secondary */
+  --secondary: oklch(0.95 0.01 155);
+  --secondary-foreground: oklch(0.26 0.04 260);
+
+  /* Muted — for subtle backgrounds */
+  --muted: oklch(0.95 0.008 155);
+  --muted-foreground: oklch(0.50 0.02 260);
+
+  /* Accent — for highlighted elements */
+  --accent: oklch(0.93 0.03 163);
+  --accent-foreground: oklch(0.22 0.05 260);
+
+  /* Destructive */
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.90 0.02 155);
-  --input: oklch(0.90 0.02 155);
+
+  /* Borders */
+  --border: oklch(0.91 0.01 155);
+  --input: oklch(0.91 0.01 155);
   --ring: oklch(0.508 0.16 163);
+
+  /* Charts */
   --chart-1: oklch(0.508 0.16 163);
   --chart-2: oklch(0.626 0.194 149);
   --chart-3: oklch(0.45 0.14 160);
   --chart-4: oklch(0.70 0.15 165);
   --chart-5: oklch(0.38 0.11 155);
-  --sidebar: oklch(0.98 0.003 155);
-  --sidebar-foreground: oklch(0.25 0.02 155);
-  --sidebar-primary: oklch(0.508 0.16 163);
+
+  /* ===== SIDEBAR — Dark charcoal for strong visual hierarchy ===== */
+  --sidebar: oklch(0.17 0.015 260);
+  --sidebar-foreground: oklch(0.92 0.008 260);
+  --sidebar-primary: oklch(0.70 0.16 163);
   --sidebar-primary-foreground: oklch(0.99 0.002 155);
-  --sidebar-accent: oklch(0.94 0.035 163);
-  --sidebar-accent-foreground: oklch(0.26 0.06 163);
-  --sidebar-border: oklch(0.91 0.01 155);
+  --sidebar-accent: oklch(0.24 0.025 260);
+  --sidebar-accent-foreground: oklch(0.92 0.008 260);
+  --sidebar-border: oklch(0.26 0.02 260);
   --sidebar-ring: oklch(0.508 0.16 163);
+
+  /* ===== HEADER — Clean white with separation ===== */
+  --header: oklch(0.99 0.002 155);
+  --header-foreground: oklch(0.17 0.02 260);
+  --header-border: oklch(0.91 0.01 155);
 }
 
+/* ============================================================================
+   ENTERPRISE DARK MODE
+   - Deeper dark sidebar for maximum contrast
+   - Elevated header surface with subtle glow
+   - Deep background with refined borders
+   ============================================================================ */
 .dark {
-  --background: oklch(0.145 0.015 163);
-  --foreground: oklch(0.96 0.01 155);
-  --card: oklch(0.19 0.02 163);
-  --card-foreground: oklch(0.96 0.01 155);
-  --popover: oklch(0.19 0.02 163);
-  --popover-foreground: oklch(0.96 0.01 155);
-  --primary: oklch(0.60 0.17 163);
-  --primary-foreground: oklch(0.14 0.02 163);
-  --secondary: oklch(0.24 0.03 163);
-  --secondary-foreground: oklch(0.96 0.01 155);
-  --muted: oklch(0.24 0.02 163);
-  --muted-foreground: oklch(0.65 0.03 155);
-  --accent: oklch(0.28 0.04 163);
-  --accent-foreground: oklch(0.96 0.01 155);
+  /* Main content background — deep dark */
+  --background: oklch(0.14 0.012 260);
+  --foreground: oklch(0.95 0.008 155);
+
+  /* Cards — elevated surface */
+  --card: oklch(0.185 0.018 260);
+  --card-foreground: oklch(0.95 0.008 155);
+
+  /* Popover */
+  --popover: oklch(0.185 0.018 260);
+  --popover-foreground: oklch(0.95 0.008 155);
+
+  /* Primary — brighter emerald for dark mode */
+  --primary: oklch(0.62 0.17 163);
+  --primary-foreground: oklch(0.13 0.02 260);
+
+  /* Secondary */
+  --secondary: oklch(0.22 0.025 260);
+  --secondary-foreground: oklch(0.95 0.008 155);
+
+  /* Muted */
+  --muted: oklch(0.22 0.02 260);
+  --muted-foreground: oklch(0.62 0.025 155);
+
+  /* Accent */
+  --accent: oklch(0.27 0.035 260);
+  --accent-foreground: oklch(0.95 0.008 155);
+
+  /* Destructive */
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.60 0.17 163);
-  --chart-1: oklch(0.60 0.17 163);
+
+  /* Borders — subtle white opacity */
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.62 0.17 163);
+
+  /* Charts */
+  --chart-1: oklch(0.62 0.17 163);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.50 0.14 160);
   --chart-4: oklch(0.70 0.15 165);
   --chart-5: oklch(0.40 0.11 155);
-  --sidebar: oklch(0.14 0.02 163);
-  --sidebar-foreground: oklch(0.96 0.01 155);
-  --sidebar-primary: oklch(0.60 0.17 163);
+
+  /* ===== SIDEBAR — Even deeper dark ===== */
+  --sidebar: oklch(0.11 0.015 260);
+  --sidebar-foreground: oklch(0.92 0.008 155);
+  --sidebar-primary: oklch(0.62 0.17 163);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(0.22 0.04 163);
-  --sidebar-accent-foreground: oklch(0.96 0.01 155);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.60 0.17 163);
+  --sidebar-accent: oklch(0.18 0.03 260);
+  --sidebar-accent-foreground: oklch(0.95 0.008 155);
+  --sidebar-border: oklch(1 0 0 / 7%);
+  --sidebar-ring: oklch(0.62 0.17 163);
+
+  /* ===== HEADER — Elevated dark surface ===== */
+  --header: oklch(0.17 0.015 260);
+  --header-foreground: oklch(0.95 0.008 155);
+  --header-border: oklch(1 0 0 / 8%);
 }
 
 @layer base {
@@ -121,17 +190,96 @@
   }
 }
 
-/* Professional Scrollbar Styling */
+/* ============================================================================
+   SIDEBAR & HEADER SHADOWS — Creates visual depth between zones
+   ============================================================================ */
+aside {
+  box-shadow: 1px 0 8px rgba(0, 0, 0, 0.06);
+}
+.dark aside {
+  box-shadow: 1px 0 12px rgba(0, 0, 0, 0.25);
+}
+
+/* Header shadow — subtle in light, deeper in dark */
+header[class*="bg-header"] {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.dark header[class*="bg-header"] {
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* ============================================================================
+   CARD ENHANCEMENTS — Subtle elevation for visual hierarchy
+   ============================================================================ */
+[data-slot="card"] {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: box-shadow 0.2s ease;
+}
+[data-slot="card"]:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.07), 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+.dark [data-slot="card"] {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+.dark [data-slot="card"]:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.18);
+}
+
+/* ============================================================================
+   TABLE ENHANCEMENTS — Clean, professional data display
+   ============================================================================ */
+[data-slot="table-head"] {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: oklch(0.50 0.02 260);
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+.dark [data-slot="table-head"] {
+  color: oklch(0.65 0.02 260);
+}
+[data-slot="table-row"] {
+  border-bottom-color: oklch(0.93 0.008 155);
+}
+.dark [data-slot="table-row"] {
+  border-bottom-color: oklch(1 0 0 / 5%);
+}
+[data-slot="table-cell"] {
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
+  color: oklch(0.25 0.015 260);
+}
+.dark [data-slot="table-cell"] {
+  color: oklch(0.85 0.01 155);
+}
+
+/* ============================================================================
+   POPOVER / DIALOG ENHANCEMENTS — Elevated floating panels
+   ============================================================================ */
+[data-slot="popover-content"],
+[data-slot="dialog-content"] {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12), 0 4px 10px rgba(0, 0, 0, 0.06);
+}
+.dark [data-slot="popover-content"],
+.dark [data-slot="dialog-content"] {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), 0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+/* ============================================================================
+   PROFESSIONAL SCROLLBAR STYLING
+   ============================================================================ */
 @layer base {
   /* Main content scrollbar */
   .overflow-y-auto,
   .overflow-auto {
     scrollbar-width: thin;
-    scrollbar-color: oklch(0.82 0.02 155) transparent;
+    scrollbar-color: oklch(0.80 0.015 155) transparent;
   }
   .overflow-y-auto:hover,
   .overflow-auto:hover {
-    scrollbar-color: oklch(0.72 0.03 155) transparent;
+    scrollbar-color: oklch(0.68 0.025 155) transparent;
   }
 
   /* Webkit scrollbar */
@@ -146,18 +294,18 @@
   }
   .overflow-y-auto::-webkit-scrollbar-thumb,
   .overflow-auto::-webkit-scrollbar-thumb {
-    background: oklch(0.85 0.02 155);
+    background: oklch(0.82 0.015 155);
     border-radius: 3px;
   }
   .overflow-y-auto::-webkit-scrollbar-thumb:hover,
   .overflow-auto::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.72 0.03 155);
+    background: oklch(0.68 0.025 155);
   }
 
-  /* Sidebar scrollbar */
+  /* Sidebar scrollbar — dark in both modes */
   nav.overflow-y-auto {
     scrollbar-width: thin;
-    scrollbar-color: oklch(0.85 0.02 155) transparent;
+    scrollbar-color: oklch(0.35 0.015 260) transparent;
   }
   nav.overflow-y-auto::-webkit-scrollbar {
     width: 4px;
@@ -166,40 +314,42 @@
     background: transparent;
   }
   nav.overflow-y-auto::-webkit-scrollbar-thumb {
-    background: oklch(0.85 0.02 155);
+    background: oklch(0.35 0.015 260);
     border-radius: 2px;
   }
   nav.overflow-y-auto::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.72 0.03 155);
+    background: oklch(0.45 0.025 260);
   }
 
-  /* Dark mode scrollbar overrides */
+  /* Dark mode content scrollbar overrides */
   .dark .overflow-y-auto::-webkit-scrollbar-thumb,
   .dark .overflow-auto::-webkit-scrollbar-thumb {
-    background: oklch(0.35 0.02 163);
+    background: oklch(0.30 0.015 260);
   }
   .dark .overflow-y-auto::-webkit-scrollbar-thumb:hover,
   .dark .overflow-auto::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.45 0.03 163);
+    background: oklch(0.40 0.025 260);
   }
   .dark .overflow-y-auto,
   .dark .overflow-auto {
-    scrollbar-color: oklch(0.35 0.02 163) transparent;
+    scrollbar-color: oklch(0.30 0.015 260) transparent;
   }
 
-  /* Dark mode sidebar scrollbar (sidebar stays dark) */
+  /* Dark mode sidebar scrollbar */
   .dark nav.overflow-y-auto {
-    scrollbar-color: oklch(0.35 0.04 163) transparent;
+    scrollbar-color: oklch(0.28 0.02 260) transparent;
   }
   .dark nav.overflow-y-auto::-webkit-scrollbar-thumb {
-    background: oklch(0.35 0.04 163);
+    background: oklch(0.28 0.02 260);
   }
   .dark nav.overflow-y-auto::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.45 0.05 163);
+    background: oklch(0.38 0.03 260);
   }
 }
 
-/* Dark mode color overrides for dashboard elements */
+/* ============================================================================
+   DARK MODE DASHBOARD OVERRIDES
+   ============================================================================ */
 .dark .dark\:bg-amber-950\/30 { background-color: oklch(0.22 0.04 75 / 0.3); }
 .dark .dark\:bg-emerald-950\/30 { background-color: oklch(0.20 0.04 160 / 0.3); }
 .dark .dark\:bg-red-950\/30 { background-color: oklch(0.20 0.04 25 / 0.3); }
@@ -210,6 +360,6 @@
 
 /* Chart tooltip dark mode */
 .dark [data-slot="chart-tooltip"] {
-  background-color: oklch(0.17 0.02 163) !important;
-  border-color: oklch(1 0 0 / 12%) !important;
+  background-color: oklch(0.17 0.02 260) !important;
+  border-color: oklch(1 0 0 / 10%) !important;
 }

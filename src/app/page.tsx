@@ -655,22 +655,22 @@ function SidebarContent() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Brand */}
+      {/* Brand — Prominent logo on dark surface */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-sidebar-border shrink-0">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary shrink-0 shadow-md shadow-primary/20">
-          <Factory className="h-5 w-5 text-sidebar-primary-foreground" />
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 shrink-0 shadow-lg shadow-emerald-900/30">
+          <Factory className="h-5 w-5 text-white" />
         </div>
         {sidebarOpen && (
           <div className="overflow-hidden">
             <h1 className="text-base font-bold text-sidebar-foreground tracking-tight">iAssetsPro</h1>
-            <p className="text-[10px] text-sidebar-foreground/50 uppercase tracking-widest font-medium">EAM System</p>
+            <p className="text-[10px] text-sidebar-foreground/40 uppercase tracking-widest font-medium">Enterprise EAM</p>
           </div>
         )}
       </div>
 
       {/* Navigation - overflow-y-auto for reliable native scroll */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4">
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           {visibleNavItems.map(item => {
             const Icon = item.icon;
             const active = currentPage === item.page ||
@@ -682,21 +682,24 @@ function SidebarContent() {
                   <TooltipTrigger asChild>
                     <button
                       onClick={() => item.comingSoon ? toast.info(`${item.label} module coming soon!`) : navigate(item.page)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all relative ${
                         active
-                          ? 'bg-sidebar-accent text-sidebar-primary font-medium'
+                          ? 'bg-sidebar-accent text-sidebar-primary font-medium shadow-sm shadow-black/10'
                           : item.comingSoon
-                            ? 'text-sidebar-foreground/30 cursor-not-allowed'
-                            : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+                            ? 'text-sidebar-foreground/25 cursor-not-allowed'
+                            : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground/90'
                       }`}
                       disabled={item.comingSoon}
                     >
-                      <Icon className="h-4.5 w-4.5 shrink-0" />
+                      {active && (
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-sidebar-primary" />
+                      )}
+                      <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-sidebar-primary' : ''}`} />
                       {sidebarOpen && (
                         <span className="flex-1 text-left">{item.label}</span>
                       )}
                       {sidebarOpen && item.comingSoon && (
-                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-sidebar-border text-sidebar-foreground/30">SOON</Badge>
+                        <span className="text-[9px] px-1.5 py-0 rounded border border-sidebar-border text-sidebar-foreground/25 font-medium">SOON</span>
                       )}
                     </button>
                   </TooltipTrigger>
@@ -709,8 +712,8 @@ function SidebarContent() {
           {showSettings && (
             <>
               <Separator className="my-3 bg-sidebar-border" />
-              <p className={`px-3 text-[10px] uppercase tracking-widest text-sidebar-foreground/40 mb-1 ${!sidebarOpen && 'text-center'}`}>
-                {sidebarOpen ? 'Settings' : '⚙'}
+              <p className={`px-3 text-[10px] uppercase tracking-widest text-sidebar-foreground/30 mb-1.5 font-semibold ${!sidebarOpen && 'text-center'}`}>
+                {sidebarOpen ? 'Configuration' : '⚙'}
               </p>
               {visibleSettingsItems.map(item => {
                 const Icon = item.icon;
@@ -721,13 +724,16 @@ function SidebarContent() {
                       <TooltipTrigger asChild>
                         <button
                           onClick={() => navigate(item.page)}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all relative ${
                             active
-                              ? 'bg-sidebar-accent text-sidebar-primary font-medium'
-                              : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+                              ? 'bg-sidebar-accent text-sidebar-primary font-medium shadow-sm shadow-black/10'
+                              : 'text-sidebar-foreground/60 hover:bg-sidebar-accent/40 hover:text-sidebar-foreground/90'
                           }`}
                         >
-                          <Icon className="h-4.5 w-4.5 shrink-0" />
+                          {active && (
+                            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-sidebar-primary" />
+                          )}
+                          <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-sidebar-primary' : ''}`} />
                           {sidebarOpen && <span>{item.label}</span>}
                         </button>
                       </TooltipTrigger>
@@ -741,29 +747,27 @@ function SidebarContent() {
         </div>
       </nav>
 
-      {/* User */}
+      {/* User — Clean profile section */}
       <div className="border-t border-sidebar-border p-3">
         <div className="flex items-center gap-3 px-2">
-          <Avatar className="h-8 w-8 bg-sidebar-primary text-sidebar-primary-foreground shrink-0">
-            <AvatarFallback className="text-xs font-bold">{user ? getInitials(user.fullName) : '?'}</AvatarFallback>
-          </Avatar>
+          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-emerald-500/80 to-emerald-700/80 flex items-center justify-center shrink-0 ring-1 ring-sidebar-border">
+            <span className="text-xs font-bold text-white">{user ? getInitials(user.fullName) : '?'}</span>
+          </div>
           {sidebarOpen && (
             <>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.fullName}</p>
-                <p className="text-[10px] text-sidebar-foreground/50 truncate">{user?.roles?.[0]?.name || ''}</p>
+                <p className="text-[10px] text-sidebar-foreground/40 truncate">{user?.roles?.[0]?.name || ''}</p>
               </div>
               <TooltipProvider delayDuration={0}>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-sidebar-foreground/50 hover:text-red-400 hover:bg-red-500/10"
+                    <button
+                      className="h-8 w-8 flex items-center justify-center rounded-lg text-sidebar-foreground/40 hover:text-red-400 hover:bg-red-500/10 transition-all"
                       onClick={logout}
                     >
                       <LogOut className="h-4 w-4" />
-                    </Button>
+                    </button>
                   </TooltipTrigger>
                   <TooltipContent side="top">Sign Out</TooltipContent>
                 </Tooltip>
@@ -5375,7 +5379,7 @@ function AppShell() {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Bar */}
-        <header className="h-14 border-b border-border/60 flex items-center px-4 gap-3 shrink-0 bg-background/80 backdrop-blur-md z-10">
+        <header className="h-14 border-b border-header-border flex items-center px-4 gap-3 shrink-0 bg-header z-10">
           <button
             className="lg:hidden p-2 rounded-lg hover:bg-muted transition-colors"
             onClick={() => setMobileSidebarOpen(true)}
@@ -5421,7 +5425,7 @@ function AppShell() {
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon" className="relative h-9 w-9 hover:bg-muted transition-colors" onClick={() => navigate('notifications')}>
                     <Bell className="h-4 w-4 text-muted-foreground" />
-                    <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-background" />
+                    <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-header" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Notifications</TooltipContent>
