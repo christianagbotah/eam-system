@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
-import type { PageName, User, MaintenanceRequest, WorkOrder, DashboardStats, Module, Role, Permission } from '@/types';
+import type { PageName, User, MaintenanceRequest, WorkOrder, DashboardStats, Module, Role, Permission, UserRole } from '@/types';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   LayoutDashboard,
   Wrench,
@@ -74,6 +81,13 @@ import {
   Bell,
   TrendingUp,
   RefreshCw,
+  Shield,
+  Package,
+  BarChart3,
+  Cog,
+  ShoppingCart,
+  Building2,
+  Zap,
 } from 'lucide-react';
 
 // ============================================================================
@@ -82,7 +96,7 @@ import {
 
 const priorityColors: Record<string, string> = {
   low: 'bg-slate-100 text-slate-700 border-slate-200',
-  medium: 'bg-blue-50 text-blue-700 border-blue-200',
+  medium: 'bg-sky-50 text-sky-700 border-sky-200',
   high: 'bg-amber-50 text-amber-700 border-amber-200',
   urgent: 'bg-red-50 text-red-700 border-red-200',
   critical: 'bg-red-50 text-red-700 border-red-200',
@@ -93,14 +107,14 @@ const mrStatusColors: Record<string, string> = {
   pending: 'bg-amber-50 text-amber-700 border-amber-200',
   approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   rejected: 'bg-red-50 text-red-700 border-red-200',
-  converted: 'bg-blue-50 text-blue-700 border-blue-200',
+  converted: 'bg-teal-50 text-teal-700 border-teal-200',
 };
 
 const woStatusColors: Record<string, string> = {
   draft: 'bg-slate-100 text-slate-600 border-slate-200',
-  requested: 'bg-blue-50 text-blue-700 border-blue-200',
+  requested: 'bg-sky-50 text-sky-700 border-sky-200',
   approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  planned: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  planned: 'bg-violet-50 text-violet-700 border-violet-200',
   assigned: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   in_progress: 'bg-amber-50 text-amber-700 border-amber-200',
   waiting_parts: 'bg-orange-50 text-orange-700 border-orange-200',
@@ -111,20 +125,24 @@ const woStatusColors: Record<string, string> = {
   cancelled: 'bg-red-50 text-red-600 border-red-200',
 };
 
-const statusIcons: Record<string, any> = {
-  pending: <Clock className="h-3.5 w-3.5" />,
-  approved: <CheckCircle2 className="h-3.5 w-3.5" />,
-  rejected: <XCircle className="h-3.5 w-3.5" />,
-  converted: <RefreshCw className="h-3.5 w-3.5" />,
-  draft: <AlertCircle className="h-3.5 w-3.5" />,
-  assigned: <Users className="h-3.5 w-3.5" />,
-  in_progress: <Play className="h-3.5 w-3.5" />,
-  completed: <Check className="h-3.5 w-3.5" />,
-  verified: <CheckCircle2 className="h-3.5 w-3.5" />,
-  closed: <Lock className="h-3.5 w-3.5" />,
-};
+function StatusIcon({ status }: { status: string }) {
+  const iconMap: Record<string, React.ReactNode> = {
+    pending: <Clock className="h-3.5 w-3.5" />,
+    approved: <CheckCircle2 className="h-3.5 w-3.5" />,
+    rejected: <XCircle className="h-3.5 w-3.5" />,
+    converted: <RefreshCw className="h-3.5 w-3.5" />,
+    draft: <AlertCircle className="h-3.5 w-3.5" />,
+    assigned: <Users className="h-3.5 w-3.5" />,
+    in_progress: <Play className="h-3.5 w-3.5" />,
+    completed: <Check className="h-3.5 w-3.5" />,
+    verified: <CheckCircle2 className="h-3.5 w-3.5" />,
+    closed: <Lock className="h-3.5 w-3.5" />,
+  };
+  return <>{iconMap[status]}</>;
+}
 
 function getInitials(name: string) {
+  if (!name) return '?';
   return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 }
 
@@ -147,7 +165,7 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <Badge variant="outline" className={mrStatusColors[status] || woStatusColors[status] || 'bg-gray-50 text-gray-700'}>
       <span className="flex items-center gap-1">
-        {statusIcons[status]}
+        <StatusIcon status={status} />
         {status.replace(/_/g, ' ').toUpperCase()}
       </span>
     </Badge>
@@ -162,9 +180,42 @@ function PriorityBadge({ priority }: { priority: string }) {
   );
 }
 
+function EmptyState({ icon: Icon, title, description }: { icon: React.ElementType; title: string; description: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-12 text-center">
+      <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center mb-3">
+        <Icon className="h-6 w-6 text-muted-foreground" />
+      </div>
+      <h3 className="font-medium text-sm">{title}</h3>
+      <p className="text-xs text-muted-foreground mt-1 max-w-[280px]">{description}</p>
+    </div>
+  );
+}
+
 // ============================================================================
-// LOADING SKELETON
+// LOADING SCREEN
 // ============================================================================
+
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="text-center space-y-4">
+        <div className="h-12 w-12 mx-auto rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center animate-pulse shadow-lg">
+          <Factory className="h-6 w-6 text-white" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold text-foreground">GTP EAM</h2>
+          <p className="text-sm text-muted-foreground">Loading your workspace...</p>
+        </div>
+        <div className="flex gap-1 justify-center">
+          <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-bounce [animation-delay:0ms]" />
+          <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-bounce [animation-delay:150ms]" />
+          <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-bounce [animation-delay:300ms]" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function LoadingSkeleton() {
   return (
@@ -207,37 +258,62 @@ function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-emerald-50">
-      <Card className="w-full max-w-md shadow-xl border-emerald-100">
-        <CardHeader className="text-center space-y-3 pb-2">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 shadow-lg">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900 relative overflow-hidden">
+      {/* Background pattern */}
+      <div className="absolute inset-0 opacity-5">
+        <div className="absolute top-1/4 -left-20 h-96 w-96 rounded-full bg-emerald-400 blur-3xl" />
+        <div className="absolute bottom-1/4 -right-20 h-96 w-96 rounded-full bg-emerald-600 blur-3xl" />
+      </div>
+
+      <Card className="w-full max-w-md shadow-2xl border-slate-700/50 bg-slate-900/80 backdrop-blur-xl relative z-10">
+        <CardHeader className="text-center space-y-4 pb-2">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 shadow-lg shadow-emerald-500/20">
             <Factory className="h-8 w-8 text-white" />
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold text-emerald-900">GTP EAM</CardTitle>
-            <CardDescription className="text-emerald-600">Enterprise Asset Management</CardDescription>
+            <CardTitle className="text-2xl font-bold text-white">GTP EAM</CardTitle>
+            <CardDescription className="text-emerald-400">Enterprise Asset Management</CardDescription>
           </div>
-          <p className="text-xs text-muted-foreground">GTP Ghana Limited</p>
+          <p className="text-xs text-slate-400">GTP Ghana Limited</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
-              <Input id="username" placeholder="Enter your username" value={username} onChange={e => setUsername(e.target.value)} autoFocus />
+              <Label htmlFor="username" className="text-slate-300">Username</Label>
+              <Input
+                id="username"
+                placeholder="Enter your username"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                autoFocus
+                className="bg-slate-800 border-slate-600 text-white placeholder:text-slate-500 focus:border-emerald-500"
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" placeholder="Enter your password" value={password} onChange={e => setPassword(e.target.value)} />
+              <Label htmlFor="password" className="text-slate-300">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="bg-slate-800 border-slate-600 text-white placeholder:text-slate-500 focus:border-emerald-500"
+              />
             </div>
-            <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={loading}>
-              {loading ? 'Signing in...' : 'Sign In'}
+            <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium" disabled={loading}>
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Signing in...
+                </span>
+              ) : 'Sign In'}
             </Button>
           </form>
-          <div className="mt-6 p-3 rounded-lg bg-muted/50 text-xs text-muted-foreground">
-            <p className="font-medium mb-1">Demo Accounts:</p>
-            <p>admin / admin123 (Full Access)</p>
-            <p>kwame.asante / password123 (Manager)</p>
-            <p>kojo.boateng / password123 (Supervisor)</p>
+          <div className="mt-6 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 text-xs text-slate-400 space-y-1">
+            <p className="font-medium text-slate-300 mb-1.5">Demo Accounts:</p>
+            <p><span className="text-emerald-400">admin / admin123</span> — Full Access</p>
+            <p><span className="text-emerald-400">kwame.asante / password123</span> — Manager</p>
+            <p><span className="text-emerald-400">kojo.boateng / password123</span> — Supervisor</p>
           </div>
         </CardContent>
       </Card>
@@ -249,30 +325,36 @@ function LoginPage() {
 // SIDEBAR
 // ============================================================================
 
-function Sidebar() {
-  const { currentPage, navigate, sidebarOpen, toggleSidebar, mobileSidebarOpen, setMobileSidebarOpen } = useNavigationStore();
-  const { user, hasPermission, logout, permissions } = useAuthStore();
+// Sidebar inner content extracted as a separate component
+function SidebarContent() {
+  const { currentPage, navigate, sidebarOpen } = useNavigationStore();
+  const { user, hasPermission, logout } = useAuthStore();
 
-  const navItems = [
-    { page: 'dashboard' as PageName, label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view' },
-    { page: 'maintenance-requests' as PageName, label: 'Maintenance Requests', icon: ClipboardList, perm: 'maintenance_requests.view' },
-    { page: 'work-orders' as PageName, label: 'Work Orders', icon: Wrench, perm: 'work_orders.view' },
+  const navItems: { page: PageName; label: string; icon: React.ElementType; perm: string; comingSoon?: boolean }[] = [
+    { page: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view' },
+    { page: 'maintenance-requests', label: 'Maintenance Requests', icon: ClipboardList, perm: 'maintenance_requests.view' },
+    { page: 'work-orders', label: 'Work Orders', icon: Wrench, perm: 'work_orders.view' },
+    { page: 'assets', label: 'Assets', icon: Building2, perm: 'assets.view', comingSoon: true },
+    { page: 'inventory', label: 'Inventory', icon: Package, perm: 'inventory.view', comingSoon: true },
+    { page: 'production', label: 'Production', icon: Zap, perm: 'production.view', comingSoon: true },
+    { page: 'analytics', label: 'Analytics', icon: BarChart3, perm: 'analytics.view', comingSoon: true },
   ];
 
-  const settingsItems = [
-    { page: 'settings-users' as PageName, label: 'Users', icon: Users, perm: 'users.view' },
-    { page: 'settings-modules' as PageName, label: 'Modules', icon: Boxes, perm: 'modules.manage' },
+  const settingsItems: { page: PageName; label: string; icon: React.ElementType; perm: string }[] = [
+    { page: 'settings-users', label: 'Users', icon: Users, perm: 'users.view' },
+    { page: 'settings-roles', label: 'Roles & Permissions', icon: Shield, perm: 'roles.view' },
+    { page: 'settings-modules', label: 'Module Management', icon: Boxes, perm: 'modules.manage' },
   ];
 
-  const visibleNavItems = navItems.filter(item => hasPermission(item.perm));
+  const visibleNavItems = navItems.filter(item => item.comingSoon || hasPermission(item.perm));
   const visibleSettingsItems = settingsItems.filter(item => hasPermission(item.perm));
   const showSettings = visibleSettingsItems.length > 0;
 
-  const SidebarContent = () => (
+  return (
     <div className="flex flex-col h-full">
       {/* Brand */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-sidebar-border">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary shrink-0">
           <Factory className="h-5 w-5 text-sidebar-primary-foreground" />
         </div>
         {sidebarOpen && (
@@ -288,20 +370,36 @@ function Sidebar() {
         <div className="space-y-1">
           {visibleNavItems.map(item => {
             const Icon = item.icon;
-            const active = currentPage === item.page || (item.page === 'maintenance-requests' && currentPage === 'mr-detail') || (item.page === 'work-orders' && currentPage === 'wo-detail');
+            const active = currentPage === item.page ||
+              (item.page === 'maintenance-requests' && (currentPage === 'mr-detail' || currentPage === 'create-mr')) ||
+              (item.page === 'work-orders' && (currentPage === 'wo-detail'));
             return (
-              <button
-                key={item.page}
-                onClick={() => navigate(item.page)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
-                  active
-                    ? 'bg-sidebar-accent text-sidebar-primary font-medium'
-                    : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
-                }`}
-              >
-                <Icon className="h-4.5 w-4.5 shrink-0" />
-                {sidebarOpen && <span>{item.label}</span>}
-              </button>
+              <TooltipProvider key={item.page} delayDuration={0}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => item.comingSoon ? toast.info(`${item.label} module coming soon!`) : navigate(item.page)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
+                        active
+                          ? 'bg-sidebar-accent text-sidebar-primary font-medium'
+                          : item.comingSoon
+                            ? 'text-sidebar-foreground/30 cursor-not-allowed'
+                            : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+                      }`}
+                      disabled={item.comingSoon}
+                    >
+                      <Icon className="h-4.5 w-4.5 shrink-0" />
+                      {sidebarOpen && (
+                        <span className="flex-1 text-left">{item.label}</span>
+                      )}
+                      {sidebarOpen && item.comingSoon && (
+                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-sidebar-border text-sidebar-foreground/30">SOON</Badge>
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  {!sidebarOpen && <TooltipContent side="right">{item.label}{item.comingSoon ? ' (Coming Soon)' : ''}</TooltipContent>}
+                </Tooltip>
+              </TooltipProvider>
             );
           })}
 
@@ -315,18 +413,24 @@ function Sidebar() {
                 const Icon = item.icon;
                 const active = currentPage === item.page;
                 return (
-                  <button
-                    key={item.page}
-                    onClick={() => navigate(item.page)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
-                      active
-                        ? 'bg-sidebar-accent text-sidebar-primary font-medium'
-                        : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
-                    }`}
-                  >
-                    <Icon className="h-4.5 w-4.5 shrink-0" />
-                    {sidebarOpen && <span>{item.label}</span>}
-                  </button>
+                  <TooltipProvider key={item.page} delayDuration={0}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => navigate(item.page)}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
+                            active
+                              ? 'bg-sidebar-accent text-sidebar-primary font-medium'
+                              : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+                          }`}
+                        >
+                          <Icon className="h-4.5 w-4.5 shrink-0" />
+                          {sidebarOpen && <span>{item.label}</span>}
+                        </button>
+                      </TooltipTrigger>
+                      {!sidebarOpen && <TooltipContent side="right">{item.label}</TooltipContent>}
+                    </Tooltip>
+                  </TooltipProvider>
                 );
               })}
             </>
@@ -337,29 +441,40 @@ function Sidebar() {
       {/* User */}
       <div className="border-t border-sidebar-border p-3">
         <div className="flex items-center gap-3 px-2">
-          <Avatar className="h-8 w-8 bg-sidebar-primary text-sidebar-primary-foreground">
+          <Avatar className="h-8 w-8 bg-sidebar-primary text-sidebar-primary-foreground shrink-0">
             <AvatarFallback className="text-xs font-bold">{user ? getInitials(user.fullName) : '?'}</AvatarFallback>
           </Avatar>
           {sidebarOpen && (
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.fullName}</p>
-              <p className="text-[10px] text-sidebar-foreground/50 truncate">{user?.roles?.[0]?.name || ''}</p>
-            </div>
-          )}
-          {sidebarOpen && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-sidebar-foreground/50 hover:text-red-400 hover:bg-red-500/10"
-              onClick={logout}
-            >
-              <LogOut className="h-4 w-4" />
-            </Button>
+            <>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.fullName}</p>
+                <p className="text-[10px] text-sidebar-foreground/50 truncate">{user?.roles?.[0]?.name || ''}</p>
+              </div>
+              <TooltipProvider delayDuration={0}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-sidebar-foreground/50 hover:text-red-400 hover:bg-red-500/10"
+                      onClick={logout}
+                    >
+                      <LogOut className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Sign Out</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+function Sidebar() {
+  const { sidebarOpen, toggleSidebar, mobileSidebarOpen, setMobileSidebarOpen } = useNavigationStore();
 
   return (
     <>
@@ -375,10 +490,10 @@ function Sidebar() {
       {/* Mobile overlay */}
       {mobileSidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setMobileSidebarOpen(false)} />
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileSidebarOpen(false)} />
           <aside className="absolute left-0 top-0 bottom-0 w-64 bg-sidebar z-50 shadow-xl">
             <button
-              className="absolute top-4 right-3 text-sidebar-foreground/50 hover:text-sidebar-foreground"
+              className="absolute top-4 right-3 text-sidebar-foreground/50 hover:text-sidebar-foreground z-10"
               onClick={() => setMobileSidebarOpen(false)}
             >
               <X className="h-5 w-5" />
@@ -398,7 +513,8 @@ function Sidebar() {
 function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const { hasPermission } = useAuthStore();
+  const { user, hasPermission } = useAuthStore();
+  const { navigate } = useNavigationStore();
 
   useEffect(() => {
     api.get<DashboardStats>('/api/dashboard/stats').then(res => {
@@ -410,88 +526,154 @@ function DashboardPage() {
   if (loading) return <LoadingSkeleton />;
 
   const statCards = [
-    { label: 'Open Requests', value: stats?.pendingRequests || 0, color: 'text-amber-600', bg: 'bg-amber-50', icon: ClipboardList },
-    { label: 'Active WOs', value: (stats?.assignedWorkOrders || 0) + (stats?.inProgressWorkOrders || 0), color: 'text-emerald-600', bg: 'bg-emerald-50', icon: Wrench },
-    { label: 'Completed', value: stats?.completedWorkOrders || 0, color: 'text-blue-600', bg: 'bg-blue-50', icon: CheckCircle2 },
-    { label: 'Overdue', value: stats?.overdueWorkOrders || 0, color: 'text-red-600', bg: 'bg-red-50', icon: AlertTriangle },
+    { label: 'Open Requests', value: stats?.pendingRequests || 0, color: 'text-amber-600', bg: 'bg-amber-50', icon: ClipboardList, permission: 'maintenance_requests.view' },
+    { label: 'Active WOs', value: (stats?.assignedWorkOrders || 0) + (stats?.inProgressWorkOrders || 0), color: 'text-emerald-600', bg: 'bg-emerald-50', icon: Wrench, permission: 'work_orders.view' },
+    { label: 'Completed', value: stats?.completedWorkOrders || 0, color: 'text-teal-600', bg: 'bg-teal-50', icon: CheckCircle2, permission: 'work_orders.view' },
+    { label: 'Overdue', value: stats?.overdueWorkOrders || 0, color: 'text-red-600', bg: 'bg-red-50', icon: AlertTriangle, permission: 'work_orders.view' },
   ];
+
+  const quickActions = [
+    { label: 'Create Request', icon: ClipboardList, permission: 'maintenance_requests.create', page: 'create-mr' as PageName },
+    { label: 'Create WO', icon: Wrench, permission: 'work_orders.create', page: 'work-orders' as PageName },
+    { label: 'View Requests', icon: Search, permission: 'maintenance_requests.view', page: 'maintenance-requests' as PageName },
+    { label: 'View WOs', icon: Eye, permission: 'work_orders.view', page: 'work-orders' as PageName },
+  ].filter(a => hasPermission(a.permission));
+
+  const visibleStatCards = statCards.filter(c => hasPermission(c.permission));
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Welcome Header */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground text-sm">Welcome back! Here&apos;s your overview.</p>
+          <h1 className="text-2xl font-bold">Welcome back, {user?.fullName?.split(' ')[0] || 'User'} 👋</h1>
+          <p className="text-muted-foreground text-sm mt-1">Here&apos;s your maintenance overview for today.</p>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {format(new Date(), 'EEEE, MMMM d, yyyy')}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map(card => {
-          const Icon = card.icon;
-          return (
-            <Card key={card.label} className="border-0 shadow-sm">
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{card.label}</p>
-                    <p className="text-3xl font-bold mt-1">{card.value}</p>
+      {/* Stats */}
+      {visibleStatCards.length > 0 && (
+        <div className={`grid gap-4 ${visibleStatCards.length === 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' : `grid-cols-1 sm:grid-cols-2 lg:grid-cols-${visibleStatCards.length}`}`}>
+          {visibleStatCards.map(card => {
+            const Icon = card.icon;
+            return (
+              <Card key={card.label} className="border-0 shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{card.label}</p>
+                      <p className="text-3xl font-bold mt-1">{card.value}</p>
+                    </div>
+                    <div className={`h-11 w-11 rounded-xl ${card.bg} flex items-center justify-center`}>
+                      <Icon className={`h-5 w-5 ${card.color}`} />
+                    </div>
                   </div>
-                  <div className={`h-11 w-11 rounded-xl ${card.bg} flex items-center justify-center`}>
-                    <Icon className={`h-5 w-5 ${card.color}`} />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
+      {/* Quick Actions */}
+      {quickActions.length > 0 && (
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold">Quick Actions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {quickActions.map(action => {
+                const Icon = action.icon;
+                return (
+                  <Button
+                    key={action.label}
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => navigate(action.page)}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {action.label}
+                  </Button>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Recent Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold">Recent Requests</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {stats?.recentRequests?.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">No recent requests</p>
-            ) : (
-              <div className="space-y-3">
-                {stats?.recentRequests?.map(mr => (
-                  <div key={mr.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{mr.title}</p>
-                      <p className="text-xs text-muted-foreground">{mr.requestNumber} · {mr.requester?.fullName} · {timeAgo(mr.createdAt)}</p>
-                    </div>
-                    <StatusBadge status={mr.status} />
-                  </div>
-                ))}
+        {hasPermission('maintenance_requests.view') && (
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base font-semibold">Recent Requests</CardTitle>
+                <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate('maintenance-requests')}>View All</Button>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent>
+              {!stats?.recentRequests?.length ? (
+                <EmptyState icon={ClipboardList} title="No recent requests" description="Maintenance requests you create will appear here." />
+              ) : (
+                <ScrollArea className="max-h-72">
+                  <div className="space-y-3">
+                    {stats.recentRequests.map(mr => (
+                      <div
+                        key={mr.id}
+                        className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-muted/30 px-2 -mx-2 rounded-md transition-colors"
+                        onClick={() => navigate('mr-detail', { id: mr.id })}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{mr.title}</p>
+                          <p className="text-xs text-muted-foreground">{mr.requestNumber} · {mr.requester?.fullName} · {timeAgo(mr.createdAt)}</p>
+                        </div>
+                        <StatusBadge status={mr.status} />
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold">Recent Work Orders</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {stats?.recentWorkOrders?.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">No recent work orders</p>
-            ) : (
-              <div className="space-y-3">
-                {stats?.recentWorkOrders?.map(wo => (
-                  <div key={wo.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{wo.title}</p>
-                      <p className="text-xs text-muted-foreground">{wo.woNumber} · {wo.type} · {timeAgo(wo.createdAt)}</p>
-                    </div>
-                    <StatusBadge status={wo.status} />
-                  </div>
-                ))}
+        {hasPermission('work_orders.view') && (
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base font-semibold">Recent Work Orders</CardTitle>
+                <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate('work-orders')}>View All</Button>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent>
+              {!stats?.recentWorkOrders?.length ? (
+                <EmptyState icon={Wrench} title="No recent work orders" description="Work orders created from approved requests will appear here." />
+              ) : (
+                <ScrollArea className="max-h-72">
+                  <div className="space-y-3">
+                    {stats.recentWorkOrders.map(wo => (
+                      <div
+                        key={wo.id}
+                        className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-muted/30 px-2 -mx-2 rounded-md transition-colors"
+                        onClick={() => navigate('wo-detail', { id: wo.id })}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{wo.title}</p>
+                          <p className="text-xs text-muted-foreground">{wo.woNumber} · {wo.type.replace('_', ' ')} · {timeAgo(wo.createdAt)}</p>
+                        </div>
+                        <StatusBadge status={wo.status} />
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
@@ -506,24 +688,49 @@ function MaintenanceRequestsPage() {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [searchText, setSearchText] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
-  const { navigate, hasPermission } = useNavigationStore();
+  const [refreshKey, setRefreshKey] = useState(0);
+  const { hasPermission } = useAuthStore();
 
-  const fetchRequests = useCallback(async () => {
-    setLoading(true);
+  const filteredRequests = useMemo(() => {
+    if (!searchText.trim()) return requests;
+    const q = searchText.toLowerCase();
+    return requests.filter(r =>
+      r.title.toLowerCase().includes(q) ||
+      r.requestNumber.toLowerCase().includes(q) ||
+      (r.assetName || '').toLowerCase().includes(q) ||
+      (r.requester?.fullName || '').toLowerCase().includes(q)
+    );
+  }, [requests, searchText]);
+
+  const statusCounts = useMemo(() => ({
+    total: requests.length,
+    pending: requests.filter(r => r.status === 'pending').length,
+    approved: requests.filter(r => r.status === 'approved').length,
+    rejected: requests.filter(r => r.status === 'rejected').length,
+    converted: requests.filter(r => r.status === 'converted').length,
+  }), [requests]);
+
+  useEffect(() => {
+    let active = true;
     const params = new URLSearchParams();
     if (filterStatus !== 'all') params.set('status', filterStatus);
     if (filterPriority !== 'all') params.set('priority', filterPriority);
-    const res = await api.get<MaintenanceRequest[]>(`/api/maintenance-requests?${params}`);
-    if (res.success && res.data) setRequests(res.data);
-    setLoading(false);
-  }, [filterStatus, filterPriority]);
+    api.get<MaintenanceRequest[]>(`/api/maintenance-requests?${params}`).then(res => {
+      if (active) {
+        if (res.success && res.data) setRequests(res.data);
+        setLoading(false);
+      }
+    });
+    return () => { active = false; };
+  }, [filterStatus, filterPriority, refreshKey]);
 
-  useEffect(() => { fetchRequests(); }, [fetchRequests]);
+  const handleRefresh = useCallback(() => setRefreshKey(k => k + 1), []);
 
   if (detailId) {
-    return <MRDetailPage id={detailId} onBack={() => setDetailId(null)} onUpdate={fetchRequests} />;
+    return <MRDetailPage id={detailId} onBack={() => setDetailId(null)} onUpdate={handleRefresh} />;
   }
 
   return (
@@ -531,70 +738,98 @@ function MaintenanceRequestsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">Maintenance Requests</h1>
-          <p className="text-muted-foreground text-sm">{requests.length} request(s) found</p>
+          <p className="text-muted-foreground text-sm">{filteredRequests.length} request(s) found</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="approved">Approved</SelectItem>
-              <SelectItem value="rejected">Rejected</SelectItem>
-              <SelectItem value="converted">Converted</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={filterPriority} onValueChange={setFilterPriority}>
-            <SelectTrigger className="w-36"><SelectValue placeholder="Priority" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Priority</SelectItem>
-              <SelectItem value="low">Low</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-              <SelectItem value="urgent">Urgent</SelectItem>
-            </SelectContent>
-          </Select>
-          {hasPermission('maintenance_requests.create') && (
-            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1" />New Request</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>Create Maintenance Request</DialogTitle></DialogHeader>
-                <CreateMRForm onSuccess={() => { setCreateOpen(false); fetchRequests(); }} />
-              </DialogContent>
-            </Dialog>
-          )}
+        {hasPermission('maintenance_requests.create') && (
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Request</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Create Maintenance Request</DialogTitle></DialogHeader>
+              <CreateMRForm onSuccess={() => { setCreateOpen(false); handleRefresh(); }} />
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
+
+      {/* Stats Bar */}
+      <div className="flex gap-3 flex-wrap">
+        {[
+          { label: 'Total', value: statusCounts.total, className: 'bg-slate-100 text-slate-700' },
+          { label: 'Pending', value: statusCounts.pending, className: 'bg-amber-50 text-amber-700' },
+          { label: 'Approved', value: statusCounts.approved, className: 'bg-emerald-50 text-emerald-700' },
+          { label: 'Rejected', value: statusCounts.rejected, className: 'bg-red-50 text-red-700' },
+          { label: 'Converted', value: statusCounts.converted, className: 'bg-teal-50 text-teal-700' },
+        ].map(s => (
+          <div key={s.label} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${s.className}`}>
+            {s.label}: <span className="font-bold">{s.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search requests..."
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            className="pl-9"
+          />
         </div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
+            <SelectItem value="converted">Converted</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filterPriority} onValueChange={setFilterPriority}>
+          <SelectTrigger className="w-36"><SelectValue placeholder="Priority" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Priority</SelectItem>
+            <SelectItem value="low">Low</SelectItem>
+            <SelectItem value="medium">Medium</SelectItem>
+            <SelectItem value="high">High</SelectItem>
+            <SelectItem value="urgent">Urgent</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {loading ? <LoadingSkeleton /> : (
-        <Card>
+        <Card className="border-0 shadow-sm">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Request #</TableHead>
                 <TableHead>Title</TableHead>
-                <TableHead>Priority</TableHead>
+                <TableHead className="hidden md:table-cell">Priority</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Requested By</TableHead>
-                <TableHead>Asset</TableHead>
-                <TableHead>Date</TableHead>
+                <TableHead className="hidden lg:table-cell">Requested By</TableHead>
+                <TableHead className="hidden xl:table-cell">Asset</TableHead>
+                <TableHead className="hidden md:table-cell">Date</TableHead>
                 <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {requests.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No maintenance requests found</TableCell></TableRow>
-              ) : requests.map(mr => (
+              {filteredRequests.length === 0 ? (
+                <TableRow><TableCell colSpan={8} className="h-48">
+                  <EmptyState icon={ClipboardList} title="No maintenance requests found" description="Try adjusting your filters or create a new request." />
+                </TableCell></TableRow>
+              ) : filteredRequests.map(mr => (
                 <TableRow key={mr.id} className="cursor-pointer hover:bg-muted/30" onClick={() => setDetailId(mr.id)}>
                   <TableCell className="font-mono text-xs">{mr.requestNumber}</TableCell>
                   <TableCell className="font-medium max-w-[250px] truncate">{mr.title}</TableCell>
-                  <TableCell><PriorityBadge priority={mr.priority} /></TableCell>
+                  <TableCell className="hidden md:table-cell"><PriorityBadge priority={mr.priority} /></TableCell>
                   <TableCell><StatusBadge status={mr.status} /></TableCell>
-                  <TableCell className="text-sm">{mr.requester?.fullName}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate">{mr.assetName || '-'}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{formatDate(mr.createdAt)}</TableCell>
+                  <TableCell className="text-sm hidden lg:table-cell">{mr.requester?.fullName}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate hidden xl:table-cell">{mr.assetName || '-'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{formatDate(mr.createdAt)}</TableCell>
                   <TableCell>
                     {mr.machineDown && <Badge variant="destructive" className="text-[10px]">DOWN</Badge>}
                   </TableCell>
@@ -643,7 +878,7 @@ function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
       </div>
       <div className="space-y-2">
         <Label>Description</Label>
-        <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Detailed description" rows={3} />
+        <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Detailed description of the issue, including any relevant observations" rows={3} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
@@ -684,9 +919,12 @@ function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
           <Input value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Production Line 2" />
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-100">
         <Switch checked={machineDown} onCheckedChange={setMachineDown} />
-        <Label className="text-sm font-medium text-red-600">Machine is Down</Label>
+        <div>
+          <Label className="text-sm font-medium text-red-700">Machine is Down</Label>
+          <p className="text-[11px] text-red-500">Enable if this issue has caused a machine shutdown</p>
+        </div>
       </div>
       <DialogFooter>
         <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={loading}>
@@ -706,23 +944,36 @@ function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [comment, setComment] = useState('');
-  const { hasPermission, user } = useAuthStore();
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectNotes, setRejectNotes] = useState('');
+  const { hasPermission } = useAuthStore();
 
-  const fetchMR = useCallback(async () => {
-    const res = await api.get<MaintenanceRequest>(`/api/maintenance-requests/${id}`);
-    if (res.success && res.data) setMr(res.data);
-    setLoading(false);
+  useEffect(() => {
+    let active = true;
+    api.get<MaintenanceRequest>(`/api/maintenance-requests/${id}`).then(res => {
+      if (active) {
+        if (res.success && res.data) setMr(res.data);
+        setLoading(false);
+      }
+    });
+    return () => { active = false; };
   }, [id]);
 
-  useEffect(() => { fetchMR(); }, [fetchMR]);
+  const handleRefresh = useCallback(() => {
+    api.get<MaintenanceRequest>(`/api/maintenance-requests/${id}`).then(res => {
+      if (res.success && res.data) setMr(res.data);
+    });
+  }, [id]);
 
   const handleAction = async (action: string, notes?: string) => {
     setActionLoading(true);
     const res = await api.patch(`/api/maintenance-requests/${id}`, { action, reviewNotes: notes });
     if (res.success) {
-      toast.success(`Request ${action}d successfully`);
-      fetchMR();
+      toast.success(`Request ${action === 'approve' ? 'approved' : 'rejected'} successfully`);
+      handleRefresh();
       onUpdate();
+      setRejectDialogOpen(false);
+      setRejectNotes('');
     } else {
       toast.error(res.error || 'Action failed');
     }
@@ -738,7 +989,7 @@ function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
     });
     if (res.success) {
       toast.success('Converted to Work Order');
-      fetchMR();
+      handleRefresh();
       onUpdate();
     } else {
       toast.error(res.error || 'Conversion failed');
@@ -752,7 +1003,7 @@ function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
     if (res.success) {
       toast.success('Comment added');
       setComment('');
-      fetchMR();
+      handleRefresh();
     }
   };
 
@@ -761,10 +1012,11 @@ function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center gap-3">
+      {/* Header */}
+      <div className="flex items-start gap-3 flex-wrap">
         <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-mono text-sm text-muted-foreground">{mr.requestNumber}</span>
             <StatusBadge status={mr.status} />
             <PriorityBadge priority={mr.priority} />
@@ -772,10 +1024,10 @@ function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
           </div>
           <h1 className="text-xl font-bold mt-1">{mr.title}</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {mr.status === 'pending' && hasPermission('maintenance_requests.approve') && (
             <>
-              <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" disabled={actionLoading} onClick={() => handleAction('reject', '')}>
+              <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectDialogOpen(true)}>
                 <XCircle className="h-4 w-4 mr-1" />Reject
               </Button>
               <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={() => handleAction('approve', '')}>
@@ -791,47 +1043,71 @@ function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
         </div>
       </div>
 
+      {/* Reject Dialog */}
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Reject Request</DialogTitle><DialogDescription>Please provide a reason for rejection.</DialogDescription></DialogHeader>
+          <Textarea value={rejectNotes} onChange={e => setRejectNotes(e.target.value)} placeholder="Reason for rejection..." rows={3} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>Cancel</Button>
+            <Button variant="destructive" disabled={actionLoading} onClick={() => handleAction('reject', rejectNotes)}>
+              {actionLoading ? 'Rejecting...' : 'Reject Request'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Body */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <Card>
+          <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Description</CardTitle></CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground whitespace-pre-wrap">{mr.description || 'No description provided.'}</p>
             </CardContent>
           </Card>
 
-          {/* Comments Section */}
-          <Card>
+          {/* Comments */}
+          <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Comments ({mr.comments?.length || 0})</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="flex gap-2">
                 <Input value={comment} onChange={e => setComment(e.target.value)} placeholder="Add a comment..." onKeyDown={e => e.key === 'Enter' && handleComment()} />
                 <Button size="icon" className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0" onClick={handleComment}><MessageSquare className="h-4 w-4" /></Button>
               </div>
-              {mr.comments?.map(c => (
-                <div key={c.id} className="flex gap-3 py-2 border-b last:border-0">
-                  <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px]">{getInitials(c.user?.fullName || 'U')}</AvatarFallback></Avatar>
-                  <div>
-                    <p className="text-xs"><span className="font-medium">{c.user?.fullName || 'Unknown'}</span> <span className="text-muted-foreground">{timeAgo(c.createdAt)}</span></p>
-                    <p className="text-sm mt-0.5">{c.content}</p>
+              <ScrollArea className="max-h-64">
+                {mr.comments?.map(c => (
+                  <div key={c.id} className="flex gap-3 py-2 border-b last:border-0">
+                    <Avatar className="h-7 w-7 shrink-0"><AvatarFallback className="text-[10px]">{getInitials(c.user?.fullName || 'U')}</AvatarFallback></Avatar>
+                    <div>
+                      <p className="text-xs"><span className="font-medium">{c.user?.fullName || 'Unknown'}</span> <span className="text-muted-foreground">{timeAgo(c.createdAt)}</span></p>
+                      <p className="text-sm mt-0.5">{c.content}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </ScrollArea>
               {(!mr.comments || mr.comments.length === 0) && <p className="text-sm text-muted-foreground text-center py-4">No comments yet</p>}
             </CardContent>
           </Card>
 
           {/* Status History */}
-          <Card>
+          <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Status History</CardTitle></CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {mr.statusHistory?.map(h => (
-                  <div key={h.id} className="flex items-center gap-3 text-sm py-1">
-                    <div className="h-2 w-2 rounded-full bg-emerald-400" />
-                    <span className="font-medium">{h.toStatus.replace(/_/g, ' ')}</span>
-                    <span className="text-muted-foreground">by {h.changedBy?.fullName || 'System'}</span>
-                    <span className="text-muted-foreground text-xs ml-auto">{formatDateTime(h.createdAt)}</span>
+              <div className="space-y-3">
+                {mr.statusHistory?.map((h, i) => (
+                  <div key={h.id} className="flex items-center gap-3 text-sm">
+                    <div className="relative flex flex-col items-center">
+                      <div className={`h-3 w-3 rounded-full ${i === 0 ? 'bg-emerald-500 ring-4 ring-emerald-100' : 'bg-emerald-300'}`} />
+                      {i < (mr.statusHistory?.length || 0) - 1 && <div className="w-0.5 h-6 bg-emerald-200" />}
+                    </div>
+                    <div className="flex-1 flex items-center justify-between">
+                      <div>
+                        <span className="font-medium">{h.toStatus.replace(/_/g, ' ')}</span>
+                        <span className="text-muted-foreground"> — by {h.changedBy?.fullName || 'System'}</span>
+                      </div>
+                      <span className="text-muted-foreground text-xs">{formatDateTime(h.createdAt)}</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -839,9 +1115,9 @@ function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
           </Card>
         </div>
 
-        {/* Right Sidebar Info */}
+        {/* Right Sidebar */}
         <div className="space-y-4">
-          <Card>
+          <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Category</span><span className="font-medium capitalize">{mr.category || '-'}</span></div>
@@ -862,7 +1138,7 @@ function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
               {mr.reviewNotes && (
                 <>
                   <Separator />
-                  <div><span className="text-muted-foreground">Review Notes</span><p className="mt-1">{mr.reviewNotes}</p></div>
+                  <div><span className="text-muted-foreground">Review Notes</span><p className="mt-1 text-xs">{mr.reviewNotes}</p></div>
                 </>
               )}
             </CardContent>
@@ -892,23 +1168,50 @@ function WorkOrdersPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [searchText, setSearchText] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
-  const { hasPermission } = useNavigationStore();
+  const [refreshKey, setRefreshKey] = useState(0);
+  const { hasPermission } = useAuthStore();
 
-  const fetchWOs = useCallback(async () => {
-    setLoading(true);
+  const filteredWOs = useMemo(() => {
+    if (!searchText.trim()) return workOrders;
+    const q = searchText.toLowerCase();
+    return workOrders.filter(wo =>
+      wo.title.toLowerCase().includes(q) ||
+      wo.woNumber.toLowerCase().includes(q) ||
+      (wo.assetName || '').toLowerCase().includes(q) ||
+      (wo.assignedToName || '').toLowerCase().includes(q)
+    );
+  }, [workOrders, searchText]);
+
+  const statusCounts = useMemo(() => ({
+    total: workOrders.length,
+    inProgress: workOrders.filter(w => w.status === 'in_progress').length,
+    completed: workOrders.filter(w => w.status === 'completed').length,
+    assigned: workOrders.filter(w => w.status === 'assigned' || w.status === 'draft').length,
+    overdue: workOrders.filter(w => w.slaBreached).length,
+  }), [workOrders]);
+
+  useEffect(() => {
+    let active = true;
     const params = new URLSearchParams();
     if (filterStatus !== 'all') params.set('status', filterStatus);
-    const res = await api.get<WorkOrder[]>(`/api/work-orders?${params}`);
-    if (res.success && res.data) setWorkOrders(res.data);
-    setLoading(false);
-  }, [filterStatus]);
+    if (filterPriority !== 'all') params.set('priority', filterPriority);
+    api.get<WorkOrder[]>(`/api/work-orders?${params}`).then(res => {
+      if (active) {
+        if (res.success && res.data) setWorkOrders(res.data);
+        setLoading(false);
+      }
+    });
+    return () => { active = false; };
+  }, [filterStatus, filterPriority, refreshKey]);
 
-  useEffect(() => { fetchWOs(); }, [fetchWOs]);
+  const handleRefresh = useCallback(() => setRefreshKey(k => k + 1), []);
 
   if (detailId) {
-    return <WODetailPage id={detailId} onBack={() => setDetailId(null)} onUpdate={fetchWOs} />;
+    return <WODetailPage id={detailId} onBack={() => setDetailId(null)} onUpdate={handleRefresh} />;
   }
 
   return (
@@ -916,62 +1219,96 @@ function WorkOrdersPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">Work Orders</h1>
-          <p className="text-muted-foreground text-sm">{workOrders.length} work order(s)</p>
+          <p className="text-muted-foreground text-sm">{filteredWOs.length} work order(s)</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="approved">Approved</SelectItem>
-              <SelectItem value="assigned">Assigned</SelectItem>
-              <SelectItem value="in_progress">In Progress</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-              <SelectItem value="verified">Verified</SelectItem>
-              <SelectItem value="closed">Closed</SelectItem>
-            </SelectContent>
-          </Select>
-          {hasPermission('work_orders.create') && (
-            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1" />New Work Order</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader><DialogTitle>Create Work Order</DialogTitle></DialogHeader>
-                <CreateWOForm onSuccess={() => { setCreateOpen(false); fetchWOs(); }} />
-              </DialogContent>
-            </Dialog>
-          )}
+        {hasPermission('work_orders.create') && (
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Work Order</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Create Work Order</DialogTitle></DialogHeader>
+              <CreateWOForm onSuccess={() => { setCreateOpen(false); handleRefresh(); }} />
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
+
+      {/* Stats Bar */}
+      <div className="flex gap-3 flex-wrap">
+        {[
+          { label: 'Total', value: statusCounts.total, className: 'bg-slate-100 text-slate-700' },
+          { label: 'In Progress', value: statusCounts.inProgress, className: 'bg-amber-50 text-amber-700' },
+          { label: 'Completed', value: statusCounts.completed, className: 'bg-emerald-50 text-emerald-700' },
+          { label: 'Pending', value: statusCounts.assigned, className: 'bg-sky-50 text-sky-700' },
+          { label: 'Overdue', value: statusCounts.overdue, className: 'bg-red-50 text-red-700' },
+        ].map(s => (
+          <div key={s.label} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${s.className}`}>
+            {s.label}: <span className="font-bold">{s.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Search work orders..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
         </div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="assigned">Assigned</SelectItem>
+            <SelectItem value="in_progress">In Progress</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+            <SelectItem value="verified">Verified</SelectItem>
+            <SelectItem value="closed">Closed</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filterPriority} onValueChange={setFilterPriority}>
+          <SelectTrigger className="w-36"><SelectValue placeholder="Priority" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Priority</SelectItem>
+            <SelectItem value="low">Low</SelectItem>
+            <SelectItem value="medium">Medium</SelectItem>
+            <SelectItem value="high">High</SelectItem>
+            <SelectItem value="critical">Critical</SelectItem>
+            <SelectItem value="emergency">Emergency</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {loading ? <LoadingSkeleton /> : (
-        <Card>
+        <Card className="border-0 shadow-sm">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>WO #</TableHead>
                 <TableHead>Title</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Priority</TableHead>
+                <TableHead className="hidden md:table-cell">Type</TableHead>
+                <TableHead className="hidden sm:table-cell">Priority</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Assigned To</TableHead>
-                <TableHead>Created</TableHead>
+                <TableHead className="hidden lg:table-cell">Assigned To</TableHead>
+                <TableHead className="hidden md:table-cell">Created</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {workOrders.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No work orders found</TableCell></TableRow>
-              ) : workOrders.map(wo => (
+              {filteredWOs.length === 0 ? (
+                <TableRow><TableCell colSpan={7} className="h-48">
+                  <EmptyState icon={Wrench} title="No work orders found" description="Try adjusting your filters or create a new work order." />
+                </TableCell></TableRow>
+              ) : filteredWOs.map(wo => (
                 <TableRow key={wo.id} className="cursor-pointer hover:bg-muted/30" onClick={() => setDetailId(wo.id)}>
                   <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
                   <TableCell className="font-medium max-w-[250px] truncate">{wo.title}</TableCell>
-                  <TableCell className="text-xs capitalize">{wo.type.replace('_', ' ')}</TableCell>
-                  <TableCell><PriorityBadge priority={wo.priority} /></TableCell>
+                  <TableCell className="text-xs capitalize hidden md:table-cell">{wo.type.replace('_', ' ')}</TableCell>
+                  <TableCell className="hidden sm:table-cell"><PriorityBadge priority={wo.priority} /></TableCell>
                   <TableCell><StatusBadge status={wo.status} /></TableCell>
-                  <TableCell className="text-sm">{wo.assignedToName || <span className="text-muted-foreground">Unassigned</span>}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{formatDate(wo.createdAt)}</TableCell>
+                  <TableCell className="text-sm hidden lg:table-cell">{wo.assignedToName || <span className="text-muted-foreground">Unassigned</span>}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{formatDate(wo.createdAt)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -1015,11 +1352,11 @@ function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label>Title *</Label>
-        <Input value={title} onChange={e => setTitle(e.target.value)} required />
+        <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Work order title" required />
       </div>
       <div className="space-y-2">
         <Label>Description</Label>
-        <Textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} />
+        <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Detailed description of work to be done" rows={3} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
@@ -1053,11 +1390,11 @@ function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label>Asset / Machine</Label>
-          <Input value={assetName} onChange={e => setAssetName(e.target.value)} />
+          <Input value={assetName} onChange={e => setAssetName(e.target.value)} placeholder="e.g. Pump Station A" />
         </div>
         <div className="space-y-2">
           <Label>Est. Hours</Label>
-          <Input type="number" value={estimatedHours} onChange={e => setEstimatedHours(e.target.value)} />
+          <Input type="number" value={estimatedHours} onChange={e => setEstimatedHours(e.target.value)} placeholder="0" />
         </div>
       </div>
       <DialogFooter>
@@ -1079,7 +1416,8 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
   const [actionLoading, setActionLoading] = useState(false);
   const [comment, setComment] = useState('');
   const [actionDialog, setActionDialog] = useState<string | null>(null);
-  const { hasPermission, user } = useAuthStore();
+  const [completionNotes, setCompletionNotes] = useState('');
+  const { hasPermission } = useAuthStore();
   const [users, setUsers] = useState<User[]>([]);
 
   const fetchWO = useCallback(async () => {
@@ -1089,11 +1427,18 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
   }, [id]);
 
   useEffect(() => {
-    fetchWO();
+    let active = true;
+    api.get<WorkOrder>(`/api/work-orders/${id}`).then(res => {
+      if (active) {
+        if (res.success && res.data) setWo(res.data);
+        setLoading(false);
+      }
+    });
     api.get<User[]>('/api/users').then(res => { if (res.success && res.data) setUsers(res.data); });
-  }, [fetchWO]);
+    return () => { active = false; };
+  }, [id]);
 
-  const handleAction = async (action: string, extra?: any) => {
+  const handleAction = async (action: string, extra?: Record<string, unknown>) => {
     setActionLoading(true);
     const res = await api.patch(`/api/work-orders/${id}`, { action, ...extra });
     if (res.success) {
@@ -1126,7 +1471,7 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-start gap-3 flex-wrap">
         <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -1135,6 +1480,7 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
             <PriorityBadge priority={wo.priority} />
             <Badge variant="outline" className="capitalize">{wo.type.replace('_', ' ')}</Badge>
             {wo.isLocked && <Badge variant="secondary"><Lock className="h-3 w-3 mr-1" />Locked</Badge>}
+            {wo.slaBreached && <Badge variant="destructive" className="text-[10px]"><AlertTriangle className="h-3 w-3 mr-1" />SLA BREACHED</Badge>}
           </div>
           <h1 className="text-xl font-bold mt-1">{wo.title}</h1>
         </div>
@@ -1159,7 +1505,7 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
       {/* Assign Dialog */}
       <Dialog open={actionDialog === 'assign'} onOpenChange={() => setActionDialog(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Assign Work Order</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Assign Work Order</DialogTitle><DialogDescription>Select a technician to assign this work order.</DialogDescription></DialogHeader>
           <Select onValueChange={(val) => {
             const u = users.find(x => x.id === val);
             if (u) handleAction('assign', { assignedToId: u.id, assignedToName: u.fullName });
@@ -1174,31 +1520,14 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
 
       {/* Complete Dialog */}
       <Dialog open={actionDialog === 'complete'} onOpenChange={() => setActionDialog(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Complete Work Order</DialogTitle><DialogDescription>Mark this work order as completed.</DialogDescription></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Completion Notes</Label>
-              <Textarea id="comp-notes" placeholder="What was done?" rows={3} />
+              <Textarea value={completionNotes} onChange={e => setCompletionNotes(e.target.value)} placeholder="What was done?" rows={3} />
             </div>
-            <div className="grid grid-cols-1 gap-3">
-              <div className="space-y-2">
-                <Label>Failure Description</Label>
-                <Textarea placeholder="What failed?" rows={2} />
-              </div>
-              <div className="space-y-2">
-                <Label>Cause</Label>
-                <Textarea placeholder="Root cause" rows={2} />
-              </div>
-              <div className="space-y-2">
-                <Label>Action Taken</Label>
-                <Textarea placeholder="Corrective action" rows={2} />
-              </div>
-            </div>
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={() => {
-              const compNotes = (document.getElementById('comp-notes') as HTMLTextAreaElement)?.value || '';
-              handleAction('complete', { completionNotes: compNotes });
-            }}>
+            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={() => handleAction('complete', { completionNotes })}>
               {actionLoading ? 'Completing...' : 'Mark as Completed'}
             </Button>
           </div>
@@ -1208,42 +1537,51 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
       {/* Body */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <Card>
+          <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Description</CardTitle></CardHeader>
             <CardContent><p className="text-sm text-muted-foreground whitespace-pre-wrap">{wo.description || 'No description'}</p></CardContent>
           </Card>
 
           {/* Comments */}
-          <Card>
+          <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Comments ({wo.comments?.length || 0})</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="flex gap-2">
                 <Input value={comment} onChange={e => setComment(e.target.value)} placeholder="Add comment..." onKeyDown={e => e.key === 'Enter' && handleComment()} />
                 <Button size="icon" className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0" onClick={handleComment}><MessageSquare className="h-4 w-4" /></Button>
               </div>
-              {wo.comments?.map(c => (
-                <div key={c.id} className="flex gap-3 py-2 border-b last:border-0">
-                  <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px]">{getInitials(c.userName || 'U')}</AvatarFallback></Avatar>
-                  <div>
-                    <p className="text-xs"><span className="font-medium">{c.userName || 'Unknown'}</span> <span className="text-muted-foreground">{timeAgo(c.createdAt)}</span></p>
-                    <p className="text-sm mt-0.5">{c.content}</p>
+              <ScrollArea className="max-h-64">
+                {wo.comments?.map(c => (
+                  <div key={c.id} className="flex gap-3 py-2 border-b last:border-0">
+                    <Avatar className="h-7 w-7 shrink-0"><AvatarFallback className="text-[10px]">{getInitials(c.userName || 'U')}</AvatarFallback></Avatar>
+                    <div>
+                      <p className="text-xs"><span className="font-medium">{c.userName || 'Unknown'}</span> <span className="text-muted-foreground">{timeAgo(c.createdAt)}</span></p>
+                      <p className="text-sm mt-0.5">{c.content}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </ScrollArea>
             </CardContent>
           </Card>
 
           {/* Timeline */}
-          <Card>
+          <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Activity Timeline</CardTitle></CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                {wo.statusHistory?.map(h => (
-                  <div key={h.id} className="flex items-center gap-3 text-sm py-1">
-                    <div className="h-2 w-2 rounded-full bg-emerald-400" />
-                    <span className="font-medium">{h.toStatus.replace(/_/g, ' ')}</span>
-                    <span className="text-muted-foreground">{h.reason || ''}</span>
-                    <span className="text-muted-foreground text-xs ml-auto">{formatDateTime(h.createdAt)}</span>
+              <div className="space-y-3">
+                {wo.statusHistory?.map((h, i) => (
+                  <div key={h.id} className="flex items-center gap-3 text-sm">
+                    <div className="relative flex flex-col items-center">
+                      <div className={`h-3 w-3 rounded-full ${i === 0 ? 'bg-emerald-500 ring-4 ring-emerald-100' : 'bg-emerald-300'}`} />
+                      {i < (wo.statusHistory?.length || 0) - 1 && <div className="w-0.5 h-6 bg-emerald-200" />}
+                    </div>
+                    <div className="flex-1 flex items-center justify-between">
+                      <div>
+                        <span className="font-medium">{h.toStatus.replace(/_/g, ' ')}</span>
+                        {h.reason && <span className="text-muted-foreground"> — {h.reason}</span>}
+                      </div>
+                      <span className="text-muted-foreground text-xs">{formatDateTime(h.createdAt)}</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1253,7 +1591,7 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
 
         {/* Right Panel */}
         <div className="space-y-4">
-          <Card>
+          <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">Type</span><span className="font-medium capitalize">{wo.type.replace('_', ' ')}</span></div>
@@ -1275,16 +1613,25 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
               {wo.actualStart && (
                 <><Separator /><div className="flex justify-between"><span className="text-muted-foreground">Actual Start</span><span className="font-medium">{formatDateTime(wo.actualStart)}</span></div></>
               )}
-              {wo.actualEnd && (
-                <><Separator /><div className="flex justify-between"><span className="text-muted-foreground">Actual End</span><span className="font-medium">{formatDateTime(wo.actualEnd)}</span></div></>
-              )}
             </CardContent>
           </Card>
 
+          {/* Cost Summary */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader><CardTitle className="text-base">Cost Summary</CardTitle></CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Material</span><span className="font-medium">GHS {wo.materialCost.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Labor</span><span className="font-medium">GHS {wo.laborCost.toFixed(2)}</span></div>
+              <Separator />
+              <div className="flex justify-between font-semibold"><span>Total</span><span>GHS {wo.totalCost.toFixed(2)}</span></div>
+            </CardContent>
+          </Card>
+
+          {/* Source Request */}
           {wo.request && (
-            <Card className="border-blue-200 bg-blue-50/50">
+            <Card className="border-teal-200 bg-teal-50/50">
               <CardContent className="p-4">
-                <p className="text-xs font-medium text-blue-700 uppercase tracking-wider mb-1">Source Request</p>
+                <p className="text-xs font-medium text-teal-700 uppercase tracking-wider mb-1">Source Request</p>
                 <p className="font-semibold">{wo.request.requestNumber}</p>
                 <p className="text-sm text-muted-foreground">{wo.request.title}</p>
                 {wo.request.requester && <p className="text-xs text-muted-foreground mt-1">by {wo.request.requester.fullName}</p>}
@@ -1292,8 +1639,9 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
             </Card>
           )}
 
+          {/* Team Members */}
           {wo.teamMembers && wo.teamMembers.length > 0 && (
-            <Card>
+            <Card className="border-0 shadow-sm">
               <CardHeader><CardTitle className="text-base">Team</CardTitle></CardHeader>
               <CardContent className="space-y-2">
                 {wo.teamMembers.map(tm => (
@@ -1306,17 +1654,6 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
               </CardContent>
             </Card>
           )}
-
-          {/* Cost Summary */}
-          <Card>
-            <CardHeader><CardTitle className="text-base">Cost</CardTitle></CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Material</span><span className="font-medium">GHS {wo.materialCost.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Labor</span><span className="font-medium">GHS {wo.laborCost.toFixed(2)}</span></div>
-              <Separator />
-              <div className="flex justify-between font-semibold"><span>Total</span><span>GHS {wo.totalCost.toFixed(2)}</span></div>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>
@@ -1329,16 +1666,129 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
 
 function SettingsUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
-  const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchText, setSearchText] = useState('');
+
+  useEffect(() => {
+    api.get<User[]>('/api/users').then(res => {
+      if (res.success && res.data) setUsers(res.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const filteredUsers = useMemo(() => {
+    if (!searchText.trim()) return users;
+    const q = searchText.toLowerCase();
+    return users.filter(u =>
+      u.fullName.toLowerCase().includes(q) ||
+      u.username.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q)
+    );
+  }, [users, searchText]);
+
+  if (loading) return <LoadingSkeleton />;
+
+  return (
+    <div className="p-6 space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Users</h1>
+          <p className="text-muted-foreground text-sm">{users.length} user(s)</p>
+        </div>
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Search users..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
+        </div>
+      </div>
+
+      <Card className="border-0 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>User</TableHead>
+                <TableHead>Username</TableHead>
+                <TableHead className="hidden md:table-cell">Email</TableHead>
+                <TableHead className="hidden lg:table-cell">Department</TableHead>
+                <TableHead className="hidden md:table-cell">Roles</TableHead>
+                <TableHead className="hidden xl:table-cell">Plant</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredUsers.length === 0 ? (
+                <TableRow><TableCell colSpan={7} className="h-48">
+                  <EmptyState icon={Users} title="No users found" description="No users match your search criteria." />
+                </TableCell></TableRow>
+              ) : filteredUsers.map(u => (
+                <TableRow key={u.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700">{getInitials(u.fullName)}</AvatarFallback></Avatar>
+                      <span className="font-medium text-sm">{u.fullName}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">{u.username}</TableCell>
+                  <TableCell className="text-sm hidden md:table-cell">{u.email}</TableCell>
+                  <TableCell className="text-sm hidden lg:table-cell">{u.department?.name || '-'}</TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <div className="flex gap-1 flex-wrap">
+                      {u.userRoles ? (
+                        (u.userRoles as UserRole[]).map((ur: UserRole) => (
+                          <Badge key={ur.role.id} variant="outline" style={{ borderColor: ur.role.color || undefined, color: ur.role.color || undefined }} className="text-[10px]">
+                            {ur.role.name}
+                          </Badge>
+                        ))
+                      ) : (
+                        u.roles?.map(r => (
+                          <Badge key={r.id} variant="outline" style={{ borderColor: r.color || undefined, color: r.color || undefined }} className="text-[10px]">
+                            {r.name}
+                          </Badge>
+                        ))
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-sm hidden xl:table-cell">{u.plant?.name || '-'}</TableCell>
+                  <TableCell>
+                    <Badge variant={u.status === 'active' ? 'default' : 'secondary'} className={u.status === 'active' ? 'bg-emerald-100 text-emerald-700' : ''}>
+                      {u.status}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================================
+// SETTINGS - ROLES
+// ============================================================================
+
+function SettingsRolesPage() {
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const permissionsByModule = useMemo(() => {
+    const map: Record<string, Permission[]> = {};
+    permissions.forEach(p => {
+      if (!map[p.module]) map[p.module] = [];
+      map[p.module].push(p);
+    });
+    return map;
+  }, [permissions]);
 
   useEffect(() => {
     Promise.all([
-      api.get<User[]>('/api/users'),
       api.get<Role[]>('/api/roles'),
-    ]).then(([usersRes, rolesRes]) => {
-      if (usersRes.success && usersRes.data) setUsers(usersRes.data);
+      api.get<Permission[]>('/api/permissions'),
+    ]).then(([rolesRes, permsRes]) => {
       if (rolesRes.success && rolesRes.data) setRoles(rolesRes.data);
+      if (permsRes.success && permsRes.data) setPermissions(permsRes.data);
       setLoading(false);
     });
   }, []);
@@ -1348,55 +1798,60 @@ function SettingsUsersPage() {
   return (
     <div className="p-6 space-y-5">
       <div>
-        <h1 className="text-2xl font-bold">Users</h1>
-        <p className="text-muted-foreground text-sm">{users.length} user(s)</p>
+        <h1 className="text-2xl font-bold">Roles & Permissions</h1>
+        <p className="text-muted-foreground text-sm">Manage system roles and their associated permissions</p>
       </div>
 
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>User</TableHead>
-              <TableHead>Username</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Department</TableHead>
-              <TableHead>Roles</TableHead>
-              <TableHead>Plant</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.map(u => (
-              <TableRow key={u.id}>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700">{getInitials(u.fullName)}</AvatarFallback></Avatar>
-                    <span className="font-medium text-sm">{u.fullName}</span>
+      <Tabs defaultValue={roles[0]?.id || ''}>
+        <TabsList className="flex-wrap h-auto gap-1 bg-muted/50 p-1">
+          {roles.map(role => (
+            <TabsTrigger key={role.id} value={role.id} className="text-xs">
+              {role.name}
+              {role.permissionCount !== undefined && (
+                <Badge variant="secondary" className="ml-1.5 text-[9px] px-1 py-0 h-4">{role.permissionCount}</Badge>
+              )}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        {roles.map(role => (
+          <TabsContent key={role.id} value={role.id} className="mt-4">
+            <Card className="border-0 shadow-sm">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: (role.color || '#10b981') + '20', color: role.color || '#10b981' }}>
+                    <Shield className="h-5 w-5" />
                   </div>
-                </TableCell>
-                <TableCell className="font-mono text-xs">{u.username}</TableCell>
-                <TableCell className="text-sm">{u.email}</TableCell>
-                <TableCell className="text-sm">{u.department?.name || '-'}</TableCell>
-                <TableCell>
-                  <div className="flex gap-1 flex-wrap">
-                    {u.userRoles?.map(ur => (
-                      <Badge key={ur.role.id} variant="outline" style={{ borderColor: ur.role.color || undefined, color: ur.role.color || undefined }} className="text-[10px]">
-                        {ur.role.name}
-                      </Badge>
+                  <div>
+                    <CardTitle className="text-lg">{role.name}</CardTitle>
+                    <CardDescription>{role.description || `Level ${role.level} role`}</CardDescription>
+                  </div>
+                  {role.isSystem && <Badge variant="outline" className="text-[10px]">SYSTEM</Badge>}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="max-h-96">
+                  <div className="space-y-4">
+                    {Object.entries(permissionsByModule).map(([module, perms]) => (
+                      <div key={module}>
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">{module.replace(/_/g, ' ')}</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {perms.map(p => (
+                            <div key={p.id} className="flex items-center gap-2 p-2 rounded-md bg-muted/30">
+                              <div className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                              <span className="text-xs">{p.name}</span>
+                              <span className="text-[10px] text-muted-foreground ml-auto font-mono">{p.action}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </TableCell>
-                <TableCell className="text-sm">{u.plant?.name || '-'}</TableCell>
-                <TableCell>
-                  <Badge variant={u.status === 'active' ? 'default' : 'secondary'} className={u.status === 'active' ? 'bg-emerald-100 text-emerald-700' : ''}>
-                    {u.status}
-                  </Badge>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        ))}
+      </Tabs>
     </div>
   );
 }
@@ -1434,40 +1889,65 @@ function SettingsModulesPage() {
   return (
     <div className="p-6 space-y-5">
       <div>
-        <h1 className="text-2xl font-bold">Modules</h1>
-        <p className="text-muted-foreground text-sm">Manage system modules and features</p>
+        <h1 className="text-2xl font-bold">Module Management</h1>
+        <p className="text-muted-foreground text-sm">Manage system modules and feature availability</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {modules.map(mod => (
-          <Card key={mod.id} className={mod.isEnabled ? 'border-emerald-200' : ''}>
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${mod.isEnabled ? 'bg-emerald-100 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>
-                    <Boxes className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-sm">{mod.name}</h3>
-                      {mod.isCore && <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">CORE</Badge>}
-                      <Badge variant="outline" className="text-[10px] font-mono">{mod.code}</Badge>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {modules.map(mod => {
+          const moduleIcon: Record<string, React.ElementType> = {
+            maintenance_requests: ClipboardList,
+            work_orders: Wrench,
+            assets: Building2,
+            inventory: Package,
+            production: Zap,
+            analytics: BarChart3,
+          };
+          const Icon = moduleIcon[mod.code] || Boxes;
+
+          return (
+            <Card key={mod.id} className={`border-0 shadow-sm transition-all hover:shadow-md ${mod.isEnabled ? 'ring-1 ring-emerald-200' : 'opacity-75'}`}>
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${mod.isEnabled ? 'bg-emerald-100 text-emerald-600' : 'bg-muted text-muted-foreground'}`}>
+                      <Icon className="h-5 w-5" />
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">{mod.description}</p>
-                    <p className="text-[10px] text-muted-foreground mt-1">v{mod.version}</p>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold text-sm">{mod.name}</h3>
+                        {mod.isCore && <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">CORE</Badge>}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{mod.description}</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <Badge variant="outline" className="text-[10px] font-mono">{mod.code}</Badge>
+                        <span className="text-[10px] text-muted-foreground">v{mod.version}</span>
+                      </div>
+                    </div>
+                  </div>
+                  {canToggle && (
+                    <Switch
+                      checked={mod.isEnabled}
+                      onCheckedChange={() => handleToggle(mod)}
+                      disabled={mod.isCore && mod.isEnabled}
+                    />
+                  )}
+                </div>
+                <div className="mt-3 pt-3 border-t">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <div className={`h-1.5 w-1.5 rounded-full ${mod.isEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                      <span className="text-[11px] font-medium">{mod.isEnabled ? 'Active' : 'Inactive'}</span>
+                    </div>
+                    {!mod.isCore && (
+                      <Badge variant="secondary" className="text-[9px]">Optional</Badge>
+                    )}
                   </div>
                 </div>
-                {canToggle && (
-                  <Switch
-                    checked={mod.isEnabled}
-                    onCheckedChange={() => handleToggle(mod)}
-                    disabled={mod.isCore && mod.isEnabled}
-                  />
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );
@@ -1486,16 +1966,7 @@ function AppShell() {
   }, [fetchMe]);
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <div className="h-10 w-10 mx-auto rounded-xl bg-emerald-600 flex items-center justify-center animate-pulse">
-            <Factory className="h-5 w-5 text-white" />
-          </div>
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (!isAuthenticated) {
@@ -1506,13 +1977,27 @@ function AppShell() {
     switch (currentPage) {
       case 'dashboard': return <DashboardPage />;
       case 'maintenance-requests':
-      case 'mr-detail': return <MaintenanceRequestsPage />;
+      case 'mr-detail':
+      case 'create-mr': return <MaintenanceRequestsPage />;
       case 'work-orders':
       case 'wo-detail': return <WorkOrdersPage />;
       case 'settings-users': return <SettingsUsersPage />;
+      case 'settings-roles': return <SettingsRolesPage />;
       case 'settings-modules': return <SettingsModulesPage />;
       default: return <DashboardPage />;
     }
+  };
+
+  const pageTitle: Record<string, string> = {
+    'dashboard': 'Dashboard',
+    'maintenance-requests': 'Maintenance Requests',
+    'mr-detail': 'Request Details',
+    'create-mr': 'New Request',
+    'work-orders': 'Work Orders',
+    'wo-detail': 'Work Order Details',
+    'settings-users': 'Users',
+    'settings-roles': 'Roles & Permissions',
+    'settings-modules': 'Module Management',
   };
 
   return (
@@ -1528,17 +2013,25 @@ function AppShell() {
             <Menu className="h-5 w-5" />
           </button>
           <button
-            className="hidden lg:block p-1.5 rounded-md hover:bg-muted"
+            className="hidden lg:block p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
             onClick={toggleSidebar}
           >
             {useNavigationStore.getState().sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
+          <h2 className="text-sm font-medium hidden sm:block">{pageTitle[currentPage] || 'Dashboard'}</h2>
           <div className="flex-1" />
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-4 w-4" />
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-500" />
-            </Button>
+          <div className="flex items-center gap-1">
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative">
+                    <Bell className="h-4 w-4" />
+                    <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-500" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Notifications</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </header>
 

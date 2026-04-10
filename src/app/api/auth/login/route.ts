@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { compare } from 'bcryptjs';
-import { createSession, deleteSession } from '@/lib/auth';
+import { createSession } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {

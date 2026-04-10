@@ -2,7 +2,15 @@ import { db } from '@/lib/db';
 import { randomUUID } from 'crypto';
 
 // In-memory session store (for prototype; use Redis/DB for production)
-const sessions = new Map<string, SessionData>();
+// Use globalThis to ensure shared state across all route modules in Turbopack
+const globalForSessions = globalThis as unknown as {
+  sessions: Map<string, SessionData> | undefined;
+};
+
+if (!globalForSessions.sessions) {
+  globalForSessions.sessions = new Map<string, SessionData>();
+}
+const sessions = globalForSessions.sessions;
 
 interface SessionData {
   userId: string;
@@ -46,51 +54,40 @@ export async function createSession(userId: string): Promise<{ token: string; se
   if (!user) throw new Error('User not found');
 
   // Collect role-based permissions
-  const roleSlugs: string[] = [];
-  const permissionSlugs: string[] = new Set<string>() as unknown as string[];
+  const roleSlugsSet = new Set<string>();
+  const permissionSlugsSet = new Set<string>();
 
   for (const ur of user.userRoles) {
-    roleSlugs.push(ur.role.slug);
+    roleSlugsSet.add(ur.role.slug);
     for (const rp of ur.role.rolePermissions) {
-      permissionSlugs.push(rp.permission.slug);
+      permissionSlugsSet.add(rp.permission.slug);
     }
   }
 
   // Apply direct permission overrides
   for (const up of user.directPerms) {
-    if (up.isGranted) {
-      if (!permissionSlugs.includes(up.permission.slug)) {
-        permissionSlugs.push(up.permission.slug);
-      }
-    } else {
-      // Remove denied permission
-      const idx = permissionSlugs.indexOf(up.permission.slug);
-      if (idx > -1) {
-        permissionSlugs.splice(idx, 1);
-      }
-    }
-    // Check expiry
+    // Check expiry first
     if (up.expiresAt && new Date(up.expiresAt) < new Date()) {
-      const idx = permissionSlugs.indexOf(up.permission.slug);
-      if (idx > -1) {
-        permissionSlugs.splice(idx, 1);
-      }
+      permissionSlugsSet.delete(up.permission.slug);
+      continue;
+    }
+    if (up.isGranted) {
+      permissionSlugsSet.add(up.permission.slug);
+    } else {
+      permissionSlugsSet.delete(up.permission.slug);
     }
   }
 
   // Admin role gets ALL permissions
-  if (roleSlugs.includes('admin')) {
+  if (roleSlugsSet.has('admin')) {
     const allPermissions = await db.permission.findMany({ select: { slug: true } });
-    const allSlugs = allPermissions.map((p) => p.slug);
-    // Replace with all permissions
-    permissionSlugs.length = 0;
-    for (const s of allSlugs) {
-      permissionSlugs.push(s);
+    for (const p of allPermissions) {
+      permissionSlugsSet.add(p.slug);
     }
   }
 
-  const uniquePermissions = [...new Set(permissionSlugs)];
-  const uniqueRoles = [...new Set(roleSlugs)];
+  const uniquePermissions = [...permissionSlugsSet];
+  const uniqueRoles = [...roleSlugsSet];
 
   const token = randomUUID();
   const session: SessionData = {
