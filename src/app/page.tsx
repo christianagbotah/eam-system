@@ -689,8 +689,9 @@ function LoginPage() {
 // ============================================================================
 
 // Sidebar inner content extracted as a separate component with collapsible submenus
-function SidebarContent() {
+function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const { currentPage, navigate, sidebarOpen } = useNavigationStore();
+  const expanded = forceExpanded ?? sidebarOpen;
   const { user, hasPermission, logout } = useAuthStore();
   const [openMenus, setOpenMenus] = useState<string[]>([]);
 
@@ -937,7 +938,7 @@ function SidebarContent() {
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 shrink-0 shadow-lg shadow-emerald-900/30">
           <Factory className="h-5 w-5 text-white" />
         </div>
-        {sidebarOpen && (
+        {expanded && (
           <div className="overflow-hidden">
             <h1 className="text-base font-bold text-sidebar-foreground tracking-tight">iAssetsPro</h1>
             <p className="text-[10px] text-sidebar-foreground/40 uppercase tracking-widest font-medium">Enterprise EAM</p>
@@ -970,17 +971,17 @@ function SidebarContent() {
                       >
                         {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-sidebar-primary" />}
                         <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-sidebar-primary' : ''}`} />
-                        {sidebarOpen && <span className="flex-1 text-left">{group.label}</span>}
+                        {expanded && <span className="flex-1 text-left">{group.label}</span>}
                       </button>
                     </TooltipTrigger>
-                    {!sidebarOpen && <TooltipContent side="right">{group.label}</TooltipContent>}
+                    {!expanded && <TooltipContent side="right">{group.label}</TooltipContent>}
                   </Tooltip>
                 </TooltipProvider>
               );
             }
 
             // Collapsed sidebar — show only icon with tooltip
-            if (!sidebarOpen) {
+            if (!expanded) {
               return (
                 <TooltipProvider key={group.label} delayDuration={0}>
                   <Tooltip>
@@ -1059,7 +1060,7 @@ function SidebarContent() {
           <div className="h-8 w-8 rounded-full bg-gradient-to-br from-emerald-500/80 to-emerald-700/80 flex items-center justify-center shrink-0 ring-1 ring-sidebar-border">
             <span className="text-xs font-bold text-white">{user ? getInitials(user.fullName) : '?'}</span>
           </div>
-          {sidebarOpen && (
+          {expanded && (
             <>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.fullName}</p>
@@ -1111,7 +1112,7 @@ function Sidebar() {
             >
               <X className="h-5 w-5" />
             </button>
-            <SidebarContent />
+            <SidebarContent forceExpanded />
           </aside>
         </div>
       )}
