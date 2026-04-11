@@ -516,7 +516,7 @@ function LoginPage() {
                 <Lock className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
               </div>
               <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-1">Welcome Back</h2>
-              <p className="text-xs sm:text-sm text-slate-500">Sign in to access your maintenance dashboard</p>
+              <p className="hidden sm:block text-sm text-slate-500">Sign in to access your maintenance dashboard</p>
             </div>
 
             {/* Form */}
