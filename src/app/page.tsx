@@ -6865,17 +6865,19 @@ function AssetsConditionMonitoringPage() {
   const [form, setForm] = useState({ asset: '', parameter: 'vibration', normalMin: '', normalMax: '', alertThreshold: '' });
   const [searchText, setSearchText] = useState('');
 
+  const parameterUnits: Record<string, string> = { vibration: 'mm/s', temperature: '°C', pressure: 'bar', flow: 'L/min', current: 'A' };
+  const fetchMonitoring = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/iot/monitoring/summary');
+      if (res.success && res.data) {
+        setMonitoringData(res.data);
+      }
+    } catch { /* silent */ }
+    setLoading(false);
+  };
+
   useEffect(() => {
-    const fetchMonitoring = async () => {
-      setLoading(true);
-      try {
-        const res = await api.get('/api/iot/monitoring/summary');
-        if (res.success && res.data) {
-          setMonitoringData(res.data);
-        }
-      } catch { /* silent */ }
-      setLoading(false);
-    };
     fetchMonitoring();
   }, []);
 
@@ -6923,9 +6925,27 @@ function AssetsConditionMonitoringPage() {
   const statusColor = (s: string) => s === 'normal' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : s === 'warning' ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-red-600 bg-red-50 border-red-200';
   const dotColor = (s: string) => s === 'normal' ? 'bg-emerald-500' : s === 'warning' ? 'bg-amber-500' : 'bg-red-500';
   const barColor = (s: string) => s === 'normal' ? 'bg-emerald-400' : s === 'warning' ? 'bg-amber-400' : 'bg-red-400';
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    if (!form.asset) { toast.error('Asset name is required'); return; }
     setSaving(true);
-    setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ asset: '', parameter: 'vibration', normalMin: '', normalMax: '', alertThreshold: '' }); toast.success('Monitoring point added successfully'); }, 800);
+    try {
+      const res = await api.post('/api/iot/devices', {
+        name: form.asset,
+        type: 'sensor',
+        protocol: 'mqtt',
+        parameter: form.parameter,
+        unit: parameterUnits[form.parameter] || '',
+        thresholdMin: form.normalMin ? parseFloat(form.normalMin) : null,
+        thresholdMax: form.normalMax ? parseFloat(form.normalMax) : null,
+      });
+      if (res.success) {
+        toast.success('Monitoring point added successfully');
+        setCreateOpen(false);
+        setForm({ asset: '', parameter: 'vibration', normalMin: '', normalMax: '', alertThreshold: '' });
+        await fetchMonitoring();
+      } else { toast.error(res.error || 'Failed to add monitoring point'); }
+    } catch { toast.error('Failed to add monitoring point'); }
+    setSaving(false);
   };
   return (
     <div className="page-content">
@@ -9453,25 +9473,42 @@ function AnalyticsKpiPage() {
 }
 function AnalyticsOeePage() {
   const [assets, setAssets] = useState<any[]>([]);
+  const [workOrders, setWorkOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await api.get('/api/assets?limit=9999');
-        if (res.success && res.data) setAssets(Array.isArray(res.data) ? res.data : []);
+        const [assetRes, woRes] = await Promise.all([
+          api.get('/api/assets?limit=9999'),
+          api.get('/api/work-orders?limit=9999'),
+        ]);
+        if (assetRes.success && assetRes.data) setAssets(Array.isArray(assetRes.data) ? assetRes.data : []);
+        if (woRes.success && woRes.data) setWorkOrders(Array.isArray(woRes.data) ? woRes.data : []);
       } catch { /* empty */ }
       setLoading(false);
     })();
   }, []);
 
-  // Simulated OEE data derived from asset states
+  // OEE data calculated from assets and work orders
   const operationalAssets = assets.filter((a: any) => a.status === 'operational').length;
-  const totalAssets = assets.length || 1;
+  const activeAssets = assets.filter((a: any) => !['disposed', 'retired', 'decommissioned'].includes(a.status)).length;
+  const totalAssets = activeAssets || 1;
 
-  const availability = operationalAssets > 0 ? Math.min(98, 75 + Math.floor(operationalAssets / Math.max(1, totalAssets) * 25) + Math.floor(Math.random() * 5)) : 0;
-  const performance = availability > 60 ? Math.min(97, 68 + Math.floor(Math.random() * 20)) : 45;
-  const quality = performance > 50 ? Math.min(99, 88 + Math.floor(Math.random() * 10)) : 70;
+  // Availability = operational assets / active assets * 100
+  const availability = activeAssets > 0 ? Math.round((operationalAssets / totalAssets) * 100) : 0;
+
+  // Performance = completed WOs on time / total completed WOs * 100
+  const completedWOs = workOrders.filter((wo: any) => wo.status === 'completed' || wo.status === 'closed');
+  const completedWithDue = completedWOs.filter((wo: any) => wo.plannedEnd);
+  const onTimeWOs = completedWithDue.filter((wo: any) => wo.actualEnd && new Date(wo.actualEnd) <= new Date(wo.plannedEnd));
+  const performance = completedWithDue.length > 0 ? Math.round((onTimeWOs.length / completedWithDue.length) * 100) : 0;
+
+  // Quality = WOs completed without rework mentions / total completed * 100
+  const reworkPattern = /rework|redo|repeat|refurbish|re-fix|rework required|defective/i;
+  const withoutRework = completedWOs.filter((wo: any) => !(wo.notes && reworkPattern.test(wo.notes)) && !(wo.completionNotes && reworkPattern.test(wo.completionNotes)));
+  const quality = completedWOs.length > 0 ? Math.round((withoutRework.length / completedWOs.length) * 100) : 0;
+
   const oee = Math.round((availability * performance * quality) / 10000 * 100) / 100;
 
   const gaugeColor = (val: number) => {
@@ -9579,34 +9616,49 @@ function AnalyticsOeePage() {
           </CardContent>
         </Card>
 
-        {/* Top Losses */}
+        {/* Top Losses - derived from work order data */}
         <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-base">Top Loss Categories</CardTitle><CardDescription>Simulated production loss analysis</CardDescription></CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="text-base">Top Loss Categories</CardTitle><CardDescription>Production loss analysis derived from asset and work order data</CardDescription></CardHeader>
           <CardContent className="space-y-3 max-h-72 overflow-y-auto">
-            {[
-              { type: 'Unplanned Downtime', hours: 12.5, pct: 28, color: 'bg-red-500' },
-              { type: 'Speed Loss', hours: 8.2, pct: 18, color: 'bg-amber-500' },
-              { type: 'Planned Downtime', hours: 7.0, pct: 16, color: 'bg-sky-500' },
-              { type: 'Quality Rejects', hours: 6.3, pct: 14, color: 'bg-orange-500' },
-              { type: 'Setup / Changeover', hours: 5.1, pct: 11, color: 'bg-violet-500' },
-              { type: 'Minor Stops', hours: 3.8, pct: 8, color: 'bg-teal-500' },
-              { type: 'Rework', hours: 2.2, pct: 5, color: 'bg-purple-500' },
-            ].map(loss => (
-              <div key={loss.type} className="flex items-center gap-3">
-                <div className={`h-3 w-3 rounded-full ${loss.color} shrink-0`} />
-                <span className="text-sm flex-1 truncate">{loss.type}</span>
-                <span className="text-xs text-muted-foreground w-16 text-right">{loss.hours}h</span>
-                <div className="w-20 bg-muted rounded-full h-2"><div className={`h-full rounded-full ${loss.color}`} style={{ width: `${loss.pct}%` }} /></div>
-                <span className="text-xs font-semibold w-10 text-right">{loss.pct}%</span>
-              </div>
-            ))}
+            {(() => {
+              const allWOs = workOrders;
+              const unplannedHours = allWOs.filter((wo: any) => wo.type === 'corrective' || wo.type === 'emergency').reduce((s: number, wo: any) => s + (wo.actualHours || 0), 0);
+              const plannedHours = allWOs.filter((wo: any) => wo.type === 'preventive').reduce((s: number, wo: any) => s + (wo.actualHours || 0), 0);
+              const inspectionHours = allWOs.filter((wo: any) => wo.type === 'inspection').reduce((s: number, wo: any) => s + (wo.actualHours || 0), 0);
+              const reworkHours = allWOs.filter((wo: any) => (wo.notes && reworkPattern.test(wo.notes)) || (wo.completionNotes && reworkPattern.test(wo.completionNotes))).reduce((s: number, wo: any) => s + (wo.actualHours || 0), 0);
+              const totalLossHours = unplannedHours + plannedHours + inspectionHours + reworkHours || 1;
+              const speedLossHours = totalLossHours > 0 ? totalLossHours * ((100 - performance) / 100) * 0.5 : 0;
+              const minorStopHours = totalLossHours > 0 ? totalLossHours * 0.08 : 0;
+              const grandTotal = unplannedHours + plannedHours + speedLossHours + reworkHours + inspectionHours + minorStopHours || 1;
+
+              const losses = [
+                { type: 'Unplanned Downtime', hours: Math.round(unplannedHours * 10) / 10, pct: Math.round((unplannedHours / grandTotal) * 100), color: 'bg-red-500' },
+                { type: 'Speed Loss', hours: Math.round(speedLossHours * 10) / 10, pct: Math.round((speedLossHours / grandTotal) * 100), color: 'bg-amber-500' },
+                { type: 'Planned Downtime', hours: Math.round(plannedHours * 10) / 10, pct: Math.round((plannedHours / grandTotal) * 100), color: 'bg-sky-500' },
+                { type: 'Quality Rejects', hours: Math.round(reworkHours * 10) / 10, pct: Math.round((reworkHours / grandTotal) * 100), color: 'bg-orange-500' },
+                { type: 'Setup / Changeover', hours: Math.round(inspectionHours * 10) / 10, pct: Math.round((inspectionHours / grandTotal) * 100), color: 'bg-violet-500' },
+                { type: 'Minor Stops', hours: Math.round(minorStopHours * 10) / 10, pct: Math.round((minorStopHours / grandTotal) * 100), color: 'bg-teal-500' },
+              ].filter(l => l.hours > 0).sort((a, b) => b.hours - a.hours);
+
+              return losses.length > 0 ? losses.map(loss => (
+                <div key={loss.type} className="flex items-center gap-3">
+                  <div className={`h-3 w-3 rounded-full ${loss.color} shrink-0`} />
+                  <span className="text-sm flex-1 truncate">{loss.type}</span>
+                  <span className="text-xs text-muted-foreground w-16 text-right">{loss.hours}h</span>
+                  <div className="w-20 bg-muted rounded-full h-2"><div className={`h-full rounded-full ${loss.color}`} style={{ width: `${loss.pct}%` }} /></div>
+                  <span className="text-xs font-semibold w-10 text-right">{loss.pct}%</span>
+                </div>
+              )) : (
+                <div className="text-sm text-muted-foreground text-center py-6">No loss data available from work orders</div>
+              );
+            })()}
           </CardContent>
         </Card>
       </div>
 
-      {/* Asset-level OEE (simulated) */}
+      {/* Asset-level OEE */}
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-base">Asset OEE Scores</CardTitle><CardDescription>Simulated OEE per asset based on condition and status</CardDescription></CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Asset OEE Scores</CardTitle><CardDescription>Estimated OEE per asset based on condition and status</CardDescription></CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <Table>
@@ -9622,10 +9674,11 @@ function AnalyticsOeePage() {
               <TableBody>
                 {assets.slice(0, 15).map((a: any) => {
                   let estOee = 0;
-                  if (a.status === 'operational' && (a.condition === 'good' || a.condition === 'new')) estOee = 82 + Math.floor(Math.random() * 16);
-                  else if (a.status === 'operational' && a.condition === 'fair') estOee = 60 + Math.floor(Math.random() * 20);
-                  else if (a.status === 'standby') estOee = 40 + Math.floor(Math.random() * 25);
-                  else if (a.status === 'under_maintenance') estOee = 10 + Math.floor(Math.random() * 20);
+                  if (a.status === 'operational' && (a.condition === 'good' || a.condition === 'new')) estOee = 90;
+                  else if (a.status === 'operational' && a.condition === 'fair') estOee = 70;
+                  else if (a.status === 'operational' && a.condition === 'poor') estOee = 50;
+                  else if (a.status === 'standby') estOee = 40;
+                  else if (a.status === 'under_maintenance') estOee = 15;
                   else estOee = 0;
                   return (
                     <TableRow key={a.id}>
@@ -9731,66 +9784,76 @@ function AnalyticsDowntimePage() {
   );
 }
 function AnalyticsEnergyPage() {
-  const [assets, setAssets] = useState<any[]>([]);
+  const [readings, setReadings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await api.get('/api/assets?limit=9999');
-        if (res.success && res.data) setAssets(Array.isArray(res.data) ? res.data : []);
+        const res = await api.get('/api/meter-readings?limit=9999');
+        if (res.success && res.data) setReadings(Array.isArray(res.data) ? res.data : []);
       } catch { /* empty */ }
       setLoading(false);
     })();
   }, []);
 
-  // Simulated energy data
-  const totalConsumption = 48250;
-  const totalCost = 28950;
-  const avgDailyConsumption = 1608;
-  const efficiencyScore = 78;
+  // Energy data from meter readings
+  const UNIT_COST_RATE = 0.60;
+  const totalConsumption = readings.reduce((sum: number, r: any) => sum + (r.consumption || 0), 0);
+  const totalCost = Math.round(totalConsumption * UNIT_COST_RATE);
+  const uniqueDays = new Set(readings.map((r: any) => {
+    const d = new Date(r.readingDate);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  })).size;
+  const avgDailyConsumption = uniqueDays > 0 ? Math.round(totalConsumption / uniqueDays) : 0;
+  const efficiencyScore = totalConsumption > 0 ? Math.min(95, Math.max(40, 100 - Math.round((readings.filter((r: any) => r.consumption && r.consumption > 0 && r.previousValue && r.previousValue > 0 && ((r.value - r.previousValue) / r.previousValue) > 0.15).length / Math.max(1, readings.filter((r: any) => r.consumption && r.consumption > 0).length)) * 30))) : 0;
 
   const summaryCards = [
-    { label: 'Total Consumption', value: `${(totalConsumption / 1000).toFixed(1)} MWh`, icon: Zap, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Total Cost', value: `$${(totalCost / 1000).toFixed(1)}k`, icon: TrendingUp, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Total Consumption', value: totalConsumption > 0 ? `${(totalConsumption / 1000).toFixed(1)} MWh` : '0 MWh', icon: Zap, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Total Cost', value: totalCost > 0 ? `$${(totalCost / 1000).toFixed(1)}k` : '$0', icon: TrendingUp, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
     { label: 'Avg Daily', value: `${avgDailyConsumption} kWh`, icon: BarChart3, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
     { label: 'Efficiency Score', value: `${efficiencyScore}%`, icon: Target, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
-  // Monthly consumption trend (simulated)
-  const monthlyData = [
-    { month: 'Jan', kwh: 4200, cost: 2520 },
-    { month: 'Feb', kwh: 3800, cost: 2280 },
-    { month: 'Mar', kwh: 4500, cost: 2700 },
-    { month: 'Apr', kwh: 4100, cost: 2460 },
-    { month: 'May', kwh: 4800, cost: 2880 },
-    { month: 'Jun', kwh: 5200, cost: 3120 },
-    { month: 'Jul', kwh: 5600, cost: 3360 },
-    { month: 'Aug', kwh: 5400, cost: 3240 },
-    { month: 'Sep', kwh: 4600, cost: 2760 },
-    { month: 'Oct', kwh: 3900, cost: 2340 },
-    { month: 'Nov', kwh: 3700, cost: 2220 },
-    { month: 'Dec', kwh: 3450, cost: 2070 },
-  ];
-  const maxKwh = Math.max(...monthlyData.map(m => m.kwh));
+  // Monthly consumption trend — group real readings by month
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthlyMap: Record<string, number> = {};
+  readings.forEach((r: any) => {
+    if (!r.readingDate) return;
+    const d = new Date(r.readingDate);
+    const key = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}`;
+    monthlyMap[key] = (monthlyMap[key] || 0) + (r.consumption || 0);
+  });
+  const monthlyData = Object.entries(monthlyMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-12)
+    .map(([key, kwh]) => {
+      const parts = key.split('-');
+      return { month: monthNames[parseInt(parts[1], 10)] || key, kwh: Math.round(kwh), cost: Math.round(kwh * UNIT_COST_RATE) };
+    });
+  const maxKwh = monthlyData.length > 0 ? Math.max(...monthlyData.map(m => m.kwh)) : 1;
 
-  // Meter readings (simulated)
-  const meterReadings = [
-    { id: '1', meter: 'MTR-001 Main', reading: '124568', date: '2025-01-15', consumption: 2480, cost: 1488 },
-    { id: '2', meter: 'MTR-002 Building A', reading: '87342', date: '2025-01-15', consumption: 1850, cost: 1110 },
-    { id: '3', meter: 'MTR-003 Production', reading: '198421', date: '2025-01-15', consumption: 3200, cost: 1920 },
-    { id: '4', meter: 'MTR-004 HVAC', reading: '56218', date: '2025-01-15', consumption: 980, cost: 588 },
-    { id: '5', meter: 'MTR-005 Lighting', reading: '34521', date: '2025-01-15', consumption: 620, cost: 372 },
-    { id: '6', meter: 'MTR-006 Compressed Air', reading: '76834', date: '2025-01-15', consumption: 1540, cost: 924 },
-    { id: '7', meter: 'MTR-007 Workshop', reading: '43210', date: '2025-01-15', consumption: 880, cost: 528 },
-    { id: '8', meter: 'MTR-008 Cooling Tower', reading: '65432', date: '2025-01-15', consumption: 1280, cost: 768 },
-  ];
+  // Real meter readings for the table (show readings with consumption)
+  const meterReadings = readings.filter((r: any) => r.consumption && r.consumption > 0).slice(0, 20).map((r: any) => ({
+    id: r.id,
+    meter: r.meterName || r.readingNumber || '-',
+    reading: String(r.value),
+    date: r.readingDate ? new Date(r.readingDate).toISOString().split('T')[0] : '-',
+    consumption: Math.round(r.consumption),
+    cost: Math.round(r.consumption * UNIT_COST_RATE),
+  }));
 
-  // Top consumers from assets
-  const topConsumers = assets.slice(0, 8).map((a: any, i: number) => ({
-    name: a.name || a.assetTag || `Asset ${i + 1}`,
-    consumption: Math.floor(2000 - i * 200 + Math.random() * 500),
-  })).sort((a: any, b: any) => b.consumption - a.consumption);
+  // Top consumers — group consumption by meter name
+  const meterConsumption: Record<string, number> = {};
+  readings.forEach((r: any) => {
+    if (r.meterName && r.consumption && r.consumption > 0) {
+      meterConsumption[r.meterName] = (meterConsumption[r.meterName] || 0) + r.consumption;
+    }
+  });
+  const topConsumers = Object.entries(meterConsumption)
+    .map(([name, consumption]) => ({ name, consumption: Math.round(consumption) }))
+    .sort((a, b) => b.consumption - a.consumption)
+    .slice(0, 8);
   const maxConsumption = topConsumers.length > 0 ? topConsumers[0].consumption : 1;
 
   if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
@@ -9812,7 +9875,7 @@ function AnalyticsEnergyPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Monthly consumption trend */}
         <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Consumption Trend</CardTitle><CardDescription>kWh per month (simulated)</CardDescription></CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Consumption Trend</CardTitle><CardDescription>kWh per month from meter readings</CardDescription></CardHeader>
           <CardContent className="space-y-2.5">
             {monthlyData.map(m => (
               <div key={m.month} className="flex items-center gap-3">
@@ -9849,7 +9912,7 @@ function AnalyticsEnergyPage() {
 
       {/* Meter readings table */}
       <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-base">Meter Readings</CardTitle><CardDescription>Latest meter readings and consumption data (simulated)</CardDescription></CardHeader>
+        <CardHeader className="pb-3"><CardTitle className="text-base">Meter Readings</CardTitle><CardDescription>Latest meter readings and consumption data</CardDescription></CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <Table>
@@ -10719,9 +10782,7 @@ function ProductionWorkCentersPage() {
 }
 function ProductionResourcePlanningPage() {
   const [search, setSearch] = useState('');
-  const [createOpen, setCreateOpen] = useState(false);
   const [filterType, setFilterType] = useState('all');
-  const [form, setForm] = useState({ resource: '', type: 'labor', assignedTo: '', allocation: '', shift: 'Day', startDate: '', endDate: '' });
   const [resourceData, setResourceData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [kpisData, setKpisData] = useState({ total: 0, overAllocated: 0, underUtilized: 0, utilization: 0 });
@@ -10737,7 +10798,7 @@ function ProductionResourcePlanningPage() {
         const resources: any[] = [];
         wcs.forEach((wc: any, i: number) => {
           const wcOrders = pos.filter((po: any) => po.workCenter?.id === wc.id);
-          const alloc = wcOrders.length > 0 ? Math.min(Math.round((wcOrders.length / Math.max(wcs.length, 1)) * 100 * 1.2), 115) : 30 + Math.round(Math.random() * 40);
+          const alloc = wcOrders.length > 0 ? Math.min(Math.round((wcOrders.length / Math.max(wcs.length, 1)) * 100 * 1.2), 115) : 0;
           const status = alloc > 100 ? 'over-allocated' : alloc < 50 ? 'under-utilized' : 'allocated';
           resources.push({ id: `RES-${String(i + 1).padStart(3, '0')}`, name: wc.name, type: 'machine', assignedTo: wcOrders.length > 0 ? wcOrders[0].orderNumber : 'Unassigned', allocation: alloc, available: wc.capacity || 40, status, shift: i % 3 === 0 ? 'Night' : i % 3 === 1 ? 'Day' : 'All' });
         });
@@ -10763,13 +10824,9 @@ function ProductionResourcePlanningPage() {
     { label: 'Under-Utilized', value: kpisData.underUtilized, icon: TrendingDown, color: 'text-amber-600 bg-amber-50' },
     { label: 'Utilization', value: `${kpisData.utilization}%`, icon: Gauge, color: 'text-sky-600 bg-sky-50' },
   ];
-  const handleCreate = () => { if (!form.resource || !form.allocation) { toast.error('Resource and allocation are required'); return; } toast.success('Resource planned'); setCreateOpen(false); setForm({ resource: '', type: 'labor', assignedTo: '', allocation: '', shift: 'Day', startDate: '', endDate: '' }); };
   return (
     <div className="page-content">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-bold tracking-tight">Resource Planning</h1><p className="text-muted-foreground text-sm mt-1">Plan and allocate resources for production orders</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Plan Resource</Button>
-      </div>
+      <div><h1 className="text-2xl font-bold tracking-tight">Resource Planning</h1><p className="text-muted-foreground text-sm mt-1">Plan and allocate resources for production orders</p></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
@@ -10795,24 +10852,6 @@ function ProductionResourcePlanningPage() {
           </TableBody></Table>
         </div>
       </CardContent></Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent><DialogHeader><DialogTitle>Plan Resource</DialogTitle><DialogDescription>Allocate a resource to a production task.</DialogDescription></DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2"><Label>Resource *</Label><Input value={form.resource} onChange={e => setForm(f => ({ ...f, resource: e.target.value }))} placeholder="Resource name" /></div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="labor">Labor</SelectItem><SelectItem value="machine">Machine</SelectItem><SelectItem value="material">Material</SelectItem></SelectContent></Select></div>
-              <div className="space-y-2"><Label>Allocation (%) *</Label><Input type="number" value={form.allocation} onChange={e => setForm(f => ({ ...f, allocation: e.target.value }))} placeholder="0" /></div>
-            </div>
-            <div className="space-y-2"><Label>Assigned To</Label><Input value={form.assignedTo} onChange={e => setForm(f => ({ ...f, assignedTo: e.target.value }))} placeholder="Order or task ID" /></div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2"><Label>Shift</Label><Select value={form.shift} onValueChange={v => setForm(f => ({ ...f, shift: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Day">Day</SelectItem><SelectItem value="Night">Night</SelectItem><SelectItem value="All">All</SelectItem></SelectContent></Select></div>
-              <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
-              <div className="space-y-2"><Label>End Date</Label><Input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} /></div>
-            </div>
-          </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Plan Resource</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -10820,15 +10859,49 @@ function ProductionSchedulingPage() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ product: '', workCenter: '', startDate: '', endDate: '', priority: 'medium', quantity: '' });
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ product: '', workCenterId: '', startDate: '', endDate: '', priority: 'medium', quantity: '' });
   const [scheduleData, setScheduleData] = useState<any[]>([]);
+  const [workCenters, setWorkCenters] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [kpisData, setKpisData] = useState({ total: 0, inProgress: 0, delayed: 0, onTrack: 0 });
+  const fetchScheduleData = async () => {
+    const res = await api.get('/api/production-orders');
+    if (res.success) {
+      const pos = (res.data || []) as any[];
+      const jobs = pos.map((po: any, i: number) => {
+        const now = new Date();
+        const start = po.scheduledStart ? new Date(po.scheduledStart) : new Date(now.getTime() - i * 5 * 86400000);
+        const end = po.scheduledEnd ? new Date(po.scheduledEnd) : new Date(start.getTime() + 6 * 86400000);
+        let status = po.status === 'completed' ? 'completed' : po.status === 'cancelled' ? 'cancelled' : po.status === 'in_progress' ? 'in_progress' : end < now ? 'delayed' : 'scheduled';
+        const progress = po.status === 'completed' ? 100 : po.status === 'in_progress' ? Math.round((po.completedQty || 0) / Math.max(po.quantity, 1) * 100) : po.status === 'planned' ? 0 : 50;
+        return {
+          id: po.orderNumber,
+          product: po.title,
+          workCenter: po.workCenter?.name || '—',
+          startDate: start.toISOString().split('T')[0],
+          endDate: end.toISOString().split('T')[0],
+          progress,
+          status,
+          priority: po.priority || 'medium',
+        };
+      });
+      setScheduleData(jobs);
+      const inProgress = jobs.filter(j => j.status === 'in_progress').length;
+      const delayed = jobs.filter(j => j.status === 'delayed').length;
+      const onTrack = jobs.filter(j => j.status !== 'delayed' && j.status !== 'cancelled').length;
+      setKpisData({ total: jobs.length, inProgress, delayed, onTrack });
+    }
+  };
   useEffect(() => {
     (async () => {
-      const res = await api.get('/api/production-orders');
-      if (res.success) {
-        const pos = (res.data || []) as any[];
+      const [poRes, wcRes] = await Promise.all([
+        api.get('/api/production-orders'),
+        api.get('/api/work-centers'),
+      ]);
+      if (wcRes.success) setWorkCenters(wcRes.data || []);
+      if (poRes.success) {
+        const pos = (poRes.data || []) as any[];
         const jobs = pos.map((po: any, i: number) => {
           const now = new Date();
           const start = po.scheduledStart ? new Date(po.scheduledStart) : new Date(now.getTime() - i * 5 * 86400000);
@@ -10870,7 +10943,28 @@ function ProductionSchedulingPage() {
     { label: 'Delayed', value: kpisData.delayed, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
     { label: 'On Track', value: kpisData.onTrack, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
   ];
-  const handleCreate = () => { if (!form.product || !form.workCenter) { toast.error('Product and work center are required'); return; } toast.success('Job scheduled'); setCreateOpen(false); setForm({ product: '', workCenter: '', startDate: '', endDate: '', priority: 'medium', quantity: '' }); };
+  const handleCreate = async () => {
+    if (!form.product || !form.quantity) { toast.error('Product and quantity are required'); return; }
+    setSaving(true);
+    try {
+      const res = await api.post('/api/production-orders', {
+        title: form.product,
+        quantity: parseFloat(form.quantity) || 0,
+        workCenterId: form.workCenterId || undefined,
+        priority: form.priority,
+        scheduledStart: form.startDate || undefined,
+        scheduledEnd: form.endDate || undefined,
+        status: 'planned',
+      });
+      if (res.success) {
+        toast.success('Job scheduled successfully');
+        setCreateOpen(false);
+        setForm({ product: '', workCenterId: '', startDate: '', endDate: '', priority: 'medium', quantity: '' });
+        await fetchScheduleData();
+      } else { toast.error(res.error || 'Failed to schedule job'); }
+    } catch { toast.error('Failed to schedule job'); }
+    setSaving(false);
+  };
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -10908,7 +11002,7 @@ function ProductionSchedulingPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Product *</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Product name" /></div>
-              <div className="space-y-2"><Label>Work Center *</Label><Input value={form.workCenter} onChange={e => setForm(f => ({ ...f, workCenter: e.target.value }))} placeholder="Work center" /></div>
+              <div className="space-y-2"><Label>Work Center</Label><Select value={form.workCenterId} onValueChange={v => setForm(f => ({ ...f, workCenterId: v }))}><SelectTrigger><SelectValue placeholder="Select work center" /></SelectTrigger><SelectContent>{workCenters.map(wc => <SelectItem key={wc.id} value={wc.id}>{wc.name}</SelectItem>)}</SelectContent></Select></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
@@ -10919,7 +11013,7 @@ function ProductionSchedulingPage() {
               <div className="space-y-2"><Label>Quantity</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" /></div>
             </div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Schedule</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? 'Scheduling...' : 'Schedule'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -11037,17 +11131,60 @@ function ProductionEfficiencyPage() {
         const performance = totalQty > 0 ? Math.round((completedQty / totalQty) * 100) : 0;
         const quality = completedQty > 0 ? Math.round(Math.min(completedQty / Math.max(totalQty * 0.95, 1), 1) * 100) : 100;
         setKpisData({ oee, availability, performance, quality: Math.min(quality, 100) });
-        // Simulate monthly data from orders
-        const months = ['Aug 2024', 'Sep 2024', 'Oct 2024', 'Nov 2024', 'Dec 2024', 'Jan 2025'];
-        setMonthlyData(months.map(m => ({
-          month: m,
-          unitsProduced: Math.round(totalQty / 6 * (0.85 + Math.random() * 0.3)),
-          target: Math.round(totalQty / 6 * 1.1),
-          achievement: 95 + Math.round(Math.random() * 10),
-          oee: 78 + Math.round(Math.random() * 12),
-          downtime: 25 + Math.round(Math.random() * 25),
-          rejectRate: 1.5 + Math.round(Math.random() * 2 * 10) / 10,
-        })));
+        // Build monthly data from actual orders grouped by scheduledStart (or createdAt fallback)
+        const monthLabel = (d: Date) => {
+          const m = d.toLocaleString('en-US', { month: 'short' });
+          return `${m} ${d.getFullYear()}`;
+        };
+        const getMonthKey = (d: Date) => {
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        };
+        const monthMap = new Map<string, {
+          key: string;
+          label: string;
+          monthOrders: any[];
+        }>();
+        pos.forEach((o: any) => {
+          const d = o.scheduledStart ? new Date(o.scheduledStart) : (o.createdAt ? new Date(o.createdAt) : null);
+          if (!d) return;
+          const mk = getMonthKey(d);
+          if (!monthMap.has(mk)) {
+            monthMap.set(mk, { key: mk, label: monthLabel(d), monthOrders: [] });
+          }
+          monthMap.get(mk)!.monthOrders.push(o);
+        });
+        // Sort by month key ascending, take last 6
+        const sortedMonths = Array.from(monthMap.values()).sort((a, b) => a.key.localeCompare(b.key));
+        const recentMonths = sortedMonths.slice(-6);
+        const monthlyRows = recentMonths.map(m => {
+          const mo = m.monthOrders;
+          const activeOrders = mo.filter(o => o.status !== 'cancelled');
+          const completedOrders = mo.filter(o => o.status === 'completed');
+          const cancelledOrders = mo.filter(o => o.status === 'cancelled');
+          const mTotalQty = activeOrders.reduce((s: number, o: any) => s + (o.quantity || 0), 0);
+          const mCompletedQty = completedOrders.reduce((s: number, o: any) => s + (o.completedQty || 0), 0);
+          const mTarget = mTotalQty || 1;
+          const achievement = mTotalQty > 0 ? Math.round((mCompletedQty / mTarget) * 100) : 0;
+          const mOee = activeOrders.length > 0 ? Math.round((completedOrders.length / activeOrders.length) * 100) : 0;
+          // Downtime: orders completed late (actualEnd > scheduledEnd) — estimate 4 hrs per late order
+          const lateOrders = completedOrders.filter((o: any) => {
+            if (!o.scheduledEnd || !o.actualEnd) return false;
+            return new Date(o.actualEnd) > new Date(o.scheduledEnd);
+          });
+          const downtime = lateOrders.length * 4;
+          // Reject rate from cancelled orders vs total
+          const rejectRate = mo.length > 0 ? Math.round((cancelledOrders.length / mo.length) * 100 * 10) / 10 : 0;
+          return {
+            month: m.label,
+            unitsProduced: mCompletedQty,
+            target: mTarget,
+            achievement,
+            oee: mOee,
+            downtime,
+            rejectRate,
+          };
+        });
+        setMonthlyData(monthlyRows);
       }
       setLoading(false);
     })();
@@ -11118,8 +11255,6 @@ function ProductionEfficiencyPage() {
 function ProductionBottlenecksPage() {
   const [search, setSearch] = useState('');
   const [filterSeverity, setFilterSeverity] = useState('all');
-  const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ workCenter: '', type: 'capacity', severity: 'medium', impact: '', rootCause: '', proposedAction: '' });
   const [bottleneckData, setBottleneckData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [kpisData, setKpisData] = useState({ active: 0, avgWait: '—', totalImpact: 0, resolvedMonth: 0 });
@@ -11190,13 +11325,9 @@ function ProductionBottlenecksPage() {
     { label: 'Impact', value: `${totalImpact.toLocaleString()} units`, icon: TrendingDown, color: 'text-sky-600 bg-sky-50' },
     { label: 'Resolved This Month', value: resolvedMonth, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
   ];
-  const handleCreate = () => { if (!form.workCenter || !form.rootCause) { toast.error('Work center and root cause are required'); return; } toast.success('Bottleneck reported'); setCreateOpen(false); setForm({ workCenter: '', type: 'capacity', severity: 'medium', impact: '', rootCause: '', proposedAction: '' }); };
   return (
     <div className="page-content">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-bold tracking-tight">Bottleneck Analysis</h1><p className="text-muted-foreground text-sm mt-1">Identify and analyze production bottlenecks to optimize throughput</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Report Bottleneck</Button>
-      </div>
+      <div><h1 className="text-2xl font-bold tracking-tight">Bottleneck Analysis</h1><p className="text-muted-foreground text-sm mt-1">Identify and analyze production bottlenecks to optimize throughput</p></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
@@ -11222,23 +11353,6 @@ function ProductionBottlenecksPage() {
           </TableBody></Table>
         </div>
       </CardContent></Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent><DialogHeader><DialogTitle>Report Bottleneck</DialogTitle><DialogDescription>Report a new production bottleneck.</DialogDescription></DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Work Center *</Label><Input value={form.workCenter} onChange={e => setForm(f => ({ ...f, workCenter: e.target.value }))} placeholder="Work center name" /></div>
-              <div className="space-y-2"><Label>Impact (units lost)</Label><Input type="number" value={form.impact} onChange={e => setForm(f => ({ ...f, impact: e.target.value }))} placeholder="0" /></div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="capacity">Capacity</SelectItem><SelectItem value="maintenance">Maintenance</SelectItem><SelectItem value="material">Material</SelectItem><SelectItem value="labor">Labor</SelectItem><SelectItem value="quality">Quality</SelectItem></SelectContent></Select></div>
-              <div className="space-y-2"><Label>Severity</Label><Select value={form.severity} onValueChange={v => setForm(f => ({ ...f, severity: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="high">High</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="low">Low</SelectItem></SelectContent></Select></div>
-            </div>
-            <div className="space-y-2"><Label>Root Cause *</Label><Textarea value={form.rootCause} onChange={e => setForm(f => ({ ...f, rootCause: e.target.value }))} placeholder="Describe the root cause..." rows={2} /></div>
-            <div className="space-y-2"><Label>Proposed Action</Label><Textarea value={form.proposedAction} onChange={e => setForm(f => ({ ...f, proposedAction: e.target.value }))} placeholder="Suggested resolution..." rows={2} /></div>
-          </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Report</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -11272,19 +11386,42 @@ function ProductionOrdersPage() {
   const statusColors: Record<string, string> = { draft: 'bg-slate-100 text-slate-600 border-slate-200', planned: 'bg-sky-50 text-sky-700 border-sky-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', cancelled: 'bg-gray-100 text-gray-500 border-gray-200' };
   const progressColors: Record<string, string> = { draft: 'bg-slate-300', planned: 'bg-sky-400', in_progress: 'bg-amber-500', completed: 'bg-emerald-500', cancelled: 'bg-gray-300' };
   const priorityColors: Record<string, string> = { low: 'bg-sky-50 text-sky-700', medium: 'bg-amber-50 text-amber-700', high: 'bg-orange-50 text-orange-700', critical: 'bg-red-50 text-red-700' };
-  const filtered = orders.filter(r => {
+  const filtered = orders.filter((r: any) => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
-    if (search && !r.product.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.orderNumber.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
   const kpis = [
-    { label: 'Total Orders', value: 42, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'In Progress', value: 12, icon: Play, color: 'text-sky-600 bg-sky-50' },
-    { label: 'Completed', value: 26, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Cancelled', value: 4, icon: XCircle, color: 'text-slate-600 bg-slate-100' },
+    { label: 'Total Orders', value: kpisData.total, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'In Progress', value: kpisData.inProgress, icon: Play, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Completed', value: kpisData.completed, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Cancelled', value: kpisData.cancelled, icon: XCircle, color: 'text-slate-600 bg-slate-100' },
   ];
-  const handleCreate = () => { if (!form.product || !form.quantity) { toast.error('Product and quantity are required'); return; } toast.success('Production order created'); setCreateOpen(false); setForm({ product: '', quantity: '', workCenter: '', priority: 'medium', dueDate: '', notes: '' }); };
-  const handleDelete = (id: string) => { setOrders(prev => prev.filter(o => o.id !== id)); toast.success('Order deleted'); };
+  const handleCreate = async () => {
+    if (!form.title || !form.quantity) { toast.error('Title and quantity are required'); return; }
+    const res = await api.post('/api/production-orders', {
+      title: form.title,
+      productName: form.title,
+      quantity: form.quantity,
+      priority: form.priority,
+      workCenterId: form.workCenterId || null,
+      scheduledEnd: form.scheduledEnd || null,
+      notes: form.notes || null,
+    });
+    if (res.success) {
+      toast.success('Production order created');
+      setCreateOpen(false);
+      setForm({ title: '', quantity: '', workCenterId: '', priority: 'medium', scheduledEnd: '', notes: '' });
+      fetchOrders();
+    } else { toast.error(res.error || 'Failed to create order'); }
+  };
+  const handleDelete = async (id: string) => {
+    const res = await api.delete(`/api/production-orders/${id}`);
+    if (res.success) {
+      toast.success('Order cancelled');
+      fetchOrders();
+    } else { toast.error(res.error || 'Failed to cancel order'); }
+  };
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -11300,35 +11437,37 @@ function ProductionOrdersPage() {
       </div>
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
         <div className="overflow-x-auto">
-          <Table><TableHeader><TableRow><TableHead className="w-[120px]">Order #</TableHead><TableHead>Product</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead>Work Center</TableHead><TableHead>Status</TableHead><TableHead>Start Date</TableHead><TableHead>Due Date</TableHead><TableHead>Progress</TableHead><TableHead>Priority</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
-            {filtered.map(r => (
+          <Table><TableHeader><TableRow><TableHead className="w-[180px]">Order #</TableHead><TableHead>Product</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead>Work Center</TableHead><TableHead>Status</TableHead><TableHead>Due Date</TableHead><TableHead>Progress</TableHead><TableHead>Priority</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+            {loading ? (<TableRow><TableCell colSpan={9} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (<TableRow><TableCell colSpan={9} className="h-48 text-center text-muted-foreground">No production orders found</TableCell></TableRow>) : filtered.map((r: any) => {
+              const progress = r.quantity > 0 ? Math.round(((r.completedQty || 0) / r.quantity) * 100) : 0;
+              return (
               <TableRow key={r.id}>
-                <TableCell className="font-mono text-xs font-medium">{r.id}</TableCell>
-                <TableCell className="font-medium text-sm">{r.product}</TableCell>
+                <TableCell className="font-mono text-xs font-medium">{r.orderNumber}</TableCell>
+                <TableCell className="font-medium text-sm">{r.productName || r.title}</TableCell>
                 <TableCell className="text-right text-sm">{r.quantity.toLocaleString()}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{r.workCenter}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.workCenter?.name || '—'}</TableCell>
                 <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell className="text-sm text-muted-foreground">{formatDate(r.startDate)}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{formatDate(r.dueDate)}</TableCell>
-                <TableCell><div className="flex items-center gap-2"><div className="w-16 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${progressColors[r.status] || 'bg-slate-400'}`} style={{ width: `${r.progress}%` }} /></div><span className="text-xs font-medium w-8">{r.progress}%</span></div></TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.scheduledEnd ? formatDate(r.scheduledEnd) : '—'}</TableCell>
+                <TableCell><div className="flex items-center gap-2"><div className="w-16 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${progressColors[r.status] || 'bg-slate-400'}`} style={{ width: `${progress}%` }} /></div><span className="text-xs font-medium w-8">{progress}%</span></div></TableCell>
                 <TableCell><Badge variant="secondary" className={`text-[11px] ${priorityColors[r.priority] || ''}`}>{r.priority}</Badge></TableCell>
-                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Cancel</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
               </TableRow>
-            ))}
+              );
+            })}
           </TableBody></Table>
         </div>
       </CardContent></Card>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent><DialogHeader><DialogTitle>New Production Order</DialogTitle><DialogDescription>Create a new production order.</DialogDescription></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label>Product *</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Product name" /></div>
+            <div className="space-y-2"><Label>Product / Title *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Product name" /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Quantity *</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" /></div>
               <div className="space-y-2"><Label>Priority</Label><Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Work Center</Label><Input value={form.workCenter} onChange={e => setForm(f => ({ ...f, workCenter: e.target.value }))} placeholder="Work center name" /></div>
-              <div className="space-y-2"><Label>Due Date</Label><Input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>Work Center</Label><Select value={form.workCenterId} onValueChange={v => setForm(f => ({ ...f, workCenterId: v }))}><SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger><SelectContent>{workCenters.map(wc => <SelectItem key={wc.id} value={wc.id}>{wc.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Due Date</Label><Input type="date" value={form.scheduledEnd} onChange={e => setForm(f => ({ ...f, scheduledEnd: e.target.value }))} /></div>
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional notes..." rows={2} /></div>
           </div>
@@ -11342,32 +11481,65 @@ function ProductionBatchesPage() {
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState('all');
-  const [form, setForm] = useState({ product: '', order: '', quantity: '', startDate: '', notes: '' });
-  const [batches, setBatches] = useState([
-    { id: 'BATCH-001', product: 'Hydraulic Pump HP-300', order: 'PO-2025-001', quantity: 120, startDate: '2025-01-10', endDate: '2025-01-24', status: 'completed', qualityStatus: 'passed', yieldPct: 98.3 },
-    { id: 'BATCH-002', product: 'Control Valve CV-200', order: 'PO-2025-002', quantity: 85, startDate: '2025-01-12', endDate: '', status: 'in_progress', qualityStatus: 'pending', yieldPct: 0 },
-    { id: 'BATCH-003', product: 'Actuator Arm AA-150', order: 'PO-2025-003', quantity: 200, startDate: '2025-01-14', endDate: '', status: 'in_progress', qualityStatus: 'pending', yieldPct: 0 },
-    { id: 'BATCH-004', product: 'Sensor Housing SH-400', order: 'PO-2025-004', quantity: 500, startDate: '2025-01-15', endDate: '', status: 'in_progress', qualityStatus: 'pending', yieldPct: 0 },
-    { id: 'BATCH-005', product: 'Bearing Assembly BA-100', order: 'PO-2025-005', quantity: 300, startDate: '2025-01-16', endDate: '', status: 'on_hold', qualityStatus: 'pending', yieldPct: 95.2 },
-    { id: 'BATCH-006', product: 'Coupling Assembly CA-100', order: 'PO-2025-010', quantity: 400, startDate: '2025-01-08', endDate: '2025-01-19', status: 'completed', qualityStatus: 'passed', yieldPct: 99.1 },
-    { id: 'BATCH-007', product: 'Gearbox GB-250', order: 'PO-2025-006', quantity: 60, startDate: '2025-01-18', endDate: '', status: 'planned', qualityStatus: 'pending', yieldPct: 0 },
-    { id: 'BATCH-008', product: 'Piston Set PS-200', order: 'PO-2025-009', quantity: 250, startDate: '2025-01-03', endDate: '2025-01-11', status: 'completed', qualityStatus: 'failed', yieldPct: 88.5 },
-  ]);
+  const [form, setForm] = useState({ productName: '', orderId: '', quantity: '', startDate: '', notes: '' });
+  const [batches, setBatches] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [kpisData, setKpisData] = useState({ total: 0, inProgress: 0, completed: 0, onHold: 0 });
+  const [loading, setLoading] = useState(true);
+  const fetchBatches = async () => {
+    const res = await api.get('/api/production-batches');
+    if (res.success) {
+      setBatches(res.data || []);
+      if (res.kpis) setKpisData(res.kpis as any);
+    }
+  };
+  useEffect(() => {
+    (async () => {
+      const [batchRes, poRes] = await Promise.all([
+        api.get('/api/production-batches'),
+        api.get('/api/production-orders'),
+      ]);
+      if (batchRes.success) { setBatches(batchRes.data || []); if (batchRes.kpis) setKpisData(batchRes.kpis as any); }
+      if (poRes.success) setOrders(poRes.data || []);
+      setLoading(false);
+    })();
+  }, []);
   const statusColors: Record<string, string> = { planned: 'bg-slate-100 text-slate-600 border-slate-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', on_hold: 'bg-amber-50 text-amber-700 border-amber-200', quarantine: 'bg-red-50 text-red-700 border-red-200' };
   const qualityColors: Record<string, string> = { pending: 'bg-slate-100 text-slate-600 border-slate-200', passed: 'bg-emerald-50 text-emerald-700 border-emerald-200', failed: 'bg-red-50 text-red-700 border-red-200' };
-  const filtered = batches.filter(r => {
+  const filtered = batches.filter((r: any) => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
-    if (search && !r.product.toLowerCase().includes(search.toLowerCase()) && !r.id.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !r.productName.toLowerCase().includes(search.toLowerCase()) && !r.batchNumber.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
   const kpis = [
-    { label: 'Total Batches', value: 58, icon: Package, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'In Progress', value: 8, icon: Play, color: 'text-sky-600 bg-sky-50' },
-    { label: 'Completed', value: 45, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'On Hold', value: 5, icon: Pause, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Total Batches', value: kpisData.total, icon: Package, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'In Progress', value: kpisData.inProgress, icon: Play, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Completed', value: kpisData.completed, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'On Hold', value: kpisData.onHold, icon: Pause, color: 'text-amber-600 bg-amber-50' },
   ];
-  const handleCreate = () => { if (!form.product || !form.quantity) { toast.error('Product and quantity are required'); return; } toast.success('Batch created'); setCreateOpen(false); setForm({ product: '', order: '', quantity: '', startDate: '', notes: '' }); };
-  const handleDelete = (id: string) => { setBatches(prev => prev.filter(b => b.id !== id)); toast.success('Batch deleted'); };
+  const handleCreate = async () => {
+    if (!form.productName || !form.quantity) { toast.error('Product and quantity are required'); return; }
+    const res = await api.post('/api/production-batches', {
+      productName: form.productName,
+      orderId: form.orderId || null,
+      quantity: form.quantity,
+      startDate: form.startDate || null,
+      notes: form.notes || null,
+    });
+    if (res.success) {
+      toast.success('Batch created');
+      setCreateOpen(false);
+      setForm({ productName: '', orderId: '', quantity: '', startDate: '', notes: '' });
+      fetchBatches();
+    } else { toast.error(res.error || 'Failed to create batch'); }
+  };
+  const handleDelete = async (id: string) => {
+    const res = await api.delete(`/api/production-batches/${id}`);
+    if (res.success) {
+      toast.success('Batch removed');
+      fetchBatches();
+    } else { toast.error(res.error || 'Failed to delete batch'); }
+  };
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -11383,21 +11555,23 @@ function ProductionBatchesPage() {
       </div>
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
         <div className="overflow-x-auto">
-          <Table><TableHeader><TableRow><TableHead className="w-[110px]">Batch #</TableHead><TableHead>Product</TableHead><TableHead>Order #</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead>Start</TableHead><TableHead>End</TableHead><TableHead>Status</TableHead><TableHead>Quality</TableHead><TableHead>Yield</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
-            {filtered.map(r => (
+          <Table><TableHeader><TableRow><TableHead className="w-[170px]">Batch #</TableHead><TableHead>Product</TableHead><TableHead>Order #</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead>Start</TableHead><TableHead>End</TableHead><TableHead>Status</TableHead><TableHead>Yield</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+            {loading ? (<TableRow><TableCell colSpan={9} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (<TableRow><TableCell colSpan={9} className="h-48 text-center text-muted-foreground">No batches found</TableCell></TableRow>) : filtered.map((r: any) => {
+              const yieldPct = r.yield_ || 0;
+              return (
               <TableRow key={r.id}>
-                <TableCell className="font-mono text-xs font-medium">{r.id}</TableCell>
-                <TableCell className="font-medium text-sm">{r.product}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{r.order}</TableCell>
+                <TableCell className="font-mono text-xs font-medium">{r.batchNumber}</TableCell>
+                <TableCell className="font-medium text-sm">{r.productName}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{r.order?.orderNumber || '—'}</TableCell>
                 <TableCell className="text-right text-sm">{r.quantity.toLocaleString()}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{formatDate(r.startDate)}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.startDate ? formatDate(r.startDate) : '—'}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{r.endDate ? formatDate(r.endDate) : '—'}</TableCell>
                 <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell><Badge variant="outline" className={qualityColors[r.qualityStatus] || ''}>{r.qualityStatus.toUpperCase()}</Badge></TableCell>
-                <TableCell><div className="flex items-center gap-2"><div className="w-14 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${r.yieldPct >= 97 ? 'bg-emerald-500' : r.yieldPct > 0 ? 'bg-amber-500' : 'bg-slate-300'}`} style={{ width: `${r.yieldPct > 0 ? Math.min(r.yieldPct, 100) : 0}%` }} /></div><span className={`text-xs font-medium w-10 ${r.yieldPct >= 97 ? 'text-emerald-600' : r.yieldPct > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>{r.yieldPct > 0 ? `${r.yieldPct}%` : '—'}</span></div></TableCell>
+                <TableCell><div className="flex items-center gap-2"><div className="w-14 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${yieldPct >= 97 ? 'bg-emerald-500' : yieldPct > 0 ? 'bg-amber-500' : 'bg-slate-300'}`} style={{ width: `${yieldPct > 0 ? Math.min(yieldPct, 100) : 0}%` }} /></div><span className={`text-xs font-medium w-10 ${yieldPct >= 97 ? 'text-emerald-600' : yieldPct > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>{yieldPct > 0 ? `${yieldPct}%` : '—'}</span></div></TableCell>
                 <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
               </TableRow>
-            ))}
+              );
+            })}
           </TableBody></Table>
         </div>
       </CardContent></Card>
@@ -11405,8 +11579,8 @@ function ProductionBatchesPage() {
         <DialogContent><DialogHeader><DialogTitle>New Batch</DialogTitle><DialogDescription>Start a new production batch.</DialogDescription></DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Product *</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Product name" /></div>
-              <div className="space-y-2"><Label>Order #</Label><Input value={form.order} onChange={e => setForm(f => ({ ...f, order: e.target.value }))} placeholder="PO-2025-XXX" /></div>
+              <div className="space-y-2"><Label>Product *</Label><Input value={form.productName} onChange={e => setForm(f => ({ ...f, productName: e.target.value }))} placeholder="Product name" /></div>
+              <div className="space-y-2"><Label>Order #</Label><Select value={form.orderId} onValueChange={v => setForm(f => ({ ...f, orderId: v }))}><SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger><SelectContent>{orders.filter(o => o.status !== 'cancelled').map(o => <SelectItem key={o.id} value={o.id}>{o.orderNumber}</SelectItem>)}</SelectContent></Select></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Quantity *</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" /></div>
@@ -11766,31 +11940,56 @@ function QualitySpcPage() {
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [filterStatus, setFilterStatus] = useState('all');
-  const [form, setForm] = useState({ process: '', characteristic: '', usl: '', lsl: '', target: '' });
+  const [form, setForm] = useState({ process: '', characteristic: '', unit: '', usl: '', lsl: '', target: '', samples: '' });
+  const [spcData, setSpcData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [spcKpis, setSpcKpis] = useState({ total: 0, active: 0, outOfControl: 0, inControl: 0, cpkGood: 0 });
   const spcStatusColors: Record<string, string> = { in_control: 'bg-emerald-50 text-emerald-700 border-emerald-200', warning: 'bg-amber-50 text-amber-700 border-amber-200', out_of_control: 'bg-red-50 text-red-700 border-red-200' };
   const cpkColor = (v: number) => v >= 1.33 ? 'text-emerald-600 font-semibold' : v >= 1.0 ? 'text-amber-600 font-semibold' : 'text-red-600 font-semibold';
-  const spcData = [
-    { process: 'CNC Turning', characteristic: 'Outer Diameter (mm)', usl: 50.05, lsl: 49.95, target: 50.00, mean: 50.01, cp: 1.67, cpk: 1.52, status: 'in_control' },
-    { process: 'Welding – MIG', characteristic: 'Weld Strength (MPa)', usl: 450, lsl: 380, target: 415, mean: 418.5, cp: 1.42, cpk: 1.28, status: 'warning' },
-    { process: 'Paint Thickness', characteristic: 'Dry Film (μm)', usl: 85, lsl: 65, target: 75, mean: 74.2, cp: 1.85, cpk: 1.74, status: 'in_control' },
-    { process: 'Heat Treatment', characteristic: 'Hardness (HRC)', usl: 62, lsl: 56, target: 59, mean: 58.8, cp: 1.38, cpk: 1.31, status: 'in_control' },
-    { process: 'Assembly Torque', characteristic: 'Torque (Nm)', usl: 55, lsl: 45, target: 50, mean: 52.1, cp: 0.92, cpk: 0.74, status: 'out_of_control' },
-    { process: 'Injection Molding', characteristic: 'Weight (g)', usl: 105, lsl: 95, target: 100, mean: 100.3, cp: 1.56, cpk: 1.48, status: 'in_control' },
-    { process: 'Surface Grinding', characteristic: 'Roughness (Ra μm)', usl: 1.6, lsl: 0.4, target: 1.0, mean: 1.35, cp: 0.85, cpk: 0.68, status: 'out_of_control' },
-    { process: 'Brazing', characteristic: 'Joint Strength (kN)', usl: 12.0, lsl: 8.0, target: 10.0, mean: 10.1, cp: 1.33, cpk: 1.30, status: 'in_control' },
-  ];
-  const filtered = spcData.filter(r => {
-    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
-    if (search && !r.process.toLowerCase().includes(search.toLowerCase()) && !r.characteristic.toLowerCase().includes(search.toLowerCase())) return false;
+  const fetchSpcData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/spc-processes');
+      if (res.success && Array.isArray(res.data)) setSpcData(res.data);
+      const kpiRes = await api.get('/api/spc-processes?limit=1');
+      if (kpiRes.success) setSpcKpis((kpiRes as any).kpis || { total: 0, active: 0, outOfControl: 0, inControl: 0, cpkGood: 0 });
+    } catch {} finally { setLoading(false); }
+  }, []);
+  useEffect(() => { fetchSpcData(); }, [fetchSpcData]);
+  const filtered = spcData.filter((r: any) => {
+    if (filterStatus !== 'all' && r.controlStatus !== filterStatus) return false;
+    if (search && !r.processName.toLowerCase().includes(search.toLowerCase()) && !r.parameter.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
   const kpis = [
-    { label: 'Processes Monitored', value: 8, icon: Activity, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'In Control', value: 6, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Out of Control', value: 2, icon: XCircle, color: 'text-red-600 bg-red-50' },
-    { label: 'Cp/Cpk ≥ 1.33', value: 5, icon: TrendingUp, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Processes Monitored', value: spcKpis.total, icon: Activity, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'In Control', value: spcKpis.inControl, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Out of Control', value: spcKpis.outOfControl, icon: XCircle, color: 'text-red-600 bg-red-50' },
+    { label: 'Cp/Cpk ≥ 1.33', value: spcKpis.cpkGood, icon: TrendingUp, color: 'text-emerald-600 bg-emerald-50' },
   ];
-  const handleCreate = () => { if (!form.process) { toast.error('Process name is required'); return; } toast.success('SPC process added'); setCreateOpen(false); setForm({ process: '', characteristic: '', usl: '', lsl: '', target: '' }); };
+  const handleCreate = async () => {
+    if (!form.process) { toast.error('Process name is required'); return; }
+    if (!form.characteristic) { toast.error('Characteristic is required'); return; }
+    let samplesArr: number[] = [];
+    if (form.samples.trim()) {
+      samplesArr = form.samples.split(',').map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n));
+    }
+    const res = await api.post('/api/spc-processes', {
+      processName: form.process,
+      parameter: form.characteristic,
+      unit: form.unit,
+      specMax: form.usl ? parseFloat(form.usl) : null,
+      specMin: form.lsl ? parseFloat(form.lsl) : null,
+      target: form.target ? parseFloat(form.target) : null,
+      samples: samplesArr,
+    });
+    if (res.success) { toast.success('SPC process added'); setCreateOpen(false); setForm({ process: '', characteristic: '', unit: '', usl: '', lsl: '', target: '', samples: '' }); fetchSpcData(); }
+    else toast.error(res.error || 'Failed to add SPC process');
+  };
+  const handleDelete = async (id: string) => {
+    const res = await api.delete(`/api/spc-processes/${id}`);
+    if (res.success) { toast.success('SPC process deleted'); fetchSpcData(); } else toast.error(res.error || 'Failed to delete');
+  };
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -11807,18 +12006,18 @@ function QualitySpcPage() {
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
         <div className="overflow-x-auto">
           <Table><TableHeader><TableRow><TableHead>Process</TableHead><TableHead>Characteristic</TableHead><TableHead className="text-right">USL</TableHead><TableHead className="text-right">LSL</TableHead><TableHead className="text-right">Target</TableHead><TableHead className="text-right">Current Mean</TableHead><TableHead className="text-right">Cp</TableHead><TableHead className="text-right">Cpk</TableHead><TableHead>Status</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
-            {filtered.map(r => (
-              <TableRow key={r.process}>
-                <TableCell className="font-medium text-sm">{r.process}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{r.characteristic}</TableCell>
-                <TableCell className="text-right font-mono text-sm">{r.usl}</TableCell>
-                <TableCell className="text-right font-mono text-sm">{r.lsl}</TableCell>
-                <TableCell className="text-right font-mono text-sm">{r.target}</TableCell>
-                <TableCell className="text-right font-mono text-sm">{r.mean}</TableCell>
-                <TableCell className={`text-right font-mono text-sm ${cpkColor(r.cp)}`}>{r.cp.toFixed(2)}</TableCell>
-                <TableCell className={`text-right font-mono text-sm ${cpkColor(r.cpk)}`}>{r.cpk.toFixed(2)}</TableCell>
-                <TableCell><Badge variant="outline" className={spcStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View Chart</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            {loading ? <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow> : filtered.length === 0 ? <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No SPC processes found</TableCell></TableRow> : filtered.map((r: any) => (
+              <TableRow key={r.id}>
+                <TableCell className="font-medium text-sm">{r.processName}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.parameter}{r.unit ? ` (${r.unit})` : ''}</TableCell>
+                <TableCell className="text-right font-mono text-sm">{r.specMax ?? '-'}</TableCell>
+                <TableCell className="text-right font-mono text-sm">{r.specMin ?? '-'}</TableCell>
+                <TableCell className="text-right font-mono text-sm">{r.target ?? '-'}</TableCell>
+                <TableCell className="text-right font-mono text-sm">{r.samples.length > 0 ? r.mean : '-'}</TableCell>
+                <TableCell className={`text-right font-mono text-sm ${cpkColor(r.cp)}`}>{r.samples.length > 1 ? r.cp.toFixed(2) : '-'}</TableCell>
+                <TableCell className={`text-right font-mono text-sm ${cpkColor(r.cpk)}`}>{r.samples.length > 1 ? r.cpk.toFixed(2) : '-'}</TableCell>
+                <TableCell><Badge variant="outline" className={spcStatusColors[r.controlStatus] || ''}>{(r.controlStatus || 'in_control').replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View Chart</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
@@ -11831,11 +12030,13 @@ function QualitySpcPage() {
               <div className="space-y-2"><Label>Process *</Label><Input value={form.process} onChange={e => setForm(f => ({ ...f, process: e.target.value }))} placeholder="e.g., CNC Turning" /></div>
               <div className="space-y-2"><Label>Characteristic *</Label><Input value={form.characteristic} onChange={e => setForm(f => ({ ...f, characteristic: e.target.value }))} placeholder="e.g., Outer Diameter (mm)" /></div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-4 gap-4">
+              <div className="space-y-2"><Label>Unit</Label><Input value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} placeholder="mm, MPa, etc." /></div>
               <div className="space-y-2"><Label>USL</Label><Input type="number" step="any" value={form.usl} onChange={e => setForm(f => ({ ...f, usl: e.target.value }))} placeholder="Upper limit" /></div>
               <div className="space-y-2"><Label>LSL</Label><Input type="number" step="any" value={form.lsl} onChange={e => setForm(f => ({ ...f, lsl: e.target.value }))} placeholder="Lower limit" /></div>
               <div className="space-y-2"><Label>Target</Label><Input type="number" step="any" value={form.target} onChange={e => setForm(f => ({ ...f, target: e.target.value }))} placeholder="Target value" /></div>
             </div>
+            <div className="space-y-2"><Label>Initial Samples (comma-separated)</Label><Input value={form.samples} onChange={e => setForm(f => ({ ...f, samples: e.target.value }))} placeholder="e.g., 50.01, 49.98, 50.02, 49.99, 50.00" /></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Add Process</Button></DialogFooter>
         </DialogContent>
@@ -11945,40 +12146,39 @@ function SafetyIncidentsPage() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({ title: '', description: '', type: 'near_miss', severity: 'first_aid', location: '', reportedBy: '', date: '', witnesses: '' });
+  const [incidents, setIncidents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [kpis, setKpis] = useState<any>({ total: 0, open: 0, investigating: 0, closed: 0, daysSinceLast: 0 });
+  const [form, setForm] = useState({ title: '', description: '', type: 'near_miss', severity: 'medium', location: '', date: '' });
+
+  const fetchData = async () => {
+    try {
+      const res = await api.get<any>('/api/safety-incidents');
+      if (res.success) {
+        setIncidents(res.data || []);
+        if (res.kpis) setKpis(res.kpis);
+      }
+    } catch {} finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchData(); }, []);
 
   const severityBadge: Record<string, string> = {
-    near_miss: 'bg-blue-50 text-blue-700 border-blue-200',
-    first_aid: 'bg-amber-50 text-amber-700 border-amber-200',
-    recordable: 'bg-orange-50 text-orange-700 border-orange-200',
-    serious: 'bg-red-50 text-red-700 border-red-200',
-    fatal: 'bg-red-100 text-red-900 border-red-300',
+    low: 'bg-sky-50 text-sky-700 border-sky-200',
+    medium: 'bg-amber-50 text-amber-700 border-amber-200',
+    high: 'bg-orange-50 text-orange-700 border-orange-200',
+    critical: 'bg-red-50 text-red-700 border-red-200',
   };
   const statusColors: Record<string, string> = {
-    reported: 'bg-sky-50 text-sky-700 border-sky-200',
+    open: 'bg-sky-50 text-sky-700 border-sky-200',
     investigating: 'bg-amber-50 text-amber-700 border-amber-200',
-    corrective: 'bg-violet-50 text-violet-700 border-violet-200',
     closed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   };
-  const typeLabel: Record<string, string> = { near_miss: 'Near Miss', first_aid: 'First Aid', recordable: 'Recordable', serious: 'Serious', fatal: 'Fatal' };
-
-  const incidents = useMemo(() => [
-    { id: 'INC-001', title: 'Chemical spill in warehouse B', type: 'serious', severity: 'serious', location: 'Warehouse B', date: '2025-01-18T09:30:00', reportedBy: 'James Carter', status: 'investigating', rootCause: 'Improper container storage' },
-    { id: 'INC-002', title: 'Slip and fall near loading dock', type: 'recordable', severity: 'recordable', location: 'Loading Dock', date: '2025-01-17T14:15:00', reportedBy: 'Maria Lopez', status: 'corrective', rootCause: 'Wet floor, no signage' },
-    { id: 'INC-003', title: 'Near miss – forklift near pedestrian', type: 'near_miss', severity: 'near_miss', location: 'Zone A', date: '2025-01-16T11:00:00', reportedBy: 'Robert Chen', status: 'reported', rootCause: '' },
-    { id: 'INC-004', title: 'Minor cut from sharp edge', type: 'first_aid', severity: 'first_aid', location: 'Workshop 1', date: '2025-01-15T08:45:00', reportedBy: 'Sarah Kim', status: 'closed', rootCause: 'Missing guard on machine' },
-    { id: 'INC-005', title: 'Electrical shock from exposed wiring', type: 'recordable', severity: 'serious', location: 'Building A', date: '2025-01-14T16:20:00', reportedBy: 'David Park', status: 'closed', rootCause: 'Damaged cable insulation' },
-    { id: 'INC-006', title: 'Minor burn from hot pipe', type: 'first_aid', severity: 'first_aid', location: 'Boiler Room', date: '2025-01-13T10:00:00', reportedBy: 'Lisa Nguyen', status: 'closed', rootCause: 'Missing insulation cover' },
-    { id: 'INC-007', title: 'Falling object from scaffolding', type: 'serious', severity: 'recordable', location: 'Warehouse D', date: '2025-01-12T13:30:00', reportedBy: 'Tom Harris', status: 'investigating', rootCause: '' },
-    { id: 'INC-008', title: 'Near miss – swinging crane load', type: 'near_miss', severity: 'near_miss', location: 'Crane Bay', date: '2025-01-11T09:15:00', reportedBy: 'Emma Wright', status: 'corrective', rootCause: 'Wind gust, no tagline' },
-    { id: 'INC-009', title: 'Noise exposure above limit', type: 'recordable', severity: 'recordable', location: 'Production Floor', date: '2025-01-10T15:45:00', reportedBy: 'Mike Johnson', status: 'closed', rootCause: 'Faulty hearing protection' },
-    { id: 'INC-010', title: 'Forklift collision with racking', type: 'near_miss', severity: 'near_miss', location: 'Zone C', date: '2025-01-09T07:30:00', reportedBy: 'Anna White', status: 'reported', rootCause: '' },
-    { id: 'INC-011', title: 'Confined space oxygen drop', type: 'serious', severity: 'serious', location: 'Tank Farm', date: '2025-01-08T11:00:00', reportedBy: 'Kevin Brooks', status: 'investigating', rootCause: 'Ventilation failure' },
-    { id: 'INC-012', title: 'First aid – eye irritation', type: 'first_aid', severity: 'first_aid', location: 'Lab 2', date: '2025-01-07T14:20:00', reportedBy: 'Rachel Adams', status: 'closed', rootCause: 'Splash from chemical mix' },
-  ], []);
+  const typeLabel: Record<string, string> = { injury: 'Injury', near_miss: 'Near Miss', property_damage: 'Property Damage', environmental: 'Environmental', fire: 'Fire', chemical_spill: 'Chemical Spill' };
+  const severityLabel: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical' };
 
   const filtered = useMemo(() => incidents.filter(i => {
-    if (search && !i.title.toLowerCase().includes(search.toLowerCase()) && !i.id.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !i.title.toLowerCase().includes(search.toLowerCase()) && !(i.incidentNumber || '').toLowerCase().includes(search.toLowerCase())) return false;
     if (typeFilter !== 'all' && i.type !== typeFilter) return false;
     if (statusFilter !== 'all' && i.status !== statusFilter) return false;
     return true;
@@ -11986,29 +12186,42 @@ function SafetyIncidentsPage() {
 
   const severityCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    incidents.forEach(i => { counts[i.type] = (counts[i.type] || 0) + 1; });
-    return Object.entries(counts).map(([name, value]) => ({ name: typeLabel[name] || name, value, fill: name === 'near_miss' ? '#3b82f6' : name === 'first_aid' ? '#f59e0b' : name === 'recordable' ? '#f97316' : name === 'serious' ? '#ef4444' : '#991b1b' }));
+    incidents.forEach(i => { counts[i.severity || 'medium'] = (counts[i.severity || 'medium'] || 0) + 1; });
+    return Object.entries(counts).map(([name, value]) => ({ name: severityLabel[name] || name, value, fill: name === 'low' ? '#3b82f6' : name === 'medium' ? '#f59e0b' : name === 'high' ? '#f97316' : '#ef4444' }));
   }, [incidents]);
   const severityConfig = useMemo(() => Object.fromEntries(severityCounts.map((s: any) => [s.name, { label: s.name, color: s.fill }])) as any, [severityCounts]);
 
-  const daysSince = Math.floor((Date.now() - new Date('2025-01-18T09:30:00').getTime()) / 86400000);
-  const openCount = incidents.filter(i => i.status === 'reported').length;
-  const invCount = incidents.filter(i => i.status === 'investigating').length;
-  const closedCount = incidents.filter(i => i.status === 'closed').length;
+  const kpiCards = [
+    { label: 'Total Incidents', value: kpis.total, icon: TriangleAlert, color: 'from-red-500 to-orange-500' },
+    { label: 'Open', value: kpis.open, icon: AlertCircle, color: 'from-sky-500 to-blue-500' },
+    { label: 'Under Investigation', value: kpis.investigating, icon: Search, color: 'from-amber-500 to-yellow-500' },
+    { label: 'Closed', value: kpis.closed, icon: CheckCircle2, color: 'from-emerald-500 to-teal-500' },
+    { label: 'Days Since Last Incident', value: kpis.daysSinceLast, icon: ShieldCheck, color: 'from-teal-500 to-emerald-500' },
+  ];
 
-  const kpis = useMemo(() => [
-    { label: 'Total Incidents', value: incidents.length, icon: TriangleAlert, color: 'from-red-500 to-orange-500' },
-    { label: 'Open', value: openCount, icon: AlertCircle, color: 'from-sky-500 to-blue-500' },
-    { label: 'Under Investigation', value: invCount, icon: Search, color: 'from-amber-500 to-yellow-500' },
-    { label: 'Closed', value: closedCount, icon: CheckCircle2, color: 'from-emerald-500 to-teal-500' },
-    { label: 'Days Since Last Incident', value: daysSince, icon: ShieldCheck, color: 'from-teal-500 to-emerald-500' },
-  ], [openCount, invCount, closedCount, daysSince]);
-
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!form.title) { toast.error('Title is required'); return; }
-    toast.success(`Incident "${form.title}" reported successfully`);
-    setDialogOpen(false);
-    setForm({ title: '', description: '', type: 'near_miss', severity: 'first_aid', location: '', reportedBy: '', date: '', witnesses: '' });
+    if (!form.date) { toast.error('Incident date is required'); return; }
+    try {
+      const res = await api.post('/api/safety-incidents', {
+        title: form.title, description: form.description, type: form.type,
+        severity: form.severity, location: form.location || null, incidentDate: form.date,
+      });
+      if (res.success) {
+        toast.success(`Incident "${form.title}" reported successfully`);
+        setDialogOpen(false);
+        setForm({ title: '', description: '', type: 'near_miss', severity: 'medium', location: '', date: '' });
+        fetchData();
+      } else { toast.error(res.error || 'Failed to create incident'); }
+    } catch { toast.error('Failed to create incident'); }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await api.delete(`/api/safety-incidents/${id}`);
+      if (res.success) { toast.success('Incident deleted'); fetchData(); }
+      else { toast.error(res.error || 'Failed to delete'); }
+    } catch { toast.error('Failed to delete'); }
   };
 
   return (
@@ -12035,23 +12248,19 @@ function SafetyIncidentsPage() {
                   <div className="space-y-2"><Label>Type</Label>
                     <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="near_miss">Near Miss</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="recordable">Recordable</SelectItem><SelectItem value="serious">Serious</SelectItem><SelectItem value="fatal">Fatal</SelectItem></SelectContent>
+                      <SelectContent><SelectItem value="near_miss">Near Miss</SelectItem><SelectItem value="injury">Injury</SelectItem><SelectItem value="property_damage">Property Damage</SelectItem><SelectItem value="environmental">Environmental</SelectItem><SelectItem value="fire">Fire</SelectItem><SelectItem value="chemical_spill">Chemical Spill</SelectItem></SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2"><Label>Severity</Label>
                     <Select value={form.severity} onValueChange={v => setForm(p => ({ ...p, severity: v }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="near_miss">Near Miss</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="recordable">Recordable</SelectItem><SelectItem value="serious">Serious</SelectItem><SelectItem value="fatal">Fatal</SelectItem></SelectContent>
+                      <SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent>
                     </Select>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Location</Label><Input placeholder="e.g. Warehouse B" value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))} /></div>
                   <div className="space-y-2"><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Reported By</Label><Input placeholder="Name" value={form.reportedBy} onChange={e => setForm(p => ({ ...p, reportedBy: e.target.value }))} /></div>
-                  <div className="space-y-2"><Label>Witnesses</Label><Input placeholder="Comma-separated names" value={form.witnesses} onChange={e => setForm(p => ({ ...p, witnesses: e.target.value }))} /></div>
                 </div>
               </div>
             </ScrollArea>
@@ -12063,8 +12272,9 @@ function SafetyIncidentsPage() {
         </Dialog>
       </div>
 
+      {loading ? <LoadingSkeleton /> : <>
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
-        {kpis.map(k => { const Icon = k.icon; return (
+        {kpiCards.map(k => { const Icon = k.icon; return (
           <Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
@@ -12078,7 +12288,7 @@ function SafetyIncidentsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm lg:col-span-1">
-          <CardHeader className="pb-2"><CardTitle className="text-base">Severity Breakdown</CardTitle><CardDescription className="text-xs">By incident type</CardDescription></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Severity Breakdown</CardTitle><CardDescription className="text-xs">By severity level</CardDescription></CardHeader>
           <CardContent>
             <ChartContainer config={severityConfig} className="h-[240px] w-full">
               <PieChart>
@@ -12103,24 +12313,25 @@ function SafetyIncidentsPage() {
           <CardContent className="p-4 sm:p-6">
             <div className="filter-row mb-4">
               <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search incidents..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
-              <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="near_miss">Near Miss</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="recordable">Recordable</SelectItem><SelectItem value="serious">Serious</SelectItem><SelectItem value="fatal">Fatal</SelectItem></SelectContent></Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="reported">Reported</SelectItem><SelectItem value="investigating">Investigating</SelectItem><SelectItem value="corrective">Corrective</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select>
+              <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="near_miss">Near Miss</SelectItem><SelectItem value="injury">Injury</SelectItem><SelectItem value="property_damage">Property Damage</SelectItem><SelectItem value="environmental">Environmental</SelectItem><SelectItem value="fire">Fire</SelectItem><SelectItem value="chemical_spill">Chemical Spill</SelectItem></SelectContent></Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="open">Open</SelectItem><SelectItem value="investigating">Investigating</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select>
             </div>
             <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
               <Table>
-                <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Title</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Location</TableHead><TableHead className="font-semibold">Date</TableHead><TableHead className="font-semibold">Reported By</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="font-semibold">Root Cause</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+                <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Title</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Severity</TableHead><TableHead className="font-semibold">Location</TableHead><TableHead className="font-semibold">Date</TableHead><TableHead className="font-semibold">Reported By</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="font-semibold">Root Cause</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {filtered.length === 0 ? <TableRow><TableCell colSpan={9}><EmptyState icon={TriangleAlert} title="No incidents found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(i => (
+                  {filtered.length === 0 ? <TableRow><TableCell colSpan={10}><EmptyState icon={TriangleAlert} title="No incidents found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(i => (
                     <TableRow key={i.id} className="cursor-pointer hover:bg-muted/30">
-                      <TableCell className="font-mono text-xs font-semibold">{i.id}</TableCell>
+                      <TableCell className="font-mono text-xs font-semibold">{i.incidentNumber}</TableCell>
                       <TableCell className="font-medium max-w-[200px] truncate">{i.title}</TableCell>
-                      <TableCell><Badge variant="outline" className={severityBadge[i.type] || ''}>{typeLabel[i.type] || i.type}</Badge></TableCell>
+                      <TableCell><Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200">{typeLabel[i.type] || i.type}</Badge></TableCell>
+                      <TableCell><Badge variant="outline" className={severityBadge[i.severity] || ''}>{severityLabel[i.severity] || i.severity}</Badge></TableCell>
                       <TableCell className="text-sm text-muted-foreground"><div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 shrink-0" /><span className="truncate max-w-[120px]">{i.location}</span></div></TableCell>
-                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(i.date)}</TableCell>
-                      <TableCell><div className="flex items-center gap-2"><Avatar className="h-6 w-6"><AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700">{getInitials(i.reportedBy)}</AvatarFallback></Avatar><span className="text-sm whitespace-nowrap">{i.reportedBy}</span></div></TableCell>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(i.incidentDate)}</TableCell>
+                      <TableCell><div className="flex items-center gap-2"><Avatar className="h-6 w-6"><AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700">{getInitials(i.reportedBy?.fullName || '')}</AvatarFallback></Avatar><span className="text-sm whitespace-nowrap">{i.reportedBy?.fullName || ''}</span></div></TableCell>
                       <TableCell><Badge variant="outline" className={statusColors[i.status] || ''}>{i.status}</Badge></TableCell>
-                      <TableCell className="text-sm text-muted-foreground max-w-[160px] truncate">{i.rootCause || '—'}</TableCell>
-                      <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-[140px] truncate">{i.rootCause || '—'}</TableCell>
+                      <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(i.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -12132,6 +12343,7 @@ function SafetyIncidentsPage() {
           </CardContent>
         </Card>
       </div>
+      </>}
     </div>
   );
 }
@@ -12142,47 +12354,71 @@ function SafetyInspectionsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [checklistItems, setChecklistItems] = useState(['', '']);
+  const [inspections, setInspections] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [kpis, setKpis] = useState<any>({ total: 0, completed: 0, failed: 0, scheduled: 0, inProgress: 0 });
   const [form, setForm] = useState({ title: '', type: 'routine', area: '', inspector: '', scheduledDate: '' });
 
-  const statusColors: Record<string, string> = { passed: 'bg-emerald-50 text-emerald-700 border-emerald-200', failed: 'bg-red-50 text-red-700 border-red-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', scheduled: 'bg-sky-50 text-sky-700 border-sky-200' };
-  const typeColors: Record<string, string> = { routine: 'bg-slate-100 text-slate-600 border-slate-200', special: 'bg-violet-50 text-violet-700 border-violet-200', emergency: 'bg-red-50 text-red-600 border-red-200' };
+  const fetchData = async () => {
+    try {
+      const res = await api.get<any>('/api/safety-inspections');
+      if (res.success) {
+        setInspections(res.data || []);
+        if (res.kpis) setKpis(res.kpis);
+      }
+    } catch {} finally { setLoading(false); }
+  };
 
-  const inspections = useMemo(() => [
-    { id: 'INSP-001', title: 'Monthly Fire Safety Walkthrough', type: 'routine', area: 'Building A', inspector: 'John Mitchell', date: '2025-01-20', findings: 2, score: 92, status: 'passed' },
-    { id: 'INSP-002', title: 'OSHA Compliance Audit – Zone C', type: 'special', area: 'Zone C', inspector: 'Rachel Adams', date: '2025-01-22', findings: 5, score: 78, status: 'failed' },
-    { id: 'INSP-003', title: 'Scaffold Safety Check', type: 'emergency', area: 'Warehouse D', inspector: 'Kevin Brooks', date: '2025-01-25', findings: 0, score: 0, status: 'scheduled' },
-    { id: 'INSP-004', title: 'Emergency Exit Inspection', type: 'routine', area: 'Building B', inspector: 'Linda Park', date: '2025-01-18', findings: 3, score: 65, status: 'failed' },
-    { id: 'INSP-005', title: 'Chemical Storage Compliance', type: 'special', area: 'Lab 2', inspector: 'Tom Wilson', date: '2025-01-28', findings: 0, score: 0, status: 'scheduled' },
-    { id: 'INSP-006', title: 'Crane & Lifting Equipment Audit', type: 'special', area: 'Workshop 1', inspector: 'Mike Torres', date: '2025-01-19', findings: 1, score: 88, status: 'in_progress' },
-    { id: 'INSP-007', title: 'PPE Condition Assessment', type: 'routine', area: 'All Areas', inspector: 'Anna Lee', date: '2025-01-15', findings: 1, score: 96, status: 'passed' },
-    { id: 'INSP-008', title: 'Emergency Response Drill Evaluation', type: 'emergency', area: 'Plant Grounds', inspector: 'Chris Evans', date: '2025-01-21', findings: 4, score: 82, status: 'passed' },
-  ], []);
+  useEffect(() => { fetchData(); }, []);
+
+  const statusColors: Record<string, string> = { completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', failed: 'bg-red-50 text-red-700 border-red-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', scheduled: 'bg-sky-50 text-sky-700 border-sky-200' };
+  const typeColors: Record<string, string> = { routine: 'bg-slate-100 text-slate-600 border-slate-200', special: 'bg-violet-50 text-violet-700 border-violet-200', follow_up: 'bg-orange-50 text-orange-700 border-orange-200' };
 
   const filtered = useMemo(() => inspections.filter(i => {
-    if (search && !i.title.toLowerCase().includes(search.toLowerCase()) && !i.id.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !i.title.toLowerCase().includes(search.toLowerCase()) && !(i.inspectionNumber || '').toLowerCase().includes(search.toLowerCase())) return false;
     if (typeFilter !== 'all' && i.type !== typeFilter) return false;
     if (statusFilter !== 'all' && i.status !== statusFilter) return false;
     return true;
   }), [inspections, search, typeFilter, statusFilter]);
 
-  const passedCount = inspections.filter(i => i.status === 'passed').length;
-  const failedCount = inspections.filter(i => i.status === 'failed').length;
-  const scheduledCount = inspections.filter(i => i.status === 'scheduled').length;
+  const parseFindings = (f: string) => { try { return JSON.parse(f || '[]'); } catch { return []; } };
 
-  const kpis = useMemo(() => [
-    { label: 'Total Inspections', value: inspections.length, icon: ClipboardCheck, color: 'from-emerald-500 to-teal-500' },
-    { label: 'Passed', value: passedCount, icon: CheckCircle2, color: 'from-emerald-500 to-green-500' },
-    { label: 'Failed', value: failedCount, icon: XCircle, color: 'from-red-500 to-orange-500' },
-    { label: 'Scheduled', value: scheduledCount, icon: Calendar, color: 'from-sky-500 to-blue-500' },
-  ], [passedCount, failedCount, scheduledCount]);
+  const kpiCards = [
+    { label: 'Total Inspections', value: kpis.total, icon: ClipboardCheck, color: 'from-emerald-500 to-teal-500' },
+    { label: 'Passed', value: kpis.completed, icon: CheckCircle2, color: 'from-emerald-500 to-green-500' },
+    { label: 'Failed', value: kpis.failed, icon: XCircle, color: 'from-red-500 to-orange-500' },
+    { label: 'Scheduled', value: kpis.scheduled, icon: Calendar, color: 'from-sky-500 to-blue-500' },
+  ];
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!form.title) { toast.error('Title is required'); return; }
-    toast.success(`Inspection "${form.title}" created successfully`);
-    setDialogOpen(false);
-    setForm({ title: '', type: 'routine', area: '', inspector: '', scheduledDate: '' });
-    setChecklistItems(['', '']);
+    if (!form.scheduledDate) { toast.error('Scheduled date is required'); return; }
+    try {
+      const findings = checklistItems.filter(c => c.trim());
+      const res = await api.post('/api/safety-inspections', {
+        title: form.title, type: form.type, status: 'scheduled',
+        scheduledDate: form.scheduledDate, location: form.area || null,
+        inspectorId: form.inspector || null, findings: JSON.stringify(findings),
+      });
+      if (res.success) {
+        toast.success(`Inspection "${form.title}" created successfully`);
+        setDialogOpen(false);
+        setForm({ title: '', type: 'routine', area: '', inspector: '', scheduledDate: '' });
+        setChecklistItems(['', '']);
+        fetchData();
+      } else { toast.error(res.error || 'Failed to create inspection'); }
+    } catch { toast.error('Failed to create inspection'); }
   };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await api.delete(`/api/safety-inspections/${id}`);
+      if (res.success) { toast.success('Inspection deleted'); fetchData(); }
+      else { toast.error(res.error || 'Failed to delete'); }
+    } catch { toast.error('Failed to delete'); }
+  };
+
+  if (loading) return <LoadingSkeleton />;
 
   return (
     <div className="page-content">
@@ -12201,13 +12437,13 @@ function SafetyInspectionsPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Type</Label>
                     <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
-                      <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="routine">Routine</SelectItem><SelectItem value="special">Special</SelectItem><SelectItem value="emergency">Emergency</SelectItem></SelectContent>
+                      <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="routine">Routine</SelectItem><SelectItem value="special">Special</SelectItem><SelectItem value="follow_up">Follow Up</SelectItem></SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2"><Label>Area</Label><Input placeholder="e.g. Building A" value={form.area} onChange={e => setForm(p => ({ ...p, area: e.target.value }))} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Inspector</Label><Input placeholder="Assigned inspector" value={form.inspector} onChange={e => setForm(p => ({ ...p, inspector: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label>Inspector ID</Label><Input placeholder="User ID (optional)" value={form.inspector} onChange={e => setForm(p => ({ ...p, inspector: e.target.value }))} /></div>
                   <div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={form.scheduledDate} onChange={e => setForm(p => ({ ...p, scheduledDate: e.target.value }))} /></div>
                 </div>
                 <div className="space-y-3">
@@ -12235,7 +12471,7 @@ function SafetyInspectionsPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {kpis.map(k => { const Icon = k.icon; return (
+        {kpiCards.map(k => { const Icon = k.icon; return (
           <Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
@@ -12251,34 +12487,37 @@ function SafetyInspectionsPage() {
         <CardContent className="p-4 sm:p-6">
           <div className="filter-row mb-4">
             <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search inspections..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
-            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="routine">Routine</SelectItem><SelectItem value="special">Special</SelectItem><SelectItem value="emergency">Emergency</SelectItem></SelectContent></Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="failed">Failed</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem></SelectContent></Select>
+            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="routine">Routine</SelectItem><SelectItem value="special">Special</SelectItem><SelectItem value="follow_up">Follow Up</SelectItem></SelectContent></Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="scheduled">Scheduled</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Passed</SelectItem><SelectItem value="failed">Failed</SelectItem></SelectContent></Select>
           </div>
           <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
             <Table>
-              <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Title</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Area</TableHead><TableHead className="font-semibold">Inspector</TableHead><TableHead className="font-semibold">Date</TableHead><TableHead className="font-semibold">Findings</TableHead><TableHead className="font-semibold">Score</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+              <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Title</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Area</TableHead><TableHead className="font-semibold">Date</TableHead><TableHead className="font-semibold">Findings</TableHead><TableHead className="font-semibold">Score</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
               <TableBody>
-                {filtered.length === 0 ? <TableRow><TableCell colSpan={10}><EmptyState icon={ClipboardCheck} title="No inspections found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(i => (
+                {filtered.length === 0 ? <TableRow><TableCell colSpan={9}><EmptyState icon={ClipboardCheck} title="No inspections found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(i => {
+                  const findings = parseFindings(i.findings);
+                  const scorePct = i.maxScore ? Math.round((i.score / i.maxScore) * 100) : (i.score || 0);
+                  return (
                   <TableRow key={i.id} className="cursor-pointer hover:bg-muted/30">
-                    <TableCell className="font-mono text-xs font-semibold">{i.id}</TableCell>
+                    <TableCell className="font-mono text-xs font-semibold">{i.inspectionNumber}</TableCell>
                     <TableCell className="font-medium max-w-[220px] truncate">{i.title}</TableCell>
-                    <TableCell><Badge variant="outline" className={typeColors[i.type] || ''}>{i.type}</Badge></TableCell>
-                    <TableCell className="text-sm"><div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="truncate max-w-[120px]">{i.area}</span></div></TableCell>
-                    <TableCell><div className="flex items-center gap-2"><Avatar className="h-6 w-6"><AvatarFallback className="text-[10px] bg-teal-100 text-teal-700">{getInitials(i.inspector)}</AvatarFallback></Avatar><span className="text-sm whitespace-nowrap">{i.inspector}</span></div></TableCell>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(i.date)}</TableCell>
-                    <TableCell className="text-sm font-medium">{i.findings}</TableCell>
+                    <TableCell><Badge variant="outline" className={typeColors[i.type] || ''}>{i.type?.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell className="text-sm"><div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="truncate max-w-[120px]">{i.location}</span></div></TableCell>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(i.scheduledDate)}</TableCell>
+                    <TableCell className="text-sm font-medium">{Array.isArray(findings) ? findings.length : 0}</TableCell>
                     <TableCell>
-                      {i.score > 0 ? (
+                      {scorePct > 0 ? (
                         <div className="flex items-center gap-2">
-                          <div className="h-2 w-16 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${i.score >= 80 ? 'bg-emerald-500' : i.score >= 60 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${i.score}%` }} /></div>
-                          <span className={`text-sm font-semibold ${i.score >= 80 ? 'text-emerald-600' : i.score >= 60 ? 'text-amber-600' : 'text-red-600'}`}>{i.score}%</span>
+                          <div className="h-2 w-16 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${scorePct >= 80 ? 'bg-emerald-500' : scorePct >= 60 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${scorePct}%` }} /></div>
+                          <span className={`text-sm font-semibold ${scorePct >= 80 ? 'text-emerald-600' : scorePct >= 60 ? 'text-amber-600' : 'text-red-600'}`}>{scorePct}%</span>
                         </div>
                       ) : <span className="text-sm text-muted-foreground">—</span>}
                     </TableCell>
-                    <TableCell><Badge variant="outline" className={statusColors[i.status] || ''}>{i.status.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                    <TableCell><Badge variant="outline" className={statusColors[i.status] || ''}>{i.status?.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(i.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -12295,52 +12534,69 @@ function SafetyTrainingPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({ courseName: '', type: 'mandatory', requiredFor: '', duration: '', completedBy: '', dueDate: '' });
+  const [trainings, setTrainings] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [kpis, setKpis] = useState<any>({ total: 0, completed: 0, inProgress: 0, overdue: 0, planned: 0 });
+  const [form, setForm] = useState({ title: '', type: 'induction', trainer: '', durationHours: '', scheduledDate: '', location: '' });
 
-  const statusColors: Record<string, string> = { completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', overdue: 'bg-red-50 text-red-700 border-red-200', not_started: 'bg-slate-100 text-slate-500 border-slate-200' };
-  const typeColors: Record<string, string> = { mandatory: 'bg-red-50 text-red-600 border-red-200', refresher: 'bg-amber-50 text-amber-700 border-amber-200', certification: 'bg-violet-50 text-violet-700 border-violet-200', elective: 'bg-sky-50 text-sky-700 border-sky-200' };
+  const fetchData = async () => {
+    try {
+      const res = await api.get<any>('/api/safety-training');
+      if (res.success) {
+        setTrainings(res.data || []);
+        if (res.kpis) setKpis(res.kpis);
+      }
+    } catch {} finally { setLoading(false); }
+  };
 
-  const trainings = useMemo(() => [
-    { id: 'TR-001', courseName: 'Fire Safety & Evacuation', type: 'mandatory', requiredFor: 'All Staff', duration: '4 hours', completedBy: 'Operations', dueDate: '2025-02-15', status: 'completed' },
-    { id: 'TR-002', courseName: 'Hazardous Chemical Handling', type: 'certification', requiredFor: 'Lab Technicians', duration: '6 hours', completedBy: 'Lab Team (partial)', dueDate: '2025-01-10', status: 'overdue' },
-    { id: 'TR-003', courseName: 'Electrical Safety Awareness', type: 'mandatory', requiredFor: 'Maintenance', duration: '3 hours', completedBy: 'Maintenance Dept', dueDate: '2025-02-28', status: 'in_progress' },
-    { id: 'TR-004', courseName: 'Working at Heights Certification', type: 'certification', requiredFor: 'Riggers & Scaffolders', duration: '8 hours', completedBy: 'Scaffold Team', dueDate: '2025-01-20', status: 'completed' },
-    { id: 'TR-005', courseName: 'First Aid & CPR', type: 'mandatory', requiredFor: 'All Staff', duration: '5 hours', completedBy: 'Admin & Ops', dueDate: '2025-03-01', status: 'in_progress' },
-    { id: 'TR-006', courseName: 'Confined Space Entry', type: 'certification', requiredFor: 'Tank Crew', duration: '4 hours', completedBy: '—', dueDate: '2025-01-25', status: 'not_started' },
-    { id: 'TR-007', courseName: 'Lockout/Tagout Procedures', type: 'refresher', requiredFor: 'Electricians', duration: '2 hours', completedBy: 'Electrical Team', dueDate: '2025-01-15', status: 'completed' },
-    { id: 'TR-008', courseName: 'Emergency Response Drill', type: 'mandatory', requiredFor: 'All Staff', duration: '3 hours', completedBy: '—', dueDate: '2025-02-10', status: 'not_started' },
-    { id: 'TR-009', courseName: 'Crane & Rigging Safety', type: 'certification', requiredFor: 'Crane Operators', duration: '8 hours', completedBy: 'Crane Team', dueDate: '2025-01-05', status: 'overdue' },
-    { id: 'TR-010', courseName: 'Ergonomics in the Workplace', type: 'elective', requiredFor: 'Office Staff', duration: '2 hours', completedBy: 'Admin Team', dueDate: '2025-03-15', status: 'in_progress' },
-  ], []);
+  useEffect(() => { fetchData(); }, []);
+
+  const statusColors: Record<string, string> = { completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', cancelled: 'bg-red-50 text-red-700 border-red-200', planned: 'bg-slate-100 text-slate-500 border-slate-200' };
+  const typeColors: Record<string, string> = { induction: 'bg-red-50 text-red-600 border-red-200', refresher: 'bg-amber-50 text-amber-700 border-amber-200', specialized: 'bg-violet-50 text-violet-700 border-violet-200' };
 
   const filtered = useMemo(() => trainings.filter(t => {
-    if (search && !t.courseName.toLowerCase().includes(search.toLowerCase()) && !t.requiredFor.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !t.title.toLowerCase().includes(search.toLowerCase()) && !(t.trainer || '').toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter !== 'all' && t.status !== statusFilter) return false;
     return true;
   }), [trainings, search, statusFilter]);
 
-  const completedCount = trainings.filter(t => t.status === 'completed').length;
-  const overdueCount = trainings.filter(t => t.status === 'overdue').length;
-  const complianceRate = Math.round((completedCount / trainings.length) * 100);
+  const completedCount = kpis.completed || 0;
+  const complianceRate = kpis.total ? Math.round((completedCount / kpis.total) * 100) : 0;
 
-  const kpis = useMemo(() => [
-    { label: 'Total Courses', value: trainings.length, icon: GraduationCap, color: 'from-emerald-500 to-teal-500' },
+  const kpiCards = [
+    { label: 'Total Courses', value: kpis.total, icon: GraduationCap, color: 'from-emerald-500 to-teal-500' },
     { label: 'Completed', value: completedCount, icon: CheckCircle2, color: 'from-sky-500 to-blue-500' },
-    { label: 'Overdue', value: overdueCount, icon: AlertTriangle, color: 'from-red-500 to-orange-500' },
+    { label: 'Overdue', value: kpis.overdue, icon: AlertTriangle, color: 'from-red-500 to-orange-500' },
     { label: 'Compliance Rate', value: `${complianceRate}%`, icon: ShieldCheck, color: 'from-amber-500 to-yellow-500' },
-  ], [completedCount, overdueCount, complianceRate]);
-
-  const deptCompliance = [
-    { dept: 'Operations', rate: 92 }, { dept: 'Maintenance', rate: 78 }, { dept: 'Lab', rate: 60 },
-    { dept: 'Admin', rate: 85 }, { dept: 'Warehouse', rate: 70 }, { dept: 'Safety', rate: 95 },
   ];
 
-  const handleCreate = () => {
-    if (!form.courseName) { toast.error('Course name is required'); return; }
-    toast.success(`Training "${form.courseName}" created successfully`);
-    setDialogOpen(false);
-    setForm({ courseName: '', type: 'mandatory', requiredFor: '', duration: '', completedBy: '', dueDate: '' });
+  const handleCreate = async () => {
+    if (!form.title) { toast.error('Course name is required'); return; }
+    try {
+      const res = await api.post('/api/safety-training', {
+        title: form.title, type: form.type, trainer: form.trainer || null,
+        durationHours: form.durationHours ? parseFloat(form.durationHours) : null,
+        scheduledDate: form.scheduledDate || null, location: form.location || null,
+        status: 'planned',
+      });
+      if (res.success) {
+        toast.success(`Training "${form.title}" created successfully`);
+        setDialogOpen(false);
+        setForm({ title: '', type: 'induction', trainer: '', durationHours: '', scheduledDate: '', location: '' });
+        fetchData();
+      } else { toast.error(res.error || 'Failed to create training'); }
+    } catch { toast.error('Failed to create training'); }
   };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await api.delete(`/api/safety-training/${id}`);
+      if (res.success) { toast.success('Training deleted'); fetchData(); }
+      else { toast.error(res.error || 'Failed to delete'); }
+    } catch { toast.error('Failed to delete'); }
+  };
+
+  if (loading) return <LoadingSkeleton />;
 
   return (
     <div className="page-content">
@@ -12355,20 +12611,20 @@ function SafetyTrainingPage() {
             <DialogHeader><DialogTitle>Create Training Record</DialogTitle><DialogDescription>Add a new safety training course or session</DialogDescription></DialogHeader>
             <ScrollArea className="max-h-[70vh]">
               <div className="space-y-4 py-2 pr-3">
-                <div className="space-y-2"><Label>Course Name</Label><Input placeholder="e.g. Fire Safety Training" value={form.courseName} onChange={e => setForm(p => ({ ...p, courseName: e.target.value }))} /></div>
+                <div className="space-y-2"><Label>Course Name</Label><Input placeholder="e.g. Fire Safety Training" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} /></div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Type</Label>
                     <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
-                      <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="mandatory">Mandatory</SelectItem><SelectItem value="refresher">Refresher</SelectItem><SelectItem value="certification">Certification</SelectItem><SelectItem value="elective">Elective</SelectItem></SelectContent>
+                      <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="induction">Induction</SelectItem><SelectItem value="refresher">Refresher</SelectItem><SelectItem value="specialized">Specialized</SelectItem></SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2"><Label>Duration</Label><Input placeholder="e.g. 4 hours" value={form.duration} onChange={e => setForm(p => ({ ...p, duration: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label>Duration (hours)</Label><Input type="number" placeholder="e.g. 4" value={form.durationHours} onChange={e => setForm(p => ({ ...p, durationHours: e.target.value }))} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Required For</Label><Input placeholder="e.g. All Staff" value={form.requiredFor} onChange={e => setForm(p => ({ ...p, requiredFor: e.target.value }))} /></div>
-                  <div className="space-y-2"><Label>Due Date</Label><Input type="date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label>Trainer</Label><Input placeholder="Trainer name" value={form.trainer} onChange={e => setForm(p => ({ ...p, trainer: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={form.scheduledDate} onChange={e => setForm(p => ({ ...p, scheduledDate: e.target.value }))} /></div>
                 </div>
-                <div className="space-y-2"><Label>Completed By</Label><Input placeholder="e.g. Operations Team" value={form.completedBy} onChange={e => setForm(p => ({ ...p, completedBy: e.target.value }))} /></div>
+                <div className="space-y-2"><Label>Location</Label><Input placeholder="e.g. Training Room A" value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))} /></div>
               </div>
             </ScrollArea>
             <DialogFooter>
@@ -12380,7 +12636,7 @@ function SafetyTrainingPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {kpis.map(k => { const Icon = k.icon; return (
+        {kpiCards.map(k => { const Icon = k.icon; return (
           <Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
@@ -12393,44 +12649,25 @@ function SafetyTrainingPage() {
       </div>
 
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
-        <CardHeader className="pb-3"><CardTitle className="text-base">Department Compliance</CardTitle><CardDescription className="text-xs">Training completion rates by department</CardDescription></CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {deptCompliance.map(d => (
-              <div key={d.dept} className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{d.dept}</span>
-                  <span className={`font-semibold ${d.rate >= 85 ? 'text-emerald-600' : d.rate >= 70 ? 'text-amber-600' : 'text-red-600'}`}>{d.rate}%</span>
-                </div>
-                <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
-                  <div className={`h-full rounded-full transition-all ${d.rate >= 85 ? 'bg-emerald-500' : d.rate >= 70 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${d.rate}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
         <CardContent className="p-4 sm:p-6">
           <div className="filter-row mb-4">
             <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search courses..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="overdue">Overdue</SelectItem><SelectItem value="not_started">Not Started</SelectItem></SelectContent></Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
           </div>
           <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
             <Table>
-              <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">Course Name</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Required For</TableHead><TableHead className="font-semibold">Duration</TableHead><TableHead className="font-semibold">Completed By</TableHead><TableHead className="font-semibold">Due Date</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+              <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">Course Name</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Trainer</TableHead><TableHead className="font-semibold">Duration</TableHead><TableHead className="font-semibold">Location</TableHead><TableHead className="font-semibold">Scheduled Date</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
               <TableBody>
                 {filtered.length === 0 ? <TableRow><TableCell colSpan={8}><EmptyState icon={GraduationCap} title="No courses found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(t => (
                   <TableRow key={t.id} className="cursor-pointer hover:bg-muted/30">
-                    <TableCell className="font-medium max-w-[220px] truncate">{t.courseName}</TableCell>
-                    <TableCell><Badge variant="outline" className={typeColors[t.type] || ''}>{t.type}</Badge></TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{t.requiredFor}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{t.duration}</TableCell>
-                    <TableCell className="text-sm max-w-[150px] truncate">{t.completedBy}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap"><span className={t.status === 'overdue' ? 'text-red-600 font-medium' : ''}>{formatDate(t.dueDate)}</span></TableCell>
-                    <TableCell><Badge variant="outline" className={statusColors[t.status] || ''}>{t.status.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                    <TableCell className="font-medium max-w-[220px] truncate">{t.title}</TableCell>
+                    <TableCell><Badge variant="outline" className={typeColors[t.type] || ''}>{t.type?.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{t.trainer || '—'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{t.durationHours ? `${t.durationHours}h` : '—'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{t.location || '—'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(t.scheduledDate)}</TableCell>
+                    <TableCell><Badge variant="outline" className={statusColors[t.status] || ''}>{t.status?.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(t.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -12450,59 +12687,86 @@ function SafetyEquipmentPage() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [equipment, setEquipment] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [kpis, setKpis] = useState<any>({ total: 0, available: 0, inUse: 0, expired: 0, disposed: 0, dueInspection: 0 });
   const [form, setForm] = useState({ name: '', type: 'ppe', location: '', lastInspection: '', nextInspection: '' });
+
+  const fetchData = async () => {
+    try {
+      const res = await api.get<any>('/api/safety-equipment');
+      if (res.success) {
+        setEquipment(res.data || []);
+        if (res.kpis) setKpis(res.kpis);
+      }
+    } catch {} finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const getDisplayStatus = (eq: any) => {
+    if (eq.status === 'expired' || (eq.expiryDate && new Date(eq.expiryDate) < new Date())) return 'expired';
+    if (eq.status === 'disposed') return 'disposed';
+    if (eq.nextInspection && new Date(eq.nextInspection) < new Date(Date.now() + 30 * 86400000)) return 'expiring';
+    if (!eq.nextInspection && !eq.lastInspected) return 'not_inspected';
+    return 'valid';
+  };
 
   const statusColors: Record<string, string> = {
     valid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     expiring: 'bg-amber-50 text-amber-700 border-amber-200',
     expired: 'bg-red-50 text-red-700 border-red-200',
     not_inspected: 'bg-slate-100 text-slate-500 border-slate-200',
+    disposed: 'bg-zinc-100 text-zinc-500 border-zinc-200',
+    in_use: 'bg-sky-50 text-sky-700 border-sky-200',
   };
   const typeColors: Record<string, string> = {
     ppe: 'bg-sky-50 text-sky-700 border-sky-200',
     fire_extinguisher: 'bg-red-50 text-red-600 border-red-200',
     first_aid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    guard: 'bg-orange-50 text-orange-700 border-orange-200',
-    device: 'bg-violet-50 text-violet-700 border-violet-200',
+    gas_detector: 'bg-violet-50 text-violet-700 border-violet-200',
+    spill_kit: 'bg-orange-50 text-orange-700 border-orange-200',
   };
 
-  const equipment = useMemo(() => [
-    { id: 'SEQ-001', name: 'Safety Helmet – White (x12)', type: 'ppe', location: 'Stores Room A', lastInspection: '2025-01-10', nextInspection: '2025-04-10', status: 'valid' },
-    { id: 'SEQ-002', name: 'ABC Fire Extinguisher', type: 'fire_extinguisher', location: 'Building A – Floor 2', lastInspection: '2025-01-05', nextInspection: '2025-07-05', status: 'valid' },
-    { id: 'SEQ-003', name: 'Emergency First Aid Kit', type: 'first_aid', location: 'Workshop 1', lastInspection: '2024-12-20', nextInspection: '2025-01-20', status: 'expiring' },
-    { id: 'SEQ-004', name: '4-Gas Detector – Monitor', type: 'device', location: 'Lab 2', lastInspection: '2024-06-15', nextInspection: '2024-12-15', status: 'expired' },
-    { id: 'SEQ-005', name: 'Full Body Harness', type: 'ppe', location: 'Warehouse D', lastInspection: '2025-01-08', nextInspection: '2025-07-08', status: 'valid' },
-    { id: 'SEQ-006', name: 'CO2 Fire Extinguisher', type: 'fire_extinguisher', location: 'Server Room', lastInspection: '2024-11-01', nextInspection: '2025-01-15', status: 'expired' },
-    { id: 'SEQ-007', name: 'Machine Guard – Lathe', type: 'guard', location: 'Workshop 2', lastInspection: '2024-12-01', nextInspection: '2025-01-18', status: 'expiring' },
-    { id: 'SEQ-008', name: 'Safety Goggles – Pack (x20)', type: 'ppe', location: 'Stores Room A', lastInspection: '', nextInspection: '', status: 'not_inspected' },
-    { id: 'SEQ-009', name: 'Chemical Resistant Gloves', type: 'ppe', location: 'Lab 1', lastInspection: '2025-01-03', nextInspection: '2025-04-03', status: 'valid' },
-    { id: 'SEQ-010', name: 'Emergency Escape Respirator', type: 'device', location: 'Building B – Stairwell', lastInspection: '2024-10-15', nextInspection: '2025-01-25', status: 'expiring' },
-  ], []);
-
   const filtered = useMemo(() => equipment.filter(eq => {
-    if (search && !eq.name.toLowerCase().includes(search.toLowerCase()) && !eq.id.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !eq.name.toLowerCase().includes(search.toLowerCase()) && !(eq.code || '').toLowerCase().includes(search.toLowerCase())) return false;
     if (typeFilter !== 'all' && eq.type !== typeFilter) return false;
-    if (statusFilter !== 'all' && eq.status !== statusFilter) return false;
+    if (statusFilter !== 'all' && getDisplayStatus(eq) !== statusFilter) return false;
     return true;
   }), [equipment, search, typeFilter, statusFilter]);
 
-  const inspectedCount = equipment.filter(e => e.status === 'valid' || e.status === 'expiring').length;
-  const expiredCount = equipment.filter(e => e.status === 'expired').length;
-  const dueCount = equipment.filter(e => e.status === 'expiring' || e.status === 'not_inspected').length;
+  const kpiCards = [
+    { label: 'Total Equipment', value: kpis.total, icon: HardHat, color: 'from-emerald-500 to-teal-500' },
+    { label: 'Available', value: kpis.available, icon: CheckCircle2, color: 'from-sky-500 to-blue-500' },
+    { label: 'Expired', value: kpis.expired, icon: XCircle, color: 'from-red-500 to-orange-500' },
+    { label: 'Due for Inspection', value: kpis.dueInspection, icon: AlertTriangle, color: 'from-amber-500 to-yellow-500' },
+  ];
 
-  const kpis = useMemo(() => [
-    { label: 'Total Equipment', value: equipment.length, icon: HardHat, color: 'from-emerald-500 to-teal-500' },
-    { label: 'Inspected', value: inspectedCount, icon: CheckCircle2, color: 'from-sky-500 to-blue-500' },
-    { label: 'Expired', value: expiredCount, icon: XCircle, color: 'from-red-500 to-orange-500' },
-    { label: 'Due for Inspection', value: dueCount, icon: AlertTriangle, color: 'from-amber-500 to-yellow-500' },
-  ], [inspectedCount, expiredCount, dueCount]);
-
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!form.name) { toast.error('Equipment name is required'); return; }
-    toast.success(`Equipment "${form.name}" registered successfully`);
-    setDialogOpen(false);
-    setForm({ name: '', type: 'ppe', location: '', lastInspection: '', nextInspection: '' });
+    try {
+      const res = await api.post('/api/safety-equipment', {
+        name: form.name, type: form.type, location: form.location || null,
+        lastInspected: form.lastInspection || null, nextInspection: form.nextInspection || null,
+      });
+      if (res.success) {
+        toast.success(`Equipment "${form.name}" registered successfully`);
+        setDialogOpen(false);
+        setForm({ name: '', type: 'ppe', location: '', lastInspection: '', nextInspection: '' });
+        fetchData();
+      } else { toast.error(res.error || 'Failed to register equipment'); }
+    } catch { toast.error('Failed to register equipment'); }
   };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await api.delete(`/api/safety-equipment/${id}`);
+      if (res.success) { toast.success('Equipment deleted'); fetchData(); }
+      else { toast.error(res.error || 'Failed to delete'); }
+    } catch { toast.error('Failed to delete'); }
+  };
+
+  if (loading) return <LoadingSkeleton />;
 
   return (
     <div className="page-content">
@@ -12520,7 +12784,7 @@ function SafetyEquipmentPage() {
                 <div className="space-y-2"><Label>Equipment Name</Label><Input placeholder="e.g. Safety Helmet" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
                 <div className="space-y-2"><Label>Type</Label>
                   <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ppe">PPE</SelectItem><SelectItem value="fire_extinguisher">Fire Extinguisher</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="guard">Guard</SelectItem><SelectItem value="device">Device</SelectItem></SelectContent>
+                    <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ppe">PPE</SelectItem><SelectItem value="fire_extinguisher">Fire Extinguisher</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="gas_detector">Gas Detector</SelectItem><SelectItem value="spill_kit">Spill Kit</SelectItem></SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2"><Label>Location</Label><Input placeholder="Storage location" value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))} /></div>
@@ -12539,7 +12803,7 @@ function SafetyEquipmentPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {kpis.map(k => { const Icon = k.icon; return (
+        {kpiCards.map(k => { const Icon = k.icon; return (
           <Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
@@ -12555,25 +12819,28 @@ function SafetyEquipmentPage() {
         <CardContent className="p-4 sm:p-6">
           <div className="filter-row mb-4">
             <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search equipment..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
-            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="ppe">PPE</SelectItem><SelectItem value="fire_extinguisher">Fire Extinguisher</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="guard">Guard</SelectItem><SelectItem value="device">Device</SelectItem></SelectContent></Select>
+            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-[170px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="ppe">PPE</SelectItem><SelectItem value="fire_extinguisher">Fire Extinguisher</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="gas_detector">Gas Detector</SelectItem><SelectItem value="spill_kit">Spill Kit</SelectItem></SelectContent></Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="valid">Valid</SelectItem><SelectItem value="expiring">Expiring</SelectItem><SelectItem value="expired">Expired</SelectItem><SelectItem value="not_inspected">Not Inspected</SelectItem></SelectContent></Select>
           </div>
           <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
             <Table>
               <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Equipment Name</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Location</TableHead><TableHead className="font-semibold">Last Inspection</TableHead><TableHead className="font-semibold">Next Inspection</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
               <TableBody>
-                {filtered.length === 0 ? <TableRow><TableCell colSpan={8}><EmptyState icon={HardHat} title="No equipment found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(eq => (
+                {filtered.length === 0 ? <TableRow><TableCell colSpan={8}><EmptyState icon={HardHat} title="No equipment found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(eq => {
+                  const dStatus = getDisplayStatus(eq);
+                  return (
                   <TableRow key={eq.id} className="cursor-pointer hover:bg-muted/30">
-                    <TableCell className="font-mono text-xs font-semibold">{eq.id}</TableCell>
+                    <TableCell className="font-mono text-xs font-semibold">{eq.code}</TableCell>
                     <TableCell className="font-medium max-w-[220px] truncate">{eq.name}</TableCell>
-                    <TableCell><Badge variant="outline" className={typeColors[eq.type] || ''}>{eq.type.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell><Badge variant="outline" className={typeColors[eq.type] || ''}>{eq.type?.replace(/_/g, ' ')}</Badge></TableCell>
                     <TableCell className="text-sm"><div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="truncate max-w-[140px]">{eq.location}</span></div></TableCell>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(eq.lastInspection)}</TableCell>
-                    <TableCell className="text-sm whitespace-nowrap"><span className={eq.status === 'expired' ? 'text-red-600 font-medium' : eq.status === 'expiring' ? 'text-amber-600 font-medium' : 'text-muted-foreground'}>{formatDate(eq.nextInspection)}</span></TableCell>
-                    <TableCell><Badge variant="outline" className={statusColors[eq.status] || ''}>{eq.status.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(eq.lastInspected)}</TableCell>
+                    <TableCell className="text-sm whitespace-nowrap"><span className={dStatus === 'expired' ? 'text-red-600 font-medium' : dStatus === 'expiring' ? 'text-amber-600 font-medium' : 'text-muted-foreground'}>{formatDate(eq.nextInspection)}</span></TableCell>
+                    <TableCell><Badge variant="outline" className={statusColors[dStatus] || ''}>{dStatus?.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(eq.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -12591,49 +12858,70 @@ function SafetyPermitsPage() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [permits, setPermits] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [kpis, setKpis] = useState<any>({ total: 0, active: 0, pending: 0, expired: 0, completed: 0, cancelled: 0 });
   const [safetyMeasures, setSafetyMeasures] = useState(['', '', '']);
-  const [form, setForm] = useState({ type: 'hot_work', description: '', area: '', requestedBy: '', validFrom: '', validUntil: '' });
+  const [form, setForm] = useState({ type: 'hot_work', title: '', description: '', area: '', validFrom: '', validUntil: '' });
 
-  const statusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', pending: 'bg-amber-50 text-amber-700 border-amber-200', expired: 'bg-red-50 text-red-700 border-red-200', revoked: 'bg-slate-100 text-slate-500 border-slate-300' };
-  const typeColors: Record<string, string> = { hot_work: 'bg-red-50 text-red-600 border-red-200', confined_space: 'bg-orange-50 text-orange-700 border-orange-200', height: 'bg-sky-50 text-sky-700 border-sky-200', electrical: 'bg-violet-50 text-violet-700 border-violet-200', excavation: 'bg-amber-50 text-amber-700 border-amber-200' };
+  const fetchData = async () => {
+    try {
+      const res = await api.get<any>('/api/safety-permits');
+      if (res.success) {
+        setPermits(res.data || []);
+        if (res.kpis) setKpis(res.kpis);
+      }
+    } catch {} finally { setLoading(false); }
+  };
 
-  const permits = useMemo(() => [
-    { id: 'PMT-001', type: 'hot_work', description: 'Welding near fuel storage area', status: 'active', requestedBy: 'James Carter', area: 'Tank Farm', validFrom: '2025-01-15', validUntil: '2025-01-20' },
-    { id: 'PMT-002', type: 'confined_space', description: 'Tank cleaning in reactor vessel', status: 'active', requestedBy: 'Maria Lopez', area: 'Reactor Bay', validFrom: '2025-01-14', validUntil: '2025-01-18' },
-    { id: 'PMT-003', type: 'electrical', description: 'HVAC panel replacement – Building A', status: 'pending', requestedBy: 'Robert Chen', area: 'Building A', validFrom: '2025-01-22', validUntil: '2025-01-25' },
-    { id: 'PMT-004', type: 'excavation', description: 'Underground pipe repair near entrance', status: 'pending', requestedBy: 'Sarah Kim', area: 'Main Entrance', validFrom: '2025-01-20', validUntil: '2025-01-23' },
-    { id: 'PMT-005', type: 'height', description: 'Roof maintenance on Warehouse D', status: 'active', requestedBy: 'David Park', area: 'Warehouse D', validFrom: '2025-01-16', validUntil: '2025-01-19' },
-    { id: 'PMT-006', type: 'hot_work', description: 'Pipe cutting in Workshop 1', status: 'expired', requestedBy: 'Lisa Nguyen', area: 'Workshop 1', validFrom: '2025-01-01', validUntil: '2025-01-05' },
-    { id: 'PMT-007', type: 'electrical', description: 'Emergency lighting repair', status: 'revoked', requestedBy: 'Tom Harris', area: 'Corridor B', validFrom: '2024-12-28', validUntil: '2025-01-02' },
-    { id: 'PMT-008', type: 'confined_space', description: 'Manhole inspection – Zone C', status: 'expired', requestedBy: 'Emma Wright', area: 'Zone C', validFrom: '2025-01-05', validUntil: '2025-01-08' },
-  ], []);
+  useEffect(() => { fetchData(); }, []);
+
+  const statusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', pending: 'bg-amber-50 text-amber-700 border-amber-200', expired: 'bg-red-50 text-red-700 border-red-200', cancelled: 'bg-slate-100 text-slate-500 border-slate-300', completed: 'bg-sky-50 text-sky-700 border-sky-200', approved: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+  const typeColors: Record<string, string> = { hot_work: 'bg-red-50 text-red-600 border-red-200', confined_space: 'bg-orange-50 text-orange-700 border-orange-200', elevated_work: 'bg-sky-50 text-sky-700 border-sky-200', electrical: 'bg-violet-50 text-violet-700 border-violet-200', excavation: 'bg-amber-50 text-amber-700 border-amber-200' };
 
   const filtered = useMemo(() => permits.filter(p => {
-    if (search && !p.description.toLowerCase().includes(search.toLowerCase()) && !p.id.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !p.description.toLowerCase().includes(search.toLowerCase()) && !(p.permitNumber || '').toLowerCase().includes(search.toLowerCase())) return false;
     if (typeFilter !== 'all' && p.type !== typeFilter) return false;
     if (statusFilter !== 'all' && p.status !== statusFilter) return false;
     return true;
   }), [permits, search, typeFilter, statusFilter]);
 
-  const activeCount = permits.filter(p => p.status === 'active').length;
-  const expiredCount = permits.filter(p => p.status === 'expired').length;
-  const pendingCount = permits.filter(p => p.status === 'pending').length;
-  const revokedCount = permits.filter(p => p.status === 'revoked').length;
+  const kpiCards = [
+    { label: 'Active Permits', value: kpis.active, icon: CheckCircle2, color: 'from-emerald-500 to-teal-500' },
+    { label: 'Expired', value: kpis.expired, icon: XCircle, color: 'from-red-500 to-orange-500' },
+    { label: 'Pending Approval', value: kpis.pending, icon: Clock, color: 'from-amber-500 to-yellow-500' },
+    { label: 'Cancelled', value: kpis.cancelled, icon: ShieldAlert, color: 'from-slate-500 to-slate-600' },
+  ];
 
-  const kpis = useMemo(() => [
-    { label: 'Active Permits', value: activeCount, icon: CheckCircle2, color: 'from-emerald-500 to-teal-500' },
-    { label: 'Expired', value: expiredCount, icon: XCircle, color: 'from-red-500 to-orange-500' },
-    { label: 'Pending Approval', value: pendingCount, icon: Clock, color: 'from-amber-500 to-yellow-500' },
-    { label: 'Revoked', value: revokedCount, icon: ShieldAlert, color: 'from-slate-500 to-slate-600' },
-  ], [activeCount, expiredCount, pendingCount, revokedCount]);
-
-  const handleCreate = () => {
-    if (!form.description) { toast.error('Description is required'); return; }
-    toast.success(`Permit for "${form.type.replace(/_/g, ' ')}" submitted successfully`);
-    setDialogOpen(false);
-    setForm({ type: 'hot_work', description: '', area: '', requestedBy: '', validFrom: '', validUntil: '' });
-    setSafetyMeasures(['', '', '']);
+  const handleCreate = async () => {
+    if (!form.title) { toast.error('Title is required'); return; }
+    if (!form.validFrom || !form.validUntil) { toast.error('Valid from and valid until dates are required'); return; }
+    try {
+      const precautions = safetyMeasures.filter(m => m.trim());
+      const res = await api.post('/api/safety-permits', {
+        title: form.title, type: form.type, description: form.description || '',
+        location: form.area || null, startDate: form.validFrom, endDate: form.validUntil,
+        precautions: JSON.stringify(precautions),
+      });
+      if (res.success) {
+        toast.success(`Permit for "${form.type.replace(/_/g, ' ')}" submitted successfully`);
+        setDialogOpen(false);
+        setForm({ type: 'hot_work', title: '', description: '', area: '', validFrom: '', validUntil: '' });
+        setSafetyMeasures(['', '', '']);
+        fetchData();
+      } else { toast.error(res.error || 'Failed to create permit'); }
+    } catch { toast.error('Failed to create permit'); }
   };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await api.delete(`/api/safety-permits/${id}`);
+      if (res.success) { toast.success('Permit deleted'); fetchData(); }
+      else { toast.error(res.error || 'Failed to delete'); }
+    } catch { toast.error('Failed to delete'); }
+  };
+
+  if (loading) return <LoadingSkeleton />;
 
   return (
     <div className="page-content">
@@ -12650,13 +12938,13 @@ function SafetyPermitsPage() {
               <div className="space-y-4 py-2 pr-3">
                 <div className="space-y-2"><Label>Permit Type</Label>
                   <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="hot_work">Hot Work</SelectItem><SelectItem value="confined_space">Confined Space</SelectItem><SelectItem value="height">Working at Height</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="excavation">Excavation</SelectItem></SelectContent>
+                    <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="hot_work">Hot Work</SelectItem><SelectItem value="confined_space">Confined Space</SelectItem><SelectItem value="elevated_work">Working at Height</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="excavation">Excavation</SelectItem></SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-2"><Label>Title</Label><Input placeholder="Permit title" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} /></div>
                 <div className="space-y-2"><Label>Description</Label><Textarea placeholder="Describe the work activity..." rows={3} value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Area</Label><Input placeholder="Work location" value={form.area} onChange={e => setForm(p => ({ ...p, area: e.target.value }))} /></div>
-                  <div className="space-y-2"><Label>Requested By</Label><Input placeholder="Your name" value={form.requestedBy} onChange={e => setForm(p => ({ ...p, requestedBy: e.target.value }))} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Valid From</Label><Input type="date" value={form.validFrom} onChange={e => setForm(p => ({ ...p, validFrom: e.target.value }))} /></div>
@@ -12688,7 +12976,7 @@ function SafetyPermitsPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {kpis.map(k => { const Icon = k.icon; return (
+        {kpiCards.map(k => { const Icon = k.icon; return (
           <Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
@@ -12704,8 +12992,8 @@ function SafetyPermitsPage() {
         <CardContent className="p-4 sm:p-6">
           <div className="filter-row mb-4">
             <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search permits..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
-            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-[170px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="hot_work">Hot Work</SelectItem><SelectItem value="confined_space">Confined Space</SelectItem><SelectItem value="height">Working at Height</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="excavation">Excavation</SelectItem></SelectContent></Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="expired">Expired</SelectItem><SelectItem value="revoked">Revoked</SelectItem></SelectContent></Select>
+            <Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-[170px]"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="hot_work">Hot Work</SelectItem><SelectItem value="confined_space">Confined Space</SelectItem><SelectItem value="elevated_work">Working at Height</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="excavation">Excavation</SelectItem></SelectContent></Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="expired">Expired</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
           </div>
           <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
             <Table>
@@ -12713,15 +13001,15 @@ function SafetyPermitsPage() {
               <TableBody>
                 {filtered.length === 0 ? <TableRow><TableCell colSpan={9}><EmptyState icon={FileCheck} title="No permits found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(p => (
                   <TableRow key={p.id} className="cursor-pointer hover:bg-muted/30">
-                    <TableCell className="font-mono text-xs font-semibold">{p.id}</TableCell>
-                    <TableCell><Badge variant="outline" className={typeColors[p.type] || ''}>{p.type.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell className="font-medium max-w-[200px] truncate">{p.description}</TableCell>
-                    <TableCell className="text-sm"><div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="truncate max-w-[120px]">{p.area}</span></div></TableCell>
-                    <TableCell><div className="flex items-center gap-2"><Avatar className="h-6 w-6"><AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700">{getInitials(p.requestedBy)}</AvatarFallback></Avatar><span className="text-sm whitespace-nowrap">{p.requestedBy}</span></div></TableCell>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(p.validFrom)}</TableCell>
-                    <TableCell className="text-sm whitespace-nowrap"><span className={p.status === 'expired' || p.status === 'revoked' ? 'text-red-600 font-medium' : 'text-muted-foreground'}>{formatDate(p.validUntil)}</span></TableCell>
-                    <TableCell><Badge variant="outline" className={statusColors[p.status] || ''}>{p.status}</Badge></TableCell>
-                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600"><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                    <TableCell className="font-mono text-xs font-semibold">{p.permitNumber}</TableCell>
+                    <TableCell><Badge variant="outline" className={typeColors[p.type] || ''}>{p.type?.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell className="font-medium max-w-[200px] truncate">{p.description || p.title}</TableCell>
+                    <TableCell className="text-sm"><div className="flex items-center gap-1.5"><MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" /><span className="truncate max-w-[120px]">{p.location}</span></div></TableCell>
+                    <TableCell><div className="flex items-center gap-2"><Avatar className="h-6 w-6"><AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700">{getInitials(p.requestedBy?.fullName || '')}</AvatarFallback></Avatar><span className="text-sm whitespace-nowrap">{p.requestedBy?.fullName || ''}</span></div></TableCell>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(p.startDate)}</TableCell>
+                    <TableCell className="text-sm whitespace-nowrap"><span className={p.status === 'expired' || p.status === 'cancelled' ? 'text-red-600 font-medium' : 'text-muted-foreground'}>{formatDate(p.endDate)}</span></TableCell>
+                    <TableCell><Badge variant="outline" className={statusColors[p.status] || ''}>{p.status?.replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(p.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -13732,27 +14020,61 @@ function ReportsCustomPage() {
 // ============================================================================
 
 function SettingsGeneralPage() {
-  const [profile, setProfile] = useState<any>(() => {
-    if (typeof window === 'undefined') return { timezone: 'UTC', currency: 'USD', dateFormat: 'MM/DD/YYYY', companyName: '' };
-    try { const s = localStorage.getItem('iassetspro_company_profile'); return s ? JSON.parse(s) : { timezone: 'UTC', currency: 'USD', dateFormat: 'MM/DD/YYYY', companyName: '' }; } catch { return { timezone: 'UTC', currency: 'USD', dateFormat: 'MM/DD/YYYY', companyName: '' }; }
-  });
+  const [profile, setProfile] = useState<any>({ timezone: 'UTC', currency: 'USD', dateFormat: 'MM/DD/YYYY', companyName: '' });
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/api/company-profile').then(res => {
+      if (res.success && res.data) {
+        setProfile(prev => ({
+          ...prev,
+          companyName: res.data.companyName || prev.companyName,
+          timezone: res.data.timezone || prev.timezone,
+          currency: res.data.currency || prev.currency,
+          dateFormat: res.data.dateFormat || prev.dateFormat,
+        }));
+      }
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
-    await new Promise(r => setTimeout(r, 800));
-    localStorage.setItem('iassetspro_company_profile', JSON.stringify(profile));
-    toast.success('General settings saved');
+    try {
+      const res = await api.put('/api/company-profile', {
+        companyName: profile.companyName,
+        timezone: profile.timezone,
+        currency: profile.currency,
+        dateFormat: profile.dateFormat,
+      });
+      if (res.success) {
+        toast.success('General settings saved');
+      } else {
+        toast.error(res.error || 'Failed to save settings');
+      }
+    } catch {
+      toast.error('Failed to save settings');
+    }
     setSaving(false);
   };
+
+  if (loading) {
+    return (
+      <div className="page-content flex items-center justify-center min-h-[40vh]">
+        <div className="text-center"><RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-muted-foreground" /><p className="text-sm text-muted-foreground">Loading settings…</p></div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">General Settings</h1><p className="text-muted-foreground mt-1">Configure system-wide preferences and defaults</p></div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
-          <CardHeader><CardTitle className="text-base">Regional Settings</CardTitle><CardDescription>Timezone, currency, and date format</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-base">Company & Regional Settings</CardTitle><CardDescription>Company name, timezone, currency, and date format</CardDescription></CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-2"><Label>Company Name</Label><Input value={profile.companyName || ''} onChange={e => setProfile(p => ({ ...p, companyName: e.target.value }))} placeholder="iAssetsPro" /></div>
             <div className="space-y-2"><Label>Timezone</Label><Select value={profile.timezone} onValueChange={v => setProfile(p => ({ ...p, timezone: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="UTC">UTC</SelectItem><SelectItem value="America/New_York">Eastern Time</SelectItem><SelectItem value="America/Chicago">Central Time</SelectItem><SelectItem value="America/Denver">Mountain Time</SelectItem><SelectItem value="America/Los_Angeles">Pacific Time</SelectItem><SelectItem value="Europe/London">London (GMT)</SelectItem><SelectItem value="Africa/Accra">Accra (GMT)</SelectItem></SelectContent></Select></div>
             <div className="space-y-2"><Label>Currency</Label><Select value={profile.currency} onValueChange={v => setProfile(p => ({ ...p, currency: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="USD">USD ($)</SelectItem><SelectItem value="EUR">EUR (€)</SelectItem><SelectItem value="GBP">GBP (£)</SelectItem><SelectItem value="GHS">GHS (₵)</SelectItem><SelectItem value="NGN">NGN (₦)</SelectItem></SelectContent></Select></div>
             <div className="space-y-2"><Label>Date Format</Label><Select value={profile.dateFormat} onValueChange={v => setProfile(p => ({ ...p, dateFormat: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem><SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem><SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem><SelectItem value="DD-MMM-YYYY">DD-MMM-YYYY</SelectItem></SelectContent></Select></div>
@@ -13779,11 +14101,17 @@ function SettingsGeneralPage() {
 
 function SettingsNotificationsPage() {
   const [saving, setSaving] = useState(false);
-  const [channels, setChannels] = useState({ inApp: true, email: true, emailAddr: 'admin@company.com', sms: false, phone: '' });
-  const [quietHours, setQuietHours] = useState({ enabled: false, start: '22:00', end: '07:00', timezone: 'UTC' });
-  const [notifTypes, setNotifTypes] = useState({
-    woAssigned: true, woStatusChange: true, mrApprovedRejected: true, pmDue: true,
-    lowStockAlert: true, assetConditionAlert: false, systemNotifications: true,
+  const [channels, setChannels] = useState(() => {
+    try { const s = localStorage.getItem('iassetspro_notif_settings'); if (s) { const saved = JSON.parse(s); return saved.channels || { inApp: true, email: true, emailAddr: 'admin@company.com', sms: false, phone: '' }; } } catch { /* ignore */ }
+    return { inApp: true, email: true, emailAddr: 'admin@company.com', sms: false, phone: '' };
+  });
+  const [quietHours, setQuietHours] = useState(() => {
+    try { const s = localStorage.getItem('iassetspro_notif_settings'); if (s) { const saved = JSON.parse(s); return saved.quietHours || { enabled: false, start: '22:00', end: '07:00', timezone: 'UTC' }; } } catch { /* ignore */ }
+    return { enabled: false, start: '22:00', end: '07:00', timezone: 'UTC' };
+  });
+  const [notifTypes, setNotifTypes] = useState(() => {
+    try { const s = localStorage.getItem('iassetspro_notif_settings'); if (s) { const saved = JSON.parse(s); return saved.notifTypes || { woAssigned: true, woStatusChange: true, mrApprovedRejected: true, pmDue: true, lowStockAlert: true, assetConditionAlert: false, systemNotifications: true }; } } catch { /* ignore */ }
+    return { woAssigned: true, woStatusChange: true, mrApprovedRejected: true, pmDue: true, lowStockAlert: true, assetConditionAlert: false, systemNotifications: true };
   });
 
   const typeLabels: Record<string, { label: string; desc: string }> = {
@@ -13798,7 +14126,6 @@ function SettingsNotificationsPage() {
 
   const handleSave = async () => {
     setSaving(true);
-    await new Promise(r => setTimeout(r, 800));
     localStorage.setItem('iassetspro_notif_settings', JSON.stringify({ channels, quietHours, notifTypes }));
     toast.success('Notification preferences saved');
     setSaving(false);
@@ -13902,26 +14229,47 @@ function SettingsIntegrationsPage() {
   const [configForm, setConfigForm] = useState({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' });
   const [saving, setSaving] = useState(false);
 
-  const integrations = [
-    { id: 'erp', name: 'ERP Integration', description: 'Connect to your enterprise resource planning system for data synchronization', icon: Server, connected: false, fields: ['url', 'apiKey', 'username', 'password'] },
-    { id: 'iot', name: 'IoT Platform', description: 'Stream sensor data from IoT devices and gateways into iAssetsPro', icon: Cpu, connected: true, fields: ['url', 'apiKey'] },
-    { id: 'email', name: 'Email Server', description: 'Configure SMTP settings for email notifications and reports delivery', icon: Mail, connected: true, fields: ['url', 'username', 'password'] },
-    { id: 'sms', name: 'SMS Gateway', description: 'Set up SMS delivery for critical alerts via your preferred gateway', icon: Smartphone, connected: false, fields: ['url', 'apiKey'] },
-    { id: 'webhooks', name: 'Webhooks', description: 'Send real-time event notifications to external systems via webhooks', icon: Globe, connected: false, fields: ['webhookUrl'] },
-    { id: 'ldap', name: 'LDAP / Active Directory', description: 'Sync users and authenticate via your organization\'s directory service', icon: Shield, connected: false, fields: ['url', 'username', 'password'] },
-  ];
+  const [integrations, setIntegrations] = useState(() => {
+    const defaults = [
+      { id: 'erp', name: 'ERP Integration', description: 'Connect to your enterprise resource planning system for data synchronization', icon: Server, connected: false, fields: ['url', 'apiKey', 'username', 'password'] },
+      { id: 'iot', name: 'IoT Platform', description: 'Stream sensor data from IoT devices and gateways into iAssetsPro', icon: Cpu, connected: false, fields: ['url', 'apiKey'] },
+      { id: 'email', name: 'Email Server', description: 'Configure SMTP settings for email notifications and reports delivery', icon: Mail, connected: false, fields: ['url', 'username', 'password'] },
+      { id: 'sms', name: 'SMS Gateway', description: 'Set up SMS delivery for critical alerts via your preferred gateway', icon: Smartphone, connected: false, fields: ['url', 'apiKey'] },
+      { id: 'webhooks', name: 'Webhooks', description: 'Send real-time event notifications to external systems via webhooks', icon: Globe, connected: false, fields: ['webhookUrl'] },
+      { id: 'ldap', name: 'LDAP / Active Directory', description: 'Sync users and authenticate via your organization\'s directory service', icon: Shield, connected: false, fields: ['url', 'username', 'password'] },
+    ];
+    try { const s = localStorage.getItem('iassetspro_integrations'); if (s) { const saved: Record<string, any> = JSON.parse(s); return defaults.map(i => ({ ...i, connected: saved[i.id]?.connected ?? i.connected })); } } catch { /* ignore */ }
+    return defaults;
+  });
 
   const openConfig = (integ: any) => {
     setSelected(integ);
-    setConfigForm({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' });
+    // Restore saved form values for this integration
+    try {
+      const s = localStorage.getItem('iassetspro_integrations');
+      if (s) {
+        const saved = JSON.parse(s);
+        const stored = saved[integ.id];
+        if (stored) setConfigForm({ url: stored.url || '', apiKey: stored.apiKey || '', username: stored.username || '', password: stored.password || '', webhookUrl: stored.webhookUrl || '' });
+        else setConfigForm({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' });
+      } else { setConfigForm({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' }); }
+    } catch { setConfigForm({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' }); }
     setConfigOpen(true);
   };
 
   const handleSave = async () => {
     if (!selected) return;
     setSaving(true);
-    await new Promise(r => setTimeout(r, 800));
-    toast.success(`${selected.name} configuration saved`);
+    try {
+      const s = localStorage.getItem('iassetspro_integrations');
+      const all = s ? JSON.parse(s) : {};
+      all[selected.id] = { ...configForm, connected: true };
+      localStorage.setItem('iassetspro_integrations', JSON.stringify(all));
+      setIntegrations(prev => prev.map(i => i.id === selected.id ? { ...i, connected: true } : i));
+      toast.success(`${selected.name} configuration saved`);
+    } catch {
+      toast.error('Failed to save configuration');
+    }
     setConfigOpen(false);
     setSelected(null);
     setSaving(false);
@@ -14023,20 +14371,83 @@ function SettingsBackupPage() {
 
   const handleBackup = async () => {
     setBackingUp(true);
-    await new Promise(r => setTimeout(r, 2000));
-    toast.success('Backup completed successfully');
+    try {
+      const endpoints = ['/api/company-profile', '/api/assets?limit=9999', '/api/inventory?limit=9999', '/api/work-orders?limit=9999', '/api/maintenance-requests?limit=9999'];
+      const keys = ['companyProfile', 'assets', 'inventory', 'workOrders', 'maintenanceRequests'];
+      const results: Record<string, any> = { exportedAt: new Date().toISOString(), version: '2.0.0' };
+      await Promise.all(endpoints.map(async (ep, i) => {
+        const res = await api.get(ep);
+        results[keys[i]] = res.data || res;
+      }));
+      const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `iassetspro-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Backup completed and downloaded successfully');
+    } catch (err: any) {
+      toast.error(err.message || 'Backup failed');
+    }
     setBackingUp(false);
   };
 
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
   const handleRestore = async () => {
-    setRestoring(true);
-    await new Promise(r => setTimeout(r, 2000));
-    toast.success('Data restored successfully');
-    setRestoring(false);
+    fileInputRef.current?.click();
   };
 
-  const handleExport = (type: string) => {
-    toast.success(`${type} export started. Download will begin shortly.`);
+  const onFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setRestoring(true);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data.exportedAt) {
+        toast.error('Invalid backup file format');
+      } else {
+        toast.success(`Backup file loaded (${new Date(data.exportedAt).toLocaleString()}). Restore would require a dedicated server endpoint.`);
+      }
+    } catch {
+      toast.error('Failed to read backup file');
+    }
+    setRestoring(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleExport = async (type: string) => {
+    let endpoint = '';
+    let filename = '';
+    if (type === 'Assets') { endpoint = '/api/assets?limit=9999'; filename = 'assets.csv'; }
+    else if (type === 'Inventory') { endpoint = '/api/inventory?limit=9999'; filename = 'inventory.csv'; }
+    else if (type === 'Work Orders') { endpoint = '/api/work-orders?limit=9999'; filename = 'work-orders.csv'; }
+    if (!endpoint) return;
+    try {
+      const res = await api.get(endpoint);
+      const items = Array.isArray(res.data) ? res.data : (Array.isArray(res) ? res : []);
+      if (items.length === 0) { toast.info(`No ${type.toLowerCase()} data to export`); return; }
+      const headers = Object.keys(items[0]);
+      const csvRows = [headers.join(',')];
+      for (const item of items) {
+        csvRows.push(headers.map(h => {
+          const val = String(item[h] ?? '');
+          return val.includes(',') || val.includes('"') || val.includes('\n') ? `"${val.replace(/"/g, '""')}"` : val;
+        }).join(','));
+      }
+      const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `iassetspro-${filename}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`${type} exported successfully`);
+    } catch {
+      toast.error(`Failed to export ${type.toLowerCase()}`);
+    }
   };
 
   return (
@@ -14045,6 +14456,7 @@ function SettingsBackupPage() {
         <h1 className="text-2xl font-bold tracking-tight">Backup & Restore</h1>
         <p className="text-muted-foreground mt-1">Manage system backups, data exports, and disaster recovery</p>
       </div>
+      <input ref={fileInputRef} type="file" accept=".json,.sql,.zip" className="hidden" onChange={onFileSelected} />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

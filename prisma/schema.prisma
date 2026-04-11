@@ -142,11 +142,14 @@ model User {
   // Safety Module relations
   safetyIncidentsReported SafetyIncident[]      @relation("SafetyIncidentReportedBy")
   safetyIncidentsInvestigated SafetyIncident[]  @relation("SafetyIncidentInvestigatedBy")
+  safetyPermitsRequested SafetyPermit[]         @relation("SafetyPermitRequestedBy")
+  safetyPermitsApproved  SafetyPermit[]         @relation("SafetyPermitApprovedBy")
 
   // Quality Module relations
   qualityInspections     QualityInspection[]   @relation("QIInspectedBy")
   ncrs                   NonConformanceReport[] @relation("NCRRaisedBy")
   qualityAudits          QualityAudit[]        @relation("QAuditedBy")
+  spcProcessesCreated    SpcProcess[]          @relation("SpcProcessCreatedBy")
 
   // Digital Twin relation
   digitalTwinsCreated    DigitalTwin[]      @relation("DigitalTwinCreatedBy")
@@ -1218,6 +1221,9 @@ model SafetyPermit {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  requestedBy       User      @relation("SafetyPermitRequestedBy", fields: [requestedById], references: [id])
+  approvedBy        User?     @relation("SafetyPermitApprovedBy", fields: [approvedById], references: [id])
+
   @@map("safety_permits")
 }
 
@@ -1344,6 +1350,24 @@ model CorrectiveAction {
   @@map("corrective_actions")
 }
 
+model SpcProcess {
+  id          String   @id @default(cuid())
+  processName String
+  parameter   String
+  unit        String   @default("")
+  specMin     Float?
+  specMax     Float?
+  target      Float?
+  status      String   @default("active")  // active, inactive
+  samples     String   // JSON array of sample values
+  createdById String
+  createdBy   User     @relation("SpcProcessCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+}
+
 // ============================================================================
 // 20. PRODUCTION MANAGEMENT
 // ============================================================================
@@ -1363,6 +1387,8 @@ model WorkCenter {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  productionOrders  ProductionOrder[]
+
   @@map("work_centers")
 }
 
@@ -1379,6 +1405,8 @@ model ProductionOrder {
   completedQty      Float     @default(0)
   unitCost          Float?
   workCenterId      String?
+
+  workCenter        WorkCenter?  @relation(fields: [workCenterId], references: [id])
   scheduledStart    DateTime?
   scheduledEnd      DateTime?
   actualStart       DateTime?

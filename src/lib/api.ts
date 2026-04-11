@@ -27,7 +27,13 @@ export async function apiFetch<T = any>(
       return { success: false, error: json.error || `Request failed with status ${res.status}` };
     }
 
-    return { success: true, data: json.data !== undefined ? json.data : json };
+    const result: { success: boolean; data?: T; kpis?: any; pagination?: any; error?: string } = {
+      success: true,
+      data: json.data !== undefined ? json.data : json,
+    };
+    if (json.kpis !== undefined) result.kpis = json.kpis;
+    if (json.pagination !== undefined) result.pagination = json.pagination;
+    return result;
   } catch (err: any) {
     return { success: false, error: err.message || 'Network error' };
   }
