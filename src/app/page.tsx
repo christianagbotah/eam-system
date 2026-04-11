@@ -1,8 +1,10 @@
 'use client';
 
 import React, { Suspense, lazy, useEffect, useState } from 'react';
+import { useAuthStore } from '@/stores/authStore';
+import LoginPage from '@/components/LoginPage';
 
-// Lazy load the heavy app shell - it only downloads after the initial page hydrates
+// Lazy load the heavy app shell - it only downloads after the user logs in
 const EAMApp = lazy(() => import('@/components/EAMApp'));
 
 function LoadingScreen() {
@@ -30,8 +32,9 @@ function LoadingScreen() {
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
+  const user = useAuthStore((s) => s.user);
 
-  // Ensure we're mounted before rendering lazy component
+  // Ensure we're mounted before rendering
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -40,6 +43,12 @@ export default function Home() {
     return <LoadingScreen />;
   }
 
+  // Not logged in → show the lightweight LoginPage (no lazy loading needed)
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  // Logged in → lazy-load the heavy EAMApp with a Suspense fallback
   return (
     <Suspense fallback={<LoadingScreen />}>
       <EAMApp />

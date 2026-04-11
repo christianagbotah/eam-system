@@ -750,3 +750,24 @@ Stage Summary:
 - Dev server compiles cleanly: GET / 200 in 4.4s
 - Login credentials: admin/admin123
 
+---
+Task ID: 3
+Agent: Main Agent + full-stack-developer sub-agent
+Task: Fix preview panel not loading - split monolithic EAMApp.tsx (7.4MB chunk)
+
+Work Log:
+- Diagnosed server startup issue: zombie next-server process holding port 3000
+- Identified root cause: EAMApp.tsx (15,302 lines) compiles to 7.4MB JS chunk, too large for preview iframe
+- Found missing `Send` import from lucide-react (line 14910) causing runtime crash in chat
+- Extracted LoginPage (lines 356-710) into separate `src/components/LoginPage.tsx` (385 lines, ~156KB chunk)
+- Rewrote `src/app/page.tsx` (57 lines) with auth-aware routing: shows LoginPage directly when not logged in, lazy-loads EAMApp only after login
+- Fixed `Send` import in EAMApp.tsx
+- Removed LoginPage function from EAMApp.tsx (trimmed from 15,302 to 14,943 lines)
+- Cleared .next cache for fresh compilation
+- Verified server compiles and renders: GET / 200 in 5.4s
+
+Stage Summary:
+- LoginPage now loads as a small ~156KB chunk (vs 7.4MB before)
+- The 7.4MB EAMApp chunk only downloads after user successfully logs in
+- `Send` icon import bug fixed (was causing ReferenceError in chat page)
+- Server compiles cleanly with no new errors
