@@ -184,6 +184,9 @@ import {
   Upload,
   Archive,
   Star,
+  Info,
+  Loader2,
+  Settings2,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, AreaChart, Area,
@@ -1965,7 +1968,14 @@ function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
 
   const handleAction = async (action: string, notes?: string) => {
     setActionLoading(true);
-    const res = await api.patch(`/api/maintenance-requests/${id}`, { action, reviewNotes: notes });
+    let res;
+    if (action === 'approve') {
+      res = await api.post(`/api/maintenance-requests/${id}/approve`, { notes: notes || '' });
+    } else if (action === 'reject') {
+      res = await api.post(`/api/maintenance-requests/${id}/reject`, { reason: notes || '' });
+    } else {
+      res = await api.put(`/api/maintenance-requests/${id}`, { action, reviewNotes: notes });
+    }
     if (res.success) {
       toast.success(`Request ${action === 'approve' ? 'approved' : 'rejected'} successfully`);
       handleRefresh();
@@ -1980,10 +1990,9 @@ function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
 
   const handleConvert = async () => {
     setActionLoading(true);
-    const res = await api.patch(`/api/maintenance-requests/${id}`, {
-      action: 'convert',
-      woTitle: mr?.title,
-      woPriority: mr?.priority,
+    const res = await api.post(`/api/maintenance-requests/${id}/convert`, {
+      title: mr?.title,
+      priority: mr?.priority,
     });
     if (res.success) {
       toast.success('Converted to Work Order');
@@ -1997,7 +2006,7 @@ function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
 
   const handleComment = async () => {
     if (!comment.trim()) return;
-    const res = await api.patch(`/api/maintenance-requests/${id}`, { action: 'comment', comment });
+    const res = await api.post(`/api/maintenance-requests/${id}/comments`, { content: comment });
     if (res.success) {
       toast.success('Comment added');
       setComment('');
@@ -2455,7 +2464,27 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
 
   const handleAction = async (action: string, extra?: Record<string, unknown>) => {
     setActionLoading(true);
-    const res = await api.patch(`/api/work-orders/${id}`, { action, ...extra });
+    let res;
+    switch (action) {
+      case 'assign':
+        res = await api.post(`/api/work-orders/${id}/assign`, { assignedTo: extra?.assignedToId, ...extra });
+        break;
+      case 'start':
+        res = await api.post(`/api/work-orders/${id}/start`, { notes: extra?.notes });
+        break;
+      case 'complete':
+        res = await api.post(`/api/work-orders/${id}/complete`, { notes: extra?.completionNotes, ...extra });
+        break;
+      case 'verify':
+      case 'close':
+        res = await api.post(`/api/work-orders/${id}/close`, { notes: extra?.notes });
+        break;
+      case 'approve':
+        res = await api.put(`/api/work-orders/${id}`, { status: 'approved', ...extra });
+        break;
+      default:
+        res = await api.put(`/api/work-orders/${id}`, { action, ...extra });
+    }
     if (res.success) {
       toast.success(`Work order ${action}d`);
       fetchWO();
@@ -2469,7 +2498,7 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
 
   const handleComment = async () => {
     if (!comment.trim()) return;
-    const res = await api.patch(`/api/work-orders/${id}`, { action: 'comment', comment });
+    const res = await api.post(`/api/work-orders/${id}/comments`, { content: comment });
     if (res.success) { toast.success('Comment added'); setComment(''); fetchWO(); }
   };
 
@@ -2490,7 +2519,7 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
   const handleEditWO = async () => {
     if (!editForm.title) { toast.error('Title is required'); return; }
     setActionLoading(true);
-    const payload: any = { action: 'update' };
+    const payload: any = {};
     if (editForm.title) payload.title = editForm.title;
     if (editForm.description !== undefined) payload.description = editForm.description;
     if (editForm.type) payload.type = editForm.type;
@@ -2501,7 +2530,7 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
     if (editForm.failureDescription !== undefined) payload.failureDescription = editForm.failureDescription;
     if (editForm.causeDescription !== undefined) payload.causeDescription = editForm.causeDescription;
     if (editForm.actionDescription !== undefined) payload.actionDescription = editForm.actionDescription;
-    const res = await api.patch(`/api/work-orders/${id}`, payload);
+    const res = await api.put(`/api/work-orders/${id}`, payload);
     if (res.success) { toast.success('Work order updated'); setEditOpen(false); fetchWO(); }
     else { toast.error(res.error || 'Update failed'); }
     setActionLoading(false);
@@ -7367,52 +7396,69 @@ function MaintenanceToolsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', category: '', location: '', serialNumber: '', assignedTo: '', condition: '' });
+  const [form, setForm] = useState({ name: '', category: '', location: '', serialNumber: '', condition: '' });
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [tools, setTools] = useState<any[]>([]);
+  const [kpis, setKpis] = useState({ total: 0, available: 0, checkedOut: 0, inRepair: 0, retired: 0 });
+
+  const fetchTools = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/tools');
+      if (res.success && res.data) {
+        setTools(Array.isArray(res.data) ? res.data : []);
+        if (res.kpis) setKpis(res.kpis);
+      }
+    } catch { /* empty */ }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchTools(); }, []);
 
   const toolStatusColors: Record<string, string> = {
     available: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
     checked_out: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800',
     in_repair: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
-    lost: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
+    transferred: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-800',
+    retired: 'bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-900/30 dark:text-slate-300 dark:border-slate-800',
   };
 
-  const kpis = [
-    { label: 'Total Tools', value: 67, icon: WrenchIcon, color: 'text-slate-600 bg-slate-50 dark:bg-slate-800/50 dark:text-slate-300' },
-    { label: 'Available', value: 52, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Checked Out', value: 12, icon: ArrowRightLeft, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Needs Repair', value: 3, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+  const kpiCards = [
+    { label: 'Total Tools', value: kpis.total, icon: WrenchIcon, color: 'text-slate-600 bg-slate-50 dark:bg-slate-800/50 dark:text-slate-300' },
+    { label: 'Available', value: kpis.available, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Checked Out', value: kpis.checkedOut, icon: ArrowRightLeft, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Needs Repair', value: kpis.inRepair, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
   ];
 
-  const tools = [
-    { id: 'TL-001', name: 'Torque Wrench 1/2"', category: 'hand_tool', location: 'Tool Room A-1', status: 'available', assignedTo: '-', lastReturnDate: '2025-01-12' },
-    { id: 'TL-002', name: 'Digital Multimeter', category: 'measuring', location: 'Electrical Shop', status: 'checked_out', assignedTo: 'Mike Rodriguez', lastReturnDate: '2025-01-10' },
-    { id: 'TL-003', name: 'Angle Grinder 4.5"', category: 'power_tool', location: 'Tool Room A-2', status: 'available', assignedTo: '-', lastReturnDate: '2025-01-14' },
-    { id: 'TL-004', name: 'Micrometer 0-25mm', category: 'measuring', location: 'Quality Lab', status: 'available', assignedTo: '-', lastReturnDate: '2025-01-08' },
-    { id: 'TL-005', name: 'Hydraulic Puller Set', category: 'specialty', location: 'Workshop B', status: 'in_repair', assignedTo: '-', lastReturnDate: '2024-12-28' },
-    { id: 'TL-006', name: 'Cordless Impact Driver', category: 'power_tool', location: 'Tool Room A-1', status: 'checked_out', assignedTo: 'James Miller', lastReturnDate: null },
-    { id: 'TL-007', name: 'Pipe Wrench 18"', category: 'hand_tool', location: 'Pipe Shop', status: 'available', assignedTo: '-', lastReturnDate: '2025-01-11' },
-    { id: 'TL-008', name: 'Thermal Imaging Camera', category: 'specialty', location: 'Electrical Shop', status: 'checked_out', assignedTo: 'Sarah Chen', lastReturnDate: null },
-    { id: 'TL-009', name: 'Oscilloscope Tektronix', category: 'measuring', location: 'Electrical Lab', status: 'available', assignedTo: '-', lastReturnDate: '2025-01-05' },
-    { id: 'TL-010', name: 'Reciprocating Saw', category: 'power_tool', location: 'Workshop A', status: 'in_repair', assignedTo: '-', lastReturnDate: '2024-12-20' },
-  ];
-
-  const filtered = tools.filter(t => {
-    const matchSearch = !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.id.toLowerCase().includes(search.toLowerCase()) || t.location.toLowerCase().includes(search.toLowerCase());
+  const filtered = tools.filter((t: any) => {
+    const matchSearch = !search || t.name?.toLowerCase().includes(search.toLowerCase()) || t.toolCode?.toLowerCase().includes(search.toLowerCase()) || t.location?.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === 'all' || t.status === statusFilter;
     return matchSearch && matchStatus;
   });
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    if (!form.name || !form.category) { toast.error('Tool name and category are required'); return; }
     setSaving(true);
-    setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ name: '', category: '', location: '', serialNumber: '', assignedTo: '', condition: '' }); toast.success('Tool added successfully'); }, 800);
+    try {
+      const res = await api.post('/api/tools', { ...form });
+      if (res.success) {
+        toast.success('Tool added successfully');
+        setCreateOpen(false);
+        setForm({ name: '', category: '', location: '', serialNumber: '', condition: '' });
+        fetchTools();
+      } else {
+        toast.error(res.error || 'Failed to add tool');
+      }
+    } catch { toast.error('Failed to add tool'); }
+    setSaving(false);
   };
 
   return (
     <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Tools</h1><p className="text-muted-foreground mt-1">Manage maintenance tool inventory, assignments, and condition tracking</p></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {kpis.map(k => { const I = k.icon; return (
+        {kpiCards.map(k => { const I = k.icon; return (
           <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
         ); })}
       </div>
@@ -7427,12 +7473,11 @@ function MaintenanceToolsPage() {
                 <div className="grid gap-4 py-2">
                   <div className="grid gap-2"><Label className="text-xs">Tool Name</Label><Input placeholder="e.g. Torque Wrench 1/2 inch" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="grid gap-2"><Label className="text-xs">Category</Label><Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger><SelectContent><SelectItem value="hand_tool">Hand Tool</SelectItem><SelectItem value="power_tool">Power Tool</SelectItem><SelectItem value="measuring">Measuring</SelectItem><SelectItem value="specialty">Specialty</SelectItem></SelectContent></Select></div>
+                    <div className="grid gap-2"><Label className="text-xs">Category</Label><Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger><SelectContent><SelectItem value="Hand Tool">Hand Tool</SelectItem><SelectItem value="Power Tool">Power Tool</SelectItem><SelectItem value="Measurement">Measurement</SelectItem><SelectItem value="Safety">Safety</SelectItem><SelectItem value="Specialty">Specialty</SelectItem></SelectContent></Select></div>
                     <div className="grid gap-2"><Label className="text-xs">Condition</Label><Select value={form.condition} onValueChange={v => setForm({ ...form, condition: v })}><SelectTrigger><SelectValue placeholder="Condition" /></SelectTrigger><SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent></Select></div>
                   </div>
                   <div className="grid gap-2"><Label className="text-xs">Location</Label><Input placeholder="e.g. Tool Room A-1" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} /></div>
                   <div className="grid gap-2"><Label className="text-xs">Serial Number</Label><Input placeholder="e.g. SN-2024-001" value={form.serialNumber} onChange={e => setForm({ ...form, serialNumber: e.target.value })} /></div>
-                  <div className="grid gap-2"><Label className="text-xs">Assigned To</Label><Input placeholder="Leave blank if unassigned" value={form.assignedTo} onChange={e => setForm({ ...form, assignedTo: e.target.value })} /></div>
                 </div>
                 <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving}>{saving ? 'Adding...' : 'Add Tool'}</Button></DialogFooter>
               </DialogContent>
@@ -7440,24 +7485,25 @@ function MaintenanceToolsPage() {
           </div>
           <div className="filter-row flex flex-col sm:flex-row gap-2 mt-3">
             <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="Search tools, locations..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} /></div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="available">Available</SelectItem><SelectItem value="checked_out">Checked Out</SelectItem><SelectItem value="in_repair">In Repair</SelectItem><SelectItem value="lost">Lost</SelectItem></SelectContent></Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="available">Available</SelectItem><SelectItem value="checked_out">Checked Out</SelectItem><SelectItem value="in_repair">In Repair</SelectItem><SelectItem value="retired">Retired</SelectItem></SelectContent></Select>
           </div>
         </CardHeader>
         <CardContent className="pt-0">
           <div className="overflow-x-auto">
-            <Table><TableHeader><TableRow><TableHead className="text-xs">ID</TableHead><TableHead className="text-xs">Tool Name</TableHead><TableHead className="text-xs hidden md:table-cell">Category</TableHead><TableHead className="text-xs hidden lg:table-cell">Location</TableHead><TableHead className="text-xs">Status</TableHead><TableHead className="text-xs hidden md:table-cell">Assigned To</TableHead><TableHead className="text-xs hidden lg:table-cell">Last Return</TableHead></TableRow></TableHeader><TableBody>
-              {filtered.map(t => (
+            <Table><TableHeader><TableRow><TableHead className="text-xs">Code</TableHead><TableHead className="text-xs">Tool Name</TableHead><TableHead className="text-xs hidden md:table-cell">Category</TableHead><TableHead className="text-xs hidden lg:table-cell">Location</TableHead><TableHead className="text-xs">Status</TableHead><TableHead className="text-xs hidden md:table-cell">Assigned To</TableHead><TableHead className="text-xs hidden lg:table-cell">Checked Out</TableHead></TableRow></TableHeader><TableBody>
+              {loading && <TableRow><TableCell colSpan={7}><div className="flex items-center justify-center py-8"><div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div></TableCell></TableRow>}
+              {!loading && filtered.map((t: any) => (
                 <TableRow key={t.id} className="hover:bg-muted/30">
-                  <TableCell className="font-mono text-xs">{t.id}</TableCell>
+                  <TableCell className="font-mono text-xs">{t.toolCode}</TableCell>
                   <TableCell className="font-medium text-sm">{t.name}</TableCell>
-                  <TableCell className="text-xs capitalize hidden md:table-cell">{t.category.replace(/_/g, ' ')}</TableCell>
-                  <TableCell className="text-xs hidden lg:table-cell"><div className="flex items-center gap-1"><MapPin className="h-3 w-3 text-muted-foreground" />{t.location}</div></TableCell>
-                  <TableCell><Badge variant="outline" className={`text-[10px] uppercase font-semibold ${toolStatusColors[t.status] || ''}`}>{t.status.replace(/_/g, ' ')}</Badge></TableCell>
-                  <TableCell className="text-xs hidden md:table-cell">{t.assignedTo}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{formatDate(t.lastReturnDate as string | undefined)}</TableCell>
+                  <TableCell className="text-xs hidden md:table-cell">{t.category?.replace(/_/g, ' ')}</TableCell>
+                  <TableCell className="text-xs hidden lg:table-cell"><div className="flex items-center gap-1"><MapPin className="h-3 w-3 text-muted-foreground" />{t.location || '-'}</div></TableCell>
+                  <TableCell><Badge variant="outline" className={`text-[10px] uppercase font-semibold ${toolStatusColors[t.status] || ''}`}>{t.status?.replace(/_/g, ' ')}</Badge></TableCell>
+                  <TableCell className="text-xs hidden md:table-cell">{t.assignedTo?.fullName || '-'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{formatDate(t.checkedOutAt)}</TableCell>
                 </TableRow>
               ))}
-              {filtered.length === 0 && <TableRow><TableCell colSpan={7}><EmptyState icon={WrenchIcon} title="No tools found" description="Adjust your search or filter criteria" /></TableCell></TableRow>}
+              {!loading && filtered.length === 0 && <TableRow><TableCell colSpan={7}><EmptyState icon={WrenchIcon} title="No tools found" description="Adjust your search or filter criteria" /></TableCell></TableRow>}
             </TableBody></Table>
           </div>
         </CardContent>
@@ -8440,59 +8486,85 @@ function InventoryReceivingPage() {
 // ============================================================================
 
 function IotDevicesPage() {
-  const [devices, setDevices] = useState<any[]>([
-    { id: 'DEV-001', name: 'Temperature Sensor - Boiler Room', type: 'sensor', location: 'Boiler Room A', protocol: 'MQTT', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: 87, signalStrength: 'Strong', asset: 'BLR-101', group: 'HVAC Monitoring', parameter: 'Temperature', unit: '°C', currentValue: 72.4 },
-    { id: 'DEV-002', name: 'Vibration Sensor - Pump Station', type: 'sensor', location: 'Pump Station B', protocol: 'Modbus', status: 'online', lastSeen: '2025-01-15T14:28:00Z', batteryLevel: 92, signalStrength: 'Strong', asset: 'PMP-205', group: 'Rotating Equipment', parameter: 'Vibration', unit: 'mm/s', currentValue: 3.2 },
-    { id: 'DEV-003', name: 'Pressure Transmitter - Compressor', type: 'sensor', location: 'Compressor Room', protocol: 'OPC-UA', status: 'warning', lastSeen: '2025-01-15T14:29:00Z', batteryLevel: 45, signalStrength: 'Medium', asset: 'CMP-310', group: 'Process Control', parameter: 'Pressure', unit: 'PSI', currentValue: 142.8 },
-    { id: 'DEV-004', name: 'Humidity Sensor - Clean Room', type: 'sensor', location: 'Clean Room 1', protocol: 'HTTP', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: 78, signalStrength: 'Strong', asset: 'CLR-001', group: 'Environmental', parameter: 'Humidity', unit: '%', currentValue: 42.1 },
-    { id: 'DEV-005', name: 'Flow Meter - Cooling Loop', type: 'sensor', location: 'Cooling Tower', protocol: 'MQTT', status: 'online', lastSeen: '2025-01-15T14:27:00Z', batteryLevel: 65, signalStrength: 'Good', asset: 'CLT-400', group: 'Process Control', parameter: 'Flow Rate', unit: 'GPM', currentValue: 120.5 },
-    { id: 'DEV-006', name: 'Gateway - Building A', type: 'gateway', location: 'Building A MDF', protocol: 'MQTT', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: null, signalStrength: 'Strong', asset: 'BLD-A', group: 'Infrastructure', parameter: 'Packet Rate', unit: 'pkt/s', currentValue: 1540 },
-    { id: 'DEV-007', name: 'Level Sensor - Fuel Tank', type: 'sensor', location: 'Fuel Storage', protocol: 'Modbus', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: 54, signalStrength: 'Good', asset: 'TK-501', group: 'Storage Monitoring', parameter: 'Level', unit: '%', currentValue: 67.3 },
-    { id: 'DEV-008', name: 'Motor Actuator - Valve V-201', type: 'actuator', location: 'Process Line 2', protocol: 'OPC-UA', status: 'offline', lastSeen: '2025-01-15T12:15:00Z', batteryLevel: null, signalStrength: 'N/A', asset: 'VLV-201', group: 'Process Control', parameter: 'Position', unit: '%', currentValue: 0 },
-    { id: 'DEV-009', name: 'Gateway - Building B', type: 'gateway', location: 'Building B MDF', protocol: 'MQTT', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: null, signalStrength: 'Strong', asset: 'BLD-B', group: 'Infrastructure', parameter: 'Packet Rate', unit: 'pkt/s', currentValue: 980 },
-    { id: 'DEV-010', name: 'Current Sensor - Motor M-102', type: 'sensor', location: 'Motor Control Center', protocol: 'Modbus', status: 'critical', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: 31, signalStrength: 'Weak', asset: 'MTR-102', group: 'Electrical', parameter: 'Current', unit: 'A', currentValue: 48.7 },
-    { id: 'DEV-011', name: 'pH Sensor - Effluent Treatment', type: 'sensor', location: 'ETP Room', protocol: 'HTTP', status: 'online', lastSeen: '2025-01-15T14:28:00Z', batteryLevel: 60, signalStrength: 'Good', asset: 'ETP-001', group: 'Environmental', parameter: 'pH', unit: 'pH', currentValue: 7.2 },
-    { id: 'DEV-012', name: 'Proximity Sensor - Conveyor C3', type: 'sensor', location: 'Packaging Line', protocol: 'HTTP', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: 88, signalStrength: 'Strong', asset: 'CNV-303', group: 'Production', parameter: 'Count', unit: 'units', currentValue: 1245 },
-    { id: 'DEV-013', name: 'Thermal Camera - Panel P-14', type: 'sensor', location: 'Switchgear Room', protocol: 'MQTT', status: 'warning', lastSeen: '2025-01-15T14:25:00Z', batteryLevel: 22, signalStrength: 'Medium', asset: 'PNL-014', group: 'Electrical', parameter: 'Temperature', unit: '°C', currentValue: 58.3 },
-    { id: 'DEV-014', name: 'Solenoid Valve - Cooling Water', type: 'actuator', location: 'Cooling Tower', protocol: 'OPC-UA', status: 'online', lastSeen: '2025-01-15T14:30:00Z', batteryLevel: null, signalStrength: 'Strong', asset: 'SV-701', group: 'Process Control', parameter: 'State', unit: '', currentValue: 1 },
-    { id: 'DEV-015', name: 'Smoke Detector - Warehouse', type: 'sensor', location: 'Main Warehouse', protocol: 'HTTP', status: 'offline', lastSeen: '2025-01-15T08:45:00Z', batteryLevel: 5, signalStrength: 'None', asset: 'WH-001', group: 'Safety', parameter: 'Smoke', unit: '% obsc', currentValue: 0 },
-  ]);
+  const [devices, setDevices] = useState<any[]>([]);
+  const [kpis, setKpis] = useState<any>({ total: 0, online: 0, offline: 0, warning: 0, error: 0, alerting: 0 });
+  const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterProtocol, setFilterProtocol] = useState('all');
   const [createOpen, setCreateOpen] = useState(false);
   const [detailDevice, setDetailDevice] = useState<any>(null);
-  const [newDevice, setNewDevice] = useState({ name: '', type: 'sensor', location: '', protocol: 'MQTT', asset: '', group: '' });
+  const [detailReadings, setDetailReadings] = useState<any[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newDevice, setNewDevice] = useState({ name: '', type: 'sensor', location: '', protocol: 'MQTT', parameter: '', unit: '', groupId: '' });
+
+  const fetchDevices = async () => {
+    setLoading(true);
+    const res = await api.get('/api/iot/devices');
+    if (res.success) {
+      setDevices(res.data || []);
+      if (res.kpis) setKpis(res.kpis);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchDevices(); }, []);
 
   const filtered = useMemo(() => devices.filter(d => {
     const q = searchText.toLowerCase();
-    if (q && !d.name.toLowerCase().includes(q) && !d.id.toLowerCase().includes(q) && !d.location.toLowerCase().includes(q)) return false;
+    if (q && !d.name.toLowerCase().includes(q) && !(d.deviceCode || '').toLowerCase().includes(q) && !(d.location || '').toLowerCase().includes(q)) return false;
     if (filterType !== 'all' && d.type !== filterType) return false;
     if (filterStatus !== 'all' && d.status !== filterStatus) return false;
-    if (filterProtocol !== 'all' && d.protocol !== filterProtocol) return false;
+    if (filterProtocol !== 'all' && d.protocol !== filterProtocol.toLowerCase()) return false;
     return true;
   }), [devices, searchText, filterType, filterStatus, filterProtocol]);
 
-  const stats = useMemo(() => ({
-    total: devices.length, online: devices.filter(d => d.status === 'online').length,
-    offline: devices.filter(d => d.status === 'offline').length, alerting: devices.filter(d => d.status === 'warning' || d.status === 'critical').length,
-  }), [devices]);
-
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!newDevice.name.trim()) { toast.error('Device name is required'); return; }
-    const dev: any = { id: `DEV-${String(devices.length + 1).padStart(3, '0')}`, ...newDevice, status: 'offline', lastSeen: new Date().toISOString(), batteryLevel: 100, signalStrength: 'N/A', parameter: 'N/A', unit: '', currentValue: 0 };
-    setDevices(p => [...p, dev]); setCreateOpen(false); setNewDevice({ name: '', type: 'sensor', location: '', protocol: 'MQTT', asset: '', group: '' });
-    toast.success('Device registered successfully');
+    if (!newDevice.parameter.trim()) { toast.error('Parameter is required'); return; }
+    if (!newDevice.unit.trim()) { toast.error('Unit is required'); return; }
+    setCreating(true);
+    const res = await api.post('/api/iot/devices', newDevice);
+    setCreating(false);
+    if (res.success) {
+      toast.success('Device registered successfully');
+      setCreateOpen(false);
+      setNewDevice({ name: '', type: 'sensor', location: '', protocol: 'MQTT', parameter: '', unit: '', groupId: '' });
+      fetchDevices();
+    } else {
+      toast.error(res.error || 'Failed to register device');
+    }
   };
 
-  const handleDelete = (id: string) => { setDevices(p => p.filter(d => d.id !== id)); if (detailDevice?.id === id) setDetailDevice(null); toast.success('Device removed'); };
+  const handleDelete = async (id: string) => {
+    const res = await api.delete(`/api/iot/devices/${id}`);
+    if (res.success) {
+      toast.success('Device removed');
+      setDevices(p => p.filter(d => d.id !== id));
+      if (detailDevice?.id === id) setDetailDevice(null);
+    } else {
+      toast.error(res.error || 'Failed to remove device');
+    }
+  };
 
-  const statusColor: Record<string, string> = { online: 'bg-emerald-50 text-emerald-700 border-emerald-200', offline: 'bg-slate-100 text-slate-500 border-slate-200', warning: 'bg-amber-50 text-amber-700 border-amber-200', critical: 'bg-red-50 text-red-700 border-red-200' };
-  const statusDot: Record<string, string> = { online: 'bg-emerald-500', offline: 'bg-slate-400', warning: 'bg-amber-500', critical: 'bg-red-500' };
-  const typeIcon: Record<string, any> = { sensor: Thermometer, gateway: Wifi, actuator: Cpu };
+  const handleViewDetail = async (d: any) => {
+    setDetailDevice(d);
+    setDetailLoading(true);
+    const res = await api.get(`/api/iot/devices/${d.id}`);
+    if (res.success && res.data) {
+      setDetailDevice(res.data);
+      setDetailReadings(res.data.readings || []);
+    }
+    setDetailLoading(false);
+  };
 
-  const generateReadingData = (baseVal: number, variance: number) => Array.from({ length: 24 }, (_, i) => ({ hour: `${String(i).padStart(2, '0')}:00`, value: +(baseVal + (Math.sin(i * 0.5) * variance) + (Math.random() * variance * 0.3)).toFixed(1) }));
+  const statusColor: Record<string, string> = { online: 'bg-emerald-50 text-emerald-700 border-emerald-200', offline: 'bg-slate-100 text-slate-500 border-slate-200', warning: 'bg-amber-50 text-amber-700 border-amber-200', error: 'bg-red-50 text-red-700 border-red-200', maintenance: 'bg-sky-50 text-sky-700 border-sky-200' };
+  const statusDot: Record<string, string> = { online: 'bg-emerald-500', offline: 'bg-slate-400', warning: 'bg-amber-500', error: 'bg-red-500', maintenance: 'bg-sky-500' };
+  const typeIcon: Record<string, any> = { sensor: Thermometer, gateway: Wifi, actuator: Cpu, controller: Settings2 };
+
+  const signalLabel = (s: number | null | undefined) => s == null ? 'N/A' : s >= 80 ? 'Strong' : s >= 60 ? 'Good' : s >= 40 ? 'Medium' : 'Weak';
 
   return (
     <div className="page-content">
@@ -8505,26 +8577,27 @@ function IotDevicesPage() {
             <div className="grid gap-4 py-2">
               <div className="space-y-2"><Label>Device Name *</Label><Input placeholder="Temperature Sensor - Room X" value={newDevice.name} onChange={e => setNewDevice({ ...newDevice, name: e.target.value })} /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2"><Label>Type *</Label><Select value={newDevice.type} onValueChange={v => setNewDevice({ ...newDevice, type: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="sensor">Sensor</SelectItem><SelectItem value="gateway">Gateway</SelectItem><SelectItem value="actuator">Actuator</SelectItem></SelectContent></Select></div>
+                <div className="space-y-2"><Label>Type *</Label><Select value={newDevice.type} onValueChange={v => setNewDevice({ ...newDevice, type: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="sensor">Sensor</SelectItem><SelectItem value="gateway">Gateway</SelectItem><SelectItem value="controller">Controller</SelectItem><SelectItem value="actuator">Actuator</SelectItem></SelectContent></Select></div>
                 <div className="space-y-2"><Label>Protocol *</Label><Select value={newDevice.protocol} onValueChange={v => setNewDevice({ ...newDevice, protocol: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="MQTT">MQTT</SelectItem><SelectItem value="HTTP">HTTP</SelectItem><SelectItem value="Modbus">Modbus</SelectItem><SelectItem value="OPC-UA">OPC-UA</SelectItem></SelectContent></Select></div>
               </div>
-              <div className="space-y-2"><Label>Location *</Label><Input placeholder="Building A, Room 101" value={newDevice.location} onChange={e => setNewDevice({ ...newDevice, location: e.target.value })} /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2"><Label>Asset Link</Label><Input placeholder="AST-001" value={newDevice.asset} onChange={e => setNewDevice({ ...newDevice, asset: e.target.value })} /></div>
-                <div className="space-y-2"><Label>Device Group</Label><Input placeholder="Environmental" value={newDevice.group} onChange={e => setNewDevice({ ...newDevice, group: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Location</Label><Input placeholder="Building A, Room 101" value={newDevice.location} onChange={e => setNewDevice({ ...newDevice, location: e.target.value })} /></div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2"><Label>Parameter *</Label><Input placeholder="Temperature" value={newDevice.parameter} onChange={e => setNewDevice({ ...newDevice, parameter: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Unit *</Label><Input placeholder="°C" value={newDevice.unit} onChange={e => setNewDevice({ ...newDevice, unit: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Group</Label><Input placeholder="Environmental" value={newDevice.groupId} onChange={e => setNewDevice({ ...newDevice, groupId: e.target.value })} /></div>
               </div>
             </div>
-            <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Register Device</Button></DialogFooter>
+            <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Registering...' : 'Register Device'}</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {[
-          { label: 'Total Devices', value: stats.total, icon: Smartphone, color: 'text-slate-600 bg-slate-50 dark:bg-slate-900/30 dark:text-slate-400' },
-          { label: 'Online', value: stats.online, icon: Wifi, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-          { label: 'Offline', value: stats.offline, icon: XCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
-          { label: 'Alerting', value: stats.alerting, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+          { label: 'Total Devices', value: kpis.total, icon: Smartphone, color: 'text-slate-600 bg-slate-50 dark:bg-slate-900/30 dark:text-slate-400' },
+          { label: 'Online', value: kpis.online, icon: Wifi, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+          { label: 'Offline', value: kpis.offline, icon: XCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+          { label: 'Alerting', value: kpis.alerting, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
         ].map(k => { const I = k.icon; return (
           <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
         ); })}
@@ -8535,8 +8608,8 @@ function IotDevicesPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search devices..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
         </div>
-        <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-36"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="sensor">Sensor</SelectItem><SelectItem value="gateway">Gateway</SelectItem><SelectItem value="actuator">Actuator</SelectItem></SelectContent></Select>
-        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="online">Online</SelectItem><SelectItem value="offline">Offline</SelectItem><SelectItem value="warning">Warning</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select>
+        <Select value={filterType} onValueChange={setFilterType}><SelectTrigger className="w-36"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent><SelectItem value="all">All Types</SelectItem><SelectItem value="sensor">Sensor</SelectItem><SelectItem value="gateway">Gateway</SelectItem><SelectItem value="controller">Controller</SelectItem><SelectItem value="actuator">Actuator</SelectItem></SelectContent></Select>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="online">Online</SelectItem><SelectItem value="offline">Offline</SelectItem><SelectItem value="warning">Warning</SelectItem><SelectItem value="error">Error</SelectItem><SelectItem value="maintenance">Maintenance</SelectItem></SelectContent></Select>
         <Select value={filterProtocol} onValueChange={setFilterProtocol}><SelectTrigger className="w-36"><SelectValue placeholder="Protocol" /></SelectTrigger><SelectContent><SelectItem value="all">All Protocols</SelectItem><SelectItem value="MQTT">MQTT</SelectItem><SelectItem value="HTTP">HTTP</SelectItem><SelectItem value="Modbus">Modbus</SelectItem><SelectItem value="OPC-UA">OPC-UA</SelectItem></SelectContent></Select>
       </div>
 
@@ -8544,18 +8617,19 @@ function IotDevicesPage() {
         <Table><TableHeader><TableRow className="hover:bg-transparent">
           <TableHead>Device</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden md:table-cell">Location</TableHead><TableHead className="hidden md:table-cell">Protocol</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Last Seen</TableHead><TableHead className="hidden xl:table-cell">Battery</TableHead><TableHead className="hidden xl:table-cell">Signal</TableHead><TableHead className="w-12"></TableHead>
         </TableRow></TableHeader><TableBody>
-          {filtered.length === 0 && <TableRow><TableCell colSpan={9}><EmptyState icon={Smartphone} title="No devices found" description="Try adjusting your search or filters." /></TableCell></TableRow>}
-          {filtered.map(d => { const TI = typeIcon[d.type] || Smartphone; return (
-            <TableRow key={d.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => setDetailDevice(d)}>
-              <TableCell><div className="flex items-center gap-2"><TI className="h-4 w-4 text-muted-foreground shrink-0" /><div><p className="font-medium text-sm">{d.name}</p><p className="text-xs text-muted-foreground font-mono">{d.id}</p></div></div></TableCell>
+          {loading && <TableRow><TableCell colSpan={9}><div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div></TableCell></TableRow>}
+          {!loading && filtered.length === 0 && <TableRow><TableCell colSpan={9}><EmptyState icon={Smartphone} title="No devices found" description="Try adjusting your search or filters, or register a new device." /></TableCell></TableRow>}
+          {!loading && filtered.map(d => { const TI = typeIcon[d.type] || Smartphone; const sig = signalLabel(d.signalStrength); return (
+            <TableRow key={d.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => handleViewDetail(d)}>
+              <TableCell><div className="flex items-center gap-2"><TI className="h-4 w-4 text-muted-foreground shrink-0" /><div><p className="font-medium text-sm">{d.name}</p><p className="text-xs text-muted-foreground font-mono">{d.deviceCode || d.id}</p></div></div></TableCell>
               <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="capitalize">{d.type}</Badge></TableCell>
-              <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{d.location}</TableCell>
-              <TableCell className="hidden md:table-cell"><Badge variant="secondary" className="font-mono text-xs">{d.protocol}</Badge></TableCell>
-              <TableCell><Badge variant="outline" className={`${statusColor[d.status]} capitalize`}><span className={`h-1.5 w-1.5 rounded-full ${statusDot[d.status]} mr-1`} />{d.status}</Badge></TableCell>
-              <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{timeAgo(d.lastSeen)}</TableCell>
+              <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{d.location || '-'}</TableCell>
+              <TableCell className="hidden md:table-cell"><Badge variant="secondary" className="font-mono text-xs uppercase">{d.protocol}</Badge></TableCell>
+              <TableCell><Badge variant="outline" className={`${statusColor[d.status] || ''} capitalize`}><span className={`h-1.5 w-1.5 rounded-full ${statusDot[d.status] || 'bg-slate-400'} mr-1`} />{d.status}</Badge></TableCell>
+              <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{d.lastSeen ? timeAgo(d.lastSeen) : 'Never'}</TableCell>
               <TableCell className="hidden xl:table-cell">{d.batteryLevel != null ? <div className="flex items-center gap-2"><div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${d.batteryLevel <= 20 ? 'bg-red-500' : d.batteryLevel <= 50 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${d.batteryLevel}%` }} /></div><span className="text-xs font-medium">{d.batteryLevel}%</span></div> : <span className="text-xs text-muted-foreground">Wired</span>}</TableCell>
-              <TableCell className="hidden xl:table-cell"><Badge variant="outline" className={`text-xs ${d.signalStrength === 'Strong' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : d.signalStrength === 'Good' || d.signalStrength === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-200' : d.signalStrength === 'Weak' ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>{d.signalStrength}</Badge></TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={e => { e.stopPropagation(); setDetailDevice(d); }}><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={e => { e.stopPropagation(); handleDelete(d.id); }}><Trash2 className="h-4 w-4 mr-2" />Remove</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell className="hidden xl:table-cell"><Badge variant="outline" className={`text-xs ${sig === 'Strong' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : sig === 'Good' || sig === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-200' : sig === 'Weak' ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>{sig}</Badge></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={e => { e.stopPropagation(); handleViewDetail(d); }}><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={e => { e.stopPropagation(); handleDelete(d.id); }}><Trash2 className="h-4 w-4 mr-2" />Remove</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ); })}
         </TableBody></Table>
@@ -8564,24 +8638,26 @@ function IotDevicesPage() {
       <Dialog open={!!detailDevice} onOpenChange={() => setDetailDevice(null)}>
         <DialogContent className="sm:max-w-[600px]">
           {detailDevice && (<>
-            <DialogHeader><DialogTitle className="flex items-center gap-2">{detailDevice.name}<Badge variant="outline" className={`${statusColor[detailDevice.status]} capitalize ml-2`}>{detailDevice.status}</Badge></DialogTitle><DialogDescription className="font-mono text-xs">{detailDevice.id}</DialogDescription></DialogHeader>
+            <DialogHeader><DialogTitle className="flex items-center gap-2">{detailDevice.name}<Badge variant="outline" className={`${statusColor[detailDevice.status] || ''} capitalize ml-2`}>{detailDevice.status}</Badge></DialogTitle><DialogDescription className="font-mono text-xs">{detailDevice.deviceCode || detailDevice.id}</DialogDescription></DialogHeader>
+            {detailLoading ? <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : (<>
             <div className="grid grid-cols-2 gap-4 text-sm">
-              {[['Type', detailDevice.type], ['Protocol', detailDevice.protocol], ['Location', detailDevice.location], ['Asset', detailDevice.asset || '-'], ['Group', detailDevice.group || '-'], ['Last Seen', timeAgo(detailDevice.lastSeen)], ['Battery', detailDevice.batteryLevel != null ? `${detailDevice.batteryLevel}%` : 'Wired'], ['Signal', detailDevice.signalStrength], ['Parameter', detailDevice.parameter], ['Current Value', `${detailDevice.currentValue} ${detailDevice.unit}`]].map(([label, val]) => (
+              {[['Type', detailDevice.type], ['Protocol', detailDevice.protocol?.toUpperCase()], ['Location', detailDevice.location || '-'], ['Asset', detailDevice.asset?.name || '-'], ['Group', detailDevice.groupId || '-'], ['Last Seen', detailDevice.lastSeen ? timeAgo(detailDevice.lastSeen) : 'Never'], ['Battery', detailDevice.batteryLevel != null ? `${detailDevice.batteryLevel}%` : 'Wired'], ['Signal', signalLabel(detailDevice.signalStrength)], ['Parameter', detailDevice.parameter], ['Last Reading', detailDevice.lastReading != null ? `${detailDevice.lastReading} ${detailDevice.unit}` : 'No data'], ['Threshold', (detailDevice.thresholdMin != null || detailDevice.thresholdMax != null) ? `${detailDevice.thresholdMin ?? '—'} ~ ${detailDevice.thresholdMax ?? '—'} ${detailDevice.unit}` : '-'], ['Readings', `${detailDevice._count?.readings ?? 0}`], ['Alerts', `${detailDevice._count?.alerts ?? 0}`]].map(([label, val]) => (
                 <div key={label} className="flex justify-between p-2 rounded-lg bg-muted/30"><span className="text-muted-foreground">{label as string}</span><span className="font-medium">{label === 'Type' ? <span className="capitalize">{val as string}</span> : val as string}</span></div>
               ))}
             </div>
-            <div className="mt-2">
-              <p className="text-sm font-medium mb-2">Simulated Readings (24h)</p>
+            {detailReadings.length > 0 && (<div className="mt-2">
+              <p className="text-sm font-medium mb-2">Recent Readings</p>
               <ChartContainer config={{ value: { label: detailDevice.parameter, color: '#10b981' } }} className="h-[200px] w-full">
-                <AreaChart data={generateReadingData(detailDevice.currentValue, detailDevice.currentValue * 0.15)} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                <AreaChart data={[...detailReadings].reverse().map((r: any) => ({ hour: new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), value: r.value }))} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
-                  <XAxis dataKey="hour" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval={3} className="fill-muted-foreground" />
+                  <XAxis dataKey="hour" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval={Math.max(0, Math.floor(detailReadings.length / 6) - 1)} className="fill-muted-foreground" />
                   <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Area type="monotone" dataKey="value" stroke="#10b981" fill="#10b981" fillOpacity={0.15} strokeWidth={2} />
                 </AreaChart>
               </ChartContainer>
-            </div>
+            </div>)}
+            </>)}
             <DialogFooter><Button variant="outline" onClick={() => handleDelete(detailDevice.id)} className="text-red-600 border-red-200 hover:bg-red-50"><Trash2 className="h-4 w-4 mr-1.5" />Remove Device</Button><Button variant="outline" onClick={() => setDetailDevice(null)}>Close</Button></DialogFooter>
           </>)}
         </DialogContent>
@@ -8591,42 +8667,69 @@ function IotDevicesPage() {
 }
 
 function IotMonitoringPage() {
-  const [sensors] = useState([
-    { id: 'DEV-001', name: 'Boiler Room Temp', parameter: 'Temperature', unit: '°C', value: 72.4, threshold: 85, trend: 'up' as const, sparkline: [68, 70, 69, 71, 73, 72, 74, 71, 72.4] },
-    { id: 'DEV-002', name: 'Pump Vibration', parameter: 'Vibration', unit: 'mm/s', value: 3.2, threshold: 7.0, trend: 'stable' as const, sparkline: [3.0, 3.1, 3.3, 3.2, 3.1, 3.2, 3.0, 3.1, 3.2] },
-    { id: 'DEV-003', name: 'Compressor Pressure', parameter: 'Pressure', unit: 'PSI', value: 142.8, threshold: 150, trend: 'up' as const, sparkline: [130, 135, 138, 140, 142, 139, 141, 143, 142.8] },
-    { id: 'DEV-004', name: 'Clean Room Humidity', parameter: 'Humidity', unit: '%', value: 42.1, threshold: 60, trend: 'down' as const, sparkline: [45, 44, 43.5, 44, 43, 42.5, 42, 42.3, 42.1] },
-    { id: 'DEV-010', name: 'Motor M-102 Current', parameter: 'Current', unit: 'A', value: 48.7, threshold: 35, trend: 'up' as const, sparkline: [32, 35, 38, 42, 44, 45, 47, 48, 48.7] },
-    { id: 'DEV-011', name: 'ETP pH Level', parameter: 'pH', unit: 'pH', value: 7.2, threshold: 9.0, trend: 'stable' as const, sparkline: [7.1, 7.2, 7.0, 7.3, 7.2, 7.1, 7.2, 7.3, 7.2] },
-    { id: 'DEV-013', name: 'Panel P-14 Thermal', parameter: 'Temperature', unit: '°C', value: 58.3, threshold: 55, trend: 'up' as const, sparkline: [42, 45, 48, 50, 52, 54, 55, 57, 58.3] },
-    { id: 'DEV-007', name: 'Fuel Tank Level', parameter: 'Level', unit: '%', value: 67.3, threshold: 15, trend: 'down' as const, sparkline: [80, 78, 75, 73, 71, 70, 68, 67.5, 67.3] },
-  ]);
-  const [alerts] = useState([
-    { id: 1, severity: 'critical' as const, device: 'Motor M-102 Current', parameter: 'Current', value: '48.7 A', threshold: '35 A', time: '2 min ago' },
-    { id: 2, severity: 'critical' as const, device: 'Panel P-14 Thermal', parameter: 'Temperature', value: '58.3 °C', threshold: '55 °C', time: '5 min ago' },
-    { id: 3, severity: 'warning' as const, device: 'Compressor Pressure', parameter: 'Pressure', value: '142.8 PSI', threshold: '150 PSI', time: '12 min ago' },
-    { id: 4, severity: 'warning' as const, device: 'Boiler Room Temp', parameter: 'Temperature', value: '72.4 °C', threshold: '85 °C', time: '18 min ago' },
-    { id: 5, severity: 'info' as const, device: 'Fuel Tank Level', parameter: 'Level', value: '67.3%', threshold: '15%', time: '1 hr ago' },
-    { id: 6, severity: 'info' as const, device: 'Pump Vibration', parameter: 'Vibration', value: '3.2 mm/s', threshold: '7.0 mm/s', time: '2 hr ago' },
-  ]);
+  const [summary, setSummary] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  const activityData = useMemo(() => Array.from({ length: 24 }, (_, i) => ({
-    hour: `${String(i).padStart(2, '0')}:00`,
-    temperature: +(70 + Math.sin(i * 0.4) * 8 + Math.random() * 3).toFixed(1),
-    pressure: +(130 + Math.sin(i * 0.3 + 1) * 15 + Math.random() * 5).toFixed(1),
-    humidity: +(45 + Math.sin(i * 0.25 + 2) * 5 + Math.random() * 2).toFixed(1),
-  })), []);
+  const fetchSummary = async () => {
+    setLoading(true);
+    const res = await api.get('/api/iot/monitoring/summary');
+    if (res.success && res.data) {
+      setSummary(res.data);
+    }
+    setLoading(false);
+  };
 
-  const activityConfig = {
-    temperature: { label: 'Temperature (°C)', color: '#ef4444' },
-    pressure: { label: 'Pressure (PSI)', color: '#f59e0b' },
-    humidity: { label: 'Humidity (%)', color: '#06b6d4' },
-  } as const;
+  useEffect(() => { fetchSummary(); }, []);
+
+  const devicesWithReadings = summary?.devicesWithReadings || [];
+  const recentAlerts = summary?.alerts?.recent || [];
+
+  // Build chart data from actual readings grouped by parameter
+  const chartData = useMemo(() => {
+    if (!devicesWithReadings.length) return [];
+    const paramMap: Record<string, { hour: string } & Record<string, number>>[] = [];
+    const allTimestamps = new Set<string>();
+
+    devicesWithReadings.forEach((d: any) => {
+      (d.readings || []).forEach((r: any) => {
+        allTimestamps.add(new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      });
+    });
+
+    const sortedHours = [...allTimestamps].sort();
+    const paramColors: Record<string, string> = { Temperature: '#ef4444', Pressure: '#f59e0b', Humidity: '#06b6d4', Current: '#a855f7', Vibration: '#f97316', pH: '#14b8a6' };
+
+    return sortedHours.map(hour => {
+      const point: Record<string, string | number> = { hour };
+      devicesWithReadings.forEach((d: any) => {
+        const reading = (d.readings || []).find((r: any) => new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) === hour);
+        if (reading && d.parameter) {
+          point[d.parameter] = reading.value;
+        }
+      });
+      return point;
+    });
+  }, [devicesWithReadings]);
+
+  const uniqueParams = useMemo(() => {
+    const params = new Set<string>();
+    devicesWithReadings.forEach((d: any) => { if (d.parameter) params.add(d.parameter); });
+    return [...params];
+  }, [devicesWithReadings]);
+
+  const activityConfig = useMemo(() => {
+    const colors: Record<string, string> = { Temperature: '#ef4444', Pressure: '#f59e0b', Humidity: '#06b6d4', Current: '#a855f7', Vibration: '#f97316', pH: '#14b8a6' };
+    const cfg: Record<string, { label: string; color: string }> = {};
+    uniqueParams.forEach(p => { cfg[p] = { label: p, color: colors[p] || '#10b981' }; });
+    return cfg;
+  }, [uniqueParams]);
 
   const severityStyle: Record<string, string> = {
     critical: 'bg-red-50 text-red-700 border-red-200', warning: 'bg-amber-50 text-amber-700 border-amber-200', info: 'bg-sky-50 text-sky-700 border-sky-200',
   };
   const severityIcon: Record<string, any> = { critical: AlertCircle, warning: AlertTriangle, info: Info };
+
+  const operatorSymbol: Record<string, string> = { gt: '>', lt: '<', gte: '≥', lte: '≤', eq: '=' };
 
   return (
     <div className="page-content">
@@ -8634,91 +8737,105 @@ function IotMonitoringPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {[
-          { label: 'Active Sensors', value: 8, icon: Radio, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-          { label: 'Alerts Today', value: 14, icon: BellRing, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
-          { label: 'Data Points (24h)', value: '1.2M', icon: Activity, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-          { label: 'Avg Response Time', value: '142ms', icon: Gauge, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
+          { label: 'Active Sensors', value: summary?.devices?.activeSensors ?? 0, icon: Radio, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+          { label: 'Active Alerts', value: summary?.alerts?.active ?? 0, icon: BellRing, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+          { label: 'Data Points', value: summary?.readingsToday ?? 0, icon: Activity, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+          { label: 'Active Rules', value: summary?.activeRules ?? 0, icon: Gauge, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
         ].map(k => { const I = k.icon; return (
-          <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+          <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{typeof k.value === 'number' ? k.value.toLocaleString() : k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
         ); })}
       </div>
 
-      <Card className="border">
+      {chartData.length > 0 && (<Card className="border">
         <CardHeader className="pb-2">
           <div className="flex items-center gap-3">
             <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center"><Activity className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /></div>
-            <div><CardTitle className="text-base font-semibold">Sensor Activity (24h)</CardTitle><CardDescription className="text-xs mt-0.5">Multi-parameter trend across critical sensors</CardDescription></div>
+            <div><CardTitle className="text-base font-semibold">Sensor Activity</CardTitle><CardDescription className="text-xs mt-0.5">Multi-parameter trend across connected sensors</CardDescription></div>
           </div>
         </CardHeader>
         <CardContent className="pt-0">
           <ChartContainer config={activityConfig} className="h-[300px] w-full">
-            <AreaChart data={activityData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+            <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
-              <XAxis dataKey="hour" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} interval={3} className="fill-muted-foreground" />
+              <XAxis dataKey="hour" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} interval={Math.max(1, Math.floor(chartData.length / 8) - 1)} className="fill-muted-foreground" />
               <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
               <ChartTooltip content={<ChartTooltipContent />} />
               <ChartLegend content={<ChartLegendContent />} />
-              <Area type="monotone" dataKey="temperature" stroke="#ef4444" fill="#ef4444" fillOpacity={0.08} strokeWidth={2} />
-              <Area type="monotone" dataKey="pressure" stroke="#f59e0b" fill="#f59e0b" fillOpacity={0.08} strokeWidth={2} />
-              <Area type="monotone" dataKey="humidity" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.08} strokeWidth={2} />
+              {uniqueParams.map((p, i) => {
+                const colors: Record<string, string> = { Temperature: '#ef4444', Pressure: '#f59e0b', Humidity: '#06b6d4', Current: '#a855f7', Vibration: '#f97316', pH: '#14b8a6' };
+                return <Area key={p} type="monotone" dataKey={p} stroke={colors[p] || '#10b981'} fill={colors[p] || '#10b981'} fillOpacity={0.08} strokeWidth={2} connectNulls />;
+              })}
             </AreaChart>
           </ChartContainer>
         </CardContent>
-      </Card>
+      </Card>)}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
           <h2 className="text-lg font-semibold">Live Sensor Readings</h2>
+          {loading ? <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div> : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-            {sensors.map(s => {
-              const isOver = s.value >= s.threshold;
-              const TrendI = s.trend === 'up' ? TrendingUp : s.trend === 'down' ? TrendingDown : Minus;
-              const trendColor = s.trend === 'up' ? 'text-red-500' : s.trend === 'down' ? 'text-emerald-500' : 'text-slate-400';
+            {devicesWithReadings.length === 0 && <div className="col-span-full"><EmptyState icon={Radio} title="No sensor data" description="Register devices and submit readings to see live data here." /></div>}
+            {devicesWithReadings.map((d: any) => {
+              const readings = d.readings || [];
+              const lastVal = readings[0]?.value;
+              const prevVal = readings[1]?.value;
+              const threshold = d.rules?.[0]?.threshold ?? d.thresholdMax;
+              const isOver = threshold != null && lastVal != null && lastVal >= threshold;
+              const hasTrend = lastVal != null && prevVal != null;
+              const trend = hasTrend ? (lastVal > prevVal ? 'up' : lastVal < prevVal ? 'down' : 'stable') : 'stable';
+              const TrendI = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus;
+              const trendColor = trend === 'up' ? 'text-red-500' : trend === 'down' ? 'text-emerald-500' : 'text-slate-400';
+              const sparkline = readings.slice(0, 10).reverse().map((r: any) => r.value);
               return (
-                <Card key={s.id} className={`border ${isOver ? 'border-red-200 bg-red-50/30 dark:bg-red-900/10' : ''}`}>
+                <Card key={d.id} className={`border ${isOver ? 'border-red-200 bg-red-50/30 dark:bg-red-900/10' : ''}`}>
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-medium text-muted-foreground truncate max-w-[120px]">{s.name}</p>
+                      <p className="text-xs font-medium text-muted-foreground truncate max-w-[120px]">{d.name}</p>
                       <TrendI className={`h-3.5 w-3.5 ${trendColor}`} />
                     </div>
                     <div className="flex items-baseline gap-1.5">
-                      <span className={`text-2xl font-bold ${isOver ? 'text-red-600' : ''}`}>{s.value}</span>
-                      <span className="text-xs text-muted-foreground">{s.unit}</span>
+                      <span className={`text-2xl font-bold ${isOver ? 'text-red-600' : ''}`}>{lastVal != null ? lastVal : '—'}</span>
+                      <span className="text-xs text-muted-foreground">{d.unit}</span>
                     </div>
-                    <div className="mt-2 h-8">
+                    {sparkline.length > 1 && <div className="mt-2 h-8">
                       <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={s.sparkline.map((v, i) => ({ i, v }))}>
+                        <AreaChart data={sparkline.map((v, i) => ({ i, v }))}>
                           <Area type="monotone" dataKey="v" stroke={isOver ? '#ef4444' : '#10b981'} fill={isOver ? '#ef4444' : '#10b981'} fillOpacity={0.15} strokeWidth={1.5} dot={false} />
                         </AreaChart>
                       </ResponsiveContainer>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">Threshold: {s.threshold} {s.unit}</p>
+                    </div>}
+                    <p className="text-[10px] text-muted-foreground">Threshold: {threshold != null ? `${threshold} ${d.unit}` : 'Not set'}</p>
                   </CardContent>
                 </Card>
               );
             })}
           </div>
+          )}
         </div>
 
         <div className="space-y-4">
           <h2 className="text-lg font-semibold">Recent Alerts</h2>
           <Card className="border">
             <CardContent className="p-4">
+              {loading ? <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : (
               <div className="space-y-3 max-h-[500px] overflow-y-auto">
-                {alerts.map(a => {
-                  const SI = severityIcon[a.severity];
+                {recentAlerts.length === 0 && <EmptyState icon={BellRing} title="No active alerts" description="Alerts will appear here when sensor thresholds are breached." />}
+                {recentAlerts.map((a: any) => {
+                  const SI = severityIcon[a.severity] || Info;
                   return (
                     <div key={a.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                      <div className={`h-7 w-7 rounded-lg ${severityStyle[a.severity]} flex items-center justify-center shrink-0 mt-0.5`}><SI className="h-3.5 w-3.5" /></div>
+                      <div className={`h-7 w-7 rounded-lg ${severityStyle[a.severity] || ''} flex items-center justify-center shrink-0 mt-0.5`}><SI className="h-3.5 w-3.5" /></div>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-0.5"><span className="font-medium text-xs truncate">{a.device}</span><Badge variant="outline" className={`text-[10px] capitalize ${severityStyle[a.severity]}`}>{a.severity}</Badge></div>
-                        <p className="text-[11px] text-muted-foreground">{a.parameter}: <span className={a.severity === 'critical' ? 'text-red-600 font-medium' : ''}>{a.value}</span> (Limit: {a.threshold})</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">{a.time}</p>
+                        <div className="flex items-center gap-2 mb-0.5"><span className="font-medium text-xs truncate">{a.device?.name || 'Unknown'}</span><Badge variant="outline" className={`text-[10px] capitalize ${severityStyle[a.severity] || ''}`}>{a.severity}</Badge></div>
+                        <p className="text-[11px] text-muted-foreground">{a.message}</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{timeAgo(a.createdAt)}</p>
                       </div>
                     </div>
                   );
                 })}
               </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -8728,44 +8845,84 @@ function IotMonitoringPage() {
 }
 
 function IotRulesPage() {
-  const [rules, setRules] = useState<any[]>([
-    { id: 'RUL-001', name: 'High Temperature Alert', device: 'Temperature Sensor - Boiler Room', parameter: 'Temperature', operator: '>', threshold: 85, unit: '°C', action: 'alert', status: 'active', triggeredCount: 12, lastTriggered: '2025-01-15T14:20:00Z', cooldown: 300 },
-    { id: 'RUL-002', name: 'Critical Vibration Shutdown', device: 'Vibration Sensor - Pump Station', parameter: 'Vibration', operator: '>', threshold: 10.0, unit: 'mm/s', action: 'shutdown', status: 'active', triggeredCount: 0, lastTriggered: null, cooldown: 60 },
-    { id: 'RUL-003', name: 'Low Battery Warning', device: 'Smoke Detector - Warehouse', parameter: 'Battery', operator: '<', threshold: 20, unit: '%', action: 'email', status: 'active', triggeredCount: 3, lastTriggered: '2025-01-15T08:45:00Z', cooldown: 3600 },
-    { id: 'RUL-004', name: 'High Pressure Alert', device: 'Pressure Transmitter - Compressor', parameter: 'Pressure', operator: '>=', threshold: 150, unit: 'PSI', action: 'alert', status: 'active', triggeredCount: 5, lastTriggered: '2025-01-15T14:28:00Z', cooldown: 300 },
-    { id: 'RUL-005', name: 'Humidity Breach Notification', device: 'Humidity Sensor - Clean Room', parameter: 'Humidity', operator: '>', threshold: 55, unit: '%', action: 'webhook', status: 'paused', triggeredCount: 8, lastTriggered: '2025-01-14T22:10:00Z', cooldown: 600 },
-    { id: 'RUL-006', name: 'Motor Overcurrent Protection', device: 'Current Sensor - Motor M-102', parameter: 'Current', operator: '>', threshold: 45, unit: 'A', action: 'shutdown', status: 'active', triggeredCount: 2, lastTriggered: '2025-01-15T14:30:00Z', cooldown: 120 },
-    { id: 'RUL-007', name: 'Fuel Tank Low Level', device: 'Level Sensor - Fuel Tank', parameter: 'Level', operator: '<=', threshold: 15, unit: '%', action: 'email', status: 'active', triggeredCount: 1, lastTriggered: '2025-01-10T06:00:00Z', cooldown: 43200 },
-    { id: 'RUL-008', name: 'pH Out of Range', device: 'pH Sensor - Effluent Treatment', parameter: 'pH', operator: '>', threshold: 9.0, unit: 'pH', action: 'alert', status: 'paused', triggeredCount: 0, lastTriggered: null, cooldown: 900 },
-    { id: 'RUL-009', name: 'Thermal Panel Warning', device: 'Thermal Camera - Panel P-14', parameter: 'Temperature', operator: '>', threshold: 55, unit: '°C', action: 'alert', status: 'active', triggeredCount: 7, lastTriggered: '2025-01-15T14:25:00Z', cooldown: 600 },
-    { id: 'RUL-010', name: 'Cooling Flow Drop', device: 'Flow Meter - Cooling Loop', parameter: 'Flow Rate', operator: '<', threshold: 80, unit: 'GPM', action: 'email', status: 'active', triggeredCount: 4, lastTriggered: '2025-01-15T11:30:00Z', cooldown: 1800 },
-  ]);
+  const [rules, setRules] = useState<any[]>([]);
+  const [devices, setDevices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
-  const [newRule, setNewRule] = useState({ name: '', device: '', parameter: '', operator: '>' as string, threshold: '', unit: '', action: 'alert' as string, cooldown: '300' });
+  const [creating, setCreating] = useState(false);
+  const [newRule, setNewRule] = useState({ name: '', deviceId: '', parameter: '', operator: 'gt' as string, threshold: '', severity: 'warning' as string, cooldownMinutes: '5' });
+
+  const fetchRules = async () => {
+    setLoading(true);
+    const [rulesRes, devicesRes] = await Promise.all([
+      api.get('/api/iot/rules'),
+      api.get('/api/iot/devices?limit=100'),
+    ]);
+    if (rulesRes.success) setRules(rulesRes.data || []);
+    if (devicesRes.success) setDevices(devicesRes.data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchRules(); }, []);
 
   const stats = useMemo(() => ({
-    total: rules.length, active: rules.filter(r => r.status === 'active').length,
-    paused: rules.filter(r => r.status === 'paused').length, triggersToday: rules.reduce((s, r) => s + r.triggeredCount, 0),
+    total: rules.length, active: rules.filter(r => r.isActive).length,
+    paused: rules.filter(r => !r.isActive).length, triggersToday: rules.reduce((s: number, r: any) => s + (r._count?.alerts ?? 0), 0),
   }), [rules]);
 
-  const handleCreate = () => {
+  const operatorSymbol: Record<string, string> = { gt: '>', lt: '<', gte: '≥', lte: '≤', eq: '=' };
+
+  const handleCreate = async () => {
     if (!newRule.name.trim()) { toast.error('Rule name is required'); return; }
-    if (!newRule.device.trim()) { toast.error('Device is required'); return; }
-    const rule: any = { id: `RUL-${String(rules.length + 1).padStart(3, '0')}`, name: newRule.name, device: newRule.device, parameter: newRule.parameter || 'N/A', operator: newRule.operator, threshold: parseFloat(newRule.threshold) || 0, unit: newRule.unit || '', action: newRule.action, status: 'active', triggeredCount: 0, lastTriggered: null, cooldown: parseInt(newRule.cooldown) || 300 };
-    setRules(p => [...p, rule]); setCreateOpen(false); setNewRule({ name: '', device: '', parameter: '', operator: '>', threshold: '', unit: '', action: 'alert', cooldown: '300' });
-    toast.success('Rule created successfully');
+    if (!newRule.deviceId) { toast.error('Device is required'); return; }
+    if (!newRule.threshold) { toast.error('Threshold is required'); return; }
+    setCreating(true);
+    const device = devices.find((d: any) => d.id === newRule.deviceId);
+    const res = await api.post('/api/iot/rules', {
+      name: newRule.name,
+      deviceId: newRule.deviceId,
+      parameter: newRule.parameter || device?.parameter || 'N/A',
+      operator: newRule.operator,
+      threshold: newRule.threshold,
+      severity: newRule.severity,
+      cooldownMinutes: newRule.cooldownMinutes,
+    });
+    setCreating(false);
+    if (res.success) {
+      toast.success('Rule created successfully');
+      setCreateOpen(false);
+      setNewRule({ name: '', deviceId: '', parameter: '', operator: 'gt', threshold: '', severity: 'warning', cooldownMinutes: '5' });
+      fetchRules();
+    } else {
+      toast.error(res.error || 'Failed to create rule');
+    }
   };
 
-  const toggleRule = (id: string) => {
-    setRules(p => p.map(r => r.id === id ? { ...r, status: r.status === 'active' ? 'paused' : 'active' } : r));
-    const rule = rules.find(r => r.id === id);
-    toast.success(`${rule?.name} ${rule?.status === 'active' ? 'paused' : 'activated'}`);
+  const toggleRule = async (id: string) => {
+    const rule = rules.find((r: any) => r.id === id);
+    if (!rule) return;
+    const newActive = !rule.isActive;
+    const res = await api.put(`/api/iot/rules/${id}`, { toggleActive: newActive });
+    if (res.success) {
+      toast.success(`${rule.name} ${newActive ? 'activated' : 'paused'}`);
+      fetchRules();
+    } else {
+      toast.error(res.error || 'Failed to toggle rule');
+    }
   };
 
-  const handleDelete = (id: string) => { setRules(p => p.filter(r => r.id !== id)); toast.success('Rule deleted'); };
+  const handleDelete = async (id: string) => {
+    const res = await api.delete(`/api/iot/rules/${id}`);
+    if (res.success) {
+      toast.success('Rule deleted');
+      setRules(p => p.filter(r => r.id !== id));
+    } else {
+      toast.error(res.error || 'Failed to delete rule');
+    }
+  };
 
-  const actionColor: Record<string, string> = { alert: 'bg-amber-50 text-amber-700 border-amber-200', email: 'bg-sky-50 text-sky-700 border-sky-200', webhook: 'bg-violet-50 text-violet-700 border-violet-200', shutdown: 'bg-red-50 text-red-700 border-red-200' };
-  const actionIcon: Record<string, any> = { alert: Bell, email: Mail, webhook: Globe, shutdown: StopCircle };
+  const severityColor: Record<string, string> = { warning: 'bg-amber-50 text-amber-700 border-amber-200', critical: 'bg-red-50 text-red-700 border-red-200', info: 'bg-sky-50 text-sky-700 border-sky-200' };
+  const severityIcon: Record<string, any> = { warning: AlertTriangle, critical: AlertCircle, info: Info };
 
   return (
     <div className="page-content">
@@ -8774,24 +8931,26 @@ function IotRulesPage() {
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Create Rule</Button></DialogTrigger>
           <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader><DialogTitle>Create Automation Rule</DialogTitle><DialogDescription>Define conditions and actions for automated responses.</DialogDescription></DialogHeader>
+            <DialogHeader><DialogTitle>Create Automation Rule</DialogTitle><DialogDescription>Define conditions and actions for automated alerts.</DialogDescription></DialogHeader>
             <div className="grid gap-4 py-2">
               <div className="space-y-2"><Label>Rule Name *</Label><Input placeholder="High Temperature Alert" value={newRule.name} onChange={e => setNewRule({ ...newRule, name: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Device *</Label>
+                <Select value={newRule.deviceId} onValueChange={v => { const dev = devices.find((d: any) => d.id === v); setNewRule({ ...newRule, deviceId: v, parameter: dev?.parameter || newRule.parameter }); }}>
+                  <SelectTrigger><SelectValue placeholder="Select device" /></SelectTrigger>
+                  <SelectContent>{devices.map((d: any) => <SelectItem key={d.id} value={d.id}>{d.name} ({d.deviceCode})</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2"><Label>Device *</Label><Input placeholder="Temperature Sensor" value={newRule.device} onChange={e => setNewRule({ ...newRule, device: e.target.value })} /></div>
                 <div className="space-y-2"><Label>Parameter</Label><Input placeholder="Temperature" value={newRule.parameter} onChange={e => setNewRule({ ...newRule, parameter: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Severity</Label><Select value={newRule.severity} onValueChange={v => setNewRule({ ...newRule, severity: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="info">Info</SelectItem><SelectItem value="warning">Warning</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></div>
               </div>
               <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2"><Label>Operator</Label><Select value={newRule.operator} onValueChange={v => setNewRule({ ...newRule, operator: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['>', '<', '>=', '<=', '==', '!='].map(op => <SelectItem key={op} value={op}>{op}</SelectItem>)}</SelectContent></Select></div>
+                <div className="space-y-2"><Label>Operator</Label><Select value={newRule.operator} onValueChange={v => setNewRule({ ...newRule, operator: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[['gt', '>'], ['lt', '<'], ['gte', '≥'], ['lte', '≤'], ['eq', '=']].map(([val, label]) => <SelectItem key={val} value={val}>{label}</SelectItem>)}</SelectContent></Select></div>
                 <div className="space-y-2"><Label>Threshold *</Label><Input type="number" placeholder="85" value={newRule.threshold} onChange={e => setNewRule({ ...newRule, threshold: e.target.value })} /></div>
-                <div className="space-y-2"><Label>Unit</Label><Input placeholder="°C" value={newRule.unit} onChange={e => setNewRule({ ...newRule, unit: e.target.value })} /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2"><Label>Action Type</Label><Select value={newRule.action} onValueChange={v => setNewRule({ ...newRule, action: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="alert">Alert</SelectItem><SelectItem value="email">Email</SelectItem><SelectItem value="webhook">Webhook</SelectItem><SelectItem value="shutdown">Shutdown</SelectItem></SelectContent></Select></div>
-                <div className="space-y-2"><Label>Cooldown (sec)</Label><Input type="number" placeholder="300" value={newRule.cooldown} onChange={e => setNewRule({ ...newRule, cooldown: e.target.value })} /></div>
+                <div className="space-y-2"><Label>Cooldown (min)</Label><Input type="number" placeholder="5" value={newRule.cooldownMinutes} onChange={e => setNewRule({ ...newRule, cooldownMinutes: e.target.value })} /></div>
               </div>
             </div>
-            <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Rule</Button></DialogFooter>
+            <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Creating...' : 'Create Rule'}</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
@@ -8801,40 +8960,40 @@ function IotRulesPage() {
           { label: 'Total Rules', value: stats.total, icon: ClipboardList, color: 'text-slate-600 bg-slate-50 dark:bg-slate-900/30 dark:text-slate-400' },
           { label: 'Active', value: stats.active, icon: Play, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
           { label: 'Paused', value: stats.paused, icon: Pause, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-          { label: 'Total Triggers', value: stats.triggersToday, icon: Zap, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+          { label: 'Total Alerts', value: stats.triggersToday, icon: Zap, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
         ].map(k => { const I = k.icon; return (
           <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
         ); })}
       </div>
 
-      <div className="space-y-3">
-        {rules.map(rule => {
-          const AI = actionIcon[rule.action] || Bell;
+      {loading ? <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div> : (<div className="space-y-3">
+        {rules.map((rule: any) => {
+          const SI = severityIcon[rule.severity] || AlertTriangle;
           return (
-            <Card key={rule.id} className={`border ${rule.status === 'paused' ? 'opacity-70' : ''}`}>
+            <Card key={rule.id} className={`border ${!rule.isActive ? 'opacity-70' : ''}`}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0 flex-1">
-                    <div className={`h-9 w-9 rounded-lg ${actionColor[rule.action]} flex items-center justify-center shrink-0 mt-0.5`}><AI className="h-4 w-4" /></div>
+                    <div className={`h-9 w-9 rounded-lg ${severityColor[rule.severity] || severityColor.warning} flex items-center justify-center shrink-0 mt-0.5`}><SI className="h-4 w-4" /></div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium text-sm">{rule.name}</p>
-                        <Badge variant="outline" className={rule.status === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'}>{rule.status === 'active' ? 'Active' : 'Paused'}</Badge>
+                        <Badge variant="outline" className={rule.isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'}>{rule.isActive ? 'Active' : 'Paused'}</Badge>
+                        <Badge variant="outline" className={`text-[10px] capitalize ${severityColor[rule.severity] || ''}`}>{rule.severity}</Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">{rule.device} &mdash; When <span className="font-medium text-foreground">{rule.parameter}</span> {rule.operator} <span className="font-semibold text-foreground">{rule.threshold}{rule.unit}</span></p>
+                      <p className="text-xs text-muted-foreground mt-1">{rule.device?.name || 'Unknown Device'} &mdash; When <span className="font-medium text-foreground">{rule.parameter}</span> {operatorSymbol[rule.operator] || rule.operator} <span className="font-semibold text-foreground">{rule.threshold} {rule.device?.unit || ''}</span></p>
                       <div className="flex items-center gap-4 mt-2 text-[11px] text-muted-foreground">
-                        <span>Triggers: <span className="font-medium text-foreground">{rule.triggeredCount}</span></span>
-                        <span>Last: <span className="font-medium text-foreground">{rule.lastTriggered ? timeAgo(rule.lastTriggered) : 'Never'}</span></span>
-                        <span className="hidden sm:inline">Cooldown: <span className="font-medium text-foreground">{rule.cooldown}s</span></span>
+                        <span>Alerts: <span className="font-medium text-foreground">{rule._count?.alerts ?? 0}</span></span>
+                        <span className="hidden sm:inline">Cooldown: <span className="font-medium text-foreground">{rule.cooldownMinutes}m</span></span>
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <Switch checked={rule.status === 'active'} onCheckedChange={() => toggleRule(rule.id)} />
+                    <Switch checked={rule.isActive} onCheckedChange={() => toggleRule(rule.id)} />
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => toggleRule(rule.id)}>{rule.status === 'active' ? <><Pause className="h-4 w-4 mr-2" />Pause</> : <><Play className="h-4 w-4 mr-2" />Activate</>}</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toggleRule(rule.id)}>{rule.isActive ? <><Pause className="h-4 w-4 mr-2" />Pause</> : <><Play className="h-4 w-4 mr-2" />Activate</>}</DropdownMenuItem>
                         <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(rule.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -8845,7 +9004,7 @@ function IotRulesPage() {
           );
         })}
         {rules.length === 0 && <EmptyState icon={Radio} title="No automation rules" description="Create rules to automate responses to IoT sensor data." />}
-      </div>
+      </div>)}
     </div>
   );
 }

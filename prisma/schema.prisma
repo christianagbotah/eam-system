@@ -115,6 +115,17 @@ model User {
   woStatusHistory      WorkOrderStatusHistory[]
   mrComments           MaintenanceRequestComment[]
 
+  // Tool Management relations
+  toolsAssigned        Tool[]                   @relation("ToolAssignedTo")
+  toolsCreated         Tool[]                   @relation("ToolCreatedBy")
+  toolTransactions     ToolTransaction[]        @relation("ToolTxnPerformedBy")
+  toolTxnsFrom         ToolTransaction[]        @relation("ToolTxnFromUser")
+  toolTxnsTo           ToolTransaction[]        @relation("ToolTxnToUser")
+
+  // IoT Management relations
+  iotDevicesCreated   IotDevice[]               @relation("IotDeviceCreatedBy")
+  iotRulesCreated     IotAlertRule[]            @relation("IotRuleCreatedBy")
+
   @@map("users")
 }
 
@@ -578,6 +589,7 @@ model Asset {
   createdBy          User                @relation("AssetCreatedBy", fields: [createdById], references: [id])
   assignedTo         User?               @relation("AssetAssignedTo", fields: [assignedToId], references: [id])
   pmSchedules        PmSchedule[]
+  iotDevices          IotDevice[]
 
   @@map("assets")
 }
@@ -708,3 +720,148 @@ model MaintenanceRequestComment {
 }
 
 
+// ============================================================================
+// 15. IoT / CONDITION MONITORING
+// ============================================================================
+
+model IotDevice {
+  id              String    @id @default(cuid())
+  name            String
+  deviceCode      String    @unique                    // e.g. IOT-0001
+  type            String                               // sensor, gateway, controller, actuator
+  protocol        String                               // mqtt, http, modbus, opcua
+  status          String    @default("online")          // online, offline, warning, error, maintenance
+  location        String?
+  assetId         String?
+  groupId         String?
+  parameter       String                               // e.g. "Temperature", "Vibration"
+  unit            String                               // e.g. "°C", "mm/s", "kPa"
+  thresholdMin    Float?
+  thresholdMax    Float?
+  lastReading     Float?
+  lastSeen        DateTime?
+  batteryLevel    Int?
+  signalStrength  Int?
+  firmwareVersion String?
+  isActive        Boolean   @default(true)
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  asset           Asset?    @relation(fields: [assetId], references: [id])
+  readings        IotReading[]
+  alerts          IotAlert[]
+  rules           IotAlertRule[]
+  createdBy       User      @relation("IotDeviceCreatedBy", fields: [createdById], references: [id])
+
+  @@map("iot_devices")
+}
+
+model IotReading {
+  id          String    @id @default(cuid())
+  deviceId    String
+  value       Float
+  unit        String
+  timestamp   DateTime  @default(now())
+  isAnomaly   Boolean   @default(false)
+
+  device      IotDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, timestamp])
+  @@map("iot_readings")
+}
+
+model IotAlert {
+  id              String    @id @default(cuid())
+  deviceId        String
+  ruleId          String?
+  severity        String                               // info, warning, critical
+  message         String
+  value           Float?
+  threshold       Float?
+  status          String    @default("active")         // active, acknowledged, resolved
+  acknowledgedBy  String?
+  acknowledgedAt  DateTime?
+  resolvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  device          IotDevice   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  rule            IotAlertRule? @relation(fields: [ruleId], references: [id])
+
+  @@index([deviceId, createdAt])
+  @@map("iot_alerts")
+}
+
+model IotAlertRule {
+  id              String    @id @default(cuid())
+  name            String
+  deviceId        String
+  parameter       String                               // e.g. "Temperature"
+  operator        String                               // gt, lt, gte, lte, eq
+  threshold       Float
+  severity        String    @default("warning")         // info, warning, critical
+  cooldownMinutes Int       @default(5)
+  isActive        Boolean   @default(true)
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  device          IotDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  alerts          IotAlert[]
+  createdBy       User      @relation("IotRuleCreatedBy", fields: [createdById], references: [id])
+
+  @@map("iot_alert_rules")
+}
+
+
+// ============================================================================
+// 16. TOOL MANAGEMENT
+// ============================================================================
+
+model Tool {
+  id              String    @id @default(cuid())
+  toolCode        String    @unique                    // e.g. TL-0001
+  name            String
+  description     String?
+  category        String                               // e.g. "Hand Tool", "Power Tool", "Measurement", "Safety"
+  serialNumber    String?   @unique
+  status          String    @default("available")      // available, checked_out, in_repair, retired, transferred
+  condition       String    @default("good")            // new, good, fair, poor
+  location        String?
+  purchaseDate    DateTime?
+  purchaseCost    Float?
+  currentValue    Float?
+  manufacturer    String?
+  model           String?
+  assignedToId    String?
+  checkedOutAt    DateTime?
+  expectedReturn  DateTime?
+  isActive        Boolean   @default(true)
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  assignedTo      User?     @relation("ToolAssignedTo", fields: [assignedToId], references: [id])
+  createdBy       User      @relation("ToolCreatedBy", fields: [createdById], references: [id])
+  transactions    ToolTransaction[]
+
+  @@map("tools")
+}
+
+model ToolTransaction {
+  id              String    @id @default(cuid())
+  toolId          String
+  type            String                               // checkout, return, transfer, repair_start, repair_complete, retire
+  fromUserId      String?                              // who had it before (for transfer)
+  toUserId        String?                              // who gets it now (for checkout/transfer)
+  notes           String?
+  performedById   String                               // who did the action
+  createdAt       DateTime  @default(now())
+
+  tool            Tool      @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  performedBy     User      @relation("ToolTxnPerformedBy", fields: [performedById], references: [id])
+  fromUser        User?     @relation("ToolTxnFromUser", fields: [fromUserId], references: [id])
+  toUser          User?     @relation("ToolTxnToUser", fields: [toUserId], references: [id])
+
+  @@map("tool_transactions")
+}

@@ -1,0 +1,176 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { db } from '@/lib/db';
+import { getSession } from '@/lib/auth';
+
+// Helper: generate tool code TL-NNNN
+async function generateToolCode(): Promise<string> {
+  const latest = await db.tool.findFirst({
+    orderBy: { toolCode: 'desc' },
+    select: { toolCode: true },
+  });
+
+  let nextNum = 1;
+  if (latest) {
+    const parts = latest.toolCode.split('-');
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastNum)) nextNum = lastNum + 1;
+  }
+
+  return `TL-${String(nextNum).padStart(4, '0')}`;
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status');
+    const category = searchParams.get('category');
+    const condition = searchParams.get('condition');
+    const search = searchParams.get('search');
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '50', 10);
+
+    const where: Record<string, unknown> = { isActive: true };
+
+    if (status) where.status = status;
+    if (category) where.category = category;
+    if (condition) where.condition = condition;
+    if (search) {
+      where.OR = [
+        { name: { contains: search } },
+        { toolCode: { contains: search } },
+        { serialNumber: { contains: search } },
+        { location: { contains: search } },
+        { manufacturer: { contains: search } },
+        { model: { contains: search } },
+      ];
+    }
+
+    const [tools, total] = await Promise.all([
+      db.tool.findMany({
+        where: Object.keys(where).length > 1 || where.OR ? where : undefined,
+        include: {
+          assignedTo: { select: { id: true, fullName: true, username: true } },
+          createdBy: { select: { id: true, fullName: true, username: true } },
+          _count: { select: { transactions: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      db.tool.count({
+        where: Object.keys(where).length > 1 || where.OR ? where : { isActive: true },
+      }),
+    ]);
+
+    // Also get KPI counts
+    const [totalCount, availableCount, checkedOutCount, inRepairCount, retiredCount] = await Promise.all([
+      db.tool.count({ where: { isActive: true } }),
+      db.tool.count({ where: { isActive: true, status: 'available' } }),
+      db.tool.count({ where: { isActive: true, status: 'checked_out' } }),
+      db.tool.count({ where: { isActive: true, status: 'in_repair' } }),
+      db.tool.count({ where: { isActive: true, status: 'retired' } }),
+    ]);
+
+    return NextResponse.json({
+      success: true,
+      data: tools,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+      kpis: {
+        total: totalCount,
+        available: availableCount,
+        checkedOut: checkedOutCount,
+        inRepair: inRepairCount,
+        retired: retiredCount,
+      },
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to load tools';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const {
+      name,
+      description,
+      category,
+      serialNumber,
+      condition,
+      status,
+      location,
+      purchaseDate,
+      purchaseCost,
+      currentValue,
+      manufacturer,
+      model,
+      assignedToId,
+    } = body;
+
+    if (!name) {
+      return NextResponse.json({ success: false, error: 'Tool name is required' }, { status: 400 });
+    }
+
+    if (!category) {
+      return NextResponse.json({ success: false, error: 'Category is required' }, { status: 400 });
+    }
+
+    const toolCode = await generateToolCode();
+
+    const tool = await db.tool.create({
+      data: {
+        toolCode,
+        name,
+        description: description || null,
+        category,
+        serialNumber: serialNumber || null,
+        condition: condition || 'good',
+        status: status || 'available',
+        location: location || null,
+        purchaseDate: purchaseDate ? new Date(purchaseDate) : null,
+        purchaseCost: purchaseCost || null,
+        currentValue: currentValue || null,
+        manufacturer: manufacturer || null,
+        model: model || null,
+        assignedToId: assignedToId || null,
+        createdById: session.userId,
+      },
+      include: {
+        assignedTo: { select: { id: true, fullName: true, username: true } },
+        createdBy: { select: { id: true, fullName: true, username: true } },
+      },
+    });
+
+    // Create audit log
+    await db.auditLog.create({
+      data: {
+        userId: session.userId,
+        action: 'create',
+        entityType: 'tool',
+        entityId: tool.id,
+        newValues: JSON.stringify({ toolCode, name, category }),
+      },
+    });
+
+    return NextResponse.json({ success: true, data: tool }, { status: 201 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to create tool';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}

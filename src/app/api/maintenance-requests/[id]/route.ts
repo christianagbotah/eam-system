@@ -24,6 +24,10 @@ export async function GET(
             priority: true,
           },
         },
+        comments: {
+          include: { user: { select: { id: true, fullName: true, username: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
 

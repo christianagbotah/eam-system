@@ -224,3 +224,117 @@ Stage Summary:
 - Logo upload fully functional with file type/size validation
 - All API permission references verified against DB
 - 11 new permissions seeded to database
+
+---
+Task ID: 5
+Agent: Main
+Task: Fix critical PATCH vs POST/PUT routing bug — all WO and MR lifecycle transitions silently failing
+
+Work Log:
+- Investigated the root cause: frontend sends `api.patch()` for all action handlers, but backend endpoints only support POST on dedicated action routes and PUT on general update routes
+- No backend route handlers had PATCH exports, so all PATCH requests were returning 405 silently
+
+## Backend Changes
+
+### 1. Created `/api/maintenance-requests/[id]/convert/route.ts` (NEW)
+- POST handler that converts an approved MR into a Work Order
+- Validates MR status is 'approved' and no existing workOrderId
+- Auto-generates WO number (WO-YYYYMM-NNNN format)
+- Creates WorkOrder linked to MR with correct field mapping (title, description, priority, asset, department, plant, estimatedHours, dates)
+- Updates MR status to 'converted', workflowStatus to 'work_order_created'
+- Includes audit log entry
+
+### 2. Created `/api/maintenance-requests/[id]/comments/route.ts` (NEW)
+- POST handler to add comments to maintenance requests
+- Validates content is non-empty string
+- Creates MaintenanceRequestComment with user relation
+- Returns comment with user data (201 status)
+
+### 3. Updated `/api/maintenance-requests/[id]/route.ts`
+- Added `comments` to GET handler's Prisma include (with user select + orderBy createdAt asc)
+- This was needed because the frontend renders `mr.comments` but the GET endpoint was not returning them
+
+## Frontend Changes (src/app/page.tsx)
+
+### 1. MRDetailPage.handleAction (line ~1966)
+- **Before**: `api.patch('/api/maintenance-requests/${id}', { action, reviewNotes: notes })`
+- **After**: Routes to correct dedicated POST endpoints:
+  - `'approve'` → `api.post('/api/maintenance-requests/${id}/approve', { notes })`
+  - `'reject'` → `api.post('/api/maintenance-requests/${id}/reject', { reason: notes })` — note: backend expects `reason`, not `notes`
+  - fallback → `api.put('/api/maintenance-requests/${id}', { action, reviewNotes })`
+
+### 2. MRDetailPage.handleConvert (line ~1988)
+- **Before**: `api.patch('/api/maintenance-requests/${id}', { action: 'convert', woTitle, woPriority })`
+- **After**: `api.post('/api/maintenance-requests/${id}/convert', { title, priority })` — uses correct field names matching backend
+
+### 3. MRDetailPage.handleComment (line ~2004)
+- **Before**: `api.patch('/api/maintenance-requests/${id}', { action: 'comment', comment })`
+- **After**: `api.post('/api/maintenance-requests/${id}/comments', { content: comment })`
+
+### 4. WODetailPage.handleAction (line ~2462)
+- **Before**: `api.patch('/api/work-orders/${id}', { action, ...extra })`
+- **After**: Switch-case routing to correct endpoints:
+  - `'assign'` → `api.post('/api/work-orders/${id}/assign', { assignedTo: extra?.assignedToId })` — maps frontend's `assignedToId` to backend's `assignedTo`
+  - `'start'` → `api.post('/api/work-orders/${id}/start', { notes })`
+  - `'complete'` → `api.post('/api/work-orders/${id}/complete', { notes: extra?.completionNotes })` — maps `completionNotes` to backend's `notes`
+  - `'verify'` / `'close'` → `api.post('/api/work-orders/${id}/close', { notes })`
+  - `'approve'` → `api.put('/api/work-orders/${id}', { status: 'approved' })`
+  - default → `api.put('/api/work-orders/${id}', { action, ...extra })`
+
+### 5. WODetailPage.handleComment (line ~2496)
+- **Before**: `api.patch('/api/work-orders/${id}', { action: 'comment', comment })`
+- **After**: `api.post('/api/work-orders/${id}/comments', { content: comment })`
+
+### 6. WODetailPage.handleEditWO (line ~2516)
+- **Before**: `api.patch('/api/work-orders/${id}', { action: 'update', ...fields })`
+- **After**: `api.put('/api/work-orders/${id}', { ...fields })` — removed unnecessary `action: 'update'` field
+
+### 7. Module toggle (line ~3524)
+- **No change needed**: Backend already supports both PUT and PATCH for module updates
+
+Stage Summary:
+- All 6 broken lifecycle transitions (MR approve/reject/convert/comment, WO action/comment) now route to correct HTTP methods and endpoints
+- 2 new backend API endpoints created (MR convert, MR comments)
+- MR GET endpoint now includes comments in response
+- Parameter name mismatches fixed (reason vs notes, assignedToId vs assignedTo, completionNotes vs notes)
+- Module toggle verified as already working (backend supports PATCH)
+- ESLint passes (1 pre-existing error unrelated to changes)
+- Dev server compiles successfully with no errors
+- Files modified: src/app/page.tsx, src/app/api/maintenance-requests/[id]/route.ts
+- Files created: src/app/api/maintenance-requests/[id]/convert/route.ts, src/app/api/maintenance-requests/[id]/comments/route.ts
+---
+Task ID: 6
+Agent: Main
+Task: Build complete Tool Management backend and connect existing frontend
+
+Work Log:
+- Added Tool and ToolTransaction models to Prisma schema (section 15: TOOL MANAGEMENT)
+- Added User model relations: toolsAssigned, toolsCreated, toolTransactions, toolTxnsFrom, toolTxnsTo
+- Ran db:push + prisma generate to apply schema and regenerate client
+- Created 7 API routes following existing patterns from assets API:
+  1. `src/app/api/tools/route.ts` — GET (list with search/status/category/condition filters, pagination, KPI counts) + POST (create tool with auto-generated TL-NNNN code)
+  2. `src/app/api/tools/[id]/route.ts` — GET (detail with transactions), PUT (update), DELETE (soft delete with retired status)
+  3. `src/app/api/tools/[id]/checkout/route.ts` — POST { assignedToId, expectedReturn? } validates tool available, creates transaction
+  4. `src/app/api/tools/[id]/return/route.ts` — POST { notes? } validates tool checked_out, creates transaction
+  5. `src/app/api/tools/[id]/transfer/route.ts` — POST { toUserId, notes? } validates assignment, creates transaction
+  6. `src/app/api/tools/[id]/repair/route.ts` — POST { notes? } sets status in_repair, clears assignment if checked out
+  7. `src/app/api/tools/[id]/transactions/route.ts` — GET with pagination, includes performedBy/fromUser/toUser relations
+- Connected MaintenanceToolsPage frontend in page.tsx:
+  - Replaced hardcoded tools array with useState + useEffect fetching from /api/tools
+  - Replaced hardcoded KPI values with dynamic kpis state from API response
+  - Real handleCreate function calling api.post('/api/tools', ...)
+  - Loading spinner state while fetching
+  - Updated status filter to match backend statuses (removed 'lost', added 'retired', 'transferred')
+  - Updated category options to match backend convention (Hand Tool, Power Tool, Measurement, Safety, Specialty)
+  - Removed unused 'assignedTo' form field (users can be assigned via checkout action after creation)
+  - Updated table columns: ID→Code (toolCode), AssignedTo uses assignedTo.fullName, Last Return→Checked Out (checkedOutAt)
+  - Added optional chaining for null-safe property access on tool fields
+
+Stage Summary:
+- Tool Management now has full backend persistence via Prisma SQLite
+- 7 REST API endpoints created with auth, validation, audit logging
+- Frontend dynamically fetches and displays real tool data
+- Create tool functionality wired to backend
+- Dev server compiles successfully
+- Files modified: prisma/schema.prisma, src/app/page.tsx
+- Files created: src/app/api/tools/route.ts, src/app/api/tools/[id]/route.ts, src/app/api/tools/[id]/checkout/route.ts, src/app/api/tools/[id]/return/route.ts, src/app/api/tools/[id]/transfer/route.ts, src/app/api/tools/[id]/repair/route.ts, src/app/api/tools/[id]/transactions/route.ts
