@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
-import type { PageName, User, MaintenanceRequest, WorkOrder, DashboardStats, Module, Role, Permission, UserRole, Notification, CompanyProfile } from '@/types';
+import type { PageName, User, MaintenanceRequest, WorkOrder, DashboardStats, Module, Role, Permission, UserRole, Notification, CompanyProfile, Asset, InventoryItem } from '@/types';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -2802,6 +2802,7 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
                           <TableHead className="text-right hidden sm:table-cell">Unit Cost</TableHead>
                           <TableHead className="text-right hidden sm:table-cell">Total</TableHead>
                           <TableHead>Status</TableHead>
+                          <TableHead className="w-[120px]">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -2811,7 +2812,23 @@ function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void
                             <TableCell className="text-right text-sm">{m.quantity || 0} {m.unit || ''}</TableCell>
                             <TableCell className="text-right text-sm hidden sm:table-cell">${(m.unitCost || 0).toFixed(2)}</TableCell>
                             <TableCell className="text-right text-sm hidden sm:table-cell font-medium">${(m.totalCost || (m.quantity || 0) * (m.unitCost || 0)).toFixed(2)}</TableCell>
-                            <TableCell><Badge variant="outline" className="text-[10px] capitalize">{m.status || 'requested'}</Badge></TableCell>
+                            <TableCell><Badge variant="outline" className={`text-[10px] capitalize ${m.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : m.status === 'issued' ? 'bg-sky-50 text-sky-700 border-sky-200' : m.status === 'returned' ? 'bg-slate-50 text-slate-500 border-slate-200' : ''}`}>{m.status || 'requested'}</Badge></TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                {m.status === 'requested' && (
+                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-200" onClick={async () => { const r = await api.put(`/api/work-orders/${id}/materials/${m.id}`, { status: 'approved' }); if (r.success) { toast.success('Material approved'); fetchWO(); } else toast.error(r.error || 'Failed'); }}>Approve</Button>
+                                )}
+                                {m.status === 'approved' && (
+                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-sky-600 hover:text-sky-700 border-sky-200" onClick={async () => { const r = await api.put(`/api/work-orders/${id}/materials/${m.id}`, { status: 'issued' }); if (r.success) { toast.success('Material issued'); fetchWO(); } else toast.error(r.error || 'Failed'); }}>Issue</Button>
+                                )}
+                                {(m.status === 'issued') && (
+                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-slate-600 hover:text-slate-700" onClick={async () => { const r = await api.put(`/api/work-orders/${id}/materials/${m.id}`, { status: 'returned' }); if (r.success) { toast.success('Material returned'); fetchWO(); } else toast.error(r.error || 'Failed'); }}>Return</Button>
+                                )}
+                                {m.status === 'requested' && (
+                                  <Button size="sm" variant="ghost" className="h-7 text-[10px] px-1.5 text-red-500 hover:text-red-600" onClick={async () => { if (!confirm('Delete this material?')) return; const r = await api.delete(`/api/work-orders/${id}/materials/${m.id}`); if (r.success) { toast.success('Material removed'); fetchWO(); } else toast.error(r.error || 'Failed'); }}><Trash2 className="h-3 w-3" /></Button>
+                                )}
+                              </div>
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -12449,184 +12466,332 @@ function ReportsInventoryPage() {
 }
 function ReportsProductionPage() {
   const [monthFilter, setMonthFilter] = useState('all');
-  const monthlyData = [
-    { month: 'Aug 2024', planned: 2100, actual: 1980, efficiency: 94.3, downtime: 28, waste: 42 },
-    { month: 'Sep 2024', planned: 2150, actual: 2010, efficiency: 93.5, downtime: 32, waste: 38 },
-    { month: 'Oct 2024', planned: 2200, actual: 2050, efficiency: 93.2, downtime: 35, waste: 45 },
-    { month: 'Nov 2024', planned: 2100, actual: 1830, efficiency: 87.1, downtime: 52, waste: 62 },
-    { month: 'Dec 2024', planned: 2050, actual: 1780, efficiency: 86.8, downtime: 56, waste: 58 },
-    { month: 'Jan 2025', planned: 2200, actual: 1800, efficiency: 81.8, downtime: 48, waste: 40 },
-  ];
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api.get<WorkOrder[]>('/api/work-orders?limit=9999'),
+      api.get<Asset[]>('/api/assets?limit=9999'),
+    ]).then(([woRes, assetRes]) => {
+      if (woRes.success && Array.isArray(woRes.data)) setWorkOrders(woRes.data);
+      if (assetRes.success && Array.isArray(assetRes.data)) setAssets(assetRes.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const completedWOs = workOrders.filter(wo => wo.status === 'completed' || wo.status === 'closed' || wo.status === 'verified');
+
+  // Group completed WOs by month
+  const monthlyMap: Record<string, { completed: number; plannedHrs: number; actualHrs: number }> = {};
+  completedWOs.forEach(wo => {
+    const dateStr = wo.actualEnd || wo.updatedAt || wo.createdAt;
+    if (!dateStr) return;
+    const d = new Date(dateStr);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const label = format(d, 'MMM yyyy');
+    if (!monthlyMap[key]) monthlyMap[key] = { completed: 0, plannedHrs: 0, actualHrs: 0 };
+    monthlyMap[key].completed += 1;
+    monthlyMap[key].plannedHrs += wo.estimatedHours || 0;
+    monthlyMap[key].actualHrs += wo.actualHours || 0;
+  });
+
+  // Assets under maintenance for downtime count
+  const underMaintenanceCount = assets.filter(a => a.status === 'under_maintenance').length;
+
+  const monthlyData = Object.entries(monthlyMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([key, data]) => {
+      const d = new Date(key + '-01');
+      const label = format(d, 'MMM yyyy');
+      const efficiency = data.plannedHrs > 0 ? Math.min(100, Math.round((data.plannedHrs / (data.plannedHrs + Math.max(0, data.actualHrs - data.plannedHrs))) * 100 * 10) / 10) : data.actualHrs > 0 ? 100 : 0;
+      return { month: label, monthKey: key, completed: data.completed, plannedHrs: Math.round(data.plannedHrs), actualHrs: Math.round(data.actualHrs), efficiency, downtime: underMaintenanceCount };
+    });
+
+  const months = monthlyData.map(d => d.month);
   const filtered = monthFilter === 'all' ? monthlyData : monthlyData.filter(d => d.month.includes(monthFilter));
-  const totalOutput = monthlyData.reduce((s, d) => s + d.actual, 0);
-  const avgEfficiency = (monthlyData.reduce((s, d) => s + d.efficiency, 0) / monthlyData.length).toFixed(1);
-  const avgDowntime = (monthlyData.reduce((s, d) => s + d.downtime, 0) / monthlyData.length).toFixed(1);
-  const avgWaste = ((monthlyData.reduce((s, d) => s + d.waste, 0) / totalOutput) * 100).toFixed(1);
-  const maxActual = Math.max(...monthlyData.map(d => d.actual));
+  const totalOutput = monthlyData.reduce((s, d) => s + d.completed, 0);
+  const avgEfficiency = monthlyData.length > 0 ? (monthlyData.reduce((s, d) => s + d.efficiency, 0) / monthlyData.length).toFixed(1) : '0.0';
+  const avgDowntime = monthlyData.length > 0 ? (monthlyData.reduce((s, d) => s + d.actualHrs, 0) / monthlyData.length).toFixed(1) : '0.0';
+  const avgWaste = totalOutput > 0 ? ((monthlyData.reduce((s, d) => s + Math.max(0, d.actualHrs - d.plannedHrs), 0) / monthlyData.reduce((s, d) => s + d.plannedHrs || 1, 0)) * 100).toFixed(1) : '0.0';
+  const maxActual = monthlyData.length > 0 ? Math.max(...monthlyData.map(d => d.completed), 1) : 1;
   const summaryCards = [
-    { label: 'Total Output', value: `${totalOutput.toLocaleString()} units`, icon: Factory, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Completed WOs', value: totalOutput.toString(), icon: Factory, color: 'bg-emerald-50 text-emerald-600' },
     { label: 'Efficiency', value: `${avgEfficiency}%`, icon: Target, color: 'bg-sky-50 text-sky-600' },
-    { label: 'Avg Downtime', value: `${avgDowntime} hrs/mo`, icon: Clock, color: 'bg-amber-50 text-amber-600' },
-    { label: 'Waste Rate', value: `${avgWaste}%`, icon: AlertTriangle, color: 'bg-red-50 text-red-600' },
+    { label: 'Avg Actual Hours', value: `${avgDowntime} hrs/mo`, icon: Clock, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Over-hours Rate', value: `${avgWaste}%`, icon: AlertTriangle, color: 'bg-red-50 text-red-600' },
   ];
-  const months = ['Aug 2024', 'Sep 2024', 'Oct 2024', 'Nov 2024', 'Dec 2024', 'Jan 2025'];
+
+  if (loading) return <div className="page-content"><LoadingSkeleton /></div>;
+
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-bold tracking-tight">Production Reports</h1><p className="text-muted-foreground mt-1">Reports on production output, efficiency, and resource utilization</p></div>
+        <div><h1 className="text-2xl font-bold tracking-tight">Production Reports</h1><p className="text-muted-foreground mt-1">Work order output, planned vs actual hours, and efficiency trends derived from completed work orders</p></div>
         <div className="w-full sm:w-auto">
           <Select value={monthFilter} onValueChange={setMonthFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Filter month" /></SelectTrigger><SelectContent><SelectItem value="all">All Months</SelectItem>{months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select>
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {summaryCards.map(k => { const I = k.icon; return (
-          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
-            <div className="flex items-center gap-4">
-              <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
-              <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
-            </div>
-          </div>
-        ); })}
-      </div>
-      <Card className="border border-border/60 shadow-sm">
-        <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Output (Last 6 Months)</CardTitle></CardHeader>
-        <CardContent>
-          <div className="flex items-end gap-3 h-48">
-            {monthlyData.map(d => (
-              <div key={d.month} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-xs font-medium">{d.actual.toLocaleString()}</span>
-                <div className="w-full bg-emerald-100 rounded-t-md" style={{ height: `${(d.actual / maxActual) * 140}px` }}>
-                  <div className="w-full h-full bg-emerald-500 rounded-t-md opacity-80" />
-                </div>
-                <span className="text-[10px] text-muted-foreground text-center">{d.month.split(' ')[0]}</span>
+      {completedWOs.length === 0 ? (
+        <EmptyState icon={Factory} title="No production data available yet" description="Complete work orders to see production trends, efficiency metrics, and planned vs actual hours." />
+      ) : (<>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {summaryCards.map(k => { const I = k.icon; return (
+            <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+              <div className="flex items-center gap-4">
+                <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
+                <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
               </div>
+            </div>
+          ); })}
+        </div>
+        <Card className="border border-border/60 shadow-sm">
+          <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Completed Work Orders</CardTitle></CardHeader>
+          <CardContent>
+            <div className="flex items-end gap-3 h-48">
+              {monthlyData.map(d => (
+                <div key={d.monthKey} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-xs font-medium">{d.completed}</span>
+                  <div className="w-full bg-emerald-100 rounded-t-md" style={{ height: `${(d.completed / maxActual) * 140}px` }}>
+                    <div className="w-full h-full bg-emerald-500 rounded-t-md opacity-80" />
+                  </div>
+                  <span className="text-[10px] text-muted-foreground text-center">{d.month.split(' ')[0]}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
+          <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Completed WOs</TableHead><TableHead className="text-right">Planned Hrs</TableHead><TableHead className="text-right">Actual Hrs</TableHead><TableHead className="hidden sm:table-cell text-right">Efficiency</TableHead><TableHead className="hidden md:table-cell text-right">Assets in Maint.</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.map(d => (
+              <TableRow key={d.monthKey} className="hover:bg-muted/30">
+                <TableCell className="font-medium">{d.month}</TableCell>
+                <TableCell className="text-right font-medium">{d.completed}</TableCell>
+                <TableCell className="text-right text-muted-foreground">{d.plannedHrs.toLocaleString()}</TableCell>
+                <TableCell className="text-right">{d.actualHrs.toLocaleString()}</TableCell>
+                <TableCell className={`text-right font-medium hidden sm:table-cell ${d.efficiency >= 90 ? 'text-emerald-600' : d.efficiency >= 75 ? 'text-amber-600' : 'text-red-600'}`}>{d.efficiency}%</TableCell>
+                <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.downtime}</TableCell>
+              </TableRow>
             ))}
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
-        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Planned</TableHead><TableHead className="text-right">Actual</TableHead><TableHead className="text-right">Efficiency</TableHead><TableHead className="hidden sm:table-cell text-right">Downtime (hrs)</TableHead><TableHead className="hidden md:table-cell text-right">Waste (units)</TableHead></TableRow></TableHeader><TableBody>
-          {filtered.map(d => (
-            <TableRow key={d.month} className="hover:bg-muted/30">
-              <TableCell className="font-medium">{d.month}</TableCell>
-              <TableCell className="text-right text-muted-foreground">{d.planned.toLocaleString()}</TableCell>
-              <TableCell className="text-right font-medium">{d.actual.toLocaleString()}</TableCell>
-              <TableCell className={`text-right font-medium ${d.efficiency >= 90 ? 'text-emerald-600' : d.efficiency >= 85 ? 'text-amber-600' : 'text-red-600'}`}>{d.efficiency}%</TableCell>
-              <TableCell className="text-right text-muted-foreground hidden sm:table-cell">{d.downtime}</TableCell>
-              <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.waste}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody></Table></div>
-      </CardContent></Card>
+          </TableBody></Table></div>
+        </CardContent></Card>
+      </>)}
     </div>
   );
 }
 function ReportsQualityPage() {
   const [monthFilter, setMonthFilter] = useState('all');
-  const ncrCategories = [
-    { name: 'Design', count: 12, color: 'bg-violet-500' },
-    { name: 'Material', count: 18, color: 'bg-amber-500' },
-    { name: 'Process', count: 25, color: 'bg-sky-500' },
-    { name: 'External', count: 8, color: 'bg-red-500' },
-  ];
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get<WorkOrder[]>('/api/work-orders?limit=9999').then(res => {
+      if (res.success && Array.isArray(res.data)) setWorkOrders(res.data);
+      setLoading(false);
+    });
+  }, []);
+
+  // Group WOs by type
+  const typeMap: Record<string, { total: number; completed: number; totalActualHrs: number; totalEstHrs: number }> = {};
+  workOrders.forEach(wo => {
+    const t = wo.type || 'other';
+    if (!typeMap[t]) typeMap[t] = { total: 0, completed: 0, totalActualHrs: 0, totalEstHrs: 0 };
+    typeMap[t].total += 1;
+    if (wo.status === 'completed' || wo.status === 'closed' || wo.status === 'verified') typeMap[t].completed += 1;
+    typeMap[t].totalActualHrs += wo.actualHours || 0;
+    typeMap[t].totalEstHrs += wo.estimatedHours || 0;
+  });
+
+  const typeColors: Record<string, string> = { preventive: 'bg-emerald-500', corrective: 'bg-amber-500', emergency: 'bg-red-500', inspection: 'bg-sky-500', predictive: 'bg-violet-500', project: 'bg-teal-500', other: 'bg-slate-400' };
+  const ncrCategories = Object.entries(typeMap)
+    .map(([type, data]) => ({
+      name: type.replace('_', ' '),
+      count: data.total,
+      color: typeColors[type] || 'bg-slate-400',
+      completed: data.completed,
+      completionRate: data.total > 0 ? Math.round((data.completed / data.total) * 100) : 0,
+      avgHours: data.completed > 0 ? Math.round((data.totalActualHrs / data.completed) * 10) / 10 : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
   const totalNCRs = ncrCategories.reduce((s, c) => s + c.count, 0);
-  const monthlyData = [
-    { month: 'Aug 2024', inspections: 55, passed: 52, failed: 3, passRate: 94.5, ncrs: 3, capas: 2 },
-    { month: 'Sep 2024', inspections: 60, passed: 57, failed: 3, passRate: 95.0, ncrs: 4, capas: 3 },
-    { month: 'Oct 2024', inspections: 58, passed: 54, failed: 4, passRate: 93.1, ncrs: 5, capas: 4 },
-    { month: 'Nov 2024', inspections: 62, passed: 58, failed: 4, passRate: 93.5, ncrs: 6, capas: 5 },
-    { month: 'Dec 2024', inspections: 52, passed: 49, failed: 3, passRate: 94.2, ncrs: 4, capas: 3 },
-    { month: 'Jan 2025', inspections: 55, passed: 52, failed: 3, passRate: 94.5, ncrs: 3, capas: 2 },
-  ];
+  const totalCompleted = ncrCategories.reduce((s, c) => s + c.completed, 0);
+  const avgPassRate = totalNCRs > 0 ? ((totalCompleted / totalNCRs) * 100).toFixed(1) : '0.0';
+
+  // Group completed WOs by month
+  const monthlyMap: Record<string, { completed: number; total: number }> = {};
+  workOrders.forEach(wo => {
+    const dateStr = wo.actualEnd || wo.updatedAt || wo.createdAt;
+    if (!dateStr) return;
+    const d = new Date(dateStr);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (!monthlyMap[key]) monthlyMap[key] = { completed: 0, total: 0 };
+    monthlyMap[key].total += 1;
+    if (wo.status === 'completed' || wo.status === 'closed' || wo.status === 'verified') monthlyMap[key].completed += 1;
+  });
+
+  const monthlyData = Object.entries(monthlyMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([key, data]) => {
+      const d = new Date(key + '-01');
+      const label = format(d, 'MMM yyyy');
+      const passRate = data.total > 0 ? Math.round((data.completed / data.total) * 1000) / 10 : 0;
+      return { month: label, monthKey: key, inspections: data.total, passed: data.completed, failed: data.total - data.completed, passRate, ncrs: data.total - data.completed };
+    });
+
+  const months = monthlyData.map(d => d.month);
   const filtered = monthFilter === 'all' ? monthlyData : monthlyData.filter(d => d.month.includes(monthFilter));
-  const totalInspections = monthlyData.reduce((s, d) => s + d.inspections, 0);
-  const avgPassRate = ((monthlyData.reduce((s, d) => s + d.passed, 0) / totalInspections) * 100).toFixed(1);
+  const totalInspections = workOrders.length;
   const summaryCards = [
-    { label: 'Total Inspections', value: totalInspections.toString(), icon: ClipboardCheck, color: 'bg-emerald-50 text-emerald-600' },
-    { label: 'Pass Rate', value: `${avgPassRate}%`, icon: ShieldCheck, color: 'bg-sky-50 text-sky-600' },
-    { label: 'Open NCRs', value: '9', icon: AlertTriangle, color: 'bg-amber-50 text-amber-600' },
-    { label: 'CAPAs Pending', value: '8', icon: Clock, color: 'bg-red-50 text-red-600' },
+    { label: 'Total Work Orders', value: totalInspections.toString(), icon: ClipboardCheck, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Completion Rate', value: `${avgPassRate}%`, icon: ShieldCheck, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Incomplete WOs', value: (totalNCRs - totalCompleted).toString(), icon: AlertTriangle, color: 'bg-amber-50 text-amber-600' },
+    { label: 'WO Types', value: ncrCategories.length.toString(), icon: Clock, color: 'bg-red-50 text-red-600' },
   ];
-  const months = ['Aug 2024', 'Sep 2024', 'Oct 2024', 'Nov 2024', 'Dec 2024', 'Jan 2025'];
+
+  if (loading) return <div className="page-content"><LoadingSkeleton /></div>;
+
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-bold tracking-tight">Quality Reports</h1><p className="text-muted-foreground mt-1">Reports on inspections, NCRs, CAPAs, and quality KPIs</p></div>
+        <div><h1 className="text-2xl font-bold tracking-tight">Quality Reports</h1><p className="text-muted-foreground mt-1">Work order completion rates, type analysis, and quality KPIs derived from real work order data</p></div>
         <Select value={monthFilter} onValueChange={setMonthFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Filter month" /></SelectTrigger><SelectContent><SelectItem value="all">All Months</SelectItem>{months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {summaryCards.map(k => { const I = k.icon; return (
-          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
-            <div className="flex items-center gap-4">
-              <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
-              <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
-            </div>
-          </div>
-        ); })}
-      </div>
-      <Card className="border border-border/60 shadow-sm">
-        <CardHeader className="pb-3"><CardTitle className="text-base">NCR by Category</CardTitle></CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {ncrCategories.map(cat => (
-              <div key={cat.name} className="flex items-center gap-3">
-                <span className="text-sm font-medium w-20">{cat.name}</span>
-                <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden"><div className={`h-full ${cat.color} rounded-full`} style={{ width: `${(cat.count / Math.max(...ncrCategories.map(c => c.count))) * 100}%` }} /></div>
-                <span className="text-sm font-semibold w-16 text-right">{cat.count} ({Math.round((cat.count / totalNCRs) * 100)}%)</span>
+      {workOrders.length === 0 ? (
+        <EmptyState icon={ClipboardCheck} title="No quality data available yet" description="Create work orders to see completion rates and type analysis." />
+      ) : (<>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {summaryCards.map(k => { const I = k.icon; return (
+            <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+              <div className="flex items-center gap-4">
+                <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
+                <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
               </div>
+            </div>
+          ); })}
+        </div>
+        <Card className="border border-border/60 shadow-sm">
+          <CardHeader className="pb-3"><CardTitle className="text-base">Work Orders by Type</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {ncrCategories.map(cat => (
+                <div key={cat.name} className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-28 capitalize">{cat.name}</span>
+                  <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden"><div className={`h-full ${cat.color} rounded-full`} style={{ width: `${totalNCRs > 0 ? (cat.count / Math.max(...ncrCategories.map(c => c.count))) * 100 : 0}%` }} /></div>
+                  <span className="text-sm font-semibold w-36 text-right">{cat.count} ({cat.completionRate}% done)</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
+          <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Total WOs</TableHead><TableHead className="hidden sm:table-cell text-right">Completed</TableHead><TableHead className="hidden sm:table-cell text-right">Incomplete</TableHead><TableHead className="text-right">Completion Rate</TableHead><TableHead className="hidden md:table-cell text-right">Avg Hrs/WO</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.map(d => (
+              <TableRow key={d.monthKey} className="hover:bg-muted/30">
+                <TableCell className="font-medium">{d.month}</TableCell>
+                <TableCell className="text-right">{d.inspections}</TableCell>
+                <TableCell className="text-right text-emerald-600 hidden sm:table-cell">{d.passed}</TableCell>
+                <TableCell className="text-right text-red-600 hidden sm:table-cell">{d.failed}</TableCell>
+                <TableCell className={`text-right font-medium ${d.passRate >= 95 ? 'text-emerald-600' : d.passRate >= 80 ? 'text-amber-600' : 'text-red-600'}`}>{d.passRate}%</TableCell>
+                <TableCell className="text-right text-muted-foreground hidden md:table-cell">—</TableCell>
+              </TableRow>
             ))}
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
-        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Inspections</TableHead><TableHead className="hidden sm:table-cell text-right">Passed</TableHead><TableHead className="hidden sm:table-cell text-right">Failed</TableHead><TableHead className="text-right">Pass Rate</TableHead><TableHead className="text-right">NCRs</TableHead><TableHead className="hidden md:table-cell text-right">CAPAs</TableHead></TableRow></TableHeader><TableBody>
-          {filtered.map(d => (
-            <TableRow key={d.month} className="hover:bg-muted/30">
-              <TableCell className="font-medium">{d.month}</TableCell>
-              <TableCell className="text-right">{d.inspections}</TableCell>
-              <TableCell className="text-right text-emerald-600 hidden sm:table-cell">{d.passed}</TableCell>
-              <TableCell className="text-right text-red-600 hidden sm:table-cell">{d.failed}</TableCell>
-              <TableCell className={`text-right font-medium ${d.passRate >= 95 ? 'text-emerald-600' : d.passRate >= 90 ? 'text-amber-600' : 'text-red-600'}`}>{d.passRate}%</TableCell>
-              <TableCell className="text-right">{d.ncrs}</TableCell>
-              <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.capas}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody></Table></div>
-      </CardContent></Card>
+          </TableBody></Table></div>
+        </CardContent></Card>
+      </>)}
     </div>
   );
 }
 function ReportsSafetyPage() {
   const [yearFilter, setYearFilter] = useState('2025');
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [mrs, setMrs] = useState<MaintenanceRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api.get<WorkOrder[]>('/api/work-orders?limit=9999'),
+      api.get<Asset[]>('/api/assets?limit=9999'),
+      api.get<MaintenanceRequest[]>('/api/maintenance-requests?limit=9999'),
+    ]).then(([woRes, assetRes, mrRes]) => {
+      if (woRes.success && Array.isArray(woRes.data)) setWorkOrders(woRes.data);
+      if (assetRes.success && Array.isArray(assetRes.data)) setAssets(assetRes.data);
+      if (mrRes.success && Array.isArray(mrRes.data)) setMrs(mrRes.data);
+      setLoading(false);
+    });
+  }, []);
+
+  // Safety-related: critical/urgent priority WOs
+  const safetyWOs = workOrders.filter(wo => wo.priority === 'critical' || wo.priority === 'urgent' || wo.priority === 'emergency');
+  const criticalWOs = workOrders.filter(wo => wo.priority === 'critical' || wo.priority === 'emergency');
+  const urgentWOs = workOrders.filter(wo => wo.priority === 'urgent');
+
+  // At-risk assets: poor condition or out of service
+  const atRiskAssets = assets.filter(a => a.condition === 'poor' || a.status === 'out_of_service');
+  const poorConditionAssets = assets.filter(a => a.condition === 'poor');
+  const outOfServiceAssets = assets.filter(a => a.status === 'out_of_service');
+
+  // Overdue MRs: pending for more than 7 days
+  const now = Date.now();
+  const overdueMrs = mrs.filter(mr => mr.status === 'pending' && (now - new Date(mr.createdAt).getTime()) > 7 * 24 * 60 * 60 * 1000);
+  const pendingMrs = mrs.filter(mr => mr.status === 'pending');
+
+  // Priority breakdown for chart
   const incidentTypes = [
-    { name: 'Injury', count: 8, color: 'bg-red-500' },
-    { name: 'Near Miss', count: 12, color: 'bg-amber-500' },
-    { name: 'Property', count: 4, color: 'bg-sky-500' },
-    { name: 'Environmental', count: 2, color: 'bg-emerald-500' },
-    { name: 'Fire', count: 1, color: 'bg-orange-500' },
-  ];
-  const maxCount = Math.max(...incidentTypes.map(t => t.count));
-  const monthlyData = [
-    { month: 'Aug 2024', incidents: 5, nearMisses: 8, trir: 1.2, trainingHrs: 120, inspections: 22, actionsClosed: 18 },
-    { month: 'Sep 2024', incidents: 4, nearMisses: 10, trir: 0.9, trainingHrs: 135, inspections: 25, actionsClosed: 20 },
-    { month: 'Oct 2024', incidents: 3, nearMisses: 7, trir: 0.7, trainingHrs: 110, inspections: 20, actionsClosed: 17 },
-    { month: 'Nov 2024', incidents: 6, nearMisses: 9, trir: 1.4, trainingHrs: 145, inspections: 28, actionsClosed: 22 },
-    { month: 'Dec 2024', incidents: 3, nearMisses: 6, trir: 0.6, trainingHrs: 95, inspections: 18, actionsClosed: 15 },
-    { month: 'Jan 2025', incidents: 3, nearMisses: 5, trir: 0.5, trainingHrs: 88, inspections: 15, actionsClosed: 12 },
-  ];
+    { name: 'Critical', count: criticalWOs.length, color: 'bg-red-500' },
+    { name: 'Urgent', count: urgentWOs.length, color: 'bg-amber-500' },
+    { name: 'Poor Assets', count: poorConditionAssets.length, color: 'bg-orange-500' },
+    { name: 'Out of Service', count: outOfServiceAssets.length, color: 'bg-sky-500' },
+    { name: 'Overdue MRs', count: overdueMrs.length, color: 'bg-emerald-500' },
+  ].filter(t => t.count > 0);
+  const maxCount = incidentTypes.length > 0 ? Math.max(...incidentTypes.map(t => t.count)) : 1;
+
+  // Group by month
+  const monthlyMap: Record<string, { critical: number; urgent: number; atRiskAssets: number; overdueMRs: number }> = {};
+  const addMonth = (dateStr: string, key: string, value: number) => {
+    if (!dateStr) return;
+    const d = new Date(dateStr);
+    const mk = `${d.getFullYear()}`;
+    if (!monthlyMap[mk]) monthlyMap[mk] = { critical: 0, urgent: 0, atRiskAssets: 0, overdueMRs: 0 };
+    (monthlyMap[mk] as any)[key] = (monthlyMap[mk] as any)[key] || 0;
+    (monthlyMap[mk] as any)[key] += value;
+  };
+  criticalWOs.forEach(wo => addMonth(wo.createdAt || '', 'critical', 1));
+  urgentWOs.forEach(wo => addMonth(wo.createdAt || '', 'urgent', 1));
+  overdueMrs.forEach(mr => addMonth(mr.createdAt || '', 'overdueMRs', 1));
+
+  const monthlyData = Object.entries(monthlyMap)
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([year, data]) => ({
+      month: year,
+      incidents: data.critical,
+      nearMisses: data.urgent,
+      trir: (data.critical + data.urgent) > 0 ? Math.round(((data.critical * 2 + data.urgent) / (data.critical + data.urgent)) * 10) / 10 : 0,
+      trainingHrs: 0,
+      inspections: atRiskAssets.length,
+      actionsClosed: workOrders.filter(wo => (wo.status === 'completed' || wo.status === 'closed') && (wo.createdAt || '').startsWith(year)).length,
+    }));
+
   const filtered = monthlyData.filter(d => d.month.includes(yearFilter));
-  const totalIncidents = monthlyData.reduce((s, d) => s + d.incidents, 0);
-  const avgTRIR = (monthlyData.reduce((s, d) => s + d.trir, 0) / monthlyData.length).toFixed(1);
+  const totalIncidents = criticalWOs.length + urgentWOs.length;
+  const avgTRIR = totalIncidents > 0 ? (monthlyData.length > 0 ? (monthlyData.reduce((s, d) => s + d.trir, 0) / monthlyData.length).toFixed(1) : '0.0') : '0.0';
   const summaryCards = [
-    { label: 'Incidents', value: totalIncidents.toString(), icon: AlertTriangle, color: 'bg-red-50 text-red-600' },
-    { label: 'TRIR', value: avgTRIR, icon: ShieldAlert, color: 'bg-amber-50 text-amber-600' },
-    { label: 'Days Without Incident', value: '45', icon: CheckCircle2, color: 'bg-emerald-50 text-emerald-600' },
-    { label: 'Training Compliance', value: '92%', icon: GraduationCap, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Critical WOs', value: criticalWOs.length.toString(), icon: AlertTriangle, color: 'bg-red-50 text-red-600' },
+    { label: 'Urgent WOs', value: urgentWOs.length.toString(), icon: ShieldAlert, color: 'bg-amber-50 text-amber-600' },
+    { label: 'At-Risk Assets', value: atRiskAssets.length.toString(), icon: CheckCircle2, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Overdue MRs', value: overdueMrs.length.toString(), icon: GraduationCap, color: 'bg-sky-50 text-sky-600' },
   ];
+
+  if (loading) return <div className="page-content"><LoadingSkeleton /></div>;
+
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-bold tracking-tight">Safety Reports</h1><p className="text-muted-foreground mt-1">Reports on incidents, inspections, training, and safety KPIs</p></div>
+        <div><h1 className="text-2xl font-bold tracking-tight">Safety Reports</h1><p className="text-muted-foreground mt-1">Critical/urgent work orders, at-risk assets, and overdue maintenance requests</p></div>
         <Select value={yearFilter} onValueChange={setYearFilter}><SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder="Year" /></SelectTrigger><SelectContent><SelectItem value="2024">2024</SelectItem><SelectItem value="2025">2025</SelectItem></SelectContent></Select>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -12639,47 +12804,61 @@ function ReportsSafetyPage() {
           </div>
         ); })}
       </div>
-      <Card className="border border-border/60 shadow-sm">
-        <CardHeader className="pb-3"><CardTitle className="text-base">Incidents by Type</CardTitle></CardHeader>
-        <CardContent>
-          <div className="flex items-end gap-4 h-40">
-            {incidentTypes.map(t => (
-              <div key={t.name} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-xs font-medium">{t.count}</span>
-                <div className="w-full rounded-t-md" style={{ height: `${(t.count / maxCount) * 100}px` }}>
-                  <div className={`w-full h-full ${t.color} rounded-t-md opacity-80`} />
+      {safetyWOs.length === 0 && atRiskAssets.length === 0 && overdueMrs.length === 0 ? (
+        <EmptyState icon={ShieldAlert} title="No safety concerns detected" description="No critical/urgent work orders, at-risk assets, or overdue maintenance requests found." />
+      ) : (<>
+        <Card className="border border-border/60 shadow-sm">
+          <CardHeader className="pb-3"><CardTitle className="text-base">Safety Risk Breakdown</CardTitle></CardHeader>
+          <CardContent>
+            <div className="flex items-end gap-4 h-40">
+              {incidentTypes.map(t => (
+                <div key={t.name} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-xs font-medium">{t.count}</span>
+                  <div className="w-full rounded-t-md" style={{ height: `${(t.count / maxCount) * 100}px` }}>
+                    <div className={`w-full h-full ${t.color} rounded-t-md opacity-80`} />
+                  </div>
+                  <span className="text-[10px] text-muted-foreground text-center">{t.name}</span>
                 </div>
-                <span className="text-[10px] text-muted-foreground text-center">{t.name}</span>
-              </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
+          <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Year</TableHead><TableHead className="text-right">Critical WOs</TableHead><TableHead className="hidden sm:table-cell text-right">Urgent WOs</TableHead><TableHead className="text-right">Risk Score</TableHead><TableHead className="hidden md:table-cell text-right">At-Risk Assets</TableHead><TableHead className="hidden lg:table-cell text-right">Actions Closed</TableHead></TableRow></TableHeader><TableBody>
+            {filtered.map(d => (
+              <TableRow key={d.month} className="hover:bg-muted/30">
+                <TableCell className="font-medium">{d.month}</TableCell>
+                <TableCell className={`text-right font-medium ${d.incidents > 0 ? 'text-red-600' : 'text-foreground'}`}>{d.incidents}</TableCell>
+                <TableCell className="text-right text-amber-600 hidden sm:table-cell">{d.nearMisses}</TableCell>
+                <TableCell className={`text-right font-medium ${d.trir > 1.0 ? 'text-red-600' : d.trir > 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>{d.trir}</TableCell>
+                <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.inspections}</TableCell>
+                <TableCell className="text-right text-muted-foreground hidden lg:table-cell">{d.actionsClosed}</TableCell>
+              </TableRow>
             ))}
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
-        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Incidents</TableHead><TableHead className="hidden sm:table-cell text-right">Near Misses</TableHead><TableHead className="text-right">TRIR</TableHead><TableHead className="hidden md:table-cell text-right">Training Hrs</TableHead><TableHead className="hidden lg:table-cell text-right">Inspections</TableHead><TableHead className="hidden lg:table-cell text-right">Actions Closed</TableHead></TableRow></TableHeader><TableBody>
-          {filtered.map(d => (
-            <TableRow key={d.month} className="hover:bg-muted/30">
-              <TableCell className="font-medium">{d.month}</TableCell>
-              <TableCell className={`text-right font-medium ${d.incidents > 4 ? 'text-red-600' : 'text-foreground'}`}>{d.incidents}</TableCell>
-              <TableCell className="text-right text-amber-600 hidden sm:table-cell">{d.nearMisses}</TableCell>
-              <TableCell className={`text-right font-medium ${d.trir > 1.0 ? 'text-red-600' : d.trir > 0.7 ? 'text-amber-600' : 'text-emerald-600'}`}>{d.trir}</TableCell>
-              <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.trainingHrs}</TableCell>
-              <TableCell className="text-right text-muted-foreground hidden lg:table-cell">{d.inspections}</TableCell>
-              <TableCell className="text-right text-muted-foreground hidden lg:table-cell">{d.actionsClosed}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody></Table></div>
-      </CardContent></Card>
+            {filtered.length === 0 && (
+              <TableRow><TableCell colSpan={6}><EmptyState icon={Calendar} title={`No data for ${yearFilter}`} description="Select a different year or create work orders to see safety data." /></TableCell></TableRow>
+            )}
+          </TableBody></Table></div>
+        </CardContent></Card>
+      </>)}
     </div>
   );
 }
 function ReportsFinancialPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get<WorkOrder[]>('/api/work-orders').then(res => {
-      if (res.success && res.data) setWorkOrders(res.data);
+    Promise.all([
+      api.get<WorkOrder[]>('/api/work-orders?limit=9999'),
+      api.get<Asset[]>('/api/assets?limit=9999'),
+      api.get<InventoryItem[]>('/api/inventory?limit=9999'),
+    ]).then(([woRes, assetRes, invRes]) => {
+      if (woRes.success && Array.isArray(woRes.data)) setWorkOrders(woRes.data);
+      if (assetRes.success && Array.isArray(assetRes.data)) setAssets(assetRes.data);
+      if (invRes.success && Array.isArray(invRes.data)) setInventory(invRes.data);
       setLoading(false);
     });
   }, []);
@@ -12688,6 +12867,13 @@ function ReportsFinancialPage() {
   const materialCost = workOrders.reduce((sum, wo) => sum + (wo.materialCost || 0), 0);
   const laborCost = workOrders.reduce((sum, wo) => sum + (wo.laborCost || 0), 0);
   const avgCost = workOrders.length > 0 ? totalCost / workOrders.length : 0;
+
+  // Asset values
+  const totalAssetPurchaseCost = assets.reduce((sum, a) => sum + (a.purchaseCost || 0), 0);
+  const totalAssetCurrentValue = assets.reduce((sum, a) => sum + (a.currentValue || 0), 0);
+
+  // Inventory value
+  const totalInventoryValue = inventory.reduce((sum, i) => sum + ((i.currentStock || 0) * (i.unitCost || 0)), 0);
 
   const costByType: Record<string, { cost: number; count: number }> = {};
   workOrders.forEach(wo => {
@@ -12698,26 +12884,71 @@ function ReportsFinancialPage() {
   });
   const typeEntries = Object.entries(costByType).sort((a, b) => b[1].cost - a[1].cost);
 
+  // Monthly cost trends from completed WOs
+  const monthlyCostMap: Record<string, { totalCost: number; laborCost: number; materialCost: number; count: number }> = {};
+  workOrders.forEach(wo => {
+    const dateStr = wo.actualEnd || wo.updatedAt || wo.createdAt;
+    if (!dateStr) return;
+    const d = new Date(dateStr);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (!monthlyCostMap[key]) monthlyCostMap[key] = { totalCost: 0, laborCost: 0, materialCost: 0, count: 0 };
+    monthlyCostMap[key].totalCost += wo.totalCost || 0;
+    monthlyCostMap[key].laborCost += wo.laborCost || 0;
+    monthlyCostMap[key].materialCost += wo.materialCost || 0;
+    monthlyCostMap[key].count += 1;
+  });
+
+  const monthlyCostData = Object.entries(monthlyCostMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([key, data]) => {
+      const d = new Date(key + '-01');
+      const label = format(d, 'MMM yyyy');
+      return { month: label, monthKey: key, ...data };
+    });
+
+  const maxMonthlyCost = monthlyCostData.length > 0 ? Math.max(...monthlyCostData.map(d => d.totalCost), 1) : 1;
+
   const highCostWOs = [...workOrders].sort((a, b) => (b.totalCost || 0) - (a.totalCost || 0)).slice(0, 15);
 
   const typeColors: Record<string, string> = { preventive: 'bg-emerald-500', corrective: 'bg-amber-500', emergency: 'bg-red-500', inspection: 'bg-sky-500', predictive: 'bg-violet-500', project: 'bg-teal-500' };
 
   const summaryCards = [
     { label: 'Total Maintenance Cost', value: `$${totalCost.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Material Cost', value: `$${materialCost.toLocaleString()}`, icon: Package, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Labor Cost', value: `$${laborCost.toLocaleString()}`, icon: Users, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Asset Value (Current)', value: `$${totalAssetCurrentValue.toLocaleString()}`, icon: Package, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Inventory Value', value: `$${totalInventoryValue.toLocaleString()}`, icon: Boxes, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
     { label: 'Avg WO Cost', value: `$${avgCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
+  if (loading) return <div className="page-content"><LoadingSkeleton /></div>;
+
   return (
     <div className="page-content">
-      <div><h1 className="text-2xl font-bold tracking-tight">Financial Reports</h1><p className="text-muted-foreground mt-1">Financial reports on maintenance costs, asset values, and budgets</p></div>
-      {loading ? <LoadingSkeleton /> : (<>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {summaryCards.map(k => { const I = k.icon; return (
-            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
-          ); })}
-        </div>
+      <div><h1 className="text-2xl font-bold tracking-tight">Financial Reports</h1><p className="text-muted-foreground mt-1">Financial reports on maintenance costs, asset values, inventory value, and budget trends</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {summaryCards.map(k => { const I = k.icon; return (
+          <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+        ); })}
+      </div>
+      {monthlyCostData.length > 0 && (
+        <Card className="border border-border/60 shadow-sm">
+          <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Cost Trends</CardTitle><CardDescription className="text-xs">Maintenance expenditure by month</CardDescription></CardHeader>
+          <CardContent>
+            <div className="flex items-end gap-3 h-48">
+              {monthlyCostData.map(d => (
+                <div key={d.monthKey} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-xs font-medium">${d.totalCost.toLocaleString()}</span>
+                  <div className="w-full bg-emerald-100 rounded-t-md" style={{ height: `${(d.totalCost / maxMonthlyCost) * 140}px` }}>
+                    <div className="w-full h-full bg-emerald-500 rounded-t-md opacity-80" />
+                  </div>
+                  <span className="text-[10px] text-muted-foreground text-center">{d.month.split(' ')[0]}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="border"><CardHeader><CardTitle className="text-base">Cost by WO Type</CardTitle><CardDescription className="text-xs">Maintenance expenditure breakdown by type</CardDescription></CardHeader><CardContent>
           <div className="space-y-3">
             {typeEntries.map(([type, data]) => {
@@ -12733,7 +12964,34 @@ function ReportsFinancialPage() {
             {typeEntries.length === 0 && <p className="text-sm text-muted-foreground">No cost data available.</p>}
           </div>
         </CardContent></Card>
-        <Card className="border"><CardHeader><CardTitle className="text-base">High-Cost Work Orders</CardTitle><CardDescription className="text-xs">Top work orders by total cost</CardDescription></CardHeader><CardContent>
+        <Card className="border"><CardHeader><CardTitle className="text-base">Asset Value Distribution</CardTitle><CardDescription className="text-xs">Purchase cost vs current value</CardDescription></CardHeader><CardContent>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Total Assets</span>
+              <span className="text-sm font-semibold">{assets.length}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Total Purchase Cost</span>
+              <span className="text-sm font-semibold">${totalAssetPurchaseCost.toLocaleString()}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Current Value</span>
+              <span className="text-sm font-semibold">${totalAssetCurrentValue.toLocaleString()}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Inventory Value</span>
+              <span className="text-sm font-semibold">${totalInventoryValue.toLocaleString()}</span>
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Total Portfolio Value</span>
+              <span className="text-lg font-bold">${(totalAssetCurrentValue + totalInventoryValue).toLocaleString()}</span>
+            </div>
+          </div>
+        </CardContent></Card>
+      </div>
+      <Card className="border"><CardHeader><CardTitle className="text-base">High-Cost Work Orders</CardTitle><CardDescription className="text-xs">Top work orders by total cost</CardDescription></CardHeader><CardContent>
+        <div className="max-h-96 overflow-y-auto">
           <Table><TableHeader><TableRow><TableHead>WO #</TableHead><TableHead>Title</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden md:table-cell">Priority</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Material</TableHead><TableHead className="text-right">Labor</TableHead><TableHead className="text-right">Total</TableHead></TableRow></TableHeader><TableBody>
             {highCostWOs.length === 0 ? (
               <TableRow><TableCell colSpan={8}><EmptyState icon={DollarSign} title="No cost data" description="Cost data will appear once work orders have costs assigned." /></TableCell></TableRow>
@@ -12750,44 +13008,137 @@ function ReportsFinancialPage() {
               </TableRow>
             ))}
           </TableBody></Table>
-        </CardContent></Card>
-      </>)}
+        </div>
+      </CardContent></Card>
     </div>
   );
 }
 function ReportsCustomPage() {
-  const [searchText, setSearchText] = useState('');
-  const [createOpen, setCreateOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ name: '', description: '', type: 'table', module: 'Assets', schedule: 'manual' });
-  const [reports] = useState([
-    { id: '1', name: 'Asset Utilization Summary', type: 'summary', createdBy: 'John Martinez', createdDate: '2025-01-10', lastRun: '2025-01-15 09:00', status: 'scheduled' },
-    { id: '2', name: 'Maintenance Cost by Department', type: 'pivot', createdBy: 'Sarah Chen', createdDate: '2025-01-05', lastRun: '2025-01-14 14:30', status: 'published' },
-    { id: '3', name: 'Inventory Turnover Analysis', type: 'chart', createdBy: 'Mike Johnson', createdDate: '2024-12-20', lastRun: '2025-01-15 08:00', status: 'scheduled' },
-    { id: '4', name: 'Work Order Aging Report', type: 'table', createdBy: 'Emily Davis', createdDate: '2025-01-12', lastRun: '2025-01-12 16:00', status: 'draft' },
-    { id: '5', name: 'Safety Compliance Dashboard', type: 'chart', createdBy: 'Robert Wilson', createdDate: '2024-11-15', lastRun: '2025-01-13 10:00', status: 'published' },
-    { id: '6', name: 'Production Downtime Analysis', type: 'summary', createdBy: 'Tom Brown', createdDate: '2024-12-01', lastRun: '2025-01-11 11:30', status: 'archived' },
-  ]);
-  const filtered = searchText.trim() ? reports.filter(r => {
-    const q = searchText.toLowerCase();
-    return r.name.toLowerCase().includes(q) || r.type.toLowerCase().includes(q) || r.status.toLowerCase().includes(q);
-  }) : reports;
+  const [dataSource, setDataSource] = useState<'work_orders' | 'assets' | 'inventory' | 'maintenance_requests'>('work_orders');
+  const [metric, setMetric] = useState('count');
+  const [loading, setLoading] = useState(true);
+  const [summaryRows, setSummaryRows] = useState<{ key: string; label: string; value: string | number }[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+
+  const dataSourceLabels: Record<string, string> = {
+    work_orders: 'Work Orders',
+    assets: 'Assets',
+    inventory: 'Inventory Items',
+    maintenance_requests: 'Maintenance Requests',
+  };
+
+  const metricLabels: Record<string, string> = {
+    count: 'Count by Status',
+    cost: 'Cost Breakdown',
+    hours: 'Hours Analysis',
+    priority: 'Priority Distribution',
+  };
+
+  useEffect(() => {
+    let endpoint = '';
+    if (dataSource === 'work_orders') endpoint = '/api/work-orders?limit=9999';
+    else if (dataSource === 'assets') endpoint = '/api/assets?limit=9999';
+    else if (dataSource === 'inventory') endpoint = '/api/inventory?limit=9999';
+    else if (dataSource === 'maintenance_requests') endpoint = '/api/maintenance-requests?limit=9999';
+
+    api.get(endpoint).then(res => {
+      const data = Array.isArray(res.data) ? res.data : [];
+      setTotalCount(data.length);
+
+      const rows: { key: string; label: string; value: string | number }[] = [];
+
+      if (dataSource === 'work_orders') {
+        const wos = data as WorkOrder[];
+        if (metric === 'count') {
+          const statusMap: Record<string, number> = {};
+          wos.forEach(wo => { const s = wo.status || 'unknown'; statusMap[s] = (statusMap[s] || 0) + 1; });
+          Object.entries(statusMap).sort((a, b) => b[1] - a[1]).forEach(([s, c]) => rows.push({ key: s, label: s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), value: c }));
+        } else if (metric === 'cost') {
+          const totalCost = wos.reduce((s, wo) => s + (wo.totalCost || 0), 0);
+          rows.push({ key: 'total', label: 'Total Cost', value: `$${totalCost.toLocaleString()}` });
+          rows.push({ key: 'labor', label: 'Total Labor Cost', value: `$${wos.reduce((s, wo) => s + (wo.laborCost || 0), 0).toLocaleString()}` });
+          rows.push({ key: 'material', label: 'Total Material Cost', value: `$${wos.reduce((s, wo) => s + (wo.materialCost || 0), 0).toLocaleString()}` });
+          rows.push({ key: 'avg', label: 'Avg Cost per WO', value: wos.length > 0 ? `$${Math.round(totalCost / wos.length).toLocaleString()}` : '$0' });
+        } else if (metric === 'hours') {
+          const totalActual = wos.reduce((s, wo) => s + (wo.actualHours || 0), 0);
+          const totalEst = wos.reduce((s, wo) => s + (wo.estimatedHours || 0), 0);
+          rows.push({ key: 'totalActual', label: 'Total Actual Hours', value: `${totalActual.toFixed(1)} hrs` });
+          rows.push({ key: 'totalEst', label: 'Total Estimated Hours', value: `${totalEst.toFixed(1)} hrs` });
+          rows.push({ key: 'avg', label: 'Avg Actual per WO', value: wos.length > 0 ? `${(totalActual / wos.length).toFixed(1)} hrs` : '0 hrs' });
+        } else if (metric === 'priority') {
+          const prioMap: Record<string, number> = {};
+          wos.forEach(wo => { const p = wo.priority || 'unknown'; prioMap[p] = (prioMap[p] || 0) + 1; });
+          Object.entries(prioMap).sort((a, b) => b[1] - a[1]).forEach(([p, c]) => rows.push({ key: p, label: p.charAt(0).toUpperCase() + p.slice(1), value: c }));
+        }
+      } else if (dataSource === 'assets') {
+        const items = data as Asset[];
+        if (metric === 'count') {
+          const statusMap: Record<string, number> = {};
+          items.forEach(a => { const s = a.status || 'unknown'; statusMap[s] = (statusMap[s] || 0) + 1; });
+          Object.entries(statusMap).sort((a, b) => b[1] - a[1]).forEach(([s, c]) => rows.push({ key: s, label: s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), value: c }));
+        } else if (metric === 'cost') {
+          const totalPurchase = items.reduce((s, a) => s + (a.purchaseCost || 0), 0);
+          const totalCurrent = items.reduce((s, a) => s + (a.currentValue || 0), 0);
+          rows.push({ key: 'purchase', label: 'Total Purchase Cost', value: `$${totalPurchase.toLocaleString()}` });
+          rows.push({ key: 'current', label: 'Total Current Value', value: `$${totalCurrent.toLocaleString()}` });
+          rows.push({ key: 'avg', label: 'Avg per Asset', value: items.length > 0 ? `$${Math.round(totalCurrent / items.length).toLocaleString()}` : '$0' });
+        } else if (metric === 'priority') {
+          const condMap: Record<string, number> = {};
+          items.forEach(a => { const c = a.condition || 'unknown'; condMap[c] = (condMap[c] || 0) + 1; });
+          Object.entries(condMap).sort((a, b) => b[1] - a[1]).forEach(([c, n]) => rows.push({ key: c, label: c.charAt(0).toUpperCase() + c.slice(1), value: n }));
+        } else {
+          rows.push({ key: 'total', label: 'Total Assets', value: items.length });
+        }
+      } else if (dataSource === 'inventory') {
+        const items = data as InventoryItem[];
+        if (metric === 'count') {
+          const catMap: Record<string, number> = {};
+          items.forEach(i => { const c = i.category || 'unknown'; catMap[c] = (catMap[c] || 0) + 1; });
+          Object.entries(catMap).sort((a, b) => b[1] - a[1]).forEach(([c, n]) => rows.push({ key: c, label: c, value: n }));
+        } else if (metric === 'cost') {
+          const totalValue = items.reduce((s, i) => s + ((i.currentStock || 0) * (i.unitCost || 0)), 0);
+          const lowStock = items.filter(i => i.currentStock <= i.minStockLevel).length;
+          rows.push({ key: 'totalValue', label: 'Total Inventory Value', value: `$${totalValue.toLocaleString()}` });
+          rows.push({ key: 'lowStock', label: 'Low Stock Items', value: lowStock });
+          rows.push({ key: 'avg', label: 'Avg Value per Item', value: items.length > 0 ? `$${Math.round(totalValue / items.length).toLocaleString()}` : '$0' });
+        } else {
+          rows.push({ key: 'total', label: 'Total Items', value: items.length });
+          rows.push({ key: 'totalStock', label: 'Total Stock Units', value: items.reduce((s, i) => s + (i.currentStock || 0), 0) });
+          rows.push({ key: 'lowStock', label: 'Low Stock Count', value: items.filter(i => i.currentStock <= i.minStockLevel).length });
+        }
+      } else if (dataSource === 'maintenance_requests') {
+        const items = data as MaintenanceRequest[];
+        if (metric === 'count') {
+          const statusMap: Record<string, number> = {};
+          items.forEach(mr => { const s = mr.status || 'unknown'; statusMap[s] = (statusMap[s] || 0) + 1; });
+          Object.entries(statusMap).sort((a, b) => b[1] - a[1]).forEach(([s, c]) => rows.push({ key: s, label: s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), value: c }));
+        } else if (metric === 'priority') {
+          const prioMap: Record<string, number> = {};
+          items.forEach(mr => { const p = mr.priority || 'unknown'; prioMap[p] = (prioMap[p] || 0) + 1; });
+          Object.entries(prioMap).sort((a, b) => b[1] - a[1]).forEach(([p, c]) => rows.push({ key: p, label: p.charAt(0).toUpperCase() + p.slice(1), value: c }));
+        } else {
+          rows.push({ key: 'total', label: 'Total MRs', value: items.length });
+          rows.push({ key: 'pending', label: 'Pending', value: items.filter(mr => mr.status === 'pending').length });
+          rows.push({ key: 'approved', label: 'Approved', value: items.filter(mr => mr.status === 'approved').length });
+        }
+      }
+
+      setSummaryRows(rows);
+      setLoading(false);
+    });
+  }, [dataSource, metric]);
+
   const kpis = [
-    { label: 'Total Custom Reports', value: '8', icon: FileSpreadsheet, color: 'bg-emerald-50 text-emerald-600' },
-    { label: 'Scheduled', value: '3', icon: Clock, color: 'bg-sky-50 text-sky-600' },
-    { label: 'Last Run', value: 'Today', icon: Play, color: 'bg-amber-50 text-amber-600' },
-    { label: 'Published', value: '2', icon: CheckCircle2, color: 'bg-violet-50 text-violet-600' },
+    { label: 'Data Source', value: dataSourceLabels[dataSource], icon: Database, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Metric', value: metricLabels[metric], icon: BarChart3, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Total Records', value: totalCount.toString(), icon: FileSpreadsheet, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Summary Rows', value: summaryRows.length.toString(), icon: CheckCircle2, color: 'bg-violet-50 text-violet-600' },
   ];
-  const statusColor = (s: string) => s === 'published' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : s === 'scheduled' ? 'text-sky-600 bg-sky-50 border-sky-200' : s === 'draft' ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-slate-500 bg-slate-50 border-slate-200';
-  const typeColor = (t: string) => t === 'table' ? 'text-sky-600 bg-sky-50 border-sky-200' : t === 'pivot' ? 'text-violet-600 bg-violet-50 border-violet-200' : t === 'chart' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : 'text-amber-600 bg-amber-50 border-amber-200';
-  const handleCreate = () => { setSaving(true); setTimeout(() => { setSaving(false); setCreateOpen(false); setForm({ name: '', description: '', type: 'table', module: 'Assets', schedule: 'manual' }); toast.success('Report created successfully'); }, 800); };
-  const handleRun = (name: string) => { toast.success(`Running "${name}"...`); };
-  const handleDelete = (name: string) => { toast.success(`"${name}" deleted`); };
+
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-bold tracking-tight">Custom Reports</h1><p className="text-muted-foreground mt-1">Build and save custom reports with flexible filters and formatting</p></div>
-        <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Report</Button>
+        <div><h1 className="text-2xl font-bold tracking-tight">Custom Reports</h1><p className="text-muted-foreground mt-1">Build custom reports by selecting a data source and metric — results are generated in real time</p></div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (
@@ -12799,45 +13150,55 @@ function ReportsCustomPage() {
           </div>
         ); })}
       </div>
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search reports..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" /></div>
-      </div>
-      <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
-        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Report Name</TableHead><TableHead>Type</TableHead><TableHead className="hidden md:table-cell">Created By</TableHead><TableHead className="hidden sm:table-cell">Created Date</TableHead><TableHead className="hidden lg:table-cell">Last Run</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
-          {filtered.map(r => (
-            <TableRow key={r.id} className="hover:bg-muted/30">
-              <TableCell className="font-medium">{r.name}</TableCell>
-              <TableCell><Badge variant="outline" className={typeColor(r.type)}><span className="capitalize">{r.type}</span></Badge></TableCell>
-              <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{r.createdBy}</TableCell>
-              <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{formatDate(r.createdDate)}</TableCell>
-              <TableCell className="text-sm text-muted-foreground hidden lg:table-cell">{formatDateTime(r.lastRun)}</TableCell>
-              <TableCell><Badge variant="outline" className={statusColor(r.status)}><span className="capitalize">{r.status}</span></Badge></TableCell>
-              <TableCell className="text-right">
-                <div className="flex items-center justify-end gap-1">
-                  <Button variant="ghost" size="icon" className="h-7 w-7" title="Run" onClick={() => handleRun(r.name)}><Play className="h-3.5 w-3.5" /></Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" title="Export"><Download className="h-3.5 w-3.5" /></Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-700" title="Delete" onClick={() => handleDelete(r.name)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody></Table></div>
-      </CardContent></Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Create Custom Report</DialogTitle><DialogDescription>Define a new custom report for your organization</DialogDescription></DialogHeader>
-          <div className="space-y-4">
-            <div><Label>Report Name</Label><Input placeholder="e.g. Asset Utilization Summary" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
-            <div><Label>Description</Label><Textarea placeholder="Describe what this report covers..." value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="table">Table</SelectItem><SelectItem value="pivot">Pivot</SelectItem><SelectItem value="chart">Chart</SelectItem><SelectItem value="summary">Summary</SelectItem></SelectContent></Select></div>
-              <div><Label>Module</Label><Select value={form.module} onValueChange={v => setForm(f => ({ ...f, module: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Assets">Assets</SelectItem><SelectItem value="Maintenance">Maintenance</SelectItem><SelectItem value="Inventory">Inventory</SelectItem><SelectItem value="Quality">Quality</SelectItem><SelectItem value="Safety">Safety</SelectItem><SelectItem value="Production">Production</SelectItem></SelectContent></Select></div>
+      <Card className="border border-border/60 shadow-sm">
+        <CardHeader><CardTitle className="text-base">Report Builder</CardTitle><CardDescription className="text-xs">Select data source and metric to generate a report</CardDescription></CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            <div className="space-y-2">
+              <Label>Data Source</Label>
+              <Select value={dataSource} onValueChange={(v: any) => setDataSource(v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="work_orders">Work Orders</SelectItem>
+                  <SelectItem value="assets">Assets</SelectItem>
+                  <SelectItem value="inventory">Inventory</SelectItem>
+                  <SelectItem value="maintenance_requests">Maintenance Requests</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <div><Label>Schedule</Label><Select value={form.schedule} onValueChange={v => setForm(f => ({ ...f, schedule: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="manual">Manual</SelectItem><SelectItem value="daily">Daily</SelectItem><SelectItem value="weekly">Weekly</SelectItem><SelectItem value="monthly">Monthly</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2">
+              <Label>Metric</Label>
+              <Select value={metric} onValueChange={setMetric}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="count">Count by Status</SelectItem>
+                  <SelectItem value="cost">Cost Breakdown</SelectItem>
+                  <SelectItem value="hours">Hours Analysis</SelectItem>
+                  <SelectItem value="priority">Priority Distribution</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.name}>{saving ? 'Creating...' : 'Create Report'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="border rounded-lg overflow-hidden">
+            <Table>
+              <TableHeader><TableRow><TableHead className="w-12">#</TableHead><TableHead>Metric / Category</TableHead><TableHead className="text-right">Value</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow><TableCell colSpan={3}><div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground mr-2" />Loading data...</div></TableCell></TableRow>
+                ) : summaryRows.length === 0 ? (
+                  <TableRow><TableCell colSpan={3}><EmptyState icon={FileSpreadsheet} title="No data available" description="No data found for the selected source and metric." /></TableCell></TableRow>
+                ) : summaryRows.map((row, idx) => (
+                  <TableRow key={row.key} className="hover:bg-muted/30">
+                    <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                    <TableCell className="font-medium">{row.label}</TableCell>
+                    <TableCell className="text-right font-semibold">{typeof row.value === 'number' ? row.value.toLocaleString() : row.value}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
