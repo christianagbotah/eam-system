@@ -126,6 +126,19 @@ model User {
   iotDevicesCreated   IotDevice[]               @relation("IotDeviceCreatedBy")
   iotRulesCreated     IotAlertRule[]            @relation("IotRuleCreatedBy")
 
+  // Inventory Sub-module relations
+  invLocationsCreated    InventoryLocation[]    @relation("InvLocationCreatedBy")
+  invAdjustmentsApproved InventoryAdjustment[] @relation("InvAdjApprovedBy")
+  invAdjustmentsCreated  InventoryAdjustment[] @relation("InvAdjCreatedBy")
+  invRequestsRequested   InventoryRequest[]    @relation("InvReqRequestedBy")
+  invRequestsApproved    InventoryRequest[]    @relation("InvReqApprovedBy")
+  invTransfersRequested  InventoryTransfer[]   @relation("InvTransferRequestedBy")
+  invTransfersApproved   InventoryTransfer[]   @relation("InvTransferApprovedBy")
+  suppliersCreated       Supplier[]            @relation("SupplierCreatedBy")
+  poCreated              PurchaseOrder[]       @relation("POCreatedBy")
+  poApproved             PurchaseOrder[]       @relation("POApprovedBy")
+  receivingReceived      ReceivingRecord[]     @relation("ReceivingReceivedBy")
+
   @@map("users")
 }
 
@@ -317,6 +330,7 @@ model WorkOrder {
   priority            String    @default("medium")     // low, medium, high, critical
   status              String    @default("draft")       // draft, requested, approved, planned, assigned, in_progress, waiting_parts, on_hold, completed, closed, cancelled
   maintenanceRequestId String?  @unique
+  pmScheduleId        String?                       // → PmSchedule (auto-generated WOs link back)
   assetId             String?
   assetName           String?
   departmentId        String?
@@ -350,6 +364,9 @@ model WorkOrder {
 
   // Maintenance Request relation
   maintenanceRequest MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id])
+
+  // PM Schedule relation
+  pmSchedule         PmSchedule? @relation(fields: [pmScheduleId], references: [id])
 
   // User relations
   assignee           User?  @relation("WOAssignedTo", fields: [assignedTo], references: [id])
@@ -631,6 +648,12 @@ model InventoryItem {
   invLocation     InventoryLocation?  @relation(fields: [locationId], references: [id])
   supplierRef     Supplier?           @relation("ItemSupplier", fields: [supplierId], references: [id])
 
+  adjustments     InventoryAdjustment[]
+  requestItems    InventoryRequestItem[]
+  transfers       InventoryTransfer[]
+  poItems         PurchaseOrderItem[]
+  receivingRecords ReceivingRecord[]
+
   @@map("inventory_items")
 }
 
@@ -683,6 +706,8 @@ model PmSchedule {
   assignedTo  User?       @relation("PmScheduleAssignedTo", fields: [assignedToId], references: [id])
   department  Department? @relation(fields: [departmentId], references: [id])
   createdBy   User        @relation("PmScheduleCreatedBy", fields: [createdById], references: [id])
+
+  workOrders  WorkOrder[]
 
   @@map("pm_schedules")
 }
@@ -868,4 +893,193 @@ model ToolTransaction {
   toUser          User?     @relation("ToolTxnToUser", fields: [toUserId], references: [id])
 
   @@map("tool_transactions")
+}
+
+// ============================================================================
+// 17. INVENTORY SUB-MODULES
+// ============================================================================
+
+model InventoryLocation {
+  id          String    @id @default(cuid())
+  name        String
+  code        String    @unique
+  type        String    @default("warehouse")   // warehouse, storeroom, tool_crib, site, staging, production, picking, receiving
+  address     String?
+  isActive    Boolean   @default(true)
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  createdBy   User            @relation("InvLocationCreatedBy", fields: [createdById], references: [id])
+  items       InventoryItem[]
+  transfersFrom  InventoryTransfer[] @relation("InvTransferFrom")
+  transfersTo    InventoryTransfer[] @relation("InvTransferTo")
+
+  @@map("inventory_locations")
+}
+
+model InventoryAdjustment {
+  id               String    @id @default(cuid())
+  adjustmentNumber String    @unique                    // ADJ-YYYYMM-NNNN
+  itemId           String
+  type             String                                // gain, loss, correction
+  quantity         Float
+  reason           String
+  status           String    @default("pending")        // pending, approved, rejected
+  approvedById     String?
+  approvedAt       DateTime?
+  notes            String?
+  createdById      String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  item        InventoryItem @relation(fields: [itemId], references: [id])
+  approvedBy  User?         @relation("InvAdjApprovedBy", fields: [approvedById], references: [id])
+  createdBy   User          @relation("InvAdjCreatedBy", fields: [createdById], references: [id])
+
+  @@map("inventory_adjustments")
+}
+
+model InventoryRequest {
+  id                String    @id @default(cuid())
+  requestNumber     String    @unique                    // IR-YYYYMM-NNNN
+  title             String
+  description       String?
+  status            String    @default("pending")        // pending, approved, partially_fulfilled, fulfilled, rejected, closed
+  priority          String    @default("medium")         // low, medium, high, urgent
+  requestedById     String
+  departmentId      String?
+  plantId           String?
+  approvedById      String?
+  approvedAt        DateTime?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  items         InventoryRequestItem[]
+  requestedBy   User      @relation("InvReqRequestedBy", fields: [requestedById], references: [id])
+  approvedBy    User?     @relation("InvReqApprovedBy", fields: [approvedById], references: [id])
+
+  @@map("inventory_requests")
+}
+
+model InventoryRequestItem {
+  id                String    @id @default(cuid())
+  requestId         String
+  itemId            String
+  quantityRequested Float
+  quantityFulfilled Float     @default(0)
+  unitCost          Float?
+  notes             String?
+
+  request   InventoryRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  item      InventoryItem    @relation(fields: [itemId], references: [id])
+
+  @@map("inventory_request_items")
+}
+
+model InventoryTransfer {
+  id                String    @id @default(cuid())
+  transferNumber    String    @unique                    // IT-YYYYMM-NNNN
+  itemId            String
+  fromLocationId    String?
+  toLocationId      String?
+  quantity          Float
+  status            String    @default("pending")        // pending, in_transit, completed, cancelled
+  requestedById     String
+  approvedById      String?
+  approvedAt        DateTime?
+  completedAt       DateTime?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  item          InventoryItem      @relation(fields: [itemId], references: [id])
+  fromLocation  InventoryLocation? @relation("InvTransferFrom", fields: [fromLocationId], references: [id])
+  toLocation    InventoryLocation? @relation("InvTransferTo", fields: [toLocationId], references: [id])
+  requestedBy   User                @relation("InvTransferRequestedBy", fields: [requestedById], references: [id])
+  approvedBy    User?               @relation("InvTransferApprovedBy", fields: [approvedById], references: [id])
+
+  @@map("inventory_transfers")
+}
+
+model Supplier {
+  id            String    @id @default(cuid())
+  name          String
+  code          String    @unique
+  contactPerson String?
+  email         String?
+  phone         String?
+  address       String?
+  city          String?
+  country       String?
+  website       String?
+  rating        Int?                                    // 1-5
+  isActive      Boolean   @default(true)
+  createdById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  createdBy      User            @relation("SupplierCreatedBy", fields: [createdById], references: [id])
+  purchaseOrders PurchaseOrder[]
+  items          InventoryItem[] @relation("ItemSupplier")
+
+  @@map("suppliers")
+}
+
+model PurchaseOrder {
+  id                String    @id @default(cuid())
+  poNumber          String    @unique                    // PO-YYYYMM-NNNN
+  supplierId        String
+  status            String    @default("draft")          // draft, submitted, approved, partially_received, received, cancelled
+  priority          String    @default("medium")
+  expectedDelivery  DateTime?
+  notes             String?
+  totalAmount       Float     @default(0)
+  createdById       String
+  approvedById      String?
+  approvedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  supplier  Supplier              @relation(fields: [supplierId], references: [id])
+  items     PurchaseOrderItem[]
+  receivingRecords ReceivingRecord[]
+  createdBy User                  @relation("POCreatedBy", fields: [createdById], references: [id])
+  approvedBy User?                @relation("POApprovedBy", fields: [approvedById], references: [id])
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id               String    @id @default(cuid())
+  poId             String
+  itemId           String
+  quantity         Float
+  unitCost         Float
+  totalCost        Float
+  quantityReceived Float     @default(0)
+  description      String?
+
+  po   PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  item InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@map("purchase_order_items")
+}
+
+model ReceivingRecord {
+  id                String    @id @default(cuid())
+  poId              String
+  itemId            String
+  quantityReceived  Float
+  condition         String    @default("good")          // good, damaged, defective
+  receivedById      String
+  notes             String?
+  createdAt         DateTime  @default(now())
+
+  po          PurchaseOrder @relation(fields: [poId], references: [id])
+  item        InventoryItem @relation(fields: [itemId], references: [id])
+  receivedBy  User          @relation("ReceivingReceivedBy", fields: [receivedById], references: [id])
+
+  @@map("receiving_records")
 }

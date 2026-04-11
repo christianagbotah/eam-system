@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 
 export async function POST(
   request: NextRequest,
@@ -85,6 +86,19 @@ export async function POST(
         newValues: JSON.stringify({ status: 'approved' }),
       },
     });
+
+    // Notify the requester
+    if (mr.requestedBy && mr.requestedBy !== session.userId) {
+      await notifyUser(
+        mr.requestedBy,
+        'mr_approved',
+        'Maintenance Request Approved',
+        `Your request ${mr.requestNumber} has been approved`,
+        'maintenance_request',
+        id,
+        `mr-detail?id=${id}`,
+      );
+    }
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {

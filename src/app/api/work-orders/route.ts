@@ -69,6 +69,7 @@ export async function GET(request: NextRequest) {
           assigner: { select: { id: true, fullName: true, username: true } },
           planner: { select: { id: true, fullName: true, username: true } },
           maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
+          pmSchedule: { select: { id: true, title: true, frequencyType: true, frequencyValue: true } },
           teamMembers: {
             include: { user: { select: { id: true, fullName: true } } },
             orderBy: { assignedAt: 'asc' },

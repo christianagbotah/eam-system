@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 
 export async function POST(
   request: NextRequest,
@@ -38,6 +39,23 @@ export async function POST(
         user: { select: { id: true, fullName: true, username: true } },
       },
     });
+
+    // Notify the requester if commenter is not the requester
+    if (mr.requestedBy && mr.requestedBy !== session.userId) {
+      const sessionUser = await db.user.findUnique({
+        where: { id: session.userId },
+        select: { fullName: true },
+      });
+      await notifyUser(
+        mr.requestedBy,
+        'mr_comment',
+        'New Comment on MR',
+        `${sessionUser?.fullName || 'Someone'} commented on ${mr.requestNumber}`,
+        'maintenance_request',
+        id,
+        `mr-detail?id=${id}`,
+      );
+    }
 
     return NextResponse.json({ success: true, data: comment }, { status: 201 });
   } catch (error: unknown) {

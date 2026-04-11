@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 
 export async function POST(
   request: NextRequest,
@@ -102,6 +103,19 @@ export async function POST(
         newValues: JSON.stringify({ status: 'converted', workOrderId: wo.id, woNumber: wo.woNumber }),
       },
     });
+
+    // Notify the requester that the MR was converted
+    if (mr.requestedBy && mr.requestedBy !== session.userId) {
+      await notifyUser(
+        mr.requestedBy,
+        'mr_converted',
+        'MR Converted to Work Order',
+        `Your request has been converted to WO ${wo.woNumber}`,
+        'work_order',
+        wo.id,
+        `wo-detail?id=${wo.id}`,
+      );
+    }
 
     return NextResponse.json({ success: true, data: wo }, { status: 201 });
   } catch (error: unknown) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 
 export async function POST(
   request: NextRequest,
@@ -77,6 +78,33 @@ export async function POST(
         newValues: JSON.stringify({ status: 'closed', isLocked: true }),
       },
     });
+
+    // Notify assigned user and requester (from linked MR if exists)
+    const notifyTargets: string[] = [];
+    if (wo.assignedTo && wo.assignedTo !== session.userId) {
+      notifyTargets.push(wo.assignedTo);
+    }
+    // Look up the linked MR's requester
+    if (wo.maintenanceRequestId) {
+      const linkedMR = await db.maintenanceRequest.findUnique({
+        where: { id: wo.maintenanceRequestId },
+        select: { requestedBy: true },
+      });
+      if (linkedMR?.requestedBy && linkedMR.requestedBy !== session.userId && !notifyTargets.includes(linkedMR.requestedBy)) {
+        notifyTargets.push(linkedMR.requestedBy);
+      }
+    }
+    for (const targetId of notifyTargets) {
+      await notifyUser(
+        targetId,
+        'wo_closed',
+        'Work Order Closed',
+        `${wo.woNumber} has been closed`,
+        'work_order',
+        id,
+        `wo-detail?id=${id}`,
+      );
+    }
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 
 export async function POST(
   request: NextRequest,
@@ -38,6 +39,19 @@ export async function POST(
         user: { select: { id: true, fullName: true, username: true } },
       },
     });
+
+    // Notify WO planner/creator if commenter is different
+    if (wo.plannerId && wo.plannerId !== session.userId) {
+      await notifyUser(
+        wo.plannerId,
+        'wo_comment',
+        'New Comment on WO',
+        `New comment on ${wo.woNumber}`,
+        'work_order',
+        id,
+        `wo-detail?id=${id}`,
+      );
+    }
 
     return NextResponse.json({ success: true, data: comment }, { status: 201 });
   } catch (error: unknown) {

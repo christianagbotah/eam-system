@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
+import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils';
 
 export async function POST(
   request: NextRequest,
@@ -115,6 +117,71 @@ export async function POST(
         }),
       },
     });
+
+    // Notify supervisors
+    const notifyTargets = [wo.assignedSupervisorId, wo.teamLeaderId].filter(
+      (uid): uid is string => !!uid && uid !== session.userId,
+    );
+    for (const targetId of notifyTargets) {
+      await notifyUser(
+        targetId,
+        'wo_completed',
+        'Work Order Completed',
+        `${wo.woNumber} has been completed`,
+        'work_order',
+        id,
+        `wo-detail?id=${id}`,
+      );
+    }
+
+    // ── PM Schedule: advance nextDueDate when a PM WO is completed ──
+    // If this WO was auto-generated from a PM schedule (pmScheduleId set),
+    // recalculate the schedule's nextDueDate from the completion date.
+    if (wo.pmScheduleId) {
+      try {
+        const pmSchedule = await db.pmSchedule.findUnique({
+          where: { id: wo.pmScheduleId },
+        });
+
+        if (pmSchedule && pmSchedule.isActive && isAutoCalculableFrequency(pmSchedule.frequencyType)) {
+          const newNextDueDate = calculateNextDueDate(
+            now, // start from completion date
+            pmSchedule.frequencyType,
+            pmSchedule.frequencyValue,
+          );
+
+          await db.pmSchedule.update({
+            where: { id: pmSchedule.id },
+            data: {
+              lastCompletedDate: now,
+              nextDueDate: newNextDueDate,
+            },
+          });
+
+          // Audit log for schedule update
+          await db.auditLog.create({
+            data: {
+              userId: session.userId,
+              action: 'update',
+              entityType: 'pm_schedule',
+              entityId: pmSchedule.id,
+              oldValues: JSON.stringify({
+                lastCompletedDate: pmSchedule.lastCompletedDate,
+                nextDueDate: pmSchedule.nextDueDate,
+              }),
+              newValues: JSON.stringify({
+                lastCompletedDate: now.toISOString(),
+                nextDueDate: newNextDueDate?.toISOString() ?? null,
+                reason: `PM WO ${wo.woNumber} completed`,
+              }),
+            },
+          });
+        }
+      } catch (pmErr) {
+        // Don't fail the WO completion if PM schedule update fails
+        console.error('[PM Schedule Update Error] Failed to update nextDueDate:', pmErr);
+      }
+    }
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {

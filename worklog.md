@@ -376,3 +376,58 @@ Stage Summary:
 - Loading states, error handling, and toast notifications on all operations
 - Files modified: prisma/schema.prisma, src/app/page.tsx
 - Files created: src/app/api/iot/devices/route.ts, src/app/api/iot/devices/[id]/route.ts, src/app/api/iot/devices/[id]/readings/route.ts, src/app/api/iot/alerts/route.ts, src/app/api/iot/alerts/[id]/route.ts, src/app/api/iot/rules/route.ts, src/app/api/iot/rules/[id]/route.ts, src/app/api/iot/monitoring/summary/route.ts
+---
+Task ID: 8
+Agent: Main
+Task: Implement PM auto-WO generation (check-due endpoint + cron scheduler)
+
+Work Log:
+- Read and analyzed existing codebase: PmSchedule model, WorkOrder model, PM schedules API, WO complete endpoint, notification system
+- Added `pmScheduleId` field to WorkOrder model in prisma/schema.prisma (nullable, links back to PmSchedule)
+- Added `workOrders WorkOrder[]` reverse relation on PmSchedule model
+- Ran db:push + prisma generate to apply schema changes
+- Created `src/lib/pm-utils.ts` with 3 utility functions:
+  - `calculateNextDueDate()` — computes next due date from frequencyType/frequencyValue (supports daily/weekly/biweekly/monthly/quarterly/semiannual/annual/custom_days; returns null for meter_based/custom_hours)
+  - `isAutoCalculableFrequency()` — returns false for meter_based and custom_hours
+  - `formatFrequencyLabel()` — human-readable frequency description
+- Created `src/app/api/pm-schedules/check-due/route.ts` — POST endpoint that:
+  - Authenticates via session OR internal X-PM-Cron-Secret header
+  - Finds all active schedules where autoGenerateWO=true, nextDueDate not null
+  - For each: checks lead window (now + leadDays), skips if not due or if meter_based/custom_hours
+  - Deduplication: checks if a WO was already created for this schedule's current due cycle
+  - Creates preventive WO with title "PM: {schedule.title}", linked via pmScheduleId
+  - Auto-generates WO number, sets priority/status/asset/assignment from schedule
+  - Advances schedule's nextDueDate using calculateNextDueDate()
+  - Creates notifications for assigned user if one exists
+  - Creates audit log entries for each generated WO
+  - Returns summary: checked count, generated count, skipped count, per-schedule details
+- Updated `src/app/api/work-orders/[id]/complete/route.ts`:
+  - After completing a WO, checks if pmScheduleId is set
+  - If linked to an active PM schedule with auto-calculable frequency, recalculates nextDueDate from completion date
+  - Updates schedule's lastCompletedDate and nextDueDate
+  - Creates audit log for the schedule update
+  - Wrapped in try/catch so PM update failures don't break WO completion
+- Updated `src/app/api/work-orders/route.ts` GET to include pmSchedule relation in WO responses
+- Updated `src/app/api/work-orders/[id]/route.ts` GET to include pmSchedule relation in WO detail
+- Created `mini-services/pm-cron/` mini-service:
+  - Bun HTTP server on port 3010
+  - Runs check-due every 6 hours via setInterval
+  - Provides /health endpoint and /trigger endpoint for manual invocation
+  - Uses X-PM-Cron-Secret header for authentication
+  - Auto-runs initial check 10s after startup
+- Added background PM check in PmSchedulesPage (src/app/page.tsx):
+  - useEffect fires a POST to /api/pm-schedules/check-due on page load
+  - Sends auth token from localStorage for authentication
+  - Fire-and-forget (catches errors silently)
+- Tested check-due endpoint: successfully checked 5 active schedules (all skipped as not within lead window — correct behavior)
+
+Stage Summary:
+- PM auto-WO generation system fully functional with dual triggers:
+  1. Cron mini-service (port 3010, checks every 6 hours)
+  2. Background check on PM Schedules page load
+- Check-due endpoint handles deduplication, lead windows, and meter-based skip
+- PM WO completion automatically advances the schedule's nextDueDate
+- WorkOrder model now links back to PmSchedule via pmScheduleId
+- ESLint passes with only 2 pre-existing errors (unrelated to changes)
+- Files modified: prisma/schema.prisma, src/app/api/work-orders/[id]/complete/route.ts, src/app/api/work-orders/route.ts, src/app/api/work-orders/[id]/route.ts, src/app/page.tsx
+- Files created: src/lib/pm-utils.ts, src/app/api/pm-schedules/check-due/route.ts, mini-services/pm-cron/index.ts, mini-services/pm-cron/package.json

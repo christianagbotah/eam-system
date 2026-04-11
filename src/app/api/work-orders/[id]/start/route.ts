@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 
 export async function POST(
   request: NextRequest,
@@ -74,6 +75,22 @@ export async function POST(
         newValues: JSON.stringify({ status: 'in_progress', actualStart: now.toISOString() }),
       },
     });
+
+    // Notify supervisors/approvers
+    const notifyTargets = [wo.assignedSupervisorId, wo.teamLeaderId].filter(
+      (uid): uid is string => !!uid && uid !== session.userId,
+    );
+    for (const targetId of notifyTargets) {
+      await notifyUser(
+        targetId,
+        'wo_started',
+        'Work Order Started',
+        `${wo.woNumber} has been started`,
+        'work_order',
+        id,
+        `wo-detail?id=${id}`,
+      );
+    }
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {

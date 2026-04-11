@@ -5535,6 +5535,19 @@ function PmSchedulesPage() {
   useEffect(() => { fetchSchedules(); }, [fetchSchedules]);
   useEffect(() => { fetchLookups(); }, [fetchLookups]);
 
+  // Background PM check: fire-and-forget trigger on page load
+  useEffect(() => {
+    const token = localStorage.getItem('eam_token');
+    fetch('/api/pm-schedules/check-due', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({}),
+    }).catch(() => { /* silent — background task */ });
+  }, []);
+
   const resetForm = () => {
     setFormTitle(''); setFormDesc(''); setFormAssetId('');
     setFormFreqType('monthly'); setFormFreqValue('1');
@@ -7713,45 +7726,48 @@ function InventoryLocationsPage() {
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [locations, setLocations] = useState<any[]>([]);
+  const [kpis, setKpis] = useState<any>({});
   const [form, setForm] = useState({ code: '', name: '', type: '', zone: '', capacity: '', address: '' });
 
   const locationTypes = ['warehouse', 'staging', 'production', 'picking', 'receiving'];
 
-  const initialLocations = [
-    { id: 1, code: 'WH-A1', name: 'Warehouse A - Zone 1', type: 'warehouse', zone: 'Zone A', capacityUsed: 85, capacity: 500, status: 'active', itemsCount: 425, address: 'Building A, Floor 1' },
-    { id: 2, code: 'WH-A2', name: 'Warehouse A - Zone 2', type: 'warehouse', zone: 'Zone A', capacityUsed: 62, capacity: 400, status: 'active', itemsCount: 248, address: 'Building A, Floor 1' },
-    { id: 3, code: 'ST-B1', name: 'Staging Area B', type: 'staging', zone: 'Zone B', capacityUsed: 100, capacity: 150, status: 'active', itemsCount: 150, address: 'Building B, Dock 3' },
-    { id: 4, code: 'PR-C1', name: 'Production Floor - Line 1', type: 'production', zone: 'Zone C', capacityUsed: 45, capacity: 200, status: 'active', itemsCount: 90, address: 'Building C, Line 1' },
-    { id: 5, code: 'PK-D1', name: 'Picking Station Delta', type: 'picking', zone: 'Zone D', capacityUsed: 30, capacity: 100, status: 'active', itemsCount: 30, address: 'Building D, Bay 5' },
-    { id: 6, code: 'RC-E1', name: 'Receiving Dock East', type: 'receiving', zone: 'Zone E', capacityUsed: 0, capacity: 300, status: 'active', itemsCount: 0, address: 'Building E, Dock 1' },
-    { id: 7, code: 'WH-F1', name: 'Warehouse F - Cold Storage', type: 'warehouse', zone: 'Zone F', capacityUsed: 100, capacity: 200, status: 'active', itemsCount: 200, address: 'Building F, Cold Room' },
-    { id: 8, code: 'ST-G1', name: 'Staging Area G', type: 'staging', zone: 'Zone G', capacityUsed: 0, capacity: 120, status: 'inactive', itemsCount: 0, address: 'Building G, Bay 2' },
-  ];
+  const fetchLocations = useCallback(async () => {
+    try {
+      const res = await api.get<any>('/api/inventory/locations');
+      if (res.success) {
+        setLocations(res.data || []);
+        setKpis(res.kpis || {});
+      }
+    } catch {} finally { setLoading(false); }
+  }, []);
 
-  const filtered = initialLocations.filter(l => {
-    const matchSearch = l.code.toLowerCase().includes(search.toLowerCase()) || l.name.toLowerCase().includes(search.toLowerCase()) || l.zone.toLowerCase().includes(search.toLowerCase());
+  useEffect(() => { fetchLocations(); }, [fetchLocations]);
+
+  const filtered = locations.filter((l: any) => {
+    const matchSearch = l.code.toLowerCase().includes(search.toLowerCase()) || l.name.toLowerCase().includes(search.toLowerCase()) || (l.address || '').toLowerCase().includes(search.toLowerCase());
     const matchType = filterType === 'all' || l.type === filterType;
-    const matchStatus = filterStatus === 'all' || l.status === filterStatus;
+    const matchStatus = filterStatus === 'all' || (filterStatus === 'active' ? l.isActive : !l.isActive);
     return matchSearch && matchType && matchStatus;
   });
 
-  const totalLocations = initialLocations.length;
-  const activeCount = initialLocations.filter(l => l.status === 'active').length;
-  const fullCapacity = initialLocations.filter(l => l.capacityUsed >= 100).length;
-  const emptyCount = initialLocations.filter(l => l.capacityUsed === 0).length;
-
   const kpiCards = [
-    { label: 'Total Locations', value: totalLocations, icon: MapPin, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Active', value: activeCount, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Full Capacity', value: fullCapacity, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Empty', value: emptyCount, icon: Box, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    { label: 'Total Locations', value: kpis.total || 0, icon: MapPin, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Active', value: kpis.active || 0, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Inactive', value: kpis.inactive || 0, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Empty', value: locations.filter((l: any) => (l._count?.items || 0) === 0).length, icon: Box, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!form.code || !form.name || !form.type) { toast.error('Please fill in all required fields'); return; }
-    toast.success(`Location ${form.code} created successfully`);
-    setCreateOpen(false);
-    setForm({ code: '', name: '', type: '', zone: '', capacity: '', address: '' });
+    setCreating(true);
+    try {
+      const res = await api.post('/api/inventory/locations', { name: form.name, code: form.code, type: form.type, address: form.address || null });
+      if (res.success) { toast.success(`Location ${form.code} created successfully`); setCreateOpen(false); setForm({ code: '', name: '', type: '', zone: '', capacity: '', address: '' }); fetchLocations(); }
+      else toast.error(res.error || 'Failed to create location');
+    } catch { toast.error('Failed to create location'); } finally { setCreating(false); }
   };
 
   return (
@@ -7775,23 +7791,17 @@ function InventoryLocationsPage() {
       </div>
       <Card className="border-0 shadow-sm">
         <div className="overflow-x-auto rounded border">
-          <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden md:table-cell">Zone</TableHead><TableHead>Capacity Used</TableHead><TableHead className="hidden lg:table-cell">Status</TableHead><TableHead className="hidden lg:table-cell text-right">Items</TableHead></TableRow></TableHeader><TableBody>
-            {filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="h-48"><EmptyState icon={MapPin} title="No locations found" description="Try adjusting your search or filters." /></TableCell></TableRow>
-            ) : filtered.map(l => (
+          <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden md:table-cell">Address</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell text-right">Items</TableHead></TableRow></TableHeader><TableBody>
+            {loading ? (<TableRow><TableCell colSpan={6} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={6} className="h-48"><EmptyState icon={MapPin} title="No locations found" description="Try adjusting your search or filters." /></TableCell></TableRow>
+            ) : filtered.map((l: any) => (
               <TableRow key={l.id} className="hover:bg-muted/30">
                 <TableCell className="font-mono text-sm font-medium">{l.code}</TableCell>
                 <TableCell className="font-medium">{l.name}</TableCell>
-                <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="capitalize">{l.type}</Badge></TableCell>
-                <TableCell className="hidden md:table-cell text-muted-foreground">{l.zone}</TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2 min-w-[120px]">
-                    <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${l.capacityUsed >= 90 ? 'bg-red-500' : l.capacityUsed >= 70 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${l.capacityUsed}%` }} /></div>
-                    <span className="text-xs font-medium w-10 text-right">{l.capacityUsed}%</span>
-                  </div>
-                </TableCell>
-                <TableCell className="hidden lg:table-cell"><StatusBadge status={l.status} /></TableCell>
-                <TableCell className="hidden lg:table-cell text-right font-medium">{l.itemsCount}</TableCell>
+                <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="capitalize">{(l.type || '').replace('_', ' ')}</Badge></TableCell>
+                <TableCell className="hidden md:table-cell text-muted-foreground">{l.address || '-'}</TableCell>
+                <TableCell><Badge variant="outline" className={l.isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}>{l.isActive ? 'ACTIVE' : 'INACTIVE'}</Badge></TableCell>
+                <TableCell className="hidden lg:table-cell text-right font-medium">{l._count?.items || 0}</TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
@@ -7892,41 +7902,69 @@ function InventoryAdjustmentsPage() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [adjustments, setAdjustments] = useState<any[]>([]);
+  const [kpis, setKpis] = useState<any>({});
+  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+  const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ item: '', location: '', type: '', quantityBefore: '', quantityAfter: '', reason: '' });
 
-  const adjTypes = ['correction', 'write_off', 'damage', 'return'];
+  const adjTypes = ['gain', 'loss', 'correction', 'write_off', 'damage', 'return'];
 
-  const initialAdjustments = [
-    { id: 1, adjNo: 'ADJ-001', item: 'Ball Bearing 6205', location: 'WH-A1', type: 'correction', qtyBefore: 100, qtyAfter: 95, reason: 'Physical count discrepancy found during cycle count', status: 'approved', date: '2025-01-10' },
-    { id: 2, adjNo: 'ADJ-002', item: 'Hydraulic Pump HP-300', location: 'WH-A2', type: 'damage', qtyBefore: 8, qtyAfter: 6, reason: 'Damaged during handling, units unsalvageable', status: 'approved', date: '2025-01-09' },
-    { id: 3, adjNo: 'ADJ-003', item: 'Drive Belt V-A68', location: 'ST-B1', type: 'write_off', qtyBefore: 25, qtyAfter: 20, reason: 'Expired stock beyond usable shelf life', status: 'pending', date: '2025-01-08' },
-    { id: 4, adjNo: 'ADJ-004', item: 'Contactor LC1D25', location: 'PR-C1', type: 'correction', qtyBefore: 15, qtyAfter: 18, reason: 'Found 3 additional units during audit', status: 'approved', date: '2025-01-07' },
-    { id: 5, adjNo: 'ADJ-005', item: 'Thermocouple Type K', location: 'WH-F1', type: 'damage', qtyBefore: 40, qtyAfter: 38, reason: 'Broken during quality inspection', status: 'rejected', date: '2025-01-06' },
-    { id: 6, adjNo: 'ADJ-006', item: 'Lubricant ISO 68', location: 'WH-A1', type: 'return', qtyBefore: 50, qtyAfter: 55, reason: 'Unused stock returned from production line 3', status: 'approved', date: '2025-01-05' },
-    { id: 7, adjNo: 'ADJ-007', item: 'Solenoid Valve SV-200', location: 'PK-D1', type: 'correction', qtyBefore: 12, qtyAfter: 11, reason: 'One unit missing, investigation pending', status: 'pending', date: '2025-01-04' },
-    { id: 8, adjNo: 'ADJ-008', item: 'Fuse 30A NH-00', location: 'WH-A2', type: 'write_off', qtyBefore: 200, qtyAfter: 185, reason: 'Recalled batch from manufacturer', status: 'approved', date: '2025-01-03' },
-  ];
+  const fetchAdjustments = useCallback(async () => {
+    try {
+      const [adjRes, itemRes] = await Promise.all([
+        api.get<any>('/api/inventory/adjustments'),
+        api.get<any>('/api/inventory'),
+      ]);
+      if (adjRes.success) { setAdjustments(adjRes.data || []); setKpis(adjRes.kpis || {}); }
+      if (itemRes.success) setInventoryItems(itemRes.data || []);
+    } catch {} finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchAdjustments(); }, [fetchAdjustments]);
 
   const adjStatusColors: Record<string, string> = { pending: 'bg-amber-50 text-amber-700 border-amber-200', approved: 'bg-emerald-50 text-emerald-700 border-emerald-200', rejected: 'bg-red-50 text-red-700 border-red-200' };
 
-  const filtered = initialAdjustments.filter(a => {
-    const matchSearch = a.adjNo.toLowerCase().includes(search.toLowerCase()) || a.item.toLowerCase().includes(search.toLowerCase()) || a.location.toLowerCase().includes(search.toLowerCase());
+  const filtered = adjustments.filter((a: any) => {
+    const matchSearch = a.adjustmentNumber.toLowerCase().includes(search.toLowerCase()) || (a.item?.name || '').toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === 'all' || a.status === filterStatus;
     return matchSearch && matchStatus;
   });
 
   const kpiCards = [
-    { label: 'Total Adjustments', value: initialAdjustments.length, icon: ArrowUpDown, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Pending Approval', value: initialAdjustments.filter(a => a.status === 'pending').length, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Approved', value: initialAdjustments.filter(a => a.status === 'approved').length, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Rejected', value: initialAdjustments.filter(a => a.status === 'rejected').length, icon: XCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+    { label: 'Total Adjustments', value: kpis.total || 0, icon: ArrowUpDown, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Pending Approval', value: kpis.pending || 0, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Approved', value: kpis.approved || 0, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Rejected', value: kpis.rejected || 0, icon: XCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
   ];
 
-  const handleCreate = () => {
-    if (!form.item || !form.location || !form.type) { toast.error('Please fill in all required fields'); return; }
-    toast.success(`Adjustment for ${form.item} created successfully`);
-    setCreateOpen(false);
-    setForm({ item: '', location: '', type: '', quantityBefore: '', quantityAfter: '', reason: '' });
+  const handleCreate = async () => {
+    if (!form.item || !form.type || !form.reason) { toast.error('Please fill in all required fields'); return; }
+    setCreating(true);
+    try {
+      const selectedItem = inventoryItems.find((i: any) => i.id === form.item);
+      const quantity = form.type === 'gain' || form.type === 'return'
+        ? Math.abs(parseFloat(form.quantityAfter || '0') - parseFloat(form.quantityBefore || '0'))
+        : Math.abs(parseFloat(form.quantityBefore || '0') - parseFloat(form.quantityAfter || '0'));
+      const res = await api.post('/api/inventory/adjustments', {
+        itemId: form.item,
+        type: form.type === 'write_off' ? 'loss' : form.type === 'damage' ? 'loss' : form.type,
+        quantity: quantity || 1,
+        reason: form.reason,
+        notes: form.location || null,
+      });
+      if (res.success) { toast.success('Adjustment created successfully'); setCreateOpen(false); setForm({ item: '', location: '', type: '', quantityBefore: '', quantityAfter: '', reason: '' }); fetchAdjustments(); }
+      else toast.error(res.error || 'Failed to create adjustment');
+    } catch { toast.error('Failed to create adjustment'); } finally { setCreating(false); }
+  };
+
+  const handleAction = async (id: string, action: 'approve' | 'reject') => {
+    try {
+      const res = await api.put(`/api/inventory/adjustments/${id}`, { action, type: action === 'approve' ? 'gain' : 'loss' });
+      if (res.success) { toast.success(`Adjustment ${action}d`); fetchAdjustments(); }
+      else toast.error(res.error || `Failed to ${action}`);
+    } catch { toast.error(`Failed to ${action}`); }
   };
 
   return (
@@ -7946,20 +7984,19 @@ function InventoryAdjustmentsPage() {
       </div>
       <Card className="border-0 shadow-sm">
         <div className="overflow-x-auto rounded border">
-          <Table><TableHeader><TableRow><TableHead>Adj #</TableHead><TableHead>Item</TableHead><TableHead className="hidden sm:table-cell">Location</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden md:table-cell">Qty Before</TableHead><TableHead className="hidden md:table-cell">Qty After</TableHead><TableHead className="hidden lg:table-cell">Reason</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead></TableRow></TableHeader><TableBody>
-            {filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={9} className="h-48"><EmptyState icon={ArrowUpDown} title="No adjustments found" description="Try adjusting your search or filters." /></TableCell></TableRow>
+          <Table><TableHeader><TableRow><TableHead>Adj #</TableHead><TableHead>Item</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden sm:table-cell">Qty Change</TableHead><TableHead className="hidden md:table-cell">Reason</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Created By</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead></TableRow></TableHeader><TableBody>
+            {loading ? (<TableRow><TableCell colSpan={8} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={ArrowUpDown} title="No adjustments found" description="Try adjusting your search or filters." /></TableCell></TableRow>
             ) : filtered.map(a => (
               <TableRow key={a.id} className="hover:bg-muted/30">
-                <TableCell className="font-mono text-sm font-medium">{a.adjNo}</TableCell>
-                <TableCell className="font-medium">{a.item}</TableCell>
-                <TableCell className="hidden sm:table-cell text-muted-foreground">{a.location}</TableCell>
-                <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="capitalize">{a.type.replace('_', ' ')}</Badge></TableCell>
-                <TableCell className="hidden md:table-cell font-medium">{a.qtyBefore}</TableCell>
-                <TableCell className="hidden md:table-cell font-medium">{a.qtyAfter}</TableCell>
-                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground max-w-[200px] truncate">{a.reason}</TableCell>
-                <TableCell><Badge variant="outline" className={adjStatusColors[a.status]}>{a.status.replace('_', ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(a.date)}</TableCell>
+                <TableCell className="font-mono text-sm font-medium">{a.adjustmentNumber}</TableCell>
+                <TableCell className="font-medium">{a.item?.name || '-'}</TableCell>
+                <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="capitalize">{a.type?.replace('_', ' ')}</Badge></TableCell>
+                <TableCell className="hidden sm:table-cell font-medium">{a.type === 'gain' ? '+' : '-'}{a.quantity}</TableCell>
+                <TableCell className="hidden md:table-cell text-xs text-muted-foreground max-w-[200px] truncate">{a.reason}</TableCell>
+                <TableCell><Badge variant="outline" className={adjStatusColors[a.status]}>{a.status?.replace('_', ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{a.createdBy?.fullName || '-'}</TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(a.createdAt)}</TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
@@ -7994,40 +8031,57 @@ function InventoryRequestsPage() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ item: '', quantity: '', workOrder: '', priority: '', requestedBy: '', notes: '' });
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [requests, setRequests] = useState<any[]>([]);
+  const [kpis, setKpis] = useState<any>({});
+  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+  const [form, setForm] = useState({ item: '', quantity: '', priority: '', description: '', notes: '' });
 
-  const initialRequests = [
-    { id: 1, reqNo: 'REQ-001', item: 'Ball Bearing 6205', quantity: 24, requestedBy: 'Mike Johnson', workOrder: 'WO-1023', priority: 'high', status: 'fulfilled', date: '2025-01-12' },
-    { id: 2, reqNo: 'REQ-002', item: 'Hydraulic Pump HP-300', quantity: 2, requestedBy: 'Sarah Chen', workOrder: 'WO-1024', priority: 'urgent', status: 'approved', date: '2025-01-11' },
-    { id: 3, reqNo: 'REQ-003', item: 'Drive Belt V-A68', quantity: 8, requestedBy: 'Tom Wilson', workOrder: 'WO-1025', priority: 'medium', status: 'pending', date: '2025-01-10' },
-    { id: 4, reqNo: 'REQ-004', item: 'Contactor LC1D25', quantity: 5, requestedBy: 'Anna Lee', workOrder: 'WO-1026', priority: 'low', status: 'approved', date: '2025-01-09' },
-    { id: 5, reqNo: 'REQ-005', item: 'Thermocouple Type K', quantity: 12, requestedBy: 'Mike Johnson', workOrder: 'WO-1027', priority: 'medium', status: 'partially_fulfilled', date: '2025-01-08' },
-    { id: 6, reqNo: 'REQ-006', item: 'Lubricant ISO 68 (5L)', quantity: 6, requestedBy: 'David Park', workOrder: 'WO-1028', priority: 'low', status: 'pending', date: '2025-01-07' },
-    { id: 7, reqNo: 'REQ-007', item: 'Solenoid Valve SV-200', quantity: 3, requestedBy: 'Sarah Chen', workOrder: 'WO-1029', priority: 'high', status: 'rejected', date: '2025-01-06' },
-    { id: 8, reqNo: 'REQ-008', item: 'Motor Coupling F-50', quantity: 4, requestedBy: 'Tom Wilson', workOrder: 'WO-1030', priority: 'urgent', status: 'fulfilled', date: '2025-01-05' },
-  ];
+  const fetchRequests = useCallback(async () => {
+    try {
+      const [reqRes, itemRes] = await Promise.all([
+        api.get<any>('/api/inventory/requests'),
+        api.get<any>('/api/inventory'),
+      ]);
+      if (reqRes.success) { setRequests(reqRes.data || []); setKpis(reqRes.kpis || {}); }
+      if (itemRes.success) setInventoryItems(itemRes.data || []);
+    } catch {} finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchRequests(); }, [fetchRequests]);
 
   const reqStatusColors: Record<string, string> = { pending: 'bg-amber-50 text-amber-700 border-amber-200', approved: 'bg-emerald-50 text-emerald-700 border-emerald-200', partially_fulfilled: 'bg-sky-50 text-sky-700 border-sky-200', fulfilled: 'bg-teal-50 text-teal-700 border-teal-200', rejected: 'bg-red-50 text-red-700 border-red-200' };
 
-  const filtered = initialRequests.filter(r => {
-    const matchSearch = r.reqNo.toLowerCase().includes(search.toLowerCase()) || r.item.toLowerCase().includes(search.toLowerCase()) || r.workOrder.toLowerCase().includes(search.toLowerCase());
+  const filtered = requests.filter((r: any) => {
+    const matchSearch = r.requestNumber?.toLowerCase().includes(search.toLowerCase()) || r.title?.toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === 'all' || r.status === filterStatus;
     const matchPriority = filterPriority === 'all' || r.priority === filterPriority;
     return matchSearch && matchStatus && matchPriority;
   });
 
   const kpiCards = [
-    { label: 'Total Requests', value: initialRequests.length, icon: FileText, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Pending', value: initialRequests.filter(r => r.status === 'pending').length, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Approved', value: initialRequests.filter(r => r.status === 'approved').length, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Fulfilled', value: initialRequests.filter(r => r.status === 'fulfilled' || r.status === 'partially_fulfilled').length, icon: Check, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
+    { label: 'Total Requests', value: kpis.total || 0, icon: FileText, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Pending', value: kpis.pending || 0, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Approved', value: kpis.approved || 0, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Fulfilled', value: kpis.fulfilled || 0, icon: Check, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
   ];
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!form.item || !form.quantity || !form.priority) { toast.error('Please fill in all required fields'); return; }
-    toast.success(`Request for ${form.item} created successfully`);
-    setCreateOpen(false);
-    setForm({ item: '', quantity: '', workOrder: '', priority: '', requestedBy: '', notes: '' });
+    setCreating(true);
+    try {
+      const selectedItem = inventoryItems.find((i: any) => i.id === form.item);
+      const res = await api.post('/api/inventory/requests', {
+        title: selectedItem?.name || form.item,
+        description: form.description || null,
+        priority: form.priority,
+        items: [{ itemId: form.item, quantity: parseFloat(form.quantity) || 1 }],
+        notes: form.notes || null,
+      });
+      if (res.success) { toast.success('Request created successfully'); setCreateOpen(false); setForm({ item: '', quantity: '', priority: '', description: '', notes: '' }); fetchRequests(); }
+      else toast.error(res.error || 'Failed to create request');
+    } catch { toast.error('Failed to create request'); } finally { setCreating(false); }
   };
 
   return (
@@ -8048,19 +8102,18 @@ function InventoryRequestsPage() {
       </div>
       <Card className="border-0 shadow-sm">
         <div className="overflow-x-auto rounded border">
-          <Table><TableHeader><TableRow><TableHead>Req #</TableHead><TableHead>Item</TableHead><TableHead>Qty</TableHead><TableHead className="hidden sm:table-cell">Requested By</TableHead><TableHead className="hidden md:table-cell">Work Order</TableHead><TableHead>Priority</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead></TableRow></TableHeader><TableBody>
-            {filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={FileText} title="No requests found" description="Try adjusting your search or filters." /></TableCell></TableRow>
-            ) : filtered.map(r => (
+          <Table><TableHeader><TableRow><TableHead>Req #</TableHead><TableHead>Title</TableHead><TableHead className="hidden sm:table-cell">Items</TableHead><TableHead className="hidden sm:table-cell">Requested By</TableHead><TableHead>Priority</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead></TableRow></TableHeader><TableBody>
+            {loading ? (<TableRow><TableCell colSpan={7} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={7} className="h-48"><EmptyState icon={FileText} title="No requests found" description="Try adjusting your search or filters." /></TableCell></TableRow>
+            ) : filtered.map((r: any) => (
               <TableRow key={r.id} className="hover:bg-muted/30">
-                <TableCell className="font-mono text-sm font-medium">{r.reqNo}</TableCell>
-                <TableCell className="font-medium">{r.item}</TableCell>
-                <TableCell className="font-medium">{r.quantity}</TableCell>
-                <TableCell className="hidden sm:table-cell text-muted-foreground">{r.requestedBy}</TableCell>
-                <TableCell className="hidden md:table-cell"><Badge variant="outline" className="font-mono text-xs">{r.workOrder}</Badge></TableCell>
+                <TableCell className="font-mono text-sm font-medium">{r.requestNumber}</TableCell>
+                <TableCell className="font-medium">{r.title}</TableCell>
+                <TableCell className="hidden sm:table-cell">{r.items?.length || 0}</TableCell>
+                <TableCell className="hidden sm:table-cell text-muted-foreground">{r.requestedBy?.fullName || '-'}</TableCell>
                 <TableCell><PriorityBadge priority={r.priority} /></TableCell>
-                <TableCell><Badge variant="outline" className={reqStatusColors[r.status]}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(r.date)}</TableCell>
+                <TableCell><Badge variant="outline" className={reqStatusColors[r.status]}>{r.status?.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(r.createdAt)}</TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
@@ -8068,22 +8121,19 @@ function InventoryRequestsPage() {
       </Card>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader><DialogTitle>New Inventory Request</DialogTitle><DialogDescription>Submit a material requisition linked to a work order.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>New Inventory Request</DialogTitle><DialogDescription>Submit a material requisition for inventory items.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
+            <div className="space-y-2"><Label>Item *</Label><Select value={form.item} onValueChange={v => setForm({ ...form, item: v })}><SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{inventoryItems.filter((i: any) => i.isActive).map((i: any) => <SelectItem key={i.id} value={i.id}>{i.name} ({i.itemCode})</SelectItem>)}</SelectContent></Select></div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Item *</Label><Input placeholder="Ball Bearing 6205" value={form.item} onChange={e => setForm({ ...form, item: e.target.value })} /></div>
               <div className="space-y-2"><Label>Quantity *</Label><Input type="number" placeholder="10" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Work Order</Label><Input placeholder="WO-1023" value={form.workOrder} onChange={e => setForm({ ...form, workOrder: e.target.value })} /></div>
               <div className="space-y-2"><Label>Priority *</Label><Select value={form.priority} onValueChange={v => setForm({ ...form, priority: v })}><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="urgent">Urgent</SelectItem></SelectContent></Select></div>
             </div>
-            <div className="space-y-2"><Label>Requested By</Label><Input placeholder="Your name" value={form.requestedBy} onChange={e => setForm({ ...form, requestedBy: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Additional notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={3} /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea placeholder="Purpose or description..." value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
+            <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Additional notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Submit Request</Button>
+            <Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Creating...' : 'Submit Request'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -8094,40 +8144,67 @@ function InventoryTransfersPage() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [transfers, setTransfers] = useState<any[]>([]);
+  const [kpis, setKpis] = useState<any>({});
+  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+  const [locations, setLocations] = useState<any[]>([]);
   const [form, setForm] = useState({ item: '', quantity: '', fromLocation: '', toLocation: '', notes: '' });
 
   const transferStatusColors: Record<string, string> = { pending: 'bg-amber-50 text-amber-700 border-amber-200', in_transit: 'bg-sky-50 text-sky-700 border-sky-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', cancelled: 'bg-slate-100 text-slate-600 border-slate-200' };
 
-  const initialTransfers = [
-    { id: 1, transferNo: 'TRF-001', item: 'Ball Bearing 6205', qty: 50, fromLocation: 'WH-A1', toLocation: 'PR-C1', status: 'completed', requestedDate: '2025-01-08', completedDate: '2025-01-10' },
-    { id: 2, transferNo: 'TRF-002', item: 'Drive Belt V-A68', qty: 20, fromLocation: 'WH-A2', toLocation: 'ST-B1', status: 'in_transit', requestedDate: '2025-01-11', completedDate: null },
-    { id: 3, transferNo: 'TRF-003', item: 'Contactor LC1D25', qty: 10, fromLocation: 'WH-F1', toLocation: 'PK-D1', status: 'completed', requestedDate: '2025-01-05', completedDate: '2025-01-06' },
-    { id: 4, transferNo: 'TRF-004', item: 'Lubricant ISO 68 (5L)', qty: 15, fromLocation: 'RC-E1', toLocation: 'WH-A1', status: 'pending', requestedDate: '2025-01-12', completedDate: null },
-    { id: 5, transferNo: 'TRF-005', item: 'Solenoid Valve SV-200', qty: 8, fromLocation: 'WH-A2', toLocation: 'PR-C1', status: 'completed', requestedDate: '2025-01-03', completedDate: '2025-01-04' },
-    { id: 6, transferNo: 'TRF-006', item: 'Hydraulic Pump HP-300', qty: 3, fromLocation: 'WH-A1', toLocation: 'ST-G1', status: 'cancelled', requestedDate: '2025-01-02', completedDate: null },
-    { id: 7, transferNo: 'TRF-007', item: 'Thermocouple Type K', qty: 30, fromLocation: 'WH-F1', toLocation: 'WH-A1', status: 'in_transit', requestedDate: '2025-01-10', completedDate: null },
-    { id: 8, transferNo: 'TRF-008', item: 'Fuse 30A NH-00', qty: 100, fromLocation: 'WH-A2', toLocation: 'PK-D1', status: 'completed', requestedDate: '2025-01-01', completedDate: '2025-01-02' },
-  ];
+  const fetchTransfers = useCallback(async () => {
+    try {
+      const [txRes, itemRes, locRes] = await Promise.all([
+        api.get<any>('/api/inventory/transfers'),
+        api.get<any>('/api/inventory'),
+        api.get<any>('/api/inventory/locations'),
+      ]);
+      if (txRes.success) { setTransfers(txRes.data || []); setKpis(txRes.kpis || {}); }
+      if (itemRes.success) setInventoryItems(itemRes.data || []);
+      if (locRes.success) setLocations(locRes.data || []);
+    } catch {} finally { setLoading(false); }
+  }, []);
 
-  const filtered = initialTransfers.filter(t => {
-    const matchSearch = t.transferNo.toLowerCase().includes(search.toLowerCase()) || t.item.toLowerCase().includes(search.toLowerCase()) || t.fromLocation.toLowerCase().includes(search.toLowerCase()) || t.toLocation.toLowerCase().includes(search.toLowerCase());
+  useEffect(() => { fetchTransfers(); }, [fetchTransfers]);
+
+  const filtered = transfers.filter((t: any) => {
+    const matchSearch = t.transferNumber?.toLowerCase().includes(search.toLowerCase()) || t.item?.name?.toLowerCase().includes(search.toLowerCase()) || t.fromLocation?.name?.toLowerCase().includes(search.toLowerCase()) || t.toLocation?.name?.toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === 'all' || t.status === filterStatus;
     return matchSearch && matchStatus;
   });
 
   const kpiCards = [
-    { label: 'Total Transfers', value: initialTransfers.length, icon: Truck, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'In Transit', value: initialTransfers.filter(t => t.status === 'in_transit').length, icon: ArrowRightLeft, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Completed', value: initialTransfers.filter(t => t.status === 'completed').length, icon: CheckCircle2, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
-    { label: 'Cancelled', value: initialTransfers.filter(t => t.status === 'cancelled').length, icon: XCircle, color: 'text-slate-600 bg-slate-100 dark:bg-slate-900/30 dark:text-slate-400' },
+    { label: 'Total Transfers', value: kpis.total || 0, icon: Truck, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Pending', value: (kpis.pending || 0) + (kpis.inTransit || 0), icon: ArrowRightLeft, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Completed', value: kpis.completed || 0, icon: CheckCircle2, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
+    { label: 'Cancelled', value: kpis.cancelled || 0, icon: XCircle, color: 'text-slate-600 bg-slate-100 dark:bg-slate-900/30 dark:text-slate-400' },
   ];
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!form.item || !form.quantity || !form.fromLocation || !form.toLocation) { toast.error('Please fill in all required fields'); return; }
     if (form.fromLocation === form.toLocation) { toast.error('From and To locations cannot be the same'); return; }
-    toast.success(`Transfer for ${form.item} created successfully`);
-    setCreateOpen(false);
-    setForm({ item: '', quantity: '', fromLocation: '', toLocation: '', notes: '' });
+    setCreating(true);
+    try {
+      const res = await api.post('/api/inventory/transfers', {
+        itemId: form.item,
+        quantity: parseFloat(form.quantity),
+        fromLocationId: form.fromLocation,
+        toLocationId: form.toLocation,
+        notes: form.notes || null,
+      });
+      if (res.success) { toast.success('Transfer created successfully'); setCreateOpen(false); setForm({ item: '', quantity: '', fromLocation: '', toLocation: '', notes: '' }); fetchTransfers(); }
+      else toast.error(res.error || 'Failed to create transfer');
+    } catch { toast.error('Failed to create transfer'); } finally { setCreating(false); }
+  };
+
+  const handleAction = async (id: string, action: 'approve' | 'complete' | 'cancel') => {
+    try {
+      const res = await api.put(`/api/inventory/transfers/${id}`, { action });
+      if (res.success) { toast.success(`Transfer ${action}d`); fetchTransfers(); }
+      else toast.error(res.error || `Failed to ${action}`);
+    } catch { toast.error(`Failed to ${action}`); }
   };
 
   return (
@@ -8147,19 +8224,23 @@ function InventoryTransfersPage() {
       </div>
       <Card className="border-0 shadow-sm">
         <div className="overflow-x-auto rounded border">
-          <Table><TableHeader><TableRow><TableHead>Transfer #</TableHead><TableHead>Item</TableHead><TableHead>Qty</TableHead><TableHead className="hidden sm:table-cell">From</TableHead><TableHead className="hidden sm:table-cell">To</TableHead><TableHead>Status</TableHead><TableHead className="hidden md:table-cell">Req. Date</TableHead><TableHead className="hidden lg:table-cell">Comp. Date</TableHead></TableRow></TableHeader><TableBody>
-            {filtered.length === 0 ? (
+          <Table><TableHeader><TableRow><TableHead>Transfer #</TableHead><TableHead>Item</TableHead><TableHead>Qty</TableHead><TableHead className="hidden sm:table-cell">From</TableHead><TableHead className="hidden sm:table-cell">To</TableHead><TableHead>Status</TableHead><TableHead className="hidden md:table-cell">Date</TableHead><TableHead className="hidden lg:table-cell">Actions</TableHead></TableRow></TableHeader><TableBody>
+            {loading ? (<TableRow><TableCell colSpan={8} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (
               <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={Truck} title="No transfers found" description="Try adjusting your search or filters." /></TableCell></TableRow>
-            ) : filtered.map(t => (
+            ) : filtered.map((t: any) => (
               <TableRow key={t.id} className="hover:bg-muted/30">
-                <TableCell className="font-mono text-sm font-medium">{t.transferNo}</TableCell>
-                <TableCell className="font-medium">{t.item}</TableCell>
-                <TableCell className="font-medium">{t.qty}</TableCell>
-                <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">{t.fromLocation}</Badge></TableCell>
-                <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200">{t.toLocation}</Badge></TableCell>
-                <TableCell><Badge variant="outline" className={transferStatusColors[t.status]}>{t.status.replace('_', ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{formatDate(t.requestedDate)}</TableCell>
-                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{t.completedDate ? formatDate(t.completedDate) : '-'}</TableCell>
+                <TableCell className="font-mono text-sm font-medium">{t.transferNumber}</TableCell>
+                <TableCell className="font-medium">{t.item?.name || '-'}</TableCell>
+                <TableCell className="font-medium">{t.quantity}</TableCell>
+                <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">{t.fromLocation?.code || '-'}</Badge></TableCell>
+                <TableCell className="hidden sm:table-cell"><Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200">{t.toLocation?.code || '-'}</Badge></TableCell>
+                <TableCell><Badge variant="outline" className={transferStatusColors[t.status]}>{t.status?.replace('_', ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{formatDate(t.createdAt)}</TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  {t.status === 'pending' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(t.id, 'approve')}>Approve</Button>}
+                  {t.status === 'in_transit' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(t.id, 'complete')}>Complete</Button>}
+                  {(t.status === 'pending' || t.status === 'in_transit') && <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => handleAction(t.id, 'cancel')}>Cancel</Button>}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
@@ -8169,17 +8250,17 @@ function InventoryTransfersPage() {
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader><DialogTitle>New Inventory Transfer</DialogTitle><DialogDescription>Create a transfer request to move items between locations.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="space-y-2"><Label>Item *</Label><Input placeholder="Ball Bearing 6205" value={form.item} onChange={e => setForm({ ...form, item: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Item *</Label><Select value={form.item} onValueChange={v => setForm({ ...form, item: v })}><SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{inventoryItems.filter((i: any) => i.isActive).map((i: any) => <SelectItem key={i.id} value={i.id}>{i.name} ({i.itemCode})</SelectItem>)}</SelectContent></Select></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Quantity *</Label><Input type="number" placeholder="10" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
-              <div className="space-y-2"><Label>From Location *</Label><Input placeholder="WH-A1" value={form.fromLocation} onChange={e => setForm({ ...form, fromLocation: e.target.value })} /></div>
+              <div className="space-y-2"><Label>From Location *</Label><Select value={form.fromLocation} onValueChange={v => setForm({ ...form, fromLocation: v })}><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent>{locations.filter((l: any) => l.isActive).map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name} ({l.code})</SelectItem>)}</SelectContent></Select></div>
             </div>
-            <div className="space-y-2"><Label>To Location *</Label><Input placeholder="PR-C1" value={form.toLocation} onChange={e => setForm({ ...form, toLocation: e.target.value })} /></div>
+            <div className="space-y-2"><Label>To Location *</Label><Select value={form.toLocation} onValueChange={v => setForm({ ...form, toLocation: v })}><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent>{locations.filter((l: any) => l.isActive).map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name} ({l.code})</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Additional notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={3} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Transfer</Button>
+            <Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Creating...' : 'Create Transfer'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -8190,41 +8271,55 @@ function InventorySuppliersPage() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ company: '', contact: '', email: '', phone: '', leadTime: '', address: '', categories: '' });
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [kpis, setKpis] = useState<any>({});
+  const [form, setForm] = useState({ name: '', code: '', contactPerson: '', email: '', phone: '', address: '', city: '', country: '', website: '', rating: '' });
 
-  const initialSuppliers = [
-    { id: 1, code: 'SUP-001', company: 'SKF Industries', contact: 'James Morton', email: 'j.morton@skf.com', phone: '+1-555-0101', leadTime: 7, rating: 5, status: 'active', itemsSupplied: 45 },
-    { id: 2, code: 'SUP-002', company: 'Siemens AG', contact: 'Erika Muller', email: 'e.muller@siemens.com', phone: '+49-30-555-0102', leadTime: 14, rating: 4, status: 'active', itemsSupplied: 32 },
-    { id: 3, code: 'SUP-003', company: 'Schneider Electric', contact: 'Pierre Dubois', email: 'p.dubois@schneider.fr', phone: '+33-1-555-0103', leadTime: 10, rating: 5, status: 'active', itemsSupplied: 58 },
-    { id: 4, code: 'SUP-004', company: 'Gates Corporation', contact: 'Robert Chen', email: 'r.chen@gates.com', phone: '+1-555-0104', leadTime: 5, rating: 4, status: 'active', itemsSupplied: 23 },
-    { id: 5, code: 'SUP-005', company: 'Parker Hannifin', contact: 'Linda Scott', email: 'l.scott@parker.com', phone: '+1-555-0105', leadTime: 12, rating: 3, status: 'on_hold', itemsSupplied: 17 },
-    { id: 6, code: 'SUP-006', company: 'ABB Ltd', contact: 'Karl Andersen', email: 'k.andersen@abb.ch', phone: '+41-44-555-0106', leadTime: 18, rating: 4, status: 'active', itemsSupplied: 29 },
-    { id: 7, code: 'SUP-007', company: 'Emerson Electric', contact: 'Maria Garcia', email: 'm.garcia@emerson.com', phone: '+1-555-0107', leadTime: 8, rating: 5, status: 'active', itemsSupplied: 41 },
-    { id: 8, code: 'SUP-008', company: 'Timken Company', contact: 'David Brown', email: 'd.brown@timken.com', phone: '+1-555-0108', leadTime: 6, rating: 3, status: 'active', itemsSupplied: 19 },
-    { id: 9, code: 'SUP-009', company: 'Rockwell Automation', contact: 'Susan Taylor', email: 's.taylor@rockwell.com', phone: '+1-555-0109', leadTime: 10, rating: 2, status: 'on_hold', itemsSupplied: 14 },
-    { id: 10, code: 'SUP-010', company: 'Honeywell Intl', contact: 'William Lee', email: 'w.lee@honeywell.com', phone: '+1-555-0110', leadTime: 9, rating: 4, status: 'active', itemsSupplied: 36 },
-  ];
+  const fetchSuppliers = useCallback(async () => {
+    try {
+      const res = await api.get<any>('/api/suppliers');
+      if (res.success) { setSuppliers(res.data || []); setKpis(res.kpis || {}); }
+    } catch {} finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchSuppliers(); }, [fetchSuppliers]);
 
   const supplierStatusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', on_hold: 'bg-amber-50 text-amber-700 border-amber-200', inactive: 'bg-slate-100 text-slate-600 border-slate-200' };
 
-  const filtered = initialSuppliers.filter(s => {
-    const matchSearch = s.code.toLowerCase().includes(search.toLowerCase()) || s.company.toLowerCase().includes(search.toLowerCase()) || s.contact.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = filterStatus === 'all' || s.status === filterStatus;
+  const filtered = suppliers.filter((s: any) => {
+    const matchSearch = s.code?.toLowerCase().includes(search.toLowerCase()) || s.name?.toLowerCase().includes(search.toLowerCase()) || s.contactPerson?.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = filterStatus === 'all' || (filterStatus === 'active' ? s.isActive : !s.isActive);
     return matchSearch && matchStatus;
   });
 
   const kpiCards = [
-    { label: 'Total Suppliers', value: initialSuppliers.length, icon: Building, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Active', value: initialSuppliers.filter(s => s.status === 'active').length, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'On Hold', value: initialSuppliers.filter(s => s.status === 'on_hold').length, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'New This Quarter', value: 3, icon: Star, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    { label: 'Total Suppliers', value: kpis.total || 0, icon: Building, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Active', value: kpis.active || 0, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Inactive', value: kpis.inactive || 0, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Top Rated', value: suppliers.filter((s: any) => s.rating >= 4).length, icon: Star, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
-  const handleCreate = () => {
-    if (!form.company || !form.contact || !form.email) { toast.error('Please fill in all required fields'); return; }
-    toast.success(`Supplier ${form.company} added successfully`);
-    setCreateOpen(false);
-    setForm({ company: '', contact: '', email: '', phone: '', leadTime: '', address: '', categories: '' });
+  const handleCreate = async () => {
+    if (!form.name || !form.code) { toast.error('Name and code are required'); return; }
+    setCreating(true);
+    try {
+      const res = await api.post('/api/suppliers', {
+        name: form.name,
+        code: form.code,
+        contactPerson: form.contactPerson || null,
+        email: form.email || null,
+        phone: form.phone || null,
+        address: form.address || null,
+        city: form.city || null,
+        country: form.country || null,
+        website: form.website || null,
+        rating: form.rating ? parseInt(form.rating) : null,
+      });
+      if (res.success) { toast.success(`Supplier ${form.name} added successfully`); setCreateOpen(false); setForm({ name: '', code: '', contactPerson: '', email: '', phone: '', address: '', city: '', country: '', website: '', rating: '' }); fetchSuppliers(); }
+      else toast.error(res.error || 'Failed to add supplier');
+    } catch { toast.error('Failed to add supplier'); } finally { setCreating(false); }
   };
 
   return (
@@ -8240,24 +8335,22 @@ function InventorySuppliersPage() {
       </div>
       <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search suppliers..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
-        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="on_hold">On Hold</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent></Select>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent></Select>
       </div>
       <Card className="border-0 shadow-sm">
         <div className="overflow-x-auto rounded border">
-          <Table><TableHeader><TableRow><TableHead>ID</TableHead><TableHead>Company</TableHead><TableHead className="hidden sm:table-cell">Contact</TableHead><TableHead className="hidden md:table-cell">Email</TableHead><TableHead className="hidden md:table-cell">Phone</TableHead><TableHead className="hidden lg:table-cell">Lead Time</TableHead><TableHead className="hidden lg:table-cell">Rating</TableHead><TableHead>Status</TableHead><TableHead className="hidden xl:table-cell text-right">Items</TableHead></TableRow></TableHeader><TableBody>
-            {filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={9} className="h-48"><EmptyState icon={Building} title="No suppliers found" description="Try adjusting your search or filters." /></TableCell></TableRow>
-            ) : filtered.map(s => (
+          <Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Company</TableHead><TableHead className="hidden sm:table-cell">Contact</TableHead><TableHead className="hidden md:table-cell">Email</TableHead><TableHead className="hidden lg:table-cell">Rating</TableHead><TableHead>Status</TableHead><TableHead className="hidden xl:table-cell text-right">Items</TableHead></TableRow></TableHeader><TableBody>
+            {loading ? (<TableRow><TableCell colSpan={8} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={Building} title="No suppliers found" description="Try adjusting your search or filters." /></TableCell></TableRow>
+            ) : filtered.map((s: any) => (
               <TableRow key={s.id} className="hover:bg-muted/30">
                 <TableCell className="font-mono text-sm font-medium">{s.code}</TableCell>
-                <TableCell className="font-medium">{s.company}</TableCell>
-                <TableCell className="hidden sm:table-cell text-muted-foreground">{s.contact}</TableCell>
-                <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{s.email}</TableCell>
-                <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{s.phone}</TableCell>
-                <TableCell className="hidden lg:table-cell">{s.leadTime} days</TableCell>
-                <TableCell className="hidden lg:table-cell"><span className="text-amber-500">{'★'.repeat(s.rating)}</span><span className="text-muted/30">{'★'.repeat(5 - s.rating)}</span></TableCell>
-                <TableCell><Badge variant="outline" className={supplierStatusColors[s.status]}>{s.status.replace('_', ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell className="hidden xl:table-cell text-right font-medium">{s.itemsSupplied}</TableCell>
+                <TableCell className="font-medium">{s.name}</TableCell>
+                <TableCell className="hidden sm:table-cell text-muted-foreground">{s.contactPerson || '-'}</TableCell>
+                <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{s.email || '-'}</TableCell>
+                <TableCell className="hidden lg:table-cell"><span className="text-amber-500">{'★'.repeat(s.rating || 0)}</span><span className="text-muted/30">{'★'.repeat(5 - (s.rating || 0))}</span></TableCell>
+                <TableCell><Badge variant="outline" className={s.isActive ? supplierStatusColors.active : supplierStatusColors.inactive}>{s.isActive ? 'ACTIVE' : 'INACTIVE'}</Badge></TableCell>
+                <TableCell className="hidden xl:table-cell text-right font-medium">{s._count?.items || 0}</TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
@@ -8267,21 +8360,27 @@ function InventorySuppliersPage() {
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader><DialogTitle>Add New Supplier</DialogTitle><DialogDescription>Register a new supplier in the system.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="space-y-2"><Label>Company Name *</Label><Input placeholder="SKF Industries" value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Contact Person *</Label><Input placeholder="John Smith" value={form.contact} onChange={e => setForm({ ...form, contact: e.target.value })} /></div>
-              <div className="space-y-2"><Label>Email *</Label><Input type="email" placeholder="john@company.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Company Name *</Label><Input placeholder="SKF Industries" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Code *</Label><Input placeholder="SUP-0001" value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Contact Person</Label><Input placeholder="John Smith" value={form.contactPerson} onChange={e => setForm({ ...form, contactPerson: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Email</Label><Input type="email" placeholder="john@company.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Phone</Label><Input placeholder="+1-555-0100" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
-              <div className="space-y-2"><Label>Lead Time (days)</Label><Input type="number" placeholder="7" value={form.leadTime} onChange={e => setForm({ ...form, leadTime: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Rating (1-5)</Label><Input type="number" min="1" max="5" placeholder="4" value={form.rating} onChange={e => setForm({ ...form, rating: e.target.value })} /></div>
             </div>
-            <div className="space-y-2"><Label>Address</Label><Textarea placeholder="Full address..." value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={2} /></div>
-            <div className="space-y-2"><Label>Categories</Label><Input placeholder="Bearings, Pumps, Valves" value={form.categories} onChange={e => setForm({ ...form, categories: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Address</Label><Input placeholder="Full address..." value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>City</Label><Input placeholder="City" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Country</Label><Input placeholder="Country" value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} /></div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Add Supplier</Button>
+            <Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Adding...' : 'Add Supplier'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -8292,41 +8391,66 @@ function InventoryPurchaseOrdersPage() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ supplier: '', priority: '', expectedDate: '', notes: '', items: '' });
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [kpis, setKpis] = useState<any>({});
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+  const [form, setForm] = useState({ supplier: '', priority: '', expectedDate: '', notes: '' });
+
+  const fetchOrders = useCallback(async () => {
+    try {
+      const [poRes, supRes, itemRes] = await Promise.all([
+        api.get<any>('/api/purchase-orders'),
+        api.get<any>('/api/suppliers'),
+        api.get<any>('/api/inventory'),
+      ]);
+      if (poRes.success) { setOrders(poRes.data || []); setKpis(poRes.kpis || {}); }
+      if (supRes.success) setSuppliers(supRes.data || []);
+      if (itemRes.success) setInventoryItems(itemRes.data || []);
+    } catch {} finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
   const poStatusColors: Record<string, string> = { draft: 'bg-slate-100 text-slate-600 border-slate-200', pending: 'bg-amber-50 text-amber-700 border-amber-200', approved: 'bg-emerald-50 text-emerald-700 border-emerald-200', partially_received: 'bg-sky-50 text-sky-700 border-sky-200', received: 'bg-teal-50 text-teal-700 border-teal-200', cancelled: 'bg-red-50 text-red-600 border-red-200' };
 
-  const initialPOs = [
-    { id: 1, poNo: 'PO-2025-001', supplier: 'SKF Industries', totalItems: 5, totalAmount: 12500.00, priority: 'high', status: 'received', orderDate: '2025-01-02', expectedDate: '2025-01-12' },
-    { id: 2, poNo: 'PO-2025-002', supplier: 'Siemens AG', totalItems: 3, totalAmount: 28750.00, priority: 'urgent', status: 'approved', orderDate: '2025-01-04', expectedDate: '2025-01-18' },
-    { id: 3, poNo: 'PO-2025-003', supplier: 'Schneider Electric', totalItems: 8, totalAmount: 9320.00, priority: 'medium', status: 'pending', orderDate: '2025-01-06', expectedDate: '2025-01-20' },
-    { id: 4, poNo: 'PO-2025-004', supplier: 'Gates Corporation', totalItems: 12, totalAmount: 4680.00, priority: 'low', status: 'received', orderDate: '2025-01-03', expectedDate: '2025-01-10' },
-    { id: 5, poNo: 'PO-2025-005', supplier: 'Parker Hannifin', totalItems: 4, totalAmount: 18200.00, priority: 'high', status: 'partially_received', orderDate: '2025-01-05', expectedDate: '2025-01-17' },
-    { id: 6, poNo: 'PO-2025-006', supplier: 'ABB Ltd', totalItems: 6, totalAmount: 35100.00, priority: 'medium', status: 'draft', orderDate: '2025-01-08', expectedDate: '2025-01-26' },
-    { id: 7, poNo: 'PO-2025-007', supplier: 'Emerson Electric', totalItems: 9, totalAmount: 21900.00, priority: 'high', status: 'approved', orderDate: '2025-01-07', expectedDate: '2025-01-21' },
-    { id: 8, poNo: 'PO-2025-008', supplier: 'Timken Company', totalItems: 7, totalAmount: 8450.00, priority: 'medium', status: 'received', orderDate: '2025-01-01', expectedDate: '2025-01-09' },
-    { id: 9, poNo: 'PO-2025-009', supplier: 'Rockwell Automation', totalItems: 2, totalAmount: 42000.00, priority: 'urgent', status: 'pending', orderDate: '2025-01-09', expectedDate: '2025-01-23' },
-    { id: 10, poNo: 'PO-2025-010', supplier: 'Honeywell Intl', totalItems: 10, totalAmount: 15800.00, priority: 'low', status: 'cancelled', orderDate: '2025-01-04', expectedDate: '2025-01-15' },
-  ];
-
-  const filtered = initialPOs.filter(po => {
-    const matchSearch = po.poNo.toLowerCase().includes(search.toLowerCase()) || po.supplier.toLowerCase().includes(search.toLowerCase());
+  const filtered = orders.filter((po: any) => {
+    const matchSearch = po.poNumber?.toLowerCase().includes(search.toLowerCase()) || po.supplier?.name?.toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === 'all' || po.status === filterStatus;
     return matchSearch && matchStatus;
   });
 
   const kpiCards = [
-    { label: 'Total POs', value: initialPOs.length, icon: ShoppingCart, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Pending Approval', value: initialPOs.filter(po => po.status === 'pending' || po.status === 'draft').length, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Approved', value: initialPOs.filter(po => po.status === 'approved' || po.status === 'partially_received').length, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Received', value: initialPOs.filter(po => po.status === 'received').length, icon: Check, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
+    { label: 'Total POs', value: kpis.total || 0, icon: ShoppingCart, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Pending', value: kpis.pending || 0, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Approved', value: kpis.approved || 0, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Received', value: kpis.received || 0, icon: Check, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
   ];
 
-  const handleCreate = () => {
-    if (!form.supplier || !form.priority || !form.expectedDate) { toast.error('Please fill in all required fields'); return; }
-    toast.success(`Purchase order for ${form.supplier} created successfully`);
-    setCreateOpen(false);
-    setForm({ supplier: '', priority: '', expectedDate: '', notes: '', items: '' });
+  const handleCreate = async () => {
+    if (!form.supplier || !form.priority) { toast.error('Supplier and priority are required'); return; }
+    setCreating(true);
+    try {
+      const res = await api.post('/api/purchase-orders', {
+        supplierId: form.supplier,
+        priority: form.priority,
+        expectedDelivery: form.expectedDate || null,
+        notes: form.notes || null,
+        items: [],
+      });
+      if (res.success) { toast.success('Purchase order created successfully'); setCreateOpen(false); setForm({ supplier: '', priority: '', expectedDate: '', notes: '' }); fetchOrders(); }
+      else toast.error(res.error || 'Failed to create PO');
+    } catch { toast.error('Failed to create PO'); } finally { setCreating(false); }
+  };
+
+  const handleAction = async (id: string, action: 'approve') => {
+    try {
+      const res = await api.post(`/api/purchase-orders/${id}/${action}`, {});
+      if (res.success) { toast.success(`PO ${action}d`); fetchOrders(); }
+      else toast.error(res.error || `Failed to ${action}`);
+    } catch { toast.error(`Failed to ${action}`); }
   };
 
   return (
@@ -8342,23 +8466,25 @@ function InventoryPurchaseOrdersPage() {
       </div>
       <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search purchase orders..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
-        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-48"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="partially_received">Partial</SelectItem><SelectItem value="received">Received</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-48"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="partially_received">Partial</SelectItem><SelectItem value="received">Received</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
       </div>
       <Card className="border-0 shadow-sm">
         <div className="overflow-x-auto rounded border">
-          <Table><TableHeader><TableRow><TableHead>PO #</TableHead><TableHead>Supplier</TableHead><TableHead className="hidden sm:table-cell">Items</TableHead><TableHead className="hidden sm:table-cell">Amount</TableHead><TableHead className="hidden md:table-cell">Priority</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Order Date</TableHead><TableHead className="hidden lg:table-cell">Expected</TableHead></TableRow></TableHeader><TableBody>
-            {filtered.length === 0 ? (
+          <Table><TableHeader><TableRow><TableHead>PO #</TableHead><TableHead>Supplier</TableHead><TableHead className="hidden sm:table-cell">Items</TableHead><TableHead className="hidden sm:table-cell">Amount</TableHead><TableHead className="hidden md:table-cell">Priority</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead><TableHead className="hidden lg:table-cell">Actions</TableHead></TableRow></TableHeader><TableBody>
+            {loading ? (<TableRow><TableCell colSpan={8} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (
               <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={ShoppingCart} title="No purchase orders found" description="Try adjusting your search or filters." /></TableCell></TableRow>
-            ) : filtered.map(po => (
+            ) : filtered.map((po: any) => (
               <TableRow key={po.id} className="hover:bg-muted/30">
-                <TableCell className="font-mono text-sm font-medium">{po.poNo}</TableCell>
-                <TableCell className="font-medium">{po.supplier}</TableCell>
-                <TableCell className="hidden sm:table-cell">{po.totalItems}</TableCell>
-                <TableCell className="hidden sm:table-cell font-medium">${po.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</TableCell>
+                <TableCell className="font-mono text-sm font-medium">{po.poNumber}</TableCell>
+                <TableCell className="font-medium">{po.supplier?.name || '-'}</TableCell>
+                <TableCell className="hidden sm:table-cell">{po.items?.length || 0}</TableCell>
+                <TableCell className="hidden sm:table-cell font-medium">${(po.totalAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</TableCell>
                 <TableCell className="hidden md:table-cell"><PriorityBadge priority={po.priority} /></TableCell>
-                <TableCell><Badge variant="outline" className={poStatusColors[po.status]}>{po.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(po.orderDate)}</TableCell>
-                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(po.expectedDate)}</TableCell>
+                <TableCell><Badge variant="outline" className={poStatusColors[po.status]}>{po.status?.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(po.createdAt)}</TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  {po.status === 'draft' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(po.id, 'approve')}>Approve</Button>}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
@@ -8368,17 +8494,16 @@ function InventoryPurchaseOrdersPage() {
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader><DialogTitle>New Purchase Order</DialogTitle><DialogDescription>Create a new purchase order for inventory items.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="space-y-2"><Label>Supplier *</Label><Input placeholder="SKF Industries" value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Supplier *</Label><Select value={form.supplier} onValueChange={v => setForm({ ...form, supplier: v })}><SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger><SelectContent>{suppliers.filter((s: any) => s.isActive).map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name} ({s.code})</SelectItem>)}</SelectContent></Select></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Priority *</Label><Select value={form.priority} onValueChange={v => setForm({ ...form, priority: v })}><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="urgent">Urgent</SelectItem></SelectContent></Select></div>
-              <div className="space-y-2"><Label>Expected Date *</Label><Input type="date" value={form.expectedDate} onChange={e => setForm({ ...form, expectedDate: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Expected Date</Label><Input type="date" value={form.expectedDate} onChange={e => setForm({ ...form, expectedDate: e.target.value })} /></div>
             </div>
-            <div className="space-y-2"><Label>Items (one per line: name, qty, price)</Label><Textarea placeholder={'Ball Bearing 6205, 100, 15.50\nHydraulic Pump HP-300, 5, 850.00'} value={form.items} onChange={e => setForm({ ...form, items: e.target.value })} rows={4} /></div>
             <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Additional notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create PO</Button>
+            <Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Creating...' : 'Create PO'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -8387,42 +8512,68 @@ function InventoryPurchaseOrdersPage() {
 }
 function InventoryReceivingPage() {
   const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterCondition, setFilterCondition] = useState<string>('all');
+  const [loading, setLoading] = useState(true);
+  const [records, setRecords] = useState<any[]>([]);
+  const [kpis, setKpis] = useState<any>({});
+  const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ purchaseOrder: '', supplier: '', receivedDate: '', notes: '', items: '' });
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ purchaseOrder: '', itemId: '', quantity: '', condition: 'good', notes: '' });
 
-  const grnStatusColors: Record<string, string> = { pending_inspection: 'bg-amber-50 text-amber-700 border-amber-200', accepted: 'bg-emerald-50 text-emerald-700 border-emerald-200', rejected: 'bg-red-50 text-red-700 border-red-200' };
+  const fetchRecords = useCallback(async () => {
+    try {
+      const [recRes, poRes] = await Promise.all([
+        api.get<any>('/api/receiving-records'),
+        api.get<any>('/api/purchase-orders'),
+      ]);
+      if (recRes.success) { setRecords(recRes.data || []); setKpis(recRes.kpis || {}); }
+      if (poRes.success) setPurchaseOrders(poRes.data || []);
+    } catch {} finally { setLoading(false); }
+  }, []);
 
-  const initialGRNs = [
-    { id: 1, grnNo: 'GRN-001', poNo: 'PO-2025-001', supplier: 'SKF Industries', itemsReceived: 5, receivedDate: '2025-01-12', status: 'accepted', inspectedBy: 'Mike Johnson', notes: 'All items passed QC inspection' },
-    { id: 2, grnNo: 'GRN-002', poNo: 'PO-2025-004', supplier: 'Gates Corporation', itemsReceived: 12, receivedDate: '2025-01-10', status: 'accepted', inspectedBy: 'Sarah Chen', notes: 'Minor packaging damage, items OK' },
-    { id: 3, grnNo: 'GRN-003', poNo: 'PO-2025-005', supplier: 'Parker Hannifin', itemsReceived: 2, receivedDate: '2025-01-13', status: 'pending_inspection', inspectedBy: '', notes: 'Awaiting QC team availability' },
-    { id: 4, grnNo: 'GRN-004', poNo: 'PO-2025-002', supplier: 'Siemens AG', itemsReceived: 1, receivedDate: '2025-01-13', status: 'pending_inspection', inspectedBy: '', notes: 'Partial shipment received' },
-    { id: 5, grnNo: 'GRN-005', poNo: 'PO-2025-008', supplier: 'Timken Company', itemsReceived: 7, receivedDate: '2025-01-09', status: 'accepted', inspectedBy: 'Tom Wilson', notes: 'All within specification' },
-    { id: 6, grnNo: 'GRN-006', poNo: 'PO-2025-010', supplier: 'Honeywell Intl', itemsReceived: 3, receivedDate: '2025-01-14', status: 'pending_inspection', inspectedBy: '', notes: 'Special inspection required per contract' },
-    { id: 7, grnNo: 'GRN-007', poNo: 'PO-2025-003', supplier: 'Schneider Electric', itemsReceived: 2, receivedDate: '2025-01-11', status: 'rejected', inspectedBy: 'Anna Lee', notes: 'Voltage rating mismatch on contactors - returned' },
-    { id: 8, grnNo: 'GRN-008', poNo: 'PO-2025-006', supplier: 'ABB Ltd', itemsReceived: 4, receivedDate: '2025-01-14', status: 'rejected', inspectedBy: 'David Park', notes: 'Incorrect model shipped - returned to supplier' },
-  ];
+  useEffect(() => { fetchRecords(); }, [fetchRecords]);
 
-  const filtered = initialGRNs.filter(g => {
-    const matchSearch = g.grnNo.toLowerCase().includes(search.toLowerCase()) || g.poNo.toLowerCase().includes(search.toLowerCase()) || g.supplier.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = filterStatus === 'all' || g.status === filterStatus;
-    return matchSearch && matchStatus;
+  const conditionColors: Record<string, string> = { good: 'bg-emerald-50 text-emerald-700 border-emerald-200', damaged: 'bg-amber-50 text-amber-700 border-amber-200', defective: 'bg-red-50 text-red-700 border-red-200' };
+
+  const filtered = records.filter((r: any) => {
+    const matchSearch = r.po?.poNumber?.toLowerCase().includes(search.toLowerCase()) || r.item?.name?.toLowerCase().includes(search.toLowerCase()) || r.item?.itemCode?.toLowerCase().includes(search.toLowerCase());
+    const matchCondition = filterCondition === 'all' || r.condition === filterCondition;
+    return matchSearch && matchCondition;
   });
 
   const kpiCards = [
-    { label: 'Total GRNs', value: initialGRNs.length, icon: Download, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Pending Inspection', value: initialGRNs.filter(g => g.status === 'pending_inspection').length, icon: ClipboardCheck, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Accepted', value: initialGRNs.filter(g => g.status === 'accepted').length, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Rejected', value: initialGRNs.filter(g => g.status === 'rejected').length, icon: XCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+    { label: 'Total GRNs', value: kpis.total || 0, icon: Download, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Good', value: kpis.good || 0, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Damaged', value: kpis.pending || 0, icon: ClipboardCheck, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Defective', value: kpis.rejected || 0, icon: XCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
   ];
 
-  const handleCreate = () => {
-    if (!form.purchaseOrder || !form.supplier || !form.receivedDate) { toast.error('Please fill in all required fields'); return; }
-    toast.success(`GRN for ${form.purchaseOrder} created successfully`);
-    setCreateOpen(false);
-    setForm({ purchaseOrder: '', supplier: '', receivedDate: '', notes: '', items: '' });
+  const handleCreate = async () => {
+    if (!form.purchaseOrder || !form.itemId || !form.quantity) { toast.error('PO, item, and quantity are required'); return; }
+    setCreating(true);
+    try {
+      const res = await api.post(`/api/purchase-orders/${form.purchaseOrder}/receive`, {
+        itemId: form.itemId,
+        quantityReceived: parseFloat(form.quantity),
+        condition: form.condition,
+        notes: form.notes || null,
+      });
+      if (res.success) { toast.success('Items received successfully'); setCreateOpen(false); setForm({ purchaseOrder: '', itemId: '', quantity: '', condition: 'good', notes: '' }); fetchRecords(); }
+      else toast.error(res.error || 'Failed to receive items');
+    } catch { toast.error('Failed to receive items'); } finally { setCreating(false); }
   };
+
+  // Get available PO items (approved/partially_received) for the create form
+  const availablePOItems = purchaseOrders.filter((po: any) => ['approved', 'partially_received'].includes(po.status)).flatMap((po: any) =>
+    (po.items || []).map((pi: any) => ({
+      ...pi,
+      poId: po.id,
+      poNumber: po.poNumber,
+      supplierName: po.supplier?.name || '',
+      remaining: (pi.quantity || 0) - (pi.quantityReceived || 0),
+    }))
+  ).filter((pi: any) => pi.remaining > 0);
 
   return (
     <div className="page-content">
@@ -8436,24 +8587,23 @@ function InventoryReceivingPage() {
         ); })}
       </div>
       <div className="filter-row flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search GRNs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
-        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending_inspection">Pending</SelectItem><SelectItem value="accepted">Accepted</SelectItem><SelectItem value="rejected">Rejected</SelectItem></SelectContent></Select>
+        <div className="relative flex-1 min-w-[200px] max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search records..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterCondition} onValueChange={setFilterCondition}><SelectTrigger className="w-44"><SelectValue placeholder="Condition" /></SelectTrigger><SelectContent><SelectItem value="all">All Conditions</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="damaged">Damaged</SelectItem><SelectItem value="defective">Defective</SelectItem></SelectContent></Select>
       </div>
       <Card className="border-0 shadow-sm">
         <div className="overflow-x-auto rounded border">
-          <Table><TableHeader><TableRow><TableHead>GRN #</TableHead><TableHead>PO #</TableHead><TableHead className="hidden sm:table-cell">Supplier</TableHead><TableHead className="hidden sm:table-cell">Items</TableHead><TableHead className="hidden md:table-cell">Received Date</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Inspected By</TableHead><TableHead className="hidden lg:table-cell">Notes</TableHead></TableRow></TableHeader><TableBody>
-            {filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={Download} title="No GRNs found" description="Try adjusting your search or filters." /></TableCell></TableRow>
-            ) : filtered.map(g => (
-              <TableRow key={g.id} className="hover:bg-muted/30">
-                <TableCell className="font-mono text-sm font-medium">{g.grnNo}</TableCell>
-                <TableCell><Badge variant="outline" className="font-mono text-xs">{g.poNo}</Badge></TableCell>
-                <TableCell className="hidden sm:table-cell font-medium">{g.supplier}</TableCell>
-                <TableCell className="hidden sm:table-cell font-medium">{g.itemsReceived}</TableCell>
-                <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{formatDate(g.receivedDate)}</TableCell>
-                <TableCell><Badge variant="outline" className={grnStatusColors[g.status]}>{g.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{g.inspectedBy || '-'}</TableCell>
-                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground max-w-[200px] truncate">{g.notes}</TableCell>
+          <Table><TableHeader><TableRow><TableHead>PO #</TableHead><TableHead className="hidden sm:table-cell">Supplier</TableHead><TableHead>Item</TableHead><TableHead className="hidden sm:table-cell">Qty</TableHead><TableHead>Condition</TableHead><TableHead className="hidden md:table-cell">Received By</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead></TableRow></TableHeader><TableBody>
+            {loading ? (<TableRow><TableCell colSpan={8} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (
+              <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={Download} title="No receiving records found" description="Records will appear once items are received against purchase orders." /></TableCell></TableRow>
+            ) : filtered.map((r: any) => (
+              <TableRow key={r.id} className="hover:bg-muted/30">
+                <TableCell><Badge variant="outline" className="font-mono text-xs">{r.po?.poNumber || '-'}</Badge></TableCell>
+                <TableCell className="hidden sm:table-cell font-medium">{r.po?.supplier?.name || '-'}</TableCell>
+                <TableCell className="font-medium">{r.item?.name || '-'}</TableCell>
+                <TableCell className="hidden sm:table-cell font-medium">{r.quantityReceived}</TableCell>
+                <TableCell><Badge variant="outline" className={conditionColors[r.condition]}>{r.condition?.toUpperCase()}</Badge></TableCell>
+                <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{r.receivedBy?.fullName || '-'}</TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(r.createdAt)}</TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
@@ -8463,17 +8613,21 @@ function InventoryReceivingPage() {
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader><DialogTitle>New Goods Receipt Note</DialogTitle><DialogDescription>Record received items against a purchase order.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
+            <div className="space-y-2"><Label>PO Item *</Label><Select value={form.purchaseOrder ? `${form.purchaseOrder}-${form.itemId}` : ''} onValueChange={v => { const [poId, itemId] = v.split('-'); setForm({ ...form, purchaseOrder: poId, itemId }); }}><SelectTrigger><SelectValue placeholder="Select PO item" /></SelectTrigger><SelectContent>
+              {purchaseOrders.filter((po: any) => ['approved', 'partially_received'].includes(po.status)).map((po: any) => (
+                <SelectItem key={po.id} value={`${po.id}`} className="font-mono text-xs">{po.poNumber} — {po.supplier?.name}</SelectItem>
+              ))}
+            </SelectContent></Select></div>
+            {form.purchaseOrder && form.itemId && <div className="text-xs text-muted-foreground bg-muted rounded-md p-2">Item: {availablePOItems.find((pi: any) => pi.id === form.itemId && pi.poId === form.purchaseOrder)?.item?.name || 'Select an item'} — Remaining: {availablePOItems.find((pi: any) => pi.id === form.itemId && pi.poId === form.purchaseOrder)?.remaining || 0}</div>}
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Purchase Order *</Label><Input placeholder="PO-2025-001" value={form.purchaseOrder} onChange={e => setForm({ ...form, purchaseOrder: e.target.value })} /></div>
-              <div className="space-y-2"><Label>Supplier *</Label><Input placeholder="SKF Industries" value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Quantity *</Label><Input type="number" placeholder="10" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Condition</Label><Select value={form.condition} onValueChange={v => setForm({ ...form, condition: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="good">Good</SelectItem><SelectItem value="damaged">Damaged</SelectItem><SelectItem value="defective">Defective</SelectItem></SelectContent></Select></div>
             </div>
-            <div className="space-y-2"><Label>Received Date *</Label><Input type="date" value={form.receivedDate} onChange={e => setForm({ ...form, receivedDate: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Items Received (one per line: name, qty)</Label><Textarea placeholder={'Ball Bearing 6205, 50\nDrive Belt V-A68, 20'} value={form.items} onChange={e => setForm({ ...form, items: e.target.value })} rows={4} /></div>
             <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Any observations, discrepancies, or special instructions..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create GRN</Button>
+            <Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Receiving...' : 'Receive Items'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

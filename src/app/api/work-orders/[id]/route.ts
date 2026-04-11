@@ -25,6 +25,7 @@ export async function GET(
             requester: { select: { id: true, fullName: true, username: true } },
           },
         },
+        pmSchedule: { select: { id: true, title: true, frequencyType: true, frequencyValue: true } },
         teamMembers: {
           include: { user: { select: { id: true, fullName: true, username: true } } },
           orderBy: { assignedAt: 'asc' },
