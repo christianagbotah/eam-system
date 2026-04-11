@@ -6433,60 +6433,6 @@ function AssetsHierarchyPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* Asset Detail Sheet */}
-      <Sheet open={!!selectedAsset} onOpenChange={(open) => { if (!open) setSelectedAsset(null); }}>
-        <SheetContent className="sm:max-w-lg overflow-y-auto">
-          {selectedAsset && (
-            <>
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
-                  <Building2 className="h-5 w-5 text-emerald-600" />
-                  {selectedAsset.name}
-                </SheetTitle>
-                <SheetDescription>Asset Tag: {selectedAsset.assetTag}</SheetDescription>
-              </SheetHeader>
-              <div className="mt-6 space-y-5">
-                <div className="grid grid-cols-2 gap-4">
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Condition</p><Badge variant="outline" className="mt-1 capitalize">{selectedAsset.condition?.replace(/_/g, ' ')}</Badge></div>
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Status</p><Badge variant="outline" className="mt-1 capitalize">{selectedAsset.status?.replace(/_/g, ' ')}</Badge></div>
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Criticality</p><Badge variant="outline" className={`mt-1 capitalize ${selectedAsset.criticality === 'critical' ? 'text-red-700 border-red-300' : selectedAsset.criticality === 'high' ? 'text-orange-700 border-orange-300' : ''}`}>{selectedAsset.criticality}</Badge></div>
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Serial Number</p><p className="text-sm mt-1 font-mono">{selectedAsset.serialNumber || '-'}</p></div>
-                </div>
-                <Separator />
-                <div className="grid grid-cols-2 gap-4">
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Category</p><p className="text-sm mt-1">{typeof selectedAsset.category === 'object' ? selectedAsset.category?.name : selectedAsset.category || '-'}</p></div>
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Plant</p><p className="text-sm mt-1">{typeof selectedAsset.plant === 'object' ? selectedAsset.plant?.name : selectedAsset.plant || '-'}</p></div>
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Location</p><p className="text-sm mt-1">{selectedAsset.location || '-'}</p></div>
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Manufacturer</p><p className="text-sm mt-1">{selectedAsset.manufacturer || '-'}</p></div>
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Model</p><p className="text-sm mt-1">{selectedAsset.model || '-'}</p></div>
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Year Mfg.</p><p className="text-sm mt-1">{selectedAsset.yearManufactured || '-'}</p></div>
-                </div>
-                {selectedAsset.description && (<>
-                  <Separator />
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Description</p><p className="text-sm mt-1 text-muted-foreground">{selectedAsset.description}</p></div>
-                </>)}
-                <Separator />
-                <div className="grid grid-cols-2 gap-4">
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Purchase Date</p><p className="text-sm mt-1">{selectedAsset.purchaseDate ? new Date(selectedAsset.purchaseDate).toLocaleDateString() : '-'}</p></div>
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Purchase Cost</p><p className="text-sm mt-1">{selectedAsset.purchaseCost != null ? `$${Number(selectedAsset.purchaseCost).toLocaleString()}` : '-'}</p></div>
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Current Value</p><p className="text-sm mt-1">{selectedAsset.currentValue != null ? `$${Number(selectedAsset.currentValue).toLocaleString()}` : '-'}</p></div>
-                  <div><p className="text-[11px] text-muted-foreground uppercase font-semibold tracking-wider">Expected Life</p><p className="text-sm mt-1">{selectedAsset.expectedLifeYears ? `${selectedAsset.expectedLifeYears} years` : '-'}</p></div>
-                </div>
-                <Separator />
-                <div className="flex gap-2 pt-2">
-                  <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setSelectedAsset(null); navigate('assets'); }}>
-                    <ExternalLink className="h-3.5 w-3.5 mr-1.5" />Open in Register
-                  </Button>
-                  <Button size="sm" variant="outline" className="flex-1" onClick={() => { setSelectedAsset(null); navigate('maintenance-work-orders'); }}>
-                    <Wrench className="h-3.5 w-3.5 mr-1.5" />Work Orders
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
     </div>
   );
 }
