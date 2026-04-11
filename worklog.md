@@ -431,3 +431,137 @@ Stage Summary:
 - ESLint passes with only 2 pre-existing errors (unrelated to changes)
 - Files modified: prisma/schema.prisma, src/app/api/work-orders/[id]/complete/route.ts, src/app/api/work-orders/route.ts, src/app/api/work-orders/[id]/route.ts, src/app/page.tsx
 - Files created: src/lib/pm-utils.ts, src/app/api/pm-schedules/check-due/route.ts, mini-services/pm-cron/index.ts, mini-services/pm-cron/package.json
+---
+Task ID: 3
+Agent: Main
+Task: Create API routes and wire frontend pages for Quality module
+
+Work Log:
+- Examined existing Prisma schema for 5 Quality models: QualityInspection, NonConformanceReport, QualityAudit, QualityControlPlan, CorrectiveAction
+- Studied existing API patterns (tools, IoT) for auth, auto-numbering, response format, audit logging
+- Created 10 API route files following established patterns:
+  1. `src/app/api/quality-inspections/route.ts` — GET (list + KPI counts) + POST (auto-number QI-YYYYMM-NNNN)
+  2. `src/app/api/quality-inspections/[id]/route.ts` — GET (detail) + PUT (update) + DELETE
+  3. `src/app/api/quality-ncr/route.ts` — GET (list + KPI counts) + POST (auto-number NCR-YYYYMM-NNNN)
+  4. `src/app/api/quality-ncr/[id]/route.ts` — GET + PUT + DELETE
+  5. `src/app/api/quality-audits/route.ts` — GET (list + KPI counts) + POST (auto-number QA-YYYYMM-NNNN)
+  6. `src/app/api/quality-audits/[id]/route.ts` — GET + PUT + DELETE
+  7. `src/app/api/quality-control-plans/route.ts` — GET (list + KPI counts) + POST
+  8. `src/app/api/quality-control-plans/[id]/route.ts` — GET + PUT + DELETE
+  9. `src/app/api/corrective-actions/route.ts` — GET (list + KPI counts) + POST (auto-number CAPA-YYYYMM-NNNN)
+  10. `src/app/api/corrective-actions/[id]/route.ts` — GET + PUT + DELETE
+- Wired 5 frontend pages in src/app/page.tsx to real APIs:
+  - **QualityInspectionsPage**: replaced hardcoded data with API fetch, real CRUD operations, dynamic KPIs, loading/empty states
+  - **QualityNcrPage**: replaced hardcoded data with API fetch, real CRUD, dynamic KPIs, loading/empty states
+  - **QualityAuditsPage**: replaced hardcoded data with API fetch, real CRUD, dynamic KPIs, loading/empty states
+  - **QualityControlPlansPage**: replaced hardcoded data with API fetch, real CRUD, dynamic KPIs, loading/empty states
+  - **QualityCapaPage**: replaced hardcoded data with API fetch, real CRUD, dynamic KPIs, loading/empty states
+- **QualitySpcPage**: kept as client-only with static data (no Prisma model exists for SPC process data)
+- All API routes include: session auth via getSession(), search/filter/pagination, audit logging on create/update/delete
+- Auto-numbering follows YYYYMM-NNNN format with monthly reset for NCR, QA, CAPA; QI uses same pattern
+- Dev server compiles successfully with no new errors (5 new lint warnings are pre-existing pattern, same as existing pages)
+
+Stage Summary:
+- 10 REST API endpoints created for Quality module with full CRUD
+- 5 frontend pages now use real database data via API
+- SPC page remains static (no database model)
+- All auto-numbering formats implemented correctly
+- Files created: 10 API route files under src/app/api/
+- Files modified: src/app/page.tsx (5 page components rewired)
+---
+Task ID: 5
+Agent: Main
+Task: Create API routes AND wire frontend pages for the Operations module (6 pages)
+
+Work Log:
+- Examined existing API patterns (tools, work-orders, iot) for consistent structure
+- Reviewed Prisma schema for Operations module models (MeterReading, TrainingCourse, ShiftHandover, Checklist, Survey)
+- Reviewed existing frontend pages to understand current hardcoded data structure
+
+## Backend — 10 API route files created
+
+### 1. `/api/meter-readings/route.ts` + `[id]/route.ts`
+- GET: list with search, KPI counts (total, metersTracked, thisMonth, withConsumption), pagination
+- POST: auto-generates MR-OPS-YYYYMM-NNNN reading number, auto-calculates previousValue/consumption
+- GET/PUT/DELETE by id with audit logging
+
+### 2. `/api/training-courses/route.ts` + `[id]/route.ts`
+- GET: list with search, category, status, type filters; KPI counts (total, active, archived, withCertification)
+- POST: validates title, category, type, durationHours; creates with createdById
+- GET/PUT/DELETE by id with audit logging
+
+### 3. `/api/surveys/route.ts` + `[id]/route.ts`
+- GET: list with search, type, status filters; KPI counts (total, active, totalResponses, closed)
+- POST: parses questions from textarea (one per line) or JSON array, stores as JSON
+- GET/PUT/DELETE by id with audit logging
+
+### 4. `/api/shift-handovers/route.ts` + `[id]/route.ts`
+- GET: list with search, shiftType, status filters; includes handedOverBy/receivedBy relations; KPI counts (total, today, pending, confirmed)
+- POST: stores tasksSummary/pendingIssues as JSON arrays; validates shiftType
+- GET/PUT/DELETE by id with audit logging
+
+### 5. `/api/checklists/route.ts` + `[id]/route.ts`
+- GET: list with search, type filters; includes nested ChecklistItem relations (ordered by sortOrder); KPI counts (total, active, totalItems)
+- POST: parses items from textarea; creates Checklist with nested ChecklistItem records in single transaction
+- GET/PUT/DELETE by id; DELETE cascades items first
+
+### 6. Updated `/api/work-orders/route.ts` GET
+- Added `timeLogs` include with user relation to support Time Logs page data
+
+## Frontend — 6 pages wired to real API
+
+### 1. OperationsMeterReadingsPage
+- Replaced hardcoded 8-item array with `useState([])` + `useEffect` fetch from `/api/meter-readings`
+- Dynamic KPIs from API response (total, metersTracked, thisMonth, withConsumption)
+- Real `handleCreate` calls `api.post('/api/meter-readings', { meterName, value, unit, readingDate, notes })`
+- Table adapted: readingNumber, meterName, unit, value, previousValue, change %, readingDate
+- Status derived from consumption percentage (>20% = critical, >10% = warning)
+- Added loading state, empty state, error handling
+
+### 2. OperationsTrainingPage
+- Replaced hardcoded 8-item array with API fetch from `/api/training-courses`
+- Dynamic KPIs from API response
+- Real `handleCreate` calls `api.post('/api/training-courses', { title, category, type, durationHours, instructor })`
+- Table adapted: title, category badge, instructor, durationHours, type, certification badge, status
+- Added loading state, empty state
+
+### 3. OperationsSurveysPage
+- Replaced hardcoded 8-item array with API fetch from `/api/surveys`
+- Dynamic KPIs from API response (total, active, totalResponses, completionRate)
+- Real `handleCreate` calls `api.post('/api/surveys', { title, type, description, questions })`
+- Table adapted: title, type badge, status badge, totalResponses, targetGroup, createdAt
+- Added loading state, empty state
+
+### 4. OperationsTimeLogsPage
+- Already partially wired — was fetching `/api/work-orders` and extracting timeLogs
+- Updated to use correct API field names: `tl.user.fullName` → `userName`, `tl.timestamp`
+- Updated summary cards: Total Log Entries, This Week, This Month, Top Technician
+- Updated table: WO#, User, Action, Notes, Timestamp, Date
+- Added loading state
+
+### 5. OperationsShiftHandoverPage
+- Replaced hardcoded 6-item array with API fetch from `/api/shift-handovers`
+- Dynamic KPIs from API response (today, pending, confirmed, total)
+- Real `handleCreate` calls `api.post('/api/shift-handovers', { shiftType, tasksSummary, pendingIssues, safetyNotes, notes })`
+- Added `parseJsonText()` helper to extract text from JSON-stored tasks/issues
+- Table adapted: shiftType badge, shiftDate, handedOverBy→receivedBy, tasksSummary, pendingIssues, safetyNotes, notes, status
+- Added loading state, empty state
+
+### 6. OperationsChecklistsPage
+- Replaced hardcoded 6-item array with API fetch from `/api/checklists`
+- Maps API response to display format (title→name, type→category, items→array of item strings)
+- Real `handleCreate` calls `api.post('/api/checklists', { title, description, type, frequency, items })`
+- Preserves grid card layout with category icons/colors, view dialog with checklist items
+- Added loading state
+
+Stage Summary:
+- 10 new API route files created (20 endpoints total: 5 list GET, 5 create POST, 10 id-based GET/PUT/DELETE)
+- All 6 Operations pages now fetch real data from SQLite via Prisma
+- Auto-numbering implemented for Meter Readings (MR-OPS-YYYYMM-NNNN)
+- All create dialogs wired to real API POST with validation and error handling
+- Loading states and empty states added to all pages
+- Work orders list updated to include timeLogs for the Time Logs page
+- ESLint: only pre-existing errors (9 total, none from Operations section)
+- Dev server compiles successfully
+- Files modified: src/app/page.tsx, src/app/api/work-orders/route.ts
+- Files created: src/app/api/meter-readings/route.ts, src/app/api/meter-readings/[id]/route.ts, src/app/api/training-courses/route.ts, src/app/api/training-courses/[id]/route.ts, src/app/api/surveys/route.ts, src/app/api/surveys/[id]/route.ts, src/app/api/shift-handovers/route.ts, src/app/api/shift-handovers/[id]/route.ts, src/app/api/checklists/route.ts, src/app/api/checklists/[id]/route.ts

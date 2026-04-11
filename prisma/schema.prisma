@@ -139,6 +139,23 @@ model User {
   poApproved             PurchaseOrder[]       @relation("POApprovedBy")
   receivingReceived      ReceivingRecord[]     @relation("ReceivingReceivedBy")
 
+  // Safety Module relations
+  safetyIncidentsReported SafetyIncident[]      @relation("SafetyIncidentReportedBy")
+  safetyIncidentsInvestigated SafetyIncident[]  @relation("SafetyIncidentInvestigatedBy")
+
+  // Quality Module relations
+  qualityInspections     QualityInspection[]   @relation("QIInspectedBy")
+  ncrs                   NonConformanceReport[] @relation("NCRRaisedBy")
+  qualityAudits          QualityAudit[]        @relation("QAuditedBy")
+
+  // Digital Twin relation
+  digitalTwinsCreated    DigitalTwin[]      @relation("DigitalTwinCreatedBy")
+
+  // Operations Module relations
+  meterReadings          MeterReading[]     @relation("MeterReadingReadBy")
+  shiftHandoversFrom     ShiftHandover[]    @relation("ShiftHandoverFrom")
+  shiftHandoversTo       ShiftHandover[]    @relation("ShiftHandoverTo")
+
   @@map("users")
 }
 
@@ -607,6 +624,9 @@ model Asset {
   assignedTo         User?               @relation("AssetAssignedTo", fields: [assignedToId], references: [id])
   pmSchedules        PmSchedule[]
   iotDevices          IotDevice[]
+  bomAsParent         BillOfMaterial[]    @relation("BomParent")
+  bomAsChild          BillOfMaterial[]    @relation("BomChild")
+  digitalTwin         DigitalTwin?
 
   @@map("assets")
 }
@@ -1082,4 +1102,540 @@ model ReceivingRecord {
   receivedBy  User          @relation("ReceivingReceivedBy", fields: [receivedById], references: [id])
 
   @@map("receiving_records")
+}
+
+// ============================================================================
+// 18. SAFETY MANAGEMENT
+// ============================================================================
+
+model SafetyIncident {
+  id                String    @id @default(cuid())
+  incidentNumber    String    @unique                    // SI-YYYYMM-NNNN
+  title             String
+  description       String
+  type              String                               // injury, near_miss, property_damage, environmental, fire, chemical_spill
+  severity          String    @default("medium")          // low, medium, high, critical
+  status            String    @default("open")            // open, investigating, closed
+  incidentDate      DateTime
+  location          String?
+  assetId           String?
+  departmentId      String?
+  reportedById      String
+  investigatedById  String?
+  rootCause         String?
+  correctiveAction  String?
+  daysLost          Int       @default(0)
+  cost              Float?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  reportedBy        User      @relation("SafetyIncidentReportedBy", fields: [reportedById], references: [id])
+  investigatedBy    User?     @relation("SafetyIncidentInvestigatedBy", fields: [investigatedById], references: [id])
+
+  @@map("safety_incidents")
+}
+
+model SafetyInspection {
+  id                String    @id @default(cuid())
+  inspectionNumber  String    @unique
+  title             String
+  description       String?
+  type              String                               // routine, follow_up, special
+  status            String    @default("scheduled")      // scheduled, in_progress, completed, failed
+  scheduledDate     DateTime
+  completedDate     DateTime?
+  location          String?
+  departmentId      String?
+  inspectorId       String?
+  findings          String                               // JSON text
+  score             Int?
+  maxScore          Int?
+  notes             String?
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("safety_inspections")
+}
+
+model SafetyTraining {
+  id                String    @id @default(cuid())
+  title             String
+  description       String?
+  type              String                               // induction, refresher, specialized
+  status            String    @default("planned")         // planned, in_progress, completed, cancelled
+  trainer           String?
+  scheduledDate     DateTime?
+  completedDate     DateTime?
+  location          String?
+  attendees         String                               // JSON text array of user IDs
+  durationHours     Float?
+  notes             String?
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("safety_training")
+}
+
+model SafetyEquipment {
+  id                String    @id @default(cuid())
+  name              String
+  code              String    @unique
+  type              String                               // ppe, fire_extinguisher, first_aid, gas_detector, spill_kit
+  status            String    @default("available")      // available, in_use, expired, disposed
+  location          String?
+  quantity          Int       @default(1)
+  expiryDate        DateTime?
+  lastInspected     DateTime?
+  nextInspection    DateTime?
+  condition         String    @default("good")           // new, good, fair, poor
+  notes             String?
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("safety_equipment")
+}
+
+model SafetyPermit {
+  id                String    @id @default(cuid())
+  permitNumber      String    @unique
+  title             String
+  type              String                               // hot_work, confined_space, excavation, elevated_work, electrical
+  status            String    @default("pending")         // pending, approved, active, completed, expired, cancelled
+  description       String?
+  location          String?
+  startDate         DateTime
+  endDate           DateTime
+  requestedById     String
+  approvedById      String?
+  approvedAt        DateTime?
+  hazardAssessment  String?
+  precautions       String                               // JSON text
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("safety_permits")
+}
+
+// ============================================================================
+// 19. QUALITY MANAGEMENT
+// ============================================================================
+
+model QualityInspection {
+  id                String    @id @default(cuid())
+  inspectionNumber  String    @unique
+  title             String
+  description       String?
+  type              String                               // incoming, in_process, final, source
+  status            String    @default("pending")         // pending, in_progress, passed, failed, conditional
+  orderId           String?
+  assetId           String?
+  itemId            String?
+  inspectedById     String
+  scheduledDate     DateTime?
+  completedDate     DateTime?
+  result            String?                              // pass, fail, conditional
+  defects           String                               // JSON text array
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  inspectedBy       User      @relation("QIInspectedBy", fields: [inspectedById], references: [id])
+
+  @@map("quality_inspections")
+}
+
+model NonConformanceReport {
+  id                String    @id @default(cuid())
+  ncrNumber         String    @unique                    // NCR-YYYYMM-NNNN
+  title             String
+  description       String
+  severity          String    @default("minor")           // minor, major, critical
+  status            String    @default("open")            // open, investigating, root_cause_found, corrective_action, closed
+  type              String                               // product, process, documentation
+  sourceInspectionId String?
+  assetId           String?
+  itemId            String?
+  departmentId      String?
+  raisedById        String
+  rootCause         String?
+  correctiveAction  String?
+  dueDate           DateTime?
+  completedDate     DateTime?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  raisedBy          User      @relation("NCRRaisedBy", fields: [raisedById], references: [id])
+
+  @@map("non_conformance_reports")
+}
+
+model QualityAudit {
+  id                String    @id @default(cuid())
+  auditNumber       String    @unique
+  title             String
+  description       String?
+  type              String                               // internal, external, supplier, system
+  status            String    @default("planned")         // planned, in_progress, completed, closed
+  scheduledDate     DateTime
+  completedDate     DateTime?
+  auditedById       String?
+  departmentId      String?
+  scope             String?
+  findings          String                               // JSON text
+  score             Int?
+  maxScore          Int?
+  recommendation    String?
+  notes             String?
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  auditedBy         User?     @relation("QAuditedBy", fields: [auditedById], references: [id])
+
+  @@map("quality_audits")
+}
+
+model QualityControlPlan {
+  id                String    @id @default(cuid())
+  name              String
+  description       String?
+  itemId            String?
+  assetId           String?
+  type              String                               // incoming, in_process, final
+  frequency         String                               // every_lot, every_batch, hourly, daily
+  characteristics   String                               // JSON text
+  sampleSize        Int?
+  isActive          Boolean   @default(true)
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("quality_control_plans")
+}
+
+model CorrectiveAction {
+  id                String    @id @default(cuid())
+  capaNumber        String    @unique
+  title             String
+  description       String
+  type              String                               // corrective, preventive
+  source            String                               // ncr, audit, inspection, customer_complaint
+  sourceId          String?
+  severity          String    @default("medium")
+  status            String    @default("open")            // open, in_progress, implemented, verified, closed
+  rootCause         String?
+  correctiveAction  String                               // JSON text
+  preventiveAction  String?                              // JSON text
+  responsibleId     String?
+  dueDate           DateTime?
+  verifiedById      String?
+  verifiedAt        DateTime?
+  effectiveness     String?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("corrective_actions")
+}
+
+// ============================================================================
+// 20. PRODUCTION MANAGEMENT
+// ============================================================================
+
+model WorkCenter {
+  id                String    @id @default(cuid())
+  code              String    @unique
+  name              String
+  description       String?
+  type              String                               // production, assembly, packaging, testing
+  status            String    @default("active")          // active, inactive, maintenance
+  location          String?
+  capacity          Int?
+  capacityUnit      String    @default("units/hour")
+  isActive          Boolean   @default(true)
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("work_centers")
+}
+
+model ProductionOrder {
+  id                String    @id @default(cuid())
+  orderNumber       String    @unique                    // PO-PROD-YYYYMM-NNNN
+  title             String
+  description       String?
+  status            String    @default("planned")         // planned, released, in_progress, completed, cancelled
+  priority          String    @default("medium")
+  productId         String?
+  productName       String?
+  quantity          Float
+  completedQty      Float     @default(0)
+  unitCost          Float?
+  workCenterId      String?
+  scheduledStart    DateTime?
+  scheduledEnd      DateTime?
+  actualStart       DateTime?
+  actualEnd         DateTime?
+  notes             String?
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("production_orders")
+}
+
+model ProductionBatch {
+  id                String    @id @default(cuid())
+  batchNumber       String    @unique
+  orderId           String?
+  productId         String?
+  productName       String?
+  quantity          Float
+  completedQty      Float     @default(0)
+  status            String    @default("planned")         // planned, in_progress, quality_check, completed, rejected
+  startDate         DateTime?
+  endDate           DateTime?
+  yield_            Float?                               // percentage
+  notes             String?
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("production_batches")
+}
+
+// ============================================================================
+// 21. OPERATIONS MANAGEMENT
+// ============================================================================
+
+model MeterReading {
+  id                String    @id @default(cuid())
+  readingNumber     String    @unique                    // MR-OPS-YYYYMM-NNNN
+  assetId           String?
+  meterName         String
+  value             Float
+  unit              String
+  readingDate       DateTime
+  previousValue     Float?
+  consumption       Float?
+  notes             String?
+  readById          String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  readBy            User      @relation("MeterReadingReadBy", fields: [readById], references: [id], onDelete: Cascade)
+
+  @@map("meter_readings")
+}
+
+model TrainingCourse {
+  id                String    @id @default(cuid())
+  title             String
+  description       String?
+  category          String                               // safety, technical, compliance, soft_skills
+  type              String                               // classroom, online, on_the_job
+  durationHours     Float
+  status            String    @default("active")          // active, inactive, archived
+  instructor        String?
+  maxParticipants   Int?
+  certification     Boolean   @default(false)
+  validForMonths    Int?
+  notes             String?
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("training_courses")
+}
+
+model ShiftHandover {
+  id                String    @id @default(cuid())
+  shiftDate         DateTime
+  shiftType         String                               // morning, afternoon, night
+  fromShift         String?
+  toShift           String?
+  departmentId      String?
+  handedOverById    String
+  receivedById      String?
+  status            String    @default("pending")         // pending, confirmed
+  tasksSummary      String                               // JSON text
+  pendingIssues     String                               // JSON text
+  safetyNotes       String?
+  equipmentStatus   String?                              // JSON text
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  handedOverBy      User      @relation("ShiftHandoverFrom", fields: [handedOverById], references: [id])
+  receivedBy        User?     @relation("ShiftHandoverTo", fields: [receivedById], references: [id])
+
+  @@map("shift_handovers")
+}
+
+model Checklist {
+  id                String    @id @default(cuid())
+  title             String
+  description       String?
+  type              String                               // safety, quality, maintenance, operational
+  frequency         String                               // daily, weekly, monthly, per_shift, per_job
+  departmentId      String?
+  assetId           String?
+  isActive          Boolean   @default(true)
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  items             ChecklistItem[]
+
+  @@map("checklists")
+}
+
+model ChecklistItem {
+  id                String    @id @default(cuid())
+  checklistId       String
+  item              String
+  description       String?
+  sortOrder         Int       @default(0)
+  isRequired        Boolean   @default(true)
+
+  checklist         Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  @@map("checklist_items")
+}
+
+model ChecklistResponse {
+  id                String    @id @default(cuid())
+  checklistId       String
+  completedById     String
+  status            String    @default("pass")            // pass, fail, na
+  responses         String                               // JSON text { itemId: { status, notes } }
+  notes             String?
+  completedAt       DateTime  @default(now())
+
+  @@map("checklist_responses")
+}
+
+model Survey {
+  id                String    @id @default(cuid())
+  title             String
+  description       String?
+  type              String                               // satisfaction, safety, quality, general
+  status            String    @default("active")          // active, closed
+  targetGroup       String?                              // all, department, specific
+  questions         String                               // JSON text array
+  responses         String                               // JSON text array (summary)
+  totalResponses    Int       @default(0)
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("surveys")
+}
+
+// ============================================================================
+// 22. MAINTENANCE EXTENDED
+// ============================================================================
+
+model CalibrationRecord {
+  id                String    @id @default(cuid())
+  calibrationNumber String    @unique                    // CAL-YYYYMM-NNNN
+  title             String
+  description       String?
+  assetId           String?
+  instrumentName    String?
+  serialNumber      String?
+  calibrationDate   DateTime
+  nextDueDate       DateTime?
+  status            String    @default("calibrated")     // calibrated, out_of_calibration, due
+  standardUsed      String?
+  result            String?                              // pass, fail, adjusted
+  asFound           String?                              // JSON text
+  asLeft            String?                              // JSON text
+  uncertainty       Float?
+  performedById     String?
+  approvedById      String?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("calibration_records")
+}
+
+model RiskAssessment {
+  id                String    @id @default(cuid())
+  assessmentNumber  String    @unique                    // RA-YYYYMM-NNNN
+  title             String
+  description       String?
+  assetId           String?
+  departmentId      String?
+  assessmentDate    DateTime
+  nextReview        DateTime?
+  status            String    @default("open")            // open, in_progress, completed, reviewed
+  likelihood        Int?                                  // 1-5
+  consequence       Int?                                  // 1-5
+  riskLevel         String?                              // low, medium, high, extreme
+  hazards           String                               // JSON text array
+  controls          String                               // JSON text array
+  residualRisk      String?
+  assessorId        String?
+  reviewerId        String?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("risk_assessments")
+}
+
+// ============================================================================
+// 23. ASSET EXTENDED
+// ============================================================================
+
+model BillOfMaterial {
+  id                String    @id @default(cuid())
+  parentId          String                               // → Asset (parent assembly)
+  childAssetId      String                               // → Asset (component)
+  partNumber        String?
+  quantity          Float     @default(1)
+  unit              String    @default("each")
+  specification     String?
+  status            String    @default("active")          // active, pending, obsolete, under_review
+  revision          String?
+  notes             String?
+  createdAt         DateTime  @default(now())
+
+  parent             Asset                @relation("BomParent", fields: [parentId], references: [id], onDelete: Cascade)
+  childAsset         Asset                @relation("BomChild", fields: [childAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([parentId, childAssetId])
+  @@map("bill_of_materials")
+}
+
+model DigitalTwin {
+  id                String    @id @default(cuid())
+  assetId           String    @unique
+  name              String
+  description       String?
+  type              String    @default("other")            // pump, motor, compressor, valve, heat_exchanger, other
+  parameters        String                               // JSON text of key parameters
+  connections       String                               // JSON text of connections
+  specification     String?                              // JSON text of specs
+  healthScore       Int       @default(0)                   // 0-100
+  syncInterval      String    @default("5min")             // real_time, 1min, 5min, 15min
+  lastSynced        DateTime?
+  isActive          Boolean   @default(true)
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  asset              Asset                @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  createdBy          User                @relation("DigitalTwinCreatedBy", fields: [createdById], references: [id])
+
+  @@map("digital_twins")
 }

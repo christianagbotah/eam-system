@@ -74,6 +74,12 @@ export async function GET(request: NextRequest) {
             include: { user: { select: { id: true, fullName: true } } },
             orderBy: { assignedAt: 'asc' },
           },
+          timeLogs: {
+            include: {
+              user: { select: { id: true, fullName: true, username: true } },
+            },
+            orderBy: { timestamp: 'desc' },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
