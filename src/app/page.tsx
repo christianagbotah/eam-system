@@ -360,6 +360,7 @@ function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [forgotOpen, setForgotOpen] = useState(false);
+  const [showDemo, setShowDemo] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
   const { login } = useAuthStore();
@@ -492,40 +493,40 @@ function LoginPage() {
       </div>
 
       {/* ========== RIGHT PANEL - LOGIN FORM ========== */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-8 overflow-y-auto">
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8 overflow-y-auto">
         <div className="w-full max-w-md">
           {/* Mobile Logo */}
-          <div className="lg:hidden flex items-center justify-center mb-8">
-            <div className="inline-flex items-center space-x-3 bg-white rounded-2xl px-5 py-3 shadow-lg border border-slate-200">
-              <div className="h-11 w-11 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg">
-                <Factory className="h-5 w-5 text-white" />
+          <div className="lg:hidden flex items-center justify-center mb-5">
+            <div className="inline-flex items-center space-x-2.5 bg-white rounded-xl px-4 py-2.5 shadow-md border border-slate-200">
+              <div className="h-9 w-9 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center shadow-md">
+                <Factory className="h-4.5 w-4.5 text-white" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-slate-900">iAssetsPro</h1>
-                <p className="text-[11px] text-slate-500">Enterprise Asset Management</p>
+                <h1 className="text-base font-bold text-slate-900 leading-tight">iAssetsPro</h1>
+                <p className="text-[10px] text-slate-500">Enterprise Asset Management</p>
               </div>
             </div>
           </div>
 
           {/* Login Card */}
-          <div className="bg-white rounded-3xl shadow-2xl shadow-slate-200/50 border border-slate-200/60 p-8">
+          <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl shadow-slate-200/50 border border-slate-200/60 p-5 sm:p-7 lg:p-8">
             {/* Header */}
-            <div className="text-center mb-8">
-              <div className="inline-flex items-center justify-center h-16 w-16 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl mb-4 shadow-lg shadow-emerald-500/20">
-                <Lock className="h-7 w-7 text-white" />
+            <div className="text-center mb-5 sm:mb-7">
+              <div className="inline-flex items-center justify-center h-12 w-12 sm:h-14 sm:w-14 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl sm:rounded-2xl mb-3 shadow-lg shadow-emerald-500/20">
+                <Lock className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
               </div>
-              <h2 className="text-xl font-bold text-slate-900 mb-1.5">Welcome Back</h2>
-              <p className="text-sm text-slate-500">Sign in to access your maintenance dashboard</p>
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900 mb-1">Welcome Back</h2>
+              <p className="text-xs sm:text-sm text-slate-500">Sign in to access your maintenance dashboard</p>
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} className="space-y-3.5 sm:space-y-5">
               {/* Username */}
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Username or Email</label>
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1.5 sm:mb-2">Username or Email</label>
                 <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <svg className="h-5 w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 sm:pl-4 flex items-center pointer-events-none">
+                    <svg className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                   </div>
@@ -535,17 +536,17 @@ function LoginPage() {
                     value={username}
                     onChange={e => setUsername(e.target.value)}
                     autoFocus
-                    className="w-full pl-12 pr-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm bg-slate-50/50 focus:bg-white h-12"
+                    className="w-full pl-10 sm:pl-12 pr-4 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm bg-slate-50/50 focus:bg-white h-11 sm:h-12"
                   />
                 </div>
               </div>
 
               {/* Password */}
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Password</label>
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1.5 sm:mb-2">Password</label>
                 <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <svg className="h-5 w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 sm:pl-4 flex items-center pointer-events-none">
+                    <svg className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400 group-focus-within:text-emerald-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
                   </div>
@@ -554,19 +555,19 @@ function LoginPage() {
                     placeholder="Enter your password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    className="w-full pl-12 pr-12 py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm bg-slate-50/50 focus:bg-white h-12"
+                    className="w-full pl-10 sm:pl-12 pr-10 sm:pr-12 py-2.5 sm:py-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all text-sm bg-slate-50/50 focus:bg-white h-11 sm:h-12"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
+                    className="absolute inset-y-0 right-0 pr-3.5 sm:pr-4 flex items-center text-slate-400 hover:text-slate-600 transition-colors"
                   >
                     {showPassword ? (
-                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
                       </svg>
                     ) : (
-                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
@@ -576,20 +577,20 @@ function LoginPage() {
               </div>
 
               {/* Remember + Forgot */}
-              <div className="flex items-center justify-between pt-1">
+              <div className="flex items-center justify-between pt-0.5">
                 <label className="flex items-center cursor-pointer group">
                   <input
                     type="checkbox"
                     checked={rememberMe}
                     onChange={e => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 cursor-pointer"
+                    className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 cursor-pointer"
                   />
-                  <span className="ml-2 text-sm text-slate-600 group-hover:text-slate-900 transition-colors">Remember me</span>
+                  <span className="ml-2 text-xs sm:text-sm text-slate-600 group-hover:text-slate-900 transition-colors">Remember me</span>
                 </label>
                 <button
                   type="button"
                   onClick={() => setForgotOpen(true)}
-                  className="text-sm font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
+                  className="text-xs sm:text-sm font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
                 >
                   Forgot password?
                 </button>
@@ -599,7 +600,7 @@ function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-gradient-to-r from-emerald-600 via-emerald-600 to-teal-600 hover:from-emerald-700 hover:via-emerald-700 hover:to-teal-700 text-white py-3.5 rounded-xl font-semibold shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none text-sm"
+                className="w-full bg-gradient-to-r from-emerald-600 via-emerald-600 to-teal-600 hover:from-emerald-700 hover:via-emerald-700 hover:to-teal-700 text-white py-3 sm:py-3.5 rounded-xl font-semibold shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none text-sm"
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -618,43 +619,52 @@ function LoginPage() {
             </form>
 
             {/* Security Badge */}
-            <div className="mt-6 pt-6 border-t border-slate-200">
-              <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
-                <Shield className="h-4 w-4 text-emerald-500" />
+            <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-slate-200">
+              <div className="flex items-center justify-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-slate-500">
+                <Shield className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-emerald-500" />
                 <span>Secured by enterprise-grade encryption</span>
               </div>
             </div>
           </div>
 
           {/* Demo Accounts */}
-          <div className="mt-5 p-4 rounded-2xl bg-white/80 backdrop-blur border border-slate-200/60 shadow-sm">
-            <p className="font-semibold text-xs text-slate-500 mb-2.5 uppercase tracking-wider">Demo Accounts</p>
-            <div className="space-y-2 text-xs">
-              {[
-                { user: 'admin', pass: 'admin123', role: 'Administrator', color: 'text-emerald-600' },
-                { user: 'planner1', pass: 'password123', role: 'Planner', color: 'text-amber-600' },
-                { user: 'supervisor1', pass: 'password123', role: 'Supervisor', color: 'text-teal-600' },
-              ].map(d => (
-                <button
-                  key={d.user}
-                  type="button"
-                  onClick={() => { setUsername(d.user); setPassword(d.pass); }}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-emerald-50/50 border border-slate-100 hover:border-emerald-200 transition-all group cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-semibold text-slate-700 group-hover:text-emerald-700 transition-colors">{d.user}</span>
-                    <span className="text-slate-400">/</span>
-                    <span className="font-mono text-slate-500">{d.pass}</span>
-                  </div>
-                  <Badge variant="outline" className="text-[10px] font-medium text-slate-500 group-hover:border-emerald-300">{d.role}</Badge>
-                </button>
-              ))}
-            </div>
+          <div className="mt-4 sm:mt-5 rounded-xl sm:rounded-2xl bg-white/80 backdrop-blur border border-slate-200/60 shadow-sm overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowDemo(!showDemo)}
+              className="w-full flex items-center justify-between px-4 py-3 sm:px-4 sm:py-3 text-left"
+            >
+              <p className="font-semibold text-[11px] sm:text-xs text-slate-500 uppercase tracking-wider">Demo Accounts</p>
+              <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${showDemo ? 'rotate-180' : ''}`} />
+            </button>
+            {showDemo && (
+              <div className="px-4 pb-3 space-y-1.5 text-xs">
+                {[
+                  { user: 'admin', pass: 'admin123', role: 'Administrator', color: 'text-emerald-600' },
+                  { user: 'planner1', pass: 'password123', role: 'Planner', color: 'text-amber-600' },
+                  { user: 'supervisor1', pass: 'password123', role: 'Supervisor', color: 'text-teal-600' },
+                ].map(d => (
+                  <button
+                    key={d.user}
+                    type="button"
+                    onClick={() => { setUsername(d.user); setPassword(d.pass); }}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 hover:bg-emerald-50/50 border border-slate-100 hover:border-emerald-200 transition-all group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-semibold text-slate-700 group-hover:text-emerald-700 transition-colors">{d.user}</span>
+                      <span className="text-slate-400">/</span>
+                      <span className="font-mono text-slate-500">{d.pass}</span>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] font-medium text-slate-500 group-hover:border-emerald-300">{d.role}</Badge>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Help */}
-          <div className="mt-5 text-center">
-            <p className="text-xs text-slate-400">
+          <div className="mt-4 sm:mt-5 text-center">
+            <p className="text-[11px] sm:text-xs text-slate-400">
               Need help? Contact{' '}
               <span className="text-emerald-600 hover:text-emerald-700 font-semibold cursor-pointer">IT Support</span>
             </p>
@@ -664,15 +674,15 @@ function LoginPage() {
 
       {/* ========== FORGOT PASSWORD MODAL ========== */}
       <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md mx-4">
           <DialogHeader className="text-center sm:text-center">
-            <div className="mx-auto h-14 w-14 bg-emerald-100 rounded-full flex items-center justify-center mb-3">
-              <svg className="h-7 w-7 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="mx-auto h-12 w-12 sm:h-14 sm:w-14 bg-emerald-100 rounded-full flex items-center justify-center mb-2.5">
+              <svg className="h-6 w-6 sm:h-7 sm:w-7 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
               </svg>
             </div>
-            <DialogTitle className="text-xl font-bold">Reset Password</DialogTitle>
-            <DialogDescription className="text-sm text-slate-500">Enter your email to receive a password reset link</DialogDescription>
+            <DialogTitle className="text-lg sm:text-xl font-bold">Reset Password</DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-slate-500">Enter your email to receive a password reset link</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleForgotPassword} className="space-y-4">
             <div className="space-y-2">
