@@ -25,7 +25,7 @@ export async function GET(
           select: { id: true, name: true, assetTag: true, status, condition },
           orderBy: { name: 'asc' },
         },
-        assignedTo: { select: { id: true, fullName: true, username: true, department: true } },
+        assignedTo: { select: { id: true, fullName: true, username: true } },
         createdBy: { select: { id: true, fullName: true, username: true } },
         pmSchedules: {
           where: { isActive: true },
