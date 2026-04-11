@@ -338,3 +338,41 @@ Stage Summary:
 - Dev server compiles successfully
 - Files modified: prisma/schema.prisma, src/app/page.tsx
 - Files created: src/app/api/tools/route.ts, src/app/api/tools/[id]/route.ts, src/app/api/tools/[id]/checkout/route.ts, src/app/api/tools/[id]/return/route.ts, src/app/api/tools/[id]/transfer/route.ts, src/app/api/tools/[id]/repair/route.ts, src/app/api/tools/[id]/transactions/route.ts
+---
+Task ID: 7
+Agent: Main
+Task: Build IoT/Condition Monitoring backend and connect existing frontend
+
+Work Log:
+- Added 4 IoT models to Prisma schema (section 15: IoT / CONDITION MONITORING):
+  - IotDevice: device registry with type, protocol, status, parameter, unit, thresholds, battery, signal
+  - IotReading: time-series sensor readings with anomaly flag, indexed by deviceId+timestamp
+  - IotAlert: alerts with severity (info/warning/critical), status (active/acknowledged/resolved), rule linking
+  - IotAlertRule: threshold-based rules with operators (gt/lt/gte/lte/eq), cooldown, severity
+- Added relations to existing models:
+  - Asset: iotDevices IotDevice[]
+  - User: iotDevicesCreated IotDevice[] @relation("IotDeviceCreatedBy"), iotRulesCreated IotAlertRule[] @relation("IotRuleCreatedBy")
+- Ran db:push + prisma generate to apply schema
+- Created 8 API routes:
+  1. `src/app/api/iot/devices/route.ts` — GET (list with search/status/type filters, KPI counts) + POST (auto-generated IOT-NNNN code)
+  2. `src/app/api/iot/devices/[id]/route.ts` — GET (detail with readings+alerts+rules), PUT (update), DELETE (soft delete)
+  3. `src/app/api/iot/devices/[id]/readings/route.ts` — GET (paginated with time range) + POST (submit reading + auto-evaluate against rules, create alerts on threshold breach)
+  4. `src/app/api/iot/alerts/route.ts` — GET (list with device/status/severity filters)
+  5. `src/app/api/iot/alerts/[id]/route.ts` — PUT (acknowledge or resolve alert)
+  6. `src/app/api/iot/rules/route.ts` — GET (list with device filter) + POST (create rule with validation)
+  7. `src/app/api/iot/rules/[id]/route.ts` — PUT (toggle active, update fields), DELETE
+  8. `src/app/api/iot/monitoring/summary/route.ts` — GET (aggregated: device counts, alerts, devices with readings+rules)
+- Connected 3 IoT frontend pages to real API:
+  - IotDevicesPage: fetches from /api/iot/devices, KPIs from response, create/delete via API, detail view shows actual readings chart
+  - IotMonitoringPage: fetches from /api/iot/monitoring/summary, shows real device readings with sparklines, recent alerts from DB
+  - IotRulesPage: fetches from /api/iot/rules, device dropdown from /api/iot/devices, create/toggle/delete via API
+- Added missing lucide-react imports: Info, Loader2, Settings2
+- ESLint passes with only 2 pre-existing errors (no new errors)
+
+Stage Summary:
+- Full IoT/Condition Monitoring backend with 8 REST API endpoints
+- Automatic alert generation when sensor readings breach rule thresholds (with cooldown)
+- All 3 IoT pages now use real data from SQLite via Prisma
+- Loading states, error handling, and toast notifications on all operations
+- Files modified: prisma/schema.prisma, src/app/page.tsx
+- Files created: src/app/api/iot/devices/route.ts, src/app/api/iot/devices/[id]/route.ts, src/app/api/iot/devices/[id]/readings/route.ts, src/app/api/iot/alerts/route.ts, src/app/api/iot/alerts/[id]/route.ts, src/app/api/iot/rules/route.ts, src/app/api/iot/rules/[id]/route.ts, src/app/api/iot/monitoring/summary/route.ts

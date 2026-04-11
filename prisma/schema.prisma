@@ -616,6 +616,8 @@ model InventoryItem {
   binLocation       String?
   shelfLocation     String?
   plantId           String
+  locationId        String?                              // → InventoryLocation
+  supplierId        String?                              // → Supplier
   isActive          Boolean  @default(true)
   specification     String                            // JSON text
   imageUrls         String                            // JSON text array
@@ -623,9 +625,11 @@ model InventoryItem {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  plant           Plant           @relation(fields: [plantId], references: [id])
-  createdBy       User            @relation("InventoryItemCreatedBy", fields: [createdById], references: [id])
+  plant           Plant               @relation(fields: [plantId], references: [id])
+  createdBy       User                @relation("InventoryItemCreatedBy", fields: [createdById], references: [id])
   stockMovements  StockMovement[]
+  invLocation     InventoryLocation?  @relation(fields: [locationId], references: [id])
+  supplierRef     Supplier?           @relation("ItemSupplier", fields: [supplierId], references: [id])
 
   @@map("inventory_items")
 }

@@ -8500,17 +8500,17 @@ function IotDevicesPage() {
   const [creating, setCreating] = useState(false);
   const [newDevice, setNewDevice] = useState({ name: '', type: 'sensor', location: '', protocol: 'MQTT', parameter: '', unit: '', groupId: '' });
 
-  const fetchDevices = async () => {
-    setLoading(true);
-    const res = await api.get('/api/iot/devices');
-    if (res.success) {
-      setDevices(res.data || []);
-      if (res.kpis) setKpis(res.kpis);
-    }
-    setLoading(false);
-  };
+  const fetchDevices = useCallback(() => {
+    api.get('/api/iot/devices').then(res => {
+      if (res.success) {
+        setDevices(res.data || []);
+        if (res.kpis) setKpis(res.kpis);
+      }
+      setLoading(false);
+    });
+  }, []);
 
-  useEffect(() => { fetchDevices(); }, []);
+  useEffect(() => { fetchDevices(); }, [fetchDevices]);
 
   const filtered = useMemo(() => devices.filter(d => {
     const q = searchText.toLowerCase();
@@ -8670,16 +8670,16 @@ function IotMonitoringPage() {
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchSummary = async () => {
-    setLoading(true);
-    const res = await api.get('/api/iot/monitoring/summary');
-    if (res.success && res.data) {
-      setSummary(res.data);
-    }
-    setLoading(false);
-  };
+  const fetchSummary = useCallback(() => {
+    api.get('/api/iot/monitoring/summary').then(res => {
+      if (res.success && res.data) {
+        setSummary(res.data);
+      }
+      setLoading(false);
+    });
+  }, []);
 
-  useEffect(() => { fetchSummary(); }, []);
+  useEffect(() => { fetchSummary(); }, [fetchSummary]);
 
   const devicesWithReadings = summary?.devicesWithReadings || [];
   const recentAlerts = summary?.alerts?.recent || [];
@@ -8852,18 +8852,18 @@ function IotRulesPage() {
   const [creating, setCreating] = useState(false);
   const [newRule, setNewRule] = useState({ name: '', deviceId: '', parameter: '', operator: 'gt' as string, threshold: '', severity: 'warning' as string, cooldownMinutes: '5' });
 
-  const fetchRules = async () => {
-    setLoading(true);
-    const [rulesRes, devicesRes] = await Promise.all([
+  const fetchRules = useCallback(() => {
+    Promise.all([
       api.get('/api/iot/rules'),
       api.get('/api/iot/devices?limit=100'),
-    ]);
-    if (rulesRes.success) setRules(rulesRes.data || []);
-    if (devicesRes.success) setDevices(devicesRes.data || []);
-    setLoading(false);
-  };
+    ]).then(([rulesRes, devicesRes]) => {
+      if (rulesRes.success) setRules(rulesRes.data || []);
+      if (devicesRes.success) setDevices(devicesRes.data || []);
+      setLoading(false);
+    });
+  }, []);
 
-  useEffect(() => { fetchRules(); }, []);
+  useEffect(() => { fetchRules(); }, [fetchRules]);
 
   const stats = useMemo(() => ({
     total: rules.length, active: rules.filter(r => r.isActive).length,
