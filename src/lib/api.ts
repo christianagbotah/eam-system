@@ -21,7 +21,26 @@ export async function apiFetch<T = any>(
       headers,
     });
 
-    const json = await res.json();
+    // Handle 204 No Content
+    if (res.status === 204) {
+      return { success: true };
+    }
+
+    // Check Content-Type before parsing JSON
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      if (!res.ok) {
+        return { success: false, error: `Request failed with status ${res.status}` };
+      }
+      return { success: true };
+    }
+
+    let json: any;
+    try {
+      json = await res.json();
+    } catch (parseErr: any) {
+      return { success: false, error: `Invalid JSON response: ${parseErr.message}` };
+    }
 
     if (!res.ok) {
       return { success: false, error: json.error || `Request failed with status ${res.status}` };
