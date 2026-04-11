@@ -723,3 +723,30 @@ Stage Summary:
 - Dev server compiles successfully
 - Files modified: prisma/schema.prisma, src/app/page.tsx
 - Files created: src/app/api/work-centers/route.ts, src/app/api/work-centers/[id]/route.ts, src/app/api/production-orders/route.ts, src/app/api/production-orders/[id]/route.ts, src/app/api/production-batches/route.ts, src/app/api/production-batches/[id]/route.ts
+---
+Task ID: chat-rebuild
+Agent: Main
+Task: Fresh clone, rebuild chat system, fix preview panel
+
+Work Log:
+- Cloned fresh from https://github.com/christianagbotah/eam-system.git to project root
+- Discovered chat feature was never in the GitHub repo (only existed in previous lost session)
+- Applied 3 Prisma models: Conversation, ConversationParticipant, ChatMessage to schema.prisma
+- Added User model relations: chatMessages, conversationParticipants
+- Ran prisma db push + generate to sync schema
+- Created 5 chat API routes: conversations (GET/POST), conversations/[id] (GET/DELETE), conversations/[id]/messages (GET/POST), conversations/[id]/read (POST), chat/users (GET)
+- Added ChatPage component (~400 lines) with: conversation list, message area, send messages, new conversation dialog, user search, mark as read, polling
+- Added chat route case and page title to renderPage switch in EAMApp.tsx
+- Added chat sidebar entry (MessageSquare icon, core module)
+- Added chat to PageName type union in types/index.ts
+- Fixed src/lib/api.ts: Content-Type validation, 204 handling, try/catch around JSON parsing
+- Split page.tsx: 48-line lightweight entry with React.lazy() + Suspense loading EAMApp (15,302 lines)
+- Fixed next.config.ts: conditional standalone output (only for production)
+
+Stage Summary:
+- Full chat system rebuilt from scratch: 3 DB models, 5 API endpoints, ChatPage UI
+- Preview panel fix: React.lazy + Suspense pattern ensures tiny initial bundle
+- JSON.parse error fix: api.ts now validates Content-Type before parsing
+- Dev server compiles cleanly: GET / 200 in 4.4s
+- Login credentials: admin/admin123
+

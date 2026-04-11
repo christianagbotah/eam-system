@@ -1,10 +1,12 @@
 'use client';
 
-import dynamic from 'next/dynamic';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 
-const EAMApp = dynamic(() => import('@/components/EAMApp'), {
-  ssr: false,
-  loading: () => (
+// Lazy load the heavy app shell - it only downloads after the initial page hydrates
+const EAMApp = lazy(() => import('@/components/EAMApp'));
+
+function LoadingScreen() {
+  return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="text-center space-y-4">
         <div className="h-12 w-12 mx-auto rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center animate-pulse shadow-lg">
@@ -23,9 +25,24 @@ const EAMApp = dynamic(() => import('@/components/EAMApp'), {
         </div>
       </div>
     </div>
-  ),
-});
+  );
+}
 
 export default function Home() {
-  return <EAMApp />;
+  const [mounted, setMounted] = useState(false);
+
+  // Ensure we're mounted before rendering lazy component
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return <LoadingScreen />;
+  }
+
+  return (
+    <Suspense fallback={<LoadingScreen />}>
+      <EAMApp />
+    </Suspense>
+  );
 }

@@ -355,6 +355,7 @@ export interface ApiResponse<T = any> {
 export type PageName =
   // Core
   | 'dashboard'
+  | 'chat'
   | 'notifications'
   // Assets (6 subpages)
   | 'assets-machines'

@@ -159,6 +159,10 @@ model User {
   shiftHandoversFrom     ShiftHandover[]    @relation("ShiftHandoverFrom")
   shiftHandoversTo       ShiftHandover[]    @relation("ShiftHandoverTo")
 
+  // Chat relations
+  chatMessages          ChatMessage[]
+  conversationParticipants ConversationParticipant[]
+
   @@map("users")
 }
 
@@ -1666,4 +1670,50 @@ model DigitalTwin {
   createdBy          User                @relation("DigitalTwinCreatedBy", fields: [createdById], references: [id])
 
   @@map("digital_twins")
+}
+
+// ============================================================================
+// CHAT / MESSAGING
+// ============================================================================
+
+model Conversation {
+  id        String    @id @default(cuid())
+  name      String
+  type      String    @default("direct")  // direct, group
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  participants ConversationParticipant[]
+  messages     ChatMessage[]
+
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id         String    @id @default(cuid())
+  userId     String
+  convoId    String    @map("conversationId")
+  joinedAt   DateTime  @default(now())
+  lastReadAt DateTime?
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  convo   Conversation  @relation(fields: [convoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, convoId])
+  @@map("conversation_participants")
+}
+
+model ChatMessage {
+  id         String   @id @default(cuid())
+  convoId    String   @map("conversationId")
+  senderId   String
+  content    String
+  messageType String   @default("text")  // text, system
+  createdAt  DateTime @default(now())
+
+  convo   Conversation  @relation(fields: [convoId], references: [id], onDelete: Cascade)
+  sender  User          @relation(fields: [senderId], references: [id])
+
+  @@index([convoId, createdAt])
+  @@map("chat_messages")
 }
