@@ -369,6 +369,43 @@ export function AnalyticsKpiPage() {
     </div>
   );
 }
+
+const gaugeColor = (val: number) => {
+  if (val >= 85) return 'text-emerald-500';
+  if (val >= 65) return 'text-amber-500';
+  return 'text-red-500';
+};
+const gaugeBg = (val: number) => {
+  if (val >= 85) return 'bg-emerald-100 dark:bg-emerald-900/30';
+  if (val >= 65) return 'bg-amber-100 dark:bg-amber-900/30';
+  return 'bg-red-100 dark:bg-red-900/30';
+};
+const gaugeStrokeColor = (val: number) => {
+  if (val >= 85) return 'stroke-emerald-500';
+  if (val >= 65) return 'stroke-amber-500';
+  return 'stroke-red-500';
+};
+
+function GaugeCircle({ value, label, size = 140 }: { value: number; label: string; size?: number }) {
+  const radius = (size - 16) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (value / 100) * circumference;
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className={`rounded-2xl p-4 ${gaugeBg(value)}`}>
+        <svg width={size} height={size} className="-rotate-90">
+          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" className="stroke-muted" strokeWidth="10" />
+          <circle cx={size / 2} cy={size / 2} r={radius} fill="none" className={gaugeStrokeColor(value)} strokeWidth="10" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 1s ease' }} />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className={`text-2xl font-bold ${gaugeColor(value)}`}>{value}%</span>
+        </div>
+      </div>
+      <p className="text-sm font-medium">{label}</p>
+    </div>
+  );
+}
+
 export function AnalyticsOeePage() {
   const [assets, setAssets] = useState<any[]>([]);
   const [workOrders, setWorkOrders] = useState<any[]>([]);
@@ -409,42 +446,6 @@ export function AnalyticsOeePage() {
 
   const oee = Math.round((availability * performance * quality) / 10000 * 100) / 100;
 
-  const gaugeColor = (val: number) => {
-    if (val >= 85) return 'text-emerald-500';
-    if (val >= 65) return 'text-amber-500';
-    return 'text-red-500';
-  };
-  const gaugeBg = (val: number) => {
-    if (val >= 85) return 'bg-emerald-100 dark:bg-emerald-900/30';
-    if (val >= 65) return 'bg-amber-100 dark:bg-amber-900/30';
-    return 'bg-red-100 dark:bg-red-900/30';
-  };
-  const strokeColor = (val: number) => {
-    if (val >= 85) return 'stroke-emerald-500';
-    if (val >= 65) return 'stroke-amber-500';
-    return 'stroke-red-500';
-  };
-
-  function GaugeCircle({ value, label, size = 140 }: { value: number; label: string; size?: number }) {
-    const radius = (size - 16) / 2;
-    const circumference = 2 * Math.PI * radius;
-    const offset = circumference - (value / 100) * circumference;
-    return (
-      <div className="flex flex-col items-center gap-2">
-        <div className={`rounded-2xl p-4 ${gaugeBg(value)}`}>
-          <svg width={size} height={size} className="-rotate-90">
-            <circle cx={size / 2} cy={size / 2} r={radius} fill="none" className="stroke-muted" strokeWidth="10" />
-            <circle cx={size / 2} cy={size / 2} r={radius} fill="none" className={strokeColor(value)} strokeWidth="10" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 1s ease' }} />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className={`text-2xl font-bold ${gaugeColor(value)}`}>{value}%</span>
-          </div>
-        </div>
-        <p className="text-sm font-medium">{label}</p>
-      </div>
-    );
-  }
-
   const oeeTarget = 85;
   const gap = oee - oeeTarget;
 
@@ -466,7 +467,7 @@ export function AnalyticsOeePage() {
               <div className={`relative w-44 h-44 rounded-2xl p-4 ${gaugeBg(oee)}`}>
                 <svg width="144" height="144" className="-rotate-90">
                   <circle cx="72" cy="72" r="60" fill="none" className="stroke-muted" strokeWidth="12" />
-                  <circle cx="72" cy="72" r="60" fill="none" className={strokeColor(oee)} strokeWidth="12" strokeLinecap="round"
+                  <circle cx="72" cy="72" r="60" fill="none" className={gaugeStrokeColor(oee)} strokeWidth="12" strokeLinecap="round"
                     strokeDasharray={2 * Math.PI * 60} strokeDashoffset={2 * Math.PI * 60 - (oee / 100) * 2 * Math.PI * 60}
                     style={{ transition: 'stroke-dashoffset 1s ease' }} />
                 </svg>

@@ -163,6 +163,9 @@ model User {
   chatMessages          ChatMessage[]
   conversationParticipants ConversationParticipant[]
 
+  // Session Management
+  sessions              Session[]
+
   @@map("users")
 }
 
@@ -1701,6 +1704,28 @@ model ConversationParticipant {
 
   @@unique([userId, convoId])
   @@map("conversation_participants")
+}
+
+// ============================================================================
+// SESSION MANAGEMENT
+// ============================================================================
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  roles     String   // JSON array of role slugs
+  permissions String // JSON array of permission slugs
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  lastSeen  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
 }
 
 model ChatMessage {

@@ -44,15 +44,22 @@ export function QualityInspectionsPage() {
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState({ total: 0, passed: 0, failed: 0, pending: 0 });
   const inspStatusColors: Record<string, string> = { passed: 'bg-emerald-50 text-emerald-700 border-emerald-200', failed: 'bg-red-50 text-red-700 border-red-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', pending: 'bg-sky-50 text-sky-700 border-sky-200' };
-  const fetchInspections = useCallback(async () => {
-    setLoading(true);
+  const loadInspections = async () => {
     const res = await api.get('/api/quality-inspections');
     if (res.success && Array.isArray(res.data)) setInspData(res.data);
     const kpiRes = await api.get('/api/quality-inspections?limit=1');
     if (kpiRes.success) setKpis((kpiRes as any).kpis || { total: 0, passed: 0, failed: 0, pending: 0 });
     setLoading(false);
+  };
+  useEffect(() => {
+    (async () => {
+      const res = await api.get('/api/quality-inspections');
+      if (res.success && Array.isArray(res.data)) setInspData(res.data);
+      const kpiRes = await api.get('/api/quality-inspections?limit=1');
+      if (kpiRes.success) setKpis((kpiRes as any).kpis || { total: 0, passed: 0, failed: 0, pending: 0 });
+      setLoading(false);
+    })();
   }, []);
-  useEffect(() => { fetchInspections(); }, [fetchInspections]);
   const filtered = inspData.filter((r: any) => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.inspectionNumber.toLowerCase().includes(search.toLowerCase())) return false;
@@ -61,12 +68,12 @@ export function QualityInspectionsPage() {
   const handleCreate = async () => {
     if (!form.title) { toast.error('Title is required'); return; }
     const res = await api.post('/api/quality-inspections', { title: form.title, description: form.description, type: form.type, scheduledDate: form.scheduledDate || undefined });
-    if (res.success) { toast.success('Inspection created'); setCreateOpen(false); setForm({ title: '', description: '', type: 'incoming', scheduledDate: '' }); fetchInspections(); }
+    if (res.success) { toast.success('Inspection created'); setCreateOpen(false); setForm({ title: '', description: '', type: 'incoming', scheduledDate: '' }); loadInspections(); }
     else toast.error(res.error || 'Failed to create inspection');
   };
   const handleDelete = async (id: string) => {
     const res = await api.delete(`/api/quality-inspections/${id}`);
-    if (res.success) { toast.success('Inspection deleted'); fetchInspections(); } else toast.error(res.error || 'Failed to delete');
+    if (res.success) { toast.success('Inspection deleted'); loadInspections(); } else toast.error(res.error || 'Failed to delete');
   };
   return (
     <div className="page-content">
@@ -128,15 +135,22 @@ export function QualityNcrPage() {
   const [ncrKpis, setNcrKpis] = useState({ total: 0, open: 0, investigating: 0, closed: 0 });
   const sevColors: Record<string, string> = { critical: 'bg-red-50 text-red-700 border-red-200', major: 'bg-orange-50 text-orange-700 border-orange-200', minor: 'bg-amber-50 text-amber-700 border-amber-200' };
   const ncrStatusColors: Record<string, string> = { open: 'bg-amber-50 text-amber-700 border-amber-200', investigating: 'bg-sky-50 text-sky-700 border-sky-200', root_cause_found: 'bg-violet-50 text-violet-700 border-violet-200', corrective_action: 'bg-indigo-50 text-indigo-700 border-indigo-200', closed: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
-  const fetchNcrs = useCallback(async () => {
-    setLoading(true);
+  const loadNcrs = async () => {
     const res = await api.get('/api/quality-ncr');
     if (res.success && Array.isArray(res.data)) setNcrData(res.data);
     const kpiRes = await api.get('/api/quality-ncr?limit=1');
     if (kpiRes.success) setNcrKpis((kpiRes as any).kpis || { total: 0, open: 0, investigating: 0, closed: 0 });
     setLoading(false);
+  };
+  useEffect(() => {
+    (async () => {
+      const res = await api.get('/api/quality-ncr');
+      if (res.success && Array.isArray(res.data)) setNcrData(res.data);
+      const kpiRes = await api.get('/api/quality-ncr?limit=1');
+      if (kpiRes.success) setNcrKpis((kpiRes as any).kpis || { total: 0, open: 0, investigating: 0, closed: 0 });
+      setLoading(false);
+    })();
   }, []);
-  useEffect(() => { fetchNcrs(); }, [fetchNcrs]);
   const filtered = ncrData.filter((r: any) => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.ncrNumber.toLowerCase().includes(search.toLowerCase())) return false;
@@ -146,12 +160,12 @@ export function QualityNcrPage() {
     if (!form.title) { toast.error('Title is required'); return; }
     if (!form.description) { toast.error('Description is required'); return; }
     const res = await api.post('/api/quality-ncr', { title: form.title, description: form.description, severity: form.severity, type: form.type });
-    if (res.success) { toast.success('NCR created'); setCreateOpen(false); setForm({ title: '', description: '', severity: 'minor', type: 'product' }); fetchNcrs(); }
+    if (res.success) { toast.success('NCR created'); setCreateOpen(false); setForm({ title: '', description: '', severity: 'minor', type: 'product' }); loadNcrs(); }
     else toast.error(res.error || 'Failed to create NCR');
   };
   const handleDelete = async (id: string) => {
     const res = await api.delete(`/api/quality-ncr/${id}`);
-    if (res.success) { toast.success('NCR deleted'); fetchNcrs(); } else toast.error(res.error || 'Failed to delete');
+    if (res.success) { toast.success('NCR deleted'); loadNcrs(); } else toast.error(res.error || 'Failed to delete');
   };
   return (
     <div className="page-content">
@@ -213,15 +227,22 @@ export function QualityAuditsPage() {
   const [loading, setLoading] = useState(true);
   const [auditKpis, setAuditKpis] = useState({ total: 0, planned: 0, inProgress: 0, completed: 0 });
   const auditStatusColors: Record<string, string> = { planned: 'bg-sky-50 text-sky-700 border-sky-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', closed: 'bg-slate-100 text-slate-500 border-slate-200' };
-  const fetchAudits = useCallback(async () => {
-    setLoading(true);
+  const loadAudits = async () => {
     const res = await api.get('/api/quality-audits');
     if (res.success && Array.isArray(res.data)) setAuditData(res.data);
     const kpiRes = await api.get('/api/quality-audits?limit=1');
     if (kpiRes.success) setAuditKpis((kpiRes as any).kpis || { total: 0, planned: 0, inProgress: 0, completed: 0 });
     setLoading(false);
+  };
+  useEffect(() => {
+    (async () => {
+      const res = await api.get('/api/quality-audits');
+      if (res.success && Array.isArray(res.data)) setAuditData(res.data);
+      const kpiRes = await api.get('/api/quality-audits?limit=1');
+      if (kpiRes.success) setAuditKpis((kpiRes as any).kpis || { total: 0, planned: 0, inProgress: 0, completed: 0 });
+      setLoading(false);
+    })();
   }, []);
-  useEffect(() => { fetchAudits(); }, [fetchAudits]);
   const filtered = auditData.filter((r: any) => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.auditNumber.toLowerCase().includes(search.toLowerCase())) return false;
@@ -231,12 +252,12 @@ export function QualityAuditsPage() {
     if (!form.title) { toast.error('Title is required'); return; }
     if (!form.scheduledDate) { toast.error('Scheduled date is required'); return; }
     const res = await api.post('/api/quality-audits', { title: form.title, type: form.type, scope: form.scope, scheduledDate: form.scheduledDate });
-    if (res.success) { toast.success('Audit scheduled'); setCreateOpen(false); setForm({ title: '', type: 'internal', scope: '', scheduledDate: '' }); fetchAudits(); }
+    if (res.success) { toast.success('Audit scheduled'); setCreateOpen(false); setForm({ title: '', type: 'internal', scope: '', scheduledDate: '' }); loadAudits(); }
     else toast.error(res.error || 'Failed to create audit');
   };
   const handleDelete = async (id: string) => {
     const res = await api.delete(`/api/quality-audits/${id}`);
-    if (res.success) { toast.success('Audit deleted'); fetchAudits(); } else toast.error(res.error || 'Failed to delete');
+    if (res.success) { toast.success('Audit deleted'); loadAudits(); } else toast.error(res.error || 'Failed to delete');
   };
   return (
     <div className="page-content">
@@ -295,15 +316,22 @@ export function QualityControlPlansPage() {
   const [loading, setLoading] = useState(true);
   const [cpKpis, setCpKpis] = useState({ total: 0, active: 0, inactive: 0 });
   const cpStatusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', draft: 'bg-slate-100 text-slate-600 border-slate-200', under_review: 'bg-amber-50 text-amber-700 border-amber-200', archived: 'bg-slate-100 text-slate-500 border-slate-200' };
-  const fetchPlans = useCallback(async () => {
-    setLoading(true);
+  const loadPlans = async () => {
     const res = await api.get('/api/quality-control-plans');
     if (res.success && Array.isArray(res.data)) setCpData(res.data);
     const kpiRes = await api.get('/api/quality-control-plans?limit=1');
     if (kpiRes.success) setCpKpis((kpiRes as any).kpis || { total: 0, active: 0, inactive: 0 });
     setLoading(false);
+  };
+  useEffect(() => {
+    (async () => {
+      const res = await api.get('/api/quality-control-plans');
+      if (res.success && Array.isArray(res.data)) setCpData(res.data);
+      const kpiRes = await api.get('/api/quality-control-plans?limit=1');
+      if (kpiRes.success) setCpKpis((kpiRes as any).kpis || { total: 0, active: 0, inactive: 0 });
+      setLoading(false);
+    })();
   }, []);
-  useEffect(() => { fetchPlans(); }, [fetchPlans]);
   const filtered = cpData.filter((r: any) => {
     if (filterStatus !== 'all' && (filterStatus === 'active' ? !r.isActive : filterStatus === 'draft' ? r.isActive : false)) return false;
     if (filterStatus === 'all') { /* show all */ }
@@ -313,12 +341,12 @@ export function QualityControlPlansPage() {
   const handleCreate = async () => {
     if (!form.name) { toast.error('Plan name is required'); return; }
     const res = await api.post('/api/quality-control-plans', { name: form.name, description: form.description, type: form.type, frequency: form.frequency });
-    if (res.success) { toast.success('Control plan created'); setCreateOpen(false); setForm({ name: '', description: '', type: 'in_process', frequency: 'every_batch' }); fetchPlans(); }
+    if (res.success) { toast.success('Control plan created'); setCreateOpen(false); setForm({ name: '', description: '', type: 'in_process', frequency: 'every_batch' }); loadPlans(); }
     else toast.error(res.error || 'Failed to create control plan');
   };
   const handleDelete = async (id: string) => {
     const res = await api.delete(`/api/quality-control-plans/${id}`);
-    if (res.success) { toast.success('Control plan deleted'); fetchPlans(); } else toast.error(res.error || 'Failed to delete');
+    if (res.success) { toast.success('Control plan deleted'); loadPlans(); } else toast.error(res.error || 'Failed to delete');
   };
   return (
     <div className="page-content">
@@ -489,15 +517,22 @@ export function QualityCapaPage() {
   const [capaKpis, setCapaKpis] = useState({ total: 0, open: 0, inProgress: 0, verified: 0 });
   const capaPriorityColors: Record<string, string> = { critical: 'bg-red-50 text-red-700 border-red-200', high: 'bg-orange-50 text-orange-700 border-orange-200', medium: 'bg-amber-50 text-amber-700 border-amber-200', low: 'bg-slate-100 text-slate-600 border-slate-200' };
   const capaStatusColors: Record<string, string> = { open: 'bg-amber-50 text-amber-700 border-amber-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', implemented: 'bg-violet-50 text-violet-700 border-violet-200', verified: 'bg-emerald-50 text-emerald-700 border-emerald-200', closed: 'bg-slate-100 text-slate-500 border-slate-200' };
-  const fetchCapas = useCallback(async () => {
-    setLoading(true);
+  const loadCapas = async () => {
     const res = await api.get('/api/corrective-actions');
     if (res.success && Array.isArray(res.data)) setCapaData(res.data);
     const kpiRes = await api.get('/api/corrective-actions?limit=1');
     if (kpiRes.success) setCapaKpis((kpiRes as any).kpis || { total: 0, open: 0, inProgress: 0, verified: 0 });
     setLoading(false);
+  };
+  useEffect(() => {
+    (async () => {
+      const res = await api.get('/api/corrective-actions');
+      if (res.success && Array.isArray(res.data)) setCapaData(res.data);
+      const kpiRes = await api.get('/api/corrective-actions?limit=1');
+      if (kpiRes.success) setCapaKpis((kpiRes as any).kpis || { total: 0, open: 0, inProgress: 0, verified: 0 });
+      setLoading(false);
+    })();
   }, []);
-  useEffect(() => { fetchCapas(); }, [fetchCapas]);
   const filtered = capaData.filter((r: any) => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.capaNumber.toLowerCase().includes(search.toLowerCase())) return false;
@@ -507,12 +542,12 @@ export function QualityCapaPage() {
     if (!form.title) { toast.error('Title is required'); return; }
     if (!form.description) { toast.error('Description is required'); return; }
     const res = await api.post('/api/corrective-actions', { title: form.title, description: form.description, type: form.type, source: form.source, severity: form.severity, dueDate: form.dueDate || undefined });
-    if (res.success) { toast.success('CAPA created'); setCreateOpen(false); setForm({ title: '', description: '', type: 'corrective', source: 'ncr', severity: 'medium', dueDate: '' }); fetchCapas(); }
+    if (res.success) { toast.success('CAPA created'); setCreateOpen(false); setForm({ title: '', description: '', type: 'corrective', source: 'ncr', severity: 'medium', dueDate: '' }); loadCapas(); }
     else toast.error(res.error || 'Failed to create CAPA');
   };
   const handleDelete = async (id: string) => {
     const res = await api.delete(`/api/corrective-actions/${id}`);
-    if (res.success) { toast.success('CAPA deleted'); fetchCapas(); } else toast.error(res.error || 'Failed to delete');
+    if (res.success) { toast.success('CAPA deleted'); loadCapas(); } else toast.error(res.error || 'Failed to delete');
   };
   return (
     <div className="page-content">

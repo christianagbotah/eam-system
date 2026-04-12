@@ -771,3 +771,56 @@ Stage Summary:
 - The 7.4MB EAMApp chunk only downloads after user successfully logs in
 - `Send` icon import bug fixed (was causing ReferenceError in chat page)
 - Server compiles cleanly with no new errors
+---
+Task ID: 1
+Agent: Main
+Task: Fix all 12 React lint errors across 4 files
+
+Work Log:
+- Analyzed all 12 lint errors: 1 in page.tsx, 3 in AnalyticsPages.tsx, 3 in MaintenancePages.tsx, 5 in QualityPages.tsx
+- page.tsx:39 - Wrapped `setMounted(true)` in `React.startTransition()` to avoid cascading renders warning
+- AnalyticsPages.tsx:483-485 - Moved `GaugeCircle` component and helper functions (`gaugeColor`, `gaugeBg`, `strokeColor`) outside of `AnalyticsOeePage` to module level, preventing "Cannot create components during render" error
+- MaintenancePages.tsx:1884,2026,2169 - Converted `useEffect(() => { fetchFn(); }, [])` pattern to IIFE inside useEffect with separate `load*` functions for handleCreate reuse (Calibration, Risk Assessment, Tools)
+- QualityPages.tsx:54,137,221,302,495 - Same pattern fix for 5 components (Inspections, NCR, Audits, Control Plans, CAPA), replaced `useCallback` + `useEffect` with inlined IIFE and separate `load*` functions
+
+Stage Summary:
+- ESLint passes with 0 errors, 0 warnings
+- All 12 errors resolved using React 19 compatible patterns
+- Files modified: src/app/page.tsx, src/components/modules/AnalyticsPages.tsx, src/components/modules/MaintenancePages.tsx, src/components/modules/QualityPages.tsx
+---
+Task ID: 2
+Agent: Main
+Task: Phase 1.2 — Auth middleware + Phase 1.3 — Session persistence
+
+Work Log:
+- Created src/middleware.ts with Next.js Edge-compatible auth middleware
+  - Protects all /api/* routes except /api/auth/login (public)
+  - Validates Bearer token against session store
+  - Returns 401 for missing/invalid/expired tokens
+  - Attaches session metadata (userId, roles, permissions) to request headers
+  - Allows X-PM-Cron-Secret header for internal PM cron endpoint
+
+- Added Session model to Prisma schema (prisma/schema.prisma)
+  - Fields: id, token (unique), userId, roles (JSON), permissions (JSON), expiresAt, createdAt, lastSeen
+  - Indexed on token, userId, expiresAt for fast lookups
+  - Cascade delete on user deletion
+  - Added sessions relation to User model
+
+- Rewrote src/lib/auth.ts for DB-backed sessions with in-memory LRU cache
+  - createSession: persists to SQLite + caches in memory + cleans up expired sessions
+  - getSession: synchronous cache-only lookup (fast path for route handlers)
+  - getSessionAsync: async cache-first with DB fallback (used by middleware)
+  - deleteSession: removes from both cache and DB (now async)
+  - warmSessionCache: loads active sessions from DB on startup
+  - Session TTL: 24 hours, auto-cleanup on createSession
+  - Cache: max 500 entries, LRU eviction when full
+
+- Updated src/app/api/auth/logout/route.ts to await async deleteSession
+
+Stage Summary:
+- Auth middleware provides consistent API protection across all 80+ API routes
+- Sessions persist to SQLite — survive server restarts
+- In-memory cache provides sub-millisecond lookup for normal requests
+- ESLint passes with 0 errors
+- Files modified: prisma/schema.prisma, src/lib/auth.ts, src/app/api/auth/logout/route.ts
+- Files created: src/middleware.ts

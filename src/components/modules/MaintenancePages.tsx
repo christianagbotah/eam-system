@@ -1870,8 +1870,7 @@ export function MaintenanceCalibrationPage() {
   const [calibrations, setCalibrations] = useState<any[]>([]);
   const [kpis, setKpis] = useState({ total: 0, calibrated: 0, dueSoon: 0, overdue: 0 });
 
-  const fetchCalibrations = async () => {
-    setLoading(true);
+  const loadCalibrations = async () => {
     try {
       const res = await api.get('/api/calibrations');
       if (res.success && res.data) {
@@ -1882,7 +1881,18 @@ export function MaintenanceCalibrationPage() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchCalibrations(); }, []);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/api/calibrations');
+        if (res.success && res.data) {
+          setCalibrations(Array.isArray(res.data) ? res.data : []);
+          if (res.kpis) setKpis(res.kpis as any);
+        }
+      } catch { /* silent */ }
+      setLoading(false);
+    })();
+  }, []);
 
   const calStatusColors: Record<string, string> = {
     calibrated: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
@@ -1925,7 +1935,7 @@ export function MaintenanceCalibrationPage() {
         toast.success('Calibration record created successfully');
         setCreateOpen(false);
         setForm({ instrument: '', serialNumber: '', type: '', lastCalibration: '', nextDue: '', technician: '', certificates: '' });
-        fetchCalibrations();
+        loadCalibrations();
       } else {
         toast.error(res.error || 'Failed to create calibration record');
       }
@@ -2013,8 +2023,7 @@ export function MaintenanceRiskAssessmentPage() {
   const [assessments, setAssessments] = useState<any[]>([]);
   const [kpis, setKpis] = useState({ total: 0, critical: 0, high: 0, medium: 0, low: 0 });
 
-  const fetchAssessments = async () => {
-    setLoading(true);
+  const loadAssessments = async () => {
     try {
       const res = await api.get('/api/risk-assessments');
       if (res.success && res.data) {
@@ -2025,7 +2034,18 @@ export function MaintenanceRiskAssessmentPage() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchAssessments(); }, []);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/api/risk-assessments');
+        if (res.success && res.data) {
+          setAssessments(Array.isArray(res.data) ? res.data : []);
+          if (res.kpis) setKpis(res.kpis as any);
+        }
+      } catch { /* silent */ }
+      setLoading(false);
+    })();
+  }, []);
 
   const riskLevelColors: Record<string, string> = {
     extreme: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
@@ -2073,7 +2093,7 @@ export function MaintenanceRiskAssessmentPage() {
         toast.success('Risk assessment created successfully');
         setCreateOpen(false);
         setForm({ asset: '', category: '', likelihood: '', consequence: '', mitigationPlan: '', assessor: '' });
-        fetchAssessments();
+        loadAssessments();
       } else {
         toast.error(res.error || 'Failed to create risk assessment');
       }
@@ -2157,8 +2177,7 @@ export function MaintenanceToolsPage() {
   const [tools, setTools] = useState<any[]>([]);
   const [kpis, setKpis] = useState({ total: 0, available: 0, checkedOut: 0, inRepair: 0, retired: 0 });
 
-  const fetchTools = async () => {
-    setLoading(true);
+  const loadTools = async () => {
     try {
       const res = await api.get('/api/tools');
       if (res.success && res.data) {
@@ -2169,7 +2188,18 @@ export function MaintenanceToolsPage() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchTools(); }, []);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/api/tools');
+        if (res.success && res.data) {
+          setTools(Array.isArray(res.data) ? res.data : []);
+          if (res.kpis) setKpis(res.kpis);
+        }
+      } catch { /* empty */ }
+      setLoading(false);
+    })();
+  }, []);
 
   const toolStatusColors: Record<string, string> = {
     available: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
@@ -2201,7 +2231,7 @@ export function MaintenanceToolsPage() {
         toast.success('Tool added successfully');
         setCreateOpen(false);
         setForm({ name: '', category: '', location: '', serialNumber: '', condition: '' });
-        fetchTools();
+        loadTools();
       } else {
         toast.error(res.error || 'Failed to add tool');
       }

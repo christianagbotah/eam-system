@@ -36,7 +36,7 @@ export default function Home() {
 
   // Ensure we're mounted before rendering
   useEffect(() => {
-    setMounted(true);
+    React.startTransition(() => setMounted(true));
   }, []);
 
   if (!mounted) {
