@@ -445,8 +445,15 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
           {expanded && (
             <>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.fullName}</p>
-                <p className="text-[10px] text-sidebar-foreground/40 truncate">{user?.roles?.[0]?.name || ''}</p>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.fullName}</p>
+                  {user?.roles?.[0] && (
+                    <span className="inline-flex items-center shrink-0 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 ring-1 ring-emerald-500/20">
+                      {user.roles[0].name}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-sidebar-foreground/40 truncate">{user?.email}</p>
               </div>
               <TooltipProvider delayDuration={0}>
                 <Tooltip>

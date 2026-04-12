@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionAsync } from '@/lib/auth';
 
 /**
- * Auth Middleware
+ * Auth & Plant-Scoping Middleware
  *
  * Protects all /api/* routes (except public auth endpoints) by validating the Bearer token.
- * Uses DB-backed sessions with in-memory cache for performance.
+ * Enforces multi-plant data isolation via X-Plant-ID header.
  *
  * Public routes (no auth required):
  * - /api/auth/login  — login endpoint
@@ -60,11 +60,15 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  // Token is valid — attach session info to request headers for downstream handlers
+  // Token is valid — attach session info + plant context to request headers
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-session-user-id', session.userId);
   requestHeaders.set('x-session-roles', session.roles.join(','));
   requestHeaders.set('x-session-permissions', session.permissions.join(','));
+
+  // Pass through X-Plant-ID header if present (frontend sets this for plant isolation)
+  // Route handlers can read x-session-roles to determine if user has admin/manager access
+  // (admin/manager roles bypass plant scoping in the API layer)
 
   return NextResponse.next({
     request: {

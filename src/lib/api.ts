@@ -1,17 +1,25 @@
 // API wrapper with auth headers
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
+export function getAuthHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const token = localStorage.getItem('eam_token');
+  const plantId = localStorage.getItem('user_plant_id');
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (plantId) headers['x-plant-id'] = plantId;
+  return headers;
+}
+
 export async function apiFetch<T = any>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<{ success: boolean; data?: T; error?: string }> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('eam_token') : null;
-
   const isFormData = options.body instanceof FormData;
 
   const headers: Record<string, string> = {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...getAuthHeaders(),
     ...(options.headers as Record<string, string> || {}),
   };
 

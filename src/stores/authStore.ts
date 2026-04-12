@@ -2,6 +2,30 @@ import { create } from 'zustand';
 import type { User } from '@/types';
 import { api } from '@/lib/api';
 
+// --- localStorage keys ---
+const LS_TOKEN = 'eam_token';
+const LS_PERMISSIONS = 'user_permissions';
+const LS_ROLES = 'user_roles';
+const LS_PLANT_ID = 'user_plant_id';
+const LS_PLANT_ACCESS = 'user_plant_access';
+
+/** Persist auth-related data to localStorage so the usePermissions hook can read it */
+function persistAuthData(user: User, permissions: string[]): void {
+  localStorage.setItem(LS_PERMISSIONS, JSON.stringify(permissions));
+  localStorage.setItem(LS_ROLES, JSON.stringify((user.roles || []).map(r => r.slug)));
+  localStorage.setItem(LS_PLANT_ID, user.plantId || '');
+  localStorage.setItem(LS_PLANT_ACCESS, JSON.stringify(user.plantAccess || []));
+}
+
+/** Clear all auth-related localStorage entries */
+function clearAuthData(): void {
+  localStorage.removeItem(LS_TOKEN);
+  localStorage.removeItem(LS_PERMISSIONS);
+  localStorage.removeItem(LS_ROLES);
+  localStorage.removeItem(LS_PLANT_ID);
+  localStorage.removeItem(LS_PLANT_ACCESS);
+}
+
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
@@ -28,7 +52,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const res = await api.post<{ user: User; token: string; permissions: string[] }>('/api/auth/login', { username, password });
       if (res.success && res.data) {
-        localStorage.setItem('eam_token', res.data.token);
+        localStorage.setItem(LS_TOKEN, res.data.token);
+        persistAuthData(res.data.user, res.data.permissions);
         set({
           user: res.data.user,
           permissions: res.data.permissions,
@@ -48,17 +73,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     await api.post('/api/auth/logout');
-    localStorage.removeItem('eam_token');
+    clearAuthData();
     set({ user: null, isAuthenticated: false, permissions: [], role: null });
   },
 
   fetchMe: async () => {
-    const token = localStorage.getItem('eam_token');
+    const token = localStorage.getItem(LS_TOKEN);
     if (!token) return;
     set({ isLoading: true });
     try {
       const res = await api.get<{ user: User; permissions: string[] }>('/api/auth/me');
       if (res.success && res.data) {
+        persistAuthData(res.data.user, res.data.permissions);
         set({
           user: res.data.user,
           permissions: res.data.permissions,
@@ -67,11 +93,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isLoading: false,
         });
       } else {
-        localStorage.removeItem('eam_token');
+        clearAuthData();
         set({ isLoading: false });
       }
     } catch {
-      localStorage.removeItem('eam_token');
+      clearAuthData();
       set({ isLoading: false });
     }
   },

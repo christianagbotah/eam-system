@@ -112,6 +112,7 @@ model User {
   stockMovements       StockMovement[]
   pmSchedulesAssigned  PmSchedule[]              @relation("PmScheduleAssignedTo")
   pmSchedulesCreated   PmSchedule[]              @relation("PmScheduleCreatedBy")
+  pmTemplatesCreated   PmTemplate[]              @relation("PmTemplateCreatedBy")
   woStatusHistory      WorkOrderStatusHistory[]
   mrComments           MaintenanceRequestComment[]
 
@@ -737,14 +738,73 @@ model PmSchedule {
   department  Department? @relation(fields: [departmentId], references: [id])
   createdBy   User        @relation("PmScheduleCreatedBy", fields: [createdById], references: [id])
 
-  workOrders  WorkOrder[]
+  templateId  String?
+  template    PmTemplate?  @relation(fields: [templateId], references: [id])
 
+  workOrders  WorkOrder[]
+  trigger     PmTrigger?
+
+  @@index([templateId])
   @@map("pm_schedules")
+}
+
+model PmTemplate {
+  id                String   @id @default(cuid())
+  title             String
+  description       String?
+  type              String   @default("preventive")  // preventive, predictive, inspection, calibration, lubrication
+  category          String?                           // mechanical, electrical, hydraulic, etc.
+  estimatedDuration Float                            // hours
+  priority          String   @default("medium")     // low, medium, high, critical
+  requiredSkills    String?                           // JSON array of skill names
+  requiredTools     String?                           // JSON array of tool descriptions
+  isActive          Boolean  @default(true)
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  schedules         PmSchedule[]
+  createdBy         User     @relation("PmTemplateCreatedBy", fields: [createdById], references: [id])
+  tasks             PmTemplateTask[]
+
+  @@map("pm_templates")
+}
+
+model PmTemplateTask {
+  id               String   @id @default(cuid())
+  templateId       String
+  taskNumber       Int                             // sequential order within template
+  description      String
+  taskType         String   @default("check")     // check, measure, inspect, lubricate, replace, record
+  requiredParts    String?                          // JSON array of {partName, quantity, unit}
+  estimatedMinutes Int?
+  sortOrder        Int      @default(0)
+  isActive         Boolean  @default(true)
+
+  template         PmTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@map("pm_template_tasks")
+}
+
+model PmTrigger {
+  id            String   @id @default(cuid())
+  scheduleId    String   @unique                    // one trigger per schedule
+  triggerType   String                              // time, meter, condition, production_count
+  triggerValue  Float                               // e.g., hours=500, days=30, meters=10000
+  triggerConfig String?                             // JSON for advanced config (cron expressions, etc.)
+  lastTriggeredAt DateTime?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  schedule      PmSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@map("pm_triggers")
 }
 
 // ============================================================================
 // 13. WORK ORDER STATUS HISTORY
-// ============================================================================
+// ==============================================================================
 
 model WorkOrderStatusHistory {
   id            String   @id @default(cuid())

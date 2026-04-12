@@ -3,185 +3,746 @@ import { hash } from 'bcryptjs';
 
 const db = new PrismaClient();
 
-async function seed() {
-  console.log('🌱 Seeding database...');
+// ============================================================================
+// 1. PERMISSION DEFINITIONS — 11 modules with structured actions
+// ============================================================================
 
-  // 1. Create Permissions
-  const modules = [
-    'dashboard',
-    'maintenance_requests',
-    'work_orders',
-    'assets',
-    'inventory',
-    'reports',
-    'users',
-    'roles',
-    'modules',
-    'settings',
-    'iot',
-    'production',
-    'quality',
-    'safety',
-    'operations',
-  ];
-  const actions = ['view', 'create', 'update', 'delete', 'approve', 'assign', 'execute', 'export', 'manage', 'activate'];
+const modulePermissions: Record<string, string[]> = {
+  // ── CORE (~47) ──
+  dashboard: ['view', 'stats'],
+  users: ['view', 'create', 'update', 'delete', 'manage', 'assign_role', 'assign_plant', 'reset_password'],
+  roles: ['view', 'create', 'update', 'delete', 'manage'],
+  permissions: ['view'],
+  departments: ['view', 'create', 'update', 'delete', 'manage'],
+  plants: ['view', 'create', 'update', 'delete', 'manage'],
+  notifications: ['view', 'manage', 'send'],
+  audit_logs: ['view'],
+  system_settings: ['view', 'update'],
+  modules: ['view', 'manage', 'activate'],
+  api_keys: ['view', 'create', 'update', 'delete'],
+  search: ['global'],
+  documents: ['view', 'upload', 'download', 'delete', 'manage'],
+  company: ['view', 'update'],
 
-  const permissionMap: Record<string, string> = {};
-  for (const mod of modules) {
-    for (const action of actions) {
-      // Some modules don't need all actions
-      if (mod === 'dashboard' && !['view'].includes(action)) continue;
-      if (mod === 'settings' && !['view', 'update'].includes(action)) continue;
-      if (mod === 'modules' && !['view', 'update', 'activate', 'manage'].includes(action)) continue;
-      if (mod === 'reports' && !['view', 'manage', 'export'].includes(action)) continue;
-      if (mod === 'iot' && !['view', 'manage'].includes(action)) continue;
-      if (mod === 'production' && !['view', 'manage'].includes(action)) continue;
-      if (mod === 'quality' && !['view', 'manage'].includes(action)) continue;
-      if (mod === 'safety' && !['view', 'manage'].includes(action)) continue;
-      if (mod === 'operations' && !['view', 'manage'].includes(action)) continue;
+  // ── ASSET (~47) ──
+  assets: ['view', 'view_all', 'view_own', 'create', 'update', 'delete', 'export', 'import', 'bulk_update', 'manage', 'hierarchy', 'relationships', 'health', 'criticality'],
+  equipment: ['view', 'create', 'update', 'delete'],
+  assemblies: ['view', 'create', 'update', 'delete', 'manage'],
+  bom: ['view', 'create', 'update', 'delete', 'import', 'export', 'manage'],
+  facilities: ['view', 'create', 'update', 'delete'],
+  meters: ['view', 'create', 'update', 'delete', 'read'],
+  tools: ['view', 'create', 'update', 'delete', 'manage', 'checkout', 'return', 'transfer'],
 
-      const perm = await db.permission.create({
-        data: {
-          slug: `${mod}.${action}`,
-          name: `${mod.charAt(0).toUpperCase() + mod.slice(1)} - ${action.charAt(0).toUpperCase() + action.slice(1)}`,
-          module: mod,
-          action,
-        },
-      });
-      permissionMap[perm.slug] = perm.id;
-    }
-  }
-  console.log(`✅ Created ${Object.keys(permissionMap).length} permissions`);
+  // ── RWOP / WORK ORDERS (~58) ──
+  maintenance_requests: ['view', 'view_all', 'view_own', 'create', 'update', 'delete', 'approve', 'reject', 'triage', 'assign_planner', 'convert_to_wo', 'my_queue', 'archive'],
+  work_orders: ['view', 'view_all', 'view_own', 'create', 'update', 'delete', 'assign_supervisor', 'assign_technician', 'start', 'complete', 'verify', 'reopen', 'close', 'adjust_cost', 'failure_analysis', 'dashboard', 'bulk_update', 'cancel'],
+  work_order_templates: ['view', 'create', 'update', 'delete'],
+  recurring_work_orders: ['view', 'create', 'update', 'delete'],
+  approvals: ['view', 'approve', 'reject'],
+  verifications: ['view', 'check'],
+  sla: ['view', 'manage'],
+  failure_codes: ['view', 'manage'],
+  rca: ['view', 'create', 'update'],
+  assistance_requests: ['view', 'create', 'respond'],
+  time_logs: ['view', 'create', 'update', 'delete'],
 
-  // 2. Create Roles
-  const adminRole = await db.role.create({
-    data: {
-      name: 'Administrator',
-      slug: 'admin',
-      description: 'Full system access with all permissions',
-      level: 100,
-      isSystem: true,
-    },
-  });
+  // ── MRMP / PM (~28) ──
+  pm_schedules: ['view', 'create', 'update', 'delete', 'activate', 'run'],
+  pm_templates: ['view', 'create', 'update', 'delete'],
+  pm_triggers: ['view', 'create', 'update'],
+  pm_checklists: ['view', 'create', 'update', 'delete'],
+  pm_notifications: ['view'],
+  pm_analytics: ['view'],
+  pm_work_orders: ['view'],
+  calibration: ['view', 'create', 'update', 'delete', 'manage'],
+  asset_health: ['view'],
+  condition_monitoring: ['view', 'manage'],
 
-  const plannerRole = await db.role.create({
-    data: {
-      name: 'Maintenance Planner',
-      slug: 'planner',
-      description: 'Plans and schedules maintenance work orders',
-      level: 80,
-      isSystem: true,
-    },
-  });
+  // ── IMS / INVENTORY (~46) ──
+  inventory: ['view', 'view_all', 'create', 'update', 'delete', 'stock_in', 'stock_out', 'reserve', 'consume', 'export', 'manage', 'forecast'],
+  parts: ['view', 'create', 'update', 'delete'],
+  parts_categories: ['view', 'create', 'update'],
+  material_requisitions: ['view', 'create', 'approve', 'issue', 'reject'],
+  vendors: ['view', 'create', 'update', 'delete', 'manage'],
+  stock_transactions: ['view'],
+  purchase_orders: ['view', 'create', 'update', 'approve', 'receive', 'manage'],
+  inventory_locations: ['view', 'create', 'update', 'delete'],
+  inventory_adjustments: ['view', 'create', 'approve'],
+  inventory_transfers: ['view', 'create', 'approve'],
 
-  const supervisorRole = await db.role.create({
-    data: {
-      name: 'Supervisor',
-      slug: 'supervisor',
-      description: 'Reviews and approves maintenance requests',
-      level: 60,
-      isSystem: true,
-    },
-  });
+  // ── HRMS (~24) ──
+  employees: ['view', 'create', 'update'],
+  shifts: ['view', 'create', 'update', 'assign'],
+  shift_handovers: ['view', 'create'],
+  training: ['view', 'create', 'update', 'manage'],
+  skills: ['view', 'create', 'update'],
+  skill_categories: ['view', 'manage'],
+  technician_groups: ['view', 'create', 'update'],
+  assignments: ['view', 'create', 'update'],
 
-  const technicianRole = await db.role.create({
-    data: {
-      name: 'Technician',
-      slug: 'technician',
-      description: 'Executes maintenance work orders',
-      level: 40,
-      isSystem: true,
-    },
-  });
+  // ── MPMP / PRODUCTION (~27) ──
+  production: ['view', 'create', 'update', 'manage'],
+  production_surveys: ['view', 'create', 'update', 'manage'],
+  oee: ['view', 'manage'],
+  downtime: ['view', 'create', 'manage'],
+  quality_checks: ['view', 'create', 'update'],
+  energy: ['view', 'manage'],
+  work_centers: ['view', 'create', 'update'],
+  production_targets: ['view', 'create', 'update'],
+  production_batches: ['view', 'create', 'update'],
 
-  const operatorRole = await db.role.create({
-    data: {
-      name: 'Operator',
-      slug: 'operator',
-      description: 'Submits maintenance requests',
-      level: 20,
-      isSystem: true,
-    },
-  });
+  // ── TRAC / SAFETY (~20) ──
+  safety_incidents: ['view', 'create', 'update', 'manage'],
+  safety_inspections: ['view', 'create', 'update', 'manage'],
+  safety_equipment: ['view', 'create', 'update', 'delete'],
+  safety_permits: ['view', 'create', 'approve', 'close'],
+  risk_assessments: ['view', 'create', 'update', 'manage'],
 
-  console.log('✅ Created 5 roles');
+  // ── IOT (~11) ──
+  iot_devices: ['view', 'create', 'update', 'delete'],
+  iot_monitoring: ['view'],
+  iot_rules: ['view', 'create', 'update', 'delete'],
+  predictive: ['view', 'analyze'],
 
-  // 3. Assign ALL permissions to admin role
-  const allPermIds = Object.values(permissionMap);
-  for (const pid of allPermIds) {
-    await db.rolePermission.create({
-      data: { roleId: adminRole.id, permissionId: pid },
-    });
-  }
-  console.log(`✅ Assigned ${allPermIds.length} permissions to admin role`);
+  // ── DIGITAL_TWIN (~5) ──
+  digital_twin: ['view', 'manage'],
+  model_viewer: ['view'],
+  hotspots: ['view', 'manage'],
 
-  // 3b. Assign permissions to other roles (non-admin)
-  // Supervisor permissions
-  const supervisorPerms = [
+  // ── REPORTS (~7) ──
+  reports: ['view', 'create', 'generate', 'export', 'manage', 'schedule', 'customize'],
+
+  // ── QUALITY (~17) ──
+  quality_inspections: ['view', 'create', 'update', 'delete'],
+  quality_ncr: ['view', 'create', 'update', 'delete'],
+  quality_audits: ['view', 'create', 'update', 'delete'],
+  quality_control_plans: ['view', 'create', 'update'],
+  spc: ['view', 'manage'],
+};
+
+// ============================================================================
+// 2. ROLE DEFINITIONS — 15 roles
+// ============================================================================
+
+const roleDefinitions = [
+  { name: 'Administrator', slug: 'admin', description: 'Full system access with all permissions', level: 100, isSystem: true },
+  { name: 'Plant Manager', slug: 'plant_manager', description: 'View all modules, limited create/update across the plant', level: 95, isSystem: true },
+  { name: 'Maintenance Manager', slug: 'maintenance_manager', description: 'Full work orders, maintenance requests, PM schedules, and assets', level: 90, isSystem: false },
+  { name: 'Maintenance Planner', slug: 'maintenance_planner', description: 'Plan and schedule maintenance work orders and PM', level: 80, isSystem: true },
+  { name: 'Maintenance Supervisor', slug: 'maintenance_supervisor', description: 'Supervise and manage work order execution', level: 70, isSystem: false },
+  { name: 'Maintenance Technician', slug: 'maintenance_technician', description: 'Execute assigned maintenance work orders', level: 50, isSystem: false },
+  { name: 'Production Manager', slug: 'production_manager', description: 'Full production management and OEE oversight', level: 90, isSystem: false },
+  { name: 'Production Operator', slug: 'production_operator', description: 'Production data entry and survey completion', level: 30, isSystem: false },
+  { name: 'Inventory Manager', slug: 'inventory_manager', description: 'Full inventory, parts, and procurement management', level: 85, isSystem: false },
+  { name: 'Store Keeper', slug: 'store_keeper', description: 'Day-to-day store operations and stock management', level: 45, isSystem: false },
+  { name: 'Quality Manager', slug: 'quality_manager', description: 'Quality inspections, NCR, audits, and calibration', level: 85, isSystem: false },
+  { name: 'Safety Officer', slug: 'safety_officer', description: 'Full safety management including incidents and inspections', level: 75, isSystem: false },
+  { name: 'HR Manager', slug: 'hr_manager', description: 'Full HRMS including employees, shifts, training, skills', level: 85, isSystem: false },
+  { name: 'IoT Engineer', slug: 'iot_engineer', description: 'Full IoT device management and predictive analytics', level: 70, isSystem: false },
+  { name: 'Viewer', slug: 'viewer', description: 'Read-only access across most modules', level: 10, isSystem: true },
+];
+
+// ============================================================================
+// 3. ROLE PERMISSION BUNDLES
+// ============================================================================
+
+// Helper: expand a module into all its action slugs
+function mod(moduleName: string, actions: string[]): string[] {
+  return actions.map((a) => `${moduleName}.${a}`);
+}
+
+// Helper: get all "view" permissions for a list of modules
+function allViews(modules: string[]): string[] {
+  return modules.map((m) => `${m}.view`);
+}
+
+const rolePermissionBundles: Record<string, string[]> = {
+  // ── 1. ADMIN: all permissions (handled programmatically) ──
+
+  // ── 2. PLANT MANAGER: broad view + limited create/update ──
+  plant_manager: [
+    'dashboard.view', 'dashboard.stats',
+    'users.view',
+    'roles.view',
+    'permissions.view',
+    'departments.view', 'departments.create', 'departments.update',
+    'plants.view', 'plants.update',
+    'notifications.view',
+    'audit_logs.view',
+    'system_settings.view',
+    'modules.view',
+    'documents.view',
+    'company.view', 'company.update',
+    'assets.view', 'assets.view_all', 'assets.health', 'assets.criticality', 'assets.hierarchy',
+    'equipment.view',
+    'assemblies.view',
+    'bom.view',
+    'facilities.view',
+    'meters.view',
+    'tools.view',
+    'maintenance_requests.view', 'maintenance_requests.view_all', 'maintenance_requests.dashboard',
+    'work_orders.view', 'work_orders.view_all', 'work_orders.dashboard',
+    'work_order_templates.view',
+    'recurring_work_orders.view',
+    'approvals.view',
+    'verifications.view',
+    'sla.view',
+    'rca.view',
+    'time_logs.view',
+    'pm_schedules.view', 'pm_analytics.view', 'pm_work_orders.view',
+    'pm_templates.view', 'pm_checklists.view',
+    'calibration.view',
+    'asset_health.view', 'condition_monitoring.view',
+    'inventory.view', 'inventory.view_all',
+    'parts.view', 'parts_categories.view',
+    'material_requisitions.view',
+    'vendors.view',
+    'stock_transactions.view',
+    'purchase_orders.view',
+    'inventory_locations.view',
+    'inventory_adjustments.view',
+    'inventory_transfers.view',
+    'employees.view',
+    'shifts.view',
+    'shift_handovers.view',
+    'training.view', 'skills.view', 'skill_categories.view',
+    'technician_groups.view', 'assignments.view',
+    'production.view', 'production_surveys.view',
+    'oee.view', 'downtime.view',
+    'quality_checks.view', 'energy.view',
+    'work_centers.view', 'production_targets.view', 'production_batches.view',
+    'safety_incidents.view', 'safety_inspections.view',
+    'safety_equipment.view', 'safety_permits.view', 'risk_assessments.view',
+    'iot_devices.view', 'iot_monitoring.view', 'iot_rules.view',
+    'predictive.view',
+    'digital_twin.view', 'model_viewer.view', 'hotspots.view',
+    'reports.view', 'reports.export',
+    'quality_inspections.view', 'quality_ncr.view',
+    'quality_audits.view', 'quality_control_plans.view', 'spc.view',
+  ],
+
+  // ── 3. MAINTENANCE MANAGER: full RWOP + MRMP + assets ──
+  maintenance_manager: [
+    'dashboard.view', 'dashboard.stats',
+    'documents.view', 'documents.upload', 'documents.download',
+    'notifications.view', 'notifications.manage',
+    'assets.view', 'assets.view_all', 'assets.create', 'assets.update', 'assets.delete',
+    'assets.export', 'assets.manage', 'assets.hierarchy', 'assets.health', 'assets.criticality',
+    'equipment.view', 'equipment.create', 'equipment.update',
+    'assemblies.view', 'assemblies.create', 'assemblies.update', 'assemblies.manage',
+    'bom.view', 'bom.create', 'bom.update', 'bom.manage',
+    'facilities.view',
+    'meters.view', 'meters.create', 'meters.update',
+    'tools.view', 'tools.create', 'tools.update', 'tools.manage',
+    'maintenance_requests.view', 'maintenance_requests.view_all', 'maintenance_requests.create',
+    'maintenance_requests.update', 'maintenance_requests.approve', 'maintenance_requests.reject',
+    'maintenance_requests.triage', 'maintenance_requests.assign_planner',
+    'maintenance_requests.convert_to_wo', 'maintenance_requests.my_queue',
+    'maintenance_requests.archive',
+    'work_orders.view', 'work_orders.view_all', 'work_orders.create', 'work_orders.update',
+    'work_orders.delete', 'work_orders.assign_supervisor', 'work_orders.assign_technician',
+    'work_orders.complete', 'work_orders.verify', 'work_orders.reopen', 'work_orders.close',
+    'work_orders.adjust_cost', 'work_orders.failure_analysis', 'work_orders.dashboard',
+    'work_orders.bulk_update', 'work_orders.cancel',
+    'work_order_templates.view', 'work_order_templates.create', 'work_order_templates.update',
+    'recurring_work_orders.view', 'recurring_work_orders.create', 'recurring_work_orders.update',
+    'approvals.view', 'approvals.approve', 'approvals.reject',
+    'verifications.view', 'verifications.check',
+    'sla.view', 'sla.manage',
+    'failure_codes.view', 'failure_codes.manage',
+    'rca.view', 'rca.create', 'rca.update',
+    'assistance_requests.view', 'assistance_requests.create', 'assistance_requests.respond',
+    'time_logs.view', 'time_logs.create', 'time_logs.update',
+    'pm_schedules.view', 'pm_schedules.create', 'pm_schedules.update', 'pm_schedules.delete',
+    'pm_schedules.activate', 'pm_schedules.run',
+    'pm_templates.view', 'pm_templates.create', 'pm_templates.update', 'pm_templates.delete',
+    'pm_triggers.view', 'pm_triggers.create', 'pm_triggers.update',
+    'pm_checklists.view', 'pm_checklists.create', 'pm_checklists.update', 'pm_checklists.delete',
+    'pm_notifications.view', 'pm_analytics.view', 'pm_work_orders.view',
+    'calibration.view', 'calibration.create', 'calibration.update', 'calibration.manage',
+    'asset_health.view', 'condition_monitoring.view', 'condition_monitoring.manage',
+    'inventory.view', 'inventory.view_all',
+    'parts.view',
+    'reports.view', 'reports.export', 'reports.generate',
+  ],
+
+  // ── 4. MAINTENANCE PLANNER: RWOP manage + MRMP manage ──
+  maintenance_planner: [
+    'dashboard.view', 'dashboard.stats',
+    'documents.view', 'documents.upload', 'documents.download',
+    'notifications.view',
+    'assets.view', 'assets.view_all', 'assets.create', 'assets.update',
+    'assets.hierarchy', 'assets.health', 'assets.criticality',
+    'equipment.view', 'equipment.create', 'equipment.update',
+    'assemblies.view', 'assemblies.create', 'assemblies.update',
+    'bom.view', 'bom.create', 'bom.update',
+    'facilities.view',
+    'meters.view', 'meters.read',
+    'tools.view',
+    'maintenance_requests.view', 'maintenance_requests.view_all', 'maintenance_requests.create',
+    'maintenance_requests.update', 'maintenance_requests.approve',
+    'maintenance_requests.triage', 'maintenance_requests.assign_planner',
+    'maintenance_requests.convert_to_wo', 'maintenance_requests.my_queue',
+    'work_orders.view', 'work_orders.view_all', 'work_orders.create', 'work_orders.update',
+    'work_orders.assign_supervisor', 'work_orders.assign_technician',
+    'work_orders.close', 'work_orders.failure_analysis', 'work_orders.dashboard',
+    'work_orders.bulk_update', 'work_orders.cancel',
+    'work_order_templates.view', 'work_order_templates.create', 'work_order_templates.update',
+    'recurring_work_orders.view', 'recurring_work_orders.create', 'recurring_work_orders.update',
+    'approvals.view', 'approvals.approve', 'approvals.reject',
+    'verifications.view',
+    'sla.view', 'sla.manage',
+    'failure_codes.view', 'failure_codes.manage',
+    'rca.view', 'rca.create', 'rca.update',
+    'time_logs.view',
+    'pm_schedules.view', 'pm_schedules.create', 'pm_schedules.update', 'pm_schedules.delete',
+    'pm_schedules.activate', 'pm_schedules.run',
+    'pm_templates.view', 'pm_templates.create', 'pm_templates.update', 'pm_templates.delete',
+    'pm_triggers.view', 'pm_triggers.create', 'pm_triggers.update',
+    'pm_checklists.view', 'pm_checklists.create', 'pm_checklists.update', 'pm_checklists.delete',
+    'pm_notifications.view', 'pm_analytics.view', 'pm_work_orders.view',
+    'calibration.view', 'calibration.create', 'calibration.update',
+    'asset_health.view', 'condition_monitoring.view',
+    'inventory.view',
+    'parts.view',
+    'reports.view', 'reports.export', 'reports.generate',
+  ],
+
+  // ── 5. MAINTENANCE SUPERVISOR: RWOP manage + execute ──
+  maintenance_supervisor: [
     'dashboard.view',
-    'maintenance_requests.view', 'maintenance_requests.approve',
-    'work_orders.view',
-    'reports.view',
-  ];
-  for (const slug of supervisorPerms) {
-    const pid = permissionMap[slug];
-    if (pid) {
-      await db.rolePermission.create({
-        data: { roleId: supervisorRole.id, permissionId: pid },
-      });
-    }
-  }
-
-  // Planner permissions
-  const plannerPerms = [
-    'dashboard.view',
-    'maintenance_requests.view', 'maintenance_requests.create', 'maintenance_requests.update', 'maintenance_requests.approve',
-    'work_orders.view', 'work_orders.create', 'work_orders.update', 'work_orders.assign',
-    'assets.view',
+    'documents.view', 'documents.upload', 'documents.download',
+    'notifications.view',
+    'assets.view', 'assets.view_all', 'assets.update',
+    'assets.health', 'assets.criticality',
+    'equipment.view',
+    'meters.view', 'meters.read',
+    'tools.view',
+    'maintenance_requests.view', 'maintenance_requests.view_all',
+    'maintenance_requests.update', 'maintenance_requests.approve', 'maintenance_requests.reject',
+    'work_orders.view', 'work_orders.view_all', 'work_orders.update',
+    'work_orders.assign_technician', 'work_orders.complete', 'work_orders.verify',
+    'work_orders.reopen', 'work_orders.dashboard',
+    'work_order_templates.view',
+    'approvals.view', 'approvals.approve', 'approvals.reject',
+    'verifications.view', 'verifications.check',
+    'sla.view',
+    'failure_codes.view',
+    'rca.view', 'rca.create', 'rca.update',
+    'assistance_requests.view', 'assistance_requests.create', 'assistance_requests.respond',
+    'time_logs.view', 'time_logs.create', 'time_logs.update',
+    'pm_schedules.view', 'pm_schedules.activate',
+    'pm_checklists.view',
+    'pm_notifications.view',
+    'calibration.view',
+    'asset_health.view', 'condition_monitoring.view',
     'inventory.view',
     'reports.view', 'reports.export',
-  ];
-  for (const slug of plannerPerms) {
-    const pid = permissionMap[slug];
-    if (pid) {
-      await db.rolePermission.create({
-        data: { roleId: plannerRole.id, permissionId: pid },
-      });
-    }
-  }
+  ],
 
-  // Technician permissions
-  const technicianPerms = [
+  // ── 6. MAINTENANCE TECHNICIAN: own WOs, execute, PM execute ──
+  maintenance_technician: [
     'dashboard.view',
-    'work_orders.view', 'work_orders.execute',
+    'documents.view', 'documents.download',
+    'notifications.view',
+    'assets.view', 'assets.view_own',
+    'equipment.view',
+    'meters.view', 'meters.read',
+    'tools.view', 'tools.checkout', 'tools.return',
+    'maintenance_requests.view', 'maintenance_requests.view_own',
+    'maintenance_requests.create', 'maintenance_requests.update',
+    'work_orders.view', 'work_orders.view_own', 'work_orders.update',
+    'work_orders.start', 'work_orders.complete',
+    'assistance_requests.view', 'assistance_requests.create',
+    'time_logs.view', 'time_logs.create', 'time_logs.update',
+    'pm_schedules.view', 'pm_schedules.run',
+    'pm_checklists.view',
+    'pm_notifications.view',
     'inventory.view',
-  ];
-  for (const slug of technicianPerms) {
-    const pid = permissionMap[slug];
-    if (pid) {
-      await db.rolePermission.create({
-        data: { roleId: technicianRole.id, permissionId: pid },
-      });
-    }
-  }
+    'parts.view',
+    'reports.view',
+  ],
 
-  // Operator permissions
-  const operatorPerms = [
+  // ── 7. PRODUCTION MANAGER: full MPMP ──
+  production_manager: [
+    'dashboard.view', 'dashboard.stats',
+    'documents.view', 'documents.upload', 'documents.download',
+    'notifications.view', 'notifications.manage',
+    'assets.view', 'assets.view_all', 'assets.health', 'assets.criticality',
+    'equipment.view',
+    'facilities.view',
+    'work_centers.view', 'work_centers.create', 'work_centers.update',
+    'production.view', 'production.create', 'production.update', 'production.manage',
+    'production_surveys.view', 'production_surveys.create', 'production_surveys.update', 'production_surveys.manage',
+    'oee.view', 'oee.manage',
+    'downtime.view', 'downtime.create', 'downtime.manage',
+    'quality_checks.view', 'quality_checks.create', 'quality_checks.update',
+    'energy.view', 'energy.manage',
+    'production_targets.view', 'production_targets.create', 'production_targets.update',
+    'production_batches.view', 'production_batches.create', 'production_batches.update',
+    'maintenance_requests.view', 'maintenance_requests.view_all',
+    'maintenance_requests.create',
+    'work_orders.view', 'work_orders.view_all',
+    'inventory.view', 'inventory.view_all',
+    'employees.view', 'shifts.view', 'assignments.view',
+    'reports.view', 'reports.export', 'reports.generate', 'reports.create',
+  ],
+
+  // ── 8. PRODUCTION OPERATOR: own data entry, surveys ──
+  production_operator: [
     'dashboard.view',
-    'maintenance_requests.view', 'maintenance_requests.create', 'maintenance_requests.update',
-  ];
-  for (const slug of operatorPerms) {
-    const pid = permissionMap[slug];
-    if (pid) {
-      await db.rolePermission.create({
-        data: { roleId: operatorRole.id, permissionId: pid },
+    'documents.view', 'documents.download',
+    'notifications.view',
+    'assets.view', 'assets.view_own',
+    'equipment.view',
+    'production.view',
+    'production_surveys.view', 'production_surveys.create', 'production_surveys.update',
+    'downtime.view', 'downtime.create',
+    'quality_checks.view', 'quality_checks.create', 'quality_checks.update',
+    'maintenance_requests.view', 'maintenance_requests.view_own',
+    'maintenance_requests.create', 'maintenance_requests.update',
+    'work_orders.view', 'work_orders.view_own',
+    'time_logs.view', 'time_logs.create',
+    'inventory.view',
+  ],
+
+  // ── 9. INVENTORY MANAGER: full IMS ──
+  inventory_manager: [
+    'dashboard.view', 'dashboard.stats',
+    'documents.view', 'documents.upload', 'documents.download',
+    'notifications.view', 'notifications.manage',
+    'inventory.view', 'inventory.view_all', 'inventory.create', 'inventory.update',
+    'inventory.delete', 'inventory.stock_in', 'inventory.stock_out', 'inventory.reserve',
+    'inventory.consume', 'inventory.export', 'inventory.manage', 'inventory.forecast',
+    'parts.view', 'parts.create', 'parts.update', 'parts.delete',
+    'parts_categories.view', 'parts_categories.create', 'parts_categories.update',
+    'material_requisitions.view', 'material_requisitions.create', 'material_requisitions.approve',
+    'material_requisitions.issue', 'material_requisitions.reject',
+    'vendors.view', 'vendors.create', 'vendors.update', 'vendors.delete', 'vendors.manage',
+    'stock_transactions.view',
+    'purchase_orders.view', 'purchase_orders.create', 'purchase_orders.update',
+    'purchase_orders.approve', 'purchase_orders.receive', 'purchase_orders.manage',
+    'inventory_locations.view', 'inventory_locations.create', 'inventory_locations.update',
+    'inventory_locations.delete',
+    'inventory_adjustments.view', 'inventory_adjustments.create', 'inventory_adjustments.approve',
+    'inventory_transfers.view', 'inventory_transfers.create', 'inventory_transfers.approve',
+    'assets.view',
+    'work_orders.view', 'work_orders.view_all',
+    'maintenance_requests.view',
+    'reports.view', 'reports.export', 'reports.generate',
+  ],
+
+  // ── 10. STORE KEEPER: IMS limited ──
+  store_keeper: [
+    'dashboard.view',
+    'documents.view', 'documents.download',
+    'notifications.view',
+    'inventory.view', 'inventory.stock_in', 'inventory.stock_out',
+    'inventory.reserve', 'inventory.export',
+    'parts.view', 'parts.update',
+    'parts_categories.view',
+    'material_requisitions.view', 'material_requisitions.issue',
+    'vendors.view',
+    'stock_transactions.view',
+    'purchase_orders.view', 'purchase_orders.receive',
+    'inventory_locations.view',
+    'inventory_adjustments.view', 'inventory_adjustments.create',
+    'inventory_transfers.view',
+    'reports.view',
+  ],
+
+  // ── 11. QUALITY MANAGER: quality + calibration ──
+  quality_manager: [
+    'dashboard.view', 'dashboard.stats',
+    'documents.view', 'documents.upload', 'documents.download',
+    'notifications.view', 'notifications.manage',
+    'quality_inspections.view', 'quality_inspections.create', 'quality_inspections.update', 'quality_inspections.delete',
+    'quality_ncr.view', 'quality_ncr.create', 'quality_ncr.update', 'quality_ncr.delete',
+    'quality_audits.view', 'quality_audits.create', 'quality_audits.update', 'quality_audits.delete',
+    'quality_control_plans.view', 'quality_control_plans.create', 'quality_control_plans.update',
+    'spc.view', 'spc.manage',
+    'calibration.view', 'calibration.create', 'calibration.update', 'calibration.delete', 'calibration.manage',
+    'assets.view', 'assets.view_all',
+    'equipment.view',
+    'meters.view', 'meters.read',
+    'work_orders.view', 'work_orders.view_all',
+    'maintenance_requests.view',
+    'reports.view', 'reports.export', 'reports.generate', 'reports.create',
+  ],
+
+  // ── 12. SAFETY OFFICER: full TRAC ──
+  safety_officer: [
+    'dashboard.view',
+    'documents.view', 'documents.upload', 'documents.download',
+    'notifications.view', 'notifications.manage',
+    'safety_incidents.view', 'safety_incidents.create', 'safety_incidents.update', 'safety_incidents.manage',
+    'safety_inspections.view', 'safety_inspections.create', 'safety_inspections.update', 'safety_inspections.manage',
+    'safety_equipment.view', 'safety_equipment.create', 'safety_equipment.update', 'safety_equipment.delete',
+    'safety_permits.view', 'safety_permits.create', 'safety_permits.approve', 'safety_permits.close',
+    'risk_assessments.view', 'risk_assessments.create', 'risk_assessments.update', 'risk_assessments.manage',
+    'assets.view',
+    'employees.view',
+    'work_orders.view',
+    'reports.view', 'reports.export', 'reports.generate',
+  ],
+
+  // ── 13. HR MANAGER: full HRMS ──
+  hr_manager: [
+    'dashboard.view', 'dashboard.stats',
+    'documents.view', 'documents.upload', 'documents.download',
+    'notifications.view', 'notifications.manage',
+    'users.view', 'users.create', 'users.update',
+    'employees.view', 'employees.create', 'employees.update',
+    'shifts.view', 'shifts.create', 'shifts.update', 'shifts.assign',
+    'shift_handovers.view', 'shift_handovers.create',
+    'training.view', 'training.create', 'training.update', 'training.manage',
+    'skills.view', 'skills.create', 'skills.update',
+    'skill_categories.view', 'skill_categories.manage',
+    'technician_groups.view', 'technician_groups.create', 'technician_groups.update',
+    'assignments.view', 'assignments.create', 'assignments.update',
+    'departments.view',
+    'plants.view',
+    'reports.view', 'reports.export', 'reports.generate',
+  ],
+
+  // ── 14. IOT ENGINEER: full IOT ──
+  iot_engineer: [
+    'dashboard.view',
+    'documents.view', 'documents.upload', 'documents.download',
+    'notifications.view',
+    'assets.view', 'assets.view_all',
+    'equipment.view',
+    'iot_devices.view', 'iot_devices.create', 'iot_devices.update', 'iot_devices.delete',
+    'iot_monitoring.view',
+    'iot_rules.view', 'iot_rules.create', 'iot_rules.update', 'iot_rules.delete',
+    'predictive.view', 'predictive.analyze',
+    'asset_health.view', 'condition_monitoring.view', 'condition_monitoring.manage',
+    'meters.view', 'meters.create', 'meters.update',
+    'reports.view', 'reports.export', 'reports.generate',
+  ],
+
+  // ── 15. VIEWER: read-only across most modules ──
+  viewer: [
+    'dashboard.view',
+    'documents.view',
+    'notifications.view',
+    'users.view',
+    'roles.view',
+    'permissions.view',
+    'departments.view',
+    'plants.view',
+    'assets.view',
+    'equipment.view',
+    'assemblies.view',
+    'bom.view',
+    'facilities.view',
+    'meters.view',
+    'tools.view',
+    'maintenance_requests.view',
+    'work_orders.view',
+    'work_order_templates.view',
+    'recurring_work_orders.view',
+    'approvals.view',
+    'verifications.view',
+    'sla.view',
+    'failure_codes.view',
+    'rca.view',
+    'assistance_requests.view',
+    'time_logs.view',
+    'pm_schedules.view',
+    'pm_templates.view',
+    'pm_checklists.view',
+    'calibration.view',
+    'asset_health.view',
+    'condition_monitoring.view',
+    'inventory.view',
+    'parts.view',
+    'parts_categories.view',
+    'material_requisitions.view',
+    'vendors.view',
+    'stock_transactions.view',
+    'purchase_orders.view',
+    'inventory_locations.view',
+    'inventory_adjustments.view',
+    'inventory_transfers.view',
+    'employees.view',
+    'shifts.view',
+    'shift_handovers.view',
+    'training.view',
+    'skills.view',
+    'skill_categories.view',
+    'technician_groups.view',
+    'assignments.view',
+    'production.view',
+    'production_surveys.view',
+    'oee.view',
+    'downtime.view',
+    'quality_checks.view',
+    'energy.view',
+    'work_centers.view',
+    'production_targets.view',
+    'production_batches.view',
+    'safety_incidents.view',
+    'safety_inspections.view',
+    'safety_equipment.view',
+    'safety_permits.view',
+    'risk_assessments.view',
+    'iot_devices.view',
+    'iot_monitoring.view',
+    'iot_rules.view',
+    'predictive.view',
+    'digital_twin.view',
+    'model_viewer.view',
+    'hotspots.view',
+    'reports.view',
+    'quality_inspections.view',
+    'quality_ncr.view',
+    'quality_audits.view',
+    'quality_control_plans.view',
+    'spc.view',
+    'company.view',
+  ],
+};
+
+// ============================================================================
+// MAIN SEED FUNCTION
+// ============================================================================
+
+async function seed() {
+  console.log('🌱 Seeding iAssetsPro database...\n');
+
+  // ── Clear existing data for clean re-seed (reverse dependency order) ──
+  console.log('🗑️  Clearing existing data...');
+  await db.$transaction([
+    db.rolePermission.deleteMany(),
+    db.userPermission.deleteMany(),
+    db.workOrderStatusHistory.deleteMany(),
+    db.workOrderComment.deleteMany(),
+    db.workOrderTimeLog.deleteMany(),
+    db.workOrderMaterial.deleteMany(),
+    db.workOrderTeamMember.deleteMany(),
+    db.workOrder.deleteMany(),
+    db.pmSchedule.deleteMany(),
+    db.maintenanceRequestComment.deleteMany(),
+    db.maintenanceRequest.deleteMany(),
+    db.inventoryItem.deleteMany(),
+    db.asset.deleteMany(),
+    db.assetCategory.deleteMany(),
+    db.notification.deleteMany(),
+    db.userPlant.deleteMany(),
+    db.userRole.deleteMany(),
+    db.user.deleteMany(),
+    db.statusTransition.deleteMany(),
+    db.companyModule.deleteMany(),
+    db.systemModule.deleteMany(),
+    db.role.deleteMany(),
+    db.permission.deleteMany(),
+    db.department.deleteMany(),
+    db.plant.deleteMany(),
+    db.companyProfile.deleteMany(),
+  ]);
+  console.log('✅ Existing data cleared\n');
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 1: CREATE PERMISSIONS
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log('📋 Creating permissions...');
+
+  const permissionMap: Record<string, string> = {}; // slug → id
+  let permCount = 0;
+
+  for (const [moduleName, actions] of Object.entries(modulePermissions)) {
+    for (const action of actions) {
+      const slug = `${moduleName}.${action}`;
+      const permission = await db.permission.upsert({
+        where: { slug },
+        update: {}, // no-op on re-seed since we cleared
+        create: {
+          slug,
+          name: `${formatModuleName(moduleName)} - ${formatActionName(action)}`,
+          module: moduleName,
+          action,
+          description: `${formatActionName(action)} access for ${formatModuleName(moduleName)} module`,
+        },
       });
+      permissionMap[slug] = permission.id;
+      permCount++;
     }
   }
 
-  console.log('✅ Assigned permissions to roles');
+  console.log(`✅ Created ${permCount} permissions across 11 modules (${Object.keys(modulePermissions).length} sub-modules)\n`);
 
-  // 4. Create default plant
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 2: CREATE ROLES
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log('🔑 Creating roles...');
+
+  const createdRoles: Record<string, string> = {}; // slug → id
+
+  for (const roleDef of roleDefinitions) {
+    const role = await db.role.upsert({
+      where: { slug: roleDef.slug },
+      update: {
+        name: roleDef.name,
+        description: roleDef.description,
+        level: roleDef.level,
+        isSystem: roleDef.isSystem,
+      },
+      create: {
+        name: roleDef.name,
+        slug: roleDef.slug,
+        description: roleDef.description,
+        level: roleDef.level,
+        isSystem: roleDef.isSystem,
+      },
+    });
+    createdRoles[roleDef.slug] = role.id;
+  }
+
+  console.log(`✅ Created ${roleDefinitions.length} roles\n`);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 3: ASSIGN PERMISSIONS TO ROLES
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log('🔗 Assigning permissions to roles...');
+
+  // Admin gets ALL permissions
+  const allPermIds = Object.values(permissionMap);
+  await db.rolePermission.createMany({
+    data: allPermIds.map((pid) => ({
+      roleId: createdRoles['admin'],
+      permissionId: pid,
+    })),
+  });
+  console.log(`  ✅ admin: ${allPermIds.length} permissions (ALL)`);
+
+  // Other roles get their bundles
+  for (const [roleSlug, permSlugs] of Object.entries(rolePermissionBundles)) {
+    const roleId = createdRoles[roleSlug];
+    if (!roleId) continue;
+
+    const validPermIds: string[] = [];
+    for (const slug of permSlugs) {
+      const pid = permissionMap[slug];
+      if (pid) validPermIds.push(pid);
+    }
+
+    await db.rolePermission.createMany({
+      data: validPermIds.map((pid) => ({
+        roleId,
+        permissionId: pid,
+      })),
+    });
+    console.log(`  ✅ ${roleSlug}: ${validPermIds.length} permissions`);
+  }
+
+  console.log('');
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 4: CREATE DEFAULT PLANT & DEPARTMENT
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log('🏭 Creating default plant & department...');
+
   const plant = await db.plant.create({
     data: {
       name: 'Main Plant',
@@ -192,10 +753,8 @@ async function seed() {
       isActive: true,
     },
   });
+  console.log('  ✅ Created Main Plant');
 
-  console.log('✅ Created default plant');
-
-  // 5. Create default department
   const dept = await db.department.create({
     data: {
       name: 'Maintenance',
@@ -203,10 +762,14 @@ async function seed() {
       plantId: plant.id,
     },
   });
+  console.log('  ✅ Created Maintenance Department\n');
 
-  console.log('✅ Created default department');
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 5: CREATE USERS
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log('👤 Creating users...');
 
-  // 6. Create default admin user
+  // Admin user (password: admin123)
   const adminPassword = await hash('admin123', 10);
   const admin = await db.user.create({
     data: {
@@ -217,33 +780,49 @@ async function seed() {
       staffId: 'ADM-001',
       department: 'Maintenance',
       status: 'active',
-      userRoles: { create: { roleId: adminRole.id } },
+      userRoles: { create: { roleId: createdRoles['admin'] } },
       plantAccess: { create: { plantId: plant.id, accessLevel: 'admin', isPrimary: true } },
     },
   });
+  console.log('  ✅ Admin: admin / admin123');
 
-  console.log('✅ Created admin user (admin / admin123)');
-
-  // 7. Create demo users
-  const demoUsers = [
-    { username: 'planner1', email: 'planner@eam.local', fullName: 'John Planner', staffId: 'PLN-001', role: plannerRole, department: 'Maintenance' },
-    { username: 'supervisor1', email: 'supervisor@eam.local', fullName: 'Jane Supervisor', staffId: 'SUP-001', role: supervisorRole, department: 'Production', supervisorDept: dept.id },
-    { username: 'tech1', email: 'tech@eam.local', fullName: 'Bob Technician', staffId: 'TEC-001', role: technicianRole, department: 'Maintenance' },
-    { username: 'operator1', email: 'operator@eam.local', fullName: 'Alice Operator', staffId: 'OPR-001', role: operatorRole, department: 'Production' },
+  // Original demo users (password: password123)
+  const originalDemoUsers = [
+    { username: 'planner1', email: 'planner@eam.local', fullName: 'John Planner', staffId: 'PLN-001', roleSlug: 'maintenance_planner', department: 'Maintenance' },
+    { username: 'supervisor1', email: 'supervisor@eam.local', fullName: 'Jane Supervisor', staffId: 'SUP-001', roleSlug: 'maintenance_supervisor', department: 'Production', supervisorDept: true },
+    { username: 'tech1', email: 'tech@eam.local', fullName: 'Bob Technician', staffId: 'TEC-001', roleSlug: 'maintenance_technician', department: 'Maintenance' },
+    { username: 'operator1', email: 'operator@eam.local', fullName: 'Alice Operator', staffId: 'OPR-001', roleSlug: 'production_operator', department: 'Production' },
   ];
 
-  for (const u of demoUsers) {
-    const pw = await hash('password123', 10);
+  // New demo users (password: password123)
+  const newDemoUsers = [
+    { username: 'manager1', email: 'manager1@eam.local', fullName: 'Carlos Plant Manager', staffId: 'PMG-001', roleSlug: 'plant_manager', department: 'Operations' },
+    { username: 'maint_mgr1', email: 'maint_mgr1@eam.local', fullName: 'Diana Maint Manager', staffId: 'MMG-001', roleSlug: 'maintenance_manager', department: 'Maintenance' },
+    { username: 'tech2', email: 'tech2@eam.local', fullName: 'Evan Technician', staffId: 'TEC-002', roleSlug: 'maintenance_technician', department: 'Maintenance' },
+    { username: 'prod_mgr1', email: 'prod_mgr1@eam.local', fullName: 'Fiona Prod Manager', staffId: 'PRM-001', roleSlug: 'production_manager', department: 'Production' },
+    { username: 'op2', email: 'op2@eam.local', fullName: 'George Operator', staffId: 'OPR-002', roleSlug: 'production_operator', department: 'Production' },
+    { username: 'inv_mgr1', email: 'inv_mgr1@eam.local', fullName: 'Helen Inv Manager', staffId: 'IVM-001', roleSlug: 'inventory_manager', department: 'Warehouse' },
+    { username: 'store1', email: 'store1@eam.local', fullName: 'Ivan Store Keeper', staffId: 'STK-001', roleSlug: 'store_keeper', department: 'Warehouse' },
+    { username: 'qual_mgr1', email: 'qual_mgr1@eam.local', fullName: 'Julia Quality Mgr', staffId: 'QAM-001', roleSlug: 'quality_manager', department: 'Quality' },
+    { username: 'safety1', email: 'safety1@eam.local', fullName: 'Kevin Safety Officer', staffId: 'SAF-001', roleSlug: 'safety_officer', department: 'HSE' },
+    { username: 'hr1', email: 'hr1@eam.local', fullName: 'Laura HR Manager', staffId: 'HRM-001', roleSlug: 'hr_manager', department: 'Human Resources' },
+    { username: 'iot1', email: 'iot1@eam.local', fullName: 'Mike IoT Engineer', staffId: 'IOT-001', roleSlug: 'iot_engineer', department: 'Engineering' },
+    { username: 'viewer1', email: 'viewer1@eam.local', fullName: 'Nancy Viewer', staffId: 'VWR-001', roleSlug: 'viewer', department: 'Management' },
+  ];
+
+  const demoPassword = await hash('password123', 10);
+
+  for (const u of [...originalDemoUsers, ...newDemoUsers]) {
     await db.user.create({
       data: {
         username: u.username,
         email: u.email,
-        passwordHash: pw,
+        passwordHash: demoPassword,
         fullName: u.fullName,
         staffId: u.staffId,
         department: u.department,
         status: 'active',
-        userRoles: { create: { roleId: u.role.id } },
+        userRoles: { create: { roleId: createdRoles[u.roleSlug] } },
         plantAccess: { create: { plantId: plant.id, accessLevel: 'write', isPrimary: false } },
       },
     });
@@ -258,17 +837,20 @@ async function seed() {
     });
   }
 
-  console.log('✅ Created demo users');
+  const totalUsers = 1 + originalDemoUsers.length + newDemoUsers.length;
+  console.log(`  ✅ Created ${totalUsers} demo users (${newDemoUsers.length} new)\n`);
 
-  // 8. Create System Modules (35 comprehensive EAM modules)
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 6: CREATE SYSTEM MODULES (35 comprehensive EAM modules)
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log('📦 Creating system modules...');
+
   const systemModules = [
-    // Core modules (always active)
     { code: 'core', name: 'Core Platform', description: 'Core EAM platform with authentication, navigation, and base functionality', isCore: true, version: '2.0.0', licensed: true },
     { code: 'assets', name: 'Asset Management', description: 'Complete asset registry, hierarchy, tracking, and lifecycle management', isCore: true, version: '2.0.0', licensed: true },
     { code: 'maintenance_requests', name: 'Maintenance Requests', description: 'Submit, review, approve, and convert maintenance requests with full workflow', isCore: true, version: '2.0.0', licensed: true },
     { code: 'work_orders', name: 'Work Orders', description: 'Plan, assign, execute, and track maintenance work orders with SLA management', isCore: true, version: '2.0.0', licensed: true },
     { code: 'inventory', name: 'Inventory & Spare Parts', description: 'Manage spare parts inventory, stock levels, locations, and replenishment', isCore: true, version: '2.0.0', licensed: true },
-    // Optional modules - licensed by default in demo
     { code: 'pm_schedules', name: 'PM Schedules', description: 'Preventive maintenance scheduling with auto work order generation', isCore: false, version: '2.0.0', licensed: true },
     { code: 'analytics', name: 'Analytics & KPI', description: 'Advanced analytics, dashboards, and KPI monitoring', isCore: false, version: '1.5.0', licensed: true },
     { code: 'production', name: 'Production Management', description: 'Work centers, resource planning, scheduling, and capacity management', isCore: false, version: '1.5.0', licensed: true },
@@ -318,7 +900,6 @@ async function seed() {
       },
     });
 
-    // Auto-activate core modules; for optional modules, set isActive if licensed
     if (mod.isCore || mod.licensed) {
       await db.companyModule.create({
         data: {
@@ -334,16 +915,20 @@ async function seed() {
     }
   }
 
-  console.log(`✅ Created ${systemModules.length} system modules`);
+  console.log(`✅ Created ${systemModules.length} system modules\n`);
 
-  // 9. Create Status Transitions
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 7: CREATE STATUS TRANSITIONS
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log('🔄 Creating status transitions...');
+
   // Maintenance Request transitions
   const mrTransitions = [
-    { fromStatus: null, toStatus: 'pending', allowedRoleSlugs: JSON.stringify(['operator', 'supervisor', 'planner', 'admin']) },
-    { fromStatus: 'pending', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin']) },
-    { fromStatus: 'pending', toStatus: 'approved', allowedRoleSlugs: JSON.stringify(['supervisor', 'planner', 'admin']) },
-    { fromStatus: 'pending', toStatus: 'rejected', allowedRoleSlugs: JSON.stringify(['supervisor', 'planner', 'admin']), requiresReason: true },
-    { fromStatus: 'approved', toStatus: 'converted', allowedRoleSlugs: JSON.stringify(['planner', 'admin']) },
+    { fromStatus: null, toStatus: 'pending', allowedRoleSlugs: JSON.stringify(['operator', 'supervisor', 'planner', 'admin', 'production_operator', 'plant_manager', 'maintenance_manager']) },
+    { fromStatus: 'pending', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']) },
+    { fromStatus: 'pending', toStatus: 'approved', allowedRoleSlugs: JSON.stringify(['supervisor', 'planner', 'admin', 'maintenance_supervisor', 'maintenance_planner', 'maintenance_manager', 'plant_manager']) },
+    { fromStatus: 'pending', toStatus: 'rejected', allowedRoleSlugs: JSON.stringify(['supervisor', 'planner', 'admin', 'maintenance_supervisor', 'maintenance_planner', 'maintenance_manager', 'plant_manager']), requiresReason: true },
+    { fromStatus: 'approved', toStatus: 'converted', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']) },
   ];
 
   for (const t of mrTransitions) {
@@ -358,20 +943,26 @@ async function seed() {
     });
   }
 
-  // Work Order transitions
+  // Work Order transitions (existing + new additions)
   const woTransitions = [
-    { fromStatus: null, toStatus: 'draft', allowedRoleSlugs: JSON.stringify(['planner', 'admin']) },
-    { fromStatus: 'draft', toStatus: 'requested', allowedRoleSlugs: JSON.stringify(['planner', 'admin']) },
-    { fromStatus: 'draft', toStatus: 'approved', allowedRoleSlugs: JSON.stringify(['planner', 'admin']) },
-    { fromStatus: 'approved', toStatus: 'planned', allowedRoleSlugs: JSON.stringify(['planner', 'admin']) },
-    { fromStatus: 'planned', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin']) },
-    { fromStatus: 'assigned', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'admin']) },
-    { fromStatus: 'in_progress', toStatus: 'waiting_parts', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin']) },
-    { fromStatus: 'in_progress', toStatus: 'completed', allowedRoleSlugs: JSON.stringify(['technician', 'admin']) },
-    { fromStatus: 'waiting_parts', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin']) },
-    { fromStatus: 'completed', toStatus: 'closed', allowedRoleSlugs: JSON.stringify(['supervisor', 'planner', 'admin']) },
-    { fromStatus: 'draft', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin']), requiresReason: true },
-    { fromStatus: 'requested', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin']), requiresReason: true },
+    // Original transitions
+    { fromStatus: null, toStatus: 'draft', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']) },
+    { fromStatus: 'draft', toStatus: 'requested', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']) },
+    { fromStatus: 'draft', toStatus: 'approved', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']) },
+    { fromStatus: 'approved', toStatus: 'planned', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']) },
+    { fromStatus: 'planned', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']) },
+    { fromStatus: 'assigned', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'admin', 'maintenance_technician', 'maintenance_supervisor', 'maintenance_manager']) },
+    { fromStatus: 'in_progress', toStatus: 'waiting_parts', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']) },
+    { fromStatus: 'in_progress', toStatus: 'completed', allowedRoleSlugs: JSON.stringify(['technician', 'admin', 'maintenance_technician', 'maintenance_supervisor', 'maintenance_manager']) },
+    { fromStatus: 'waiting_parts', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']) },
+    { fromStatus: 'completed', toStatus: 'closed', allowedRoleSlugs: JSON.stringify(['supervisor', 'planner', 'admin', 'maintenance_supervisor', 'maintenance_planner', 'maintenance_manager', 'plant_manager']) },
+    { fromStatus: 'draft', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
+    { fromStatus: 'requested', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
+    // New transitions added
+    { fromStatus: 'completed', toStatus: 'verified', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']) },
+    { fromStatus: 'verified', toStatus: 'closed', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']) },
+    { fromStatus: 'on_hold', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']) },
+    { fromStatus: 'in_progress', toStatus: 'on_hold', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
   ];
 
   for (const t of woTransitions) {
@@ -386,9 +977,14 @@ async function seed() {
     });
   }
 
-  console.log('✅ Created status transitions');
+  console.log(`  ✅ MR transitions: ${mrTransitions.length}`);
+  console.log(`  ✅ WO transitions: ${woTransitions.length} (4 new: completed→verified, verified→closed, on_hold↔in_progress)\n`);
 
-  // 10. Create sample maintenance requests
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 8: SAMPLE MAINTENANCE REQUESTS
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log('📝 Creating sample maintenance requests...');
+
   const requester = await db.user.findUnique({ where: { username: 'operator1' } });
   const sv = await db.user.findUnique({ where: { username: 'supervisor1' } });
 
@@ -423,9 +1019,13 @@ async function seed() {
       });
     }
 
-    console.log('✅ Created sample maintenance requests');
+    console.log(`  ✅ Created ${sampleMRs.length} maintenance requests\n`);
 
-    // 11. Create sample assets
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 9: SAMPLE ASSETS
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('🔧 Creating sample assets...');
+
     const assetCategories = await Promise.all([
       db.assetCategory.create({ data: { name: 'Rotating Equipment', code: 'RE', isActive: true } }),
       db.assetCategory.create({ data: { name: 'Electrical', code: 'EL', isActive: true } }),
@@ -475,9 +1075,13 @@ async function seed() {
       createdAssets.push(asset);
     }
 
-    console.log('✅ Created sample assets');
+    console.log(`  ✅ Created ${assetsData.length} assets in 5 categories\n`);
 
-    // 12. Create sample inventory items
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 10: SAMPLE INVENTORY ITEMS
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('📦 Creating sample inventory items...');
+
     const inventoryItems = [
       { itemCode: 'SP-001', name: 'Bearing SKF 6205', category: 'spare_part', unitOfMeasure: 'each', currentStock: 25, minStockLevel: 10, unitCost: 45, supplier: 'SKF Distributors' },
       { itemCode: 'SP-002', name: 'Hydraulic Seal Kit', category: 'spare_part', unitOfMeasure: 'set', currentStock: 8, minStockLevel: 5, unitCost: 120, supplier: 'Parker Hannifin' },
@@ -507,9 +1111,13 @@ async function seed() {
       });
     }
 
-    console.log('✅ Created sample inventory items');
+    console.log(`  ✅ Created ${inventoryItems.length} inventory items\n`);
 
-    // 13. Create sample work orders
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 11: SAMPLE WORK ORDERS
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('🔨 Creating sample work orders...');
+
     const techUser = await db.user.findUnique({ where: { username: 'tech1' } });
     const plannerUser = await db.user.findUnique({ where: { username: 'planner1' } });
 
@@ -570,9 +1178,13 @@ async function seed() {
       }
     }
 
-    console.log('✅ Created sample work orders');
+    console.log(`  ✅ Created 9 work orders with status history\n`);
 
-    // 14. Create PM Schedules
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 12: PM SCHEDULES
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('📅 Creating PM schedules...');
+
     for (let i = 0; i < 5; i++) {
       const asset = createdAssets[i];
       await db.pmSchedule.create({
@@ -596,9 +1208,13 @@ async function seed() {
       });
     }
 
-    console.log('✅ Created PM schedules');
+    console.log('  ✅ Created 5 PM schedules\n');
 
-    // 15. Create sample notifications
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 13: SAMPLE NOTIFICATIONS
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('🔔 Creating sample notifications...');
+
     const notifTypes = [
       { type: 'wo_assigned', title: 'Work Order Assigned', message: 'You have been assigned WO for Compressor C-101 bearing replacement.', entityType: 'work_order', userId: techUser?.id || admin.id },
       { type: 'mr_assigned', title: 'New Maintenance Request', message: 'A new maintenance request has been submitted for Press Line 3.', entityType: 'maintenance_request', userId: sv?.id || admin.id },
@@ -616,10 +1232,14 @@ async function seed() {
       });
     }
 
-    console.log('✅ Created sample notifications');
+    console.log(`  ✅ Created ${notifTypes.length} notifications\n`);
   }
 
-  // Create company profile
+  // ══════════════════════════════════════════════════════════════════════════
+  // STEP 14: COMPANY PROFILE
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log('🏢 Creating company profile...');
+
   await db.companyProfile.upsert({
     where: { id: 'default' },
     update: {},
@@ -642,16 +1262,66 @@ async function seed() {
     },
   });
 
-  console.log('✅ Created company profile');
+  console.log('  ✅ Company profile created\n');
 
-  console.log('\n🎉 Seeding complete!');
-  console.log('\nDefault users:');
-  console.log('  Admin:      admin / admin123');
-  console.log('  Planner:    planner1 / password123');
-  console.log('  Supervisor: supervisor1 / password123');
-  console.log('  Technician: tech1 / password123');
-  console.log('  Operator:   operator1 / password123');
+  // ══════════════════════════════════════════════════════════════════════════
+  // FINAL SUMMARY
+  // ══════════════════════════════════════════════════════════════════════════
+  const finalPermCount = await db.permission.count();
+  const finalRoleCount = await db.role.count();
+  const finalRolePermCount = await db.rolePermission.count();
+  const finalUserCount = await db.user.count();
+
+  console.log('═════════════════════════════════════════════════════════════');
+  console.log(`  🎉 iAssetsPro seeding complete!`);
+  console.log('═════════════════════════════════════════════════════════════');
+  console.log(`  📋 Permissions:     ${finalPermCount}`);
+  console.log(`  🔑 Roles:           ${finalRoleCount}`);
+  console.log(`  🔗 Role-Perms:      ${finalRolePermCount}`);
+  console.log(`  👥 Users:           ${finalUserCount}`);
+  console.log('═════════════════════════════════════════════════════════════');
+  console.log('\nDefault users:\n');
+  console.log('  Admin:               admin / admin123');
+  console.log('  Plant Manager:       manager1 / password123');
+  console.log('  Maint Manager:       maint_mgr1 / password123');
+  console.log('  Planner:             planner1 / password123');
+  console.log('  Supervisor:          supervisor1 / password123');
+  console.log('  Technician:          tech1 / password123');
+  console.log('  Technician:          tech2 / password123');
+  console.log('  Prod Manager:        prod_mgr1 / password123');
+  console.log('  Operator:            operator1 / password123');
+  console.log('  Operator:            op2 / password123');
+  console.log('  Inv Manager:         inv_mgr1 / password123');
+  console.log('  Store Keeper:        store1 / password123');
+  console.log('  Quality Manager:     qual_mgr1 / password123');
+  console.log('  Safety Officer:      safety1 / password123');
+  console.log('  HR Manager:          hr1 / password123');
+  console.log('  IoT Engineer:        iot1 / password123');
+  console.log('  Viewer:              viewer1 / password123');
+  console.log('');
 }
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+function formatModuleName(module: string): string {
+  return module
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+function formatActionName(action: string): string {
+  return action
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+// ============================================================================
+// RUN
+// ============================================================================
 
 seed()
   .catch((e) => {
