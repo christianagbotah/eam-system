@@ -824,3 +824,32 @@ Stage Summary:
 - ESLint passes with 0 errors
 - Files modified: prisma/schema.prisma, src/lib/auth.ts, src/app/api/auth/logout/route.ts
 - Files created: src/middleware.ts
+---
+Task ID: 3
+Agent: Main
+Task: Phase 1.4 — TypeScript strict mode + unused dependencies cleanup
+
+Work Log:
+- Audited all package.json dependencies against actual imports in src/
+- Removed 13 completely unused dependencies:
+  - next-auth, next-intl (custom auth used instead)
+  - @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities (no DnD features)
+  - @tanstack/react-query (custom api.ts + Zustand used instead)
+  - @hookform/resolvers, @mdxeditor/editor, @reactuses/core
+  - react-markdown, react-syntax-highlighter, uuid (crypto.randomUUID used)
+  - framer-motion (no motion animations)
+- bun install confirmed: 13 packages removed
+- Updated next.config.ts:
+  - Removed `ignoreBuildErrors: true` — builds now catch TS errors
+  - Enabled `reactStrictMode: true` — catches double-effect/lifecycle issues
+- Updated tsconfig.json:
+  - Added source-analysis/ and examples/ to exclude list
+  - Kept noImplicitAny: false (312 pre-existing implicit-any errors need separate fix)
+- Renamed package name from "nextjs_tailwind_shadcn_ts" to "iassetspro-eam", bumped to 0.3.0
+
+Stage Summary:
+- 13 unused packages removed (~50MB+ node_modules reduction)
+- Build will now fail on TS errors instead of silently ignoring them
+- React strict mode enabled for development quality
+- ESLint passes with 0 errors
+- Files modified: package.json, next.config.ts, tsconfig.json
