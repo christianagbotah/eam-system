@@ -1,0 +1,577 @@
+'use client';
+
+import React, { useEffect, useState, useMemo } from 'react';
+import { toast } from 'sonner';
+import { useAuthStore } from '@/stores/authStore';
+import { api } from '@/lib/api';
+
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
+import {
+  Search, ShieldCheck, FileCheck, ShieldAlert, ScrollText, BarChart3,
+  HardHat, Plus, MoreHorizontal, Pencil, Trash2, AlertTriangle,
+  CheckCircle2, XCircle, Eye, FlaskConical, Microscope, TestTubes,
+  ClipboardCheck, Filter, ArrowUpDown, Clock, Target, TrendingUp,
+  Activity, X,
+} from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, ResponsiveContainer,
+} from 'recharts';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+
+export function QualityInspectionsPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ title: '', description: '', type: 'incoming', scheduledDate: '' });
+  const [inspData, setInspData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [kpis, setKpis] = useState({ total: 0, passed: 0, failed: 0, pending: 0 });
+  const inspStatusColors: Record<string, string> = { passed: 'bg-emerald-50 text-emerald-700 border-emerald-200', failed: 'bg-red-50 text-red-700 border-red-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', pending: 'bg-sky-50 text-sky-700 border-sky-200' };
+  const fetchInspections = useCallback(async () => {
+    setLoading(true);
+    const res = await api.get('/api/quality-inspections');
+    if (res.success && Array.isArray(res.data)) setInspData(res.data);
+    const kpiRes = await api.get('/api/quality-inspections?limit=1');
+    if (kpiRes.success) setKpis((kpiRes as any).kpis || { total: 0, passed: 0, failed: 0, pending: 0 });
+    setLoading(false);
+  }, []);
+  useEffect(() => { fetchInspections(); }, [fetchInspections]);
+  const filtered = inspData.filter((r: any) => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.inspectionNumber.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const handleCreate = async () => {
+    if (!form.title) { toast.error('Title is required'); return; }
+    const res = await api.post('/api/quality-inspections', { title: form.title, description: form.description, type: form.type, scheduledDate: form.scheduledDate || undefined });
+    if (res.success) { toast.success('Inspection created'); setCreateOpen(false); setForm({ title: '', description: '', type: 'incoming', scheduledDate: '' }); fetchInspections(); }
+    else toast.error(res.error || 'Failed to create inspection');
+  };
+  const handleDelete = async (id: string) => {
+    const res = await api.delete(`/api/quality-inspections/${id}`);
+    if (res.success) { toast.success('Inspection deleted'); fetchInspections(); } else toast.error(res.error || 'Failed to delete');
+  };
+  return (
+    <div className="page-content">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Quality Inspections</h1><p className="text-muted-foreground text-sm mt-1">Schedule, conduct, and track quality inspections</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Inspection</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {[
+            { label: 'Total Inspections', value: kpis.total, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50' },
+            { label: 'Passed', value: kpis.passed, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+            { label: 'Failed', value: kpis.failed, icon: XCircle, color: 'text-red-600 bg-red-50' },
+            { label: 'Pending', value: kpis.pending, icon: Clock, color: 'text-sky-600 bg-sky-50' },
+          ].map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="filter-row flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search inspections..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="failed">Failed</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead className="w-[100px]">ID</TableHead><TableHead>Title</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead><TableHead>Inspector</TableHead><TableHead className="w-[120px]">Date</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+          {loading ? <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow> : filtered.length === 0 ? <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No inspections found</TableCell></TableRow> : filtered.map((r: any) => (
+            <TableRow key={r.id}>
+              <TableCell className="font-mono text-xs">{r.inspectionNumber}</TableCell>
+              <TableCell className="font-medium text-sm">{r.title}</TableCell>
+              <TableCell><Badge variant="secondary" className="text-[11px]">{r.type.replace(/_/g, ' ')}</Badge></TableCell>
+              <TableCell><Badge variant="outline" className={inspStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+              <TableCell className="text-sm">{r.inspectedBy?.fullName || '-'}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{formatDate(r.scheduledDate)}</TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>New Inspection</DialogTitle><DialogDescription>Schedule a new quality inspection.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Title *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Inspection title" /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Inspection details..." rows={2} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="incoming">Incoming</SelectItem><SelectItem value="in_process">In Process</SelectItem><SelectItem value="final">Final</SelectItem><SelectItem value="source">Source</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={form.scheduledDate} onChange={e => setForm(f => ({ ...f, scheduledDate: e.target.value }))} /></div>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Inspection</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+export function QualityNcrPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ title: '', description: '', severity: 'minor', type: 'product' });
+  const [ncrData, setNcrData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [ncrKpis, setNcrKpis] = useState({ total: 0, open: 0, investigating: 0, closed: 0 });
+  const sevColors: Record<string, string> = { critical: 'bg-red-50 text-red-700 border-red-200', major: 'bg-orange-50 text-orange-700 border-orange-200', minor: 'bg-amber-50 text-amber-700 border-amber-200' };
+  const ncrStatusColors: Record<string, string> = { open: 'bg-amber-50 text-amber-700 border-amber-200', investigating: 'bg-sky-50 text-sky-700 border-sky-200', root_cause_found: 'bg-violet-50 text-violet-700 border-violet-200', corrective_action: 'bg-indigo-50 text-indigo-700 border-indigo-200', closed: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+  const fetchNcrs = useCallback(async () => {
+    setLoading(true);
+    const res = await api.get('/api/quality-ncr');
+    if (res.success && Array.isArray(res.data)) setNcrData(res.data);
+    const kpiRes = await api.get('/api/quality-ncr?limit=1');
+    if (kpiRes.success) setNcrKpis((kpiRes as any).kpis || { total: 0, open: 0, investigating: 0, closed: 0 });
+    setLoading(false);
+  }, []);
+  useEffect(() => { fetchNcrs(); }, [fetchNcrs]);
+  const filtered = ncrData.filter((r: any) => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.ncrNumber.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const handleCreate = async () => {
+    if (!form.title) { toast.error('Title is required'); return; }
+    if (!form.description) { toast.error('Description is required'); return; }
+    const res = await api.post('/api/quality-ncr', { title: form.title, description: form.description, severity: form.severity, type: form.type });
+    if (res.success) { toast.success('NCR created'); setCreateOpen(false); setForm({ title: '', description: '', severity: 'minor', type: 'product' }); fetchNcrs(); }
+    else toast.error(res.error || 'Failed to create NCR');
+  };
+  const handleDelete = async (id: string) => {
+    const res = await api.delete(`/api/quality-ncr/${id}`);
+    if (res.success) { toast.success('NCR deleted'); fetchNcrs(); } else toast.error(res.error || 'Failed to delete');
+  };
+  return (
+    <div className="page-content">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Non-Conformance Reports</h1><p className="text-muted-foreground text-sm mt-1">Manage non-conformances, investigations, and dispositions</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New NCR</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {[
+            { label: 'Total NCRs', value: ncrKpis.total, icon: FileCheck, color: 'text-emerald-600 bg-emerald-50' },
+            { label: 'Open', value: ncrKpis.open, icon: AlertCircle, color: 'text-amber-600 bg-amber-50' },
+            { label: 'Under Investigation', value: ncrKpis.investigating, icon: Search, color: 'text-sky-600 bg-sky-50' },
+            { label: 'Closed', value: ncrKpis.closed, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+          ].map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="filter-row flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search NCRs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="open">Open</SelectItem><SelectItem value="investigating">Investigating</SelectItem><SelectItem value="root_cause_found">Root Cause Found</SelectItem><SelectItem value="corrective_action">Corrective Action</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead className="w-[130px]">NCR #</TableHead><TableHead>Title</TableHead><TableHead>Severity</TableHead><TableHead>Status</TableHead><TableHead>Type</TableHead><TableHead>Reported By</TableHead><TableHead className="w-[110px]">Date</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+          {loading ? <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow> : filtered.length === 0 ? <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No NCRs found</TableCell></TableRow> : filtered.map((r: any) => (
+            <TableRow key={r.id}>
+              <TableCell className="font-mono text-xs">{r.ncrNumber}</TableCell>
+              <TableCell className="font-medium text-sm">{r.title}</TableCell>
+              <TableCell><Badge variant="outline" className={sevColors[r.severity] || ''}>{r.severity.toUpperCase()}</Badge></TableCell>
+              <TableCell><Badge variant="outline" className={ncrStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+              <TableCell><Badge variant="secondary" className="text-[11px]">{r.type}</Badge></TableCell>
+              <TableCell className="text-sm">{r.raisedBy?.fullName || '-'}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{formatDate(r.createdAt)}</TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>New NCR</DialogTitle><DialogDescription>Report a new non-conformance.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Title *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="NCR title" /></div>
+            <div className="space-y-2"><Label>Description *</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe the non-conformance..." rows={3} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Severity</Label><Select value={form.severity} onValueChange={v => setForm(f => ({ ...f, severity: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="minor">Minor</SelectItem><SelectItem value="major">Major</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="product">Product</SelectItem><SelectItem value="process">Process</SelectItem><SelectItem value="documentation">Documentation</SelectItem></SelectContent></Select></div>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create NCR</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+export function QualityAuditsPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ title: '', type: 'internal', scope: '', scheduledDate: '' });
+  const [auditData, setAuditData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [auditKpis, setAuditKpis] = useState({ total: 0, planned: 0, inProgress: 0, completed: 0 });
+  const auditStatusColors: Record<string, string> = { planned: 'bg-sky-50 text-sky-700 border-sky-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', closed: 'bg-slate-100 text-slate-500 border-slate-200' };
+  const fetchAudits = useCallback(async () => {
+    setLoading(true);
+    const res = await api.get('/api/quality-audits');
+    if (res.success && Array.isArray(res.data)) setAuditData(res.data);
+    const kpiRes = await api.get('/api/quality-audits?limit=1');
+    if (kpiRes.success) setAuditKpis((kpiRes as any).kpis || { total: 0, planned: 0, inProgress: 0, completed: 0 });
+    setLoading(false);
+  }, []);
+  useEffect(() => { fetchAudits(); }, [fetchAudits]);
+  const filtered = auditData.filter((r: any) => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.auditNumber.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const handleCreate = async () => {
+    if (!form.title) { toast.error('Title is required'); return; }
+    if (!form.scheduledDate) { toast.error('Scheduled date is required'); return; }
+    const res = await api.post('/api/quality-audits', { title: form.title, type: form.type, scope: form.scope, scheduledDate: form.scheduledDate });
+    if (res.success) { toast.success('Audit scheduled'); setCreateOpen(false); setForm({ title: '', type: 'internal', scope: '', scheduledDate: '' }); fetchAudits(); }
+    else toast.error(res.error || 'Failed to create audit');
+  };
+  const handleDelete = async (id: string) => {
+    const res = await api.delete(`/api/quality-audits/${id}`);
+    if (res.success) { toast.success('Audit deleted'); fetchAudits(); } else toast.error(res.error || 'Failed to delete');
+  };
+  return (
+    <div className="page-content">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Quality Audits</h1><p className="text-muted-foreground text-sm mt-1">Plan and execute internal, external, and supplier audits</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Audit</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {[
+            { label: 'Total Audits', value: auditKpis.total, icon: ShieldAlert, color: 'text-emerald-600 bg-emerald-50' },
+            { label: 'Planned', value: auditKpis.planned, icon: Calendar, color: 'text-sky-600 bg-sky-50' },
+            { label: 'In Progress', value: auditKpis.inProgress, icon: Clock, color: 'text-amber-600 bg-amber-50' },
+            { label: 'Completed', value: auditKpis.completed, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+          ].map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="filter-row flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search audits..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead className="w-[130px]">Audit #</TableHead><TableHead>Title</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead><TableHead>Scope</TableHead><TableHead className="w-[110px]">Scheduled</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+          {loading ? <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow> : filtered.length === 0 ? <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No audits found</TableCell></TableRow> : filtered.map((r: any) => (
+            <TableRow key={r.id}>
+              <TableCell className="font-mono text-xs">{r.auditNumber}</TableCell>
+              <TableCell className="font-medium text-sm">{r.title}</TableCell>
+              <TableCell><Badge variant="secondary" className="text-[11px]">{r.type}</Badge></TableCell>
+              <TableCell><Badge variant="outline" className={auditStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+              <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{r.scope || '-'}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{formatDate(r.scheduledDate)}</TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>Schedule Audit</DialogTitle><DialogDescription>Plan a new quality audit.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Title *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Audit title" /></div>
+            <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="internal">Internal</SelectItem><SelectItem value="external">External</SelectItem><SelectItem value="supplier">Supplier</SelectItem><SelectItem value="system">System</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>Scope</Label><Textarea value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value }))} placeholder="Audit scope and objectives..." rows={3} /></div>
+            <div className="space-y-2"><Label>Scheduled Date *</Label><Input type="date" value={form.scheduledDate} onChange={e => setForm(f => ({ ...f, scheduledDate: e.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Schedule Audit</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+export function QualityControlPlansPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ name: '', description: '', type: 'in_process', frequency: 'every_batch' });
+  const [cpData, setCpData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [cpKpis, setCpKpis] = useState({ total: 0, active: 0, inactive: 0 });
+  const cpStatusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', draft: 'bg-slate-100 text-slate-600 border-slate-200', under_review: 'bg-amber-50 text-amber-700 border-amber-200', archived: 'bg-slate-100 text-slate-500 border-slate-200' };
+  const fetchPlans = useCallback(async () => {
+    setLoading(true);
+    const res = await api.get('/api/quality-control-plans');
+    if (res.success && Array.isArray(res.data)) setCpData(res.data);
+    const kpiRes = await api.get('/api/quality-control-plans?limit=1');
+    if (kpiRes.success) setCpKpis((kpiRes as any).kpis || { total: 0, active: 0, inactive: 0 });
+    setLoading(false);
+  }, []);
+  useEffect(() => { fetchPlans(); }, [fetchPlans]);
+  const filtered = cpData.filter((r: any) => {
+    if (filterStatus !== 'all' && (filterStatus === 'active' ? !r.isActive : filterStatus === 'draft' ? r.isActive : false)) return false;
+    if (filterStatus === 'all') { /* show all */ }
+    if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const handleCreate = async () => {
+    if (!form.name) { toast.error('Plan name is required'); return; }
+    const res = await api.post('/api/quality-control-plans', { name: form.name, description: form.description, type: form.type, frequency: form.frequency });
+    if (res.success) { toast.success('Control plan created'); setCreateOpen(false); setForm({ name: '', description: '', type: 'in_process', frequency: 'every_batch' }); fetchPlans(); }
+    else toast.error(res.error || 'Failed to create control plan');
+  };
+  const handleDelete = async (id: string) => {
+    const res = await api.delete(`/api/quality-control-plans/${id}`);
+    if (res.success) { toast.success('Control plan deleted'); fetchPlans(); } else toast.error(res.error || 'Failed to delete');
+  };
+  return (
+    <div className="page-content">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Quality Control Plans</h1><p className="text-muted-foreground text-sm mt-1">Define and manage control plans for products and processes</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Plan</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {[
+            { label: 'Total Plans', value: cpKpis.total, icon: ScrollText, color: 'text-emerald-600 bg-emerald-50' },
+            { label: 'Active', value: cpKpis.active, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+            { label: 'Inactive', value: cpKpis.inactive, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50' },
+            { label: 'All Types', value: cpData.length, icon: Archive, color: 'text-slate-600 bg-slate-100' },
+          ].map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="filter-row flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search control plans..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="draft">Inactive</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <Table><TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Type</TableHead><TableHead>Frequency</TableHead><TableHead>Status</TableHead><TableHead className="text-center">Sample Size</TableHead><TableHead className="w-[110px]">Created</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+          {loading ? <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow> : filtered.length === 0 ? <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No control plans found</TableCell></TableRow> : filtered.map((r: any) => (
+            <TableRow key={r.id}>
+              <TableCell className="font-medium text-sm">{r.name}</TableCell>
+              <TableCell><Badge variant="secondary" className="text-[11px]">{r.type.replace(/_/g, ' ')}</Badge></TableCell>
+              <TableCell><Badge variant="secondary" className="text-[11px]">{r.frequency.replace(/_/g, ' ')}</Badge></TableCell>
+              <TableCell><Badge variant="outline" className={r.isActive ? cpStatusColors.active : cpStatusColors.draft}>{r.isActive ? 'ACTIVE' : 'INACTIVE'}</Badge></TableCell>
+              <TableCell className="text-center"><Badge variant="secondary" className="text-[11px]">{r.sampleSize || '-'}</Badge></TableCell>
+              <TableCell className="text-sm text-muted-foreground">{formatDate(r.createdAt)}</TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>New Control Plan</DialogTitle><DialogDescription>Create a quality control plan.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Plan Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Control plan name" /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Plan description..." rows={3} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="incoming">Incoming</SelectItem><SelectItem value="in_process">In Process</SelectItem><SelectItem value="final">Final</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Frequency</Label><Select value={form.frequency} onValueChange={v => setForm(f => ({ ...f, frequency: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="every_lot">Every Lot</SelectItem><SelectItem value="every_batch">Every Batch</SelectItem><SelectItem value="hourly">Hourly</SelectItem><SelectItem value="daily">Daily</SelectItem></SelectContent></Select></div>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Plan</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+export function QualitySpcPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ process: '', characteristic: '', unit: '', usl: '', lsl: '', target: '', samples: '' });
+  const [spcData, setSpcData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [spcKpis, setSpcKpis] = useState({ total: 0, active: 0, outOfControl: 0, inControl: 0, cpkGood: 0 });
+  const spcStatusColors: Record<string, string> = { in_control: 'bg-emerald-50 text-emerald-700 border-emerald-200', warning: 'bg-amber-50 text-amber-700 border-amber-200', out_of_control: 'bg-red-50 text-red-700 border-red-200' };
+  const cpkColor = (v: number) => v >= 1.33 ? 'text-emerald-600 font-semibold' : v >= 1.0 ? 'text-amber-600 font-semibold' : 'text-red-600 font-semibold';
+  const fetchSpcData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/spc-processes');
+      if (res.success && Array.isArray(res.data)) setSpcData(res.data);
+      const kpiRes = await api.get('/api/spc-processes?limit=1');
+      if (kpiRes.success) setSpcKpis((kpiRes as any).kpis || { total: 0, active: 0, outOfControl: 0, inControl: 0, cpkGood: 0 });
+    } catch {} finally { setLoading(false); }
+  }, []);
+  useEffect(() => { fetchSpcData(); }, [fetchSpcData]);
+  const filtered = spcData.filter((r: any) => {
+    if (filterStatus !== 'all' && r.controlStatus !== filterStatus) return false;
+    if (search && !r.processName.toLowerCase().includes(search.toLowerCase()) && !r.parameter.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const kpis = [
+    { label: 'Processes Monitored', value: spcKpis.total, icon: Activity, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'In Control', value: spcKpis.inControl, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Out of Control', value: spcKpis.outOfControl, icon: XCircle, color: 'text-red-600 bg-red-50' },
+    { label: 'Cp/Cpk ≥ 1.33', value: spcKpis.cpkGood, icon: TrendingUp, color: 'text-emerald-600 bg-emerald-50' },
+  ];
+  const handleCreate = async () => {
+    if (!form.process) { toast.error('Process name is required'); return; }
+    if (!form.characteristic) { toast.error('Characteristic is required'); return; }
+    let samplesArr: number[] = [];
+    if (form.samples.trim()) {
+      samplesArr = form.samples.split(',').map((s: string) => parseFloat(s.trim())).filter((n: number) => !isNaN(n));
+    }
+    const res = await api.post('/api/spc-processes', {
+      processName: form.process,
+      parameter: form.characteristic,
+      unit: form.unit,
+      specMax: form.usl ? parseFloat(form.usl) : null,
+      specMin: form.lsl ? parseFloat(form.lsl) : null,
+      target: form.target ? parseFloat(form.target) : null,
+      samples: samplesArr,
+    });
+    if (res.success) { toast.success('SPC process added'); setCreateOpen(false); setForm({ process: '', characteristic: '', unit: '', usl: '', lsl: '', target: '', samples: '' }); fetchSpcData(); }
+    else toast.error(res.error || 'Failed to add SPC process');
+  };
+  const handleDelete = async (id: string) => {
+    const res = await api.delete(`/api/spc-processes/${id}`);
+    if (res.success) { toast.success('SPC process deleted'); fetchSpcData(); } else toast.error(res.error || 'Failed to delete');
+  };
+  return (
+    <div className="page-content">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Statistical Process Control</h1><p className="text-muted-foreground text-sm mt-1">Monitor process stability with SPC charts and capability indices</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Process</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="filter-row flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search processes..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="in_control">In Control</SelectItem><SelectItem value="warning">Warning</SelectItem><SelectItem value="out_of_control">Out of Control</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table><TableHeader><TableRow><TableHead>Process</TableHead><TableHead>Characteristic</TableHead><TableHead className="text-right">USL</TableHead><TableHead className="text-right">LSL</TableHead><TableHead className="text-right">Target</TableHead><TableHead className="text-right">Current Mean</TableHead><TableHead className="text-right">Cp</TableHead><TableHead className="text-right">Cpk</TableHead><TableHead>Status</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+            {loading ? <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow> : filtered.length === 0 ? <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No SPC processes found</TableCell></TableRow> : filtered.map((r: any) => (
+              <TableRow key={r.id}>
+                <TableCell className="font-medium text-sm">{r.processName}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{r.parameter}{r.unit ? ` (${r.unit})` : ''}</TableCell>
+                <TableCell className="text-right font-mono text-sm">{r.specMax ?? '-'}</TableCell>
+                <TableCell className="text-right font-mono text-sm">{r.specMin ?? '-'}</TableCell>
+                <TableCell className="text-right font-mono text-sm">{r.target ?? '-'}</TableCell>
+                <TableCell className="text-right font-mono text-sm">{r.samples.length > 0 ? r.mean : '-'}</TableCell>
+                <TableCell className={`text-right font-mono text-sm ${cpkColor(r.cp)}`}>{r.samples.length > 1 ? r.cp.toFixed(2) : '-'}</TableCell>
+                <TableCell className={`text-right font-mono text-sm ${cpkColor(r.cpk)}`}>{r.samples.length > 1 ? r.cpk.toFixed(2) : '-'}</TableCell>
+                <TableCell><Badge variant="outline" className={spcStatusColors[r.controlStatus] || ''}>{(r.controlStatus || 'in_control').replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View Chart</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              </TableRow>
+            ))}
+          </TableBody></Table>
+        </div>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>Add SPC Process</DialogTitle><DialogDescription>Define a new process for statistical monitoring.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Process *</Label><Input value={form.process} onChange={e => setForm(f => ({ ...f, process: e.target.value }))} placeholder="e.g., CNC Turning" /></div>
+              <div className="space-y-2"><Label>Characteristic *</Label><Input value={form.characteristic} onChange={e => setForm(f => ({ ...f, characteristic: e.target.value }))} placeholder="e.g., Outer Diameter (mm)" /></div>
+            </div>
+            <div className="grid grid-cols-4 gap-4">
+              <div className="space-y-2"><Label>Unit</Label><Input value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} placeholder="mm, MPa, etc." /></div>
+              <div className="space-y-2"><Label>USL</Label><Input type="number" step="any" value={form.usl} onChange={e => setForm(f => ({ ...f, usl: e.target.value }))} placeholder="Upper limit" /></div>
+              <div className="space-y-2"><Label>LSL</Label><Input type="number" step="any" value={form.lsl} onChange={e => setForm(f => ({ ...f, lsl: e.target.value }))} placeholder="Lower limit" /></div>
+              <div className="space-y-2"><Label>Target</Label><Input type="number" step="any" value={form.target} onChange={e => setForm(f => ({ ...f, target: e.target.value }))} placeholder="Target value" /></div>
+            </div>
+            <div className="space-y-2"><Label>Initial Samples (comma-separated)</Label><Input value={form.samples} onChange={e => setForm(f => ({ ...f, samples: e.target.value }))} placeholder="e.g., 50.01, 49.98, 50.02, 49.99, 50.00" /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Add Process</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+export function QualityCapaPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [form, setForm] = useState({ title: '', description: '', type: 'corrective', source: 'ncr', severity: 'medium', dueDate: '' });
+  const [capaData, setCapaData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [capaKpis, setCapaKpis] = useState({ total: 0, open: 0, inProgress: 0, verified: 0 });
+  const capaPriorityColors: Record<string, string> = { critical: 'bg-red-50 text-red-700 border-red-200', high: 'bg-orange-50 text-orange-700 border-orange-200', medium: 'bg-amber-50 text-amber-700 border-amber-200', low: 'bg-slate-100 text-slate-600 border-slate-200' };
+  const capaStatusColors: Record<string, string> = { open: 'bg-amber-50 text-amber-700 border-amber-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', implemented: 'bg-violet-50 text-violet-700 border-violet-200', verified: 'bg-emerald-50 text-emerald-700 border-emerald-200', closed: 'bg-slate-100 text-slate-500 border-slate-200' };
+  const fetchCapas = useCallback(async () => {
+    setLoading(true);
+    const res = await api.get('/api/corrective-actions');
+    if (res.success && Array.isArray(res.data)) setCapaData(res.data);
+    const kpiRes = await api.get('/api/corrective-actions?limit=1');
+    if (kpiRes.success) setCapaKpis((kpiRes as any).kpis || { total: 0, open: 0, inProgress: 0, verified: 0 });
+    setLoading(false);
+  }, []);
+  useEffect(() => { fetchCapas(); }, [fetchCapas]);
+  const filtered = capaData.filter((r: any) => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.capaNumber.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+  const handleCreate = async () => {
+    if (!form.title) { toast.error('Title is required'); return; }
+    if (!form.description) { toast.error('Description is required'); return; }
+    const res = await api.post('/api/corrective-actions', { title: form.title, description: form.description, type: form.type, source: form.source, severity: form.severity, dueDate: form.dueDate || undefined });
+    if (res.success) { toast.success('CAPA created'); setCreateOpen(false); setForm({ title: '', description: '', type: 'corrective', source: 'ncr', severity: 'medium', dueDate: '' }); fetchCapas(); }
+    else toast.error(res.error || 'Failed to create CAPA');
+  };
+  const handleDelete = async (id: string) => {
+    const res = await api.delete(`/api/corrective-actions/${id}`);
+    if (res.success) { toast.success('CAPA deleted'); fetchCapas(); } else toast.error(res.error || 'Failed to delete');
+  };
+  return (
+    <div className="page-content">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold tracking-tight">Corrective & Preventive Actions</h1><p className="text-muted-foreground text-sm mt-1">Manage CAPAs for continuous quality improvement</p></div>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New CAPA</Button>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {[
+            { label: 'Total CAPAs', value: capaKpis.total, icon: HardHat, color: 'text-emerald-600 bg-emerald-50' },
+            { label: 'Open', value: capaKpis.open, icon: AlertCircle, color: 'text-amber-600 bg-amber-50' },
+            { label: 'In Progress', value: capaKpis.inProgress, icon: Clock, color: 'text-sky-600 bg-sky-50' },
+            { label: 'Verified', value: capaKpis.verified, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
+          ].map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
+      </div>
+      <div className="filter-row flex items-center gap-3 flex-wrap">
+        <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search CAPAs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="open">Open</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="implemented">Implemented</SelectItem><SelectItem value="verified">Verified</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select>
+      </div>
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table><TableHeader><TableRow><TableHead className="w-[130px]">CAPA #</TableHead><TableHead>Title</TableHead><TableHead>Type</TableHead><TableHead>Source</TableHead><TableHead>Severity</TableHead><TableHead>Status</TableHead><TableHead className="w-[110px]">Due Date</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+          {loading ? <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow> : filtered.length === 0 ? <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No CAPAs found</TableCell></TableRow> : filtered.map((r: any) => (
+            <TableRow key={r.id}>
+              <TableCell className="font-mono text-xs">{r.capaNumber}</TableCell>
+              <TableCell className="font-medium text-sm max-w-[250px] truncate">{r.title}</TableCell>
+              <TableCell><Badge variant="secondary" className="text-[11px]">{r.type}</Badge></TableCell>
+              <TableCell><Badge variant="secondary" className="text-[11px]">{r.source}</Badge></TableCell>
+              <TableCell><Badge variant="outline" className={capaPriorityColors[r.severity] || ''}>{r.severity.toUpperCase()}</Badge></TableCell>
+              <TableCell><Badge variant="outline" className={capaStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+              <TableCell className="text-sm text-muted-foreground">{formatDate(r.dueDate)}</TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+            </TableRow>
+          ))}
+        </TableBody></Table>
+        </div>
+      </CardContent></Card>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent><DialogHeader><DialogTitle>New CAPA</DialogTitle><DialogDescription>Create a corrective or preventive action.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Title *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="CAPA title" /></div>
+            <div className="space-y-2"><Label>Description *</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe the issue and planned actions..." rows={3} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="corrective">Corrective</SelectItem><SelectItem value="preventive">Preventive</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Source</Label><Select value={form.source} onValueChange={v => setForm(f => ({ ...f, source: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="ncr">NCR</SelectItem><SelectItem value="audit">Audit</SelectItem><SelectItem value="inspection">Inspection</SelectItem><SelectItem value="customer_complaint">Customer Complaint</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Severity</Label><Select value={form.severity} onValueChange={v => setForm(f => ({ ...f, severity: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></div>
+              <div className="space-y-2"><Label>Due Date</Label><Input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} /></div>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create CAPA</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ============================================================================
+// SAFETY SUBPAGES
+// ============================================================================
+
