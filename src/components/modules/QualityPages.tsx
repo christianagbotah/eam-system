@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
+import { Separator } from '@/components/ui/separator';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -24,7 +25,7 @@ import {
   HardHat, Plus, MoreHorizontal, Pencil, Trash2, AlertTriangle,
   CheckCircle2, XCircle, Eye, FlaskConical, Microscope, TestTubes,
   ClipboardCheck, ClipboardList, Filter, ArrowUpDown, Clock, Target, TrendingUp,
-  Activity, X,
+  Activity, X, Calendar,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, ResponsiveContainer,
@@ -43,6 +44,12 @@ export function QualityInspectionsPage() {
   const [inspData, setInspData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState({ total: 0, passed: 0, failed: 0, pending: 0 });
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editLoading, setEditLoading] = useState(false);
   const inspStatusColors: Record<string, string> = { passed: 'bg-emerald-50 text-emerald-700 border-emerald-200', failed: 'bg-red-50 text-red-700 border-red-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', pending: 'bg-sky-50 text-sky-700 border-sky-200' };
   const loadInspections = async () => {
     const res = await api.get('/api/quality-inspections');
@@ -75,6 +82,15 @@ export function QualityInspectionsPage() {
     const res = await api.delete(`/api/quality-inspections/${id}`);
     if (res.success) { toast.success('Inspection deleted'); loadInspections(); } else toast.error(res.error || 'Failed to delete');
   };
+  const handleView = (r: any) => { setViewItem(r); setViewOpen(true); };
+  const handleEdit = (r: any) => { setEditItem(r); setEditForm({ title: r.title, type: r.type, status: r.status, result: r.result || '', inspector: r.inspectedBy?.fullName || '', asset: r.asset?.name || r.asset || '', scheduledDate: r.scheduledDate || '', completedDate: r.completedDate || '', findings: r.findings || '', notes: r.notes || '' }); setEditOpen(true); };
+  const handleSave = async () => {
+    if (!editItem) return;
+    setEditLoading(true);
+    const res = await api.put(`/api/quality-inspections/${editItem.id}`, editForm);
+    setEditLoading(false);
+    if (res.success) { toast.success('Inspection updated'); setEditOpen(false); loadInspections(); } else toast.error(res.error || 'Failed to update');
+  };
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -103,11 +119,13 @@ export function QualityInspectionsPage() {
               <TableCell><Badge variant="outline" className={inspStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
               <TableCell className="text-sm">{r.inspectedBy?.fullName || '-'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{formatDate(r.scheduledDate)}</TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ))}
         </TableBody></Table>
       </CardContent></Card>
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Inspection Details</DialogTitle><DialogDescription>{viewItem?.inspectionNumber}</DialogDescription></DialogHeader><Separator className="my-2" /><div className="grid grid-cols-2 gap-4 text-sm"><div><p className="text-muted-foreground text-xs">Title</p><p className="font-medium">{viewItem?.title}</p></div><div><p className="text-muted-foreground text-xs">Type</p><p className="font-medium">{viewItem?.type?.replace(/_/g, ' ')}</p></div><div><p className="text-muted-foreground text-xs">Status</p><Badge variant="outline" className={inspStatusColors[viewItem?.status] || ''}>{viewItem?.status?.replace(/_/g, ' ').toUpperCase()}</Badge></div><div><p className="text-muted-foreground text-xs">Result</p><p className="font-medium">{viewItem?.result || '-'}</p></div><div><p className="text-muted-foreground text-xs">Inspector</p><p className="font-medium">{viewItem?.inspectedBy?.fullName || '-'}</p></div><div><p className="text-muted-foreground text-xs">Asset</p><p className="font-medium">{viewItem?.asset?.name || viewItem?.asset || '-'}</p></div><div><p className="text-muted-foreground text-xs">Scheduled Date</p><p className="font-medium">{formatDate(viewItem?.scheduledDate)}</p></div><div><p className="text-muted-foreground text-xs">Completed Date</p><p className="font-medium">{formatDate(viewItem?.completedDate)}</p></div><div className="col-span-2"><p className="text-muted-foreground text-xs">Findings</p><p className="font-medium whitespace-pre-wrap">{viewItem?.findings || '-'}</p></div><div className="col-span-2"><p className="text-muted-foreground text-xs">Notes</p><p className="font-medium whitespace-pre-wrap">{viewItem?.notes || '-'}</p></div></div></DialogContent></Dialog>
+      <Dialog open={editOpen} onOpenChange={setEditOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Edit Inspection</DialogTitle><DialogDescription>Update inspection details</DialogDescription></DialogHeader><div className="space-y-4"><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>Title</Label><Input value={editForm.title || ''} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div><div className="space-y-2"><Label>Type</Label><Select value={editForm.type || ''} onValueChange={v => setEditForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="incoming">Incoming</SelectItem><SelectItem value="in_process">In Process</SelectItem><SelectItem value="final">Final</SelectItem><SelectItem value="source">Source</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Status</Label><Select value={editForm.status || ''} onValueChange={v => setEditForm(f => ({ ...f, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Pending</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="passed">Passed</SelectItem><SelectItem value="failed">Failed</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Result</Label><Input value={editForm.result || ''} onChange={e => setEditForm(f => ({ ...f, result: e.target.value }))} /></div><div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={editForm.scheduledDate || ''} onChange={e => setEditForm(f => ({ ...f, scheduledDate: e.target.value }))} /></div><div className="space-y-2"><Label>Completed Date</Label><Input type="date" value={editForm.completedDate || ''} onChange={e => setEditForm(f => ({ ...f, completedDate: e.target.value }))} /></div></div><div className="space-y-2"><Label>Findings</Label><Textarea value={editForm.findings || ''} onChange={e => setEditForm(f => ({ ...f, findings: e.target.value }))} rows={3} /></div><div className="space-y-2"><Label>Notes</Label><Textarea value={editForm.notes || ''} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} rows={2} /></div></div><DialogFooter><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={handleSave} disabled={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent><DialogHeader><DialogTitle>New Inspection</DialogTitle><DialogDescription>Schedule a new quality inspection.</DialogDescription></DialogHeader>
           <div className="space-y-4">
@@ -133,6 +151,12 @@ export function QualityNcrPage() {
   const [ncrData, setNcrData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [ncrKpis, setNcrKpis] = useState({ total: 0, open: 0, investigating: 0, closed: 0 });
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editLoading, setEditLoading] = useState(false);
   const sevColors: Record<string, string> = { critical: 'bg-red-50 text-red-700 border-red-200', major: 'bg-orange-50 text-orange-700 border-orange-200', minor: 'bg-amber-50 text-amber-700 border-amber-200' };
   const ncrStatusColors: Record<string, string> = { open: 'bg-amber-50 text-amber-700 border-amber-200', investigating: 'bg-sky-50 text-sky-700 border-sky-200', root_cause_found: 'bg-violet-50 text-violet-700 border-violet-200', corrective_action: 'bg-indigo-50 text-indigo-700 border-indigo-200', closed: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
   const loadNcrs = async () => {
@@ -167,6 +191,15 @@ export function QualityNcrPage() {
     const res = await api.delete(`/api/quality-ncr/${id}`);
     if (res.success) { toast.success('NCR deleted'); loadNcrs(); } else toast.error(res.error || 'Failed to delete');
   };
+  const handleView = (r: any) => { setViewItem(r); setViewOpen(true); };
+  const handleEdit = (r: any) => { setEditItem(r); setEditForm({ title: r.title, description: r.description || '', type: r.type, severity: r.severity, status: r.status, reportedBy: r.raisedBy?.fullName || '', item: r.item || '', quantity: r.quantity || '', disposition: r.disposition || '', rootCause: r.rootCause || '' }); setEditOpen(true); };
+  const handleSave = async () => {
+    if (!editItem) return;
+    setEditLoading(true);
+    const res = await api.put(`/api/quality-ncr/${editItem.id}`, editForm);
+    setEditLoading(false);
+    if (res.success) { toast.success('NCR updated'); setEditOpen(false); loadNcrs(); } else toast.error(res.error || 'Failed to update');
+  };
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -196,11 +229,13 @@ export function QualityNcrPage() {
               <TableCell><Badge variant="secondary" className="text-[11px]">{r.type}</Badge></TableCell>
               <TableCell className="text-sm">{r.raisedBy?.fullName || '-'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{formatDate(r.createdAt)}</TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ))}
         </TableBody></Table>
       </CardContent></Card>
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>NCR Details</DialogTitle><DialogDescription>{viewItem?.ncrNumber}</DialogDescription></DialogHeader><Separator className="my-2" /><div className="grid grid-cols-2 gap-4 text-sm"><div><p className="text-muted-foreground text-xs">Title</p><p className="font-medium">{viewItem?.title}</p></div><div><p className="text-muted-foreground text-xs">Type</p><p className="font-medium">{viewItem?.type}</p></div><div><p className="text-muted-foreground text-xs">Severity</p><Badge variant="outline" className={sevColors[viewItem?.severity] || ''}>{viewItem?.severity?.toUpperCase()}</Badge></div><div><p className="text-muted-foreground text-xs">Status</p><Badge variant="outline" className={ncrStatusColors[viewItem?.status] || ''}>{viewItem?.status?.replace(/_/g, ' ').toUpperCase()}</Badge></div><div><p className="text-muted-foreground text-xs">Reported By</p><p className="font-medium">{viewItem?.raisedBy?.fullName || '-'}</p></div><div><p className="text-muted-foreground text-xs">Item</p><p className="font-medium">{viewItem?.item || '-'}</p></div><div><p className="text-muted-foreground text-xs">Quantity</p><p className="font-medium">{viewItem?.quantity || '-'}</p></div><div><p className="text-muted-foreground text-xs">Disposition</p><p className="font-medium">{viewItem?.disposition || '-'}</p></div><div className="col-span-2"><p className="text-muted-foreground text-xs">Description</p><p className="font-medium whitespace-pre-wrap">{viewItem?.description || '-'}</p></div><div className="col-span-2"><p className="text-muted-foreground text-xs">Root Cause</p><p className="font-medium whitespace-pre-wrap">{viewItem?.rootCause || '-'}</p></div></div></DialogContent></Dialog>
+      <Dialog open={editOpen} onOpenChange={setEditOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Edit NCR</DialogTitle><DialogDescription>Update non-conformance details</DialogDescription></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label>Title</Label><Input value={editForm.title || ''} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div><div className="space-y-2"><Label>Description</Label><Textarea value={editForm.description || ''} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>Type</Label><Select value={editForm.type || ''} onValueChange={v => setEditForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="product">Product</SelectItem><SelectItem value="process">Process</SelectItem><SelectItem value="documentation">Documentation</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Severity</Label><Select value={editForm.severity || ''} onValueChange={v => setEditForm(f => ({ ...f, severity: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="minor">Minor</SelectItem><SelectItem value="major">Major</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Status</Label><Select value={editForm.status || ''} onValueChange={v => setEditForm(f => ({ ...f, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">Open</SelectItem><SelectItem value="investigating">Investigating</SelectItem><SelectItem value="root_cause_found">Root Cause Found</SelectItem><SelectItem value="corrective_action">Corrective Action</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Disposition</Label><Input value={editForm.disposition || ''} onChange={e => setEditForm(f => ({ ...f, disposition: e.target.value }))} /></div></div><div className="space-y-2"><Label>Root Cause</Label><Textarea value={editForm.rootCause || ''} onChange={e => setEditForm(f => ({ ...f, rootCause: e.target.value }))} rows={3} /></div></div><DialogFooter><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={handleSave} disabled={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent><DialogHeader><DialogTitle>New NCR</DialogTitle><DialogDescription>Report a new non-conformance.</DialogDescription></DialogHeader>
           <div className="space-y-4">
@@ -226,6 +261,12 @@ export function QualityAuditsPage() {
   const [auditData, setAuditData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [auditKpis, setAuditKpis] = useState({ total: 0, planned: 0, inProgress: 0, completed: 0 });
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editLoading, setEditLoading] = useState(false);
   const auditStatusColors: Record<string, string> = { planned: 'bg-sky-50 text-sky-700 border-sky-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', closed: 'bg-slate-100 text-slate-500 border-slate-200' };
   const loadAudits = async () => {
     const res = await api.get('/api/quality-audits');
@@ -259,6 +300,15 @@ export function QualityAuditsPage() {
     const res = await api.delete(`/api/quality-audits/${id}`);
     if (res.success) { toast.success('Audit deleted'); loadAudits(); } else toast.error(res.error || 'Failed to delete');
   };
+  const handleView = (r: any) => { setViewItem(r); setViewOpen(true); };
+  const handleEdit = (r: any) => { setEditItem(r); setEditForm({ title: r.title, description: r.description || '', type: r.type, status: r.status, auditor: r.auditor || '', department: r.department || '', scheduledDate: r.scheduledDate || '', completedDate: r.completedDate || '', findings: r.findings || '', score: r.score?.toString() || '', nonConformities: r.nonConformities?.toString() || '' }); setEditOpen(true); };
+  const handleSave = async () => {
+    if (!editItem) return;
+    setEditLoading(true);
+    const res = await api.put(`/api/quality-audits/${editItem.id}`, { ...editForm, score: editForm.score ? parseFloat(editForm.score) : null, nonConformities: editForm.nonConformities ? parseInt(editForm.nonConformities) : null });
+    setEditLoading(false);
+    if (res.success) { toast.success('Audit updated'); setEditOpen(false); loadAudits(); } else toast.error(res.error || 'Failed to update');
+  };
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -287,11 +337,13 @@ export function QualityAuditsPage() {
               <TableCell><Badge variant="outline" className={auditStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
               <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{r.scope || '-'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{formatDate(r.scheduledDate)}</TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ))}
         </TableBody></Table>
       </CardContent></Card>
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Audit Details</DialogTitle><DialogDescription>{viewItem?.auditNumber}</DialogDescription></DialogHeader><Separator className="my-2" /><div className="grid grid-cols-2 gap-4 text-sm"><div><p className="text-muted-foreground text-xs">Title</p><p className="font-medium">{viewItem?.title}</p></div><div><p className="text-muted-foreground text-xs">Type</p><p className="font-medium">{viewItem?.type}</p></div><div><p className="text-muted-foreground text-xs">Status</p><Badge variant="outline" className={auditStatusColors[viewItem?.status] || ''}>{viewItem?.status?.replace(/_/g, ' ').toUpperCase()}</Badge></div><div><p className="text-muted-foreground text-xs">Auditor</p><p className="font-medium">{viewItem?.auditor || '-'}</p></div><div><p className="text-muted-foreground text-xs">Department</p><p className="font-medium">{viewItem?.department || '-'}</p></div><div><p className="text-muted-foreground text-xs">Score</p><p className="font-medium">{viewItem?.score ?? '-'}</p></div><div><p className="text-muted-foreground text-xs">Scheduled Date</p><p className="font-medium">{formatDate(viewItem?.scheduledDate)}</p></div><div><p className="text-muted-foreground text-xs">Completed Date</p><p className="font-medium">{formatDate(viewItem?.completedDate)}</p></div><div><p className="text-muted-foreground text-xs">Non-Conformities</p><p className="font-medium">{viewItem?.nonConformities ?? '-'}</p></div><div className="col-span-2"><p className="text-muted-foreground text-xs">Description</p><p className="font-medium whitespace-pre-wrap">{viewItem?.description || '-'}</p></div><div className="col-span-2"><p className="text-muted-foreground text-xs">Findings</p><p className="font-medium whitespace-pre-wrap">{viewItem?.findings || '-'}</p></div></div></DialogContent></Dialog>
+      <Dialog open={editOpen} onOpenChange={setEditOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Edit Audit</DialogTitle><DialogDescription>Update audit details</DialogDescription></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label>Title</Label><Input value={editForm.title || ''} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div><div className="space-y-2"><Label>Description</Label><Textarea value={editForm.description || ''} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>Type</Label><Select value={editForm.type || ''} onValueChange={v => setEditForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="internal">Internal</SelectItem><SelectItem value="external">External</SelectItem><SelectItem value="supplier">Supplier</SelectItem><SelectItem value="system">System</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Status</Label><Select value={editForm.status || ''} onValueChange={v => setEditForm(f => ({ ...f, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Auditor</Label><Input value={editForm.auditor || ''} onChange={e => setEditForm(f => ({ ...f, auditor: e.target.value }))} /></div><div className="space-y-2"><Label>Department</Label><Input value={editForm.department || ''} onChange={e => setEditForm(f => ({ ...f, department: e.target.value }))} /></div><div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={editForm.scheduledDate || ''} onChange={e => setEditForm(f => ({ ...f, scheduledDate: e.target.value }))} /></div><div className="space-y-2"><Label>Completed Date</Label><Input type="date" value={editForm.completedDate || ''} onChange={e => setEditForm(f => ({ ...f, completedDate: e.target.value }))} /></div><div className="space-y-2"><Label>Score</Label><Input type="number" value={editForm.score || ''} onChange={e => setEditForm(f => ({ ...f, score: e.target.value }))} /></div><div className="space-y-2"><Label>Non-Conformities</Label><Input type="number" value={editForm.nonConformities || ''} onChange={e => setEditForm(f => ({ ...f, nonConformities: e.target.value }))} /></div></div><div className="space-y-2"><Label>Findings</Label><Textarea value={editForm.findings || ''} onChange={e => setEditForm(f => ({ ...f, findings: e.target.value }))} rows={3} /></div></div><DialogFooter><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={handleSave} disabled={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent><DialogHeader><DialogTitle>Schedule Audit</DialogTitle><DialogDescription>Plan a new quality audit.</DialogDescription></DialogHeader>
           <div className="space-y-4">
@@ -315,6 +367,12 @@ export function QualityControlPlansPage() {
   const [cpData, setCpData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [cpKpis, setCpKpis] = useState({ total: 0, active: 0, inactive: 0 });
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editLoading, setEditLoading] = useState(false);
   const cpStatusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', draft: 'bg-slate-100 text-slate-600 border-slate-200', under_review: 'bg-amber-50 text-amber-700 border-amber-200', archived: 'bg-slate-100 text-slate-500 border-slate-200' };
   const loadPlans = async () => {
     const res = await api.get('/api/quality-control-plans');
@@ -348,6 +406,15 @@ export function QualityControlPlansPage() {
     const res = await api.delete(`/api/quality-control-plans/${id}`);
     if (res.success) { toast.success('Control plan deleted'); loadPlans(); } else toast.error(res.error || 'Failed to delete');
   };
+  const handleView = (r: any) => { setViewItem(r); setViewOpen(true); };
+  const handleEdit = (r: any) => { setEditItem(r); setEditForm({ name: r.name, description: r.description || '', product: r.product || '', status: r.isActive ? 'active' : 'inactive', version: r.version?.toString() || '', frequency: r.frequency || '', sampleSize: r.sampleSize?.toString() || '', characteristics: r.characteristics || '' }); setEditOpen(true); };
+  const handleSave = async () => {
+    if (!editItem) return;
+    setEditLoading(true);
+    const res = await api.put(`/api/quality-control-plans/${editItem.id}`, { ...editForm, isActive: editForm.status === 'active', sampleSize: editForm.sampleSize ? parseInt(editForm.sampleSize) : null });
+    setEditLoading(false);
+    if (res.success) { toast.success('Control plan updated'); setEditOpen(false); loadPlans(); } else toast.error(res.error || 'Failed to update');
+  };
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -376,11 +443,13 @@ export function QualityControlPlansPage() {
               <TableCell><Badge variant="outline" className={r.isActive ? cpStatusColors.active : cpStatusColors.draft}>{r.isActive ? 'ACTIVE' : 'INACTIVE'}</Badge></TableCell>
               <TableCell className="text-center"><Badge variant="secondary" className="text-[11px]">{r.sampleSize || '-'}</Badge></TableCell>
               <TableCell className="text-sm text-muted-foreground">{formatDate(r.createdAt)}</TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ))}
         </TableBody></Table>
       </CardContent></Card>
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Control Plan Details</DialogTitle><DialogDescription>{viewItem?.name}</DialogDescription></DialogHeader><Separator className="my-2" /><div className="grid grid-cols-2 gap-4 text-sm"><div><p className="text-muted-foreground text-xs">Name</p><p className="font-medium">{viewItem?.name}</p></div><div><p className="text-muted-foreground text-xs">Product</p><p className="font-medium">{viewItem?.product || '-'}</p></div><div><p className="text-muted-foreground text-xs">Status</p><Badge variant="outline" className={viewItem?.isActive ? cpStatusColors.active : cpStatusColors.draft}>{viewItem?.isActive ? 'ACTIVE' : 'INACTIVE'}</Badge></div><div><p className="text-muted-foreground text-xs">Version</p><p className="font-medium">{viewItem?.version || '-'}</p></div><div><p className="text-muted-foreground text-xs">Frequency</p><p className="font-medium">{viewItem?.frequency?.replace(/_/g, ' ') || '-'}</p></div><div><p className="text-muted-foreground text-xs">Sample Size</p><p className="font-medium">{viewItem?.sampleSize || '-'}</p></div><div className="col-span-2"><p className="text-muted-foreground text-xs">Description</p><p className="font-medium whitespace-pre-wrap">{viewItem?.description || '-'}</p></div><div className="col-span-2"><p className="text-muted-foreground text-xs">Characteristics</p><p className="font-medium whitespace-pre-wrap">{viewItem?.characteristics || '-'}</p></div></div></DialogContent></Dialog>
+      <Dialog open={editOpen} onOpenChange={setEditOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Edit Control Plan</DialogTitle><DialogDescription>Update control plan details</DialogDescription></DialogHeader><div className="space-y-4"><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>Name</Label><Input value={editForm.name || ''} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} /></div><div className="space-y-2"><Label>Product</Label><Input value={editForm.product || ''} onChange={e => setEditForm(f => ({ ...f, product: e.target.value }))} /></div><div className="space-y-2"><Label>Status</Label><Select value={editForm.status || ''} onValueChange={v => setEditForm(f => ({ ...f, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Version</Label><Input value={editForm.version || ''} onChange={e => setEditForm(f => ({ ...f, version: e.target.value }))} /></div><div className="space-y-2"><Label>Frequency</Label><Select value={editForm.frequency || ''} onValueChange={v => setEditForm(f => ({ ...f, frequency: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="every_lot">Every Lot</SelectItem><SelectItem value="every_batch">Every Batch</SelectItem><SelectItem value="hourly">Hourly</SelectItem><SelectItem value="daily">Daily</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Sample Size</Label><Input type="number" value={editForm.sampleSize || ''} onChange={e => setEditForm(f => ({ ...f, sampleSize: e.target.value }))} /></div></div><div className="space-y-2"><Label>Description</Label><Textarea value={editForm.description || ''} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} /></div><div className="space-y-2"><Label>Characteristics</Label><Textarea value={editForm.characteristics || ''} onChange={e => setEditForm(f => ({ ...f, characteristics: e.target.value }))} rows={2} /></div></div><DialogFooter><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={handleSave} disabled={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent><DialogHeader><DialogTitle>New Control Plan</DialogTitle><DialogDescription>Create a quality control plan.</DialogDescription></DialogHeader>
           <div className="space-y-4">
@@ -406,6 +475,12 @@ export function QualitySpcPage() {
   const [spcData, setSpcData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [spcKpis, setSpcKpis] = useState({ total: 0, active: 0, outOfControl: 0, inControl: 0, cpkGood: 0 });
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editLoading, setEditLoading] = useState(false);
   const spcStatusColors: Record<string, string> = { in_control: 'bg-emerald-50 text-emerald-700 border-emerald-200', warning: 'bg-amber-50 text-amber-700 border-amber-200', out_of_control: 'bg-red-50 text-red-700 border-red-200' };
   const cpkColor = (v: number) => v >= 1.33 ? 'text-emerald-600 font-semibold' : v >= 1.0 ? 'text-amber-600 font-semibold' : 'text-red-600 font-semibold';
   const fetchSpcData = useCallback(async () => {
@@ -452,6 +527,15 @@ export function QualitySpcPage() {
     const res = await api.delete(`/api/spc-processes/${id}`);
     if (res.success) { toast.success('SPC process deleted'); fetchSpcData(); } else toast.error(res.error || 'Failed to delete');
   };
+  const handleView = (r: any) => { setViewItem(r); setViewOpen(true); };
+  const handleEdit = (r: any) => { setEditItem(r); setEditForm({ name: r.processName, description: r.description || '', parameter: r.parameter, specification: r.specification || '', upperLimit: r.specMax?.toString() ?? '', lowerLimit: r.specMin?.toString() ?? '', unit: r.unit || '', status: r.controlStatus || 'in_control' }); setEditOpen(true); };
+  const handleSave = async () => {
+    if (!editItem) return;
+    setEditLoading(true);
+    const res = await api.put(`/api/spc-processes/${editItem.id}`, { ...editForm, specMax: editForm.upperLimit ? parseFloat(editForm.upperLimit) : null, specMin: editForm.lowerLimit ? parseFloat(editForm.lowerLimit) : null });
+    setEditLoading(false);
+    if (res.success) { toast.success('SPC process updated'); setEditOpen(false); fetchSpcData(); } else toast.error(res.error || 'Failed to update');
+  };
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -479,12 +563,14 @@ export function QualitySpcPage() {
                 <TableCell className={`text-right font-mono text-sm ${cpkColor(r.cp)}`}>{r.samples.length > 1 ? r.cp.toFixed(2) : '-'}</TableCell>
                 <TableCell className={`text-right font-mono text-sm ${cpkColor(r.cpk)}`}>{r.samples.length > 1 ? r.cpk.toFixed(2) : '-'}</TableCell>
                 <TableCell><Badge variant="outline" className={spcStatusColors[r.controlStatus] || ''}>{(r.controlStatus || 'in_control').replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View Chart</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
         </div>
       </CardContent></Card>
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>SPC Process Details</DialogTitle><DialogDescription>{viewItem?.processName}</DialogDescription></DialogHeader><Separator className="my-2" /><div className="grid grid-cols-2 gap-4 text-sm"><div><p className="text-muted-foreground text-xs">Name</p><p className="font-medium">{viewItem?.processName}</p></div><div><p className="text-muted-foreground text-xs">Parameter</p><p className="font-medium">{viewItem?.parameter}</p></div><div><p className="text-muted-foreground text-xs">Status</p><Badge variant="outline" className={spcStatusColors[viewItem?.controlStatus] || ''}>{(viewItem?.controlStatus || 'in_control').replace(/_/g, ' ').toUpperCase()}</Badge></div><div><p className="text-muted-foreground text-xs">Unit</p><p className="font-medium">{viewItem?.unit || '-'}</p></div><div><p className="text-muted-foreground text-xs">Upper Limit (USL)</p><p className="font-medium font-mono">{viewItem?.specMax ?? '-'}</p></div><div><p className="text-muted-foreground text-xs">Lower Limit (LSL)</p><p className="font-medium font-mono">{viewItem?.specMin ?? '-'}</p></div><div><p className="text-muted-foreground text-xs">Target</p><p className="font-medium font-mono">{viewItem?.target ?? '-'}</p></div><div><p className="text-muted-foreground text-xs">Samples</p><p className="font-medium">{viewItem?.samples?.length || 0}</p></div><div><p className="text-muted-foreground text-xs">Cp</p><p className={`font-mono font-semibold ${viewItem?.samples?.length > 1 ? cpkColor(viewItem?.cp) : ''}`}>{viewItem?.samples?.length > 1 ? viewItem?.cp?.toFixed(2) : '-'}</p></div><div><p className="text-muted-foreground text-xs">Cpk</p><p className={`font-mono font-semibold ${viewItem?.samples?.length > 1 ? cpkColor(viewItem?.cpk) : ''}`}>{viewItem?.samples?.length > 1 ? viewItem?.cpk?.toFixed(2) : '-'}</p></div><div className="col-span-2"><p className="text-muted-foreground text-xs">Description</p><p className="font-medium whitespace-pre-wrap">{viewItem?.description || '-'}</p></div></div></DialogContent></Dialog>
+      <Dialog open={editOpen} onOpenChange={setEditOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Edit SPC Process</DialogTitle><DialogDescription>Update SPC process details</DialogDescription></DialogHeader><div className="space-y-4"><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>Name</Label><Input value={editForm.name || ''} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} /></div><div className="space-y-2"><Label>Parameter</Label><Input value={editForm.parameter || ''} onChange={e => setEditForm(f => ({ ...f, parameter: e.target.value }))} /></div><div className="space-y-2"><Label>Unit</Label><Input value={editForm.unit || ''} onChange={e => setEditForm(f => ({ ...f, unit: e.target.value }))} /></div><div className="space-y-2"><Label>Status</Label><Select value={editForm.status || ''} onValueChange={v => setEditForm(f => ({ ...f, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="in_control">In Control</SelectItem><SelectItem value="warning">Warning</SelectItem><SelectItem value="out_of_control">Out of Control</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Upper Limit</Label><Input type="number" step="any" value={editForm.upperLimit || ''} onChange={e => setEditForm(f => ({ ...f, upperLimit: e.target.value }))} /></div><div className="space-y-2"><Label>Lower Limit</Label><Input type="number" step="any" value={editForm.lowerLimit || ''} onChange={e => setEditForm(f => ({ ...f, lowerLimit: e.target.value }))} /></div></div><div className="space-y-2"><Label>Description</Label><Textarea value={editForm.description || ''} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} /></div></div><DialogFooter><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={handleSave} disabled={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent><DialogHeader><DialogTitle>Add SPC Process</DialogTitle><DialogDescription>Define a new process for statistical monitoring.</DialogDescription></DialogHeader>
           <div className="space-y-4">
@@ -515,6 +601,12 @@ export function QualityCapaPage() {
   const [capaData, setCapaData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [capaKpis, setCapaKpis] = useState({ total: 0, open: 0, inProgress: 0, verified: 0 });
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editLoading, setEditLoading] = useState(false);
   const capaPriorityColors: Record<string, string> = { critical: 'bg-red-50 text-red-700 border-red-200', high: 'bg-orange-50 text-orange-700 border-orange-200', medium: 'bg-amber-50 text-amber-700 border-amber-200', low: 'bg-slate-100 text-slate-600 border-slate-200' };
   const capaStatusColors: Record<string, string> = { open: 'bg-amber-50 text-amber-700 border-amber-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', implemented: 'bg-violet-50 text-violet-700 border-violet-200', verified: 'bg-emerald-50 text-emerald-700 border-emerald-200', closed: 'bg-slate-100 text-slate-500 border-slate-200' };
   const loadCapas = async () => {
@@ -549,6 +641,15 @@ export function QualityCapaPage() {
     const res = await api.delete(`/api/corrective-actions/${id}`);
     if (res.success) { toast.success('CAPA deleted'); loadCapas(); } else toast.error(res.error || 'Failed to delete');
   };
+  const handleView = (r: any) => { setViewItem(r); setViewOpen(true); };
+  const handleEdit = (r: any) => { setEditItem(r); setEditForm({ title: r.title, description: r.description || '', type: r.type, priority: r.severity, status: r.status, assignedTo: r.assignedTo || '', dueDate: r.dueDate || '', rootCause: r.rootCause || '', correctiveAction: r.correctiveAction || '', verification: r.verification || '' }); setEditOpen(true); };
+  const handleSave = async () => {
+    if (!editItem) return;
+    setEditLoading(true);
+    const res = await api.put(`/api/corrective-actions/${editItem.id}`, { ...editForm, severity: editForm.priority });
+    setEditLoading(false);
+    if (res.success) { toast.success('CAPA updated'); setEditOpen(false); loadCapas(); } else toast.error(res.error || 'Failed to update');
+  };
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -579,12 +680,14 @@ export function QualityCapaPage() {
               <TableCell><Badge variant="outline" className={capaPriorityColors[r.severity] || ''}>{r.severity.toUpperCase()}</Badge></TableCell>
               <TableCell><Badge variant="outline" className={capaStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
               <TableCell className="text-sm text-muted-foreground">{formatDate(r.dueDate)}</TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ))}
         </TableBody></Table>
         </div>
       </CardContent></Card>
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>CAPA Details</DialogTitle><DialogDescription>{viewItem?.capaNumber}</DialogDescription></DialogHeader><Separator className="my-2" /><div className="grid grid-cols-2 gap-4 text-sm"><div><p className="text-muted-foreground text-xs">Title</p><p className="font-medium">{viewItem?.title}</p></div><div><p className="text-muted-foreground text-xs">Type</p><p className="font-medium">{viewItem?.type}</p></div><div><p className="text-muted-foreground text-xs">Priority</p><Badge variant="outline" className={capaPriorityColors[viewItem?.severity] || ''}>{viewItem?.severity?.toUpperCase()}</Badge></div><div><p className="text-muted-foreground text-xs">Status</p><Badge variant="outline" className={capaStatusColors[viewItem?.status] || ''}>{viewItem?.status?.replace(/_/g, ' ').toUpperCase()}</Badge></div><div><p className="text-muted-foreground text-xs">Assigned To</p><p className="font-medium">{viewItem?.assignedTo || '-'}</p></div><div><p className="text-muted-foreground text-xs">Due Date</p><p className="font-medium">{formatDate(viewItem?.dueDate)}</p></div><div className="col-span-2"><p className="text-muted-foreground text-xs">Description</p><p className="font-medium whitespace-pre-wrap">{viewItem?.description || '-'}</p></div><div className="col-span-2"><p className="text-muted-foreground text-xs">Root Cause</p><p className="font-medium whitespace-pre-wrap">{viewItem?.rootCause || '-'}</p></div><div className="col-span-2"><p className="text-muted-foreground text-xs">Corrective Action</p><p className="font-medium whitespace-pre-wrap">{viewItem?.correctiveAction || '-'}</p></div><div className="col-span-2"><p className="text-muted-foreground text-xs">Verification</p><p className="font-medium whitespace-pre-wrap">{viewItem?.verification || '-'}</p></div></div></DialogContent></Dialog>
+      <Dialog open={editOpen} onOpenChange={setEditOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Edit CAPA</DialogTitle><DialogDescription>Update corrective action details</DialogDescription></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label>Title</Label><Input value={editForm.title || ''} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div><div className="space-y-2"><Label>Description</Label><Textarea value={editForm.description || ''} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label>Type</Label><Select value={editForm.type || ''} onValueChange={v => setEditForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="corrective">Corrective</SelectItem><SelectItem value="preventive">Preventive</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Priority</Label><Select value={editForm.priority || ''} onValueChange={v => setEditForm(f => ({ ...f, priority: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Status</Label><Select value={editForm.status || ''} onValueChange={v => setEditForm(f => ({ ...f, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">Open</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="implemented">Implemented</SelectItem><SelectItem value="verified">Verified</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Assigned To</Label><Input value={editForm.assignedTo || ''} onChange={e => setEditForm(f => ({ ...f, assignedTo: e.target.value }))} /></div><div className="space-y-2"><Label>Due Date</Label><Input type="date" value={editForm.dueDate || ''} onChange={e => setEditForm(f => ({ ...f, dueDate: e.target.value }))} /></div></div><div className="space-y-2"><Label>Root Cause</Label><Textarea value={editForm.rootCause || ''} onChange={e => setEditForm(f => ({ ...f, rootCause: e.target.value }))} rows={3} /></div><div className="space-y-2"><Label>Corrective Action</Label><Textarea value={editForm.correctiveAction || ''} onChange={e => setEditForm(f => ({ ...f, correctiveAction: e.target.value }))} rows={3} /></div><div className="space-y-2"><Label>Verification</Label><Textarea value={editForm.verification || ''} onChange={e => setEditForm(f => ({ ...f, verification: e.target.value }))} rows={2} /></div></div><DialogFooter><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={handleSave} disabled={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent><DialogHeader><DialogTitle>New CAPA</DialogTitle><DialogDescription>Create a corrective or preventive action.</DialogDescription></DialogHeader>
           <div className="space-y-4">

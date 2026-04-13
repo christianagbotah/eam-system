@@ -1865,30 +1865,41 @@ export function AuditLogsPage() {
 
 // General/Notifications/Integrations/Backup
 export function SettingsGeneralPage() {
-  const [profile, setProfile] = useState<any>({ timezone: 'UTC', currency: 'USD', dateFormat: 'MM/DD/YYYY', companyName: '' });
+  const [profile, setProfile] = useState<CompanyProfile>(defaultCompanyProfile);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/api/company-profile').then(res => {
+    api.get<CompanyProfile>('/api/company-profile').then(res => {
       if (res.success && res.data) {
-        setProfile(prev => ({
-          ...prev,
-          companyName: res.data.companyName || prev.companyName,
-          timezone: res.data.timezone || prev.timezone,
-          currency: res.data.currency || prev.currency,
-          dateFormat: res.data.dateFormat || prev.dateFormat,
-        }));
+        setProfile(prev => ({ ...prev, ...res.data }));
       }
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
 
+  const handleChange = (field: keyof CompanyProfile, value: string) => {
+    setProfile(prev => ({ ...prev, [field]: value }));
+  };
+
   const handleSave = async () => {
+    if (!profile.companyName.trim()) { toast.error('Company name is required'); return; }
     setSaving(true);
     try {
       const res = await api.put('/api/company-profile', {
         companyName: profile.companyName,
+        tradingName: profile.tradingName,
+        address: profile.address,
+        city: profile.city,
+        region: profile.region,
+        country: profile.country,
+        postalCode: profile.postalCode,
+        phone: profile.phone,
+        email: profile.email,
+        website: profile.website,
+        industry: profile.industry,
+        employeeCount: profile.employeeCount,
+        fiscalYearStart: profile.fiscalYearStart,
         timezone: profile.timezone,
         currency: profile.currency,
         dateFormat: profile.dateFormat,
@@ -1915,30 +1926,159 @@ export function SettingsGeneralPage() {
   return (
     <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">General Settings</h1><p className="text-muted-foreground mt-1">Configure system-wide preferences and defaults</p></div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Company Info */}
         <Card>
-          <CardHeader><CardTitle className="text-base">Company & Regional Settings</CardTitle><CardDescription>Company name, timezone, currency, and date format</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-base">Company Info</CardTitle><CardDescription>Organization identification and address</CardDescription></CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2"><Label>Company Name</Label><Input value={profile.companyName || ''} onChange={e => setProfile(p => ({ ...p, companyName: e.target.value }))} placeholder="iAssetsPro" /></div>
-            <div className="space-y-2"><Label>Timezone</Label><Select value={profile.timezone} onValueChange={v => setProfile(p => ({ ...p, timezone: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="UTC">UTC</SelectItem><SelectItem value="America/New_York">Eastern Time</SelectItem><SelectItem value="America/Chicago">Central Time</SelectItem><SelectItem value="America/Denver">Mountain Time</SelectItem><SelectItem value="America/Los_Angeles">Pacific Time</SelectItem><SelectItem value="Europe/London">London (GMT)</SelectItem><SelectItem value="Africa/Accra">Accra (GMT)</SelectItem></SelectContent></Select></div>
-            <div className="space-y-2"><Label>Currency</Label><Select value={profile.currency} onValueChange={v => setProfile(p => ({ ...p, currency: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="USD">USD ($)</SelectItem><SelectItem value="EUR">EUR (€)</SelectItem><SelectItem value="GBP">GBP (£)</SelectItem><SelectItem value="GHS">GHS (₵)</SelectItem><SelectItem value="NGN">NGN (₦)</SelectItem></SelectContent></Select></div>
-            <div className="space-y-2"><Label>Date Format</Label><Select value={profile.dateFormat} onValueChange={v => setProfile(p => ({ ...p, dateFormat: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem><SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem><SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem><SelectItem value="DD-MMM-YYYY">DD-MMM-YYYY</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>Company Name *</Label><Input value={profile.companyName || ''} onChange={e => handleChange('companyName', e.target.value)} placeholder="Legal company name" /></div>
+            <div className="space-y-2"><Label>Trading Name</Label><Input value={profile.tradingName || ''} onChange={e => handleChange('tradingName', e.target.value)} placeholder="Display / brand name" /></div>
+            <div className="space-y-2"><Label>Address</Label><Textarea value={profile.address || ''} onChange={e => handleChange('address', e.target.value)} placeholder="Street address" rows={2} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2"><Label>City</Label><Input value={profile.city || ''} onChange={e => handleChange('city', e.target.value)} placeholder="City" /></div>
+              <div className="space-y-2"><Label>Region / State</Label><Input value={profile.region || ''} onChange={e => handleChange('region', e.target.value)} placeholder="Region" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2"><Label>Country</Label><Input value={profile.country || ''} onChange={e => handleChange('country', e.target.value)} placeholder="Country" /></div>
+              <div className="space-y-2"><Label>Postal Code</Label><Input value={profile.postalCode || ''} onChange={e => handleChange('postalCode', e.target.value)} placeholder="Postal code" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2"><Label>Phone</Label><Input value={profile.phone || ''} onChange={e => handleChange('phone', e.target.value)} placeholder="+233 XX XXX XXXX" /></div>
+              <div className="space-y-2"><Label>Email</Label><Input type="email" value={profile.email || ''} onChange={e => handleChange('email', e.target.value)} placeholder="info@company.com" /></div>
+            </div>
+            <div className="space-y-2"><Label>Website</Label><Input value={profile.website || ''} onChange={e => handleChange('website', e.target.value)} placeholder="https://www.company.com" /></div>
           </CardContent>
         </Card>
+
+        {/* Business Details */}
         <Card>
-          <CardHeader><CardTitle className="text-base">System Information</CardTitle><CardDescription>Current system configuration</CardDescription></CardHeader>
-          <CardContent className="space-y-3">
-            {[
-              { label: 'Version', value: '2.0.0' },
-              { label: 'Environment', value: 'Production' },
-              { label: 'Database', value: 'SQLite' },
-              { label: 'Last Backup', value: 'Never' },
-            ].map(r => (
-              <div key={r.label} className="flex justify-between items-center py-2 border-b last:border-0"><span className="text-sm text-muted-foreground">{r.label}</span><span className="text-sm font-medium">{r.value}</span></div>
-            ))}
+          <CardHeader><CardTitle className="text-base">Business Details</CardTitle><CardDescription>Industry and organization information</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Industry</Label>
+              <Select value={profile.industry || ''} onValueChange={v => handleChange('industry', v)}>
+                <SelectTrigger><SelectValue placeholder="Select industry" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manufacturing">Manufacturing</SelectItem>
+                  <SelectItem value="energy">Energy &amp; Utilities</SelectItem>
+                  <SelectItem value="construction">Construction</SelectItem>
+                  <SelectItem value="healthcare">Healthcare</SelectItem>
+                  <SelectItem value="transportation">Transportation &amp; Logistics</SelectItem>
+                  <SelectItem value="mining">Mining &amp; Resources</SelectItem>
+                  <SelectItem value="oil_gas">Oil &amp; Gas</SelectItem>
+                  <SelectItem value="telecommunications">Telecommunications</SelectItem>
+                  <SelectItem value="food_beverage">Food &amp; Beverage</SelectItem>
+                  <SelectItem value="pharmaceutical">Pharmaceutical</SelectItem>
+                  <SelectItem value="real_estate">Real Estate &amp; Facilities</SelectItem>
+                  <SelectItem value="government">Government &amp; Public Sector</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Number of Employees</Label>
+              <Select value={profile.employeeCount || ''} onValueChange={v => handleChange('employeeCount', v)}>
+                <SelectTrigger><SelectValue placeholder="Select range" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1-10">1 - 10</SelectItem>
+                  <SelectItem value="11-50">11 - 50</SelectItem>
+                  <SelectItem value="51-200">51 - 200</SelectItem>
+                  <SelectItem value="201-500">201 - 500</SelectItem>
+                  <SelectItem value="501-1000">501 - 1,000</SelectItem>
+                  <SelectItem value="1001-5000">1,001 - 5,000</SelectItem>
+                  <SelectItem value="5001+">5,001+</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Fiscal Year Start</Label>
+              <Select value={profile.fiscalYearStart || 'January'} onValueChange={v => handleChange('fiscalYearStart', v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {['January','February','March','April','May','June','July','August','September','October','November','December'].map(m => (
+                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Separator />
+
+            {/* System Information */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">System Information</p>
+              {[
+                { label: 'Version', value: '2.0.0' },
+                { label: 'Environment', value: 'Production' },
+                { label: 'Database', value: 'SQLite' },
+              ].map(r => (
+                <div key={r.label} className="flex justify-between items-center py-2 border-b last:border-0"><span className="text-sm text-muted-foreground">{r.label}</span><span className="text-sm font-medium">{r.value}</span></div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Display Settings */}
+        <Card className="lg:col-span-2">
+          <CardHeader><CardTitle className="text-base">Display Settings</CardTitle><CardDescription>Regional preferences, locale, and formatting</CardDescription></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label>Timezone</Label>
+                <Select value={profile.timezone || 'UTC'} onValueChange={v => handleChange('timezone', v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UTC">UTC</SelectItem>
+                    <SelectItem value="Africa/Accra">GMT (Africa/Accra)</SelectItem>
+                    <SelectItem value="Africa/Lagos">WAT (Africa/Lagos)</SelectItem>
+                    <SelectItem value="America/New_York">Eastern Time</SelectItem>
+                    <SelectItem value="America/Chicago">Central Time</SelectItem>
+                    <SelectItem value="America/Denver">Mountain Time</SelectItem>
+                    <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
+                    <SelectItem value="Europe/London">London (GMT)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Currency</Label>
+                <Select value={profile.currency || 'GHS'} onValueChange={v => handleChange('currency', v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GHS">GHS (₵)</SelectItem>
+                    <SelectItem value="USD">USD ($)</SelectItem>
+                    <SelectItem value="EUR">EUR (€)</SelectItem>
+                    <SelectItem value="GBP">GBP (£)</SelectItem>
+                    <SelectItem value="NGN">NGN (₦)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Date Format</Label>
+                <Select value={profile.dateFormat || 'DD/MM/YYYY'} onValueChange={v => handleChange('dateFormat', v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
+                    <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
+                    <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
+                    <SelectItem value="DD-MMM-YYYY">DD-MMM-YYYY</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Language</Label>
+                <Select value="en" onValueChange={() => { /* placeholder for future i18n */ }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="en">English</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
+
       <Button onClick={handleSave} disabled={saving}>{saving ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Saving...</> : 'Save Changes'}</Button>
     </div>
   );
@@ -2073,32 +2213,38 @@ export function SettingsIntegrationsPage() {
   const [selected, setSelected] = useState<any>(null);
   const [configForm, setConfigForm] = useState({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' });
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [serverConfigs, setServerConfigs] = useState<Record<string, any>>({});
 
-  const [integrations, setIntegrations] = useState(() => {
-    const defaults = [
-      { id: 'erp', name: 'ERP Integration', description: 'Connect to your enterprise resource planning system for data synchronization', icon: Server, connected: false, fields: ['url', 'apiKey', 'username', 'password'] },
-      { id: 'iot', name: 'IoT Platform', description: 'Stream sensor data from IoT devices and gateways into iAssetsPro', icon: Cpu, connected: false, fields: ['url', 'apiKey'] },
-      { id: 'email', name: 'Email Server', description: 'Configure SMTP settings for email notifications and reports delivery', icon: Mail, connected: false, fields: ['url', 'username', 'password'] },
-      { id: 'sms', name: 'SMS Gateway', description: 'Set up SMS delivery for critical alerts via your preferred gateway', icon: Smartphone, connected: false, fields: ['url', 'apiKey'] },
-      { id: 'webhooks', name: 'Webhooks', description: 'Send real-time event notifications to external systems via webhooks', icon: Globe, connected: false, fields: ['webhookUrl'] },
-      { id: 'ldap', name: 'LDAP / Active Directory', description: 'Sync users and authenticate via your organization\'s directory service', icon: Shield, connected: false, fields: ['url', 'username', 'password'] },
-    ];
-    try { const s = localStorage.getItem('iassetspro_integrations'); if (s) { const saved: Record<string, any> = JSON.parse(s); return defaults.map(i => ({ ...i, connected: saved[i.id]?.connected ?? i.connected })); } } catch { /* ignore */ }
-    return defaults;
-  });
+  const defaultIntegrations = [
+    { id: 'erp', name: 'ERP Integration', description: 'Connect to your enterprise resource planning system for data synchronization', icon: Server, connected: false, fields: ['url', 'apiKey', 'username', 'password'] },
+    { id: 'iot', name: 'IoT Platform', description: 'Stream sensor data from IoT devices and gateways into iAssetsPro', icon: Cpu, connected: false, fields: ['url', 'apiKey'] },
+    { id: 'email', name: 'Email Server', description: 'Configure SMTP settings for email notifications and reports delivery', icon: Mail, connected: false, fields: ['url', 'username', 'password'] },
+    { id: 'sms', name: 'SMS Gateway', description: 'Set up SMS delivery for critical alerts via your preferred gateway', icon: Smartphone, connected: false, fields: ['url', 'apiKey'] },
+    { id: 'webhooks', name: 'Webhooks', description: 'Send real-time event notifications to external systems via webhooks', icon: Globe, connected: false, fields: ['webhookUrl'] },
+    { id: 'ldap', name: 'LDAP / Active Directory', description: 'Sync users and authenticate via your organization\'s directory service', icon: Shield, connected: false, fields: ['url', 'username', 'password'] },
+  ];
+
+  const [integrations, setIntegrations] = useState(defaultIntegrations);
+
+  useEffect(() => {
+    api.get<Record<string, any>>('/api/settings/integrations').then(res => {
+      if (res.success && res.data) {
+        setServerConfigs(res.data);
+        setIntegrations(prev => prev.map(i => ({ ...i, connected: !!res.data?.[i.id] })));
+      }
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
 
   const openConfig = (integ: any) => {
     setSelected(integ);
-    // Restore saved form values for this integration
-    try {
-      const s = localStorage.getItem('iassetspro_integrations');
-      if (s) {
-        const saved = JSON.parse(s);
-        const stored = saved[integ.id];
-        if (stored) setConfigForm({ url: stored.url || '', apiKey: stored.apiKey || '', username: stored.username || '', password: stored.password || '', webhookUrl: stored.webhookUrl || '' });
-        else setConfigForm({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' });
-      } else { setConfigForm({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' }); }
-    } catch { setConfigForm({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' }); }
+    const stored = serverConfigs[integ.id];
+    if (stored) {
+      setConfigForm({ url: stored.url || '', apiKey: stored.apiKey || '', username: stored.username || '', password: stored.password || '', webhookUrl: stored.webhookUrl || '' });
+    } else {
+      setConfigForm({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' });
+    }
     setConfigOpen(true);
   };
 
@@ -2106,12 +2252,17 @@ export function SettingsIntegrationsPage() {
     if (!selected) return;
     setSaving(true);
     try {
-      const s = localStorage.getItem('iassetspro_integrations');
-      const all = s ? JSON.parse(s) : {};
-      all[selected.id] = { ...configForm, connected: true };
-      localStorage.setItem('iassetspro_integrations', JSON.stringify(all));
-      setIntegrations(prev => prev.map(i => i.id === selected.id ? { ...i, connected: true } : i));
-      toast.success(`${selected.name} configuration saved`);
+      const res = await api.put('/api/settings/integrations', {
+        integrationId: selected.id,
+        config: { ...configForm, connected: true },
+      });
+      if (res.success) {
+        setServerConfigs(prev => ({ ...prev, [selected.id]: { ...configForm, connected: true } }));
+        setIntegrations(prev => prev.map(i => i.id === selected.id ? { ...i, connected: true } : i));
+        toast.success(`${selected.name} configuration saved`);
+      } else {
+        toast.error(res.error || 'Failed to save configuration');
+      }
     } catch {
       toast.error('Failed to save configuration');
     }
@@ -2119,6 +2270,8 @@ export function SettingsIntegrationsPage() {
     setSelected(null);
     setSaving(false);
   };
+
+  if (loading) return <LoadingSkeleton />;
 
   return (
     <div className="page-content">
@@ -2194,16 +2347,19 @@ export function SettingsIntegrationsPage() {
 export function SettingsBackupPage() {
   const [backingUp, setBackingUp] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [backupHistory, setBackupHistory] = useState<Array<{ id: string; date: string; type: string; size: string; status: string }>>([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
 
-  const backupHistory = [
-    { id: '1', date: '2025-01-15 03:00', type: 'Automatic', size: '24.5 MB', status: 'completed' },
-    { id: '2', date: '2025-01-14 03:00', type: 'Automatic', size: '24.3 MB', status: 'completed' },
-    { id: '3', date: '2025-01-13 15:32', type: 'Manual', size: '24.4 MB', status: 'completed' },
-    { id: '4', date: '2025-01-13 03:00', type: 'Automatic', size: '24.2 MB', status: 'completed' },
-    { id: '5', date: '2025-01-12 03:00', type: 'Automatic', size: '24.1 MB', status: 'failed' },
-    { id: '6', date: '2025-01-11 03:00', type: 'Automatic', size: '24.0 MB', status: 'completed' },
-    { id: '7', date: '2025-01-10 03:00', type: 'Automatic', size: '23.8 MB', status: 'completed' },
-  ];
+  const loadBackupHistory = useCallback(() => {
+    api.get<Array<{ id: string; date: string; type: string; size: string; status: string }>>('/api/backups').then(res => {
+      if (res.success && res.data) setBackupHistory(res.data);
+      setLoadingHistory(false);
+    }).catch(() => setLoadingHistory(false));
+  }, []);
+
+  useEffect(() => {
+    loadBackupHistory();
+  }, [loadBackupHistory]);
 
   const lastBackup = backupHistory.find(b => b.status === 'completed');
 
@@ -2224,15 +2380,26 @@ export function SettingsBackupPage() {
         const res = await api.get(ep);
         results[keys[i]] = res.data || res;
       }));
-      const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
+      const jsonStr = JSON.stringify(results, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `iassetspro-backup-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
+
+      // Record the backup in history via API
+      const sizeKB = new Blob([jsonStr]).size / 1024;
+      const sizeStr = sizeKB > 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB.toFixed(1)} KB`;
+      await api.post('/api/backups', { type: 'Manual', size: sizeStr, status: 'completed' });
+      loadBackupHistory();
+
       toast.success('Backup completed and downloaded successfully');
     } catch (err: any) {
+      // Record failed backup
+      await api.post('/api/backups', { type: 'Manual', size: '0 KB', status: 'failed' }).catch(() => {});
+      loadBackupHistory();
       toast.error(err.message || 'Backup failed');
     }
     setBackingUp(false);

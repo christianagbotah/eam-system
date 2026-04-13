@@ -58,11 +58,30 @@ export default function LoginPage() {
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!resetEmail.trim()) {
+      toast.error('Please enter your email address');
+      return;
+    }
     setResetLoading(true);
-    await new Promise(r => setTimeout(r, 1500));
-    setResetLoading(false);
-    setForgotOpen(false);
-    toast.success('Password reset link sent to your email');
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: resetEmail.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(data.message || 'Reset instructions sent to your email');
+        setForgotOpen(false);
+        setResetEmail('');
+      } else {
+        toast.error(data.error || 'Failed to send reset link');
+      }
+    } catch {
+      toast.error('Network error. Please try again.');
+    } finally {
+      setResetLoading(false);
+    }
   };
 
   const features = [

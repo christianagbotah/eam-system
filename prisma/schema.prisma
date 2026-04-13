@@ -68,6 +68,8 @@ model User {
   department   String?
   status       String    @default("active")  // active, inactive
   isVendorAdmin Boolean  @default(false)
+  resetToken       String?
+  resetTokenExpires DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -863,6 +865,8 @@ model IotDevice {
   batteryLevel    Int?
   signalStrength  Int?
   firmwareVersion String?
+  pollingInterval Int?                                 // seconds between readings
+  description     String?
   isActive        Boolean   @default(true)
   createdById     String
   createdAt       DateTime  @default(now())

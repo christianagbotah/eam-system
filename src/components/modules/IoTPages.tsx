@@ -17,6 +17,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -51,6 +52,9 @@ export function IotDevicesPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newDevice, setNewDevice] = useState({ name: '', type: 'sensor', location: '', protocol: 'MQTT', parameter: '', unit: '', groupId: '' });
+  const [editDevice, setEditDevice] = useState<any>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editLoading, setEditLoading] = useState(false);
 
   const fetchDevices = useCallback(() => {
     api.get('/api/iot/devices').then(res => {
@@ -99,6 +103,46 @@ export function IotDevicesPage() {
     } else {
       toast.error(res.error || 'Failed to remove device');
     }
+  };
+
+  const handleEditSave = async () => {
+    if (!editForm.name?.trim()) { toast.error('Device name is required'); return; }
+    setEditLoading(true);
+    const res = await api.put(`/api/iot/devices/${editDevice.id}`, {
+      name: editForm.name,
+      type: editForm.type,
+      status: editForm.status,
+      location: editForm.location,
+      protocol: editForm.protocol,
+      pollingInterval: editForm.pollingInterval ? Number(editForm.pollingInterval) : null,
+      thresholdMin: editForm.thresholdMin != '' ? Number(editForm.thresholdMin) : null,
+      thresholdMax: editForm.thresholdMax != '' ? Number(editForm.thresholdMax) : null,
+      description: editForm.description,
+    });
+    setEditLoading(false);
+    if (res.success) {
+      toast.success('Device updated successfully');
+      setEditDevice(null);
+      setEditForm({});
+      fetchDevices();
+    } else {
+      toast.error(res.error || 'Failed to update device');
+    }
+  };
+
+  const handleEditOpen = (d: any) => {
+    setEditDevice(d);
+    setEditForm({
+      name: d.name || '',
+      type: d.type || 'sensor',
+      status: d.status || 'online',
+      location: d.location || '',
+      protocol: d.protocol || 'mqtt',
+      pollingInterval: d.pollingInterval ?? '',
+      thresholdMin: d.thresholdMin ?? '',
+      thresholdMax: d.thresholdMax ?? '',
+      description: d.description || '',
+    });
   };
 
   const handleViewDetail = async (d: any) => {
@@ -181,7 +225,7 @@ export function IotDevicesPage() {
               <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{d.lastSeen ? timeAgo(d.lastSeen) : 'Never'}</TableCell>
               <TableCell className="hidden xl:table-cell">{d.batteryLevel != null ? <div className="flex items-center gap-2"><div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${d.batteryLevel <= 20 ? 'bg-red-500' : d.batteryLevel <= 50 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${d.batteryLevel}%` }} /></div><span className="text-xs font-medium">{d.batteryLevel}%</span></div> : <span className="text-xs text-muted-foreground">Wired</span>}</TableCell>
               <TableCell className="hidden xl:table-cell"><Badge variant="outline" className={`text-xs ${sig === 'Strong' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : sig === 'Good' || sig === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-200' : sig === 'Weak' ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>{sig}</Badge></TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={e => { e.stopPropagation(); handleViewDetail(d); }}><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={e => { e.stopPropagation(); handleDelete(d.id); }}><Trash2 className="h-4 w-4 mr-2" />Remove</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={e => { e.stopPropagation(); handleViewDetail(d); }}><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem><DropdownMenuItem onClick={e => { e.stopPropagation(); handleEditOpen(d); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={e => { e.stopPropagation(); handleDelete(d.id); }}><Trash2 className="h-4 w-4 mr-2" />Remove</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ); })}
         </TableBody></Table>
@@ -211,6 +255,94 @@ export function IotDevicesPage() {
             </div>)}
             </>)}
             <DialogFooter><Button variant="outline" onClick={() => handleDelete(detailDevice.id)} className="text-red-600 border-red-200 hover:bg-red-50"><Trash2 className="h-4 w-4 mr-1.5" />Remove Device</Button><Button variant="outline" onClick={() => setDetailDevice(null)}>Close</Button></DialogFooter>
+          </>)}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Device Dialog */}
+      <Dialog open={!!editDevice} onOpenChange={(open) => { if (!open) { setEditDevice(null); setEditForm({}); } }}>
+        <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
+          {editDevice && (<>
+            <DialogHeader>
+              <DialogTitle>Edit Device</DialogTitle>
+              <DialogDescription className="font-mono text-xs">{editDevice.deviceCode || editDevice.id}</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-2">
+              <div className="space-y-2">
+                <Label>Device Name *</Label>
+                <Input value={editForm.name || ''} onChange={e => setEditForm({ ...editForm, name: e.target.value })} placeholder="Device name" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Type</Label>
+                  <Select value={editForm.type || 'sensor'} onValueChange={v => setEditForm({ ...editForm, type: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sensor">Sensor</SelectItem>
+                      <SelectItem value="actuator">Actuator</SelectItem>
+                      <SelectItem value="gateway">Gateway</SelectItem>
+                      <SelectItem value="controller">Controller</SelectItem>
+                      <SelectItem value="plc">PLC</SelectItem>
+                      <SelectItem value="scada">SCADA</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select value={editForm.status || 'online'} onValueChange={v => setEditForm({ ...editForm, status: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="online">Online</SelectItem>
+                      <SelectItem value="offline">Offline</SelectItem>
+                      <SelectItem value="error">Error</SelectItem>
+                      <SelectItem value="maintenance">Maintenance</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Location</Label>
+                <Input value={editForm.location || ''} onChange={e => setEditForm({ ...editForm, location: e.target.value })} placeholder="Building A, Room 101" />
+              </div>
+              <div className="space-y-2">
+                <Label>Protocol</Label>
+                <Select value={editForm.protocol || 'mqtt'} onValueChange={v => setEditForm({ ...editForm, protocol: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="modbus">Modbus</SelectItem>
+                    <SelectItem value="opcua">OPC-UA</SelectItem>
+                    <SelectItem value="mqtt">MQTT</SelectItem>
+                    <SelectItem value="http">HTTP</SelectItem>
+                    <SelectItem value="bacnet">BACnet</SelectItem>
+                    <SelectItem value="snmp">SNMP</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Polling Interval (seconds)</Label>
+                <Input type="number" min={1} value={editForm.pollingInterval ?? ''} onChange={e => setEditForm({ ...editForm, pollingInterval: e.target.value })} placeholder="e.g. 30" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Threshold Min</Label>
+                  <Input type="number" value={editForm.thresholdMin ?? ''} onChange={e => setEditForm({ ...editForm, thresholdMin: e.target.value })} placeholder="Min value" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Threshold Max</Label>
+                  <Input type="number" value={editForm.thresholdMax ?? ''} onChange={e => setEditForm({ ...editForm, thresholdMax: e.target.value })} placeholder="Max value" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Textarea value={editForm.description || ''} onChange={e => setEditForm({ ...editForm, description: e.target.value })} placeholder="Optional device description..." rows={3} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setEditDevice(null); setEditForm({}); }}>Cancel</Button>
+              <Button onClick={handleEditSave} disabled={editLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                {editLoading ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </DialogFooter>
           </>)}
         </DialogContent>
       </Dialog>

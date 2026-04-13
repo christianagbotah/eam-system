@@ -71,6 +71,7 @@ export async function PUT(
       'name', 'type', 'protocol', 'status', 'location', 'assetId', 'groupId',
       'parameter', 'unit', 'thresholdMin', 'thresholdMax', 'batteryLevel',
       'signalStrength', 'firmwareVersion', 'lastReading', 'lastSeen',
+      'pollingInterval', 'description',
     ] as const;
 
     const data: Record<string, unknown> = {};

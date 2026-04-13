@@ -2259,6 +2259,10 @@ export function MaintenanceRiskAssessmentPage() {
   const [loading, setLoading] = useState(true);
   const [assessments, setAssessments] = useState<any[]>([]);
   const [kpis, setKpis] = useState({ total: 0, critical: 0, high: 0, medium: 0, low: 0 });
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ title: '', description: '', type: 'operational', status: 'open', assessor: '', department: '', assessmentDate: '', riskLevel: 'medium', hazards: '', mitigations: '' });
+  const [editLoading, setEditLoading] = useState(false);
 
   const loadAssessments = async () => {
     try {
@@ -2337,6 +2341,58 @@ export function MaintenanceRiskAssessmentPage() {
     } catch { toast.error('Failed to create risk assessment'); }
     setSaving(false);
   };
+  const parseJsonArr = (jsonStr: string | null): string => {
+    if (!jsonStr) return '-';
+    try {
+      const arr = JSON.parse(jsonStr);
+      if (Array.isArray(arr)) return arr.map((item: any) => item.category || item.plan || item.task || item.text || JSON.stringify(item)).join(', ');
+      return String(arr);
+    } catch { return jsonStr; }
+  };
+  const handleEditOpen = (item: any) => {
+    setEditItem(item);
+    setEditForm({
+      title: item.title || '',
+      description: item.description || '',
+      type: item.type || 'operational',
+      status: item.status || 'open',
+      assessor: item.assessor || '',
+      department: item.department || '',
+      assessmentDate: item.assessmentDate || '',
+      riskLevel: item.riskLevel || 'medium',
+      hazards: parseJsonArr(item.hazards),
+      mitigations: parseJsonArr(item.controls),
+    });
+  };
+  const handleEditSave = async () => {
+    if (!editItem) return;
+    setEditLoading(true);
+    try {
+      const hazards = editForm.hazards ? [{ category: editForm.hazards }] : [];
+      const controls = editForm.mitigations ? [{ plan: editForm.mitigations }] : [];
+      const res = await api.put(`/api/risk-assessments/${editItem.id}`, {
+        title: editForm.title,
+        description: editForm.description || undefined,
+        type: editForm.type,
+        status: editForm.status,
+        assessor: editForm.assessor || undefined,
+        department: editForm.department || undefined,
+        assessmentDate: editForm.assessmentDate || undefined,
+        riskLevel: editForm.riskLevel,
+        hazards,
+        controls,
+      });
+      if (res.success) {
+        toast.success('Risk assessment updated successfully');
+        setAssessments(prev => prev.map(a => a.id === editItem.id ? { ...a, ...res.data } : a));
+        setEditItem(null);
+        loadAssessments();
+      } else {
+        toast.error(res.error || 'Failed to update risk assessment');
+      }
+    } catch { toast.error('Failed to update risk assessment'); }
+    setEditLoading(false);
+  };
 
   return (
     <div className="page-content">
@@ -2376,7 +2432,7 @@ export function MaintenanceRiskAssessmentPage() {
         </CardHeader>
         <CardContent className="pt-0">
           <div className="overflow-x-auto">
-            <Table><TableHeader><TableRow><TableHead className="text-xs">ID</TableHead><TableHead className="text-xs">Asset</TableHead><TableHead className="text-xs hidden md:table-cell">Description</TableHead><TableHead className="text-xs text-center">L</TableHead><TableHead className="text-xs text-center">C</TableHead><TableHead className="text-xs text-center">Risk Score</TableHead><TableHead className="text-xs">Level</TableHead><TableHead className="text-xs hidden lg:table-cell">Status</TableHead><TableHead className="text-xs hidden md:table-cell">Date</TableHead></TableRow></TableHeader><TableBody>
+            <Table><TableHeader><TableRow><TableHead className="text-xs">ID</TableHead><TableHead className="text-xs">Asset</TableHead><TableHead className="text-xs hidden md:table-cell">Description</TableHead><TableHead className="text-xs text-center">L</TableHead><TableHead className="text-xs text-center">C</TableHead><TableHead className="text-xs text-center">Risk Score</TableHead><TableHead className="text-xs">Level</TableHead><TableHead className="text-xs hidden lg:table-cell">Status</TableHead><TableHead className="text-xs hidden md:table-cell">Date</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader><TableBody>
               {filtered.map(a => {
                 const rs = (a.likelihood || 0) * (a.consequence || 0);
                 const dl = mapRiskLevel(a.riskLevel || '');
@@ -2391,15 +2447,58 @@ export function MaintenanceRiskAssessmentPage() {
                   <TableCell><Badge variant="outline" className={`text-[10px] uppercase font-semibold ${riskLevelColors[a.riskLevel] || riskLevelColors[dl] || ''}`}>{dl || a.riskLevel || '-'}</Badge></TableCell>
                   <TableCell className="text-xs capitalize hidden lg:table-cell"><Badge variant="outline" className="text-[10px]">{(a.status || 'open').replace(/_/g, ' ')}</Badge></TableCell>
                   <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{formatDate(a.assessmentDate)}</TableCell>
+                  <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setViewItem(a)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEditOpen(a)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                 </TableRow>
                 );
               })}
-              {filtered.length === 0 && <TableRow><TableCell colSpan={9}><EmptyState icon={TriangleAlert} title="No assessments found" description="Adjust your search or filter criteria" /></TableCell></TableRow>}
+              {filtered.length === 0 && <TableRow><TableCell colSpan={10}><EmptyState icon={TriangleAlert} title="No assessments found" description="Adjust your search or filter criteria" /></TableCell></TableRow>}
             </TableBody></Table>
           </div>
         </CardContent>
       </Card>
       </>}
+      <Dialog open={!!viewItem} onOpenChange={open => { if (!open) setViewItem(null); }}>
+        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto"><DialogHeader><DialogTitle>Risk Assessment Details</DialogTitle><DialogDescription>View assessment information</DialogDescription></DialogHeader>
+          {viewItem && <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="col-span-2"><span className="text-muted-foreground">Title</span><p className="font-medium">{viewItem.title || '-'}</p></div>
+            <div><span className="text-muted-foreground">Type</span><p className="font-medium capitalize">{viewItem.type || '-'}</p></div>
+            <div><span className="text-muted-foreground">Status</span><p className="font-medium capitalize">{(viewItem.status || 'open').replace(/_/g, ' ')}</p></div>
+            <div><span className="text-muted-foreground">Assessor</span><p className="font-medium">{viewItem.assessor || '-'}</p></div>
+            <div><span className="text-muted-foreground">Department</span><p className="font-medium">{viewItem.department || '-'}</p></div>
+            <div><span className="text-muted-foreground">Assessment Date</span><p className="font-medium">{formatDate(viewItem.assessmentDate)}</p></div>
+            <div><span className="text-muted-foreground">Risk Level</span><Badge variant="outline" className={`text-[10px] uppercase font-semibold ${riskLevelColors[viewItem.riskLevel] || ''}`}>{mapRiskLevel(viewItem.riskLevel || '') || '-'}</Badge></div>
+            <div><span className="text-muted-foreground">Likelihood</span><p className="font-medium">{viewItem.likelihood ?? '-'}</p></div>
+            <div><span className="text-muted-foreground">Consequence</span><p className="font-medium">{viewItem.consequence ?? '-'}</p></div>
+            <div className="col-span-2"><span className="text-muted-foreground">Description</span><p className="font-medium">{viewItem.description || '-'}</p></div>
+            <div className="col-span-2"><span className="text-muted-foreground">Hazards</span><p className="font-medium">{parseJsonArr(viewItem.hazards)}</p></div>
+            <div className="col-span-2"><span className="text-muted-foreground">Mitigations</span><p className="font-medium">{parseJsonArr(viewItem.controls)}</p></div>
+          </div>}
+          <DialogFooter><Button variant="outline" onClick={() => setViewItem(null)}>Close</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!editItem} onOpenChange={open => { if (!open) setEditItem(null); }}>
+        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto"><DialogHeader><DialogTitle>Edit Risk Assessment</DialogTitle><DialogDescription>Update assessment details</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Title</Label><Input value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Type</Label><Select value={editForm.type} onValueChange={v => setEditForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="mechanical">Mechanical</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="safety">Safety</SelectItem><SelectItem value="environmental">Environmental</SelectItem><SelectItem value="operational">Operational</SelectItem></SelectContent></Select></div>
+              <div><Label>Status</Label><Select value={editForm.status} onValueChange={v => setEditForm(f => ({ ...f, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="open">Open</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Assessor</Label><Input value={editForm.assessor} onChange={e => setEditForm(f => ({ ...f, assessor: e.target.value }))} /></div>
+              <div><Label>Department</Label><Input value={editForm.department} onChange={e => setEditForm(f => ({ ...f, department: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Assessment Date</Label><Input type="date" value={editForm.assessmentDate} onChange={e => setEditForm(f => ({ ...f, assessmentDate: e.target.value }))} /></div>
+              <div><Label>Risk Level</Label><Select value={editForm.riskLevel} onValueChange={v => setEditForm(f => ({ ...f, riskLevel: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem><SelectItem value="extreme">Extreme</SelectItem></SelectContent></Select></div>
+            </div>
+            <div><Label>Description</Label><Textarea value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} /></div>
+            <div><Label>Hazards</Label><Textarea value={editForm.hazards} onChange={e => setEditForm(f => ({ ...f, hazards: e.target.value }))} rows={2} placeholder="Describe hazards..." /></div>
+            <div><Label>Mitigations</Label><Textarea value={editForm.mitigations} onChange={e => setEditForm(f => ({ ...f, mitigations: e.target.value }))} rows={2} placeholder="Describe mitigation measures..." /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button><Button onClick={handleEditSave} disabled={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

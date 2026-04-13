@@ -46,6 +46,10 @@ export function SafetyIncidentsPage() {
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState<any>({ total: 0, open: 0, investigating: 0, closed: 0, daysSinceLast: 0 });
   const [form, setForm] = useState({ title: '', description: '', type: 'near_miss', severity: 'medium', location: '', date: '' });
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editLoading, setEditLoading] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -118,6 +122,19 @@ export function SafetyIncidentsPage() {
       if (res.success) { toast.success('Incident deleted'); fetchData(); }
       else { toast.error(res.error || 'Failed to delete'); }
     } catch { toast.error('Failed to delete'); }
+  };
+
+  const handleSave = async () => {
+    if (!editItem) return;
+    try {
+      setEditLoading(true);
+      const res = await api.put(`/api/safety-incidents/${editItem.id}`, editForm);
+      if (res.success) {
+        toast.success('Incident updated successfully');
+        setEditItem(null); setEditForm({}); fetchData();
+      } else { toast.error(res.error || 'Failed to update incident'); }
+    } catch { toast.error('Failed to update incident'); }
+    finally { setEditLoading(false); }
   };
 
   return (
@@ -227,7 +244,7 @@ export function SafetyIncidentsPage() {
                       <TableCell><div className="flex items-center gap-2"><Avatar className="h-6 w-6"><AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700">{getInitials(i.reportedBy?.fullName || '')}</AvatarFallback></Avatar><span className="text-sm whitespace-nowrap">{i.reportedBy?.fullName || ''}</span></div></TableCell>
                       <TableCell><Badge variant="outline" className={statusColors[i.status] || ''}>{i.status}</Badge></TableCell>
                       <TableCell className="text-sm text-muted-foreground max-w-[140px] truncate">{i.rootCause || '—'}</TableCell>
-                      <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(i.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                      <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(i)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(i); setEditForm({...i}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(i.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -240,6 +257,65 @@ export function SafetyIncidentsPage() {
         </Card>
       </div>
       </>}
+
+      <Dialog open={!!viewItem} onOpenChange={() => setViewItem(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Incident Details</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label className="text-xs text-muted-foreground">Title</Label><p className="text-sm font-medium">{viewItem?.title || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Type</Label><p className="text-sm font-medium">{viewItem?.type?.replace(/_/g, ' ') || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Severity</Label><p className="text-sm font-medium capitalize">{viewItem?.severity || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Status</Label><p className="text-sm font-medium capitalize">{viewItem?.status || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Reported By</Label><p className="text-sm font-medium">{viewItem?.reportedBy?.fullName || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Location</Label><p className="text-sm font-medium">{viewItem?.location || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Occurred At</Label><p className="text-sm font-medium">{viewItem?.incidentDate ? formatDate(viewItem.incidentDate) : viewItem?.occurredAt || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Root Cause</Label><p className="text-sm font-medium">{viewItem?.rootCause || '-'}</p></div>
+            <div className="col-span-2"><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm font-medium">{viewItem?.description || '-'}</p></div>
+            <div className="col-span-2"><Label className="text-xs text-muted-foreground">Corrective Action</Label><p className="text-sm font-medium">{viewItem?.correctiveAction || '-'}</p></div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editItem} onOpenChange={() => setEditItem(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Edit Incident</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-2"><Label>Title</Label><Input value={editForm.title || ''} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea rows={3} value={editForm.description || ''} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label>
+                <Select value={editForm.type || 'near_miss'} onValueChange={v => setEditForm(p => ({ ...p, type: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="near_miss">Near Miss</SelectItem><SelectItem value="injury">Injury</SelectItem><SelectItem value="property_damage">Property Damage</SelectItem><SelectItem value="environmental">Environmental</SelectItem><SelectItem value="fire">Fire</SelectItem><SelectItem value="chemical_spill">Chemical Spill</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2"><Label>Severity</Label>
+                <Select value={editForm.severity || 'medium'} onValueChange={v => setEditForm(p => ({ ...p, severity: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Status</Label>
+                <Select value={editForm.status || 'open'} onValueChange={v => setEditForm(p => ({ ...p, status: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="open">Open</SelectItem><SelectItem value="investigating">Investigating</SelectItem><SelectItem value="closed">Closed</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2"><Label>Location</Label><Input value={editForm.location || ''} onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Root Cause</Label><Input value={editForm.rootCause || ''} onChange={e => setEditForm(p => ({ ...p, rootCause: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>Corrective Action</Label><Input value={editForm.correctiveAction || ''} onChange={e => setEditForm(p => ({ ...p, correctiveAction: e.target.value }))} /></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={editLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{editLoading ? 'Saving...' : 'Save Changes'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -254,6 +330,10 @@ export function SafetyInspectionsPage() {
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState<any>({ total: 0, completed: 0, failed: 0, scheduled: 0, inProgress: 0 });
   const [form, setForm] = useState({ title: '', type: 'routine', area: '', inspector: '', scheduledDate: '' });
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editLoading, setEditLoading] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -312,6 +392,19 @@ export function SafetyInspectionsPage() {
       if (res.success) { toast.success('Inspection deleted'); fetchData(); }
       else { toast.error(res.error || 'Failed to delete'); }
     } catch { toast.error('Failed to delete'); }
+  };
+
+  const handleSave = async () => {
+    if (!editItem) return;
+    try {
+      setEditLoading(true);
+      const res = await api.put(`/api/safety-inspections/${editItem.id}`, editForm);
+      if (res.success) {
+        toast.success('Inspection updated successfully');
+        setEditItem(null); setEditForm({}); fetchData();
+      } else { toast.error(res.error || 'Failed to update inspection'); }
+    } catch { toast.error('Failed to update inspection'); }
+    finally { setEditLoading(false); }
   };
 
   if (loading) return <LoadingSkeleton />;
@@ -410,7 +503,7 @@ export function SafetyInspectionsPage() {
                       ) : <span className="text-sm text-muted-foreground">—</span>}
                     </TableCell>
                     <TableCell><Badge variant="outline" className={statusColors[i.status] || ''}>{i.status?.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(i.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(i)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(i); setEditForm({...i}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(i.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                   </TableRow>
                   );
                 })}
@@ -422,6 +515,61 @@ export function SafetyInspectionsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={!!viewItem} onOpenChange={() => setViewItem(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Inspection Details</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label className="text-xs text-muted-foreground">Title</Label><p className="text-sm font-medium">{viewItem?.title || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Type</Label><p className="text-sm font-medium">{viewItem?.type?.replace(/_/g, ' ') || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Status</Label><p className="text-sm font-medium">{viewItem?.status?.replace(/_/g, ' ') || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Inspector</Label><p className="text-sm font-medium">{viewItem?.inspector?.fullName || viewItem?.inspectorId || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Location</Label><p className="text-sm font-medium">{viewItem?.location || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Scheduled Date</Label><p className="text-sm font-medium">{viewItem?.scheduledDate ? formatDate(viewItem.scheduledDate) : '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Completed Date</Label><p className="text-sm font-medium">{viewItem?.completedDate ? formatDate(viewItem.completedDate) : '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Score</Label><p className="text-sm font-medium">{viewItem?.score != null ? viewItem.score : '-'}</p></div>
+            <div className="col-span-2"><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm font-medium">{viewItem?.description || '-'}</p></div>
+            <div className="col-span-2"><Label className="text-xs text-muted-foreground">Findings</Label><p className="text-sm font-medium">{viewItem?.findings || '-'}</p></div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editItem} onOpenChange={() => setEditItem(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Edit Inspection</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-2"><Label>Title</Label><Input value={editForm.title || ''} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea rows={3} value={editForm.description || ''} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label>
+                <Select value={editForm.type || 'routine'} onValueChange={v => setEditForm(p => ({ ...p, type: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="routine">Routine</SelectItem><SelectItem value="special">Special</SelectItem><SelectItem value="follow_up">Follow Up</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2"><Label>Status</Label>
+                <Select value={editForm.status || 'scheduled'} onValueChange={v => setEditForm(p => ({ ...p, status: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="scheduled">Scheduled</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="failed">Failed</SelectItem></SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Location</Label><Input value={editForm.location || ''} onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>Score</Label><Input type="number" value={editForm.score ?? ''} onChange={e => setEditForm(p => ({ ...p, score: e.target.value ? Number(e.target.value) : null }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={editForm.scheduledDate ? String(editForm.scheduledDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, scheduledDate: e.target.value || null }))} /></div>
+              <div className="space-y-2"><Label>Completed Date</Label><Input type="date" value={editForm.completedDate ? String(editForm.completedDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, completedDate: e.target.value || null }))} /></div>
+            </div>
+            <div className="space-y-2"><Label>Findings</Label><Textarea rows={2} value={editForm.findings || ''} onChange={e => setEditForm(p => ({ ...p, findings: e.target.value }))} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={editLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{editLoading ? 'Saving...' : 'Save Changes'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -434,6 +582,10 @@ export function SafetyTrainingPage() {
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState<any>({ total: 0, completed: 0, inProgress: 0, overdue: 0, planned: 0 });
   const [form, setForm] = useState({ title: '', type: 'induction', trainer: '', durationHours: '', scheduledDate: '', location: '' });
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editLoading, setEditLoading] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -490,6 +642,19 @@ export function SafetyTrainingPage() {
       if (res.success) { toast.success('Training deleted'); fetchData(); }
       else { toast.error(res.error || 'Failed to delete'); }
     } catch { toast.error('Failed to delete'); }
+  };
+
+  const handleSave = async () => {
+    if (!editItem) return;
+    try {
+      setEditLoading(true);
+      const res = await api.put(`/api/safety-training/${editItem.id}`, editForm);
+      if (res.success) {
+        toast.success('Training updated successfully');
+        setEditItem(null); setEditForm({}); fetchData();
+      } else { toast.error(res.error || 'Failed to update training'); }
+    } catch { toast.error('Failed to update training'); }
+    finally { setEditLoading(false); }
   };
 
   if (loading) return <LoadingSkeleton />;
@@ -563,7 +728,7 @@ export function SafetyTrainingPage() {
                     <TableCell className="text-sm text-muted-foreground">{t.location || '—'}</TableCell>
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(t.scheduledDate)}</TableCell>
                     <TableCell><Badge variant="outline" className={statusColors[t.status] || ''}>{t.status?.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(t.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(t)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(t); setEditForm({...t}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(t.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -574,6 +739,64 @@ export function SafetyTrainingPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={!!viewItem} onOpenChange={() => setViewItem(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Training Details</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label className="text-xs text-muted-foreground">Title</Label><p className="text-sm font-medium">{viewItem?.title || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Type</Label><p className="text-sm font-medium">{viewItem?.type?.replace(/_/g, ' ') || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Status</Label><p className="text-sm font-medium">{viewItem?.status?.replace(/_/g, ' ') || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Trainer</Label><p className="text-sm font-medium">{viewItem?.trainer || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Location</Label><p className="text-sm font-medium">{viewItem?.location || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Duration</Label><p className="text-sm font-medium">{viewItem?.durationHours ? `${viewItem.durationHours} hours` : '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Scheduled Date</Label><p className="text-sm font-medium">{viewItem?.scheduledDate ? formatDate(viewItem.scheduledDate) : '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Completed Date</Label><p className="text-sm font-medium">{viewItem?.completedDate ? formatDate(viewItem.completedDate) : '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Attendees</Label><p className="text-sm font-medium">{viewItem?.attendees || '-'}</p></div>
+            <div className="col-span-2"><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm font-medium">{viewItem?.description || '-'}</p></div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editItem} onOpenChange={() => setEditItem(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Edit Training</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-2"><Label>Title</Label><Input value={editForm.title || ''} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea rows={3} value={editForm.description || ''} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label>
+                <Select value={editForm.type || 'induction'} onValueChange={v => setEditForm(p => ({ ...p, type: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="induction">Induction</SelectItem><SelectItem value="refresher">Refresher</SelectItem><SelectItem value="specialized">Specialized</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2"><Label>Status</Label>
+                <Select value={editForm.status || 'planned'} onValueChange={v => setEditForm(p => ({ ...p, status: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Trainer</Label><Input value={editForm.trainer || ''} onChange={e => setEditForm(p => ({ ...p, trainer: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>Duration (hours)</Label><Input type="number" value={editForm.durationHours ?? ''} onChange={e => setEditForm(p => ({ ...p, durationHours: e.target.value ? Number(e.target.value) : null }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Location</Label><Input value={editForm.location || ''} onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>Attendees</Label><Input value={editForm.attendees || ''} onChange={e => setEditForm(p => ({ ...p, attendees: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={editForm.scheduledDate ? String(editForm.scheduledDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, scheduledDate: e.target.value || null }))} /></div>
+              <div className="space-y-2"><Label>Completed Date</Label><Input type="date" value={editForm.completedDate ? String(editForm.completedDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, completedDate: e.target.value || null }))} /></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={editLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{editLoading ? 'Saving...' : 'Save Changes'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -587,6 +810,10 @@ export function SafetyEquipmentPage() {
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState<any>({ total: 0, available: 0, inUse: 0, expired: 0, disposed: 0, dueInspection: 0 });
   const [form, setForm] = useState({ name: '', type: 'ppe', location: '', lastInspection: '', nextInspection: '' });
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editLoading, setEditLoading] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -662,6 +889,19 @@ export function SafetyEquipmentPage() {
     } catch { toast.error('Failed to delete'); }
   };
 
+  const handleSave = async () => {
+    if (!editItem) return;
+    try {
+      setEditLoading(true);
+      const res = await api.put(`/api/safety-equipment/${editItem.id}`, editForm);
+      if (res.success) {
+        toast.success('Equipment updated successfully');
+        setEditItem(null); setEditForm({}); fetchData();
+      } else { toast.error(res.error || 'Failed to update equipment'); }
+    } catch { toast.error('Failed to update equipment'); }
+    finally { setEditLoading(false); }
+  };
+
   if (loading) return <LoadingSkeleton />;
 
   return (
@@ -733,7 +973,7 @@ export function SafetyEquipmentPage() {
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(eq.lastInspected)}</TableCell>
                     <TableCell className="text-sm whitespace-nowrap"><span className={dStatus === 'expired' ? 'text-red-600 font-medium' : dStatus === 'expiring' ? 'text-amber-600 font-medium' : 'text-muted-foreground'}>{formatDate(eq.nextInspection)}</span></TableCell>
                     <TableCell><Badge variant="outline" className={statusColors[dStatus] || ''}>{dStatus?.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(eq.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(eq)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(eq); setEditForm({...eq}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(eq.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                   </TableRow>
                   );
                 })}
@@ -745,6 +985,54 @@ export function SafetyEquipmentPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={!!viewItem} onOpenChange={() => setViewItem(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Equipment Details</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label className="text-xs text-muted-foreground">Name</Label><p className="text-sm font-medium">{viewItem?.name || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Type</Label><p className="text-sm font-medium">{viewItem?.type?.replace(/_/g, ' ') || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Status</Label><p className="text-sm font-medium">{viewItem?.status?.replace(/_/g, ' ') || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Condition</Label><p className="text-sm font-medium">{viewItem?.condition || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Location</Label><p className="text-sm font-medium">{viewItem?.location || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Serial Number</Label><p className="text-sm font-medium">{viewItem?.serialNumber || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Last Inspected</Label><p className="text-sm font-medium">{viewItem?.lastInspected ? formatDate(viewItem.lastInspected) : '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Next Inspection</Label><p className="text-sm font-medium">{viewItem?.nextInspection ? formatDate(viewItem.nextInspection) : '-'}</p></div>
+            <div className="col-span-2"><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm font-medium">{viewItem?.description || '-'}</p></div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editItem} onOpenChange={() => setEditItem(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Edit Equipment</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-2"><Label>Name</Label><Input value={editForm.name || ''} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea rows={3} value={editForm.description || ''} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label>
+                <Select value={editForm.type || 'ppe'} onValueChange={v => setEditForm(p => ({ ...p, type: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="ppe">PPE</SelectItem><SelectItem value="fire_extinguisher">Fire Extinguisher</SelectItem><SelectItem value="first_aid">First Aid</SelectItem><SelectItem value="gas_detector">Gas Detector</SelectItem><SelectItem value="spill_kit">Spill Kit</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2"><Label>Condition</Label><Input value={editForm.condition || ''} onChange={e => setEditForm(p => ({ ...p, condition: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Location</Label><Input value={editForm.location || ''} onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>Serial Number</Label><Input value={editForm.serialNumber || ''} onChange={e => setEditForm(p => ({ ...p, serialNumber: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Last Inspected</Label><Input type="date" value={editForm.lastInspected ? String(editForm.lastInspected).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, lastInspected: e.target.value || null }))} /></div>
+              <div className="space-y-2"><Label>Next Inspection</Label><Input type="date" value={editForm.nextInspection ? String(editForm.nextInspection).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, nextInspection: e.target.value || null }))} /></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={editLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{editLoading ? 'Saving...' : 'Save Changes'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -759,6 +1047,10 @@ export function SafetyPermitsPage() {
   const [kpis, setKpis] = useState<any>({ total: 0, active: 0, pending: 0, expired: 0, completed: 0, cancelled: 0 });
   const [safetyMeasures, setSafetyMeasures] = useState(['', '', '']);
   const [form, setForm] = useState({ type: 'hot_work', title: '', description: '', area: '', validFrom: '', validUntil: '' });
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editLoading, setEditLoading] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -815,6 +1107,19 @@ export function SafetyPermitsPage() {
       if (res.success) { toast.success('Permit deleted'); fetchData(); }
       else { toast.error(res.error || 'Failed to delete'); }
     } catch { toast.error('Failed to delete'); }
+  };
+
+  const handleSave = async () => {
+    if (!editItem) return;
+    try {
+      setEditLoading(true);
+      const res = await api.put(`/api/safety-permits/${editItem.id}`, editForm);
+      if (res.success) {
+        toast.success('Permit updated successfully');
+        setEditItem(null); setEditForm({}); fetchData();
+      } else { toast.error(res.error || 'Failed to update permit'); }
+    } catch { toast.error('Failed to update permit'); }
+    finally { setEditLoading(false); }
   };
 
   if (loading) return <LoadingSkeleton />;
@@ -905,7 +1210,7 @@ export function SafetyPermitsPage() {
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(p.startDate)}</TableCell>
                     <TableCell className="text-sm whitespace-nowrap"><span className={p.status === 'expired' || p.status === 'cancelled' ? 'text-red-600 font-medium' : 'text-muted-foreground'}>{formatDate(p.endDate)}</span></TableCell>
                     <TableCell><Badge variant="outline" className={statusColors[p.status] || ''}>{p.status?.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer"><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer"><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(p.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(p)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(p); setEditForm({...p}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(p.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -916,6 +1221,59 @@ export function SafetyPermitsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={!!viewItem} onOpenChange={() => setViewItem(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Permit Details</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label className="text-xs text-muted-foreground">Title</Label><p className="text-sm font-medium">{viewItem?.title || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Type</Label><p className="text-sm font-medium">{viewItem?.type?.replace(/_/g, ' ') || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Status</Label><p className="text-sm font-medium capitalize">{viewItem?.status || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Requested By</Label><p className="text-sm font-medium">{viewItem?.requestedBy?.fullName || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Location</Label><p className="text-sm font-medium">{viewItem?.location || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Start Date</Label><p className="text-sm font-medium">{viewItem?.startDate ? formatDate(viewItem.startDate) : '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">End Date</Label><p className="text-sm font-medium">{viewItem?.endDate ? formatDate(viewItem.endDate) : '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Hazards</Label><p className="text-sm font-medium">{viewItem?.hazards || '-'}</p></div>
+            <div className="col-span-2"><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm font-medium">{viewItem?.description || '-'}</p></div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editItem} onOpenChange={() => setEditItem(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Edit Permit</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-2"><Label>Title</Label><Input value={editForm.title || ''} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea rows={3} value={editForm.description || ''} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Type</Label>
+                <Select value={editForm.type || 'hot_work'} onValueChange={v => setEditForm(p => ({ ...p, type: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="hot_work">Hot Work</SelectItem><SelectItem value="confined_space">Confined Space</SelectItem><SelectItem value="elevated_work">Working at Height</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="excavation">Excavation</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2"><Label>Status</Label>
+                <Select value={editForm.status || 'pending'} onValueChange={v => setEditForm(p => ({ ...p, status: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="pending">Pending</SelectItem><SelectItem value="approved">Approved</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="expired">Expired</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Location</Label><Input value={editForm.location || ''} onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>Hazards</Label><Input value={editForm.hazards || ''} onChange={e => setEditForm(p => ({ ...p, hazards: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={editForm.startDate ? String(editForm.startDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, startDate: e.target.value || null }))} /></div>
+              <div className="space-y-2"><Label>End Date</Label><Input type="date" value={editForm.endDate ? String(editForm.endDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, endDate: e.target.value || null }))} /></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={editLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{editLoading ? 'Saving...' : 'Save Changes'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

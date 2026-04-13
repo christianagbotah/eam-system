@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { format } from 'date-fns';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
@@ -78,6 +78,14 @@ function NotificationPopover() {
     setOpen(newOpen);
     if (newOpen) loadNotifications();
   };
+
+  useEffect(() => {
+    loadNotifications();
+    const interval = setInterval(() => {
+      loadNotifications();
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [loadNotifications]);
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 

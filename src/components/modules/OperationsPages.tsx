@@ -22,6 +22,9 @@ import {
 } from '@/components/ui/table';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Gauge, GraduationCap, FileText, Clock, ArrowRightLeft, CheckSquare,
   Plus, Search, MoreHorizontal, Pencil, Trash2, AlertTriangle, CheckCircle2,
   Filter, Users, Calendar, Eye, ListChecks, ShieldAlert, Play, X,
@@ -37,6 +40,10 @@ export function OperationsMeterReadingsPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ meter: '', value: '', unit: 'kWh', notes: '', readingDate: '' });
   const [kpis, setKpis] = useState<any[]>([]);
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ meterName: '', value: '', unit: 'kWh', readingDate: '', notes: '', reader: '' });
+  const [editLoading, setEditLoading] = useState(false);
 
   useEffect(() => {
     api.get<any>('/api/meter-readings').then(res => {
@@ -94,6 +101,39 @@ export function OperationsMeterReadingsPage() {
     }
     setSaving(false);
   };
+  const handleEditOpen = (item: any) => {
+    setEditItem(item);
+    setEditForm({
+      meterName: item.meterName || '',
+      value: String(item.value || ''),
+      unit: item.unit || 'kWh',
+      readingDate: item.readingDate || '',
+      notes: item.notes || '',
+      reader: item.reader || '',
+    });
+  };
+  const handleEditSave = async () => {
+    if (!editItem) return;
+    setEditLoading(true);
+    try {
+      const res = await api.put(`/api/meter-readings/${editItem.id}`, {
+        meterName: editForm.meterName,
+        value: Number(editForm.value),
+        unit: editForm.unit,
+        readingDate: editForm.readingDate,
+        notes: editForm.notes || undefined,
+        reader: editForm.reader || undefined,
+      });
+      if (res.success) {
+        toast.success('Reading updated successfully');
+        setReadings(prev => prev.map(r => r.id === editItem.id ? { ...r, ...res.data } : r));
+        setEditItem(null);
+      } else {
+        toast.error(res.error || 'Failed to update reading');
+      }
+    } catch { toast.error('Failed to update reading'); }
+    setEditLoading(false);
+  };
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -115,9 +155,9 @@ export function OperationsMeterReadingsPage() {
         <div className="relative flex-1 max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search readings..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" /></div>
       </div>
       <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
-        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>ID</TableHead><TableHead>Meter Name</TableHead><TableHead className="hidden md:table-cell">Unit</TableHead><TableHead className="text-right">Reading Value</TableHead><TableHead className="hidden sm:table-cell text-right">Previous</TableHead><TableHead className="text-right">Change</TableHead><TableHead className="hidden md:table-cell">Date</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>ID</TableHead><TableHead>Meter Name</TableHead><TableHead className="hidden md:table-cell">Unit</TableHead><TableHead className="text-right">Reading Value</TableHead><TableHead className="hidden sm:table-cell text-right">Previous</TableHead><TableHead className="text-right">Change</TableHead><TableHead className="hidden md:table-cell">Date</TableHead><TableHead>Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader><TableBody>
           {filtered.length === 0 ? (
-            <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={Gauge} title="No meter readings found" description="Record a new reading to get started." /></TableCell></TableRow>
+            <TableRow><TableCell colSpan={9} className="h-48"><EmptyState icon={Gauge} title="No meter readings found" description="Record a new reading to get started." /></TableCell></TableRow>
           ) : filtered.map(r => {
             const change = getChangePct(r);
             const status = getReadingStatus(r);
@@ -131,6 +171,7 @@ export function OperationsMeterReadingsPage() {
               <TableCell className={`text-right font-medium ${r.previousValue ? (change > 0 ? 'text-red-600' : 'text-emerald-600') : 'text-muted-foreground'}`}>{r.previousValue ? `${change > 0 ? '+' : ''}${change.toFixed(2)}%` : '-'}</TableCell>
               <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{formatDate(r.readingDate)}</TableCell>
               <TableCell><Badge variant="outline" className={statusColor(status)}><span className="capitalize">{status}</span></Badge></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setViewItem(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEditOpen(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ); })}
         </TableBody></Table></div>
@@ -148,6 +189,37 @@ export function OperationsMeterReadingsPage() {
             <div><Label>Notes</Label><Textarea placeholder="Optional notes..." value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.meter || !form.value}>{saving ? 'Saving...' : 'Record Reading'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!viewItem} onOpenChange={open => { if (!open) setViewItem(null); }}>
+        <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Reading Details</DialogTitle><DialogDescription>View meter reading information</DialogDescription></DialogHeader>
+          {viewItem && <div className="grid grid-cols-2 gap-4 text-sm">
+            <div><span className="text-muted-foreground">Meter Name</span><p className="font-medium">{viewItem.meterName || '-'}</p></div>
+            <div><span className="text-muted-foreground">Reading Value</span><p className="font-medium">{viewItem.value?.toLocaleString()} <span className="text-xs text-muted-foreground">{viewItem.unit}</span></p></div>
+            <div><span className="text-muted-foreground">Unit</span><p className="font-medium">{viewItem.unit || '-'}</p></div>
+            <div><span className="text-muted-foreground">Reading Date</span><p className="font-medium">{formatDate(viewItem.readingDate)}</p></div>
+            <div className="col-span-2"><span className="text-muted-foreground">Notes</span><p className="font-medium">{viewItem.notes || '-'}</p></div>
+            <div><span className="text-muted-foreground">Reader</span><p className="font-medium">{viewItem.reader || '-'}</p></div>
+            <div><span className="text-muted-foreground">Reading ID</span><p className="font-mono text-xs">{viewItem.readingNumber || viewItem.id?.slice(0, 8)}</p></div>
+          </div>}
+          <DialogFooter><Button variant="outline" onClick={() => setViewItem(null)}>Close</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!editItem} onOpenChange={open => { if (!open) setEditItem(null); }}>
+        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Edit Reading</DialogTitle><DialogDescription>Update meter reading details</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div><Label>Meter Name</Label><Input value={editForm.meterName} onChange={e => setEditForm(f => ({ ...f, meterName: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Reading Value</Label><Input type="number" value={editForm.value} onChange={e => setEditForm(f => ({ ...f, value: e.target.value }))} /></div>
+              <div><Label>Unit</Label><Select value={editForm.unit} onValueChange={v => setEditForm(f => ({ ...f, unit: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="kWh">kWh</SelectItem><SelectItem value="m³">m³</SelectItem><SelectItem value="psi">psi</SelectItem><SelectItem value="bar">bar</SelectItem><SelectItem value="CFM">CFM</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Reading Date</Label><Input type="date" value={editForm.readingDate} onChange={e => setEditForm(f => ({ ...f, readingDate: e.target.value }))} /></div>
+              <div><Label>Reader</Label><Input value={editForm.reader} onChange={e => setEditForm(f => ({ ...f, reader: e.target.value }))} placeholder="Who recorded" /></div>
+            </div>
+            <div><Label>Notes</Label><Textarea value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} rows={3} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button><Button onClick={handleEditSave} disabled={editLoading || !editForm.meterName || !editForm.value}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -454,6 +526,10 @@ export function OperationsShiftHandoverPage() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ shift: 'Morning', fromOperator: '', toOperator: '', tasksCompleted: '', pendingItems: '', issues: '', escalations: '' });
   const [kpis, setKpis] = useState<any[]>([]);
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ shift: 'Morning', area: '', status: 'pending', fromOperator: '', toOperator: '', handoverDate: '', items: '', notes: '' });
+  const [editLoading, setEditLoading] = useState(false);
 
   useEffect(() => {
     api.get<any>('/api/shift-handovers').then(res => {
@@ -510,6 +586,41 @@ export function OperationsShiftHandoverPage() {
     }
     setSaving(false);
   };
+  const handleEditOpen = (item: any) => {
+    setEditItem(item);
+    setEditForm({
+      shift: item.shiftType || 'Morning',
+      area: item.area || '',
+      status: item.status || 'pending',
+      fromOperator: item.handedOverBy?.fullName || '',
+      toOperator: item.receivedBy?.fullName || '',
+      handoverDate: item.shiftDate || '',
+      items: parseJsonText(item.tasksSummary),
+      notes: item.notes || '',
+    });
+  };
+  const handleEditSave = async () => {
+    if (!editItem) return;
+    setEditLoading(true);
+    try {
+      const res = await api.put(`/api/shift-handovers/${editItem.id}`, {
+        shiftType: editForm.shift,
+        area: editForm.area || undefined,
+        status: editForm.status,
+        shiftDate: editForm.handoverDate || undefined,
+        tasksSummary: editForm.items ? [{ task: editForm.items }] : [],
+        notes: editForm.notes || undefined,
+      });
+      if (res.success) {
+        toast.success('Handover updated successfully');
+        setHandovers(prev => prev.map(h => h.id === editItem.id ? { ...h, ...res.data } : h));
+        setEditItem(null);
+      } else {
+        toast.error(res.error || 'Failed to update handover');
+      }
+    } catch { toast.error('Failed to update handover'); }
+    setEditLoading(false);
+  };
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -531,9 +642,9 @@ export function OperationsShiftHandoverPage() {
         <div className="relative flex-1 max-w-sm"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search handovers..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" /></div>
       </div>
       <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
-        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Shift</TableHead><TableHead className="hidden md:table-cell">Date</TableHead><TableHead>From / To</TableHead><TableHead className="hidden lg:table-cell">Tasks</TableHead><TableHead className="hidden lg:table-cell">Pending</TableHead><TableHead className="hidden md:table-cell">Safety Notes</TableHead><TableHead className="hidden sm:table-cell">Notes</TableHead><TableHead>Status</TableHead></TableRow></TableHeader><TableBody>
+        <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Shift</TableHead><TableHead className="hidden md:table-cell">Date</TableHead><TableHead>From / To</TableHead><TableHead className="hidden lg:table-cell">Tasks</TableHead><TableHead className="hidden lg:table-cell">Pending</TableHead><TableHead className="hidden md:table-cell">Safety Notes</TableHead><TableHead className="hidden sm:table-cell">Notes</TableHead><TableHead>Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader><TableBody>
           {filtered.length === 0 ? (
-            <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={ArrowRightLeft} title="No handovers found" description="Create a new shift handover to get started." /></TableCell></TableRow>
+            <TableRow><TableCell colSpan={9} className="h-48"><EmptyState icon={ArrowRightLeft} title="No handovers found" description="Create a new shift handover to get started." /></TableCell></TableRow>
           ) : filtered.map(h => (
             <TableRow key={h.id} className="hover:bg-muted/30">
               <TableCell><Badge variant="outline" className={shiftColor(h.shiftType)}><span className="capitalize">{h.shiftType}</span></Badge></TableCell>
@@ -544,6 +655,7 @@ export function OperationsShiftHandoverPage() {
               <TableCell className="text-xs hidden md:table-cell max-w-[150px] truncate"><span className={h.safetyNotes ? 'text-amber-600 font-medium' : 'text-muted-foreground'}>{h.safetyNotes || '-'}</span></TableCell>
               <TableCell className="text-xs hidden sm:table-cell max-w-[150px] truncate"><span className={h.notes ? 'text-red-600 font-medium' : 'text-muted-foreground'}>{h.notes || '-'}</span></TableCell>
               <TableCell><Badge variant="outline" className={h.status === 'confirmed' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : 'text-amber-600 bg-amber-50 border-amber-200'}><span className="capitalize">{h.status}</span></Badge></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setViewItem(h)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEditOpen(h)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ))}
         </TableBody></Table></div>
@@ -563,6 +675,44 @@ export function OperationsShiftHandoverPage() {
             <div><Label>Escalations</Label><Textarea placeholder="Items to escalate..." rows={2} value={form.escalations} onChange={e => setForm(f => ({ ...f, escalations: e.target.value }))} /></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.fromOperator || !form.toOperator}>{saving ? 'Saving...' : 'Save Handover'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!viewItem} onOpenChange={open => { if (!open) setViewItem(null); }}>
+        <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Handover Details</DialogTitle><DialogDescription>View shift handover information</DialogDescription></DialogHeader>
+          {viewItem && <div className="grid grid-cols-2 gap-4 text-sm">
+            <div><span className="text-muted-foreground">Shift</span><p className="font-medium capitalize">{viewItem.shiftType || '-'}</p></div>
+            <div><span className="text-muted-foreground">Status</span><p className="font-medium capitalize">{viewItem.status || '-'}</p></div>
+            <div><span className="text-muted-foreground">From Operator</span><p className="font-medium">{viewItem.handedOverBy?.fullName || '-'}</p></div>
+            <div><span className="text-muted-foreground">To Operator</span><p className="font-medium">{viewItem.receivedBy?.fullName || '-'}</p></div>
+            <div><span className="text-muted-foreground">Handover Date</span><p className="font-medium">{formatDate(viewItem.shiftDate)}</p></div>
+            <div><span className="text-muted-foreground">Area</span><p className="font-medium">{viewItem.area || '-'}</p></div>
+            <div className="col-span-2"><span className="text-muted-foreground">Tasks Summary</span><p className="font-medium">{parseJsonText(viewItem.tasksSummary)}</p></div>
+            <div className="col-span-2"><span className="text-muted-foreground">Pending Issues</span><p className="font-medium">{parseJsonText(viewItem.pendingIssues)}</p></div>
+            <div className="col-span-2"><span className="text-muted-foreground">Safety Notes</span><p className="font-medium">{viewItem.safetyNotes || '-'}</p></div>
+            <div className="col-span-2"><span className="text-muted-foreground">Notes</span><p className="font-medium">{viewItem.notes || '-'}</p></div>
+          </div>}
+          <DialogFooter><Button variant="outline" onClick={() => setViewItem(null)}>Close</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!editItem} onOpenChange={open => { if (!open) setEditItem(null); }}>
+        <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Edit Handover</DialogTitle><DialogDescription>Update shift handover details</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Shift</Label><Select value={editForm.shift} onValueChange={v => setEditForm(f => ({ ...f, shift: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Morning">Morning</SelectItem><SelectItem value="Afternoon">Afternoon</SelectItem><SelectItem value="Night">Night</SelectItem></SelectContent></Select></div>
+              <div><Label>Status</Label><Select value={editForm.status} onValueChange={v => setEditForm(f => ({ ...f, status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pending">Pending</SelectItem><SelectItem value="confirmed">Confirmed</SelectItem></SelectContent></Select></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>From Operator</Label><Input value={editForm.fromOperator} onChange={e => setEditForm(f => ({ ...f, fromOperator: e.target.value }))} /></div>
+              <div><Label>To Operator</Label><Input value={editForm.toOperator} onChange={e => setEditForm(f => ({ ...f, toOperator: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Handover Date</Label><Input type="date" value={editForm.handoverDate} onChange={e => setEditForm(f => ({ ...f, handoverDate: e.target.value }))} /></div>
+              <div><Label>Area</Label><Input value={editForm.area} onChange={e => setEditForm(f => ({ ...f, area: e.target.value }))} placeholder="e.g. Plant A" /></div>
+            </div>
+            <div><Label>Tasks Summary</Label><Textarea value={editForm.items} onChange={e => setEditForm(f => ({ ...f, items: e.target.value }))} rows={3} /></div>
+            <div><Label>Notes</Label><Textarea value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} rows={3} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button><Button onClick={handleEditSave} disabled={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
