@@ -39,7 +39,7 @@ import {
   PieChart as PieChartIcon, Layers, Cog, Wrench, FlaskConical, HardHat,
   Radio, Ruler, GraduationCap, TriangleAlert, Activity, BrainCircuit,
   GitBranch, ScanLine, Truck, FolderOpen, Target, TrendingUp, Zap, Mail,
-  Send, ShieldAlert, ShieldCheck, BarChart3, Package, ClipboardList, Gauge,
+  Send, ShieldAlert, ShieldCheck, BarChart3, Package, ClipboardList, Gauge, X,
   AlertCircle, FileBarChart,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -299,6 +299,7 @@ export function SettingsRolesPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [savingPerm, setSavingPerm] = useState(false);
+  const [permFilter, setPermFilter] = useState('');
 
   const emptyRoleForm = { name: '', slug: '', description: '', level: 1 };
   const [createForm, setCreateForm] = useState(emptyRoleForm);
@@ -388,11 +389,20 @@ export function SettingsRolesPage() {
     if (res.success) { toast.success('Role deleted'); if (selectedRoleId === role.id && roles[0]) setSelectedRoleId(roles[0].id); api.get<Role[]>('/api/roles').then(r => { if (r.success && r.data) setRoles(Array.isArray(r.data) ? r.data : []); }); } else { toast.error(res.error || 'Failed'); }
   };
 
-  if (loading) return <LoadingSkeleton />;
-
-  const moduleNames = Object.entries(permissionsByModule);
   const totalPerms = permissions.length;
   const selectedPermCount = rolePerms.length;
+
+  const moduleNames = useMemo(() => {
+    const entries = Object.entries(permissionsByModule);
+    if (!permFilter.trim()) return entries;
+    const q = permFilter.toLowerCase();
+    return entries
+      .map(([mod, perms]) => [mod, perms.filter(p => p.name.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q))])
+      .filter(([, perms]) => perms.length > 0);
+  }, [permissionsByModule, permFilter]);
+  const filteredPermTotal = useMemo(() => moduleNames.reduce((s, [, p]) => s + p.length, 0), [moduleNames]);
+
+  if (loading) return <LoadingSkeleton />;
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)]">
@@ -518,6 +528,28 @@ export function SettingsRolesPage() {
               </div>
             </div>
           )}
+
+          {/* Permission search filter */}
+          <div className="relative">
+            <Search className="absolute left-2.5 md:left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Filter permissions..."
+              value={permFilter}
+              onChange={e => setPermFilter(e.target.value)}
+              className="pl-8 md:pl-9 h-8 md:h-9 text-xs md:text-sm bg-muted/40 dark:bg-muted/20"
+            />
+            {permFilter && (
+              <div className="absolute right-2.5 md:right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                <span className="text-[10px] text-muted-foreground tabular-nums">{filteredPermTotal} of {totalPerms}</span>
+                <button
+                  onClick={() => setPermFilter('')}
+                  className="h-4 w-4 rounded-full bg-muted-foreground/20 hover:bg-muted-foreground/30 flex items-center justify-center transition-colors"
+                >
+                  <X className="h-2.5 w-2.5 text-muted-foreground" />
+                </button>
+              </div>
+            )}
+          </div>
 
           {moduleNames.map(([module, perms]) => {
             const moduleEnabledCount = perms.filter(p => rolePerms.includes(p.id)).length;
