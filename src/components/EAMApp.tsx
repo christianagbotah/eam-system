@@ -45,6 +45,14 @@ const MaintenanceCalibrationPage = lazy(() => import('./modules/MaintenancePages
 const MaintenanceRiskAssessmentPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceRiskAssessmentPage })));
 const MaintenanceToolsPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceToolsPage })));
 
+// Repairs Module
+const RepairMaterialRequestsPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairMaterialRequestsPage })));
+const RepairToolRequestsPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairToolRequestsPage })));
+const RepairToolTransfersPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairToolTransfersPage })));
+const RepairDowntimePage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairDowntimePage })));
+const RepairCompletionPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairCompletionPage })));
+const RepairAnalyticsPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairAnalyticsPage })));
+
 // Inventory
 const InventoryPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventoryPage })));
 const InventoryItemsPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventoryItemsPage })));
@@ -172,6 +180,13 @@ function AppShell() {
       case 'maintenance-risk-assessment': return <MaintenanceRiskAssessmentPage />;
       case 'maintenance-tools': return <MaintenanceToolsPage />;
       case 'pm-schedules': return <PmSchedulesPage />;
+      // Repairs
+      case 'repairs-material-requests': return <RepairMaterialRequestsPage />;
+      case 'repairs-tool-requests': return <RepairToolRequestsPage />;
+      case 'repairs-tool-transfers': return <RepairToolTransfersPage />;
+      case 'repairs-downtime': return <RepairDowntimePage />;
+      case 'repairs-completion': return <RepairCompletionPage />;
+      case 'repairs-analytics': return <RepairAnalyticsPage />;
       // IoT
       case 'iot-devices': return <IotDevicesPage />;
       case 'iot-monitoring': return <IotMonitoringPage />;
@@ -275,6 +290,13 @@ function AppShell() {
     'maintenance-risk-assessment': 'Risk Assessment',
     'maintenance-tools': 'Tools',
     'pm-schedules': 'PM Schedules',
+    // Repairs Module
+    'repairs-material-requests': 'Material Requests',
+    'repairs-tool-requests': 'Tool Requests',
+    'repairs-tool-transfers': 'Tool Transfers',
+    'repairs-downtime': 'Downtime Tracking',
+    'repairs-completion': 'Completion & Closure',
+    'repairs-analytics': 'Repairs Analytics',
     // IoT
     'iot-devices': 'IoT Devices',
     'iot-monitoring': 'IoT Monitoring',

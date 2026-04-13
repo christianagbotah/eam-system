@@ -169,6 +169,24 @@ model User {
   // Session Management
   sessions              Session[]
 
+  // Repair module relations
+  repairMatReqRequested       RepairMaterialRequest[] @relation("RepairMatReqRequested")
+  repairMatReqSupApproved     RepairMaterialRequest[] @relation("RepairMatReqSupApproved")
+  repairMatReqStoreApproved   RepairMaterialRequest[] @relation("RepairMatReqStoreApproved")
+  repairMatReqIssued          RepairMaterialRequest[] @relation("RepairMatReqIssued")
+  repairMatReqReturned        RepairMaterialRequest[] @relation("RepairMatReqReturned")
+  repairToolReqRequested      RepairToolRequest[]     @relation("RepairToolReqRequested")
+  repairToolReqSupApproved    RepairToolRequest[]     @relation("RepairToolReqSupApproved")
+  repairToolReqStoreApproved  RepairToolRequest[]     @relation("RepairToolReqStoreApproved")
+  repairToolReqIssued         RepairToolRequest[]     @relation("RepairToolReqIssued")
+  repairToolReqReturned       RepairToolRequest[]     @relation("RepairToolReqReturned")
+  toolTransferFrom             ToolTransferRequest[]  @relation("ToolTransferFrom")
+  toolTransferTo               ToolTransferRequest[]  @relation("ToolTransferTo")
+  toolTransferRequested        ToolTransferRequest[]  @relation("ToolTransferRequested")
+  toolTransferStoreApproved   ToolTransferRequest[]  @relation("ToolTransferStoreApproved")
+  repairCompSupApproved        RepairCompletion[]    @relation("RepairCompSupApproved")
+  repairCompPlannerClosed      RepairCompletion[]    @relation("RepairCompPlannerClosed")
+
   @@map("users")
 }
 
@@ -414,6 +432,12 @@ model WorkOrder {
 
   // Status History relations
   statusHistory      WorkOrderStatusHistory[]
+
+  // Repair module relations
+  repairMaterialRequests  RepairMaterialRequest[]
+  repairToolRequests      RepairToolRequest[]
+  workOrderDowntimes      WorkOrderDowntime[]
+  repairCompletion        RepairCompletion?
 
   @@map("work_orders")
 }
@@ -686,6 +710,9 @@ model InventoryItem {
   transfers       InventoryTransfer[]
   poItems         PurchaseOrderItem[]
   receivingRecords ReceivingRecord[]
+
+  // Repair module relations
+  repairMaterialRequests RepairMaterialRequest[]
 
   @@map("inventory_items")
 }
@@ -969,6 +996,10 @@ model Tool {
   assignedTo      User?     @relation("ToolAssignedTo", fields: [assignedToId], references: [id])
   createdBy       User      @relation("ToolCreatedBy", fields: [createdById], references: [id])
   transactions    ToolTransaction[]
+
+  // Repair module relations
+  repairToolRequests     RepairToolRequest[]
+  repairToolTransfers    ToolTransferRequest[]
 
   @@map("tools")
 }
@@ -1811,4 +1842,176 @@ model ChatMessage {
 
   @@index([convoId, createdAt])
   @@map("chat_messages")
+}
+
+// ============================================================================
+// REPAIRS MODULE — Work Order Management Extensions
+// ============================================================================
+
+model RepairMaterialRequest {
+  id                    String    @id @default(cuid())
+  workOrderId           String
+  itemId                String?                              // → InventoryItem
+  itemName              String
+  quantityRequested     Float
+  quantityApproved      Float     @default(0)
+  quantityIssued        Float     @default(0)
+  quantityReturned      Float     @default(0)
+  unit                  String    @default("each")
+  unitCost              Float?
+  estimatedCost         Float     @default(0)
+  reason                String
+  notes                 String?
+  status                String    @default("pending")         // pending, supervisor_approved, storekeeper_approved, issued, partially_returned, fully_returned, rejected
+  requestedById         String                               // → User
+  supervisorApprovedById String?
+  supervisorApprovedAt  DateTime?
+  storekeeperApprovedById String?
+  storekeeperApprovedAt DateTime?
+  issuedById            String?                              // → User
+  issuedAt              DateTime?
+  returnedById          String?                              // → User
+  returnedAt            DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // WorkOrder relation
+  workOrder             WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  // InventoryItem relation
+  item                  InventoryItem? @relation(fields: [itemId], references: [id])
+
+  // User relations
+  requestedBy           User       @relation("RepairMatReqRequested", fields: [requestedById], references: [id])
+  supervisorApprovedBy  User?      @relation("RepairMatReqSupApproved", fields: [supervisorApprovedById], references: [id])
+  storekeeperApprovedBy User?      @relation("RepairMatReqStoreApproved", fields: [storekeeperApprovedById], references: [id])
+  issuedByUser          User?      @relation("RepairMatReqIssued", fields: [issuedById], references: [id])
+  returnedByUser        User?      @relation("RepairMatReqReturned", fields: [returnedById], references: [id])
+
+  @@map("repair_material_requests")
+}
+
+// 2. RepairToolRequest — Tool requests from technicians
+model RepairToolRequest {
+  id                    String    @id @default(cuid())
+  workOrderId           String
+  toolId                String?                              // → Tool
+  toolName              String
+  reason                String
+  notes                 String?
+  status                String    @default("pending")         // pending, supervisor_approved, storekeeper_approved, issued, returned, rejected
+  requestedById         String                               // → User
+  supervisorApprovedById String?
+  supervisorApprovedAt  DateTime?
+  storekeeperApprovedById String?
+  storekeeperApprovedAt DateTime?
+  issuedById            String?                              // → User
+  issuedAt              DateTime?
+  returnedById          String?                              // → User
+  returnedAt            DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // WorkOrder relation
+  workOrder             WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  // Tool relation
+  tool                  Tool?     @relation(fields: [toolId], references: [id])
+
+  // User relations
+  requestedBy           User       @relation("RepairToolReqRequested", fields: [requestedById], references: [id])
+  supervisorApprovedBy  User?      @relation("RepairToolReqSupApproved", fields: [supervisorApprovedById], references: [id])
+  storekeeperApprovedBy User?      @relation("RepairToolReqStoreApproved", fields: [storekeeperApprovedById], references: [id])
+  issuedByUser          User?      @relation("RepairToolReqIssued", fields: [issuedById], references: [id])
+  returnedByUser        User?      @relation("RepairToolReqReturned", fields: [returnedById], references: [id])
+
+  @@map("repair_tool_requests")
+}
+
+// 3. ToolTransferRequest — Tool transfer between technicians
+model ToolTransferRequest {
+  id                      String    @id @default(cuid())
+  toolId                  String                               // → Tool
+  fromUserId              String                               // → User
+  toUserId                String                               // → User
+  reason                  String
+  notes                   String?
+  status                  String    @default("pending")         // pending, storekeeper_approved, transferred, rejected
+  requestedById           String                               // → User
+  storekeeperApprovedById  String?
+  storekeeperApprovedAt   DateTime?
+  transferredAt           DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  // Tool relation
+  tool                    Tool      @relation(fields: [toolId], references: [id])
+
+  // User relations
+  fromUser                User      @relation("ToolTransferFrom", fields: [fromUserId], references: [id])
+  toUser                  User      @relation("ToolTransferTo", fields: [toUserId], references: [id])
+  requestedBy             User      @relation("ToolTransferRequested", fields: [requestedById], references: [id])
+  storekeeperApprovedBy   User?     @relation("ToolTransferStoreApproved", fields: [storekeeperApprovedById], references: [id])
+
+  @@map("tool_transfer_requests")
+}
+
+// 4. WorkOrderDowntime — Equipment downtime related to WOs
+model WorkOrderDowntime {
+  id                String    @id @default(cuid())
+  workOrderId       String
+  assetId           String?                              // → Asset
+  assetName         String
+  downtimeStart     DateTime
+  downtimeEnd       DateTime?
+  durationMinutes   Float     @default(0)
+  reason            String
+  category          String    @default("unplanned")       // planned, unplanned, partial
+  impactLevel       String    @default("medium")         // low, medium, high, critical
+  productionLoss    Float?
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // WorkOrder relation
+  workOrder         WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  @@map("wo_downtimes")
+}
+
+// 5. RepairCompletion — Completion record capturing all closure data
+model RepairCompletion {
+  id                     String    @id @default(cuid())
+  workOrderId            String    @unique
+  completionNotes        String?
+  findings               String?
+  rootCause              String?
+  correctiveAction       String?
+  materialsUsedSummary   String    @default("[]")          // JSON: [{itemId, name, qty, cost}]
+  toolsUsedSummary       String    @default("[]")          // JSON: [{toolId, name}]
+  totalLaborHours        Float     @default(0)
+  totalMaterialCost      Float     @default(0)
+  totalToolCost          Float     @default(0)
+  totalDowntimeMinutes   Float     @default(0)
+  supervisorReviewNotes  String?
+  supervisorApprovedById String?                              // → User
+  supervisorApprovedAt   DateTime?
+  supervisorStatus       String    @default("pending_review") // pending_review, approved, rework_requested
+  reworkReason           String?
+  reworkCount            Int       @default(0)
+  plannerClosedById      String?                              // → User
+  plannerClosedAt        DateTime?
+  plannerStatus          String    @default("pending_closure") // pending_closure, closed
+  closureNotes           String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  // WorkOrder relation
+  workOrder              WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  // User relations
+  supervisorApprovedBy   User?     @relation("RepairCompSupApproved", fields: [supervisorApprovedById], references: [id])
+  plannerClosedBy        User?     @relation("RepairCompPlannerClosed", fields: [plannerClosedById], references: [id])
+
+  @@map("repair_completions")
 }

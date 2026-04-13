@@ -387,6 +387,13 @@ export type PageName =
   | 'maintenance-risk-assessment'
   | 'maintenance-tools'
   | 'pm-schedules'
+  // Repairs Module (6 subpages)
+  | 'repairs-material-requests'
+  | 'repairs-tool-requests'
+  | 'repairs-tool-transfers'
+  | 'repairs-downtime'
+  | 'repairs-completion'
+  | 'repairs-analytics'
   // IoT (3 subpages)
   | 'iot-devices'
   | 'iot-monitoring'

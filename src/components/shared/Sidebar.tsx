@@ -74,6 +74,8 @@ import {
   FileSpreadsheet,
   Shield,
   ClipboardCheck,
+  ArrowRightLeft,
+  Timer,
 } from 'lucide-react';
 
 // ============================================================================
@@ -123,6 +125,17 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert },
         { page: 'maintenance-tools', label: 'Tools', icon: WrenchIcon },
         { page: 'pm-schedules', label: 'PM Schedules', icon: Clock },
+      ],
+    },
+    {
+      label: 'Repairs', icon: ArrowRightLeft, perm: 'work_orders.view', moduleCodes: ['work_orders', 'maintenance_requests'],
+      children: [
+        { page: 'repairs-material-requests', label: 'Material Requests', icon: Package },
+        { page: 'repairs-tool-requests', label: 'Tool Requests', icon: WrenchIcon },
+        { page: 'repairs-tool-transfers', label: 'Tool Transfers', icon: ArrowRightLeft },
+        { page: 'repairs-downtime', label: 'Downtime', icon: Timer },
+        { page: 'repairs-completion', label: 'Completion', icon: ClipboardCheck },
+        { page: 'repairs-analytics', label: 'Analytics', icon: BarChart3 },
       ],
     },
     {
