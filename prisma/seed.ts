@@ -639,6 +639,9 @@ async function seed() {
     db.workOrderMaterial.deleteMany(),
     db.workOrderTeamMember.deleteMany(),
     db.workOrder.deleteMany(),
+    db.pmTrigger.deleteMany(),
+    db.pmTemplateTask.deleteMany(),
+    db.pmTemplate.deleteMany(),
     db.pmSchedule.deleteMany(),
     db.maintenanceRequestComment.deleteMany(),
     db.maintenanceRequest.deleteMany(),
@@ -1230,6 +1233,159 @@ async function seed() {
     }
 
     console.log('  ✅ Created 5 PM schedules\n');
+
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 12b: PM TEMPLATES
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('📋 Creating PM templates...');
+
+    await db.pmTemplate.createMany({
+      data: [
+        {
+          title: 'Monthly Motor Inspection',
+          description: 'Comprehensive monthly inspection for electric motors including visual checks, vibration measurement, temperature monitoring, and bearing inspection.',
+          type: 'inspection',
+          category: 'electrical',
+          estimatedDuration: 60,
+          priority: 'high',
+          isActive: true,
+          createdById: admin.id,
+        },
+        {
+          title: 'Quarterly HVAC Service',
+          description: 'Full quarterly service for HVAC systems including filter replacement, refrigerant check, ductwork inspection, thermostat testing, and fan motor lubrication.',
+          type: 'preventive',
+          category: 'hvac',
+          estimatedDuration: 120,
+          priority: 'medium',
+          isActive: true,
+          createdById: admin.id,
+        },
+        {
+          title: 'Annual Overhaul',
+          description: 'Complete annual overhaul including full disassembly, inspection of all parts, replacement of wear items, reassembly, test run, and documentation.',
+          type: 'preventive',
+          category: 'mechanical',
+          estimatedDuration: 480,
+          priority: 'high',
+          isActive: true,
+          createdById: admin.id,
+        },
+      ],
+    });
+    console.log(`  ✅ Created 3 PM templates`);
+
+    // Create template tasks for each template
+    const allTemplates = await db.pmTemplate.findMany({
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const templateTaskData: Array<{
+      templateId: string;
+      taskNumber: number;
+      description: string;
+      taskType: string;
+      estimatedMinutes: number | null;
+      sortOrder: number;
+      isActive: boolean;
+    }> = [];
+
+    // Template 1: Monthly Motor Inspection (4 tasks)
+    const motorTemplate = allTemplates.find((t) => t.title === 'Monthly Motor Inspection');
+    if (motorTemplate) {
+      templateTaskData.push(
+        { templateId: motorTemplate.id, taskNumber: 1, description: 'Visual inspection of motor housing, cables, and connections for damage or wear', taskType: 'check', estimatedMinutes: 10, sortOrder: 1, isActive: true },
+        { templateId: motorTemplate.id, taskNumber: 2, description: 'Measure vibration levels at drive-end and non-drive-end bearings', taskType: 'measure', estimatedMinutes: 15, sortOrder: 2, isActive: true },
+        { templateId: motorTemplate.id, taskNumber: 3, description: 'Check operating temperature using IR thermometer at multiple points', taskType: 'inspect', estimatedMinutes: 15, sortOrder: 3, isActive: true },
+        { templateId: motorTemplate.id, taskNumber: 4, description: 'Inspect bearings for noise, play, and lubrication condition', taskType: 'inspect', estimatedMinutes: 20, sortOrder: 4, isActive: true },
+      );
+    }
+
+    // Template 2: Quarterly HVAC Service (5 tasks)
+    const hvacTemplate = allTemplates.find((t) => t.title === 'Quarterly HVAC Service');
+    if (hvacTemplate) {
+      templateTaskData.push(
+        { templateId: hvacTemplate.id, taskNumber: 1, description: 'Replace air filters and clean filter housing', taskType: 'replace', estimatedMinutes: 20, sortOrder: 1, isActive: true },
+        { templateId: hvacTemplate.id, taskNumber: 2, description: 'Check refrigerant levels and inspect for leaks', taskType: 'check', estimatedMinutes: 25, sortOrder: 2, isActive: true },
+        { templateId: hvacTemplate.id, taskNumber: 3, description: 'Inspect ductwork for damage, leaks, and proper insulation', taskType: 'inspect', estimatedMinutes: 25, sortOrder: 3, isActive: true },
+        { templateId: hvacTemplate.id, taskNumber: 4, description: 'Test thermostat calibration and control sequences', taskType: 'measure', estimatedMinutes: 20, sortOrder: 4, isActive: true },
+        { templateId: hvacTemplate.id, taskNumber: 5, description: 'Lubricate fan motor bearings and check belt tension', taskType: 'lubricate', estimatedMinutes: 30, sortOrder: 5, isActive: true },
+      );
+    }
+
+    // Template 3: Annual Overhaul (6 tasks)
+    const overhaulTemplate = allTemplates.find((t) => t.title === 'Annual Overhaul');
+    if (overhaulTemplate) {
+      templateTaskData.push(
+        { templateId: overhaulTemplate.id, taskNumber: 1, description: 'Fully disassemble equipment and tag all components', taskType: 'replace', estimatedMinutes: 120, sortOrder: 1, isActive: true },
+        { templateId: overhaulTemplate.id, taskNumber: 2, description: 'Inspect all internal parts for wear, cracks, and corrosion', taskType: 'inspect', estimatedMinutes: 60, sortOrder: 2, isActive: true },
+        { templateId: overhaulTemplate.id, taskNumber: 3, description: 'Replace all wear items: seals, gaskets, bearings, belts', taskType: 'replace', estimatedMinutes: 90, sortOrder: 3, isActive: true },
+        { templateId: overhaulTemplate.id, taskNumber: 4, description: 'Reassemble equipment following manufacturer specifications', taskType: 'replace', estimatedMinutes: 120, sortOrder: 4, isActive: true },
+        { templateId: overhaulTemplate.id, taskNumber: 5, description: 'Perform test run and verify all operational parameters', taskType: 'measure', estimatedMinutes: 60, sortOrder: 5, isActive: true },
+        { templateId: overhaulTemplate.id, taskNumber: 6, description: 'Document all findings, replaced parts, and test results', taskType: 'record', estimatedMinutes: 30, sortOrder: 6, isActive: true },
+      );
+    }
+
+    if (templateTaskData.length > 0) {
+      await db.pmTemplateTask.createMany({ data: templateTaskData });
+      console.log(`  ✅ Created ${templateTaskData.length} template tasks across 3 templates`);
+    }
+
+    console.log('');
+
+    // ════════════════════════════════════════════════════════════════════════
+    // STEP 12c: PM TRIGGERS
+    // ════════════════════════════════════════════════════════════════════════
+    console.log('⚙️  Creating PM triggers...');
+
+    // Get existing PM schedules to attach triggers to
+    const existingPmSchedules = await db.pmSchedule.findMany({
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const triggerData: Array<{
+      scheduleId: string;
+      triggerType: string;
+      triggerValue: number;
+      triggerConfig: string;
+      isActive: boolean;
+    }> = [];
+
+    if (existingPmSchedules.length >= 3) {
+      // Trigger 1: meter trigger for first schedule (if schedule has meter_based/custom_hours)
+      triggerData.push({
+        scheduleId: existingPmSchedules[0].id,
+        triggerType: 'meter',
+        triggerValue: 5000,
+        triggerConfig: JSON.stringify({ meterName: 'run_hours', threshold: 5000 }),
+        isActive: true,
+      });
+
+      // Trigger 2: time trigger for second schedule (cron-based)
+      triggerData.push({
+        scheduleId: existingPmSchedules[1].id,
+        triggerType: 'time',
+        triggerValue: 7,
+        triggerConfig: JSON.stringify({ cron: '0 6 * * 1' }), // Every Monday at 6 AM
+        isActive: true,
+      });
+
+      // Trigger 3: production_count trigger for third schedule
+      triggerData.push({
+        scheduleId: existingPmSchedules[2].id,
+        triggerType: 'production_count',
+        triggerValue: 10000,
+        triggerConfig: JSON.stringify({ threshold: 10000 }),
+        isActive: true,
+      });
+    }
+
+    if (triggerData.length > 0) {
+      await db.pmTrigger.createMany({ data: triggerData });
+      console.log(`  ✅ Created ${triggerData.length} PM triggers\n`);
+    } else {
+      console.log('  ⚠️  Not enough PM schedules to create triggers\n');
+    }
 
     // ════════════════════════════════════════════════════════════════════════
     // STEP 13: SAMPLE NOTIFICATIONS

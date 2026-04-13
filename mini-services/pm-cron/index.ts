@@ -2,20 +2,22 @@
  * PM Cron Scheduler
  *
  * Runs as a background service on port 3010.
- * Triggers the PM check-due endpoint every 6 hours.
+ * Triggers the PM check-due-cron endpoint every 6 hours.
+ * The cron endpoint handles WO generation + overdue detection + notifications.
  * Also provides a manual trigger endpoint.
  */
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const CRON_SECRET = process.env.PM_CRON_SECRET || 'pm-scheduler-internal-2025';
-const TARGET_URL = 'http://localhost:3000/api/pm-schedules/check-due';
+const TARGET_URL = 'http://localhost:3000/api/pm-schedules/check-due-cron';
 const SERVICE_PORT = 3010;
 
 console.log(`[PM Cron] Starting on port ${SERVICE_PORT}`);
 console.log(`[PM Cron] Will check PM schedules every ${CHECK_INTERVAL_MS / 60000} minutes`);
+console.log(`[PM Cron] Target: ${TARGET_URL}`);
 
 async function triggerCheckDue() {
-  console.log(`[PM Cron] ${new Date().toISOString()} — Triggering PM check-due...`);
+  console.log(`[PM Cron] ${new Date().toISOString()} — Triggering PM check-due-cron...`);
   try {
     const response = await fetch(TARGET_URL, {
       method: 'POST',
@@ -27,13 +29,16 @@ async function triggerCheckDue() {
 
     const data = await response.json();
     if (data.success) {
-      const { checked, generated, skipped } = data.data;
-      console.log(`[PM Cron] Done: ${checked} checked, ${generated} WOs generated, ${skipped} skipped`);
+      const d = data.data;
+      console.log(
+        `[PM Cron] Done: ${d.dueSchedulesChecked} checked, ${d.workOrdersGenerated} WOs generated, ` +
+        `${d.skipped} skipped, ${d.overdueSchedulesFound} overdue, ${d.overdueAlertsSent} alerts sent`,
+      );
     } else {
       console.error(`[PM Cron] Check failed:`, data.error);
     }
   } catch (err) {
-    console.error(`[PM Cron] Error triggering check-due:`, err);
+    console.error(`[PM Cron] Error triggering check-due-cron:`, err);
   }
 }
 
@@ -52,7 +57,7 @@ const server = Bun.serve({
     if (url.pathname === '/trigger' && req.method === 'POST') {
       // Trigger asynchronously — don't block the response
       triggerCheckDue();
-      return Response.json({ success: true, message: 'PM check-due triggered' });
+      return Response.json({ success: true, message: 'PM check-due-cron triggered' });
     }
 
     return Response.json({ error: 'Not found' }, { status: 404 });
