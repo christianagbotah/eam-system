@@ -214,7 +214,7 @@ export function SafetyIncidentsPage() {
             </div>
             <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
               <Table>
-                <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Title</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Severity</TableHead><TableHead className="font-semibold">Location</TableHead><TableHead className="font-semibold">Date</TableHead><TableHead className="font-semibold">Reported By</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="font-semibold">Root Cause</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+                <TableHeader sticky><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Title</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Severity</TableHead><TableHead className="font-semibold">Location</TableHead><TableHead className="font-semibold">Date</TableHead><TableHead className="font-semibold">Reported By</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="font-semibold">Root Cause</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
                 <TableBody>
                   {filtered.length === 0 ? <TableRow><TableCell colSpan={10}><EmptyState icon={TriangleAlert} title="No incidents found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(i => (
                     <TableRow key={i.id} className="cursor-pointer hover:bg-muted/30">
@@ -388,7 +388,7 @@ export function SafetyInspectionsPage() {
           </div>
           <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
             <Table>
-              <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Title</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Area</TableHead><TableHead className="font-semibold">Date</TableHead><TableHead className="font-semibold">Findings</TableHead><TableHead className="font-semibold">Score</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+              <TableHeader sticky><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Title</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Area</TableHead><TableHead className="font-semibold">Date</TableHead><TableHead className="font-semibold">Findings</TableHead><TableHead className="font-semibold">Score</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
               <TableBody>
                 {filtered.length === 0 ? <TableRow><TableCell colSpan={9}><EmptyState icon={ClipboardCheck} title="No inspections found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(i => {
                   const findings = parseFindings(i.findings);
@@ -552,7 +552,7 @@ export function SafetyTrainingPage() {
           </div>
           <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
             <Table>
-              <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">Course Name</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Trainer</TableHead><TableHead className="font-semibold">Duration</TableHead><TableHead className="font-semibold">Location</TableHead><TableHead className="font-semibold">Scheduled Date</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+              <TableHeader sticky><TableRow className="bg-muted/50"><TableHead className="font-semibold">Course Name</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Trainer</TableHead><TableHead className="font-semibold">Duration</TableHead><TableHead className="font-semibold">Location</TableHead><TableHead className="font-semibold">Scheduled Date</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
               <TableBody>
                 {filtered.length === 0 ? <TableRow><TableCell colSpan={8}><EmptyState icon={GraduationCap} title="No courses found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(t => (
                   <TableRow key={t.id} className="cursor-pointer hover:bg-muted/30">
@@ -720,7 +720,7 @@ export function SafetyEquipmentPage() {
           </div>
           <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
             <Table>
-              <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Equipment Name</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Location</TableHead><TableHead className="font-semibold">Last Inspection</TableHead><TableHead className="font-semibold">Next Inspection</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+              <TableHeader sticky><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Equipment Name</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Location</TableHead><TableHead className="font-semibold">Last Inspection</TableHead><TableHead className="font-semibold">Next Inspection</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
               <TableBody>
                 {filtered.length === 0 ? <TableRow><TableCell colSpan={8}><EmptyState icon={HardHat} title="No equipment found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(eq => {
                   const dStatus = getDisplayStatus(eq);
@@ -893,7 +893,7 @@ export function SafetyPermitsPage() {
           </div>
           <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
             <Table>
-              <TableHeader sticky className="top-0 z-10"><TableRow className="bg-muted/50"><TableHead className="font-semibold">Permit #</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Description</TableHead><TableHead className="font-semibold">Area</TableHead><TableHead className="font-semibold">Requested By</TableHead><TableHead className="font-semibold">Valid From</TableHead><TableHead className="font-semibold">Valid Until</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+              <TableHeader sticky><TableRow className="bg-muted/50"><TableHead className="font-semibold">Permit #</TableHead><TableHead className="font-semibold">Type</TableHead><TableHead className="font-semibold">Description</TableHead><TableHead className="font-semibold">Area</TableHead><TableHead className="font-semibold">Requested By</TableHead><TableHead className="font-semibold">Valid From</TableHead><TableHead className="font-semibold">Valid Until</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
               <TableBody>
                 {filtered.length === 0 ? <TableRow><TableCell colSpan={9}><EmptyState icon={FileCheck} title="No permits found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(p => (
                   <TableRow key={p.id} className="cursor-pointer hover:bg-muted/30">
