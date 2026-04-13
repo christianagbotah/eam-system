@@ -1,13 +1,23 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getSession } from '@/lib/auth';
+import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 
 // Safely check if a Prisma model exists (handles stale cached client)
 function hasModel(client: any, model: string): boolean {
   return client && typeof client[model] === 'object' && client[model] !== null;
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    const plantFilter = getPlantFilterWhere(plantScope);
+
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period') || '30';
 
