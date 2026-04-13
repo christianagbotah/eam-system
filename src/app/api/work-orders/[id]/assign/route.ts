@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { executeTransition } from '@/lib/state-machine';
 
 export async function POST(
   request: NextRequest,
@@ -13,7 +14,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasAnyPermission(session, ['work_orders.assign', 'work_orders.*'])) {
+    if (!hasAnyPermission(session, ['work_orders.assign', 'work_orders.assign_supervisor', 'work_orders.assign_technician', 'work_orders.*'])) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -33,14 +34,6 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    // Validate status transition
-    if (!['draft', 'requested', 'approved', 'planned'].includes(wo.status)) {
-      return NextResponse.json(
-        { success: false, error: `Cannot assign work order with status "${wo.status}"` },
-        { status: 400 }
-      );
-    }
-
     // Verify the assigned user exists
     const assignee = await db.user.findUnique({ where: { id: assignedTo } });
     if (!assignee) {
@@ -49,24 +42,26 @@ export async function POST(
 
     const now = new Date();
 
-    const updated = await db.workOrder.update({
-      where: { id },
-      data: {
-        assignedTo,
-        teamLeaderId: teamLeaderId || null,
-        assignedSupervisorId: assignedSupervisorId || null,
-        assignedBy: session.userId,
-        assignmentType: assignmentType || 'direct',
-        status: 'assigned',
+    // Execute status transition via state machine (validates + updates status + creates history)
+    const result = await executeTransition(
+      'work_order',
+      id,
+      'assigned',
+      session,
+      {
+        extraData: {
+          assignedTo,
+          teamLeaderId: teamLeaderId || null,
+          assignedSupervisorId: assignedSupervisorId || null,
+          assignedBy: session.userId,
+          assignmentType: assignmentType || 'direct',
+        },
       },
-      include: {
-        assignee: { select: { id: true, fullName: true, username: true } },
-        teamLeader: { select: { id: true, fullName: true, username: true } },
-        assignedSupervisor: { select: { id: true, fullName: true, username: true } },
-        assigner: { select: { id: true, fullName: true, username: true } },
-        maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
-      },
-    });
+    );
+
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+    }
 
     // Add assignee as team member if not already present
     const existingMember = await db.workOrderTeamMember.findFirst({
@@ -83,16 +78,15 @@ export async function POST(
       });
     }
 
-    // Audit log
+    // Domain-specific audit log (status change is handled by state machine via WorkOrderStatusHistory)
     await db.auditLog.create({
       data: {
         userId: session.userId,
         action: 'update',
         entityType: 'work_order',
         entityId: id,
-        oldValues: JSON.stringify({ status: wo.status }),
+        oldValues: JSON.stringify({ assignedTo: null }),
         newValues: JSON.stringify({
-          status: 'assigned',
           assignedTo: assignee.fullName,
           assignmentType: assignmentType || 'direct',
         }),
@@ -111,6 +105,18 @@ export async function POST(
         `wo-detail?id=${id}`,
       );
     }
+
+    // Re-fetch with includes to return full object (state machine returns plain record)
+    const updated = await db.workOrder.findUnique({
+      where: { id },
+      include: {
+        assignee: { select: { id: true, fullName: true, username: true } },
+        teamLeader: { select: { id: true, fullName: true, username: true } },
+        assignedSupervisor: { select: { id: true, fullName: true, username: true } },
+        assigner: { select: { id: true, fullName: true, username: true } },
+        maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
+      },
+    });
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {

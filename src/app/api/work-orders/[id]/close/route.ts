@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { executeTransition } from '@/lib/state-machine';
 
 export async function POST(
   request: NextRequest,
@@ -29,32 +30,27 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    if (wo.status !== 'completed') {
-      return NextResponse.json(
-        { success: false, error: `Cannot close work order with status "${wo.status}". Must be completed first.` },
-        { status: 400 }
-      );
-    }
-
     const now = new Date();
 
-    const updated = await db.workOrder.update({
-      where: { id },
-      data: {
-        status: 'closed',
-        isLocked: true,
-        lockedBy: session.userId,
-        lockedAt: now,
-        lockReason: 'Work order closed',
+    // Execute status transition via state machine (validates + updates status + creates history)
+    const result = await executeTransition(
+      'work_order',
+      id,
+      'closed',
+      session,
+      {
+        extraData: {
+          isLocked: true,
+          lockedBy: session.userId,
+          lockedAt: now,
+          lockReason: 'Work order closed',
+        },
       },
-      include: {
-        assignee: { select: { id: true, fullName: true, username: true } },
-        teamLeader: { select: { id: true, fullName: true, username: true } },
-        assignedSupervisor: { select: { id: true, fullName: true, username: true } },
-        locker: { select: { id: true, fullName: true, username: true } },
-        maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
-      },
-    });
+    );
+
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+    }
 
     // Add closing comment if notes provided
     if (notes) {
@@ -67,15 +63,15 @@ export async function POST(
       });
     }
 
-    // Audit log
+    // Domain-specific audit log (status change handled by state machine via WorkOrderStatusHistory)
     await db.auditLog.create({
       data: {
         userId: session.userId,
         action: 'update',
         entityType: 'work_order',
         entityId: id,
-        oldValues: JSON.stringify({ status: wo.status, isLocked: wo.isLocked }),
-        newValues: JSON.stringify({ status: 'closed', isLocked: true }),
+        oldValues: JSON.stringify({ isLocked: wo.isLocked }),
+        newValues: JSON.stringify({ isLocked: true }),
       },
     });
 
@@ -105,6 +101,18 @@ export async function POST(
         `wo-detail?id=${id}`,
       );
     }
+
+    // Re-fetch with includes to return full object (state machine returns plain record)
+    const updated = await db.workOrder.findUnique({
+      where: { id },
+      include: {
+        assignee: { select: { id: true, fullName: true, username: true } },
+        teamLeader: { select: { id: true, fullName: true, username: true } },
+        assignedSupervisor: { select: { id: true, fullName: true, username: true } },
+        locker: { select: { id: true, fullName: true, username: true } },
+        maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
+      },
+    });
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {

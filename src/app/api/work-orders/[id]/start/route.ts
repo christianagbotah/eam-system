@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { executeTransition } from '@/lib/state-machine';
 
 export async function POST(
   request: NextRequest,
@@ -30,28 +31,20 @@ export async function POST(
       );
     }
 
-    if (wo.status !== 'assigned') {
-      return NextResponse.json(
-        { success: false, error: `Cannot start work order with status "${wo.status}"` },
-        { status: 400 }
-      );
-    }
-
     const now = new Date();
 
-    const updated = await db.workOrder.update({
-      where: { id },
-      data: {
-        status: 'in_progress',
-        actualStart: now,
-      },
-      include: {
-        assignee: { select: { id: true, fullName: true, username: true } },
-        teamLeader: { select: { id: true, fullName: true, username: true } },
-        assignedSupervisor: { select: { id: true, fullName: true, username: true } },
-        maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
-      },
-    });
+    // Execute status transition via state machine (validates + updates status + creates history)
+    const result = await executeTransition(
+      'work_order',
+      id,
+      'in_progress',
+      session,
+      { extraData: { actualStart: now } },
+    );
+
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+    }
 
     // Create time log entry
     await db.workOrderTimeLog.create({
@@ -61,18 +54,6 @@ export async function POST(
         action: 'start',
         notes: notes || 'Work started',
         timestamp: now,
-      },
-    });
-
-    // Audit log
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'work_order',
-        entityId: id,
-        oldValues: JSON.stringify({ status: wo.status }),
-        newValues: JSON.stringify({ status: 'in_progress', actualStart: now.toISOString() }),
       },
     });
 
@@ -91,6 +72,17 @@ export async function POST(
         `wo-detail?id=${id}`,
       );
     }
+
+    // Re-fetch with includes to return full object (state machine returns plain record)
+    const updated = await db.workOrder.findUnique({
+      where: { id },
+      include: {
+        assignee: { select: { id: true, fullName: true, username: true } },
+        teamLeader: { select: { id: true, fullName: true, username: true } },
+        assignedSupervisor: { select: { id: true, fullName: true, username: true } },
+        maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
+      },
+    });
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {

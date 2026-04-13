@@ -77,6 +77,9 @@ export async function middleware(request: NextRequest) {
   });
 }
 
+// Force Node.js runtime for Prisma Client compatibility
+export const runtime = 'nodejs';
+
 export const config = {
   matcher: ['/api/:path*'],
 };

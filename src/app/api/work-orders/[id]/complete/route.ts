@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { executeTransition } from '@/lib/state-machine';
 import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils';
 
 export async function POST(
@@ -39,13 +40,6 @@ export async function POST(
       );
     }
 
-    if (wo.status !== 'in_progress') {
-      return NextResponse.json(
-        { success: false, error: `Cannot complete work order with status "${wo.status}"` },
-        { status: 400 }
-      );
-    }
-
     const now = new Date();
 
     // Calculate actual hours if actualStart exists
@@ -55,30 +49,35 @@ export async function POST(
       actualHours = Math.round(hours * 100) / 100;
     }
 
-    const updated = await db.workOrder.update({
-      where: { id },
-      data: {
-        status: 'completed',
-        actualEnd: now,
-        actualHours,
-        failureDescription: failureDescription || wo.failureDescription,
-        causeDescription: causeDescription || wo.causeDescription,
-        actionDescription: actionDescription || wo.actionDescription,
-        laborCost: laborCost ?? wo.laborCost,
-        partsCost: partsCost ?? wo.partsCost,
-        contractorCost: contractorCost ?? wo.contractorCost,
-        totalCost:
-          (laborCost ?? wo.laborCost) +
-          (partsCost ?? wo.partsCost) +
-          (contractorCost ?? wo.contractorCost),
+    const totalCost =
+      (laborCost ?? wo.laborCost) +
+      (partsCost ?? wo.partsCost) +
+      (contractorCost ?? wo.contractorCost);
+
+    // Execute status transition via state machine (validates + updates status + creates history)
+    const result = await executeTransition(
+      'work_order',
+      id,
+      'completed',
+      session,
+      {
+        extraData: {
+          actualEnd: now,
+          actualHours,
+          failureDescription: failureDescription || wo.failureDescription,
+          causeDescription: causeDescription || wo.causeDescription,
+          actionDescription: actionDescription || wo.actionDescription,
+          laborCost: laborCost ?? wo.laborCost,
+          partsCost: partsCost ?? wo.partsCost,
+          contractorCost: contractorCost ?? wo.contractorCost,
+          totalCost,
+        },
       },
-      include: {
-        assignee: { select: { id: true, fullName: true, username: true } },
-        teamLeader: { select: { id: true, fullName: true, username: true } },
-        assignedSupervisor: { select: { id: true, fullName: true, username: true } },
-        maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
-      },
-    });
+    );
+
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+    }
 
     // Create time log
     await db.workOrderTimeLog.create({
@@ -102,16 +101,15 @@ export async function POST(
       });
     }
 
-    // Audit log
+    // Domain-specific audit log (status change handled by state machine via WorkOrderStatusHistory)
     await db.auditLog.create({
       data: {
         userId: session.userId,
         action: 'update',
         entityType: 'work_order',
         entityId: id,
-        oldValues: JSON.stringify({ status: wo.status }),
+        oldValues: JSON.stringify({ actualEnd: null, actualHours: wo.actualHours }),
         newValues: JSON.stringify({
-          status: 'completed',
           actualEnd: now.toISOString(),
           actualHours,
         }),
@@ -135,8 +133,6 @@ export async function POST(
     }
 
     // ── PM Schedule: advance nextDueDate when a PM WO is completed ──
-    // If this WO was auto-generated from a PM schedule (pmScheduleId set),
-    // recalculate the schedule's nextDueDate from the completion date.
     if (wo.pmScheduleId) {
       try {
         const pmSchedule = await db.pmSchedule.findUnique({
@@ -182,6 +178,17 @@ export async function POST(
         console.error('[PM Schedule Update Error] Failed to update nextDueDate:', pmErr);
       }
     }
+
+    // Re-fetch with includes to return full object (state machine returns plain record)
+    const updated = await db.workOrder.findUnique({
+      where: { id },
+      include: {
+        assignee: { select: { id: true, fullName: true, username: true } },
+        teamLeader: { select: { id: true, fullName: true, username: true } },
+        assignedSupervisor: { select: { id: true, fullName: true, username: true } },
+        maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
+      },
+    });
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {

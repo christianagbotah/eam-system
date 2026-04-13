@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { executeTransition } from '@/lib/state-machine';
 
 export async function POST(
   request: NextRequest,
@@ -30,62 +31,24 @@ export async function POST(
       );
     }
 
-    // Validate status transition using StatusTransition table
-    const transition = await db.statusTransition.findFirst({
-      where: {
-        entityType: 'maintenance_request',
-        fromStatus: mr.status,
-        toStatus: 'approved',
+    // Execute status transition via state machine (validates + updates + creates comment)
+    const result = await executeTransition(
+      'maintenance_request',
+      id,
+      'approved',
+      session,
+      {
+        extraData: {
+          workflowStatus: 'approved',
+          approvedBy: session.userId,
+          notes: notes || mr.notes,
+        },
       },
-    });
+    );
 
-    if (transition) {
-      // Parse allowed roles
-      const allowedRoles: string[] = JSON.parse(transition.allowedRoleSlugs);
-      const hasRole = session.roles.some((r) => allowedRoles.includes(r));
-      if (!hasRole) {
-        return NextResponse.json(
-          { success: false, error: 'Your role is not allowed to perform this action' },
-          { status: 403 }
-        );
-      }
-    } else if (!session.roles.includes('admin')) {
-      // If no transition defined, only admin can approve
-      return NextResponse.json(
-        { success: false, error: 'No valid status transition defined for this action' },
-        { status: 400 }
-      );
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
     }
-
-    // Update the request
-    const updated = await db.maintenanceRequest.update({
-      where: { id },
-      data: {
-        status: 'approved',
-        workflowStatus: 'approved',
-        approvedBy: session.userId,
-        notes: notes || mr.notes,
-      },
-      include: {
-        requester: { select: { id: true, fullName: true, username: true } },
-        supervisor: { select: { id: true, fullName: true, username: true } },
-        approver: { select: { id: true, fullName: true, username: true } },
-        assignedPlanner: { select: { id: true, fullName: true, username: true } },
-        workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
-      },
-    });
-
-    // Create audit log
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'maintenance_request',
-        entityId: id,
-        oldValues: JSON.stringify({ status: mr.status }),
-        newValues: JSON.stringify({ status: 'approved' }),
-      },
-    });
 
     // Notify the requester
     if (mr.requestedBy && mr.requestedBy !== session.userId) {
@@ -99,6 +62,18 @@ export async function POST(
         `mr-detail?id=${id}`,
       );
     }
+
+    // Re-fetch with includes to return full object (state machine returns plain record)
+    const updated = await db.maintenanceRequest.findUnique({
+      where: { id },
+      include: {
+        requester: { select: { id: true, fullName: true, username: true } },
+        supervisor: { select: { id: true, fullName: true, username: true } },
+        approver: { select: { id: true, fullName: true, username: true } },
+        assignedPlanner: { select: { id: true, fullName: true, username: true } },
+        workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
+      },
+    });
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {

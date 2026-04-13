@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { executeTransition } from '@/lib/state-machine';
 
 export async function POST(
   request: NextRequest,
@@ -24,13 +25,6 @@ export async function POST(
     const mr = await db.maintenanceRequest.findUnique({ where: { id } });
     if (!mr) {
       return NextResponse.json({ success: false, error: 'Maintenance request not found' }, { status: 404 });
-    }
-
-    if (mr.status !== 'approved') {
-      return NextResponse.json(
-        { success: false, error: `Cannot convert a request with status "${mr.status}". Must be approved.` },
-        { status: 400 }
-      );
     }
 
     if (mr.workOrderId) {
@@ -81,26 +75,34 @@ export async function POST(
       },
     });
 
-    // Update the maintenance request
-    await db.maintenanceRequest.update({
-      where: { id },
-      data: {
-        status: 'converted',
-        workflowStatus: 'work_order_created',
-        workOrderId: wo.id,
-        assignedPlannerId: session.userId,
+    // Execute MR status transition via state machine (validates + updates + creates comment)
+    const result = await executeTransition(
+      'maintenance_request',
+      id,
+      'converted',
+      session,
+      {
+        extraData: {
+          workOrderId: wo.id,
+          workflowStatus: 'work_order_created',
+          assignedPlannerId: session.userId,
+        },
       },
-    });
+    );
 
-    // Audit log
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+    }
+
+    // Domain-specific audit log (status change handled by state machine via MaintenanceRequestComment)
     await db.auditLog.create({
       data: {
         userId: session.userId,
         action: 'update',
         entityType: 'maintenance_request',
         entityId: id,
-        oldValues: JSON.stringify({ status: mr.status }),
-        newValues: JSON.stringify({ status: 'converted', workOrderId: wo.id, woNumber: wo.woNumber }),
+        oldValues: JSON.stringify({}),
+        newValues: JSON.stringify({ workOrderId: wo.id, woNumber: wo.woNumber }),
       },
     });
 
