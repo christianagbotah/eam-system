@@ -188,3 +188,28 @@ Stage Summary:
 - Committed as ecf154b, pushed to GitHub
 - All report pages now use real domain data (no more WO proxy data)
 - Dashboard is now a true cross-module overview
+
+---
+Task ID: 5
+Agent: main
+Task: Phase 5 — View/Edit dialogs, settings enhancement, forgot-password, notifications
+
+Work Log:
+- Implemented View/Edit dialogs for 14 entities: Safety (5), Quality (6), Operations (3)
+- Added 12 missing CompanyProfile fields to SettingsGeneralPage
+- Created /api/settings/integrations (GET/PUT) — moved configs from localStorage to server-side
+- Created /api/backups (GET/POST) — real backup history tracking
+- Added notification polling (60s interval + initial fetch on mount) to NotificationPopover
+- Created /api/auth/forgot-password and /api/auth/reset-password endpoints
+- Updated LoginPage to call real forgot-password API
+- Added IoT device edit dialog with full field support
+- Added resetToken/resetTokenExpires to User model, pollingInterval/description to IotDevice model
+- Committed as 00032eb, pushed to GitHub
+
+Stage Summary:
+- 1,403 lines added, 87 removed across 17 files
+- Zero lint errors
+- All View/Edit buttons across Safety, Quality, Operations modules now fully functional
+- Settings pages now persist data server-side (no more localStorage-only storage)
+- Forgot-password flow is real (generates tokens, validates expiry)
+- Notifications update in real-time via polling
