@@ -33,13 +33,13 @@ import { Progress } from '@/components/ui/progress';
 import {
   ClipboardList, Wrench, Plus, Search, ArrowLeft, CheckCircle2, XCircle,
   Clock, AlertTriangle, RefreshCw, Play, Pause, Check, Lock, Eye, Pencil,
-  Trash2, Timer, MessageSquare, Users, MoreHorizontal, BarChart3, Target,
+  Trash2, MessageSquare, Users, MoreHorizontal, BarChart3, Target,
   TrendingUp, Calendar, AlertCircle, Crosshair, TriangleAlert, Ruler,
   Wrench as WrenchIcon, Settings, Zap, Activity, Send, CircleDot, X,
   Loader2,
   Building2,
-  FileText, CheckSquare, Filter, ArrowUpDown, BookOpen, ShieldAlert,
-  PieChart as PieChartIcon, Gauge, ListChecks, Shield, HardHat, MapPin,
+  ArrowRightLeft, FileText, CheckSquare, Filter, ArrowUpDown, BookOpen, ShieldAlert,
+  PieChart as PieChartIcon, Gauge, ListChecks, Shield, ShieldCheck, HardHat, MapPin,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -1121,7 +1121,7 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {wo.actualHours || 0}h total</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setTlAction('start'); setTlHours(''); setTlNotes(''); setTimeLogOpen(true); }}><Timer className="h-3.5 w-3.5" />Log Time</Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setTlAction('start'); setTlHours(''); setTlNotes(''); setTimeLogOpen(true); }}><Clock className="h-3.5 w-3.5" />Log Time</Button>
             </CardHeader>
             <CardContent>
               {(!wo.timeLogs || wo.timeLogs.length === 0) ? (
@@ -1488,7 +1488,7 @@ export function PmSchedulesPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: 'Total Schedules', value: schedules.length, icon: Timer, color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' },
+          { label: 'Total Schedules', value: schedules.length, icon: Clock, color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' },
           { label: 'Active', value: activeSchedules.length, icon: Activity, color: 'bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400' },
           { label: 'Due Soon', value: dueSoonCount, icon: AlertCircle, color: 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400' },
           { label: 'Overdue', value: overdueCount, icon: AlertTriangle, color: 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400' },
@@ -1535,7 +1535,7 @@ export function PmSchedulesPage() {
                 </TableRow>
               )) : schedules.length === 0 ? (
                 <TableRow><TableCell colSpan={8}>
-                  <EmptyState icon={Timer} title="No schedules found" description={dueSoonFilter ? "No schedules due in the next 7 days" : "Create your first PM schedule to get started"} />
+                  <EmptyState icon={Clock} title="No schedules found" description={dueSoonFilter ? "No schedules due in the next 7 days" : "Create your first PM schedule to get started"} />
                 </TableCell></TableRow>
               ) : schedules.map(s => (
                 <TableRow key={s.id} className="group">
@@ -1795,7 +1795,7 @@ export function MaintenanceAnalyticsPage() {
   ];
 
   const kpis = [
-    { label: 'MTTR (Hours)', value: mttr, icon: Timer, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'MTTR (Hours)', value: mttr, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'MTBF (Hours)', value: mtbf, icon: Activity, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
     { label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
     { label: 'Total Maintenance Cost', value: `$${totalCost.toLocaleString()}`, icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },

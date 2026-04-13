@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/table';
 import {
   TriangleAlert, Search, ShieldCheck, HardHat, GraduationCap, FileCheck,
-  Plus, MoreHorizontal, Pencil, Trash2, AlertTriangle, CheckCircle2,
+  Plus, MoreHorizontal, Pencil, Trash2, AlertCircle, AlertTriangle, CheckCircle2,
   XCircle, Eye, Clock, Users, Filter, MapPin, Calendar, ShieldAlert,
   ClipboardCheck, ArrowUpDown, Activity, X, Send,
   BarChart3,

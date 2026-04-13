@@ -32,7 +32,7 @@ import {
 import {
   Building2, Plus, Search, ArrowLeft, Pencil, Trash2, Eye, MoreHorizontal,
   Factory, Wrench, Clock, AlertTriangle, CheckCircle2, XCircle, Activity, AlertCircle,
-  GitBranch, ListChecks, Box, HeartPulse, Settings, Monitor, Thermometer,
+  GitBranch, Layers, ListChecks, Box, HeartPulse, Settings, Monitor, Thermometer,
   ChevronRight,
   Droplets, Cpu, Zap, MapPin, Shield, BarChart3, Target, RefreshCw, Loader2, Play,
 } from 'lucide-react';

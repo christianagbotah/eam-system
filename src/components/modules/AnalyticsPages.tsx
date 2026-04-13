@@ -16,8 +16,9 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Target, Gauge, TrendingUp, TrendingDown, Zap, BarChart3, Activity,
-  AlertTriangle, Factory, Clock, ArrowUpDown, RefreshCw, Search, Filter,
+  Activity, AlertTriangle, ArrowUpDown, BarChart3, Building2, CheckCircle2,
+  ClipboardCheck, Clock, DollarSign, Factory, Filter, Gauge, RefreshCw,
+  Search, Target, TrendingDown, TrendingUp, Wrench, Zap,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -49,7 +50,7 @@ export function AnalyticsPage() {
   const charts = data?.charts || {};
 
   const kpiCards = [
-    { label: 'MTTR', value: `${kpis.mttr || 0} hrs`, icon: Timer, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'MTTR', value: `${kpis.mttr || 0} hrs`, icon: Clock, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
     { label: 'MTBF', value: `${kpis.mtbf || 0} hrs`, icon: Activity, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' },
     { label: 'Asset Utilization', value: `${kpis.assetUtilization || 0}%`, icon: Gauge, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'PM Compliance', value: `${kpis.pmCompliance || 0}%`, icon: Target, color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' },
@@ -318,7 +319,7 @@ export function AnalyticsKpiPage() {
     { label: 'Total Assets', value: '-', icon: Building2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
     { label: 'Active Work Orders', value: stats?.activeWorkOrders || 0, icon: Wrench, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'Completion Rate', value: `${completionRate}%`, icon: CheckCircle2, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
-    { label: 'MTTR (Hours)', value: mttr, icon: Timer, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'MTTR (Hours)', value: mttr, icon: Clock, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
     { label: 'Overdue WOs', value: stats?.overdueWorkOrders || 0, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
     { label: 'PM Compliance', value: `${pmCompliance}%`, icon: ClipboardCheck, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
@@ -630,7 +631,7 @@ export function AnalyticsDowntimePage() {
 
   const kpis = [
     { label: 'Downtime Events', value: totalEvents, icon: TrendingDown, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
-    { label: 'Avg Resolution (Hrs)', value: avgResolutionTime, icon: Timer, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Avg Resolution (Hrs)', value: avgResolutionTime, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'Most Affected', value: mostAffected.length > 0 ? mostAffected[0][0] : '-', icon: AlertTriangle, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
     { label: 'Cost Impact', value: `$${costImpact.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
   ];

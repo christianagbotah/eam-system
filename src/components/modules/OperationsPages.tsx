@@ -25,7 +25,7 @@ import {
   Gauge, GraduationCap, FileText, Clock, ArrowRightLeft, CheckSquare,
   Plus, Search, MoreHorizontal, Pencil, Trash2, AlertTriangle, CheckCircle2,
   Filter, Users, Calendar, Eye, ListChecks, ShieldAlert, Play, X,
-  BookOpen, ClipboardCheck, Settings, Send,
+  Activity, BookOpen, ClipboardCheck, ClipboardList, Settings, Send, Target, TrendingUp,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
 
@@ -409,7 +409,7 @@ export function OperationsTimeLogsPage() {
   const summaryCards = [
     { label: 'Total Log Entries', value: String(totalEntries), icon: Clock, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
     { label: 'This Week', value: String(thisWeekCount), icon: Calendar, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'This Month', value: String(thisMonthCount), icon: Timer, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'This Month', value: String(thisMonthCount), icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'Top Technician', value: topTech ? topTech[0] : '-', icon: Users, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 

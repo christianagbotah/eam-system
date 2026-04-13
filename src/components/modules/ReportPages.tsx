@@ -21,7 +21,9 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Building2, Wrench, Package, Factory, ShieldCheck, HardHat, TrendingUp,
+  Activity, AlertTriangle, Boxes, Building2, CheckCircle2, ClipboardCheck, ClipboardList,
+  Database, GraduationCap, ShieldAlert, Target, XCircle,
+  Wrench, Package, Factory, ShieldCheck, HardHat, TrendingUp,
   FileBarChart, FileSpreadsheet, Download, Plus, Search, Filter, Calendar,
   Eye, Printer, Share, BarChart3, DollarSign, RefreshCw, Clock, Settings,
   Loader2,

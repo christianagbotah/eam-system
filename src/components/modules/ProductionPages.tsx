@@ -25,7 +25,7 @@ import {
   Zap, CheckCircle2, Clock, Eye, ArrowUpDown, BarChart3, Activity,
   RefreshCw, Settings, Gauge, Target, Play, X,
   TrendingDown,
-  Minus,
+  Minus, Pause, ShieldCheck, Wrench, XCircle,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -679,7 +679,7 @@ export function ProductionBottlenecksPage() {
   const totalImpact = kpisData.totalImpact;
   const kpis = [
     { label: 'Active Bottlenecks', value: activeCount, icon: AlertTriangle, color: 'text-red-600 bg-red-50' },
-    { label: 'Avg Wait Time', value: avgWait, icon: Timer, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Avg Wait Time', value: avgWait, icon: Clock, color: 'text-amber-600 bg-amber-50' },
     { label: 'Impact', value: `${totalImpact.toLocaleString()} units`, icon: TrendingDown, color: 'text-sky-600 bg-sky-50' },
   Minus,
     { label: 'Resolved This Month', value: resolvedMonth, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },

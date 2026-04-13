@@ -22,9 +22,9 @@ import {
 } from '@/components/ui/table';
 import {
   Smartphone, Monitor, Radio, Wifi, Plus, Search, MoreHorizontal,
-  Pencil, Trash2, AlertTriangle, CheckCircle2, XCircle, Activity, Play, Pause,
+  Pencil, Trash2, AlertTriangle, CheckCircle2, XCircle, Activity, ClipboardList, Gauge, Play, Pause,
   Loader2,
-  Thermometer, Droplets, Zap, Settings, RefreshCw, Filter, Bell, Eye,
+  Thermometer, Droplets, Zap, Settings, RefreshCw, Filter, Bell, BellRing, Eye,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';

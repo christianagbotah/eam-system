@@ -20,7 +20,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Search, ShieldCheck, FileCheck, ShieldAlert, ScrollText, BarChart3,
+  Search, ShieldCheck, FileCheck, ShieldAlert, ScrollText, AlertCircle, Archive, BarChart3,
   HardHat, Plus, MoreHorizontal, Pencil, Trash2, AlertTriangle,
   CheckCircle2, XCircle, Eye, FlaskConical, Microscope, TestTubes,
   ClipboardCheck, ClipboardList, Filter, ArrowUpDown, Clock, Target, TrendingUp,

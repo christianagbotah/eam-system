@@ -32,8 +32,8 @@ import {
   TrendingUp, ArrowUpDown, History, X, ShoppingCart, Building, FolderOpen,
   ChevronRight,
   MapPin, ArrowRightLeft, FileText, Truck, Download, RefreshCw, Eye,
-  CheckCircle2, Clock, Filter, DollarSign, Box,
-  Loader2,
+  CheckCircle2, Check, ClipboardCheck, Clock, Filter, DollarSign, Box, Star,
+  XCircle, Loader2,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
 

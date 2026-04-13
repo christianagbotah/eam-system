@@ -34,6 +34,7 @@ import {
   UserMinus, Settings, Shield, Eye, CheckCircle2, XCircle, RefreshCw,
   Lock, AlertTriangle, Bell, BellRing, Globe, Link2, Database, Download,
   MapPin, Check, ChevronDown,
+  Box, Cpu, History, Smartphone,
   Upload, Archive, Building2, Boxes, Clock, Calendar, Factory, Building,
   PieChart as PieChartIcon, Layers, Cog, Wrench, FlaskConical, HardHat,
   Radio, Ruler, GraduationCap, TriangleAlert, Activity, BrainCircuit,
