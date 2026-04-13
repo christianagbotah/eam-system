@@ -109,3 +109,24 @@ Stage Summary:
 - 8 new API routes, 3 new API endpoints
 - All lint checks passing, dev server running at localhost:3000
 - Database seeded with 342 permissions, 15 roles, 17 users, 28 WO transitions
+---
+Task ID: 6
+Agent: main
+Task: Phase 2 — Bug fixes, icon audit, Production KPIs, Inventory alerts, Analytics auth
+
+Work Log:
+- Fixed 4 runtime ReferenceErrors: timeAgo (DashboardPages), ClipboardList (QualityPages), sticky prop on TableHeader (table.tsx + SafetyPages), Play icon (AssetPages)
+- Proactive audit: scanned all 14 module files for missing lucide-react imports
+- Fixed 45 missing icon imports across 11 files (AnalyticsPages, AssetPages, InventoryPages, IoTPages, MaintenancePages, OperationsPages, ProductionPages, QualityPages, ReportPages, SafetyPages, SettingsPages)
+- Replaced 9 Timer→Clock references (Timer doesn't exist in lucide-react)
+- Created Production KPI endpoint: GET /api/production-orders/kpi (OEE, throughput, on-time delivery, yield, completion rate)
+- Created Production order lifecycle actions: release, start, complete
+- Created Inventory alerts endpoint: GET /api/inventory/alerts (low stock with severity levels, reorder costs)
+- Created Inventory KPI endpoint: GET /api/inventory/kpi (stock value, category breakdown, movement trends)
+- Enhanced Analytics endpoint: added session auth + plant scope support
+
+Stage Summary:
+- 11 new API routes created
+- 45 icon import bugs proactively fixed
+- 4 runtime errors fixed
+- All changes committed and pushed to GitHub
