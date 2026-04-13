@@ -66,9 +66,14 @@ export async function middleware(request: NextRequest) {
   requestHeaders.set('x-session-roles', session.roles.join(','));
   requestHeaders.set('x-session-permissions', session.permissions.join(','));
 
-  // Pass through X-Plant-ID header if present (frontend sets this for plant isolation)
-  // Route handlers can read x-session-roles to determine if user has admin/manager access
-  // (admin/manager roles bypass plant scoping in the API layer)
+  // Pass through X-Plant-ID as x-user-plant-id for downstream route handler convenience.
+  // NOTE: Route handlers MUST use getPlantScope() from @/lib/plant-scope for actual
+  // plant access validation. This passthrough is for informational purposes only and
+  // does NOT guarantee the user has access to the specified plant.
+  const plantIdHeader = request.headers.get('X-Plant-ID');
+  if (plantIdHeader) {
+    requestHeaders.set('x-user-plant-id', plantIdHeader);
+  }
 
   return NextResponse.next({
     request: {

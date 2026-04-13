@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
+import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 
 // Helper: generate request number MR-YYYYMM-NNNN
 async function generateRequestNumber(): Promise<string> {
@@ -36,6 +37,9 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20', 10);
     const search = searchParams.get('search');
 
+    // Resolve plant scope (validates X-Plant-ID against user's plant access)
+    const plantScope = session ? await getPlantScope(request, session) : null;
+
     // Build where clause with role-based filtering
     const where: Record<string, unknown> = {};
     if (status) where.status = status;
@@ -56,6 +60,11 @@ export async function GET(request: NextRequest) {
         }
         // Planners and admins see all
       }
+    }
+
+    // Apply plant scoping filter
+    if (plantScope) {
+      applyPlantScope(where, plantScope);
     }
 
     const [requests, total] = await Promise.all([

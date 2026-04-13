@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 
 // Helper: generate asset tag AST-YYYYMM-NNNN
 async function generateAssetTag(): Promise<string> {
@@ -35,11 +36,14 @@ export async function GET(request: NextRequest) {
     const condition = searchParams.get('condition');
     const criticality = searchParams.get('criticality');
     const categoryId = searchParams.get('categoryId');
-    const plantId = searchParams.get('plantId');
+    const searchPlantId = searchParams.get('plantId');
     const departmentId = searchParams.get('departmentId');
     const search = searchParams.get('search');
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '50', 10);
+
+    // Resolve plant scope (validates X-Plant-ID against user's plant access)
+    const plantScope = await getPlantScope(request, session);
 
     const where: Record<string, unknown> = { isActive: true };
 
@@ -47,7 +51,6 @@ export async function GET(request: NextRequest) {
     if (condition) where.condition = condition;
     if (criticality) where.criticality = criticality;
     if (categoryId) where.categoryId = categoryId;
-    if (plantId) where.plantId = plantId;
     if (departmentId) where.departmentId = departmentId;
     if (search) {
       where.OR = [
@@ -57,6 +60,13 @@ export async function GET(request: NextRequest) {
         { manufacturer: { contains: search } },
         { model: { contains: search } },
       ];
+    }
+
+    // Apply plant scoping: scope takes precedence over search param plantId
+    if (plantScope.isScoped && plantScope.plantId) {
+      where.plantId = plantScope.plantId;
+    } else if (searchPlantId) {
+      where.plantId = searchPlantId;
     }
 
     const [assets, total] = await Promise.all([

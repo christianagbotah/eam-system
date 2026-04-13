@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,6 +15,10 @@ export async function GET(request: NextRequest) {
     const isActive = searchParams.get('isActive');
     const dueSoon = searchParams.get('dueSoon');
 
+    // Resolve plant scope (validates X-Plant-ID against user's plant access)
+    // PmSchedule has no direct plantId — scope through the related Asset's plantId
+    const plantScope = await getPlantScope(request, session);
+
     const where: Record<string, unknown> = {};
 
     if (assetId) where.assetId = assetId;
@@ -25,6 +30,11 @@ export async function GET(request: NextRequest) {
       const now = new Date();
       const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
       where.nextDueDate = { lte: weekFromNow };
+    }
+
+    // Apply plant scoping via nested Asset relation filter
+    if (plantScope.isScoped && plantScope.plantId) {
+      where.asset = { plantId: plantScope.plantId };
     }
 
     const schedules = await db.pmSchedule.findMany({

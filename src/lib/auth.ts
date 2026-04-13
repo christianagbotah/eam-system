@@ -21,7 +21,7 @@ const sessionCache = globalForSessions.sessionCache;
 const MAX_CACHE_SIZE = 500;
 const CACHE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
-interface SessionData {
+export interface SessionData {
   userId: string;
   username: string;
   roles: string[];       // role slugs

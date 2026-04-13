@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,12 +14,14 @@ export async function GET(request: NextRequest) {
     const category = searchParams.get('category');
     const lowStock = searchParams.get('lowStock');
     const search = searchParams.get('search');
-    const plantId = searchParams.get('plantId');
+    const searchPlantId = searchParams.get('plantId');
+
+    // Resolve plant scope (validates X-Plant-ID against user's plant access)
+    const plantScope = await getPlantScope(request, session);
 
     const where: Record<string, unknown> = { isActive: true };
 
     if (category) where.category = category;
-    if (plantId) where.plantId = plantId;
     if (lowStock === 'true') {
       // Items where currentStock <= minStockLevel
       where.currentStock = { lte: 100000 };
@@ -31,6 +34,13 @@ export async function GET(request: NextRequest) {
         { description: { contains: search } },
         { supplier: { contains: search } },
       ];
+    }
+
+    // Apply plant scoping: scope takes precedence over search param plantId
+    if (plantScope.isScoped && plantScope.plantId) {
+      where.plantId = plantScope.plantId;
+    } else if (searchPlantId) {
+      where.plantId = searchPlantId;
     }
 
     const items = await db.inventoryItem.findMany({
