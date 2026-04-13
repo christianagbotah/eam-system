@@ -160,3 +160,31 @@ Stage Summary:
 - WO actions now fully driven by state machine (12 transitions available)
 - 553 lines added, 46 removed across 7 files
 - Zero lint errors
+
+---
+Task ID: 4
+Agent: main
+Task: Phase 4 — Dashboard expansion, report refactoring, CSV export, bug fixes
+
+Work Log:
+- Fixed missing date-fns format import in ReportPages.tsx (runtime crash on Production, Quality, Financial reports)
+- Wired InventoryCategoriesPage CRUD to real /api/asset-categories endpoints (was fake setTimeout, data lost on reload)
+- Enhanced /api/dashboard/stats with 7 cross-module sections: assetHealth, safetyAlerts, production, iotStatus, quality, inventoryAlerts, weeklyTrends
+- Added 6 cross-module KPI cards to dashboard: Assets at Risk, Safety Incidents, Active Production, IoT Alerts, Quality Issues, Low Stock
+- Replaced hardcoded dashboard bar charts with real 7-day trend data from API (workOrders, maintenanceRequests, productionOrders)
+- Added cross-module overview section to dashboard
+- Refactored ReportsProductionPage to use /api/production-orders + KPI endpoint
+- Refactored ReportsQualityPage to use quality-inspections, quality-ncr, quality-audits APIs
+- Refactored ReportsSafetyPage to use safety-incidents, safety-inspections, safety-training APIs
+- Enhanced ReportsFinancialPage with inventory KPI + production KPI data
+- Added date-range filtering (default: last 30 days) to all 4 report pages
+- Wired real OEE KPI data (completionRate, onTimeDeliveryRate, avgYield, order values) to ProductionEfficiencyPage
+- Added CSV export functionality with reusable exportCSV helper to 4 report pages
+- Extended DashboardStats interface in src/types/index.ts with new fields
+
+Stage Summary:
+- 930 lines added, 300 removed across 7 files
+- Zero lint errors
+- Committed as ecf154b, pushed to GitHub
+- All report pages now use real domain data (no more WO proxy data)
+- Dashboard is now a true cross-module overview
