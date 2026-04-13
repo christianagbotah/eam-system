@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 
 // Helper: generate tool code TL-NNNN
 async function generateToolCode(): Promise<string> {
@@ -26,6 +27,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    const plantFilter = getPlantFilterWhere(plantScope);
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const category = searchParams.get('category');
@@ -50,6 +54,8 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    Object.assign(where, plantFilter);
+
     const [tools, total] = await Promise.all([
       db.tool.findMany({
         where: Object.keys(where).length > 1 || where.OR ? where : undefined,
@@ -69,11 +75,11 @@ export async function GET(request: NextRequest) {
 
     // Also get KPI counts
     const [totalCount, availableCount, checkedOutCount, inRepairCount, retiredCount] = await Promise.all([
-      db.tool.count({ where: { isActive: true } }),
-      db.tool.count({ where: { isActive: true, status: 'available' } }),
-      db.tool.count({ where: { isActive: true, status: 'checked_out' } }),
-      db.tool.count({ where: { isActive: true, status: 'in_repair' } }),
-      db.tool.count({ where: { isActive: true, status: 'retired' } }),
+      db.tool.count({ where: { isActive: true, ...plantFilter } }),
+      db.tool.count({ where: { isActive: true, status: 'available', ...plantFilter } }),
+      db.tool.count({ where: { isActive: true, status: 'checked_out', ...plantFilter } }),
+      db.tool.count({ where: { isActive: true, status: 'in_repair', ...plantFilter } }),
+      db.tool.count({ where: { isActive: true, status: 'retired', ...plantFilter } }),
     ]);
 
     return NextResponse.json({
@@ -105,6 +111,8 @@ export async function POST(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
+
+    const plantScope = await getPlantScope(request, session);
 
     const body = await request.json();
     const {
@@ -150,6 +158,7 @@ export async function POST(request: NextRequest) {
         model: model || null,
         assignedToId: assignedToId || null,
         createdById: session.userId,
+        plantId: body.plantId || plantScope?.plantId || null,
       },
       include: {
         assignedTo: { select: { id: true, fullName: true, username: true } },

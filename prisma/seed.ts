@@ -987,6 +987,19 @@ async function seed() {
     { fromStatus: 'verified', toStatus: 'closed', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']) },
     { fromStatus: 'on_hold', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']) },
     { fromStatus: 'in_progress', toStatus: 'on_hold', allowedRoleSlugs: JSON.stringify(['technician', 'planner', 'admin', 'maintenance_technician', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
+    // Reopen transitions
+    { fromStatus: 'closed', toStatus: 'assigned', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']), requiresReason: true },
+    { fromStatus: 'closed', toStatus: 'draft', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager', 'plant_manager']), requiresReason: true },
+    // Cancel from more states
+    { fromStatus: 'planned', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
+    { fromStatus: 'assigned', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
+    { fromStatus: 'on_hold', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
+    { fromStatus: 'waiting_parts', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
+    // Waiting parts ↔ hold (edge case transitions)
+    { fromStatus: 'on_hold', toStatus: 'waiting_parts', allowedRoleSlugs: JSON.stringify(['planner', 'technician', 'admin', 'maintenance_planner', 'maintenance_technician', 'maintenance_manager']), requiresReason: true },
+    { fromStatus: 'waiting_parts', toStatus: 'on_hold', allowedRoleSlugs: JSON.stringify(['planner', 'technician', 'admin', 'maintenance_planner', 'maintenance_technician', 'maintenance_manager']), requiresReason: true },
+    // Completed → rework (back to in_progress if quality fails)
+    { fromStatus: 'verified', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: true },
   ];
 
   for (const t of woTransitions) {
@@ -1002,7 +1015,7 @@ async function seed() {
   }
 
   console.log(`  ✅ MR transitions: ${mrTransitions.length}`);
-  console.log(`  ✅ WO transitions: ${woTransitions.length} (4 new: completed→verified, verified→closed, on_hold↔in_progress)\n`);
+  console.log(`  ✅ WO transitions: ${woTransitions.length} (28 total: full lifecycle with reopen, cancel, rework)\n`);
 
   // ══════════════════════════════════════════════════════════════════════════
   // STEP 8: SAMPLE MAINTENANCE REQUESTS

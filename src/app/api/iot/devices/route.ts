@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 
 // Helper: generate device code IOT-NNNN
 async function generateDeviceCode(): Promise<string> {
@@ -26,6 +27,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    const plantFilter = getPlantFilterWhere(plantScope);
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const type = searchParams.get('type');
@@ -46,7 +50,9 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const hasFilter = status || type || search;
+    Object.assign(where, plantFilter);
+
+    const hasFilter = status || type || search || plantScope.isScoped;
 
     const [devices, total] = await Promise.all([
       db.iotDevice.findMany({
@@ -67,11 +73,11 @@ export async function GET(request: NextRequest) {
 
     // KPI counts
     const [totalCount, onlineCount, offlineCount, warningCount, errorCount] = await Promise.all([
-      db.iotDevice.count({ where: { isActive: true } }),
-      db.iotDevice.count({ where: { isActive: true, status: 'online' } }),
-      db.iotDevice.count({ where: { isActive: true, status: 'offline' } }),
-      db.iotDevice.count({ where: { isActive: true, status: 'warning' } }),
-      db.iotDevice.count({ where: { isActive: true, status: 'error' } }),
+      db.iotDevice.count({ where: { isActive: true, ...plantFilter } }),
+      db.iotDevice.count({ where: { isActive: true, status: 'online', ...plantFilter } }),
+      db.iotDevice.count({ where: { isActive: true, status: 'offline', ...plantFilter } }),
+      db.iotDevice.count({ where: { isActive: true, status: 'warning', ...plantFilter } }),
+      db.iotDevice.count({ where: { isActive: true, status: 'error', ...plantFilter } }),
     ]);
 
     return NextResponse.json({
@@ -104,6 +110,8 @@ export async function POST(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
+
+    const plantScope = await getPlantScope(request, session);
 
     const body = await request.json();
     const {
@@ -154,6 +162,7 @@ export async function POST(request: NextRequest) {
         firmwareVersion: firmwareVersion || null,
         status: 'offline',
         createdById: session.userId,
+        plantId: body.plantId || plantScope?.plantId || null,
       },
       include: {
         asset: { select: { id: true, name: true, assetTag: true } },

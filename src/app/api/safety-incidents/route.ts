@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 
 // Helper: generate incident number SI-YYYYMM-NNNN
 async function generateIncidentNumber(): Promise<string> {
@@ -29,6 +30,9 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
+
+    const plantScope = await getPlantScope(request, session);
+    const plantFilter = getPlantFilterWhere(plantScope);
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
@@ -60,6 +64,8 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    Object.assign(where, plantFilter);
+
     const [incidents, total] = await Promise.all([
       db.safetyIncident.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,
@@ -78,14 +84,15 @@ export async function GET(request: NextRequest) {
 
     // KPI counts
     const [totalCount, openCount, investigatingCount, closedCount] = await Promise.all([
-      db.safetyIncident.count(),
-      db.safetyIncident.count({ where: { status: 'open' } }),
-      db.safetyIncident.count({ where: { status: 'investigating' } }),
-      db.safetyIncident.count({ where: { status: 'closed' } }),
+      db.safetyIncident.count({ where: { ...plantFilter } }),
+      db.safetyIncident.count({ where: { status: 'open', ...plantFilter } }),
+      db.safetyIncident.count({ where: { status: 'investigating', ...plantFilter } }),
+      db.safetyIncident.count({ where: { status: 'closed', ...plantFilter } }),
     ]);
 
     // Days since last incident
     const lastIncident = await db.safetyIncident.findFirst({
+      where: Object.keys(plantFilter).length > 0 ? plantFilter : undefined,
       orderBy: { incidentDate: 'desc' },
       select: { incidentDate: true },
     });
@@ -122,6 +129,8 @@ export async function POST(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
+
+    const plantScope = await getPlantScope(request, session);
 
     const body = await request.json();
     const {
@@ -165,6 +174,7 @@ export async function POST(request: NextRequest) {
         daysLost: daysLost || 0,
         cost: cost || null,
         notes: notes || null,
+        plantId: body.plantId || plantScope?.plantId || null,
       },
       include: {
         reportedBy: { select: { id: true, fullName: true, username: true } },

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 
 // Helper: generate inspection number QI-YYYYMM-NNNN
 async function generateInspectionNumber(): Promise<string> {
@@ -30,6 +31,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    const plantFilter = getPlantFilterWhere(plantScope);
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const type = searchParams.get('type');
@@ -49,6 +53,8 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    Object.assign(where, plantFilter);
+
     const [inspections, total] = await Promise.all([
       db.qualityInspection.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,
@@ -66,11 +72,11 @@ export async function GET(request: NextRequest) {
 
     // KPI counts
     const [totalCount, passedCount, failedCount, pendingCount, inProgressCount] = await Promise.all([
-      db.qualityInspection.count(),
-      db.qualityInspection.count({ where: { status: 'passed' } }),
-      db.qualityInspection.count({ where: { status: 'failed' } }),
-      db.qualityInspection.count({ where: { status: 'pending' } }),
-      db.qualityInspection.count({ where: { status: 'in_progress' } }),
+      db.qualityInspection.count({ where: { ...plantFilter } }),
+      db.qualityInspection.count({ where: { status: 'passed', ...plantFilter } }),
+      db.qualityInspection.count({ where: { status: 'failed', ...plantFilter } }),
+      db.qualityInspection.count({ where: { status: 'pending', ...plantFilter } }),
+      db.qualityInspection.count({ where: { status: 'in_progress', ...plantFilter } }),
     ]);
 
     return NextResponse.json({
@@ -103,6 +109,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+
     const body = await request.json();
     const {
       title,
@@ -132,6 +140,7 @@ export async function POST(request: NextRequest) {
         scheduledDate: scheduledDate ? new Date(scheduledDate) : null,
         defects: '[]',
         notes: notes || null,
+        plantId: body.plantId || plantScope?.plantId || null,
       },
       include: {
         inspectedBy: { select: { id: true, fullName: true, username: true } },

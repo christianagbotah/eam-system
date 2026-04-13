@@ -46,6 +46,7 @@ export async function GET(request: NextRequest) {
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
         createdBy: { select: { id: true, fullName: true, username: true } },
+        template: { select: { id: true, title: true, type: true, _count: { select: { tasks: true } } } },
       },
       orderBy: { nextDueDate: 'asc' },
     });

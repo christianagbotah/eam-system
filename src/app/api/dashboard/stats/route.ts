@@ -1,15 +1,21 @@
+import { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
+import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const session = getSession({ headers: new Headers() } as Request);
+    const session = getSession(request);
     const isAdm = session ? isAdmin(session) : false;
 
+    // Resolve plant scope for multi-plant data isolation
+    const plantScope = session ? await getPlantScope(request, session) : null;
+    const plantFilter = getPlantFilterWhere(plantScope);
+
     // Build base where clauses for role-based filtering
-    const mrWhere: Record<string, unknown> = {};
-    const woWhere: Record<string, unknown> = {};
+    const mrWhere: Record<string, unknown> = { ...plantFilter };
+    const woWhere: Record<string, unknown> = { ...plantFilter };
 
     if (session && !isAdm) {
       // Non-admin: show own items or items assigned to them
@@ -80,6 +86,7 @@ export async function GET() {
     // Overdue WOs (past planned end and not completed/closed/cancelled)
     const overdueWorkOrders = await db.workOrder.count({
       where: {
+        ...plantFilter,
         plannedEnd: { lt: new Date() },
         status: { notIn: ['completed', 'closed', 'cancelled'] },
       },
@@ -90,15 +97,15 @@ export async function GET() {
     todayStart.setHours(0, 0, 0, 0);
 
     const createdTodayMR = await db.maintenanceRequest.count({
-      where: { createdAt: { gte: todayStart } },
+      where: { ...plantFilter, createdAt: { gte: todayStart } },
     });
 
     const completedTodayWO = await db.workOrder.count({
-      where: { updatedAt: { gte: todayStart }, status: 'completed' },
+      where: { ...plantFilter, updatedAt: { gte: todayStart }, status: 'completed' },
     });
 
     const createdTodayWO = await db.workOrder.count({
-      where: { createdAt: { gte: todayStart } },
+      where: { ...plantFilter, createdAt: { gte: todayStart } },
     });
 
     // Pending requests
@@ -106,6 +113,7 @@ export async function GET() {
 
     // Recent activity
     const recentRequests = await db.maintenanceRequest.findMany({
+      where: plantFilter,
       take: 5,
       orderBy: { createdAt: 'desc' },
       include: {
@@ -114,6 +122,7 @@ export async function GET() {
     });
 
     const recentWorkOrders = await db.workOrder.findMany({
+      where: plantFilter,
       take: 5,
       orderBy: { createdAt: 'desc' },
       include: {
@@ -154,15 +163,15 @@ export async function GET() {
         completedWO: woStats['completed'] || 0,
         closedWO: woStats['closed'] || 0,
         // WO type breakdown for donut chart
-        preventiveWO: await db.workOrder.count({ where: { type: 'preventive' } }),
-        correctiveWO: await db.workOrder.count({ where: { type: 'corrective' } }),
-        emergencyWO: await db.workOrder.count({ where: { type: 'emergency' } }),
-        inspectionWO: await db.workOrder.count({ where: { type: 'inspection' } }),
-        predictiveWO: await db.workOrder.count({ where: { type: 'predictive' } }),
+        preventiveWO: await db.workOrder.count({ where: { ...plantFilter, type: 'preventive' } }),
+        correctiveWO: await db.workOrder.count({ where: { ...plantFilter, type: 'corrective' } }),
+        emergencyWO: await db.workOrder.count({ where: { ...plantFilter, type: 'emergency' } }),
+        inspectionWO: await db.workOrder.count({ where: { ...plantFilter, type: 'inspection' } }),
+        predictiveWO: await db.workOrder.count({ where: { ...plantFilter, type: 'predictive' } }),
         // Priority breakdown for MR
-        highPriorityMR: await db.maintenanceRequest.count({ where: { priority: { in: ['high', 'urgent'] } } }),
-        mediumPriorityMR: await db.maintenanceRequest.count({ where: { priority: 'medium' } }),
-        lowPriorityMR: await db.maintenanceRequest.count({ where: { priority: 'low' } }),
+        highPriorityMR: await db.maintenanceRequest.count({ where: { ...plantFilter, priority: { in: ['high', 'urgent'] } } }),
+        mediumPriorityMR: await db.maintenanceRequest.count({ where: { ...plantFilter, priority: 'medium' } }),
+        lowPriorityMR: await db.maintenanceRequest.count({ where: { ...plantFilter, priority: 'low' } }),
         // Recent items
         recentRequests,
         recentWorkOrders,

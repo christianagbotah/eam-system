@@ -69,6 +69,24 @@ export async function POST(request: NextRequest) {
         },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
+        template: {
+          select: {
+            id: true,
+            title: true,
+            type: true,
+            tasks: {
+              where: { isActive: true },
+              orderBy: { taskNumber: 'asc' },
+              select: {
+                taskNumber: true,
+                description: true,
+                taskType: true,
+                requiredParts: true,
+                estimatedMinutes: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -136,13 +154,51 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // Build description from template tasks (if template has tasks)
+      let woDescription = `Preventive maintenance scheduled for asset: ${schedule.asset.name || schedule.asset.assetTag}`;
+      let estimatedHours = schedule.estimatedDuration || null;
+      const tasks = schedule.template?.tasks || [];
+
+      if (tasks.length > 0) {
+        // Build a task checklist in the WO description
+        const taskLines = tasks.map(
+          (t) => `  ${t.taskNumber}. [${t.taskType}] ${t.description}${t.estimatedMinutes ? ` (~${t.estimatedMinutes}min)` : ''}${t.requiredParts ? ` | Parts: ${t.requiredParts}` : ''}`,
+        );
+        woDescription += `\n\nPM Template: ${schedule.template?.title || 'N/A'} (${schedule.template?.type || 'preventive'})\nTask Checklist:\n${taskLines.join('\n')}`;
+
+        // Calculate total estimated hours from tasks if not set on schedule
+        if (!estimatedHours) {
+          const totalMinutes = tasks.reduce((sum, t) => sum + (t.estimatedMinutes || 15), 0);
+          estimatedHours = Math.round((totalMinutes / 60) * 100) / 100;
+        }
+
+        // Aggregate required parts from all tasks
+        const allParts: string[] = [];
+        for (const t of tasks) {
+          if (t.requiredParts) {
+            try {
+              const parts = JSON.parse(t.requiredParts);
+              if (Array.isArray(parts)) {
+                for (const p of parts) {
+                  if (typeof p === 'string') allParts.push(p);
+                  else if (p?.partName) allParts.push(`${p.partName}${p.quantity ? ` (x${p.quantity})` : ''}`);
+                }
+              }
+            } catch { /* skip invalid JSON */ }
+          }
+        }
+        if (allParts.length > 0) {
+          woDescription += `\n\nRequired Parts: ${allParts.join(', ')}`;
+        }
+      }
+
       // Generate the WO
       const woNumber = await generateWoNumber();
       const wo = await db.workOrder.create({
         data: {
           woNumber,
           title: `PM: ${schedule.title}`,
-          description: `Preventive maintenance scheduled for asset: ${schedule.asset.name || schedule.asset.assetTag}`,
+          description: woDescription,
           type: 'preventive',
           priority: schedule.priority,
           status: 'draft',
@@ -151,12 +207,26 @@ export async function POST(request: NextRequest) {
           assignedTo: schedule.assignedToId,
           departmentId: schedule.asset.departmentId || schedule.departmentId || null,
           plantId: schedule.asset.plantId || null,
-          estimatedHours: schedule.estimatedDuration || null,
+          estimatedHours,
           pmScheduleId: schedule.id,
           plannedStart: nextDueDate,
-          notes: `Auto-generated from PM schedule "${schedule.title}" (${schedule.frequencyType}: ${schedule.frequencyValue})`,
+          notes: `Auto-generated from PM schedule "${schedule.title}" (${schedule.frequencyType}: ${schedule.frequencyValue})${schedule.template ? ` | Template: ${schedule.template.title} (${tasks.length} tasks)` : ''}`,
         },
       });
+
+      // Create WO comments for each template task as individual checklist items
+      if (tasks.length > 0) {
+        const auditUserId = session?.userId || 'system';
+        for (const task of tasks) {
+          await db.workOrderComment.create({
+            data: {
+              workOrderId: wo.id,
+              userId: auditUserId,
+              content: `[PM Task #${task.taskNumber}] [${task.taskType.toUpperCase()}] ${task.description}${task.estimatedMinutes ? ` — Est: ${task.estimatedMinutes} min` : ''}${task.requiredParts ? ` — Parts: ${task.requiredParts}` : ''}`,
+            },
+          });
+        }
+      }
 
       // Calculate the next due date
       const newNextDueDate = calculateNextDueDate(

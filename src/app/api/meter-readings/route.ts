@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 
 // Helper: generate reading number MR-OPS-YYYYMM-NNNN
 async function generateReadingNumber(): Promise<string> {
@@ -30,6 +31,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    const plantFilter = getPlantFilterWhere(plantScope);
+
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
     const meterName = searchParams.get('meterName');
@@ -48,6 +52,8 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    Object.assign(where, plantFilter);
+
     const [readings, total] = await Promise.all([
       db.meterReading.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,
@@ -65,23 +71,26 @@ export async function GET(request: NextRequest) {
 
     // KPI counts
     const [totalCount, thisMonthCount, anomalyCount] = await Promise.all([
-      db.meterReading.count(),
+      db.meterReading.count({ where: { ...plantFilter } }),
       db.meterReading.count({
         where: {
           readingDate: {
             gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
           },
+          ...plantFilter,
         },
       }),
       db.meterReading.count({
         where: {
           consumption: { gt: 0 },
+          ...plantFilter,
         },
       }),
     ]);
 
     // Distinct meter names
     const metersResult = await db.meterReading.findMany({
+      where: Object.keys(plantFilter).length > 0 ? plantFilter : undefined,
       distinct: ['meterName'],
       select: { meterName: true },
     });
@@ -109,6 +118,8 @@ export async function POST(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
+
+    const plantScope = await getPlantScope(request, session);
 
     const body = await request.json();
     const { meterName, value, unit, readingDate, notes } = body;
@@ -147,6 +158,7 @@ export async function POST(request: NextRequest) {
         consumption,
         notes: notes || null,
         readById: session.userId,
+        plantId: body.plantId || plantScope?.plantId || null,
       },
       include: {
         readBy: { select: { id: true, fullName: true, username: true } },

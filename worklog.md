@@ -86,3 +86,26 @@ Stage Summary:
 - Settings menu restored with correct `system_settings.view` permission
 - 5 new domain-level umbrella permissions added to seed data
 - Role bundles updated so non-admin users also see appropriate menus
+---
+Task ID: 5
+Agent: main
+Task: Phase 1 Migration — WO State Machine + Multi-Plant + PM Engine Enhancement
+
+Work Log:
+- Created 8 new WO action routes: hold, resume, cancel, verify, approve, plan, request, wait-parts
+- Created WO status history GET endpoint (GET /api/work-orders/[id]/status-history)
+- Created WO KPI/stats endpoint (GET /api/work-orders/kpi) with status/priority/type breakdown, overdue count, completion metrics, trend, open-by-age
+- Created WO bulk update endpoint (PUT /api/work-orders/bulk-update)
+- Expanded WO transitions from 20 to 28 in seed (added: reopen from closed, cancel from more states, on_hold↔waiting_parts, verified→in_progress rework)
+- Added plantId field to 6 models: SafetyIncident, QualityInspection, ProductionOrder, Tool, MeterReading, IotDevice
+- Added multi-plant scoping to 7 routes: safety-incidents, quality-inspections, production-orders, tools, meter-readings, iot/devices, dashboard/stats
+- Enhanced PM check-due engine: auto-generated WOs now include template task checklist in description, calculate estimated duration from tasks, aggregate required parts, create individual WO comments for each template task
+- Added template include to PM schedules GET response
+- Pushed schema changes via prisma db push, re-seeded database
+
+Stage Summary:
+- 28 WO state transitions covering full lifecycle with reopen, cancel, and rework paths
+- 13 plant-scoped routes (up from 7)
+- 8 new API routes, 3 new API endpoints
+- All lint checks passing, dev server running at localhost:3000
+- Database seeded with 342 permissions, 15 roles, 17 users, 28 WO transitions

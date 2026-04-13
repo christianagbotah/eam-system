@@ -851,6 +851,7 @@ model IotDevice {
   protocol        String                               // mqtt, http, modbus, opcua
   status          String    @default("online")          // online, offline, warning, error, maintenance
   location        String?
+  plantId         String?
   assetId         String?
   groupId         String?
   parameter       String                               // e.g. "Temperature", "Vibration"
@@ -947,6 +948,7 @@ model Tool {
   status          String    @default("available")      // available, checked_out, in_repair, retired, transferred
   condition       String    @default("good")            // new, good, fair, poor
   location        String?
+  plantId         String?
   purchaseDate    DateTime?
   purchaseCost    Float?
   currentValue    Float?
@@ -1190,6 +1192,7 @@ model SafetyIncident {
   location          String?
   assetId           String?
   departmentId      String?
+  plantId           String?
   reportedById      String
   investigatedById  String?
   rootCause         String?
@@ -1308,6 +1311,7 @@ model QualityInspection {
   orderId           String?
   assetId           String?
   itemId            String?
+  plantId           String?
   inspectedById     String
   scheduledDate     DateTime?
   completedDate     DateTime?
@@ -1474,6 +1478,7 @@ model ProductionOrder {
   workCenterId      String?
 
   workCenter        WorkCenter?  @relation(fields: [workCenterId], references: [id])
+  plantId           String?
   scheduledStart    DateTime?
   scheduledEnd      DateTime?
   actualStart       DateTime?
@@ -1514,6 +1519,7 @@ model MeterReading {
   id                String    @id @default(cuid())
   readingNumber     String    @unique                    // MR-OPS-YYYYMM-NNNN
   assetId           String?
+  plantId           String?
   meterName         String
   value             Float
   unit              String
