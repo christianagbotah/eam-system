@@ -23,7 +23,7 @@ import {
   Search, ShieldCheck, FileCheck, ShieldAlert, ScrollText, BarChart3,
   HardHat, Plus, MoreHorizontal, Pencil, Trash2, AlertTriangle,
   CheckCircle2, XCircle, Eye, FlaskConical, Microscope, TestTubes,
-  ClipboardCheck, Filter, ArrowUpDown, Clock, Target, TrendingUp,
+  ClipboardCheck, ClipboardList, Filter, ArrowUpDown, Clock, Target, TrendingUp,
   Activity, X,
 } from 'lucide-react';
 import {
