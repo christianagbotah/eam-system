@@ -34,7 +34,7 @@ import {
   Factory, Wrench, Clock, AlertTriangle, CheckCircle2, XCircle, Activity, AlertCircle,
   GitBranch, ListChecks, Box, HeartPulse, Settings, Monitor, Thermometer,
   ChevronRight,
-  Droplets, Cpu, Zap, MapPin, Shield, BarChart3, Target, RefreshCw, Loader2,
+  Droplets, Cpu, Zap, MapPin, Shield, BarChart3, Target, RefreshCw, Loader2, Play,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer,
