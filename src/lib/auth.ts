@@ -234,9 +234,7 @@ async function cleanupExpiredSessions(): Promise<void> {
     const result = await db.session.deleteMany({
       where: { expiresAt: { lt: new Date() } },
     });
-    if (result.count > 0) {
-      console.log(`[Auth] Cleaned up ${result.count} expired sessions`);
-    }
+    // Silently cleaned up expired sessions
   } catch {
     // Silently fail
   }
@@ -311,8 +309,8 @@ export async function warmSessionCache(): Promise<void> {
       });
     }
 
-    console.log(`[Auth] Warmed session cache with ${activeSessions.length} active sessions`);
+    // Session cache warmed successfully
   } catch {
-    console.log('[Auth] Failed to warm session cache (DB may not be ready)');
+    // Silently fail — DB may not be ready during cold start
   }
 }

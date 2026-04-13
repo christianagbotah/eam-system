@@ -22,9 +22,11 @@ import {
 } from '@/components/ui/table';
 import {
   Smartphone, Monitor, Radio, Wifi, Plus, Search, MoreHorizontal,
-  Pencil, Trash2, AlertTriangle, CheckCircle2, XCircle, Activity, ClipboardList, Gauge, Play, Pause,
+  Pencil, Trash2, AlertTriangle, AlertCircle, CheckCircle2, XCircle, Activity, ClipboardList, Gauge, Play, Pause,
   Loader2,
+  Cpu, Settings2,
   Thermometer, Droplets, Zap, Settings, RefreshCw, Filter, Bell, BellRing, Eye,
+  Info, TrendingUp, TrendingDown, Minus,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
@@ -219,6 +221,8 @@ export function IotDevicesPage() {
 export function IotMonitoringPage() {
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(true);
 
   const fetchSummary = useCallback(() => {
     api.get('/api/iot/monitoring/summary').then(res => {
@@ -230,6 +234,23 @@ export function IotMonitoringPage() {
   }, []);
 
   useEffect(() => { fetchSummary(); }, [fetchSummary]);
+
+  useEffect(() => {
+    api.get('/api/iot/alerts').then(res => {
+      if (res.success) setAlerts(res.data || []);
+      setAlertsLoading(false);
+    });
+  }, []);
+
+  const handleAlertAction = async (id: string, status: 'acknowledged' | 'resolved') => {
+    const res = await api.put(`/api/iot/alerts/${id}`, { status });
+    if (res.success) {
+      toast.success(`Alert ${status}`);
+      setAlerts(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+    } else {
+      toast.error(res.error || 'Action failed');
+    }
+  };
 
   const devicesWithReadings = summary?.devicesWithReadings || [];
   const recentAlerts = summary?.alerts?.recent || [];
@@ -389,6 +410,70 @@ export function IotMonitoringPage() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Alert Management */}
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Bell className="h-5 w-5" />
+          Alert Management
+        </h2>
+        {alertsLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : alerts.length === 0 ? (
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-6">
+              <EmptyState icon={Bell} title="No alerts" description="Alerts will appear here when sensor thresholds are breached." />
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {alerts.map((alert: any) => {
+              const SI = severityIcon[alert.severity] || Info;
+              const statusColor: Record<string, string> = {
+                new: 'bg-sky-50 text-sky-700 border-sky-200',
+                acknowledged: 'bg-amber-50 text-amber-700 border-amber-200',
+                resolved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+              };
+              return (
+                <Card key={alert.id} className="border shadow-sm">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <div className={`h-8 w-8 rounded-lg ${severityStyle[alert.severity] || 'bg-slate-100 text-slate-500'} flex items-center justify-center shrink-0 mt-0.5`}>
+                          <SI className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                            <span className="font-medium text-sm truncate">{alert.device?.name || 'Unknown Device'}</span>
+                            <Badge variant="outline" className={`text-[10px] capitalize ${severityStyle[alert.severity] || ''}`}>{alert.severity}</Badge>
+                            <Badge variant="outline" className={`text-[10px] capitalize ${statusColor[alert.status] || 'bg-slate-100 text-slate-500'}`}>{alert.status}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{alert.message}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{alert.createdAt ? formatDateTime(alert.createdAt) : ''}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {alert.status === 'new' && (
+                          <Button size="sm" variant="outline" className="text-xs" onClick={() => handleAlertAction(alert.id, 'acknowledged')}>
+                            <Eye className="h-3.5 w-3.5 mr-1" />Acknowledge
+                          </Button>
+                        )}
+                        {alert.status === 'acknowledged' && (
+                          <Button size="sm" variant="outline" className="text-xs text-emerald-600 border-emerald-200 hover:bg-emerald-50" onClick={() => handleAlertAction(alert.id, 'resolved')}>
+                            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />Resolve
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

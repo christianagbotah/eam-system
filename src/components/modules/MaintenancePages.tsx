@@ -34,7 +34,7 @@ import {
   ClipboardList, Wrench, Plus, Search, ArrowLeft, CheckCircle2, XCircle,
   Clock, AlertTriangle, RefreshCw, Play, Pause, Check, Lock, Eye, Pencil,
   Trash2, MessageSquare, Users, MoreHorizontal, BarChart3, Target,
-  TrendingUp, Calendar, AlertCircle, Crosshair, TriangleAlert, Ruler,
+  TrendingUp, TrendingDown, Calendar, AlertCircle, Crosshair, TriangleAlert, Ruler,
   Wrench as WrenchIcon, Settings, Zap, Activity, Send, CircleDot, X,
   Loader2,
   Building2,
@@ -548,6 +548,18 @@ export function WorkOrdersPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const { hasPermission } = useAuthStore();
 
+  // WO KPI state
+  const [woKpi, setWoKpi] = useState<{
+    total: number;
+    byStatus: Record<string, number>;
+    byPriority: Record<string, number>;
+    byType: Record<string, number>;
+    overdue: number;
+    completionMetrics: { avgHours: number; completedCount: number };
+    trend: { thisMonth: number; lastMonth: number; changePercent: number };
+    openByAge: Record<string, number>;
+  } | null>(null);
+
   const filteredWOs = useMemo(() => {
     if (!searchText.trim()) return workOrders;
     const q = searchText.toLowerCase();
@@ -567,6 +579,15 @@ export function WorkOrdersPage() {
     overdue: workOrders.filter(w => w.slaBreached).length,
   }), [workOrders]);
 
+  // Fetch WO KPI data
+  useEffect(() => {
+    let active = true;
+    api.get('/api/work-orders/kpi').then(res => {
+      if (active && res.success && res.data) setWoKpi(res.data as typeof woKpi);
+    });
+    return () => { active = false; };
+  }, [refreshKey]);
+
   useEffect(() => {
     let active = true;
     const params = new URLSearchParams();
@@ -582,6 +603,15 @@ export function WorkOrdersPage() {
   }, [filterStatus, filterPriority, refreshKey]);
 
   const handleRefresh = useCallback(() => setRefreshKey(k => k + 1), []);
+
+  // Derived KPI values
+  const openWOs = useMemo(() => {
+    if (!woKpi) return 0;
+    const closedStatuses = ['completed', 'verified', 'closed', 'cancelled'];
+    return Object.entries(woKpi.byStatus).reduce((sum, [status, count]) => {
+      return closedStatuses.includes(status) ? sum : sum + count;
+    }, 0);
+  }, [woKpi]);
 
   if (detailId) {
     return <WODetailPage id={detailId} onBack={() => setDetailId(null)} onUpdate={handleRefresh} />;
@@ -606,6 +636,63 @@ export function WorkOrdersPage() {
             </DialogContent>
           </Dialog>
         )}
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total WOs</CardTitle>
+            <ClipboardList className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{woKpi?.total ?? '-'}</div>
+            {woKpi && woKpi.trend.changePercent !== 0 && (
+              <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                {woKpi.trend.changePercent > 0 ? (
+                  <><TrendingUp className="h-3 w-3 text-emerald-500" /><span className="text-emerald-600">+{woKpi.trend.changePercent}%</span></>
+                ) : (
+                  <><TrendingDown className="h-3 w-3 text-red-500" /><span className="text-red-600">{woKpi.trend.changePercent}%</span></>
+                )}
+                <span>vs last month</span>
+              </p>
+            )}
+            {!woKpi && <p className="text-xs text-muted-foreground mt-1">vs last month</p>}
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Open WOs</CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{woKpi ? openWOs : '-'}</div>
+            <p className="text-xs text-muted-foreground mt-1">active work orders</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Overdue</CardTitle>
+            <AlertTriangle className={`h-4 w-4 ${woKpi && woKpi.overdue > 0 ? 'text-red-500' : 'text-muted-foreground'}`} />
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${woKpi && woKpi.overdue > 0 ? 'text-red-600' : ''}`}>{woKpi?.overdue ?? '-'}</div>
+            <p className="text-xs text-muted-foreground mt-1">past due date</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg Completion Hours</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{woKpi?.completionMetrics.avgHours != null ? `${woKpi.completionMetrics.avgHours}h` : '-'}</div>
+            <p className="text-xs text-muted-foreground mt-1">{woKpi ? `${woKpi.completionMetrics.completedCount} completed` : 'per work order'}</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Stats Bar - Pill style */}
@@ -809,6 +896,16 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const [matCost, setMatCost] = useState('');
   const [matUnit, setMatUnit] = useState('each');
   const [matLoading, setMatLoading] = useState(false);
+  // Available transitions from state machine
+  const [availableTransitions, setAvailableTransitions] = useState<Array<{
+    toStatus: string; requiresReason: boolean;
+  }>>([]);
+  // Status history
+  const [statusHistory, setStatusHistory] = useState<Array<{
+    fromStatus: string | null; toStatus: string;
+    performedBy: { fullName: string } | null;
+    notes: string | null; createdAt: string;
+  }>>([]);
 
   const fetchWO = useCallback(async () => {
     const res = await api.get<WorkOrder>(`/api/work-orders/${id}`);
@@ -825,6 +922,14 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
       }
     });
     api.get<User[]>('/api/users').then(res => { if (res.success && res.data) setUsers(res.data); });
+    // Fetch available transitions from state machine
+    api.get(`/api/work-orders/${id}/transitions`).then(res => {
+      if (active && res.success && res.data) setAvailableTransitions(res.data);
+    });
+    // Fetch status history
+    api.get(`/api/work-orders/${id}/status-history`).then(res => {
+      if (active && res.success && res.data) setStatusHistory(res.data);
+    });
     return () => { active = false; };
   }, [id]);
 
@@ -842,14 +947,34 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
         res = await api.post(`/api/work-orders/${id}/complete`, { notes: extra?.completionNotes, ...extra });
         break;
       case 'verify':
+        res = await api.post(`/api/work-orders/${id}/verify`, { notes: extra?.notes });
+        break;
       case 'close':
         res = await api.post(`/api/work-orders/${id}/close`, { notes: extra?.notes });
         break;
       case 'approve':
-        res = await api.put(`/api/work-orders/${id}`, { status: 'approved', ...extra });
+        res = await api.post(`/api/work-orders/${id}/approve`, { notes: extra?.notes, ...extra });
+        break;
+      case 'plan':
+        res = await api.post(`/api/work-orders/${id}/plan`, { notes: extra?.notes, ...extra });
+        break;
+      case 'hold':
+        res = await api.post(`/api/work-orders/${id}/hold`, { notes: extra?.notes, ...extra });
+        break;
+      case 'resume':
+        res = await api.post(`/api/work-orders/${id}/resume`, { notes: extra?.notes, ...extra });
+        break;
+      case 'cancel':
+        res = await api.post(`/api/work-orders/${id}/cancel`, { notes: extra?.notes, ...extra });
+        break;
+      case 'request':
+        res = await api.post(`/api/work-orders/${id}/request`, { notes: extra?.notes, ...extra });
+        break;
+      case 'wait-parts':
+        res = await api.post(`/api/work-orders/${id}/wait-parts`, { notes: extra?.notes, ...extra });
         break;
       default:
-        res = await api.put(`/api/work-orders/${id}`, { action, ...extra });
+        res = await api.put(`/api/work-orders/${id}`, { ...extra });
     }
     if (res.success) {
       toast.success(`Work order ${action}d`);
@@ -929,12 +1054,24 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   if (loading) return <LoadingSkeleton />;
   if (!wo) return <div className="p-6">Work order not found</div>;
 
-  const canApprove = hasPermission('work_orders.approve') && wo.status === 'draft';
-  const canAssign = hasPermission('work_orders.assign') && ['draft', 'approved'].includes(wo.status);
-  const canStart = hasPermission('work_orders.execute') && wo.status === 'assigned';
-  const canComplete = hasPermission('work_orders.complete') && wo.status === 'in_progress';
-  const canVerify = hasPermission('work_orders.verify') && wo.status === 'completed';
-  const canClose = hasPermission('work_orders.close') && wo.status === 'verified';
+  // Map transitions to action handlers — each status maps to a dedicated API endpoint
+  const statusToAction: Record<string, string> = {
+    'approved': 'approve', 'requested': 'request', 'planned': 'plan',
+    'assigned': 'assign', 'in_progress': 'start', 'completed': 'complete',
+    'verified': 'verify', 'closed': 'close', 'on_hold': 'hold',
+    'cancelled': 'cancel', 'waiting_parts': 'wait-parts',
+  };
+
+  // Build transition actions from state machine
+  const transitionActions = availableTransitions.map(t => ({
+    toStatus: t.toStatus,
+    actionName: statusToAction[t.toStatus] || t.toStatus,
+    label: t.toStatus.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+    requiresReason: t.requiresReason,
+  }));
+
+  // Special actions that need dialogs
+  const needsDialog = new Set(['assign', 'complete']);
   const canEdit = !['closed', 'cancelled'].includes(wo.status);
 
   return (
@@ -960,14 +1097,19 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
           <DropdownMenuContent align="end">
             {canEdit && <DropdownMenuItem onClick={openEditWO}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}
             {canEdit && <DropdownMenuSeparator />}
-            {canApprove && <DropdownMenuItem onClick={() => handleAction('approve')}><CheckCircle2 className="h-4 w-4 mr-2" />Approve</DropdownMenuItem>}
-            {canAssign && <DropdownMenuItem onClick={() => setActionDialog('assign')}><Users className="h-4 w-4 mr-2" />Assign</DropdownMenuItem>}
-            {canStart && <DropdownMenuItem onClick={() => handleAction('start')}><Play className="h-4 w-4 mr-2" />Start Work</DropdownMenuItem>}
-            {canComplete && <DropdownMenuItem onClick={() => setActionDialog('complete')}><Check className="h-4 w-4 mr-2" />Complete</DropdownMenuItem>}
-            {canVerify && <DropdownMenuItem onClick={() => handleAction('verify')}><Eye className="h-4 w-4 mr-2" />Verify</DropdownMenuItem>}
-            {canClose && <DropdownMenuItem onClick={() => handleAction('close')}><Lock className="h-4 w-4 mr-2" />Close</DropdownMenuItem>}
-            {!canEdit && !canApprove && !canAssign && !canStart && !canComplete && !canVerify && !canClose && (
-              <DropdownMenuItem disabled>No actions available</DropdownMenuItem>
+            {transitionActions.map(ta => (
+              <DropdownMenuItem key={ta.toStatus} onClick={() => {
+                if (needsDialog.has(ta.actionName)) {
+                  setActionDialog(ta.actionName);
+                } else if (ta.requiresReason) {
+                  setActionDialog(`reason:${ta.actionName}`);
+                } else {
+                  handleAction(ta.actionName);
+                }
+              }}>{ta.label}</DropdownMenuItem>
+            ))}
+            {transitionActions.length === 0 && canEdit && (
+              <DropdownMenuItem disabled>No transitions available</DropdownMenuItem>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -1082,6 +1224,27 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             </div>
             <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={matLoading} onClick={handleAddMaterial}>
               {matLoading ? 'Adding...' : 'Add Material'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reason Dialog (for transitions requiring a reason like cancel, hold) */}
+      <Dialog open={actionDialog?.startsWith('reason:') || false} onOpenChange={() => setActionDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Confirm Action</DialogTitle><DialogDescription>Please provide a reason for this action.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Reason *</Label>
+              <Textarea id="transition-reason" placeholder="Enter reason..." rows={3} />
+            </div>
+            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={() => {
+              const reason = (document.getElementById('transition-reason') as HTMLTextAreaElement)?.value;
+              if (!reason?.trim()) { toast.error('Reason is required'); return; }
+              const actionName = actionDialog?.replace('reason:', '') || '';
+              handleAction(actionName, { notes: reason });
+            }}>
+              {actionLoading ? 'Processing...' : 'Confirm'}
             </Button>
           </div>
         </DialogContent>
@@ -1330,6 +1493,7 @@ export function PmSchedulesPage() {
 
   const [assets, setAssets] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [pmAnalytics, setPmAnalytics] = useState<any>(null);
 
   const fetchSchedules = useCallback(async () => {
     setLoading(true);
@@ -1355,6 +1519,12 @@ export function PmSchedulesPage() {
 
   useEffect(() => { fetchSchedules(); }, [fetchSchedules]);
   useEffect(() => { fetchLookups(); }, [fetchLookups]);
+
+  useEffect(() => {
+    api.get('/api/pm-analytics').then(res => {
+      if (res.success && res.data) setPmAnalytics(res.data);
+    });
+  }, []);
 
   // Background PM check: fire-and-forget trigger on page load
   useEffect(() => {
@@ -1484,6 +1654,73 @@ export function PmSchedulesPage() {
           )}
         </div>
       </div>
+
+      {/* PM Analytics KPI Banner */}
+      {pmAnalytics && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {[
+            { label: 'Total Schedules', value: pmAnalytics.totalSchedules ?? 0, icon: ClipboardList, color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' },
+            { label: 'Compliance Rate', value: `${pmAnalytics.complianceRate ?? 0}%`, icon: Target, color: pmAnalytics.complianceRate >= 80 ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' : pmAnalytics.complianceRate >= 50 ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400' : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400' },
+            { label: 'Overdue', value: pmAnalytics.overdueCount ?? 0, icon: AlertTriangle, color: pmAnalytics.overdueCount > 0 ? 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400' : 'bg-slate-50 text-slate-600 dark:bg-slate-900/30 dark:text-slate-400' },
+            { label: 'Upcoming (7 days)', value: pmAnalytics.upcomingCount ?? 0, icon: Calendar, color: 'bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400' },
+            { label: 'PM WOs Generated', value: pmAnalytics.totalGenerated ?? 0, icon: Wrench, color: 'bg-violet-50 text-violet-700 dark:bg-violet-950/30 dark:text-violet-400' },
+            { label: 'Avg Completion Days', value: pmAnalytics.avgCompletionDays ?? '—', icon: Gauge, color: 'bg-teal-50 text-teal-700 dark:bg-teal-950/30 dark:text-teal-400' },
+          ].map(s => (
+            <div key={s.label} className="flex items-center gap-3 p-3 rounded-xl border bg-card">
+              <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${s.color}`}>
+                <s.icon className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-lg font-bold">{s.value}</p>
+                <p className="text-[11px] text-muted-foreground">{s.label}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Department Compliance Table */}
+      {pmAnalytics?.byDepartment && pmAnalytics.byDepartment.length > 0 && (
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Building2 className="h-4 w-4" />
+              Department Compliance
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="text-xs font-semibold">Department</TableHead>
+                  <TableHead className="text-xs font-semibold text-right">Schedules</TableHead>
+                  <TableHead className="text-xs font-semibold text-right">Completed WOs</TableHead>
+                  <TableHead className="text-xs font-semibold text-right">Compliance</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pmAnalytics.byDepartment.map((dept: any) => (
+                  <TableRow key={dept.departmentName}>
+                    <TableCell className="text-sm font-medium">{dept.departmentName}</TableCell>
+                    <TableCell className="text-sm text-right">{dept.scheduleCount}</TableCell>
+                    <TableCell className="text-sm text-right">{dept.completedWos}</TableCell>
+                    <TableCell className="text-right">
+                      <Badge variant="outline" className={
+                        dept.complianceRate == null ? 'bg-slate-100 text-slate-500 border-slate-200' :
+                        dept.complianceRate >= 80 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        dept.complianceRate >= 50 ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        'bg-red-50 text-red-700 border-red-200'
+                      }>
+                        {dept.complianceRate != null ? `${dept.complianceRate}%` : 'N/A'}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

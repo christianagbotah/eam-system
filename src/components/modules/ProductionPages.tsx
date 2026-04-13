@@ -723,34 +723,49 @@ export function ProductionOrdersPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [workCenters, setWorkCenters] = useState<any[]>([]);
   const [kpisData, setKpisData] = useState({ total: 0, inProgress: 0, completed: 0, cancelled: 0 });
+  const [kpiEndpointData, setKpiEndpointData] = useState<any>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const fetchOrders = async () => {
-    const res = await api.get('/api/production-orders');
+    const [res, kpiRes] = await Promise.all([
+      api.get('/api/production-orders'),
+      api.get('/api/production-orders/kpi'),
+    ]);
     if (res.success) {
       setOrders(res.data || []);
       if (res.kpis) setKpisData(res.kpis as any);
     }
+    if (kpiRes.success) setKpiEndpointData(kpiRes.data);
   };
   useEffect(() => {
     (async () => {
-      const [poRes, wcRes] = await Promise.all([
+      const [poRes, wcRes, kpiRes] = await Promise.all([
         api.get('/api/production-orders'),
         api.get('/api/work-centers'),
+        api.get('/api/production-orders/kpi'),
       ]);
       if (poRes.success) { setOrders(poRes.data || []); if (poRes.kpis) setKpisData(poRes.kpis as any); }
       if (wcRes.success) setWorkCenters(wcRes.data || []);
+      if (kpiRes.success) setKpiEndpointData(kpiRes.data);
       setLoading(false);
     })();
   }, []);
-  const statusColors: Record<string, string> = { draft: 'bg-slate-100 text-slate-600 border-slate-200', planned: 'bg-sky-50 text-sky-700 border-sky-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', cancelled: 'bg-gray-100 text-gray-500 border-gray-200' };
-  const progressColors: Record<string, string> = { draft: 'bg-slate-300', planned: 'bg-sky-400', in_progress: 'bg-amber-500', completed: 'bg-emerald-500', cancelled: 'bg-gray-300' };
+  const statusColors: Record<string, string> = { draft: 'bg-slate-100 text-slate-600 border-slate-200', planned: 'bg-sky-50 text-sky-700 border-sky-200', released: 'bg-indigo-50 text-indigo-700 border-indigo-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', cancelled: 'bg-gray-100 text-gray-500 border-gray-200' };
+  const progressColors: Record<string, string> = { draft: 'bg-slate-300', planned: 'bg-sky-400', released: 'bg-indigo-400', in_progress: 'bg-amber-500', completed: 'bg-emerald-500', cancelled: 'bg-gray-300' };
   const priorityColors: Record<string, string> = { low: 'bg-sky-50 text-sky-700', medium: 'bg-amber-50 text-amber-700', high: 'bg-orange-50 text-orange-700', critical: 'bg-red-50 text-red-700' };
   const filtered = orders.filter((r: any) => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !r.orderNumber.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
-  const kpis = [
+  const kpis = kpiEndpointData ? [
+    { label: 'Total Orders', value: kpiEndpointData.total, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Active Batches', value: kpiEndpointData.activeBatches, icon: Activity, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Completion Rate', value: `${kpiEndpointData.completionRate}%`, icon: Target, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'On-Time Delivery', value: `${kpiEndpointData.onTimeDeliveryRate}%`, icon: Clock, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Avg Yield', value: `${kpiEndpointData.avgYield}%`, icon: TrendingUp, color: 'text-violet-600 bg-violet-50' },
+    { label: 'Overdue', value: kpiEndpointData.overdue, icon: AlertTriangle, color: kpiEndpointData.overdue > 0 ? 'text-red-600 bg-red-50' : 'text-slate-600 bg-slate-100' },
+  ] : [
     { label: 'Total Orders', value: kpisData.total, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50' },
     { label: 'In Progress', value: kpisData.inProgress, icon: Play, color: 'text-sky-600 bg-sky-50' },
     { label: 'Completed', value: kpisData.completed, icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
@@ -781,23 +796,38 @@ export function ProductionOrdersPage() {
       fetchOrders();
     } else { toast.error(res.error || 'Failed to cancel order'); }
   };
+  const handleAction = async (id: string, action: 'release' | 'start' | 'complete') => {
+    setActionLoading(id);
+    try {
+      const res = await api.post(`/api/production-orders/${id}/${action}`);
+      if (res.success) {
+        toast.success(`Order ${action === 'release' ? 'released' : action === 'start' ? 'started' : 'completed'} successfully`);
+        await fetchOrders();
+      } else {
+        toast.error(res.error || `Failed to ${action} order`);
+      }
+    } catch {
+      toast.error(`Failed to ${action} order`);
+    }
+    setActionLoading(null);
+  };
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Production Orders</h1><p className="text-muted-foreground text-sm mt-1">Create and manage production orders from planning through completion</p></div>
         <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Order</Button>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${kpiEndpointData ? 'md:grid-cols-3 xl:grid-cols-6' : 'xl:grid-cols-4'} gap-4`}>
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
       <div className="filter-row flex items-center gap-3 flex-wrap">
         <div className="relative min-w-[200px] max-w-xs"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search orders..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div>
-        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
+        <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="released">Released</SelectItem><SelectItem value="in_progress">In Progress</SelectItem><SelectItem value="completed">Completed</SelectItem><SelectItem value="cancelled">Cancelled</SelectItem></SelectContent></Select>
       </div>
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">
         <div className="overflow-x-auto">
-          <Table><TableHeader><TableRow><TableHead className="w-[180px]">Order #</TableHead><TableHead>Product</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead>Work Center</TableHead><TableHead>Status</TableHead><TableHead>Due Date</TableHead><TableHead>Progress</TableHead><TableHead>Priority</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
-            {loading ? (<TableRow><TableCell colSpan={9} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (<TableRow><TableCell colSpan={9} className="h-48 text-center text-muted-foreground">No production orders found</TableCell></TableRow>) : filtered.map((r: any) => {
+          <Table><TableHeader><TableRow><TableHead className="w-[180px]">Order #</TableHead><TableHead>Product</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead>Work Center</TableHead><TableHead>Status</TableHead><TableHead>Due Date</TableHead><TableHead>Progress</TableHead><TableHead>Priority</TableHead><TableHead className="w-[120px]">Actions</TableHead><TableHead className="w-[50px]"></TableHead></TableRow></TableHeader><TableBody>
+            {loading ? (<TableRow><TableCell colSpan={10} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (<TableRow><TableCell colSpan={10} className="h-48 text-center text-muted-foreground">No production orders found</TableCell></TableRow>) : filtered.map((r: any) => {
               const progress = r.quantity > 0 ? Math.round(((r.completedQty || 0) / r.quantity) * 100) : 0;
               return (
               <TableRow key={r.id}>
@@ -809,6 +839,23 @@ export function ProductionOrdersPage() {
                 <TableCell className="text-sm text-muted-foreground">{r.scheduledEnd ? formatDate(r.scheduledEnd) : '—'}</TableCell>
                 <TableCell><div className="flex items-center gap-2"><div className="w-16 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${progressColors[r.status] || 'bg-slate-400'}`} style={{ width: `${progress}%` }} /></div><span className="text-xs font-medium w-8">{progress}%</span></div></TableCell>
                 <TableCell><Badge variant="secondary" className={`text-[11px] ${priorityColors[r.priority] || ''}`}>{r.priority}</Badge></TableCell>
+                <TableCell><div className="flex items-center gap-1">
+                  {r.status === 'planned' && (
+                    <Button variant="outline" size="sm" className="h-7 text-xs border-sky-300 text-sky-700 hover:bg-sky-50" disabled={actionLoading === r.id} onClick={() => handleAction(r.id, 'release')}>
+                      {actionLoading === r.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Zap className="h-3 w-3 mr-1" />}Release
+                    </Button>
+                  )}
+                  {r.status === 'released' && (
+                    <Button variant="outline" size="sm" className="h-7 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50" disabled={actionLoading === r.id} onClick={() => handleAction(r.id, 'start')}>
+                      {actionLoading === r.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Play className="h-3 w-3 mr-1" />}Start
+                    </Button>
+                  )}
+                  {r.status === 'in_progress' && (
+                    <Button variant="outline" size="sm" className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" disabled={actionLoading === r.id} onClick={() => handleAction(r.id, 'complete')}>
+                      {actionLoading === r.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}Complete
+                    </Button>
+                  )}
+                </div></TableCell>
                 <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Cancel</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
               </TableRow>
               );

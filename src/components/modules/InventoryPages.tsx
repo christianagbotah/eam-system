@@ -32,7 +32,7 @@ import {
   TrendingUp, ArrowUpDown, History, X, ShoppingCart, Building, FolderOpen,
   ChevronRight,
   MapPin, ArrowRightLeft, FileText, Truck, Download, RefreshCw, Eye,
-  CheckCircle2, Check, ClipboardCheck, Clock, Filter, DollarSign, Box, Star,
+  CheckCircle2, Check, ClipboardCheck, ClipboardList, Clock, Filter, DollarSign, Box, Star,
   XCircle, Loader2,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
@@ -59,6 +59,18 @@ export function InventoryPage() {
   // Stock movements list
   const [selectedMovItemId, setSelectedMovItemId] = useState<string | null>(null);
   const [stockMovements, setStockMovements] = useState<any[]>([]);
+  // KPI data from API
+  const [kpi, setKpi] = useState<{
+    total: number;
+    byCategory: Record<string, number>;
+    lowStock: number;
+    totalValue: number;
+    avgUnitCost: number;
+    pendingRequests: number;
+    pendingAdjustments: number;
+    movements: { thisMonth: number; lastMonth: number; trendPercent: number };
+    stockSummary: { totalQuantity: number; totalMinLevels: number; totalMaxCapacity: number };
+  } | null>(null);
 
   const emptyForm = { itemCode: '', name: '', description: '', category: 'spare_part', unitOfMeasure: 'each', currentStock: '', minStockLevel: '', maxStockLevel: '', reorderQuantity: '', unitCost: '', supplier: '', location: '', binLocation: '', plantId: '' };
   const [form, setForm] = useState(emptyForm);
@@ -72,6 +84,12 @@ export function InventoryPage() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    api.get('/api/inventory/kpi').then((res: any) => {
+      if (res.success && res.data) setKpi(res.data);
+    });
+  }, []);
 
   const filteredItems = useMemo(() => {
     return items.filter(i => {
@@ -138,19 +156,84 @@ export function InventoryPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        {[
-          { label: 'Total Items', value: stats.total, icon: Package, color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-          { label: 'Low Stock Alerts', value: stats.lowStock, icon: AlertTriangle, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-          { label: 'Total Value', value: `$${stats.totalValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, icon: TrendingUp, color: 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400' },
-        ].map(s => (
-          <Card key={s.label} className="border-0 shadow-sm dark:bg-card">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${s.color}`}><s.icon className="h-5 w-5" /></div>
-              <div><p className="text-xl font-bold">{s.value}</p><p className="text-xs text-muted-foreground">{s.label}</p></div>
-            </CardContent>
-          </Card>
-        ))}
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Items</CardTitle>
+            <Package className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{kpi?.total ?? stats.total}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {kpi?.byCategory ? `${Object.keys(kpi.byCategory).length} categories` : 'across all categories'}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Stock Value</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              ${(kpi?.totalValue ?? stats.totalValue).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {kpi?.avgUnitCost != null ? `Avg $${kpi.avgUnitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/unit` : 'total inventory value'}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className={"border-0 shadow-sm" + ((kpi?.lowStock ?? stats.lowStock) > 0 ? ' border-l-4 border-l-amber-400' : '')}>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Low Stock</CardTitle>
+            <AlertTriangle className={`h-4 w-4 ${(kpi?.lowStock ?? stats.lowStock) > 0 ? 'text-amber-500' : 'text-muted-foreground'}`} />
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${(kpi?.lowStock ?? stats.lowStock) > 0 ? 'text-amber-600' : ''}`}>{kpi?.lowStock ?? stats.lowStock}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {(kpi?.lowStock ?? stats.lowStock) > 0 ? 'items below min level' : 'all items in stock'}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Pending Requests</CardTitle>
+            <ClipboardList className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{kpi?.pendingRequests ?? 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {kpi?.pendingRequests != null ? 'awaiting approval' : 'pending requests'}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Movements This Month</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{kpi?.movements?.thisMonth ?? 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {kpi?.movements?.trendPercent != null
+                ? (kpi.movements.trendPercent >= 0 ? '+' : '') + kpi.movements.trendPercent.toFixed(1) + '% vs last month'
+                : 'stock movements'}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Pending Adjustments</CardTitle>
+            <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{kpi?.pendingAdjustments ?? 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {kpi?.pendingAdjustments != null ? 'awaiting review' : 'pending adjustments'}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="filter-row flex flex-wrap gap-3 items-center">
