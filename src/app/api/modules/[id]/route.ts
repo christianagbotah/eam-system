@@ -74,7 +74,6 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       if (isActive) {
         updateData.licensedAt = new Date();
         updateData.licensedBy = session.userId;
-        // If activating, also force isActive and reset isEnabled if needed
       }
     }
     if (typeof isEnabled === 'boolean') {
@@ -88,25 +87,32 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       }
     }
 
-    // Upsert company module
-    const companyModule = await db.companyModule.upsert({
-      where: {
-        systemModuleId_companyId: {
-          systemModuleId: id,
-          companyId: null, // Single company setup
-        },
-      },
-      create: {
-        systemModuleId: id,
-        isActive: isActive ?? false,
-        isEnabled: isEnabled ?? false,
-        licensedAt: isActive ? new Date() : null,
-        licensedBy: isActive ? session.userId : null,
-        activatedAt: isEnabled ? new Date() : null,
-        activatedBy: isEnabled ? session.userId : null,
-      },
-      update: updateData,
+    // Find existing company module (SQLite treats NULL as distinct in unique indexes,
+    // so we cannot use upsert with companyId: null)
+    const existing = await db.companyModule.findFirst({
+      where: { systemModuleId: id, companyId: null },
     });
+
+    let companyModule;
+    if (existing) {
+      companyModule = await db.companyModule.update({
+        where: { id: existing.id },
+        data: updateData,
+      });
+    } else {
+      companyModule = await db.companyModule.create({
+        data: {
+          systemModuleId: id,
+          companyId: null,
+          isActive: (isActive as boolean) ?? false,
+          isEnabled: (isEnabled as boolean) ?? false,
+          licensedAt: isActive ? new Date() : null,
+          licensedBy: isActive ? session.userId : null,
+          activatedAt: isEnabled ? new Date() : null,
+          activatedBy: isEnabled ? session.userId : null,
+        },
+      });
+    }
 
     return NextResponse.json({
       success: true,
