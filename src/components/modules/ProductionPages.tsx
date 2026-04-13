@@ -24,7 +24,7 @@ import {
   Loader2,
   Zap, CheckCircle2, Clock, Eye, ArrowUpDown, BarChart3, Activity,
   RefreshCw, Settings, Gauge, Target, Play, X,
-  TrendingDown,
+  TrendingDown, DollarSign,
   Minus, Pause, ShieldCheck, Wrench, XCircle,
 } from 'lucide-react';
 import {
@@ -457,14 +457,26 @@ export function ProductionEfficiencyPage() {
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [topPerformers, setTopPerformers] = useState<{name: string; oee: number}[]>([]);
   const [bottomPerformers, setBottomPerformers] = useState<{name: string; oee: number}[]>([]);
-  const [kpisData, setKpisData] = useState({ oee: 0, availability: 0, performance: 0, quality: 0 });
+  const [kpisData, setKpisData] = useState({ completionRate: 0, onTimeDeliveryRate: 0, avgYield: 0, openOrderValue: 0, completedValue: 0 });
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     (async () => {
-      const [wcRes, poRes] = await Promise.all([
+      const [wcRes, poRes, kpiRes] = await Promise.all([
         api.get('/api/work-centers'),
         api.get('/api/production-orders'),
+        api.get('/api/production-orders/kpi'),
       ]);
+      // Use real KPI data from endpoint
+      if (kpiRes.success && kpiRes.data) {
+        const d = kpiRes.data;
+        setKpisData({
+          completionRate: d.completionRate ?? 0,
+          onTimeDeliveryRate: d.onTimeDeliveryRate ?? 0,
+          avgYield: d.avgYield ?? 0,
+          openOrderValue: d.openOrderValue ?? 0,
+          completedValue: d.completedValue ?? 0,
+        });
+      }
       if (wcRes.success && poRes.success) {
         const wcs = (wcRes.data || []) as any[];
         const pos = (poRes.data || []) as any[];
@@ -478,17 +490,6 @@ export function ProductionEfficiencyPage() {
         }).filter(w => wc.oee > 0 || wc.oee === 0).sort((a, b) => b.oee - a.oee);
         setTopPerformers(wcEfficiency.slice(0, 5));
         setBottomPerformers(wcEfficiency.slice(-3).reverse());
-        // Overall KPIs
-        const totalOrders = pos.filter(po => po.status !== 'cancelled').length;
-        const completedOrders = pos.filter(po => po.status === 'completed').length;
-        const inProgressOrders = pos.filter(po => po.status === 'in_progress').length;
-        const totalQty = pos.reduce((s: number, o: any) => s + (o.quantity || 0), 0);
-        const completedQty = pos.reduce((s: number, o: any) => s + (o.completedQty || 0), 0);
-        const oee = totalOrders > 0 ? Math.round((completedOrders / totalOrders) * 100) : 0;
-        const availability = totalOrders > 0 ? Math.round(((completedOrders + inProgressOrders) / totalOrders) * 100) : 0;
-        const performance = totalQty > 0 ? Math.round((completedQty / totalQty) * 100) : 0;
-        const quality = completedQty > 0 ? Math.round(Math.min(completedQty / Math.max(totalQty * 0.95, 1), 1) * 100) : 100;
-        setKpisData({ oee, availability, performance, quality: Math.min(quality, 100) });
         // Build monthly data from actual orders grouped by scheduledStart (or createdAt fallback)
         const monthLabel = (d: Date) => {
           const m = d.toLocaleString('en-US', { month: 'short' });
@@ -548,15 +549,16 @@ export function ProductionEfficiencyPage() {
     })();
   }, []);
   const kpis = [
-    { label: 'OEE', value: `${kpisData.oee}%`, icon: Gauge, color: 'text-emerald-600 bg-emerald-50' },
-    { label: 'Availability', value: `${kpisData.availability}%`, icon: Activity, color: 'text-sky-600 bg-sky-50' },
-    { label: 'Performance', value: `${kpisData.performance}%`, icon: Zap, color: 'text-violet-600 bg-violet-50' },
-    { label: 'Quality', value: `${kpisData.quality}%`, icon: ShieldCheck, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Completion Rate', value: `${kpisData.completionRate}%`, icon: Gauge, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'On-Time Delivery', value: `${kpisData.onTimeDeliveryRate}%`, icon: Activity, color: 'text-sky-600 bg-sky-50' },
+    { label: 'Avg Yield', value: `${kpisData.avgYield}%`, icon: ShieldCheck, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Open Order Value', value: `$${kpisData.openOrderValue.toLocaleString()}`, icon: DollarSign, color: 'text-violet-600 bg-violet-50' },
+    { label: 'Completed Value', value: `$${kpisData.completedValue.toLocaleString()}`, icon: TrendingUp, color: 'text-teal-600 bg-teal-50' },
   ];
   return (
     <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Production Efficiency</h1><p className="text-muted-foreground text-sm mt-1">Track production efficiency metrics and improvement opportunities</p></div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
       </div>
       <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-0">

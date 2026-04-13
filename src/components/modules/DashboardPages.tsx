@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
@@ -19,6 +19,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLe
 import {
   ClipboardList, Wrench, Eye, Plus, CheckCircle2, AlertTriangle,
   TrendingUp, Factory, Shield, BarChart3, Package, Zap,
+  AlertCircle, Wifi, Activity,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, MiniBarChart, ProgressRing, LoadingSkeleton } from '@/components/shared/helpers';
 
@@ -49,6 +50,12 @@ const mrStatusChartConfig = {
   converted: { label: 'Converted', color: '#06b6d4' },
 } as const;
 
+const weeklyTrendConfig = {
+  workOrders: { label: 'Work Orders', color: '#10b981' },
+  maintenanceRequests: { label: 'Requests', color: '#f59e0b' },
+  productionOrders: { label: 'Production', color: '#06b6d4' },
+} as const;
+
 export function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,6 +68,25 @@ export function DashboardPage() {
       setLoading(false);
     });
   }, []);
+
+  // Generate day labels for weekly trend chart (must be before early return for hooks rule)
+  const weekLabels = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = subDays(new Date(), 6 - i);
+      return format(d, 'EEE');
+    });
+  }, []);
+
+  const weeklyTrendData = useMemo(() => {
+    const wt = stats?.weeklyTrends;
+    if (!wt) return [];
+    return weekLabels.map((label, i) => ({
+      day: label,
+      workOrders: wt.workOrders[i] ?? 0,
+      maintenanceRequests: wt.maintenanceRequests[i] ?? 0,
+      productionOrders: wt.productionOrders[i] ?? 0,
+    }));
+  }, [stats?.weeklyTrends, weekLabels]);
 
   if (loading) return <LoadingSkeleton />;
 
@@ -98,6 +124,14 @@ export function DashboardPage() {
     { status: 'converted', count: stats?.convertedMR || 0 },
   ];
 
+  // Cross-module values
+  const assetsAtRisk = (stats?.assetHealth?.poor || 0) + (stats?.assetHealth?.critical || 0);
+  const safetyIncidents = stats?.safetyAlerts?.openIncidents || 0;
+  const activeProduction = stats?.production?.activeOrders || 0;
+  const iotAlerts = stats?.iotStatus?.alertCount || 0;
+  const qualityIssues = stats?.quality?.openNcrs || 0;
+  const lowStockItems = stats?.inventoryAlerts?.lowStock || 0;
+
   const kpiCards = [
     {
       label: 'Pending Requests', value: pendingReqs,
@@ -106,7 +140,7 @@ export function DashboardPage() {
       borderColor: 'border-amber-100 dark:border-amber-900/40',
       iconBg: 'bg-amber-100 dark:bg-amber-900/50', iconColor: 'text-amber-600 dark:text-amber-400',
       icon: ClipboardList, permission: 'maintenance_requests.view',
-      barData: [2, 1, 3, pendingReqs - 1, pendingReqs + 1, pendingReqs, pendingReqs],
+      barData: stats?.weeklyTrends?.maintenanceRequests || [0, 0, 0, 0, 0, 0, 0],
     },
     {
       label: 'Active Work Orders', value: activeWOs,
@@ -115,7 +149,7 @@ export function DashboardPage() {
       borderColor: 'border-emerald-100 dark:border-emerald-900/40',
       iconBg: 'bg-emerald-100 dark:bg-emerald-900/50', iconColor: 'text-emerald-600 dark:text-emerald-400',
       icon: Wrench, permission: 'work_orders.view',
-      barData: [1, activeWOs - 1, activeWOs + 2, activeWOs, activeWOs - 2, activeWOs + 1, activeWOs],
+      barData: stats?.weeklyTrends?.workOrders || [0, 0, 0, 0, 0, 0, 0],
     },
     {
       label: 'Completion Rate', value: `${completionRate}%`,
@@ -124,7 +158,7 @@ export function DashboardPage() {
       borderColor: 'border-teal-100 dark:border-teal-900/40',
       iconBg: 'bg-teal-100 dark:bg-teal-900/50', iconColor: 'text-teal-600 dark:text-teal-400',
       icon: CheckCircle2, permission: 'work_orders.view',
-      barData: [45, 52, 48, 60, completionRate - 5, completionRate + 3, completionRate],
+      barData: [0, 0, 0, 0, 0, 0, 0],
       showRing: true, ringValue: completionRate,
     },
     {
@@ -136,7 +170,62 @@ export function DashboardPage() {
       iconBg: overdueWOs > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50',
       iconColor: overdueWOs > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400',
       icon: AlertTriangle, permission: 'work_orders.view',
-      barData: [overdueWOs + 2, overdueWOs + 1, overdueWOs, overdueWOs + 1, overdueWOs - 1, overdueWOs, overdueWOs],
+      barData: [0, 0, 0, 0, 0, 0, 0],
+    },
+    // ===== Cross-Module KPI Cards (Row 2) =====
+    {
+      label: 'Assets at Risk', value: assetsAtRisk,
+      sublabel: `${stats?.assetHealth?.poor || 0} poor, ${stats?.assetHealth?.critical || 0} critical`,
+      color: '#f97316', bgColor: 'bg-orange-50 dark:bg-orange-950/30',
+      borderColor: 'border-orange-100 dark:border-orange-900/40',
+      iconBg: 'bg-orange-100 dark:bg-orange-900/50', iconColor: 'text-orange-600 dark:text-orange-400',
+      icon: AlertTriangle, permission: 'assets.view',
+      barData: [0, 0, 0, 0, 0, 0, 0],
+    },
+    {
+      label: 'Safety Incidents', value: safetyIncidents,
+      sublabel: `${stats?.safetyAlerts?.overdueInspections || 0} overdue inspections`,
+      color: '#ef4444', bgColor: 'bg-red-50 dark:bg-red-950/30',
+      borderColor: 'border-red-100 dark:border-red-900/40',
+      iconBg: 'bg-red-100 dark:bg-red-900/50', iconColor: 'text-red-600 dark:text-red-400',
+      icon: Shield, permission: 'safety.view',
+      barData: [0, 0, 0, 0, 0, 0, 0],
+    },
+    {
+      label: 'Active Production', value: activeProduction,
+      sublabel: `${stats?.production?.completionRate || 0}% completion rate`,
+      color: '#06b6d4', bgColor: 'bg-cyan-50 dark:bg-cyan-950/30',
+      borderColor: 'border-cyan-100 dark:border-cyan-900/40',
+      iconBg: 'bg-cyan-100 dark:bg-cyan-900/50', iconColor: 'text-cyan-600 dark:text-cyan-400',
+      icon: Factory, permission: 'production.view',
+      barData: stats?.weeklyTrends?.productionOrders || [0, 0, 0, 0, 0, 0, 0],
+    },
+    {
+      label: 'IoT Alerts', value: iotAlerts,
+      sublabel: `${stats?.iotStatus?.offlineCount || 0} devices offline`,
+      color: '#8b5cf6', bgColor: 'bg-violet-50 dark:bg-violet-950/30',
+      borderColor: 'border-violet-100 dark:border-violet-900/40',
+      iconBg: 'bg-violet-100 dark:bg-violet-900/50', iconColor: 'text-violet-600 dark:text-violet-400',
+      icon: Wifi, permission: 'iot.view',
+      barData: [0, 0, 0, 0, 0, 0, 0],
+    },
+    {
+      label: 'Quality Issues', value: qualityIssues,
+      sublabel: `${stats?.quality?.failedInspections || 0} failed inspections`,
+      color: '#ec4899', bgColor: 'bg-pink-50 dark:bg-pink-950/30',
+      borderColor: 'border-pink-100 dark:border-pink-900/40',
+      iconBg: 'bg-pink-100 dark:bg-pink-900/50', iconColor: 'text-pink-600 dark:text-pink-400',
+      icon: AlertCircle, permission: 'quality.view',
+      barData: [0, 0, 0, 0, 0, 0, 0],
+    },
+    {
+      label: 'Low Stock Items', value: lowStockItems,
+      sublabel: `${stats?.inventoryAlerts?.pendingRequests || 0} pending requests`,
+      color: '#f59e0b', bgColor: 'bg-amber-50 dark:bg-amber-950/30',
+      borderColor: 'border-amber-100 dark:border-amber-900/40',
+      iconBg: 'bg-amber-100 dark:bg-amber-900/50', iconColor: 'text-amber-600 dark:text-amber-400',
+      icon: Package, permission: 'inventory.view',
+      barData: [0, 0, 0, 0, 0, 0, 0],
     },
   ];
 
@@ -148,6 +237,16 @@ export function DashboardPage() {
     { label: 'All Requests', icon: ClipboardList, permission: 'maintenance_requests.view', page: 'maintenance-requests' as PageName, color: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/30 dark:hover:bg-sky-950/50', border: 'border-sky-200 hover:border-sky-300 dark:border-sky-900/40' },
     { label: 'All Work Orders', icon: Eye, permission: 'work_orders.view', page: 'work-orders' as PageName, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50', border: 'border-violet-200 hover:border-violet-300 dark:border-violet-900/40' },
   ].filter(a => hasPermission(a.permission));
+
+  // Cross-module overview data
+  const crossModuleData = [
+    { label: 'Assets', value: stats?.assetHealth?.total || 0, detail: `${assetsAtRisk} at risk`, color: 'bg-orange-500', textColor: 'text-orange-600 dark:text-orange-400', bgColor: 'bg-orange-50 dark:bg-orange-950/30', borderColor: 'border-orange-100 dark:border-orange-900/40' },
+    { label: 'Safety', value: safetyIncidents, detail: `${stats?.safetyAlerts?.overdueInspections || 0} overdue`, color: 'bg-red-500', textColor: 'text-red-600 dark:text-red-400', bgColor: 'bg-red-50 dark:bg-red-950/30', borderColor: 'border-red-100 dark:border-red-900/40' },
+    { label: 'Production', value: activeProduction, detail: `${stats?.production?.completionRate || 0}% done`, color: 'bg-cyan-500', textColor: 'text-cyan-600 dark:text-cyan-400', bgColor: 'bg-cyan-50 dark:bg-cyan-950/30', borderColor: 'border-cyan-100 dark:border-cyan-900/40' },
+    { label: 'IoT', value: stats?.iotStatus?.totalDevices || 0, detail: `${stats?.iotStatus?.offlineCount || 0} offline`, color: 'bg-violet-500', textColor: 'text-violet-600 dark:text-violet-400', bgColor: 'bg-violet-50 dark:bg-violet-950/30', borderColor: 'border-violet-100 dark:border-violet-900/40' },
+    { label: 'Quality', value: qualityIssues, detail: `${stats?.quality?.pendingAudits || 0} audits pending`, color: 'bg-pink-500', textColor: 'text-pink-600 dark:text-pink-400', bgColor: 'bg-pink-50 dark:bg-pink-950/30', borderColor: 'border-pink-100 dark:border-pink-900/40' },
+    { label: 'Inventory', value: lowStockItems, detail: `${stats?.inventoryAlerts?.pendingRequests || 0} requests`, color: 'bg-amber-500', textColor: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-100 dark:border-amber-900/40' },
+  ];
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-[1600px] mx-auto">
@@ -171,10 +270,10 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* ===== KPI Cards ===== */}
+      {/* ===== KPI Cards Row 1 (Maintenance Core) ===== */}
       {visibleKpis.length > 0 && (
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
-          {visibleKpis.map((card) => {
+          {visibleKpis.slice(0, 4).map((card) => {
             const Icon = card.icon;
             return (
               <Card key={card.label} className={`border ${card.borderColor} ${card.bgColor} hover:shadow-lg transition-all duration-300 group overflow-hidden relative`}>
@@ -201,6 +300,86 @@ export function DashboardPage() {
           })}
         </div>
       )}
+
+      {/* ===== Cross-Module Overview Section ===== */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Activity className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold text-foreground">Cross-Module Overview</h3>
+        </div>
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+          {crossModuleData.map((mod) => (
+            <div key={mod.label} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${mod.borderColor} ${mod.bgColor} transition-all hover:shadow-sm`}>
+              <div className={`h-2.5 w-2.5 rounded-full ${mod.color} shrink-0`} />
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{mod.label}</p>
+                <p className={`text-lg font-bold ${mod.textColor}`}>{mod.value}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{mod.detail}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ===== KPI Cards Row 2 (Cross-Module) ===== */}
+      {visibleKpis.length > 4 && (
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+          {visibleKpis.slice(4).map((card) => {
+            const Icon = card.icon;
+            return (
+              <Card key={card.label} className={`border ${card.borderColor} ${card.bgColor} hover:shadow-lg transition-all duration-300 group overflow-hidden relative`}>
+                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 dark:to-transparent rounded-bl-full" />
+                <CardContent className="p-5 relative">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className={`h-10 w-10 rounded-xl ${card.iconBg} flex items-center justify-center group-hover:scale-110 transition-transform duration-300`}>
+                      <Icon className={`h-5 w-5 ${card.iconColor}`} />
+                    </div>
+                    {card.showRing ? (
+                      <ProgressRing value={card.ringValue || 0} color={card.color} size={48} strokeWidth={4} />
+                    ) : card.barData.some(v => v > 0) ? (
+                      <MiniBarChart data={card.barData} color={card.color} maxVal={Math.max(...card.barData, 1)} />
+                    ) : null}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{card.label}</p>
+                    <p className="text-3xl font-bold tracking-tight" style={{ color: card.color }}>{card.value}</p>
+                    <p className="text-xs text-muted-foreground font-medium">{card.sublabel}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ===== Weekly Trends Chart ===== */}
+      <Card className="border">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
+              <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <CardTitle className="text-base font-semibold">7-Day Activity Trends</CardTitle>
+              <CardDescription className="text-xs mt-0.5">Work orders, requests &amp; production created per day</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <ChartContainer config={weeklyTrendConfig} className="h-[280px] w-full">
+            <BarChart data={weeklyTrendData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
+              <XAxis dataKey="day" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+              <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <ChartLegend content={<ChartLegendContent />} />
+              <Bar dataKey="workOrders" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={28} />
+              <Bar dataKey="maintenanceRequests" fill="#f59e0b" radius={[4, 4, 0, 0]} maxBarSize={28} />
+              <Bar dataKey="productionOrders" fill="#06b6d4" radius={[4, 4, 0, 0]} maxBarSize={28} />
+            </BarChart>
+          </ChartContainer>
+        </CardContent>
+      </Card>
 
       {/* ===== Charts Row ===== */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

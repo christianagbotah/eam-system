@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
@@ -33,7 +33,60 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer,
 } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
+import { format } from 'date-fns';
 import { EmptyState, StatusBadge, PriorityBadge, formatDate, formatDateTime, LoadingSkeleton } from '@/components/shared/helpers';
+
+// Shared date range state hook
+const useDateRange = () => {
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
+  return { startDate, setStartDate, endDate, setEndDate };
+};
+
+// Shared DateRangePicker sub-component
+function DateRangePicker({ startDate, setStartDate, endDate, setEndDate }: {
+  startDate: string; setStartDate: (v: string) => void;
+  endDate: string; setEndDate: (v: string) => void;
+}) {
+  return (
+    <Card className="border border-border/60 shadow-sm">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Label className="text-sm font-medium flex items-center gap-1.5"><Calendar className="h-4 w-4 text-muted-foreground" />Date Range</Label>
+          <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-40" />
+          <span className="text-muted-foreground text-sm">to</span>
+          <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-40" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Client-side date range filter helper
+function filterByDateRange<T extends { createdAt?: string | null }>(items: T[], startDate: string, endDate: string): T[] {
+  const start = new Date(startDate + 'T00:00:00').getTime();
+  const end = new Date(endDate + 'T23:59:59').getTime();
+  return items.filter(item => {
+    if (!item.createdAt) return false;
+    const t = new Date(item.createdAt).getTime();
+    return t >= start && t <= end;
+  });
+}
+
+// Reusable CSV export helper
+const exportCSV = (filename: string, headers: string[], rows: string[][]) => {
+  const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${(c ?? '').toString().replace(/"/g, '""')}"`).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${filename}.csv`; a.click();
+  URL.revokeObjectURL(url);
+  toast.success(`Exported ${filename}.csv`);
+};
 
 export function ReportsAssetPage() {
   const [assets, setAssets] = useState<any[]>([]);
@@ -284,40 +337,50 @@ export function ReportsInventoryPage() {
   );
 }
 export function ReportsProductionPage() {
-  const [monthFilter, setMonthFilter] = useState('all');
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
-  const [assets, setAssets] = useState<Asset[]>([]);
+  const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
+  const [orders, setOrders] = useState<any[]>([]);
+  const [kpi, setKpi] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
+    setLoading(true);
     Promise.all([
-      api.get<WorkOrder[]>('/api/work-orders?limit=9999'),
-      api.get<Asset[]>('/api/assets?limit=9999'),
-    ]).then(([woRes, assetRes]) => {
-      if (woRes.success && Array.isArray(woRes.data)) setWorkOrders(woRes.data);
-      if (assetRes.success && Array.isArray(assetRes.data)) setAssets(assetRes.data);
+      api.get<any>('/api/production-orders?limit=9999'),
+      api.get<any>('/api/production-orders/kpi'),
+    ]).then(([ordersRes, kpiRes]) => {
+      if (ordersRes.success && Array.isArray(ordersRes.data)) {
+        // Filter by date range client-side
+        const filtered = filterByDateRange(ordersRes.data, startDate, endDate);
+        setOrders(filtered);
+      }
+      if (kpiRes.success && kpiRes.data) setKpi(kpiRes.data);
       setLoading(false);
     });
-  }, []);
+  }, [startDate, endDate]);
 
-  const completedWOs = workOrders.filter(wo => wo.status === 'completed' || wo.status === 'closed' || wo.status === 'verified');
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Group completed WOs by month
-  const monthlyMap: Record<string, { completed: number; plannedHrs: number; actualHrs: number }> = {};
-  completedWOs.forEach(wo => {
-    const dateStr = wo.actualEnd || wo.updatedAt || wo.createdAt;
+  // Status breakdown chart data
+  const statusBreakdown = useMemo(() => {
+    const map: Record<string, number> = {};
+    orders.forEach(o => { const s = o.status || 'unknown'; map[s] = (map[s] || 0) + 1; });
+    return Object.entries(map).map(([status, count]) => ({ status: status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), count }));
+  }, [orders]);
+
+  const statusColors: Record<string, string> = { planned: 'bg-sky-500', released: 'bg-violet-500', in_progress: 'bg-amber-500', completed: 'bg-emerald-500', cancelled: 'bg-red-500' };
+
+  // Monthly grouping
+  const monthlyMap: Record<string, { completed: number; total: number; value: number }> = {};
+  orders.forEach(o => {
+    const dateStr = o.actualEnd || o.updatedAt || o.createdAt;
     if (!dateStr) return;
     const d = new Date(dateStr);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const label = format(d, 'MMM yyyy');
-    if (!monthlyMap[key]) monthlyMap[key] = { completed: 0, plannedHrs: 0, actualHrs: 0 };
-    monthlyMap[key].completed += 1;
-    monthlyMap[key].plannedHrs += wo.estimatedHours || 0;
-    monthlyMap[key].actualHrs += wo.actualHours || 0;
+    if (!monthlyMap[key]) monthlyMap[key] = { completed: 0, total: 0, value: 0 };
+    monthlyMap[key].total += 1;
+    if (o.status === 'completed') monthlyMap[key].completed += 1;
+    monthlyMap[key].value += (o.quantity || 0) * (o.unitCost || 0);
   });
-
-  // Assets under maintenance for downtime count
-  const underMaintenanceCount = assets.filter(a => a.status === 'under_maintenance').length;
 
   const monthlyData = Object.entries(monthlyMap)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -325,22 +388,19 @@ export function ReportsProductionPage() {
     .map(([key, data]) => {
       const d = new Date(key + '-01');
       const label = format(d, 'MMM yyyy');
-      const efficiency = data.plannedHrs > 0 ? Math.min(100, Math.round((data.plannedHrs / (data.plannedHrs + Math.max(0, data.actualHrs - data.plannedHrs))) * 100 * 10) / 10) : data.actualHrs > 0 ? 100 : 0;
-      return { month: label, monthKey: key, completed: data.completed, plannedHrs: Math.round(data.plannedHrs), actualHrs: Math.round(data.actualHrs), efficiency, downtime: underMaintenanceCount };
+      const completionRate = data.total > 0 ? Math.round((data.completed / data.total) * 100) : 0;
+      return { month: label, monthKey: key, total: data.total, completed: data.completed, value: data.value, completionRate };
     });
 
-  const months = monthlyData.map(d => d.month);
-  const filtered = monthFilter === 'all' ? monthlyData : monthlyData.filter(d => d.month.includes(monthFilter));
-  const totalOutput = monthlyData.reduce((s, d) => s + d.completed, 0);
-  const avgEfficiency = monthlyData.length > 0 ? (monthlyData.reduce((s, d) => s + d.efficiency, 0) / monthlyData.length).toFixed(1) : '0.0';
-  const avgDowntime = monthlyData.length > 0 ? (monthlyData.reduce((s, d) => s + d.actualHrs, 0) / monthlyData.length).toFixed(1) : '0.0';
-  const avgWaste = totalOutput > 0 ? ((monthlyData.reduce((s, d) => s + Math.max(0, d.actualHrs - d.plannedHrs), 0) / monthlyData.reduce((s, d) => s + d.plannedHrs || 1, 0)) * 100).toFixed(1) : '0.0';
-  const maxActual = monthlyData.length > 0 ? Math.max(...monthlyData.map(d => d.completed), 1) : 1;
+  const totalOrders = orders.length;
+  const completedOrders = orders.filter(o => o.status === 'completed').length;
+  const maxMonthly = monthlyData.length > 0 ? Math.max(...monthlyData.map(d => d.total), 1) : 1;
+
   const summaryCards = [
-    { label: 'Completed WOs', value: totalOutput.toString(), icon: Factory, color: 'bg-emerald-50 text-emerald-600' },
-    { label: 'Efficiency', value: `${avgEfficiency}%`, icon: Target, color: 'bg-sky-50 text-sky-600' },
-    { label: 'Avg Actual Hours', value: `${avgDowntime} hrs/mo`, icon: Clock, color: 'bg-amber-50 text-amber-600' },
-    { label: 'Over-hours Rate', value: `${avgWaste}%`, icon: AlertTriangle, color: 'bg-red-50 text-red-600' },
+    { label: 'Total Orders', value: totalOrders.toString(), icon: Factory, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Completion Rate', value: kpi ? `${kpi.completionRate}%` : (totalOrders > 0 ? `${Math.round((completedOrders / totalOrders) * 100)}%` : '0%'), icon: Target, color: 'bg-sky-50 text-sky-600' },
+    { label: 'On-Time Delivery', value: kpi ? `${kpi.onTimeDeliveryRate}%` : '—', icon: Clock, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Avg Yield', value: kpi ? `${kpi.avgYield}%` : '—', icon: TrendingUp, color: 'bg-red-50 text-red-600' },
   ];
 
   if (loading) return <div className="page-content"><LoadingSkeleton /></div>;
@@ -348,13 +408,16 @@ export function ReportsProductionPage() {
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-bold tracking-tight">Production Reports</h1><p className="text-muted-foreground mt-1">Work order output, planned vs actual hours, and efficiency trends derived from completed work orders</p></div>
-        <div className="w-full sm:w-auto">
-          <Select value={monthFilter} onValueChange={setMonthFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Filter month" /></SelectTrigger><SelectContent><SelectItem value="all">All Months</SelectItem>{months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select>
-        </div>
+        <div><h1 className="text-2xl font-bold tracking-tight">Production Reports</h1><p className="text-muted-foreground mt-1">Production orders status breakdown, completion rates, on-time delivery, and yield from real production data</p></div>
       </div>
-      {completedWOs.length === 0 ? (
-        <EmptyState icon={Factory} title="No production data available yet" description="Complete work orders to see production trends, efficiency metrics, and planned vs actual hours." />
+      <div className="flex items-center gap-3 flex-wrap">
+        <DateRangePicker startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate} />
+        <Button variant="outline" size="sm" onClick={() => exportCSV('production-orders', ['Order Number', 'Product', 'Status', 'Priority', 'Start Date', 'End Date'], orders.map(o => [o.orderNumber || '', o.title || '', o.status || '', o.priority || '', o.scheduledStart ? new Date(o.scheduledStart).toISOString().slice(0, 10) : '', o.scheduledEnd ? new Date(o.scheduledEnd).toISOString().slice(0, 10) : '']))}>
+          <Download className="h-4 w-4 mr-1.5" />Export CSV
+        </Button>
+      </div>
+      {totalOrders === 0 ? (
+        <EmptyState icon={Factory} title="No production data available for this date range" description="Create production orders to see production trends, completion rates, and yield metrics." />
       ) : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {summaryCards.map(k => { const I = k.icon; return (
@@ -366,32 +429,50 @@ export function ReportsProductionPage() {
             </div>
           ); })}
         </div>
-        <Card className="border border-border/60 shadow-sm">
-          <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Completed Work Orders</CardTitle></CardHeader>
-          <CardContent>
-            <div className="flex items-end gap-3 h-48">
-              {monthlyData.map(d => (
-                <div key={d.monthKey} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-xs font-medium">{d.completed}</span>
-                  <div className="w-full bg-emerald-100 rounded-t-md" style={{ height: `${(d.completed / maxActual) * 140}px` }}>
-                    <div className="w-full h-full bg-emerald-500 rounded-t-md opacity-80" />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border border-border/60 shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Production Orders</CardTitle><CardDescription className="text-xs">Orders by month in selected range</CardDescription></CardHeader>
+            <CardContent>
+              <div className="flex items-end gap-3 h-48">
+                {monthlyData.map(d => (
+                  <div key={d.monthKey} className="flex-1 flex flex-col items-center gap-1">
+                    <span className="text-xs font-medium">{d.total}</span>
+                    <div className="w-full bg-emerald-100 rounded-t-md" style={{ height: `${(d.total / maxMonthly) * 140}px` }}>
+                      <div className="w-full h-full bg-emerald-500 rounded-t-md opacity-80" />
+                    </div>
+                    <span className="text-[10px] text-muted-foreground text-center">{d.month.split(' ')[0]}</span>
                   </div>
-                  <span className="text-[10px] text-muted-foreground text-center">{d.month.split(' ')[0]}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border border-border/60 shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Status Breakdown</CardTitle><CardDescription className="text-xs">Orders by status</CardDescription></CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {statusBreakdown.map(s => {
+                  const maxStatus = statusBreakdown.length > 0 ? Math.max(...statusBreakdown.map(x => x.count)) : 1;
+                  return (
+                    <div key={s.status} className="flex items-center gap-3">
+                      <span className="text-sm font-medium w-28">{s.status}</span>
+                      <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className={`h-full ${statusColors[s.status.toLowerCase().replace(/ /g, '_')] || 'bg-slate-400'} rounded-full transition-all`} style={{ width: `${(s.count / maxStatus) * 100}%` }} /></div>
+                      <span className="text-sm font-semibold w-16 text-right">{s.count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
         <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
-          <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Completed WOs</TableHead><TableHead className="text-right">Planned Hrs</TableHead><TableHead className="text-right">Actual Hrs</TableHead><TableHead className="hidden sm:table-cell text-right">Efficiency</TableHead><TableHead className="hidden md:table-cell text-right">Assets in Maint.</TableHead></TableRow></TableHeader><TableBody>
-            {filtered.map(d => (
+          <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Total Orders</TableHead><TableHead className="text-right">Completed</TableHead><TableHead className="hidden sm:table-cell text-right">Completion Rate</TableHead><TableHead className="hidden md:table-cell text-right">Value</TableHead></TableRow></TableHeader><TableBody>
+            {monthlyData.map(d => (
               <TableRow key={d.monthKey} className="hover:bg-muted/30">
                 <TableCell className="font-medium">{d.month}</TableCell>
-                <TableCell className="text-right font-medium">{d.completed}</TableCell>
-                <TableCell className="text-right text-muted-foreground">{d.plannedHrs.toLocaleString()}</TableCell>
-                <TableCell className="text-right">{d.actualHrs.toLocaleString()}</TableCell>
-                <TableCell className={`text-right font-medium hidden sm:table-cell ${d.efficiency >= 90 ? 'text-emerald-600' : d.efficiency >= 75 ? 'text-amber-600' : 'text-red-600'}`}>{d.efficiency}%</TableCell>
-                <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.downtime}</TableCell>
+                <TableCell className="text-right font-medium">{d.total}</TableCell>
+                <TableCell className="text-right text-emerald-600">{d.completed}</TableCell>
+                <TableCell className={`text-right font-medium hidden sm:table-cell ${d.completionRate >= 90 ? 'text-emerald-600' : d.completionRate >= 70 ? 'text-amber-600' : 'text-red-600'}`}>{d.completionRate}%</TableCell>
+                <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.value > 0 ? `$${d.value.toLocaleString()}` : '—'}</TableCell>
               </TableRow>
             ))}
           </TableBody></Table></div>
@@ -401,74 +482,84 @@ export function ReportsProductionPage() {
   );
 }
 export function ReportsQualityPage() {
-  const [monthFilter, setMonthFilter] = useState('all');
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
+  const [inspections, setInspections] = useState<any[]>([]);
+  const [ncrs, setNcrs] = useState<any[]>([]);
+  const [audits, setAudits] = useState<any[]>([]);
+  const [inspKpis, setInspKpis] = useState<any>(null);
+  const [ncrKpis, setNcrKpis] = useState<any>(null);
+  const [auditKpis, setAuditKpis] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    api.get<WorkOrder[]>('/api/work-orders?limit=9999').then(res => {
-      if (res.success && Array.isArray(res.data)) setWorkOrders(res.data);
+  const fetchData = useCallback(() => {
+    setLoading(true);
+    Promise.all([
+      api.get<any>('/api/quality-inspections?limit=9999'),
+      api.get<any>('/api/quality-ncr?limit=9999'),
+      api.get<any>('/api/quality-audits?limit=9999'),
+    ]).then(([inspRes, ncrRes, auditRes]) => {
+      const inspData = inspRes.success && Array.isArray(inspRes.data) ? filterByDateRange(inspRes.data, startDate, endDate) : [];
+      const ncrData = ncrRes.success && Array.isArray(ncrRes.data) ? filterByDateRange(ncrRes.data, startDate, endDate) : [];
+      const auditData = auditRes.success && Array.isArray(auditRes.data) ? filterByDateRange(auditRes.data, startDate, endDate) : [];
+      setInspections(inspData);
+      setNcrs(ncrData);
+      setAudits(auditData);
+      if (inspRes.kpis) setInspKpis(inspRes.kpis);
+      if (ncrRes.kpis) setNcrKpis(ncrRes.kpis);
+      if (auditRes.kpis) setAuditKpis(auditRes.kpis);
       setLoading(false);
     });
-  }, []);
+  }, [startDate, endDate]);
 
-  // Group WOs by type
-  const typeMap: Record<string, { total: number; completed: number; totalActualHrs: number; totalEstHrs: number }> = {};
-  workOrders.forEach(wo => {
-    const t = wo.type || 'other';
-    if (!typeMap[t]) typeMap[t] = { total: 0, completed: 0, totalActualHrs: 0, totalEstHrs: 0 };
-    typeMap[t].total += 1;
-    if (wo.status === 'completed' || wo.status === 'closed' || wo.status === 'verified') typeMap[t].completed += 1;
-    typeMap[t].totalActualHrs += wo.actualHours || 0;
-    typeMap[t].totalEstHrs += wo.estimatedHours || 0;
-  });
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  const typeColors: Record<string, string> = { preventive: 'bg-emerald-500', corrective: 'bg-amber-500', emergency: 'bg-red-500', inspection: 'bg-sky-500', predictive: 'bg-violet-500', project: 'bg-teal-500', other: 'bg-slate-400' };
-  const ncrCategories = Object.entries(typeMap)
-    .map(([type, data]) => ({
-      name: type.replace('_', ' '),
-      count: data.total,
-      color: typeColors[type] || 'bg-slate-400',
-      completed: data.completed,
-      completionRate: data.total > 0 ? Math.round((data.completed / data.total) * 100) : 0,
-      avgHours: data.completed > 0 ? Math.round((data.totalActualHrs / data.completed) * 10) / 10 : 0,
-    }))
-    .sort((a, b) => b.count - a.count);
+  // Inspection pass/fail
+  const inspPassed = inspections.filter(i => i.status === 'passed').length;
+  const inspFailed = inspections.filter(i => i.status === 'failed').length;
+  const inspPending = inspections.filter(i => i.status === 'pending' || i.status === 'in_progress').length;
+  const inspPassRate = inspections.length > 0 ? Math.round((inspPassed / inspections.length) * 100) : 0;
 
-  const totalNCRs = ncrCategories.reduce((s, c) => s + c.count, 0);
-  const totalCompleted = ncrCategories.reduce((s, c) => s + c.completed, 0);
-  const avgPassRate = totalNCRs > 0 ? ((totalCompleted / totalNCRs) * 100).toFixed(1) : '0.0';
+  // NCR status breakdown
+  const ncrStatusMap: Record<string, number> = {};
+  ncrs.forEach(n => { const s = n.status || 'unknown'; ncrStatusMap[s] = (ncrStatusMap[s] || 0) + 1; });
+  const ncrStatusBreakdown = Object.entries(ncrStatusMap).map(([status, count]) => ({
+    status: status.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), count,
+  }));
+  const ncrColors: Record<string, string> = { open: 'bg-red-500', investigating: 'bg-amber-500', closed: 'bg-emerald-500' };
 
-  // Group completed WOs by month
-  const monthlyMap: Record<string, { completed: number; total: number }> = {};
-  workOrders.forEach(wo => {
-    const dateStr = wo.actualEnd || wo.updatedAt || wo.createdAt;
+  // Audit completion rates
+  const auditsCompleted = audits.filter(a => a.status === 'completed').length;
+  const auditsInProgress = audits.filter(a => a.status === 'in_progress').length;
+  const auditsPlanned = audits.filter(a => a.status === 'planned').length;
+  const auditCompletionRate = audits.length > 0 ? Math.round((auditsCompleted / audits.length) * 100) : 0;
+
+  // Monthly trend for inspections
+  const monthlyMap: Record<string, { total: number; passed: number; failed: number }> = {};
+  inspections.forEach(i => {
+    const dateStr = i.createdAt;
     if (!dateStr) return;
     const d = new Date(dateStr);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    if (!monthlyMap[key]) monthlyMap[key] = { completed: 0, total: 0 };
+    if (!monthlyMap[key]) monthlyMap[key] = { total: 0, passed: 0, failed: 0 };
     monthlyMap[key].total += 1;
-    if (wo.status === 'completed' || wo.status === 'closed' || wo.status === 'verified') monthlyMap[key].completed += 1;
+    if (i.status === 'passed') monthlyMap[key].passed += 1;
+    else if (i.status === 'failed') monthlyMap[key].failed += 1;
   });
-
   const monthlyData = Object.entries(monthlyMap)
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(-6)
     .map(([key, data]) => {
       const d = new Date(key + '-01');
       const label = format(d, 'MMM yyyy');
-      const passRate = data.total > 0 ? Math.round((data.completed / data.total) * 1000) / 10 : 0;
-      return { month: label, monthKey: key, inspections: data.total, passed: data.completed, failed: data.total - data.completed, passRate, ncrs: data.total - data.completed };
+      const passRate = data.total > 0 ? Math.round((data.passed / data.total) * 100) : 0;
+      return { month: label, monthKey: key, total: data.total, passed: data.passed, failed: data.failed, passRate };
     });
 
-  const months = monthlyData.map(d => d.month);
-  const filtered = monthFilter === 'all' ? monthlyData : monthlyData.filter(d => d.month.includes(monthFilter));
-  const totalInspections = workOrders.length;
   const summaryCards = [
-    { label: 'Total Work Orders', value: totalInspections.toString(), icon: ClipboardCheck, color: 'bg-emerald-50 text-emerald-600' },
-    { label: 'Completion Rate', value: `${avgPassRate}%`, icon: ShieldCheck, color: 'bg-sky-50 text-sky-600' },
-    { label: 'Incomplete WOs', value: (totalNCRs - totalCompleted).toString(), icon: AlertTriangle, color: 'bg-amber-50 text-amber-600' },
-    { label: 'WO Types', value: ncrCategories.length.toString(), icon: Clock, color: 'bg-red-50 text-red-600' },
+    { label: 'Inspections', value: inspections.length.toString(), icon: ClipboardCheck, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Pass Rate', value: `${inspPassRate}%`, icon: ShieldCheck, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Open NCRs', value: ncrs.filter(n => n.status === 'open' || n.status === 'investigating').length.toString(), icon: AlertTriangle, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Audit Completion', value: `${auditCompletionRate}%`, icon: CheckCircle2, color: 'bg-red-50 text-red-600' },
   ];
 
   if (loading) return <div className="page-content"><LoadingSkeleton /></div>;
@@ -476,11 +567,16 @@ export function ReportsQualityPage() {
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-bold tracking-tight">Quality Reports</h1><p className="text-muted-foreground mt-1">Work order completion rates, type analysis, and quality KPIs derived from real work order data</p></div>
-        <Select value={monthFilter} onValueChange={setMonthFilter}><SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Filter month" /></SelectTrigger><SelectContent><SelectItem value="all">All Months</SelectItem>{months.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select>
+        <div><h1 className="text-2xl font-bold tracking-tight">Quality Reports</h1><p className="text-muted-foreground mt-1">Inspection pass/fail rates, NCR status breakdown, and audit completion from real quality data</p></div>
       </div>
-      {workOrders.length === 0 ? (
-        <EmptyState icon={ClipboardCheck} title="No quality data available yet" description="Create work orders to see completion rates and type analysis." />
+      <div className="flex items-center gap-3 flex-wrap">
+        <DateRangePicker startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate} />
+        <Button variant="outline" size="sm" onClick={() => exportCSV('quality-inspections', ['ID', 'Type', 'Status', 'Result', 'Date', 'Inspector'], inspections.map(i => [i.inspectionNumber || i.id || '', i.type || '', i.status || '', i.result || i.status || '', i.createdAt ? new Date(i.createdAt).toISOString().slice(0, 10) : '', i.inspector || '']))}>
+          <Download className="h-4 w-4 mr-1.5" />Export CSV
+        </Button>
+      </div>
+      {inspections.length === 0 && ncrs.length === 0 && audits.length === 0 ? (
+        <EmptyState icon={ClipboardCheck} title="No quality data available for this date range" description="Create inspections, NCRs, or audits to see quality metrics." />
       ) : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {summaryCards.map(k => { const I = k.icon; return (
@@ -492,30 +588,104 @@ export function ReportsQualityPage() {
             </div>
           ); })}
         </div>
-        <Card className="border border-border/60 shadow-sm">
-          <CardHeader className="pb-3"><CardTitle className="text-base">Work Orders by Type</CardTitle></CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {ncrCategories.map(cat => (
-                <div key={cat.name} className="flex items-center gap-3">
-                  <span className="text-sm font-medium w-28 capitalize">{cat.name}</span>
-                  <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden"><div className={`h-full ${cat.color} rounded-full`} style={{ width: `${totalNCRs > 0 ? (cat.count / Math.max(...ncrCategories.map(c => c.count))) * 100 : 0}%` }} /></div>
-                  <span className="text-sm font-semibold w-36 text-right">{cat.count} ({cat.completionRate}% done)</span>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border border-border/60 shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Inspection Pass/Fail Rates</CardTitle><CardDescription className="text-xs">Inspection outcomes in date range</CardDescription></CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-28">Passed</span>
+                  <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${inspections.length > 0 ? (inspPassed / inspections.length) * 100 : 0}%` }} /></div>
+                  <span className="text-sm font-semibold w-16 text-right">{inspPassed}</span>
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-28">Failed</span>
+                  <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden"><div className="h-full bg-red-500 rounded-full" style={{ width: `${inspections.length > 0 ? (inspFailed / inspections.length) * 100 : 0}%` }} /></div>
+                  <span className="text-sm font-semibold w-16 text-right">{inspFailed}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-28">Pending</span>
+                  <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden"><div className="h-full bg-amber-500 rounded-full" style={{ width: `${inspections.length > 0 ? (inspPending / inspections.length) * 100 : 0}%` }} /></div>
+                  <span className="text-sm font-semibold w-16 text-right">{inspPending}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border border-border/60 shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">NCR Status Breakdown</CardTitle><CardDescription className="text-xs">Non-conformance reports by status</CardDescription></CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {ncrStatusBreakdown.length === 0 && <p className="text-sm text-muted-foreground">No NCRs in date range.</p>}
+                {ncrStatusBreakdown.map(cat => {
+                  const maxNcr = ncrStatusBreakdown.length > 0 ? Math.max(...ncrStatusBreakdown.map(c => c.count)) : 1;
+                  return (
+                    <div key={cat.status} className="flex items-center gap-3">
+                      <span className="text-sm font-medium w-28">{cat.status}</span>
+                      <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden"><div className={`h-full ${ncrColors[cat.status.toLowerCase().replace(/ /g, '_')] || 'bg-slate-400'} rounded-full`} style={{ width: `${(cat.count / maxNcr) * 100}%` }} /></div>
+                      <span className="text-sm font-semibold w-16 text-right">{cat.count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border border-border/60 shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Audit Completion</CardTitle><CardDescription className="text-xs">{audits.length} audits in range</CardDescription></CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-28">Completed</span>
+                  <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${auditCompletionRate}%` }} /></div>
+                  <span className="text-sm font-semibold w-16 text-right">{auditsCompleted}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-28">In Progress</span>
+                  <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden"><div className="h-full bg-amber-500 rounded-full" style={{ width: `${audits.length > 0 ? (auditsInProgress / audits.length) * 100 : 0}%` }} /></div>
+                  <span className="text-sm font-semibold w-16 text-right">{auditsInProgress}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-28">Planned</span>
+                  <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden"><div className="h-full bg-sky-500 rounded-full" style={{ width: `${audits.length > 0 ? (auditsPlanned / audits.length) * 100 : 0}%` }} /></div>
+                  <span className="text-sm font-semibold w-16 text-right">{auditsPlanned}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border border-border/60 shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Inspection Trend</CardTitle><CardDescription className="text-xs">Inspections by month</CardDescription></CardHeader>
+            <CardContent>
+              {monthlyData.length === 0 ? <p className="text-sm text-muted-foreground">No inspection data for chart.</p> : (
+                <div className="flex items-end gap-3 h-40">
+                  {monthlyData.map(d => {
+                    const maxM = Math.max(...monthlyData.map(x => x.total), 1);
+                    return (
+                      <div key={d.monthKey} className="flex-1 flex flex-col items-center gap-1">
+                        <span className="text-xs font-medium">{d.passed}/{d.total}</span>
+                        <div className="w-full bg-emerald-100 rounded-t-md" style={{ height: `${(d.total / maxM) * 100}px` }}>
+                          <div className="w-full h-full bg-emerald-500 rounded-t-md opacity-80" />
+                        </div>
+                        <span className="text-[10px] text-muted-foreground text-center">{d.month.split(' ')[0]}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
         <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
-          <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Total WOs</TableHead><TableHead className="hidden sm:table-cell text-right">Completed</TableHead><TableHead className="hidden sm:table-cell text-right">Incomplete</TableHead><TableHead className="text-right">Completion Rate</TableHead><TableHead className="hidden md:table-cell text-right">Avg Hrs/WO</TableHead></TableRow></TableHeader><TableBody>
-            {filtered.map(d => (
+          <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Total</TableHead><TableHead className="hidden sm:table-cell text-right">Passed</TableHead><TableHead className="hidden sm:table-cell text-right">Failed</TableHead><TableHead className="text-right">Pass Rate</TableHead></TableRow></TableHeader><TableBody>
+            {monthlyData.length === 0 ? (
+              <TableRow><TableCell colSpan={5}><EmptyState icon={ClipboardCheck} title="No monthly data" description="Inspection data will appear by month." /></TableCell></TableRow>
+            ) : monthlyData.map(d => (
               <TableRow key={d.monthKey} className="hover:bg-muted/30">
                 <TableCell className="font-medium">{d.month}</TableCell>
-                <TableCell className="text-right">{d.inspections}</TableCell>
+                <TableCell className="text-right">{d.total}</TableCell>
                 <TableCell className="text-right text-emerald-600 hidden sm:table-cell">{d.passed}</TableCell>
                 <TableCell className="text-right text-red-600 hidden sm:table-cell">{d.failed}</TableCell>
                 <TableCell className={`text-right font-medium ${d.passRate >= 95 ? 'text-emerald-600' : d.passRate >= 80 ? 'text-amber-600' : 'text-red-600'}`}>{d.passRate}%</TableCell>
-                <TableCell className="text-right text-muted-foreground hidden md:table-cell">—</TableCell>
               </TableRow>
             ))}
           </TableBody></Table></div>
@@ -525,84 +695,110 @@ export function ReportsQualityPage() {
   );
 }
 export function ReportsSafetyPage() {
-  const [yearFilter, setYearFilter] = useState('2025');
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [mrs, setMrs] = useState<MaintenanceRequest[]>([]);
+  const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
+  const [incidents, setIncidents] = useState<any[]>([]);
+  const [inspections, setInspections] = useState<any[]>([]);
+  const [training, setTraining] = useState<any[]>([]);
+  const [incidentKpis, setIncidentKpis] = useState<any>(null);
+  const [inspKpis, setInspKpis] = useState<any>(null);
+  const [trainingKpis, setTrainingKpis] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
+    setLoading(true);
     Promise.all([
-      api.get<WorkOrder[]>('/api/work-orders?limit=9999'),
-      api.get<Asset[]>('/api/assets?limit=9999'),
-      api.get<MaintenanceRequest[]>('/api/maintenance-requests?limit=9999'),
-    ]).then(([woRes, assetRes, mrRes]) => {
-      if (woRes.success && Array.isArray(woRes.data)) setWorkOrders(woRes.data);
-      if (assetRes.success && Array.isArray(assetRes.data)) setAssets(assetRes.data);
-      if (mrRes.success && Array.isArray(mrRes.data)) setMrs(mrRes.data);
+      api.get<any>('/api/safety-incidents?limit=9999'),
+      api.get<any>('/api/safety-inspections?limit=9999'),
+      api.get<any>('/api/safety-training?limit=9999'),
+    ]).then(([incRes, inspRes, trainRes]) => {
+      const incData = incRes.success && Array.isArray(incRes.data) ? filterByDateRange(incRes.data, startDate, endDate) : [];
+      const inspData = inspRes.success && Array.isArray(inspRes.data) ? filterByDateRange(inspRes.data, startDate, endDate) : [];
+      const trainData = trainRes.success && Array.isArray(trainRes.data) ? filterByDateRange(trainRes.data, startDate, endDate) : [];
+      setIncidents(incData);
+      setInspections(inspData);
+      setTraining(trainData);
+      if (incRes.kpis) setIncidentKpis(incRes.kpis);
+      if (inspRes.kpis) setInspKpis(inspRes.kpis);
+      if (trainRes.kpis) setTrainingKpis(trainRes.kpis);
       setLoading(false);
     });
-  }, []);
+  }, [startDate, endDate]);
 
-  // Safety-related: critical/urgent priority WOs
-  const safetyWOs = workOrders.filter(wo => wo.priority === 'critical' || wo.priority === 'urgent' || wo.priority === 'emergency');
-  const criticalWOs = workOrders.filter(wo => wo.priority === 'critical' || wo.priority === 'emergency');
-  const urgentWOs = workOrders.filter(wo => wo.priority === 'urgent');
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  // At-risk assets: poor condition or out of service
-  const atRiskAssets = assets.filter(a => a.condition === 'poor' || a.status === 'out_of_service');
-  const poorConditionAssets = assets.filter(a => a.condition === 'poor');
-  const outOfServiceAssets = assets.filter(a => a.status === 'out_of_service');
+  // Severity breakdown
+  const severityMap: Record<string, number> = {};
+  incidents.forEach(i => { const s = i.severity || 'unknown'; severityMap[s] = (severityMap[s] || 0) + 1; });
+  const severityBreakdown = Object.entries(severityMap).map(([sev, count]) => ({
+    name: sev.charAt(0).toUpperCase() + sev.slice(1), count,
+  }));
+  const sevColors: Record<string, string> = { critical: 'bg-red-500', high: 'bg-orange-500', medium: 'bg-amber-500', low: 'bg-emerald-500', minor: 'bg-sky-500' };
 
-  // Overdue MRs: pending for more than 7 days
-  const now = Date.now();
-  const overdueMrs = mrs.filter(mr => mr.status === 'pending' && (now - new Date(mr.createdAt).getTime()) > 7 * 24 * 60 * 60 * 1000);
-  const pendingMrs = mrs.filter(mr => mr.status === 'pending');
+  // Incident status
+  const openIncidents = incidents.filter(i => i.status === 'open').length;
+  const investigatingIncidents = incidents.filter(i => i.status === 'investigating').length;
+  const closedIncidents = incidents.filter(i => i.status === 'closed').length;
 
-  // Priority breakdown for chart
-  const incidentTypes = [
-    { name: 'Critical', count: criticalWOs.length, color: 'bg-red-500' },
-    { name: 'Urgent', count: urgentWOs.length, color: 'bg-amber-500' },
-    { name: 'Poor Assets', count: poorConditionAssets.length, color: 'bg-orange-500' },
-    { name: 'Out of Service', count: outOfServiceAssets.length, color: 'bg-sky-500' },
-    { name: 'Overdue MRs', count: overdueMrs.length, color: 'bg-emerald-500' },
-  ].filter(t => t.count > 0);
-  const maxCount = incidentTypes.length > 0 ? Math.max(...incidentTypes.map(t => t.count)) : 1;
+  // Inspection completion
+  const inspCompleted = inspections.filter(i => i.status === 'completed').length;
+  const inspScheduled = inspections.filter(i => i.status === 'scheduled').length;
+  const inspFailed = inspections.filter(i => i.status === 'failed').length;
+  const inspCompletionRate = inspections.length > 0 ? Math.round((inspCompleted / inspections.length) * 100) : 0;
 
-  // Group by month
-  const monthlyMap: Record<string, { critical: number; urgent: number; atRiskAssets: number; overdueMRs: number }> = {};
-  const addMonth = (dateStr: string, key: string, value: number) => {
+  // Training compliance
+  const trainCompleted = training.filter(t => t.status === 'completed').length;
+  const trainPlanned = training.filter(t => t.status === 'planned').length;
+  const trainInProgress = training.filter(t => t.status === 'in_progress').length;
+  const trainingCompliance = training.length > 0 ? Math.round((trainCompleted / training.length) * 100) : 0;
+
+  // Total training hours
+  const totalTrainingHrs = training.reduce((sum, t) => sum + (t.durationHours || 0), 0);
+
+  // Monthly incident trend
+  const monthlyMap: Record<string, { incidents: number; closed: number; inspections: number; trainingHrs: number }> = {};
+  incidents.forEach(i => {
+    const dateStr = i.createdAt;
     if (!dateStr) return;
     const d = new Date(dateStr);
-    const mk = `${d.getFullYear()}`;
-    if (!monthlyMap[mk]) monthlyMap[mk] = { critical: 0, urgent: 0, atRiskAssets: 0, overdueMRs: 0 };
-    (monthlyMap[mk] as any)[key] = (monthlyMap[mk] as any)[key] || 0;
-    (monthlyMap[mk] as any)[key] += value;
-  };
-  criticalWOs.forEach(wo => addMonth(wo.createdAt || '', 'critical', 1));
-  urgentWOs.forEach(wo => addMonth(wo.createdAt || '', 'urgent', 1));
-  overdueMrs.forEach(mr => addMonth(mr.createdAt || '', 'overdueMRs', 1));
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (!monthlyMap[key]) monthlyMap[key] = { incidents: 0, closed: 0, inspections: 0, trainingHrs: 0 };
+    monthlyMap[key].incidents += 1;
+    if (i.status === 'closed') monthlyMap[key].closed += 1;
+  });
+  inspections.forEach(i => {
+    const dateStr = i.createdAt;
+    if (!dateStr) return;
+    const d = new Date(dateStr);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (!monthlyMap[key]) monthlyMap[key] = { incidents: 0, closed: 0, inspections: 0, trainingHrs: 0 };
+    monthlyMap[key].inspections += 1;
+  });
+  training.forEach(t => {
+    const dateStr = t.createdAt;
+    if (!dateStr) return;
+    const d = new Date(dateStr);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (!monthlyMap[key]) monthlyMap[key] = { incidents: 0, closed: 0, inspections: 0, trainingHrs: 0 };
+    monthlyMap[key].trainingHrs += t.durationHours || 0;
+  });
 
   const monthlyData = Object.entries(monthlyMap)
-    .sort(([a], [b]) => b.localeCompare(a))
-    .map(([year, data]) => ({
-      month: year,
-      incidents: data.critical,
-      nearMisses: data.urgent,
-      trir: (data.critical + data.urgent) > 0 ? Math.round(((data.critical * 2 + data.urgent) / (data.critical + data.urgent)) * 10) / 10 : 0,
-      trainingHrs: 0,
-      inspections: atRiskAssets.length,
-      actionsClosed: workOrders.filter(wo => (wo.status === 'completed' || wo.status === 'closed') && (wo.createdAt || '').startsWith(year)).length,
-    }));
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([key, data]) => {
+      const d = new Date(key + '-01');
+      const label = format(d, 'MMM yyyy');
+      return { month: label, monthKey: key, ...data };
+    });
 
-  const filtered = monthlyData.filter(d => d.month.includes(yearFilter));
-  const totalIncidents = criticalWOs.length + urgentWOs.length;
-  const avgTRIR = totalIncidents > 0 ? (monthlyData.length > 0 ? (monthlyData.reduce((s, d) => s + d.trir, 0) / monthlyData.length).toFixed(1) : '0.0') : '0.0';
+  const totalIncidents = incidents.length;
+  const daysSinceLast = incidentKpis?.daysSinceLast ?? '—';
+
   const summaryCards = [
-    { label: 'Critical WOs', value: criticalWOs.length.toString(), icon: AlertTriangle, color: 'bg-red-50 text-red-600' },
-    { label: 'Urgent WOs', value: urgentWOs.length.toString(), icon: ShieldAlert, color: 'bg-amber-50 text-amber-600' },
-    { label: 'At-Risk Assets', value: atRiskAssets.length.toString(), icon: CheckCircle2, color: 'bg-emerald-50 text-emerald-600' },
-    { label: 'Overdue MRs', value: overdueMrs.length.toString(), icon: GraduationCap, color: 'bg-sky-50 text-sky-600' },
+    { label: 'Total Incidents', value: totalIncidents.toString(), icon: AlertTriangle, color: 'bg-red-50 text-red-600' },
+    { label: 'Open Cases', value: (openIncidents + investigatingIncidents).toString(), icon: ShieldAlert, color: 'bg-amber-50 text-amber-600' },
+    { label: 'Inspections Done', value: `${inspCompletionRate}%`, icon: ClipboardCheck, color: 'bg-emerald-50 text-emerald-600' },
+    { label: 'Training Compliance', value: `${trainingCompliance}%`, icon: GraduationCap, color: 'bg-sky-50 text-sky-600' },
   ];
 
   if (loading) return <div className="page-content"><LoadingSkeleton /></div>;
@@ -610,8 +806,13 @@ export function ReportsSafetyPage() {
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-bold tracking-tight">Safety Reports</h1><p className="text-muted-foreground mt-1">Critical/urgent work orders, at-risk assets, and overdue maintenance requests</p></div>
-        <Select value={yearFilter} onValueChange={setYearFilter}><SelectTrigger className="w-full sm:w-[120px]"><SelectValue placeholder="Year" /></SelectTrigger><SelectContent><SelectItem value="2024">2024</SelectItem><SelectItem value="2025">2025</SelectItem></SelectContent></Select>
+        <div><h1 className="text-2xl font-bold tracking-tight">Safety Reports</h1><p className="text-muted-foreground mt-1">Incident trends, severity breakdown, inspection completion, and training compliance from real safety data</p></div>
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <DateRangePicker startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate} />
+        <Button variant="outline" size="sm" onClick={() => exportCSV('safety-incidents', ['ID', 'Title', 'Severity', 'Status', 'Date', 'Reported By'], incidents.map(i => [i.incidentNumber || i.id || '', i.title || '', i.severity || '', i.status || '', i.createdAt ? new Date(i.createdAt).toISOString().slice(0, 10) : '', i.reportedBy || '']))}>
+          <Download className="h-4 w-4 mr-1.5" />Export CSV
+        </Button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {summaryCards.map(k => { const I = k.icon; return (
@@ -623,40 +824,94 @@ export function ReportsSafetyPage() {
           </div>
         ); })}
       </div>
-      {safetyWOs.length === 0 && atRiskAssets.length === 0 && overdueMrs.length === 0 ? (
-        <EmptyState icon={ShieldAlert} title="No safety concerns detected" description="No critical/urgent work orders, at-risk assets, or overdue maintenance requests found." />
+      {totalIncidents === 0 && inspections.length === 0 && training.length === 0 ? (
+        <EmptyState icon={ShieldAlert} title="No safety data available for this date range" description="Record incidents, inspections, or training to see safety metrics." />
       ) : (<>
-        <Card className="border border-border/60 shadow-sm">
-          <CardHeader className="pb-3"><CardTitle className="text-base">Safety Risk Breakdown</CardTitle></CardHeader>
-          <CardContent>
-            <div className="flex items-end gap-4 h-40">
-              {incidentTypes.map(t => (
-                <div key={t.name} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-xs font-medium">{t.count}</span>
-                  <div className="w-full rounded-t-md" style={{ height: `${(t.count / maxCount) * 100}px` }}>
-                    <div className={`w-full h-full ${t.color} rounded-t-md opacity-80`} />
-                  </div>
-                  <span className="text-[10px] text-muted-foreground text-center">{t.name}</span>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="border border-border/60 shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Severity Breakdown</CardTitle><CardDescription className="text-xs">Incidents by severity level</CardDescription></CardHeader>
+            <CardContent>
+              {severityBreakdown.length === 0 ? <p className="text-sm text-muted-foreground">No incidents in date range.</p> : (
+                <div className="space-y-3">
+                  {severityBreakdown.map(s => {
+                    const maxSev = Math.max(...severityBreakdown.map(x => x.count), 1);
+                    return (
+                      <div key={s.name} className="flex items-center gap-3">
+                        <span className="text-sm font-medium w-24">{s.name}</span>
+                        <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className={`h-full ${sevColors[s.name.toLowerCase()] || 'bg-slate-400'} rounded-full transition-all`} style={{ width: `${(s.count / maxSev) * 100}%` }} /></div>
+                        <span className="text-sm font-semibold w-16 text-right">{s.count}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
+              )}
+            </CardContent>
+          </Card>
+          <Card className="border border-border/60 shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Inspection & Training</CardTitle><CardDescription className="text-xs">{inspections.length} inspections, {training.length} training sessions</CardDescription></CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-28">Completed</span>
+                  <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${inspCompletionRate}%` }} /></div>
+                  <span className="text-sm font-semibold w-16 text-right">{inspCompleted}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-28">Scheduled</span>
+                  <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-sky-500 rounded-full" style={{ width: `${inspections.length > 0 ? (inspScheduled / inspections.length) * 100 : 0}%` }} /></div>
+                  <span className="text-sm font-semibold w-16 text-right">{inspScheduled}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-28">Failed</span>
+                  <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-red-500 rounded-full" style={{ width: `${inspections.length > 0 ? (inspFailed / inspections.length) * 100 : 0}%` }} /></div>
+                  <span className="text-sm font-semibold w-16 text-right">{inspFailed}</span>
+                </div>
+                <Separator />
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium w-28">Training Done</span>
+                  <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-violet-500 rounded-full" style={{ width: `${trainingCompliance}%` }} /></div>
+                  <span className="text-sm font-semibold w-16 text-right">{trainCompleted}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Total Training Hours</span>
+                  <span className="font-semibold">{totalTrainingHrs} hrs</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        <Card className="border border-border/60 shadow-sm">
+          <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Safety Trend</CardTitle><CardDescription className="text-xs">Incidents, inspections, and training by month</CardDescription></CardHeader>
+          <CardContent>
+            <div className="flex items-end gap-3 h-40">
+              {monthlyData.map(d => {
+                const maxM = Math.max(...monthlyData.map(x => x.inspections + x.incidents), 1);
+                return (
+                  <div key={d.monthKey} className="flex-1 flex flex-col items-center gap-1">
+                    <span className="text-xs font-medium">{d.incidents}/{d.inspections}</span>
+                    <div className="w-full bg-amber-100 rounded-t-md" style={{ height: `${((d.inspections + d.incidents) / maxM) * 100}px` }}>
+                      <div className="w-full h-full bg-amber-500 rounded-t-md opacity-80" />
+                    </div>
+                    <span className="text-[10px] text-muted-foreground text-center">{d.month.split(' ')[0]}</span>
+                  </div>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
         <Card className="border border-border/60 shadow-sm"><CardContent className="p-0">
-          <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Year</TableHead><TableHead className="text-right">Critical WOs</TableHead><TableHead className="hidden sm:table-cell text-right">Urgent WOs</TableHead><TableHead className="text-right">Risk Score</TableHead><TableHead className="hidden md:table-cell text-right">At-Risk Assets</TableHead><TableHead className="hidden lg:table-cell text-right">Actions Closed</TableHead></TableRow></TableHeader><TableBody>
-            {filtered.map(d => (
-              <TableRow key={d.month} className="hover:bg-muted/30">
+          <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>Month</TableHead><TableHead className="text-right">Incidents</TableHead><TableHead className="hidden sm:table-cell text-right">Closed</TableHead><TableHead className="text-right">Inspections</TableHead><TableHead className="hidden md:table-cell text-right">Training Hrs</TableHead></TableRow></TableHeader><TableBody>
+            {monthlyData.length === 0 ? (
+              <TableRow><TableCell colSpan={5}><EmptyState icon={Calendar} title="No monthly data" description="Safety data will appear by month." /></TableCell></TableRow>
+            ) : monthlyData.map(d => (
+              <TableRow key={d.monthKey} className="hover:bg-muted/30">
                 <TableCell className="font-medium">{d.month}</TableCell>
                 <TableCell className={`text-right font-medium ${d.incidents > 0 ? 'text-red-600' : 'text-foreground'}`}>{d.incidents}</TableCell>
-                <TableCell className="text-right text-amber-600 hidden sm:table-cell">{d.nearMisses}</TableCell>
-                <TableCell className={`text-right font-medium ${d.trir > 1.0 ? 'text-red-600' : d.trir > 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>{d.trir}</TableCell>
-                <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.inspections}</TableCell>
-                <TableCell className="text-right text-muted-foreground hidden lg:table-cell">{d.actionsClosed}</TableCell>
+                <TableCell className="text-right text-emerald-600 hidden sm:table-cell">{d.closed}</TableCell>
+                <TableCell className="text-right">{d.inspections}</TableCell>
+                <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.trainingHrs} hrs</TableCell>
               </TableRow>
             ))}
-            {filtered.length === 0 && (
-              <TableRow><TableCell colSpan={6}><EmptyState icon={Calendar} title={`No data for ${yearFilter}`} description="Select a different year or create work orders to see safety data." /></TableCell></TableRow>
-            )}
           </TableBody></Table></div>
         </CardContent></Card>
       </>)}
@@ -664,23 +919,35 @@ export function ReportsSafetyPage() {
   );
 }
 export function ReportsFinancialPage() {
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
+  const [workOrders, setWorkOrders] = useState<any[]>([]);
+  const [assets, setAssets] = useState<any[]>([]);
+  const [inventory, setInventory] = useState<any[]>([]);
+  const [inventoryKpi, setInventoryKpi] = useState<any>(null);
+  const [prodKpi, setProdKpi] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
+    setLoading(true);
     Promise.all([
-      api.get<WorkOrder[]>('/api/work-orders?limit=9999'),
-      api.get<Asset[]>('/api/assets?limit=9999'),
-      api.get<InventoryItem[]>('/api/inventory?limit=9999'),
-    ]).then(([woRes, assetRes, invRes]) => {
-      if (woRes.success && Array.isArray(woRes.data)) setWorkOrders(woRes.data);
+      api.get<any>('/api/work-orders?limit=9999'),
+      api.get<any>('/api/assets?limit=9999'),
+      api.get<any>('/api/inventory?limit=9999'),
+      api.get<any>('/api/inventory/kpi'),
+      api.get<any>('/api/production-orders/kpi'),
+    ]).then(([woRes, assetRes, invRes, invKpiRes, prodKpiRes]) => {
+      // Filter WOs by date range client-side
+      const woData = woRes.success && Array.isArray(woRes.data) ? filterByDateRange(woRes.data, startDate, endDate) : [];
+      setWorkOrders(woData);
       if (assetRes.success && Array.isArray(assetRes.data)) setAssets(assetRes.data);
       if (invRes.success && Array.isArray(invRes.data)) setInventory(invRes.data);
+      if (invKpiRes.success && invKpiRes.data) setInventoryKpi(invKpiRes.data);
+      if (prodKpiRes.success && prodKpiRes.data) setProdKpi(prodKpiRes.data);
       setLoading(false);
     });
-  }, []);
+  }, [startDate, endDate]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const totalCost = workOrders.reduce((sum, wo) => sum + (wo.totalCost || 0), 0);
   const materialCost = workOrders.reduce((sum, wo) => sum + (wo.materialCost || 0), 0);
@@ -692,7 +959,10 @@ export function ReportsFinancialPage() {
   const totalAssetCurrentValue = assets.reduce((sum, a) => sum + (a.currentValue || 0), 0);
 
   // Inventory value
-  const totalInventoryValue = inventory.reduce((sum, i) => sum + ((i.currentStock || 0) * (i.unitCost || 0)), 0);
+  const totalInventoryValue = inventoryKpi ? (inventoryKpi.totalValue || 0) : inventory.reduce((sum, i) => sum + ((i.currentStock || 0) * (i.unitCost || 0)), 0);
+
+  // Production value from KPI
+  const productionValue = prodKpi ? (prodKpi.completedValue || 0) : 0;
 
   const costByType: Record<string, { cost: number; count: number }> = {};
   workOrders.forEach(wo => {
@@ -703,7 +973,7 @@ export function ReportsFinancialPage() {
   });
   const typeEntries = Object.entries(costByType).sort((a, b) => b[1].cost - a[1].cost);
 
-  // Monthly cost trends from completed WOs
+  // Monthly cost trends from filtered WOs
   const monthlyCostMap: Record<string, { totalCost: number; laborCost: number; materialCost: number; count: number }> = {};
   workOrders.forEach(wo => {
     const dateStr = wo.actualEnd || wo.updatedAt || wo.createdAt;
@@ -733,9 +1003,9 @@ export function ReportsFinancialPage() {
   const typeColors: Record<string, string> = { preventive: 'bg-emerald-500', corrective: 'bg-amber-500', emergency: 'bg-red-500', inspection: 'bg-sky-500', predictive: 'bg-violet-500', project: 'bg-teal-500' };
 
   const summaryCards = [
-    { label: 'Total Maintenance Cost', value: `$${totalCost.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Asset Value (Current)', value: `$${totalAssetCurrentValue.toLocaleString()}`, icon: Package, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Inventory Value', value: `$${totalInventoryValue.toLocaleString()}`, icon: Boxes, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Maintenance Cost', value: `$${totalCost.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Inventory Value', value: `$${Math.round(totalInventoryValue).toLocaleString()}`, icon: Boxes, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Production Value', value: `$${productionValue.toLocaleString()}`, icon: Factory, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
     { label: 'Avg WO Cost', value: `$${avgCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
@@ -743,7 +1013,13 @@ export function ReportsFinancialPage() {
 
   return (
     <div className="page-content">
-      <div><h1 className="text-2xl font-bold tracking-tight">Financial Reports</h1><p className="text-muted-foreground mt-1">Financial reports on maintenance costs, asset values, inventory value, and budget trends</p></div>
+      <div><h1 className="text-2xl font-bold tracking-tight">Financial Reports</h1><p className="text-muted-foreground mt-1">Maintenance cost breakdown, inventory value, production value, and budget trends from real financial data</p></div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <DateRangePicker startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate} />
+        <Button variant="outline" size="sm" onClick={() => exportCSV('financial-work-orders', ['WO Number', 'Title', 'Type', 'Priority', 'Cost', 'Status'], workOrders.map(wo => [wo.woNumber || '', wo.title || '', wo.type || '', wo.priority || '', (wo.totalCost || 0).toString(), wo.status || '']))}>
+          <Download className="h-4 w-4 mr-1.5" />Export CSV
+        </Button>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {summaryCards.map(k => { const I = k.icon; return (
           <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
@@ -751,7 +1027,7 @@ export function ReportsFinancialPage() {
       </div>
       {monthlyCostData.length > 0 && (
         <Card className="border border-border/60 shadow-sm">
-          <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Cost Trends</CardTitle><CardDescription className="text-xs">Maintenance expenditure by month</CardDescription></CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Cost Trends</CardTitle><CardDescription className="text-xs">Maintenance expenditure by month (filtered by date range)</CardDescription></CardHeader>
           <CardContent>
             <div className="flex items-end gap-3 h-48">
               {monthlyCostData.map(d => (
@@ -780,36 +1056,41 @@ export function ReportsFinancialPage() {
                 </div>
               );
             })}
-            {typeEntries.length === 0 && <p className="text-sm text-muted-foreground">No cost data available.</p>}
+            {typeEntries.length === 0 && <p className="text-sm text-muted-foreground">No cost data available for date range.</p>}
           </div>
         </CardContent></Card>
-        <Card className="border"><CardHeader><CardTitle className="text-base">Asset Value Distribution</CardTitle><CardDescription className="text-xs">Purchase cost vs current value</CardDescription></CardHeader><CardContent>
+        <Card className="border"><CardHeader><CardTitle className="text-base">Portfolio Value</CardTitle><CardDescription className="text-xs">Asset, inventory, and production value summary</CardDescription></CardHeader><CardContent>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Total Assets</span>
               <span className="text-sm font-semibold">{assets.length}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Total Purchase Cost</span>
+              <span className="text-sm font-medium">Asset Purchase Cost</span>
               <span className="text-sm font-semibold">${totalAssetPurchaseCost.toLocaleString()}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Current Value</span>
+              <span className="text-sm font-medium">Asset Current Value</span>
               <span className="text-sm font-semibold">${totalAssetCurrentValue.toLocaleString()}</span>
             </div>
+            <Separator />
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Inventory Value</span>
-              <span className="text-sm font-semibold">${totalInventoryValue.toLocaleString()}</span>
+              <span className="text-sm font-semibold">${Math.round(totalInventoryValue).toLocaleString()}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Production Value (completed)</span>
+              <span className="text-sm font-semibold">${productionValue.toLocaleString()}</span>
             </div>
             <Separator />
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Total Portfolio Value</span>
-              <span className="text-lg font-bold">${(totalAssetCurrentValue + totalInventoryValue).toLocaleString()}</span>
+              <span className="text-lg font-bold">${(totalAssetCurrentValue + Math.round(totalInventoryValue) + productionValue).toLocaleString()}</span>
             </div>
           </div>
         </CardContent></Card>
       </div>
-      <Card className="border"><CardHeader><CardTitle className="text-base">High-Cost Work Orders</CardTitle><CardDescription className="text-xs">Top work orders by total cost</CardDescription></CardHeader><CardContent>
+      <Card className="border"><CardHeader><CardTitle className="text-base">High-Cost Work Orders</CardTitle><CardDescription className="text-xs">Top work orders by total cost (filtered by date range)</CardDescription></CardHeader><CardContent>
         <div className="max-h-96 overflow-y-auto">
           <Table><TableHeader><TableRow><TableHead>WO #</TableHead><TableHead>Title</TableHead><TableHead className="hidden sm:table-cell">Type</TableHead><TableHead className="hidden md:table-cell">Priority</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Material</TableHead><TableHead className="text-right">Labor</TableHead><TableHead className="text-right">Total</TableHead></TableRow></TableHeader><TableBody>
             {highCostWOs.length === 0 ? (
@@ -818,7 +1099,7 @@ export function ReportsFinancialPage() {
               <TableRow key={wo.id} className="hover:bg-muted/30">
                 <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
                 <TableCell className="font-medium max-w-[200px] truncate">{wo.title}</TableCell>
-                <TableCell className="text-xs capitalize hidden sm:table-cell">{wo.type.replace('_', ' ')}</TableCell>
+                <TableCell className="text-xs capitalize hidden sm:table-cell">{(wo.type || '').replace('_', ' ')}</TableCell>
                 <TableCell className="hidden md:table-cell"><PriorityBadge priority={wo.priority} /></TableCell>
                 <TableCell><StatusBadge status={wo.status} /></TableCell>
                 <TableCell className="text-right text-muted-foreground">${(wo.materialCost || 0).toLocaleString()}</TableCell>

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
+import { Prisma } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   try {
@@ -131,6 +132,135 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    // ===== Cross-Module KPI Data =====
+
+    // Helper: generate array of last 7 day dates
+    const last7Days: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      last7Days.push(d.toISOString().slice(0, 10));
+    }
+
+    // Helper: fill a day-count map into a 7-element array matching last7Days
+    function fillTrendArray(dayCounts: { day: string; count: number }[]): number[] {
+      const map = new Map(dayCounts.map((r) => [r.day, r.count]));
+      return last7Days.map((d) => map.get(d) || 0);
+    }
+
+    const [
+      // Asset health
+      assetPoorCount,
+      assetCriticalCount,
+      assetTotalCount,
+
+      // Safety alerts
+      safetyOpenIncidents,
+      safetyOverdueInspections,
+
+      // Production
+      productionActiveOrders,
+      productionOverdueOrders,
+      productionTotalCompleted,
+      productionTotalAll,
+
+      // IoT status
+      iotTotalDevices,
+      iotOfflineCount,
+      iotAlertCount,
+
+      // Quality
+      qualityOpenNcrs,
+      qualityFailedInspections,
+      qualityPendingAudits,
+
+      // Inventory alerts
+      inventoryLowStockItems,
+      inventoryPendingRequests,
+
+      // Weekly trends (raw SQL)
+      weeklyWoResult,
+      weeklyMrResult,
+      weeklyProdResult,
+    ] = await Promise.all([
+      // Asset health: poor condition
+      db.asset.count({ where: { condition: 'poor', isActive: true, ...plantFilter } }),
+      // Asset health: critical criticality
+      db.asset.count({ where: { criticality: 'critical', isActive: true, ...plantFilter } }),
+      // Asset total
+      db.asset.count({ where: { isActive: true, ...plantFilter } }),
+
+      // Safety: open incidents (open + investigating)
+      db.safetyIncident.count({ where: { status: { in: ['open', 'investigating'] } } }),
+      // Safety: overdue inspections (scheduled date past, not completed/failed)
+      db.safetyInspection.count({
+        where: {
+          scheduledDate: { lt: new Date() },
+          status: { notIn: ['completed', 'failed'] },
+        },
+      }),
+
+      // Production: active orders (in_progress)
+      db.productionOrder.count({ where: { status: 'in_progress' } }),
+      // Production: overdue orders (past scheduled end, not completed/cancelled)
+      db.productionOrder.count({
+        where: {
+          scheduledEnd: { lt: new Date() },
+          status: { notIn: ['completed', 'cancelled'] },
+        },
+      }),
+      // Production: completed orders for rate calculation
+      db.productionOrder.count({ where: { status: 'completed' } }),
+      // Production: total orders
+      db.productionOrder.count(),
+
+      // IoT: total devices
+      db.iotDevice.count(),
+      // IoT: offline devices
+      db.iotDevice.count({ where: { status: 'offline' } }),
+      // IoT: active/new alerts
+      db.iotAlert.count({ where: { status: 'active' } }),
+
+      // Quality: open NCRs (open + investigating + root_cause_found + corrective_action)
+      db.nonConformanceReport.count({ where: { status: { in: ['open', 'investigating'] } } }),
+      // Quality: failed inspections
+      db.qualityInspection.count({ where: { status: 'failed' } }),
+      // Quality: pending audits (planned + in_progress)
+      db.qualityAudit.count({ where: { status: { in: ['planned', 'in_progress'] } } }),
+
+      // Inventory: low stock items
+      db.inventoryItem.findMany({
+        where: { isActive: true, ...plantFilter },
+        select: { id: true, currentStock: true, minStockLevel: true },
+      }),
+      // Inventory: pending requests
+      db.inventoryRequest.count({ where: { status: { in: ['pending', 'partially_fulfilled'] } } }),
+
+      // Weekly trends: work orders created per day
+      db.$queryRaw(Prisma.sql`SELECT date(createdAt) as day, COUNT(*) as count FROM work_orders WHERE createdAt >= date('now', '-6 days') GROUP BY date(createdAt) ORDER BY day`),
+      // Weekly trends: maintenance requests created per day
+      db.$queryRaw(Prisma.sql`SELECT date(createdAt) as day, COUNT(*) as count FROM maintenance_requests WHERE createdAt >= date('now', '-6 days') GROUP BY date(createdAt) ORDER BY day`),
+      // Weekly trends: production orders created per day
+      db.$queryRaw(Prisma.sql`SELECT date(createdAt) as day, COUNT(*) as count FROM production_orders WHERE createdAt >= date('now', '-6 days') GROUP BY date(createdAt) ORDER BY day`),
+    ]);
+
+    // Calculate low stock from inventory items
+    const lowStock = inventoryLowStockItems.filter(
+      (i) => i.currentStock <= i.minStockLevel && i.minStockLevel > 0,
+    ).length;
+
+    // Calculate production completion rate
+    const productionCompletionRate = productionTotalAll > 0
+      ? Math.round((productionTotalCompleted / productionTotalAll) * 100)
+      : 0;
+
+    // Build weekly trend arrays
+    const weeklyTrends = {
+      workOrders: fillTrendArray(weeklyWoResult),
+      maintenanceRequests: fillTrendArray(weeklyMrResult),
+      productionOrders: fillTrendArray(weeklyProdResult),
+    };
+
     return NextResponse.json({
       success: true,
       data: {
@@ -175,6 +305,37 @@ export async function GET(request: NextRequest) {
         // Recent items
         recentRequests,
         recentWorkOrders,
+
+        // ===== Cross-Module KPIs =====
+        assetHealth: {
+          poor: assetPoorCount,
+          critical: assetCriticalCount,
+          total: assetTotalCount,
+        },
+        safetyAlerts: {
+          openIncidents: safetyOpenIncidents,
+          overdueInspections: safetyOverdueInspections,
+        },
+        production: {
+          activeOrders: productionActiveOrders,
+          overdueOrders: productionOverdueOrders,
+          completionRate: productionCompletionRate,
+        },
+        iotStatus: {
+          totalDevices: iotTotalDevices,
+          offlineCount: iotOfflineCount,
+          alertCount: iotAlertCount,
+        },
+        quality: {
+          openNcrs: qualityOpenNcrs,
+          failedInspections: qualityFailedInspections,
+          pendingAudits: qualityPendingAudits,
+        },
+        inventoryAlerts: {
+          lowStock: lowStock,
+          pendingRequests: inventoryPendingRequests,
+        },
+        weeklyTrends,
       },
     });
   } catch (error: unknown) {

@@ -295,6 +295,18 @@ export interface DashboardStats {
   lowPriorityMR: number;
   recentRequests: MaintenanceRequest[];
   recentWorkOrders: WorkOrder[];
+  // Cross-module KPIs
+  assetHealth: { poor: number; critical: number; total: number };
+  safetyAlerts: { openIncidents: number; overdueInspections: number };
+  production: { activeOrders: number; overdueOrders: number; completionRate: number };
+  iotStatus: { totalDevices: number; offlineCount: number; alertCount: number };
+  quality: { openNcrs: number; failedInspections: number; pendingAudits: number };
+  inventoryAlerts: { lowStock: number; pendingRequests: number };
+  weeklyTrends: {
+    workOrders: number[];
+    maintenanceRequests: number[];
+    productionOrders: number[];
+  };
 }
 
 export interface Notification {

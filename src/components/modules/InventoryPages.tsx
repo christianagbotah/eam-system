@@ -460,15 +460,15 @@ export function InventoryCategoriesPage() {
   const [form, setForm] = useState({ name: '', code: '', description: '', parentId: '' });
   const [searchText, setSearchText] = useState('');
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await api.get('/api/asset-categories');
-        if (res.data) setCategories(res.data.categories || res.data || []);
-      } catch { /* empty */ }
-      setLoading(false);
-    })();
-  }, []);
+  const fetchCategories = async () => {
+    try {
+      const res = await api.get('/api/asset-categories');
+      if (res.data) setCategories(res.data.categories || res.data || []);
+    } catch { /* empty */ }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchCategories(); }, []);
 
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => {
@@ -511,7 +511,7 @@ export function InventoryCategoriesPage() {
             <Badge variant="secondary" className="text-[10px] h-5">{cat._count?.assets ?? 0} items</Badge>
             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
               <button onClick={() => { setSelectedCat(cat); setForm({ name: cat.name, code: cat.code || '', description: cat.description || '', parentId: cat.parentId || '' }); setEditOpen(true); }} className="p-1 rounded hover:bg-muted"><Pencil className="h-3.5 w-3.5 text-muted-foreground" /></button>
-              <button onClick={() => { if (confirm('Delete this category?')) { setCategories(prev => prev.filter(c => c.id !== cat.id)); toast.success('Category deleted'); } }} className="p-1 rounded hover:bg-red-50"><Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-red-500" /></button>
+              <button onClick={async () => { if (confirm('Delete this category?')) { const r = await api.delete(`/api/asset-categories/${cat.id}`); if (r.success) { toast.success('Category deleted'); fetchCategories(); } else toast.error(r.error || 'Failed to delete'); } }} className="p-1 rounded hover:bg-red-50"><Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-red-500" /></button>
             </div>
           </div>
           {hasChildren && isExpanded && renderTree(cat.id, depth + 1)}
@@ -523,23 +523,18 @@ export function InventoryCategoriesPage() {
   const handleCreate = async () => {
     if (!form.name) { toast.error('Name is required'); return; }
     setSaving(true);
-    await new Promise(r => setTimeout(r, 600));
-    const newCat = { id: `cat-${Date.now()}`, name: form.name, code: form.code, description: form.description, parentId: form.parentId || null, isActive: true, _count: { assets: 0 } };
-    setCategories(prev => [...prev, newCat]);
-    toast.success('Category created');
-    setCreateOpen(false);
-    setForm({ name: '', code: '', description: '', parentId: '' });
+    const res = await api.post('/api/asset-categories', { name: form.name, code: form.code, description: form.description, parentId: form.parentId || null, isActive: true });
+    if (res.success) { toast.success('Category created'); setCreateOpen(false); setForm({ name: '', code: '', description: '', parentId: '' }); fetchCategories(); }
+    else toast.error(res.error || 'Failed to create category');
     setSaving(false);
   };
 
   const handleEdit = async () => {
     if (!selectedCat) return;
     setSaving(true);
-    await new Promise(r => setTimeout(r, 600));
-    setCategories(prev => prev.map(c => c.id === selectedCat.id ? { ...c, name: form.name, code: form.code, description: form.description, parentId: form.parentId || null } : c));
-    toast.success('Category updated');
-    setEditOpen(false);
-    setSelectedCat(null);
+    const res = await api.put(`/api/asset-categories/${selectedCat.id}`, { name: form.name, code: form.code, description: form.description, parentId: form.parentId || null });
+    if (res.success) { toast.success('Category updated'); setEditOpen(false); setSelectedCat(null); fetchCategories(); }
+    else toast.error(res.error || 'Failed to update category');
     setSaving(false);
   };
 
