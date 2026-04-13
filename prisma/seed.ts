@@ -91,6 +91,13 @@ const modulePermissions: Record<string, string[]> = {
   production_targets: ['view', 'create', 'update'],
   production_batches: ['view', 'create', 'update'],
 
+  // ── UMBRELLA / DOMAIN-LEVEL (for sidebar menu visibility) ──
+  iot: ['view'],
+  analytics: ['view'],
+  operations: ['view'],
+  quality: ['view'],
+  safety: ['view'],
+
   // ── TRAC / SAFETY (~20) ──
   safety_incidents: ['view', 'create', 'update', 'manage'],
   safety_inspections: ['view', 'create', 'update', 'manage'],
@@ -219,6 +226,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'reports.view', 'reports.export',
     'quality_inspections.view', 'quality_ncr.view',
     'quality_audits.view', 'quality_control_plans.view', 'spc.view',
+    'iot.view', 'analytics.view', 'operations.view', 'quality.view', 'safety.view',
   ],
 
   // ── 3. MAINTENANCE MANAGER: full RWOP + MRMP + assets ──
@@ -264,6 +272,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'inventory.view', 'inventory.view_all',
     'parts.view',
     'reports.view', 'reports.export', 'reports.generate',
+    'analytics.view', 'operations.view',
   ],
 
   // ── 4. MAINTENANCE PLANNER: RWOP manage + MRMP manage ──
@@ -306,6 +315,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'inventory.view',
     'parts.view',
     'reports.view', 'reports.export', 'reports.generate',
+    'analytics.view', 'operations.view',
   ],
 
   // ── 5. MAINTENANCE SUPERVISOR: RWOP manage + execute ──
@@ -338,6 +348,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'asset_health.view', 'condition_monitoring.view',
     'inventory.view',
     'reports.view', 'reports.export',
+    'operations.view',
   ],
 
   // ── 6. MAINTENANCE TECHNICIAN: own WOs, execute, PM execute ──
@@ -386,6 +397,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'inventory.view', 'inventory.view_all',
     'employees.view', 'shifts.view', 'assignments.view',
     'reports.view', 'reports.export', 'reports.generate', 'reports.create',
+    'analytics.view', 'operations.view',
   ],
 
   // ── 8. PRODUCTION OPERATOR: own data entry, surveys ──
@@ -430,6 +442,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'work_orders.view', 'work_orders.view_all',
     'maintenance_requests.view',
     'reports.view', 'reports.export', 'reports.generate',
+    'analytics.view',
   ],
 
   // ── 10. STORE KEEPER: IMS limited ──
@@ -468,6 +481,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'work_orders.view', 'work_orders.view_all',
     'maintenance_requests.view',
     'reports.view', 'reports.export', 'reports.generate', 'reports.create',
+    'quality.view',
   ],
 
   // ── 12. SAFETY OFFICER: full TRAC ──
@@ -484,6 +498,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'employees.view',
     'work_orders.view',
     'reports.view', 'reports.export', 'reports.generate',
+    'safety.view',
   ],
 
   // ── 13. HR MANAGER: full HRMS ──
@@ -519,6 +534,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'asset_health.view', 'condition_monitoring.view', 'condition_monitoring.manage',
     'meters.view', 'meters.create', 'meters.update',
     'reports.view', 'reports.export', 'reports.generate',
+    'iot.view', 'analytics.view',
   ],
 
   // ── 15. VIEWER: read-only across most modules ──
@@ -601,6 +617,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'quality_control_plans.view',
     'spc.view',
     'company.view',
+    'iot.view', 'analytics.view', 'operations.view', 'quality.view', 'safety.view',
   ],
 };
 

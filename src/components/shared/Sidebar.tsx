@@ -216,7 +216,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Settings', icon: Cog, perm: 'settings.update', moduleCode: 'modules',
+      label: 'Settings', icon: Cog, perm: 'system_settings.view', moduleCode: 'modules',
       children: [
         { page: 'settings-general', label: 'General', icon: Settings },
         { page: 'settings-users', label: 'Users', icon: Users },

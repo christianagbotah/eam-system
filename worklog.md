@@ -59,3 +59,30 @@ Stage Summary:
 - All 15 roles properly seeded with correct permission bundles
 - State machine utility ready for WO/MR status enforcement
 - Frontend permission system (usePermissions hook) ready for UI gating
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix missing sidebar menu items (6 out of 13 groups hidden due to permission slug mismatches)
+
+Work Log:
+- Investigated sidebar filtering logic: two layers — permission check + module enablement check
+- Identified root cause: 6 menu groups reference permission slugs that don't exist in the database
+  - IoT: `iot.view` (missing) → seed only had `iot_devices.view`
+  - Analytics: `analytics.view` (missing) → no umbrella perm
+  - Operations: `operations.view` (missing) → no umbrella perm
+  - Quality: `quality.view` (missing) → seed only had `quality_inspections.view`
+  - Safety: `safety.view` (missing) → seed only had `safety_incidents.view`
+  - Settings: `settings.update` (wrong slug) → should be `system_settings.view`
+- Added 5 umbrella permissions to `modulePermissions` in prisma/seed.ts: iot, analytics, operations, quality, safety (each with ['view'])
+- Fixed Sidebar.tsx: changed Settings perm from `settings.update` to `system_settings.view`
+- Added umbrella permissions to 11 role bundles (plant_manager, maintenance_manager, maintenance_planner, maintenance_supervisor, production_manager, inventory_manager, quality_manager, safety_officer, hr_manager, iot_engineer, viewer)
+- Re-seeded database: 342 permissions (up from ~337), 17 users, 15 roles, 35 modules
+- Verified admin user now receives all 6 required permission slugs via login API
+- Lint passes clean
+
+Stage Summary:
+- All 13 sidebar menu groups now visible for admin user
+- Settings menu restored with correct `system_settings.view` permission
+- 5 new domain-level umbrella permissions added to seed data
+- Role bundles updated so non-admin users also see appropriate menus
