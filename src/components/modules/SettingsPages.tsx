@@ -39,7 +39,8 @@ import {
   PieChart as PieChartIcon, Layers, Cog, Wrench, FlaskConical, HardHat,
   Radio, Ruler, GraduationCap, TriangleAlert, Activity, BrainCircuit,
   GitBranch, ScanLine, Truck, FolderOpen, Target, TrendingUp, Zap, Mail,
-  Send, ShieldAlert, BarChart3, Package, ClipboardList, Gauge,
+  Send, ShieldAlert, ShieldCheck, BarChart3, Package, ClipboardList, Gauge,
+  AlertCircle, FileBarChart,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { EmptyState, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
