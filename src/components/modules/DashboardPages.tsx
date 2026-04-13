@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
+import { timeAgo } from '@/components/shared/helpers';
 import type { DashboardStats, PageName } from '@/types';
 
 import { Button } from '@/components/ui/button';
