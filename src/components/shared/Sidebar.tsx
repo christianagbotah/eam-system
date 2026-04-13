@@ -74,7 +74,6 @@ import {
   FileSpreadsheet,
   Shield,
   ClipboardCheck,
-  ArrowRightLeft,
   Timer,
 } from 'lucide-react';
 
