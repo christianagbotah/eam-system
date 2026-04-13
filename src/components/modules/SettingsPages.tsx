@@ -589,7 +589,7 @@ const moduleIconMap: Record<string, React.ElementType> = {
   safety: HardHat,
   iot_sensors: Radio,
   calibration: Ruler,
-  downtime: Timer,
+  downtime: Clock,
   meter_readings: Gauge,
   training: GraduationCap,
   risk_assessment: TriangleAlert,
