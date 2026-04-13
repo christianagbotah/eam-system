@@ -397,19 +397,72 @@ export function SettingsRolesPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)]">
       {/* Page header — shrinks, never scrolls */}
-      <div className="flex items-center justify-between flex-wrap gap-3 px-6 lg:px-8 py-5 shrink-0">
+      <div className="flex items-center justify-between flex-wrap gap-3 px-4 md:px-6 lg:px-8 py-4 lg:py-5 shrink-0">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Roles & Permissions</h1>
-          <p className="text-muted-foreground text-sm mt-1">Manage system roles and their associated permissions</p>
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight">Roles & Permissions</h1>
+          <p className="text-muted-foreground text-xs md:text-sm mt-0.5">Manage system roles and their associated permissions</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Create Role</Button>
+        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm"><Plus className="h-4 w-4 mr-1.5" /><span className="hidden sm:inline">Create</span> Role</Button>
       </div>
 
-      {/* Two-column layout: fills remaining height, each column scrolls independently */}
-      <div className="flex gap-4 flex-1 min-h-0 mx-6 lg:mx-8 mb-6 lg:mb-8">
+      {/* ─── Mobile: Role selector dropdown above permissions ─── */}
+      <div className="lg:hidden px-4 pb-3 shrink-0">
+        <div className="relative">
+          <Select value={selectedRoleId} onValueChange={setSelectedRoleId}>
+            <SelectTrigger className="w-full h-11 pl-3 pr-8">
+              <div className="flex items-center gap-2.5">
+                {selectedRoleData && (
+                  <div className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: (selectedRoleData.color || '#10b981') + '18', color: selectedRoleData.color || '#10b981' }}>
+                    <Shield className="h-3.5 w-3.5" />
+                  </div>
+                )}
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-medium">{selectedRoleData?.name || 'Select role'}</p>
+                  <p className="text-[10px] text-muted-foreground">{selectedPermCount} of {totalPerms} permissions</p>
+                </div>
+              </div>
+            </SelectTrigger>
+            <SelectContent className="max-h-64">
+              {roles.map(role => {
+                const rpIds = allRolePerms[role.id] || [];
+                const count = role.id === selectedRoleId ? selectedPermCount : rpIds.length;
+                return (
+                  <SelectItem key={role.id} value={role.id} className="py-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-6 w-6 rounded-md flex items-center justify-center shrink-0" style={{ backgroundColor: (role.color || '#10b981') + '15', color: role.color || '#10b981' }}>
+                        <Shield className="h-3 w-3" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium">{role.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{count}/{totalPerms} perms</p>
+                      </div>
+                    </div>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          {/* Mobile action buttons for selected role */}
+          {selectedRoleData && (
+            <div className="flex items-center gap-1.5 mt-2">
+              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => openEditRole(selectedRoleData)}>
+                <Pencil className="h-3 w-3 mr-1" />Edit
+              </Button>
+              {!selectedRoleData.isSystem && (
+                <Button variant="outline" size="sm" className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleDeleteRole(selectedRoleData)}>
+                  <Trash2 className="h-3 w-3 mr-1" />Delete
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
-        {/* ─── Left Column: Role List (viewport height, own scroll) ─── */}
-        <Card className="border border-border/60 shadow-md w-60 shrink-0 flex flex-col overflow-hidden bg-muted/40 dark:bg-muted/20">
+      {/* Two-column layout on desktop; single column on mobile/tablet */}
+      <div className="flex gap-4 flex-1 min-h-0 mx-4 md:mx-6 lg:mx-8 mb-4 md:mb-6 lg:mb-8">
+
+        {/* ─── Left Column: Role List — desktop only (hidden on mobile/tablet) ─── */}
+        <Card className="hidden lg:flex border border-border/60 shadow-md w-60 shrink-0 flex-col overflow-hidden bg-muted/40 dark:bg-muted/20">
           <div className="px-4 py-3 border-b bg-muted/30 shrink-0">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Roles ({roles.length})</p>
           </div>
@@ -452,9 +505,10 @@ export function SettingsRolesPage() {
         </Card>
 
         {/* ─── Right Column: Permissions (scrolls vertically) ─── */}
-        <div className="flex-1 min-w-0 overflow-y-auto space-y-4 pr-1">
+        <div className="flex-1 min-w-0 overflow-y-auto space-y-3 md:space-y-4 pr-0 lg:pr-1">
+          {/* Role info header — desktop only (mobile shows selector above) */}
           {selectedRoleData && (
-            <div className="flex items-center gap-3 mb-1">
+            <div className="hidden lg:flex items-center gap-3 mb-1">
               <div className="h-9 w-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: (selectedRoleData.color || '#10b981') + '18', color: selectedRoleData.color || '#10b981' }}>
                 <Shield className="h-4 w-4" />
               </div>
@@ -472,19 +526,19 @@ export function SettingsRolesPage() {
               <Card key={module} className="border-0 shadow-sm overflow-hidden">
                 {/* Module header with master toggle */}
                 <div
-                  className={`flex items-center justify-between px-5 py-3.5 border-b transition-colors ${allEnabled ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40' : 'bg-muted/30 border-border/60'}`}
+                  className={`flex items-center justify-between px-3 md:px-4 lg:px-5 py-2.5 md:py-3 lg:py-3.5 border-b transition-colors ${allEnabled ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40' : 'bg-muted/30 border-border/60'}`}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className={`h-7 w-7 rounded-md flex items-center justify-center ${allEnabled ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
-                      {allEnabled ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Settings className="h-3.5 w-3.5" />}
+                  <div className="flex items-center gap-2 md:gap-3 min-w-0">
+                    <div className={`h-6 w-6 md:h-7 md:w-7 rounded-md flex items-center justify-center shrink-0 ${allEnabled ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
+                      {allEnabled ? <CheckCircle2 className="h-3 w-3 md:h-3.5 md:w-3.5" /> : <Settings className="h-3 w-3 md:h-3.5 md:w-3.5" />}
                     </div>
-                    <div>
-                      <p className="text-sm font-semibold">{module.replace(/_/g, ' ')}</p>
+                    <div className="min-w-0">
+                      <p className="text-xs md:text-sm font-semibold truncate">{module.replace(/_/g, ' ')}</p>
                       <p className="text-[10px] text-muted-foreground">{perms.length} permissions</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Badge variant="outline" className={`text-[11px] font-medium tabular-nums ${allEnabled ? 'border-emerald-300 text-emerald-600 dark:border-emerald-600 dark:text-emerald-400' : ''}`}>
+                  <div className="flex items-center gap-2 md:gap-3 shrink-0">
+                    <Badge variant="outline" className={`text-[10px] md:text-[11px] font-medium tabular-nums ${allEnabled ? 'border-emerald-300 text-emerald-600 dark:border-emerald-600 dark:text-emerald-400' : ''}`}>
                       {moduleEnabledCount}/{perms.length}
                     </Badge>
                     <Switch
@@ -506,7 +560,7 @@ export function SettingsRolesPage() {
                   </div>
                 </div>
                 {/* Permission items */}
-                <div className="p-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1.5">
+                <div className="p-2 md:p-3 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1 md:gap-1.5">
                   {perms.map(p => {
                     const isOn = rolePerms.includes(p.id);
                     return (
@@ -514,14 +568,14 @@ export function SettingsRolesPage() {
                         key={p.id}
                         role="button"
                         tabIndex={0}
-                        className={`flex items-center gap-2.5 px-3 py-2 rounded-lg transition-all cursor-pointer ${isOn ? 'bg-emerald-50/70 dark:bg-emerald-950/25' : 'hover:bg-muted/50'}`}
+                        className={`flex items-center gap-2 md:gap-2.5 px-2.5 md:px-3 py-1.5 md:py-2 rounded-lg transition-all cursor-pointer ${isOn ? 'bg-emerald-50/70 dark:bg-emerald-950/25' : 'hover:bg-muted/50 active:bg-muted/70'}`}
                         onClick={() => togglePermission(p.id)}
                         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); togglePermission(p.id); } }}
                       >
-                        <Switch checked={isOn} onCheckedChange={() => togglePermission(p.id)} className="scale-[0.72] shrink-0" onClick={e => e.stopPropagation()} />
+                        <Switch checked={isOn} onCheckedChange={() => togglePermission(p.id)} className="scale-[0.65] md:scale-[0.72] shrink-0" onClick={e => e.stopPropagation()} />
                         <div className="min-w-0 flex-1">
-                          <p className={`text-xs font-medium truncate ${isOn ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{p.name}</p>
-                          <p className="text-[10px] text-muted-foreground/60 truncate">{p.slug}</p>
+                          <p className={`text-[11px] md:text-xs font-medium truncate ${isOn ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{p.name}</p>
+                          <p className="hidden sm:block text-[10px] text-muted-foreground/60 truncate">{p.slug}</p>
                         </div>
                       </div>
                     );
