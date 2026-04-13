@@ -130,3 +130,33 @@ Stage Summary:
 - 45 icon import bugs proactively fixed
 - 4 runtime errors fixed
 - All changes committed and pushed to GitHub
+
+---
+Task ID: 3
+Agent: main
+Task: Phase 3 — Fix critical bugs, wire up KPI endpoints, add action buttons
+
+Work Log:
+- Fixed WO approve action: was calling PUT /work-orders/[id] with {status:'approved'} (silently dropped); now calls POST /work-orders/[id]/approve
+- Fixed WO verify action: was calling POST /work-orders/[id]/close (wrong endpoint); now calls POST /work-orders/[id]/verify
+- Fixed WO default action handler: mapped all 12 actions (approve, verify, close, plan, hold, resume, cancel, request, wait-parts, start, complete, assign) to dedicated endpoints
+- Created /api/upload/route.ts for file upload (was completely missing; SettingsPages.tsx company logo upload always failed)
+- Wired WO KPI endpoint to WorkOrdersPage: 4 KPI cards (total, open, overdue, avg hours with trend)
+- Wired Inventory KPI endpoint to InventoryPage: 6 KPI cards (total items, stock value, low stock, pending requests, movements trend, pending adjustments)
+- Wired Production KPI + actions to ProductionOrdersPage: 6 KPI cards + release/start/complete action buttons based on order status
+- Wired PM Analytics to PmSchedulesPage: 6 KPI cards + department compliance table
+- Replaced hardcoded WO action dropdown with dynamic transitions from GET /api/work-orders/[id]/transitions endpoint
+- Added reason dialog for transitions requiring justification (cancel, hold, wait-parts)
+- Fetched WO status history from GET /api/work-orders/[id]/status-history
+- Wired IoT alert management to IotMonitoringPage: acknowledge/resolve buttons, alert list
+- Removed 3 console.log statements from auth.ts (session cache warmup/cleanup)
+- Committed as ced1411, pushed to GitHub
+
+Stage Summary:
+- 5 critical bugs fixed (WO approve, WO verify, WO default handler, upload route, state machine wiring)
+- 4 KPI endpoints now displayed in UI with real data
+- 3 new production action buttons (release/start/complete)
+- 6 IoT alert actions (acknowledge/resolve)
+- WO actions now fully driven by state machine (12 transitions available)
+- 553 lines added, 46 removed across 7 files
+- Zero lint errors
