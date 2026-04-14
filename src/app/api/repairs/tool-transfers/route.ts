@@ -9,16 +9,56 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const toolId = searchParams.get('toolId');
+    const search = searchParams.get('search');
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
+    const stats = searchParams.get('stats') === 'true';
 
     const where: Record<string, unknown> = {};
     if (status) where.status = status;
     if (toolId) where.toolId = toolId;
 
+    // Search filter for tool name, user names
+    if (search) {
+      where.OR = [
+        { tool: { name: { contains: search, mode: 'insensitive' } } },
+        { tool: { toolCode: { contains: search, mode: 'insensitive' } } },
+        { fromUser: { fullName: { contains: search, mode: 'insensitive' } } },
+        { toUser: { fullName: { contains: search, mode: 'insensitive' } } },
+        { requestedBy: { fullName: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
     // Store keepers and admins see all; technicians see their own
     if (session && !session.roles.includes('admin') && !session.roles.includes('store_keeper') && !session.roles.includes('supervisor') && !session.roles.includes('planner')) {
-      where.OR = [{ fromUserId: session.userId }, { toUserId: session.userId }, { requestedById: session.userId }];
+      const userFilter = { OR: [{ fromUserId: session.userId }, { toUserId: session.userId }, { requestedById: session.userId }] };
+      if (where.OR && search) {
+        // Merge search OR with user filter
+        where.AND = [{ OR: where.OR }, userFilter];
+        delete where.OR;
+      } else {
+        where.OR = userFilter.OR;
+      }
+    }
+
+    // Stats endpoint
+    if (stats) {
+      const statsWhere = Object.keys(where).length > 0 ? where : undefined;
+      const [
+        total, pending, storekeeperApproved, awaitingHandover, transferred, rejected,
+      ] = await Promise.all([
+        db.toolTransferRequest.count({ where: statsWhere }),
+        db.toolTransferRequest.count({ where: { ...statsWhere, status: 'pending' } }),
+        db.toolTransferRequest.count({ where: { ...statsWhere, status: 'storekeeper_approved' } }),
+        db.toolTransferRequest.count({ where: { ...statsWhere, status: 'awaiting_handover' } }),
+        db.toolTransferRequest.count({ where: { ...statsWhere, status: 'transferred' } }),
+        db.toolTransferRequest.count({ where: { ...statsWhere, status: 'rejected' } }),
+      ]);
+
+      return NextResponse.json({
+        success: true,
+        data: { total, pending, storekeeperApproved, awaitingHandover, transferred, rejected },
+      });
     }
 
     const [transfers, total] = await Promise.all([
@@ -67,6 +107,7 @@ export async function POST(request: NextRequest) {
     // Verify tool exists and is assigned to fromUser
     const tool = await db.tool.findUnique({ where: { id: toolId } });
     if (!tool) return NextResponse.json({ success: false, error: 'Tool not found' }, { status: 404 });
+
     if (tool.assignedToId !== fromUserId && !session.roles.includes('admin') && !session.roles.includes('store_keeper')) {
       return NextResponse.json({ success: false, error: 'Tool is not currently assigned to the specified user' }, { status: 400 });
     }

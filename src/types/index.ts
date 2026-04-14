@@ -283,6 +283,109 @@ export interface PersonalTool {
   notes?: string;
 }
 
+// Repair Module
+export type RepairMaterialRequestStatus = 'pending' | 'supervisor_approved' | 'storekeeper_approved' | 'issued' | 'partially_returned' | 'fully_returned' | 'rejected';
+export type RepairToolRequestStatus = 'pending' | 'supervisor_approved' | 'storekeeper_approved' | 'issued' | 'returned' | 'rejected';
+export type ToolTransferStatus = 'pending' | 'storekeeper_approved' | 'awaiting_handover' | 'transferred' | 'rejected';
+
+export interface RepairMaterialRequest {
+  id: string;
+  workOrderId: string;
+  itemId?: string;
+  itemName: string;
+  quantityRequested: number;
+  quantityApproved: number;
+  quantityIssued: number;
+  quantityReturned: number;
+  unit: string;
+  unitCost?: number;
+  estimatedCost: number;
+  urgency?: 'low' | 'normal' | 'high' | 'critical';
+  reason: string;
+  notes?: string;
+  rejectionReason?: string;
+  status: RepairMaterialRequestStatus;
+  requestedById: string;
+  supervisorApprovedById?: string;
+  supervisorApprovedAt?: string;
+  supervisorApprovedQuantity?: number;
+  storekeeperApprovedById?: string;
+  storekeeperApprovedAt?: string;
+  storekeeperApprovedQuantity?: number;
+  issuedById?: string;
+  issuedAt?: string;
+  returnedById?: string;
+  returnedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  // Joined
+  workOrder?: { id: string; woNumber: string; title: string; status: string };
+  item?: { id: string; itemCode: string; name: string; currentStock: number; unitOfMeasure: string };
+  requestedBy?: { id: string; fullName: string; username: string; department?: { id: string; name: string } };
+  supervisorApprovedBy?: { id: string; fullName: string; username: string };
+  storekeeperApprovedBy?: { id: string; fullName: string; username: string };
+  issuedByUser?: { id: string; fullName: string; username: string };
+  returnedByUser?: { id: string; fullName: string; username: string };
+}
+
+export interface RepairToolRequest {
+  id: string;
+  workOrderId: string;
+  toolId?: string;
+  toolName: string;
+  urgency?: 'low' | 'normal' | 'high' | 'critical';
+  reason: string;
+  notes?: string;
+  rejectionReason?: string;
+  status: RepairToolRequestStatus;
+  requestedById: string;
+  supervisorApprovedById?: string;
+  supervisorApprovedAt?: string;
+  storekeeperApprovedById?: string;
+  storekeeperApprovedAt?: string;
+  issuedById?: string;
+  issuedAt?: string;
+  returnedById?: string;
+  returnedAt?: string;
+  toolConditionAtIssue?: string;
+  createdAt: string;
+  updatedAt: string;
+  // Joined
+  workOrder?: { id: string; woNumber: string; title: string; status: string };
+  tool?: { id: string; toolCode: string; name: string; category: string; status: string; condition: string; serialNumber?: string; assignedToId?: string };
+  requestedBy?: { id: string; fullName: string; username: string; department?: { id: string; name: string } };
+  supervisorApprovedBy?: { id: string; fullName: string; username: string };
+  storekeeperApprovedBy?: { id: string; fullName: string; username: string };
+  issuedByUser?: { id: string; fullName: string; username: string };
+  returnedByUser?: { id: string; fullName: string; username: string };
+}
+
+export interface ToolTransferRequest {
+  id: string;
+  toolId: string;
+  fromUserId: string;
+  toUserId: string;
+  reason: string;
+  notes?: string;
+  rejectionReason?: string;
+  toolConditionAtTransfer?: string;
+  status: ToolTransferStatus;
+  requestedById: string;
+  storekeeperApprovedById?: string;
+  storekeeperApprovedAt?: string;
+  fromUserAcceptedAt?: string;
+  toUserAcceptedAt?: string;
+  transferredAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  // Joined
+  tool?: { id: string; toolCode: string; name: string; category: string; status: string; condition: string; serialNumber?: string };
+  fromUser?: { id: string; fullName: string; username: string; department?: { id: string; name: string } };
+  toUser?: { id: string; fullName: string; username: string; department?: { id: string; name: string } };
+  requestedBy?: { id: string; fullName: string; username: string };
+  storekeeperApprovedBy?: { id: string; fullName: string; username: string };
+}
+
 // Dashboard
 export interface DashboardStats {
   totalRequests: number;

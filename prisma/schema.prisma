@@ -1863,9 +1863,13 @@ model RepairMaterialRequest {
   unit                  String    @default("each")
   unitCost              Float?
   estimatedCost         Float     @default(0)
+  urgency               String    @default("normal")          // low, normal, high, critical
   reason                String
   notes                 String?
   status                String    @default("pending")         // pending, supervisor_approved, storekeeper_approved, issued, partially_returned, fully_returned, rejected
+  supervisorApprovedQuantity Float?                         // qty approved by supervisor (may differ from requested)
+  storekeeperApprovedQuantity Float?                         // qty approved by storekeeper (may differ from supervisor qty)
+  stockReserved         Boolean   @default(false)            // whether stock was reserved at storekeeper approval
   requestedById         String                               // → User
   supervisorApprovedById String?
   supervisorApprovedAt  DateTime?
@@ -1903,6 +1907,10 @@ model RepairToolRequest {
   reason                String
   notes                 String?
   status                String    @default("pending")         // pending, supervisor_approved, storekeeper_approved, issued, returned, rejected
+  urgency               String    @default("normal")          // low, normal, high, critical
+  rejectionReason       String?
+  toolConditionAtIssue  String?                              // new, good, fair, poor — captured at issue time
+  toolConditionAtReturn String?                              // new, good, fair, poor — captured at return time
   requestedById         String                               // → User
   supervisorApprovedById String?
   supervisorApprovedAt  DateTime?
@@ -1939,7 +1947,11 @@ model ToolTransferRequest {
   toUserId                String                               // → User
   reason                  String
   notes                   String?
-  status                  String    @default("pending")         // pending, storekeeper_approved, transferred, rejected
+  status                  String    @default("pending")         // pending, storekeeper_approved, awaiting_handover, transferred, rejected
+  rejectionReason         String?
+  toolConditionAtTransfer String?                               // new, good, fair, poor — captured at approval
+  fromUserAcceptedAt      DateTime?
+  toUserAcceptedAt        DateTime?
   requestedById           String                               // → User
   storekeeperApprovedById  String?
   storekeeperApprovedAt   DateTime?

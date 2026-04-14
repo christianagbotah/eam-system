@@ -187,3 +187,103 @@ Stage Summary:
 - CSV export with 15 columns of WO data
 - Date range filtering with Generate Report button
 - All metrics computed server-side from actual database records
+
+---
+Task ID: 5
+Agent: Enterprise Repairs Enhancement
+Task: Enterprise-grade tools/material requests and tool transfer workflows
+
+Work Log:
+
+### 1. TypeScript Types (`src/types/index.ts`)
+- Added `RepairMaterialRequestStatus` type (7 states: pending → supervisor_approved → storekeeper_approved → issued → partially_returned → fully_returned → rejected)
+- Added `RepairToolRequestStatus` type (6 states)
+- Added `ToolTransferStatus` type (5 states including new `awaiting_handover`)
+- Added `RepairMaterialRequest` interface with 39 fields including urgency, quantity tracking, approval chain, joined entities
+- Added `RepairToolRequest` interface with tool condition tracking, urgency, approval chain
+- Added `ToolTransferRequest` interface with dual-acceptance fields, condition at transfer
+
+### 2. Schema Enhancements (`prisma/schema.prisma`)
+- RepairMaterialRequest: Added `urgency` (String, default "normal"), `supervisorApprovedQuantity` (Float?), `storekeeperApprovedQuantity` (Float?), `stockReserved` (Boolean, default false)
+- RepairToolRequest: Added `urgency` (String, default "normal"), `rejectionReason` (String?), `toolConditionAtIssue` (String?), `toolConditionAtReturn` (String?)
+- ToolTransferRequest: Added `rejectionReason` (String?), `toolConditionAtTransfer` (String?), `fromUserAcceptedAt` (DateTime?), `toUserAcceptedAt` (DateTime?)
+
+### 3. Material Request API Enhancements
+- **GET `?stats=true`**: Returns aggregated counts by status, overdue count, urgency breakdown
+- **Urgency-based sorting**: Results sorted critical → high → normal → low, then createdAt desc
+- **Overdue detection**: `isOverdue` flag for pending requests older than 24 hours
+- **Inventory validation on create**: Checks stock availability, returns warnings for low/insufficient stock
+- **Quantity approval**: Supervisor and storekeeper can override requested quantities
+- **Stock reservation**: Stock deducted at storekeeper approval (not issue) to prevent double-allocation
+- **Smart issue**: If stock was reserved, issue just records it; if not, deducts stock
+- **Cumulative return tracking**: Partial returns tracked with proper validation
+- **Rejection reason**: Stored with ISO timestamp prefix in notes field
+- **Planner notification**: Material issue notifies the work order's planner
+- **Per-action audit trail**: Granular audit log entries for every workflow action
+
+### 4. Tool Request API Enhancements
+- **GET `?stats=true`**: Returns counts by status and urgency breakdown
+- **Urgency sorting and overdue detection**: Same as material requests
+- **Duplicate request prevention**: Rejects (409) if pending request exists for same tool+WO
+- **Tool availability check at supervisor approval**: Rejects if tool not in 'available' status
+- **Tool condition capture**: `toolConditionAtIssue` recorded at supervisor approval
+- **Tool reservation at storekeeper approval**: Tool status set to 'in_repair' to prevent allocation
+- **Issue workflow**: Sets tool to 'checked_out', assigns to requester, creates ToolTransaction
+- **Return with condition check**: Accepts `toolConditionAtReturn`, warns if condition degraded, clears assignment
+- **Planner notification on issue/return**
+
+### 5. Tool Transfer API Enhancements
+- **GET `?stats=true`**: Returns counts by status including `awaitingHandover`
+- **Search filter**: Filter by tool name/code and user names
+- **New `awaiting_handover` status**: Between storekeeper approval and completion
+- **Dual-acceptance workflow**: 
+  - `storekeeper_approve` → `awaiting_handover` (requires `toolConditionAtTransfer`)
+  - `from_user_accept` → fromUser confirms handover
+  - `to_user_accept` → toUser confirms receipt
+  - Auto-completes when both parties accepted
+- **Auto-complete on GET**: If both acceptance timestamps exist but status is still awaiting_handover, auto-completes
+- **Condition tracking**: Storekeeper must record tool condition; 'poor' condition returns warning
+- **Permission checks**: Only the respective user (or admin/storekeeper) can accept their side
+
+### 6. Enterprise UI Rebuild (`src/components/modules/RepairsPages.tsx`)
+- **Shared components added**:
+  - `UrgencyBadge`: Visual urgency indicator with colored dots (Low/Medium/High/Critical)
+  - `MiniPipeline`: Horizontal workflow stage indicator with colored dots showing progress
+  - `OverduePulse`: Time-ago display with red pulsing animation for overdue items
+  - `StatsCard`: Enhanced stat card with icon, count, label, subtext, background color
+  - `ConditionSelectDialog`: Tool condition selector (Excellent/Good/Fair/Poor/Damaged)
+  - `DetailTimeline`: Vertical timeline with dates, users, and notes for workflow history
+  - Reusable `RejectDialog` and `QuantityDialog` components
+
+- **Material Requests Page** (316-670):
+  - Stats overview: 5 cards (Pending, Awaiting Approval, Issued, Overdue, Total Cost)
+  - Filters: search, status, urgency with clear button and active filter count
+  - Table: Item, WO#, Qty breakdown (req/approved/issued/returned), Status pipeline, Urgency, Requested by, Time with overdue pulse
+  - Quick action buttons: Approve (green), Reject (red), Issue (emerald), Return (amber) — visible inline
+  - Detail Sheet: Full request info, workflow timeline, action buttons
+  - Enhanced create form: urgency selector, cost auto-calculation, validation
+
+- **Tool Requests Page** (672-926):
+  - Same enterprise pattern as material requests
+  - Tool availability indicator in create form
+  - Condition selector dialog for tool returns
+  - Detail Sheet with tool info, condition tracking, workflow timeline
+
+- **Tool Transfers Page** (928-1201):
+  - Stats: Pending Review, Awaiting Handover, Completed, Rejected
+  - From/To user display with avatars and visual transfer arrow
+  - Handover acceptance status panel showing both parties' confirmation
+  - Quick actions: Approve, Confirm Handover, Confirm Receipt
+  - Condition verification at approval step
+
+Stage Summary:
+- 3 TypeScript type interfaces + 3 status union types added
+- 8 new schema fields across 3 models
+- 6 API route files enhanced with enterprise workflow logic
+- 3 page components completely rebuilt with enterprise UI
+- 6 new shared UI sub-components created
+- Dual-acceptance workflow for tool transfers implemented
+- Stock reservation system for material requests implemented
+- Tool availability and condition tracking implemented
+- Urgency-based priority sorting and overdue detection system-wide
+- Lint passes cleanly, app loads successfully (HTTP 200)
