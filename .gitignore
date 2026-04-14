@@ -71,3 +71,4 @@ db/*.db-journal
 .config
 .stats
 .git-credentials
+node_modules/
