@@ -591,4 +591,5 @@ export type PageName =
   | 'settings-audit'
   | 'settings-company'
   | 'settings-plants'
-  | 'settings-departments';
+  | 'settings-departments'
+  | 'settings-security';

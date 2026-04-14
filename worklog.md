@@ -439,3 +439,79 @@ Stage Summary:
 - 1 new React hook (useWebSocket)
 - 2 new lib utilities (email.ts, ws-notify.ts)
 - All notification channels unified: in-app DB + WebSocket real-time + email
+
+---
+Task ID: 9-10
+Agent: Main Coordinator
+Task: Phase 2G + 2H - Session Management + Password Change/Security Settings
+
+Work Log:
+
+### Phase 2G: Session Management
+
+#### 1. API Endpoint: `/api/sessions/route.ts`
+- **GET**: Lists all active (non-expired) sessions for the authenticated user
+  - Returns session id, masked token (first 8 + last 4 chars), isCurrent flag, createdAt, lastSeen, expiresAt
+  - Current session identified by matching the request's Bearer token
+- **DELETE**: Revokes multiple sessions
+  - Accepts `{ all: true }` body to delete all sessions except the current one
+  - Clears both DB records and in-memory session cache
+  - Returns count of revoked sessions
+
+#### 2. API Endpoint: `/api/sessions/[id]/route.ts`
+- **DELETE**: Revokes a specific session by ID
+  - Verifies the target session belongs to the current user (IDOR protection)
+  - Prevents self-revocation (cannot delete current session through this endpoint)
+  - Removes from both DB and in-memory session cache
+
+#### 3. Frontend: Active Sessions Section
+- Integrated into the new `SecuritySettingsPage` component
+- Displays current session highlighted with emerald background and "Current" badge
+- Lists other sessions with masked token, last active time (relative), creation date
+- Loading skeleton state while fetching
+- Empty state when no sessions
+- Per-session "Revoke" button (red X icon)
+- "Revoke All Others" button (visible when other sessions exist)
+- Footer note showing total session count and password change info
+
+### Phase 2H: Password Change + Security Settings
+
+#### 1. API Endpoint: `/api/users/change-password/route.ts`
+- **POST**: Changes password for the authenticated user
+  - Validates all fields present (currentPassword, newPassword, confirmPassword)
+  - Verifies current password using bcrypt compare
+  - Ensures new password differs from current password
+  - Validates password confirmation matches
+  - Enforces complexity requirements: 8+ chars, uppercase, lowercase, number, special character
+  - Hashes new password with bcrypt (12 rounds)
+  - Automatically revokes all other sessions (forces re-login on other devices)
+  - Returns success message with count of revoked sessions
+
+#### 2. Frontend: SecuritySettingsPage Component
+- **Change Password Form**:
+  - Three password fields: current, new, confirm (each with show/hide toggle)
+  - Live password strength indicator with color-coded progress bar (Weak/Fair/Good/Strong)
+  - Requirements checklist with checkmark/X icons for 5 rules
+  - Real-time password mismatch validation with red border
+  - Submit button disabled until all requirements met and passwords match
+  - Loading spinner during password change
+  - Auto-clears form on success
+  - Auto-refreshes sessions list after password change
+- **Active Sessions Panel** (same as Phase 2G above)
+- Two-column responsive layout (stacks on mobile)
+
+#### 3. Routing & Navigation
+- Added `SecuritySettingsPage` to EAMApp.tsx lazy imports and switch/case routing
+- Added `'settings-security': 'Security'` to page title mapping
+- Added `settings-security` to `PageName` type in `src/types/index.ts`
+- Added sidebar menu item under Settings group with ShieldAlert icon
+
+Stage Summary:
+- 3 new API routes created (`/api/sessions`, `/api/sessions/[id]`, `/api/users/change-password`)
+- 1 new page component (`SecuritySettingsPage`) with password change + session management
+- 4 files modified (EAMApp.tsx, Sidebar.tsx, SettingsPages.tsx, types/index.ts)
+- 1 new icon import (Monitor)
+- Password complexity enforcement on both server and client
+- Session management with cache synchronization
+- ESLint passes with zero errors
+- App compiles and loads successfully (HTTP 200)

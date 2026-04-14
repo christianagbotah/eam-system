@@ -134,6 +134,7 @@ const SettingsNotificationsPage = lazy(() => import('./modules/SettingsPages').t
 const SettingsIntegrationsPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SettingsIntegrationsPage })));
 const SettingsBackupPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SettingsBackupPage })));
 const AuditLogsPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.AuditLogsPage })));
+const SecuritySettingsPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SecuritySettingsPage })));
 
 // ============================================================================
 // MAIN APP SHELL
@@ -258,6 +259,7 @@ function AppShell() {
       case 'settings-integrations': return <SettingsIntegrationsPage />;
       case 'settings-backup': return <SettingsBackupPage />;
       case 'settings-audit': return <AuditLogsPage />;
+      case 'settings-security': return <SecuritySettingsPage />;
       // Legacy fallbacks
       case 'assets':
       case 'asset-detail': return <AssetsPage />;
@@ -368,6 +370,7 @@ function AppShell() {
     'settings-integrations': 'Integrations',
     'settings-backup': 'Backup & Restore',
     'settings-audit': 'Audit Logs',
+    'settings-security': 'Security',
     // Legacy
     'assets': 'Asset Register',
     'asset-detail': 'Asset Details',

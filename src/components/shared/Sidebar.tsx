@@ -241,6 +241,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'settings-integrations', label: 'Integrations', icon: Link2 },
         { page: 'settings-backup', label: 'Backup', icon: Database },
         { page: 'settings-audit', label: 'Audit Logs', icon: Eye },
+        { page: 'settings-security', label: 'Security', icon: ShieldAlert },
       ],
     },
   ], []);

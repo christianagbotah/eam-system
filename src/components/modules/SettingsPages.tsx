@@ -5,7 +5,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
-import { api } from '@/lib/api';
+import { api, apiFetch } from '@/lib/api';
 import type { PageName, User, Role, Permission, Module, UserRole, Notification, CompanyProfile } from '@/types';
 
 import { Button } from '@/components/ui/button';
@@ -40,7 +40,7 @@ import {
   Radio, Ruler, GraduationCap, TriangleAlert, Activity, BrainCircuit,
   GitBranch, ScanLine, Truck, FolderOpen, Target, TrendingUp, Zap, Mail,
   Send, ShieldAlert, ShieldCheck, BarChart3, Package, ClipboardList, Gauge, X,
-  AlertCircle, FileBarChart, EyeOff, Save, Wifi, Play,
+  AlertCircle, FileBarChart, EyeOff, Save, Wifi, Play, Monitor,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { EmptyState, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
@@ -3068,6 +3068,343 @@ export function SettingsIntegrationsPage() {
     </div>
   );
 }
+export function SecuritySettingsPage() {
+  const { user } = useAuthStore();
+  const [sessions, setSessions] = useState<Array<{
+    id: string;
+    token: string;
+    isCurrent: boolean;
+    createdAt: string;
+    lastSeen: string;
+    expiresAt: string;
+  }>>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+
+  // Password form state
+  const [currentPwd, setCurrentPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [showCurrentPwd, setShowCurrentPwd] = useState(false);
+  const [showNewPwd, setShowNewPwd] = useState(false);
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+  const [changingPwd, setChangingPwd] = useState(false);
+
+  const loadSessions = useCallback(() => {
+    setSessionsLoading(true);
+    api.get<typeof sessions>('/api/sessions').then(res => {
+      if (res.success && res.data) setSessions(res.data);
+      setSessionsLoading(false);
+    }).catch(() => setSessionsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
+
+  // Password strength
+  const passwordChecks = useMemo(() => ({
+    minLength: newPwd.length >= 8,
+    hasUppercase: /[A-Z]/.test(newPwd),
+    hasLowercase: /[a-z]/.test(newPwd),
+    hasNumber: /[0-9]/.test(newPwd),
+    hasSpecial: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(newPwd),
+  }), [newPwd]);
+
+  const checkCount = Object.values(passwordChecks).filter(Boolean).length;
+  const passwordStrength = newPwd.length === 0 ? 0 : checkCount <= 2 ? 20 : checkCount <= 3 ? 40 : checkCount <= 4 ? 75 : 100;
+  const strengthLabel = passwordStrength === 0 ? '' : passwordStrength <= 20 ? 'Weak' : passwordStrength <= 40 ? 'Fair' : passwordStrength <= 75 ? 'Good' : 'Strong';
+  const strengthColor = passwordStrength <= 20 ? 'bg-red-500' : passwordStrength <= 40 ? 'bg-amber-500' : passwordStrength <= 75 ? 'bg-yellow-500' : 'bg-emerald-500';
+
+  const handleChangePassword = async () => {
+    if (!currentPwd || !newPwd || !confirmPwd) { toast.error('All fields are required'); return; }
+    setChangingPwd(true);
+    const res = await api.post('/api/users/change-password', {
+      currentPassword: currentPwd,
+      newPassword: newPwd,
+      confirmPassword: confirmPwd,
+    });
+    if (res.success) {
+      toast.success(res.data?.message || 'Password changed successfully');
+      setCurrentPwd('');
+      setNewPwd('');
+      setConfirmPwd('');
+      loadSessions(); // Refresh sessions since other sessions were revoked
+    } else {
+      toast.error(res.error || 'Failed to change password');
+    }
+    setChangingPwd(false);
+  };
+
+  const handleRevokeSession = async (sessionId: string) => {
+    const res = await api.delete(`/api/sessions/${sessionId}`);
+    if (res.success) {
+      toast.success('Session revoked');
+      loadSessions();
+    } else {
+      toast.error(res.error || 'Failed to revoke session');
+    }
+  };
+
+  const handleRevokeAllOthers = async () => {
+    const res = await apiFetch('/api/sessions', { method: 'DELETE', body: JSON.stringify({ all: true }) });
+    if (res.success) {
+      toast.success(res.data?.message || 'All other sessions revoked');
+      loadSessions();
+    } else {
+      toast.error(res.error || 'Failed to revoke sessions');
+    }
+  };
+
+  const currentSession = sessions.find(s => s.isCurrent);
+  const otherSessions = sessions.filter(s => !s.isCurrent);
+
+  return (
+    <div className="page-content">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Security Settings</h1>
+        <p className="text-muted-foreground mt-1">Manage your password and active sessions</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Change Password */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                <Lock className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Change Password</CardTitle>
+                <CardDescription>Update your account password</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Current Password */}
+            <div className="space-y-2">
+              <Label>Current Password</Label>
+              <div className="relative">
+                <Input
+                  type={showCurrentPwd ? 'text' : 'password'}
+                  value={currentPwd}
+                  onChange={e => setCurrentPwd(e.target.value)}
+                  placeholder="Enter current password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPwd(!showCurrentPwd)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showCurrentPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* New Password */}
+            <div className="space-y-2">
+              <Label>New Password</Label>
+              <div className="relative">
+                <Input
+                  type={showNewPwd ? 'text' : 'password'}
+                  value={newPwd}
+                  onChange={e => setNewPwd(e.target.value)}
+                  placeholder="Enter new password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPwd(!showNewPwd)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showNewPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Password Strength Indicator */}
+            {newPwd.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Password strength</span>
+                  <span className={passwordStrength <= 40 ? 'text-red-600 font-medium' : passwordStrength <= 75 ? 'text-amber-600 font-medium' : 'text-emerald-600 font-medium'}>
+                    {strengthLabel}
+                  </span>
+                </div>
+                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all duration-300 ${strengthColor}`} style={{ width: `${passwordStrength}%` }} />
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                  {[
+                    { key: 'minLength' as const, label: `At least 8 characters` },
+                    { key: 'hasUppercase' as const, label: 'One uppercase letter' },
+                    { key: 'hasLowercase' as const, label: 'One lowercase letter' },
+                    { key: 'hasNumber' as const, label: 'One number' },
+                    { key: 'hasSpecial' as const, label: 'One special character' },
+                  ].map(req => (
+                    <div key={req.key} className="flex items-center gap-1.5 text-xs">
+                      {passwordChecks[req.key]
+                        ? <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+                        : <XCircle className="h-3 w-3 text-muted-foreground/50 shrink-0" />
+                      }
+                      <span className={passwordChecks[req.key] ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground'}>
+                        {req.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Confirm Password */}
+            <div className="space-y-2">
+              <Label>Confirm New Password</Label>
+              <div className="relative">
+                <Input
+                  type={showConfirmPwd ? 'text' : 'password'}
+                  value={confirmPwd}
+                  onChange={e => setConfirmPwd(e.target.value)}
+                  placeholder="Re-enter new password"
+                  className={confirmPwd && confirmPwd !== newPwd ? 'border-red-300 focus-visible:ring-red-300' : ''}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPwd(!showConfirmPwd)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showConfirmPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {confirmPwd && confirmPwd !== newPwd && (
+                <p className="text-xs text-red-500 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />Passwords do not match
+                </p>
+              )}
+            </div>
+
+            <Button
+              onClick={handleChangePassword}
+              disabled={changingPwd || !currentPwd || !newPwd || !confirmPwd || newPwd !== confirmPwd || checkCount < 5}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white w-full"
+            >
+              {changingPwd ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Changing Password...</> : <><Lock className="h-4 w-4 mr-2" />Change Password</>}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Active Sessions */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-lg bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center">
+                  <Smartphone className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">Active Sessions</CardTitle>
+                  <CardDescription>Devices logged into your account</CardDescription>
+                </div>
+              </div>
+              {otherSessions.length > 0 && (
+                <Button variant="outline" size="sm" className="text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                  onClick={handleRevokeAllOthers}
+                >
+                  <ShieldAlert className="h-3 w-3 mr-1" />
+                  Revoke All Others
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {sessionsLoading ? (
+              <div className="space-y-3">
+                {[1, 2].map(i => (
+                  <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 animate-pulse">
+                    <div className="h-9 w-9 rounded-lg bg-muted" />
+                    <div className="flex-1 space-y-1.5">
+                      <div className="h-3 w-24 rounded bg-muted" />
+                      <div className="h-2 w-16 rounded bg-muted" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="text-center py-8">
+                <Smartphone className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">No active sessions</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {/* Current session */}
+                {currentSession && (
+                  <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/40">
+                    <div className="h-9 w-9 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center shrink-0 mt-0.5">
+                      <Monitor className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">Current Session</span>
+                        <Badge className="bg-emerald-100 text-emerald-700 text-[10px] border-0">Current</Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">{currentSession.token}</p>
+                      <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          Last active: {formatDistanceToNow(new Date(currentSession.lastSeen), { addSuffix: true })}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Expires {formatDistanceToNow(new Date(currentSession.expiresAt))}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Other sessions */}
+                {otherSessions.map(session => (
+                  <div key={session.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/40 hover:bg-muted/60 transition-colors">
+                    <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center shrink-0 mt-0.5">
+                      <Smartphone className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium">Other Device</span>
+                      <p className="text-[11px] text-muted-foreground mt-0.5 font-mono">{session.token}</p>
+                      <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          Last active: {formatDistanceToNow(new Date(session.lastSeen), { addSuffix: true })}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Created {format(new Date(session.createdAt), 'MMM d, yyyy HH:mm')}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2 text-red-600 hover:text-red-700 hover:bg-red-50 shrink-0"
+                      onClick={() => handleRevokeSession(session.id)}
+                    >
+                      <XCircle className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {sessions.length > 0 && (
+              <div className="mt-4 pt-3 border-t">
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                  <ShieldCheck className="h-3 w-3" />
+                  {sessions.length} active session{sessions.length !== 1 ? 's' : ''} &middot; Changing password will revoke all other sessions
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsBackupPage() {
   const [backingUp, setBackingUp] = useState(false);
   const [restoring, setRestoring] = useState(false);
