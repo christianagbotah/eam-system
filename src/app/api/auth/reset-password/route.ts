@@ -21,9 +21,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (newPassword.length < 6) {
+    if (newPassword.length < 8) {
       return NextResponse.json(
-        { success: false, error: 'Password must be at least 6 characters' },
+        { success: false, error: 'Password must be at least 8 characters' },
+        { status: 400 }
+      );
+    }
+
+    // Password complexity requirements
+    const hasUpper = /[A-Z]/.test(newPassword);
+    const hasLower = /[a-z]/.test(newPassword);
+    const hasNumber = /[0-9]/.test(newPassword);
+    const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(newPassword);
+    if (!hasUpper || !hasLower || !hasNumber || !hasSpecial) {
+      return NextResponse.json(
+        { success: false, error: 'Password must include uppercase, lowercase, number, and special character' },
         { status: 400 }
       );
     }
@@ -55,8 +67,6 @@ export async function POST(request: NextRequest) {
         resetTokenExpires: null,
       },
     });
-
-    console.log(`[Reset Password] Password updated for user: ${user.username} (${user.email})`);
 
     return NextResponse.json({
       success: true,

@@ -28,9 +28,21 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Password is required' }, { status: 400 });
     }
 
-    if (password.length < 6) {
+    if (password.length < 8) {
       return NextResponse.json(
-        { success: false, error: 'Password must be at least 6 characters' },
+        { success: false, error: 'Password must be at least 8 characters' },
+        { status: 400 }
+      );
+    }
+
+    // Password complexity requirements
+    const hasUpper = /[A-Z]/.test(password);
+    const hasLower = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password);
+    if (!hasUpper || !hasLower || !hasNumber || !hasSpecial) {
+      return NextResponse.json(
+        { success: false, error: 'Password must include uppercase, lowercase, number, and special character' },
         { status: 400 }
       );
     }

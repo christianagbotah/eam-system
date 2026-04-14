@@ -28,7 +28,6 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       // Don't reveal whether the user exists — always return success for security
-      console.log(`[Forgot Password] No user found for: ${username}`);
       return NextResponse.json({
         success: true,
         message: 'If an account exists, reset instructions have been sent',
@@ -48,11 +47,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Log the reset URL for demo purposes (in production, send via email)
-    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
-    console.log(`[Forgot Password] Reset URL for ${user.username} (${user.email}): ${resetUrl}`);
-    console.log(`[Forgot Password] Token: ${resetToken}`);
-
+    // In production, send reset instructions via email/SMS
+    // For demo: the token is stored in the database and can be retrieved by admin
     return NextResponse.json({
       success: true,
       message: 'If an account exists, reset instructions have been sent',
