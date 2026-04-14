@@ -724,3 +724,76 @@ Stage Summary:
 - Clickable cards for navigation to filtered views
 - Role-based quick actions filtered by user roles
 - ESLint clean, app loads successfully
+
+---
+Task ID: 16
+Agent: Main Coordinator
+Task: Phase 3D - Comprehensive Notification Center
+
+Work Log:
+
+### 1. Schema Enhancement
+- Added `notificationPreferences` Json field to User model in prisma/schema.prisma
+- Pushed schema and regenerated Prisma client
+
+### 2. Enhanced Notification API (`/api/notifications/route.ts`)
+- GET: Added filtering by category (work_orders, maintenance, safety, quality, system), read status (read/unread), date range (startDate/endDate), pagination (page/limit)
+- Returns `notifications`, `pagination` (page, limit, total, totalPages), and `unreadCount`
+- PUT: Enhanced with batch operations — `{ ids: string[], read: boolean }` for selective mark read/unread, `{ all: true, read: boolean }` for mark all, `{ deleteRead: true }` for delete all read
+- DELETE: Added support for deleting by IDs query param (`?ids=id1,id2`) or delete all notifications for current user
+- POST: Preserved admin-only notification creation
+- Backward compatible with existing NotificationPopover
+
+### 3. Enhanced Notification Detail API (`/api/notifications/[id]/route.ts`)
+- GET: Added related entity data resolution — fetches work order (woNumber, title, status), maintenance request (requestNumber, title, status), or asset (name, assetTag, status) when entityType/entityId present
+- PUT: Now accepts `{ read: boolean }` body to toggle read/unread (previously only marked as read)
+- DELETE: New endpoint to delete a single notification (with ownership check)
+
+### 4. Notification Preferences API (`/api/notifications/preferences/route.ts`)
+- GET: Returns user notification preferences from User.notificationPreferences JSON field, merged with sensible defaults
+- PUT: Validates and saves preferences structure (channels, quietHours, types) — only allows known fields, deep-merges with defaults
+- Default preferences: in-app + email enabled, SMS disabled, all notification types enabled except asset condition
+
+### 5. Comprehensive Notification Center Page (`NotificationsPage` in SettingsPages.tsx)
+- **Inbox view** with full-featured notification management:
+  - Filter bar: category dropdown (All/Work Orders/Maintenance/Safety/Quality/System), read status (All/Unread/Read), date range picker (start/end), clear filters button
+  - Select all / multi-select with checkboxes
+  - Bulk actions: Mark selected as read, Delete selected, Delete all read, Mark all as read
+  - Per-notification: click to expand for full detail (message, type badge, entity info, timestamp), toggle read/unread via icon click, quick delete button
+  - Expanded detail: full message, type/entity/status/received metadata grid, action buttons (mark read/unread, view details → navigates to entity, delete)
+  - Pagination: Previous/Next with page indicator
+  - Empty states: different messages for filtered vs no notifications
+- **Preferences view** (toggled via button):
+  - Notification Channels: In-App, Email (with email address input), SMS (with phone input) — all with Switch toggles
+  - Quiet Hours: enable/disable with start/end time pickers and timezone selector
+  - Notification Types: 9 toggleable categories (WO Assigned, WO Status Updates, MR Decisions, PM Schedule Due, Low Stock Alerts, Asset Condition, System Updates, Safety Alerts, Quality Alerts)
+  - Save to server via PUT /api/notifications/preferences
+  - Reset button to reload from server
+- Both views connected via tab-like navigation with Back to Inbox / Preferences buttons
+- Uses comprehensive type icon/color mapping (17 notification types with unique icons and color schemes)
+- Added `Filter`, `ExternalLink` to lucide-react imports
+
+### 6. Sidebar Enhancement
+- Added standalone "Notifications" menu item in sidebar under core section (between Chat and Assets)
+- Uses BellRing icon, requires `chat.view` permission, maps to `notifications` page
+
+### 7. Routing
+- Already wired: `case notifications` in EAMApp.tsx renders `NotificationsPage`
+- Already wired: page title mapping has `notifications: Notifications`
+- Page name `notifications` already in `PageName` type union
+
+### 8. Quality
+- ESLint passes with zero errors
+- Dev server compiles and serves successfully (HTTP 200)
+- All changes backward compatible with existing NotificationPopover and SettingsNotificationsPage
+
+Stage Summary:
+- 1 schema field added (User.notificationPreferences)
+- 3 API routes enhanced/created (notifications, notifications/[id], notifications/preferences)
+- 1 page component completely rewritten (NotificationsPage) with inbox + preferences dual view
+- 1 sidebar entry added (standalone Notifications menu item)
+- 17 notification type mappings with unique icons/colors
+- Full CRUD for notifications with filtering, pagination, and batch operations
+- Server-side notification preferences storage replacing localStorage
+- Lint passes cleanly, app loads successfully
+

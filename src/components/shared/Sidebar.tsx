@@ -102,6 +102,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const menuGroups = useMemo<NavGroup[]>(() => [
     { label: 'Dashboard', icon: LayoutDashboard, perm: 'dashboard.view', page: 'dashboard', moduleCode: 'core' },
     { label: 'Chat', icon: MessageSquare, perm: 'chat.view', page: 'chat', moduleCode: 'core' },
+    { label: 'Notifications', icon: BellRing, perm: 'chat.view', page: 'notifications', moduleCode: 'core' },
     {
       label: 'Assets', icon: Building2, perm: 'assets.view', moduleCode: 'assets',
       children: [

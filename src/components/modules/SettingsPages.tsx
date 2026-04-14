@@ -43,7 +43,7 @@ import {
   GitBranch, ScanLine, Truck, FolderOpen, Target, TrendingUp, Zap, Mail,
   Send, ShieldAlert, ShieldCheck, BarChart3, Package, ClipboardList, Gauge, X,
   AlertCircle, FileBarChart, EyeOff, Save, Wifi, Play, Monitor, HeartPulse, Server, MessageSquare,
-  FileDown, FileUp, Info,
+  FileDown, FileUp, Info, Filter, ExternalLink,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { EmptyState, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
@@ -1807,93 +1807,624 @@ export function SettingsDepartmentsPage() {
 }
 
 // ============================================================================
-// NOTIFICATIONS
+// NOTIFICATIONS CENTER
 // ============================================================================
 
+interface NotifPreferences {
+  channels: { inApp: boolean; email: boolean; emailAddr: string; sms: boolean; phone: string };
+  quietHours: { enabled: boolean; start: string; end: string; timezone: string };
+  types: Record<string, boolean>;
+}
+
+interface NotifPagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+const TYPE_COLORS: Record<string, string> = {
+  mr_assigned: 'bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400',
+  mr_approved: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
+  mr_rejected: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+  mr_cancelled: 'bg-slate-100 text-slate-500 dark:bg-slate-800/30 dark:text-slate-400',
+  wo_assigned: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',
+  wo_started: 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400',
+  wo_completed: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
+  wo_closed: 'bg-slate-100 text-slate-500 dark:bg-slate-800/30 dark:text-slate-400',
+  wo_on_hold: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400',
+  wo_cancelled: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+  wo_approved: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
+  safety_incident: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  safety_alert: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400',
+  quality_ncr: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400',
+  quality_inspection: 'bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400',
+  quality_audit: 'bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400',
+  system: 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400',
+  info: 'bg-slate-50 text-slate-500 dark:bg-slate-800/30 dark:text-slate-400',
+};
+
+const TYPE_ICONS: Record<string, React.ElementType> = {
+  mr_assigned: ClipboardList,
+  mr_approved: CheckCircle2,
+  mr_rejected: XCircle,
+  mr_cancelled: XCircle,
+  wo_assigned: Wrench,
+  wo_started: Play,
+  wo_completed: CheckCircle2,
+  wo_closed: Check,
+  wo_on_hold: Clock,
+  wo_cancelled: XCircle,
+  wo_approved: CheckCircle2,
+  safety_incident: AlertTriangle,
+  safety_alert: AlertTriangle,
+  quality_ncr: AlertCircle,
+  quality_inspection: Search,
+  quality_audit: Eye,
+  system: Settings,
+  info: MessageSquare,
+};
+
+const CATEGORY_OPTIONS = [
+  { value: 'all', label: 'All Types' },
+  { value: 'work_orders', label: 'Work Orders' },
+  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'safety', label: 'Safety' },
+  { value: 'quality', label: 'Quality' },
+  { value: 'system', label: 'System' },
+];
+
+const READ_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'unread', label: 'Unread' },
+  { value: 'read', label: 'Read' },
+];
+
+const PREF_TYPE_LABELS: Record<string, { label: string; desc: string }> = {
+  woAssigned: { label: 'Work Order Assigned', desc: 'When a work order is assigned to you' },
+  woStatusChange: { label: 'WO Status Updates', desc: 'Status changes on your work orders' },
+  mrApprovedRejected: { label: 'MR Decisions', desc: 'Maintenance request approval/rejection' },
+  pmDue: { label: 'PM Schedule Due', desc: 'Preventive maintenance reminders' },
+  lowStockAlert: { label: 'Low Stock Alerts', desc: 'Inventory items below reorder point' },
+  assetConditionAlert: { label: 'Asset Condition', desc: 'Degraded asset condition readings' },
+  systemNotifications: { label: 'System Updates', desc: 'System updates and maintenance windows' },
+  safetyAlerts: { label: 'Safety Alerts', desc: 'Safety incidents and near-misses' },
+  qualityAlerts: { label: 'Quality Alerts', desc: 'NCRs and failed inspections' },
+};
+
 export function NotificationsPage() {
+  const navigate = useNavigationStore(s => s.navigate);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigationStore(s => s.navigate);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [pagination, setPagination] = useState<NotifPagination>({ page: 1, limit: 20, total: 0, totalPages: 0 });
+  const [activeTab, setActiveTab] = useState<'inbox' | 'preferences'>('inbox');
+
+  // Filters
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [readFilter, setReadFilter] = useState('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  // Selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Preferences
+  const [prefs, setPrefs] = useState<NotifPreferences | null>(null);
+  const [prefsLoading, setPrefsLoading] = useState(false);
+  const [prefsSaving, setPrefsSaving] = useState(false);
+
+  // Build query params
+  const buildQuery = useCallback(() => {
+    const params: string[] = [];
+    params.push(`page=${pagination.page}`);
+    params.push(`limit=${pagination.limit}`);
+    if (categoryFilter !== 'all') params.push(`category=${categoryFilter}`);
+    if (readFilter !== 'all') params.push(`read=${readFilter}`);
+    if (startDate) params.push(`startDate=${startDate}`);
+    if (endDate) params.push(`endDate=${endDate}`);
+    return params.length > 0 ? '?' + params.join('&') : '';
+  }, [pagination.page, pagination.limit, categoryFilter, readFilter, startDate, endDate]);
 
   const loadNotifications = useCallback(() => {
-    api.get<Notification[]>('/api/notifications').then(res => { if (res.success && res.data) setNotifications(Array.isArray(res.data) ? res.data : []); setLoading(false); });
-  }, []);
+    setLoading(true);
+    const query = buildQuery();
+    api.get(`/api/notifications${query}`).then(res => {
+      if (res.success && res.data) {
+        const d = res.data as Record<string, unknown>;
+        const notifs = (d.notifications || []) as Notification[];
+        const pag = (d.pagination || {}) as NotifPagination;
+        setNotifications(notifs);
+        setPagination(pag);
+        setUnreadCount((d.unreadCount || 0) as number);
+        setSelectedIds(new Set());
+        setExpandedId(null);
+      }
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [buildQuery]);
 
   useEffect(() => { loadNotifications(); }, [loadNotifications]);
 
+  // Load preferences
+  const loadPrefs = useCallback(() => {
+    setPrefsLoading(true);
+    api.get('/api/notifications/preferences').then(res => {
+      if (res.success && res.data) setPrefs(res.data as NotifPreferences);
+      setPrefsLoading(false);
+    }).catch(() => setPrefsLoading(false));
+  }, []);
+
+  // Reset page when filters change
+  useEffect(() => { setPagination(p => ({ ...p, page: 1 })); }, [categoryFilter, readFilter, startDate, endDate]);
+
+  // Clear date filters
+  const clearFilters = () => {
+    setCategoryFilter('all');
+    setReadFilter('all');
+    setStartDate('');
+    setEndDate('');
+  };
+
+  const hasActiveFilters = categoryFilter !== 'all' || readFilter !== 'all' || startDate || endDate;
+
+  // Mark single as read/unread
+  const toggleRead = async (n: Notification) => {
+    await api.put(`/api/notifications/${n.id}`, { read: !n.isRead });
+    setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, isRead: !n.isRead } : x));
+    setUnreadCount(prev => n.isRead ? prev + 1 : Math.max(0, prev - 1));
+  };
+
+  // Mark all as read
   const markAllRead = async () => {
-    await api.put('/api/notifications/read-all');
+    await api.put('/api/notifications', { all: true, read: true });
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    setUnreadCount(0);
     toast.success('All notifications marked as read');
   };
 
-  const markRead = async (n: Notification) => {
-    if (n.isRead) return;
-    await api.put(`/api/notifications/${n.id}`);
-    setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true } : x));
-    if (n.actionUrl) {
-      navigate(n.actionUrl as PageName);
+  // Mark selected as read
+  const markSelectedRead = async () => {
+    if (selectedIds.size === 0) return;
+    await api.put('/api/notifications', { ids: Array.from(selectedIds), read: true });
+    setNotifications(prev => prev.map(n => selectedIds.has(n.id) ? { ...n, isRead: true } : n));
+    const newlyRead = notifications.filter(n => selectedIds.has(n.id) && !n.isRead).length;
+    setUnreadCount(prev => Math.max(0, prev - newlyRead));
+    setSelectedIds(new Set());
+    toast.success(`${selectedIds.size} notification(s) marked as read`);
+  };
+
+  // Delete single notification
+  const deleteNotification = async (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    await api.delete(`/api/notifications/${id}`);
+    const wasUnread = notifications.find(n => n.id === id)?.isRead === false;
+    setNotifications(prev => prev.filter(n => n.id !== id));
+    setPagination(prev => ({ ...prev, total: prev.total - 1 }));
+    if (wasUnread) setUnreadCount(prev => Math.max(0, prev - 1));
+    setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+    toast.success('Notification deleted');
+  };
+
+  // Delete selected notifications
+  const deleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    await api.delete(`/api/notifications?ids=${Array.from(selectedIds).join(',')}`);
+    const deletedCount = selectedIds.size;
+    const deletedUnread = notifications.filter(n => selectedIds.has(n.id) && !n.isRead).length;
+    setNotifications(prev => prev.filter(n => !selectedIds.has(n.id)));
+    setPagination(prev => ({ ...prev, total: prev.total - deletedCount }));
+    setUnreadCount(prev => Math.max(0, prev - deletedUnread));
+    setSelectedIds(new Set());
+    toast.success(`${deletedCount} notification(s) deleted`);
+  };
+
+  // Delete all read
+  const deleteAllRead = async () => {
+    await api.put('/api/notifications', { deleteRead: true });
+    const readCount = notifications.filter(n => n.isRead).length;
+    setNotifications(prev => prev.filter(n => !n.isRead));
+    setPagination(prev => ({ ...prev, total: prev.total - readCount }));
+    toast.success(`${readCount} read notification(s) deleted`);
+  };
+
+  // Toggle select
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === notifications.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(notifications.map(n => n.id)));
     }
   };
 
-  const typeColors: Record<string, string> = {
-    mr_assigned: 'bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400',
-    wo_assigned: 'bg-sky-50 text-sky-500 dark:bg-sky-950/30 dark:text-sky-300',
-    wo_completed: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
-    system: 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400',
-    info: 'bg-slate-50 text-slate-500 dark:bg-slate-800/30 dark:text-slate-400',
+  // Go to action URL
+  const goToAction = (n: Notification) => {
+    if (n.actionUrl) navigate(n.actionUrl as PageName);
   };
 
-  const typeIcons: Record<string, React.ElementType> = {
-    mr_assigned: ClipboardList,
-    wo_assigned: Wrench,
-    wo_completed: CheckCircle2,
-    system: Settings,
-    info: MessageSquare,
+  // Save preferences
+  const savePrefs = async () => {
+    if (!prefs) return;
+    setPrefsSaving(true);
+    await api.put('/api/notifications/preferences', prefs);
+    toast.success('Notification preferences saved');
+    setPrefsSaving(false);
   };
 
-  if (loading) return <LoadingSkeleton />;
+  const allSelected = notifications.length > 0 && selectedIds.size === notifications.length;
 
-  const unreadCount = notifications.filter(n => !n.isRead).length;
-
-  return (
-    <div className="page-content">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Notifications</h1>
-          <p className="text-muted-foreground text-sm mt-1">{unreadCount > 0 ? `${unreadCount} unread notification(s)` : 'All caught up!'}</p>
+  if (activeTab === 'preferences') {
+    return (
+      <div className="page-content">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Notification Preferences</h1>
+            <p className="text-muted-foreground text-sm mt-1">Configure how and when you receive notifications</p>
+          </div>
+          <Button variant="outline" onClick={() => setActiveTab('inbox')} className="gap-1.5">
+            <Bell className="h-4 w-4" />Back to Inbox
+          </Button>
         </div>
-        {unreadCount > 0 && (
-          <Button variant="outline" onClick={markAllRead} className="gap-1.5"><Check className="h-4 w-4" />Mark All Read</Button>
-        )}
-      </div>
-      <div className="space-y-2">
-        {notifications.length === 0 ? (
-          <EmptyState icon={Bell} title="No notifications" description="You're all caught up!" />
-        ) : notifications.map(n => {
-          const Icon = typeIcons[n.type] || MessageSquare;
-          const colorClass = typeColors[n.type] || typeColors.info;
-          return (
-            <Card key={n.id} className={`border-0 shadow-sm cursor-pointer transition-all hover:shadow-md dark:bg-card ${!n.isRead ? 'border-l-4 border-l-emerald-500 dark:border-l-emerald-400' : 'opacity-70'}`} onClick={() => markRead(n)}>
-              <CardContent className="p-4">
-                <div className="flex items-start gap-3">
-                  <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${colorClass}`}>
-                    <Icon className="h-4 w-4" />
+
+        {prefsLoading && !prefs ? <LoadingSkeleton /> : !prefs ? (
+          <EmptyState icon={Settings} title="Could not load preferences" description="Please try again later." />
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            {/* Channels */}
+            <Card className="border-0 shadow-sm">
+              <CardHeader><CardTitle className="text-base">Notification Channels</CardTitle><CardDescription>Choose where to receive notifications</CardDescription></CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex items-center justify-between">
+                  <div><Label className="text-sm font-medium">In-App Notifications</Label><p className="text-xs text-muted-foreground mt-0.5">Receive notifications within the application</p></div>
+                  <Switch checked={prefs.channels.inApp} onCheckedChange={v => setPrefs(p => ({ ...p!, channels: { ...p!.channels, inApp: v } }))} />
+                </div>
+                <Separator />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div><Label className="text-sm font-medium">Email Notifications</Label><p className="text-xs text-muted-foreground mt-0.5">Receive notifications via email</p></div>
+                    <Switch checked={prefs.channels.email} onCheckedChange={v => setPrefs(p => ({ ...p!, channels: { ...p!.channels, email: v } }))} />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium">{n.title}</p>
-                      {!n.isRead && <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
-                    <p className="text-[11px] text-muted-foreground/60 mt-1">{timeAgo(n.createdAt)}</p>
+                  {prefs.channels.email && (
+                    <div className="space-y-2 pl-1"><Label className="text-xs">Email Address</Label><Input value={prefs.channels.emailAddr} onChange={e => setPrefs(p => ({ ...p!, channels: { ...p!.channels, emailAddr: e.target.value } }))} placeholder="you@company.com" /></div>
+                  )}
+                </div>
+                <Separator />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div><Label className="text-sm font-medium">SMS Notifications</Label><p className="text-xs text-muted-foreground mt-0.5">Receive critical alerts via SMS</p></div>
+                    <Switch checked={prefs.channels.sms} onCheckedChange={v => setPrefs(p => ({ ...p!, channels: { ...p!.channels, sms: v } }))} />
                   </div>
+                  {prefs.channels.sms && (
+                    <div className="space-y-2 pl-1"><Label className="text-xs">Phone Number</Label><Input value={prefs.channels.phone} onChange={e => setPrefs(p => ({ ...p!, channels: { ...p!.channels, phone: e.target.value } }))} placeholder="+1 234 567 8900" /></div>
+                  )}
                 </div>
               </CardContent>
             </Card>
-          );
-        })}
+
+            {/* Quiet Hours */}
+            <Card className="border-0 shadow-sm">
+              <CardHeader><CardTitle className="text-base">Quiet Hours</CardTitle><CardDescription>Pause non-critical notifications during specified hours</CardDescription></CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div><Label className="text-sm font-medium">Enable Quiet Hours</Label><p className="text-xs text-muted-foreground mt-0.5">Only urgent alerts will be sent</p></div>
+                  <Switch checked={prefs.quietHours.enabled} onCheckedChange={v => setPrefs(p => ({ ...p!, quietHours: { ...p!.quietHours, enabled: v } }))} />
+                </div>
+                {prefs.quietHours.enabled && (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2"><Label className="text-xs">Start Time</Label><Input type="time" value={prefs.quietHours.start} onChange={e => setPrefs(p => ({ ...p!, quietHours: { ...p!.quietHours, start: e.target.value } }))} /></div>
+                      <div className="space-y-2"><Label className="text-xs">End Time</Label><Input type="time" value={prefs.quietHours.end} onChange={e => setPrefs(p => ({ ...p!, quietHours: { ...p!.quietHours, end: e.target.value } }))} /></div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Timezone</Label>
+                      <Select value={prefs.quietHours.timezone} onValueChange={v => setPrefs(p => ({ ...p!, quietHours: { ...p!.quietHours, timezone: v } }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="UTC">UTC</SelectItem>
+                          <SelectItem value="America/New_York">Eastern Time</SelectItem>
+                          <SelectItem value="America/Chicago">Central Time</SelectItem>
+                          <SelectItem value="America/Los_Angeles">Pacific Time</SelectItem>
+                          <SelectItem value="Europe/London">London (GMT)</SelectItem>
+                          <SelectItem value="Africa/Accra">Accra (GMT)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Notification Types */}
+            <Card className="lg:col-span-2 border-0 shadow-sm">
+              <CardHeader><CardTitle className="text-base">Notification Types</CardTitle><CardDescription>Toggle specific notification categories</CardDescription></CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
+                  {Object.entries(PREF_TYPE_LABELS).map(([key, { label, desc }]) => (
+                    <div key={key} className="flex items-center justify-between py-3 border-b last:border-0">
+                      <div><Label className="text-sm font-medium">{label}</Label><p className="text-xs text-muted-foreground mt-0.5">{desc}</p></div>
+                      <Switch checked={prefs.types[key] ?? true} onCheckedChange={v => setPrefs(p => ({ ...p!, types: { ...p!.types, [key]: v } }))} />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {prefs && (
+          <div className="mt-6 flex items-center gap-3">
+            <Button onClick={savePrefs} disabled={prefsSaving}>
+              {prefsSaving ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Saving...</> : 'Save Preferences'}
+            </Button>
+            <Button variant="outline" onClick={loadPrefs}>Reset</Button>
+          </div>
+        )}
       </div>
+    );
+  }
+
+  // Inbox tab
+  return (
+    <div className="page-content">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Notification Center</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            {unreadCount > 0 ? `${unreadCount} unread notification${unreadCount !== 1 ? 's' : ''}` : 'All caught up!'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => { setActiveTab('preferences'); loadPrefs(); }} className="gap-1.5">
+            <Settings className="h-4 w-4" />Preferences
+          </Button>
+          {unreadCount > 0 && (
+            <Button variant="outline" size="sm" onClick={markAllRead} className="gap-1.5">
+              <Check className="h-4 w-4" />Mark All Read
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter Bar */}
+      <Card className="border-0 shadow-sm mt-4">
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs font-medium text-muted-foreground">Filters:</span>
+            </div>
+
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="w-[160px] h-8 text-xs"><SelectValue placeholder="Category" /></SelectTrigger>
+              <SelectContent>
+                {CATEGORY_OPTIONS.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={readFilter} onValueChange={setReadFilter}>
+              <SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                {READ_OPTIONS.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex items-center gap-1.5">
+              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-8 text-xs w-[140px]" />
+              <span className="text-xs text-muted-foreground">to</span>
+              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-8 text-xs w-[140px]" />
+            </div>
+
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" className="h-8 text-xs gap-1" onClick={clearFilters}>
+                <X className="h-3 w-3" />Clear
+              </Button>
+            )}
+
+            <div className="ml-auto flex items-center gap-2">
+              {/* Bulk actions */}
+              {selectedIds.size > 0 && (
+                <>
+                  <span className="text-xs text-muted-foreground">{selectedIds.size} selected</span>
+                  <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={markSelectedRead}>
+                    <Check className="h-3 w-3" />Mark Read
+                  </Button>
+                  <Button variant="destructive" size="sm" className="h-7 text-xs gap-1" onClick={deleteSelected}>
+                    <Trash2 className="h-3 w-3" />Delete
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Notification List */}
+      {loading ? (
+        <LoadingSkeleton />
+      ) : notifications.length === 0 ? (
+        <Card className="border-0 shadow-sm mt-4">
+          <CardContent className="py-16">
+            <EmptyState
+              icon={Bell}
+              title={hasActiveFilters ? 'No matching notifications' : 'No notifications'}
+              description={hasActiveFilters
+                ? 'Try adjusting your filters to find what you\'re looking for.'
+                : 'You\'re all caught up! New notifications will appear here.'}
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="mt-4 space-y-2">
+          {/* Select all bar */}
+          <div className="flex items-center gap-3 px-2 py-1.5">
+            <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} />
+            <span className="text-xs text-muted-foreground">Select all ({notifications.length})</span>
+            <div className="ml-auto">
+              {notifications.some(n => n.isRead) && (
+                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground hover:text-red-500" onClick={deleteAllRead}>
+                  <Trash2 className="h-3 w-3" />Delete all read
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Notification items */}
+          {notifications.map(n => {
+            const Icon = TYPE_ICONS[n.type] || MessageSquare;
+            const colorClass = TYPE_COLORS[n.type] || TYPE_COLORS.info;
+            const isExpanded = expandedId === n.id;
+            const isSelected = selectedIds.has(n.id);
+
+            return (
+              <Card
+                key={n.id}
+                className={`border-0 shadow-sm transition-all hover:shadow-md dark:bg-card ${
+                  !n.isRead ? 'border-l-4 border-l-emerald-500 dark:border-l-emerald-400' : 'opacity-75'
+                } ${isSelected ? 'ring-2 ring-emerald-500/50' : ''}`}
+              >
+                <CardContent className="p-0">
+                  <div className="flex items-start gap-3 p-4">
+                    {/* Checkbox */}
+                    <div className="flex items-center pt-1">
+                      <Checkbox checked={isSelected} onCheckedChange={() => toggleSelect(n.id)} />
+                    </div>
+
+                    {/* Type icon */}
+                    <button className="shrink-0 mt-0.5" onClick={() => toggleRead(n)} title={n.isRead ? 'Mark as unread' : 'Mark as read'}>
+                      <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${colorClass}`}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                    </button>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div
+                        className="cursor-pointer"
+                        onClick={() => setExpandedId(isExpanded ? null : n.id)}
+                      >
+                        <div className="flex items-center gap-2">
+                          <p className={`text-sm ${!n.isRead ? 'font-semibold' : 'font-medium text-muted-foreground'}`}>{n.title}</p>
+                          {!n.isRead && <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />}
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 ml-auto shrink-0 font-normal">
+                            {n.type.replace(/_/g, ' ')}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
+                        <p className="text-[11px] text-muted-foreground/60 mt-1">{timeAgo(n.createdAt)}</p>
+                      </div>
+
+                      {/* Expanded detail */}
+                      {isExpanded && (
+                        <div className="mt-3 pt-3 border-t border-border/50 space-y-3 animate-in fade-in-0 slide-in-from-top-1 duration-200">
+                          <div className="rounded-lg bg-muted/40 border p-4">
+                            <p className="text-sm leading-relaxed">{n.message}</p>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                            <div className="space-y-1">
+                              <span className="text-muted-foreground">Type</span>
+                              <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-semibold">
+                                {n.type.replace(/_/g, ' ')}
+                              </Badge>
+                            </div>
+                            {n.entityType && (
+                              <div className="space-y-1">
+                                <span className="text-muted-foreground">Entity</span>
+                                <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
+                                  {n.entityType.replace(/_/g, ' ')}
+                                </Badge>
+                              </div>
+                            )}
+                            <div className="space-y-1">
+                              <span className="text-muted-foreground">Status</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`h-2 w-2 rounded-full ${n.isRead ? 'bg-muted-foreground/40' : 'bg-emerald-500'}`} />
+                                <span className="font-medium">{n.isRead ? 'Read' : 'Unread'}</span>
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-muted-foreground">Received</span>
+                              <span className="font-medium">
+                                {n.createdAt ? format(new Date(n.createdAt), 'MMM d, yyyy \'at\' h:mm a') : '—'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Action buttons */}
+                          <div className="flex items-center gap-2 pt-1">
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => toggleRead(n)}>
+                              {n.isRead ? <><EyeOff className="h-3 w-3" />Mark Unread</> : <><Check className="h-3 w-3" />Mark Read</>}
+                            </Button>
+                            {n.actionUrl && (
+                              <Button size="sm" className="h-7 text-xs gap-1" onClick={() => goToAction(n)}>
+                                <ExternalLink className="h-3 w-3" />View Details
+                              </Button>
+                            )}
+                            <Button size="sm" variant="destructive" className="h-7 text-xs gap-1 ml-auto" onClick={e => deleteNotification(n.id, e)}>
+                              <Trash2 className="h-3 w-3" />Delete
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Quick delete (collapsed) */}
+                    {!isExpanded && (
+                      <button
+                        className="shrink-0 p-1.5 rounded-md hover:bg-red-50 dark:hover:bg-red-950/30 text-muted-foreground hover:text-red-500 transition-colors"
+                        onClick={e => deleteNotification(n.id, e)}
+                        title="Delete notification"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+
+          {/* Pagination */}
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 pt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                disabled={pagination.page <= 1}
+                onClick={() => setPagination(p => ({ ...p, page: p.page - 1 }))}
+              >
+                Previous
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Page {pagination.page} of {pagination.totalPages} ({pagination.total} total)
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                disabled={pagination.page >= pagination.totalPages}
+                onClick={() => setPagination(p => ({ ...p, page: p.page + 1 }))}
+              >
+                Next
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
