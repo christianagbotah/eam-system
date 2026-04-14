@@ -281,3 +281,26 @@ Work Log:
 
 Stage Summary:
 - Converting all remaining fields to AsyncSearchableSelect pattern
+
+---
+Task ID: 7
+Agent: Main Agent + 6 Subagents
+Task: Complete Phase 1 — Searchable selects, GHS currency, PDF export
+
+Work Log:
+- Launched 4 parallel agents to convert 24 entity reference fields across 7 files
+- Agent 7-a: RepairsPages.tsx — 8 fields (workOrderId x2, itemId, toolId x2, fromUserId, toUserId, assetId)
+- Agent 7-b: ProductionPages.tsx — 3 fields (workCenterId x2, orderId) + IoTPages.tsx — 1 field (deviceId)
+- Agent 7-c: InventoryPages.tsx — 7 fields (item x3, location x2, supplier, po item) + AssetPages.tsx — 2 fields (BOM component, Digital Twin asset)
+- Agent 7-d: SafetyPages.tsx — 1 field (inspector) + QualityPages.tsx — 2 fields (auditor, assignedTo)
+- Replaced USD ($) with GHS (₵) across Production, Inventory, Reports, Repairs, Analytics pages
+- Created src/lib/export-pdf.ts utility with professional HTML-to-PDF via window.print()
+- Added Export PDF button to all 4 report pages (Production, Quality, Safety, Financial)
+- All changes pass lint with zero errors
+- Committed as 70cfcd2 + 46ebe4e
+
+Stage Summary:
+- 24 entity reference fields now use AsyncSearchableSelect with API-backed search
+- All currency displays use Ghana Cedi (₵) symbol
+- PDF export available on all report pages with branded headers and summary KPIs
+- Total: ~480 lines added, ~64 lines removed across 10 files
