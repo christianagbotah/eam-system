@@ -308,3 +308,61 @@ Stage Summary:
 - HIGH: ~70+ frontend buttons lack permission gates across 10 modules (viewer can see all Create/Edit/Delete buttons)
 - HIGH: Analytics and IoT monitoring queries ignore plant filters
 - System has excellent architecture foundation but needs security hardening, permission enforcement, and module completion for production readiness
+
+---
+Task ID: 7
+Agent: Security Hardening Implementation
+Task: Phase 1 security hardening - API auth, permission checks, password policy, frontend gates
+
+Work Log:
+
+### Phase 1A: Critical API Auth Hardening (9 files)
+- Fixed 3 unauthenticated GET endpoints: work-orders, maintenance-requests, dashboard/stats
+- Added hard auth gates (`if (!session) return 401`) to all three
+- Added permission checks: `work_orders.view`, `maintenance_requests.view`, `dashboard.view`
+- Protected `/api/modules` endpoint: added auth + admin-only license key exposure
+- Protected `/api/permissions` endpoint: added auth requirement
+- Fixed role permission escalation: added `isSystem` guard to prevent non-admin modifying system roles
+- Added `settings.update` permission to integrations PUT endpoint
+- Enhanced WO list: technicians now see WOs where they are team members (not just assigned)
+- Added `work_orders.create` permission to WO POST handler
+- Applied plant filters to ALL analytics queries (were computed but never used)
+- Added plant filters to IoT monitoring summary endpoint
+
+### Phase 1C: API Write Permission Checks (72 files, 91 handlers)
+- Created automated script to add hasPermission checks to all POST/PUT/DELETE handlers
+- Modules covered: assets, inventory (14 files), safety (10), production (9), IoT (3), quality (10), operations (10), tools (6), pm-schedules, suppliers, purchase-orders, backups
+- Each handler now checks specific permission slug (e.g. `assets.create`, `inventory.update`)
+- Admin users bypass permission checks via `isAdmin()` guard
+- DELETE handlers with existing admin checks were preserved
+- 17 existing admin-only DELETE handlers correctly skipped
+
+### Phase 1E: Password Complexity & Token Security (3 files)
+- Increased minimum password length from 6 to 8 characters
+- Added complexity requirements: uppercase, lowercase, number, special character
+- Applied to: reset-password, admin reset-password
+- Removed console.log of reset tokens and URLs from forgot-password (security leak)
+- Removed console.log of user-not-found enumeration hint
+
+### Phase 1F: Frontend Permission Gates (14 files)
+- AssetPages: 5 buttons gated (create, edit, delete, add component, add monitoring point, create twin)
+- InventoryPages: 12 buttons gated across 9 sub-pages
+- ProductionPages: 10 buttons gated across 4 components
+- QualityPages: 18 buttons gated across 6 components
+- SafetyPages: 15 buttons gated across 5 components
+- OperationsPages: 5 create buttons gated
+- RepairsPages: 9 create buttons gated
+- IoTPages: 2 create buttons gated
+- SettingsPages: 8 buttons gated (users, roles, plants, departments, data export)
+- Pattern used: `{(hasPermission('module.action') || isAdmin()) && <Button>...</Button>}`
+
+Stage Summary:
+- 4 commits pushed to GitHub (7cc8992, 5318666, b720f91, 95184df)
+- 95+ files modified across the entire codebase
+- All 3 CRITICAL security vulnerabilities fixed
+- Permission escalation path closed
+- 72 API write endpoints now have proper authorization
+- ~80+ frontend buttons now properly gated by permissions
+- Password policy hardened
+- Token logging eliminated
+- All changes pass ESLint with zero errors
