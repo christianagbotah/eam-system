@@ -25,6 +25,17 @@ export async function GET(request: NextRequest) {
         (mrWhere as Record<string, unknown>).requestedBy = session.userId;
       } else if (session.roles.includes('operator')) {
         (mrWhere as Record<string, unknown>).requestedBy = session.userId;
+        // Operators only see WOs created from their requests
+        const myMRIds = await db.maintenanceRequest.findMany({
+          where: { requestedBy: session.userId },
+          select: { id: true },
+        });
+        if (myMRIds.length > 0) {
+          (woWhere as Record<string, unknown>).maintenanceRequestId = { in: myMRIds.map(mr => mr.id) };
+        } else {
+          // No MRs, so no WOs to show
+          (woWhere as Record<string, unknown>).id = '__none__';
+        }
       } else if (session.roles.includes('supervisor')) {
         // Supervisors see their department's requests
         (mrWhere as Record<string, unknown>).supervisorId = session.userId;
@@ -112,9 +123,9 @@ export async function GET(request: NextRequest) {
     // Pending requests
     const pendingRequests = mrStats['pending'] || 0;
 
-    // Recent activity
+    // Recent activity — also filtered by role
     const recentRequests = await db.maintenanceRequest.findMany({
-      where: plantFilter,
+      where: Object.keys(mrWhere).length > 0 ? mrWhere : plantFilter,
       take: 5,
       orderBy: { createdAt: 'desc' },
       include: {
@@ -123,7 +134,7 @@ export async function GET(request: NextRequest) {
     });
 
     const recentWorkOrders = await db.workOrder.findMany({
-      where: plantFilter,
+      where: Object.keys(woWhere).length > 0 ? woWhere : plantFilter,
       take: 5,
       orderBy: { createdAt: 'desc' },
       include: {

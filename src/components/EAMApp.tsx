@@ -141,7 +141,7 @@ const AuditLogsPage = lazy(() => import('./modules/SettingsPages').then(m => ({ 
 
 function AppShell() {
   const { currentPage, navigate, toggleSidebar, setMobileSidebarOpen, fetchModules } = useNavigationStore();
-  const { user, isAuthenticated, isLoading, fetchMe, logout } = useAuthStore();
+  const { user, isAuthenticated, isLoading, fetchMe, logout, hasPermission, isAdmin } = useAuthStore();
 
   React.useEffect(() => {
     fetchMe();
@@ -455,9 +455,13 @@ function AppShell() {
                 <DropdownMenuItem onClick={() => navigate('dashboard')}><LayoutDashboard className="h-4 w-4 mr-2.5" />Dashboard</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate('notifications')}><Bell className="h-4 w-4 mr-2.5" />Notifications</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate('settings-company')}><Building2 className="h-4 w-4 mr-2.5" />Company Profile</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('settings-audit')}><History className="h-4 w-4 mr-2.5" />Audit Logs</DropdownMenuItem>
-                <DropdownMenuSeparator />
+                {hasPermission('system_settings.view') && (
+                  <>
+                    <DropdownMenuItem onClick={() => navigate('settings-company')}><Building2 className="h-4 w-4 mr-2.5" />Company Profile</DropdownMenuItem>
+                    {isAdmin() && <DropdownMenuItem onClick={() => navigate('settings-audit')}><History className="h-4 w-4 mr-2.5" />Audit Logs</DropdownMenuItem>}
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/30" onClick={logout}>
                   <LogOut className="h-4 w-4 mr-2.5" />Sign Out
                 </DropdownMenuItem>

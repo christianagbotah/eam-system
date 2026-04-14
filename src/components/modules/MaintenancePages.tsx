@@ -52,6 +52,7 @@ import {
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 export function MaintenanceRequestsPage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,7 +70,7 @@ export function MaintenanceRequestsPage() {
     return requests.filter(r =>
       r.title.toLowerCase().includes(q) ||
       r.requestNumber.toLowerCase().includes(q) ||
-      (r.assetName || '').toLowerCase().includes(q) ||
+      (r.assetName || (r as any).asset?.name || '').toLowerCase().includes(q) ||
       (r.requester?.fullName || '').toLowerCase().includes(q)
     );
   }, [requests, searchText]);
@@ -198,7 +199,7 @@ export function MaintenanceRequestsPage() {
                   <TableCell className="hidden md:table-cell"><PriorityBadge priority={mr.priority} /></TableCell>
                   <TableCell><StatusBadge status={mr.status} /></TableCell>
                   <TableCell className="text-sm hidden lg:table-cell">{mr.requester?.fullName}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate hidden xl:table-cell">{mr.assetName || '-'}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate hidden xl:table-cell">{(mr as any).asset?.name || mr.assetName || '-'}</TableCell>
                   <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{formatDate(mr.createdAt)}</TableCell>
                   <TableCell>
                     {mr.machineDown && <Badge variant="destructive" className="text-[10px]">DOWN</Badge>}
@@ -474,6 +475,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const [comment, setComment] = useState('');
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectNotes, setRejectNotes] = useState('');
+  const [approveDialogOpen, setApproveDialogOpen] = useState(false);
   const { hasPermission } = useAuthStore();
 
   // Assign to Planner dialog
@@ -531,6 +533,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
       handleRefresh();
       onUpdate();
       setRejectDialogOpen(false);
+      setApproveDialogOpen(false);
       setRejectNotes('');
     } else {
       toast.error(res.error || 'Action failed');
@@ -656,7 +659,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectDialogOpen(true)}>
                 <XCircle className="h-4 w-4 mr-1" />Reject
               </Button>
-              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={() => handleAction('approve', '')}>
+              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={() => setApproveDialogOpen(true)}>
                 <CheckCircle2 className="h-4 w-4 mr-1" />Approve
               </Button>
             </>
@@ -687,6 +690,17 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Approve Confirmation Dialog */}
+      <ConfirmDialog
+        open={approveDialogOpen}
+        onOpenChange={setApproveDialogOpen}
+        title="Approve Maintenance Request"
+        description="Are you sure you want to approve this maintenance request? This will allow it to be assigned to a planner for work order creation."
+        confirmLabel="Yes, Approve"
+        loading={actionLoading}
+        onConfirm={() => handleAction('approve', '')}
+      />
 
       {/* Assign to Planner Dialog */}
       <Dialog open={assignPlannerOpen} onOpenChange={setAssignPlannerOpen}>
@@ -919,7 +933,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               <Separator />
               <div className="flex justify-between"><span className="text-muted-foreground">Location</span><span className="font-medium">{mr.location || '-'}</span></div>
               <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Asset</span><span className="font-medium">{mr.assetName || '-'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Asset</span><span className="font-medium">{mr.asset?.name || mr.assetName || '-'}</span></div>
               <Separator />
               <div className="flex justify-between"><span className="text-muted-foreground">Requested By</span><span className="font-medium">{mr.requester?.fullName}</span></div>
               <Separator />
@@ -1363,6 +1377,7 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const [actionLoading, setActionLoading] = useState(false);
   const [comment, setComment] = useState('');
   const [actionDialog, setActionDialog] = useState<string | null>(null);
+  const [woConfirmAction, setWoConfirmAction] = useState<{ action: string; label: string; variant?: 'default' | 'destructive'; description: string } | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
   const { hasPermission, user, isAdmin } = useAuthStore();
   // Edit WO
@@ -1650,6 +1665,21 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
 
   // Special actions that need dialogs
   const needsDialog = new Set(['assign', 'complete']);
+
+  // Confirm dialog descriptions for WO actions
+  const woActionDescriptions: Record<string, { description: string; label: string; variant?: 'default' | 'destructive' }> = {
+    'approve': { description: 'Are you sure you want to approve this work order? This will allow it to be planned and assigned.', label: 'Yes, Approve' },
+    'request': { description: 'Are you sure you want to submit this work order for approval?', label: 'Yes, Submit' },
+    'plan': { description: 'Are you sure you want to mark this work order as planned?', label: 'Yes, Plan' },
+    'start': { description: 'Are you sure you want to start work on this work order? This will change the status to In Progress.', label: 'Yes, Start Work' },
+    'verify': { description: 'Are you sure you want to verify this completed work order?', label: 'Yes, Verify' },
+    'close': { description: 'Are you sure you want to close this work order? This action cannot be easily reversed.', label: 'Yes, Close', variant: 'destructive' },
+    'hold': { description: 'Are you sure you want to put this work order on hold?', label: 'Yes, Put On Hold' },
+    'resume': { description: 'Are you sure you want to resume this work order?', label: 'Yes, Resume' },
+    'cancel': { description: 'Are you sure you want to cancel this work order? This will stop all work and cannot be easily reversed.', label: 'Yes, Cancel', variant: 'destructive' },
+    'wait-parts': { description: 'Are you sure you want to set this work order to Waiting for Parts?', label: 'Yes, Wait for Parts' },
+  };
+
   const canEdit = !['closed', 'cancelled'].includes(wo.status);
   const readOnlyDisabled = isReadOnly;
 
@@ -1701,6 +1731,15 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                   setActionDialog(ta.actionName);
                 } else if (ta.requiresReason) {
                   setActionDialog(`reason:${ta.actionName}`);
+                } else if (woActionDescriptions[ta.actionName]) {
+                  // Show confirmation dialog for sensitive actions
+                  const desc = woActionDescriptions[ta.actionName];
+                  setWoConfirmAction({
+                    action: ta.actionName,
+                    label: desc.label,
+                    variant: desc.variant || 'default',
+                    description: desc.description,
+                  });
                 } else {
                   handleAction(ta.actionName);
                 }
@@ -1937,6 +1976,23 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* WO Action Confirmation Dialog */}
+      <ConfirmDialog
+        open={!!woConfirmAction}
+        onOpenChange={(open) => { if (!open) setWoConfirmAction(null); }}
+        title={`Confirm Work Order Action`}
+        description={woConfirmAction?.description || 'Are you sure you want to proceed with this action?'}
+        confirmLabel={woConfirmAction?.label || 'Confirm'}
+        variant={woConfirmAction?.variant || 'default'}
+        loading={actionLoading}
+        onConfirm={() => {
+          if (woConfirmAction) {
+            handleAction(woConfirmAction.action);
+            setWoConfirmAction(null);
+          }
+        }}
+      />
 
       {/* Body */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

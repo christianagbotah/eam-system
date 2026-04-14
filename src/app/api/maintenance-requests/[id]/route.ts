@@ -11,6 +11,7 @@ export async function GET(
     const mr = await db.maintenanceRequest.findUnique({
       where: { id },
       include: {
+        asset: { select: { id: true, name: true, assetTag: true, serialNumber: true } },
         requester: { select: { id: true, fullName: true, username: true, department: true } },
         supervisor: { select: { id: true, fullName: true, username: true } },
         approver: { select: { id: true, fullName: true, username: true } },
@@ -108,6 +109,7 @@ export async function PUT(
       where: { id },
       data: updateData,
       include: {
+        asset: { select: { id: true, name: true, assetTag: true, serialNumber: true } },
         requester: { select: { id: true, fullName: true, username: true } },
         supervisor: { select: { id: true, fullName: true, username: true } },
         approver: { select: { id: true, fullName: true, username: true } },

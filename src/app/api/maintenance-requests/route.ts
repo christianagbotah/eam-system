@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
       db.maintenanceRequest.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,
         include: {
+          asset: { select: { id: true, name: true, assetTag: true, serialNumber: true } },
           requester: { select: { id: true, fullName: true, username: true } },
           supervisor: { select: { id: true, fullName: true, username: true } },
           approver: { select: { id: true, fullName: true, username: true } },

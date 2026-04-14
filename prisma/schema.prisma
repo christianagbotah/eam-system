@@ -350,6 +350,9 @@ model MaintenanceRequest {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  // Asset relation
+  asset         Asset?      @relation("MRAsset", fields: [assetId], references: [id])
+
   // User relations
   requester     User?       @relation("MRRequester", fields: [requestedBy], references: [id])
   supervisor    User?       @relation("MRSupervisor", fields: [supervisorId], references: [id])
@@ -667,6 +670,7 @@ model Asset {
   bomAsParent         BillOfMaterial[]    @relation("BomParent")
   bomAsChild          BillOfMaterial[]    @relation("BomChild")
   digitalTwin         DigitalTwin?
+  maintenanceRequests MaintenanceRequest[] @relation("MRAsset")
 
   @@map("assets")
 }
