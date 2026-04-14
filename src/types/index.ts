@@ -631,4 +631,5 @@ export type PageName =
   | 'settings-plants'
   | 'settings-departments'
   | 'settings-security'
-  | 'settings-health';
+  | 'settings-health'
+  | 'settings-preferences';

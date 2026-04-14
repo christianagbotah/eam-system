@@ -48,6 +48,8 @@ import {
 import { useTheme } from 'next-themes';
 import { EmptyState, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
 import { AsyncSearchableSelect, MultiSearchableSelect } from '@/components/ui/searchable-select';
+import { usePreferencesStore } from '@/stores/preferencesStore';
+import { Sun, Moon, LayoutGrid, List, Volume2, MonitorSpeaker, CalendarDays, Globe2 } from 'lucide-react';
 
 // SettingsUsersPage
 export function SettingsUsersPage() {
@@ -4912,3 +4914,166 @@ export function SystemHealthPage() {
   );
 }
 
+
+// ============================================================================
+// User Preferences Page
+// ============================================================================
+
+export function UserPreferencesPage() {
+  const { preferences, savePreferences, resetPreferences } = usePreferencesStore();
+  const { theme, setTheme } = useTheme();
+  const user = useAuthStore(s => s.user);
+  const [saving, setSaving] = useState(false);
+
+  const [display, setDisplay] = useState(preferences.display);
+  const [notifPrefs, setNotifPrefs] = useState(preferences.notifications);
+  const [dateTime, setDateTime] = useState(preferences.dateTime);
+
+  useEffect(() => {
+    setDisplay(preferences.display);
+    setNotifPrefs(preferences.notifications);
+    setDateTime(preferences.dateTime);
+  }, [preferences]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const ok = await savePreferences({ display, notifications: notifPrefs, dateTime });
+    if (ok) toast.success('Preferences saved');
+    else toast.error('Failed to save preferences');
+    setSaving(false);
+  };
+
+  const handleReset = () => {
+    resetPreferences();
+    toast.info('Preferences reset to defaults');
+  };
+
+  return (
+    <div className="page-content max-w-3xl">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold tracking-tight">My Preferences</h1>
+        <p className="text-muted-foreground text-sm mt-1">Customize your workspace experience</p>
+      </div>
+      <div className="space-y-6">
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <Avatar className="h-10 w-10 border-2 border-primary/20">
+                <AvatarFallback className="text-sm font-bold bg-primary/10 text-primary">
+                  {user ? getInitials(user.fullName) : '?'}
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <CardTitle className="text-base">{user?.fullName}</CardTitle>
+                <CardDescription className="text-xs">{user?.username} · {user?.email}</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+        </Card>
+
+        <Card className="border-0 shadow-sm">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center">
+                <Monitor className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <CardTitle className="text-sm">Display</CardTitle>
+                <CardDescription>Customize how information is displayed</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5"><Label className="text-sm">Default Landing Page</Label><p className="text-xs text-muted-foreground">Page shown after login</p></div>
+              <Select value={display.defaultPage} onValueChange={v => setDisplay(d => ({ ...d, defaultPage: v }))}>
+                <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[{ value: 'dashboard', label: 'Dashboard' }, { value: 'maintenance-work-orders', label: 'Work Orders' }, { value: 'maintenance-requests', label: 'Maintenance Requests' }, { value: 'assets-machines', label: 'Assets' }, { value: 'notifications', label: 'Notifications' }].map(o => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5"><Label className="text-sm">Items Per Page</Label><p className="text-xs text-muted-foreground">Default list size for tables</p></div>
+              <Select value={String(display.itemsPerPage)} onValueChange={v => setDisplay(d => ({ ...d, itemsPerPage: parseInt(v) }))}>
+                <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[{ v: 10, l: '10' }, { v: 25, l: '25' }, { v: 50, l: '50' }, { v: 100, l: '100' }].map(o => (<SelectItem key={o.v} value={String(o.v)}>{o.l} items</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5"><Label className="text-sm">Compact Mode</Label><p className="text-xs text-muted-foreground">Reduce spacing in tables and lists</p></div>
+              <Switch checked={display.compactMode} onCheckedChange={v => setDisplay(d => ({ ...d, compactMode: v }))} />
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5"><Label className="text-sm">Theme</Label><p className="text-xs text-muted-foreground">Appearance of the interface</p></div>
+              <div className="flex items-center gap-1 border rounded-lg p-1">
+                {([['light', Sun, 'Light'], ['dark', Moon, 'Dark'], ['system', Monitor, 'System']] as const).map(([t, Icon, lbl]) => (
+                  <button key={t} onClick={() => setTheme(t)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${theme === t ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}><Icon className="h-3.5 w-3.5" />{lbl}</button>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center"><Bell className="h-4 w-4 text-amber-600 dark:text-amber-400" /></div>
+              <div><CardTitle className="text-sm">Notifications</CardTitle><CardDescription>Configure notification behavior</CardDescription></div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5"><Label className="text-sm">Notification Sound</Label><p className="text-xs text-muted-foreground">Play sound on new notifications</p></div>
+              <Switch checked={notifPrefs.soundEnabled} onCheckedChange={v => setNotifPrefs(n => ({ ...n, soundEnabled: v }))} />
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5"><Label className="text-sm">Desktop Notifications</Label><p className="text-xs text-muted-foreground">Show browser push notifications</p></div>
+              <Switch checked={notifPrefs.desktopNotifications} onCheckedChange={v => {
+                if (v && typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+                  Notification.requestPermission().then(perm => { if (perm === 'granted') setNotifPrefs(n => ({ ...n, desktopNotifications: true })); else toast.error('Permission denied'); });
+                } else { setNotifPrefs(n => ({ ...n, desktopNotifications: v })); }
+              }} />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-sm">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-purple-100 dark:bg-purple-950/40 flex items-center justify-center"><CalendarDays className="h-4 w-4 text-purple-600 dark:text-purple-400" /></div>
+              <div><CardTitle className="text-sm">Date & Time</CardTitle><CardDescription>Configure date and time formatting</CardDescription></div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5"><Label className="text-sm">Date Format</Label><p className="text-xs text-muted-foreground">How dates are displayed</p></div>
+              <Select value={dateTime.dateFormat} onValueChange={v => setDateTime(d => ({ ...d, dateFormat: v }))}>
+                <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[{ value: 'YYYY-MM-DD', label: '2025-01-15 (ISO)' }, { value: 'MM/DD/YYYY', label: '01/15/2025 (US)' }, { value: 'DD/MM/YYYY', label: '15/01/2025 (EU)' }].map(f => (<SelectItem key={f.value} value={f.value}><span className="font-mono text-xs">{f.label}</span></SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5"><Label className="text-sm">Timezone</Label><p className="text-xs text-muted-foreground">Used for date calculations</p></div>
+              <Badge variant="outline" className="font-mono text-xs max-w-48 truncate"><Globe2 className="h-3 w-3 mr-1" />{dateTime.timezone}</Badge>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="flex items-center justify-between pt-2 pb-6">
+          <Button variant="outline" onClick={handleReset} className="text-muted-foreground"><RefreshCw className="h-3.5 w-3.5 mr-1.5" />Reset to Defaults</Button>
+          <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : <Save className="h-4 w-4 mr-1.5" />}Save Preferences</Button>
+        </div>
+      </div>
+    </div>
+  );
+}

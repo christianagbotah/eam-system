@@ -71,6 +71,7 @@ model User {
   resetToken       String?
   resetTokenExpires DateTime?
   notificationPreferences Json?    // notification preferences (channels, types, quiet hours)
+  preferences         Json?    // user display/notification/datetime preferences
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 

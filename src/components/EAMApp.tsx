@@ -8,6 +8,7 @@ import { LoadingScreen, LoadingSkeleton } from '@/components/shared/helpers';
 import Sidebar from '@/components/shared/Sidebar';
 import NotificationPopover from '@/components/shared/NotificationPopover';
 import GlobalSearch from '@/components/shared/GlobalSearch';
+import CommandPalette from '@/components/CommandPalette';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -19,7 +20,7 @@ import {
 } from '@/components/ui/tooltip';
 import {
   Menu, ChevronLeft, ChevronRight, ChevronDown, Sun, Moon, Bell, LogOut,
-  LayoutDashboard, Building2, History,
+  LayoutDashboard, Building2, History, Search,
 } from 'lucide-react';
 
 // Lazy-loaded module pages
@@ -136,6 +137,7 @@ const SettingsBackupPage = lazy(() => import('./modules/SettingsPages').then(m =
 const AuditLogsPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.AuditLogsPage })));
 const SecuritySettingsPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SecuritySettingsPage })));
 const SystemHealthPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SystemHealthPage })));
+const UserPreferencesPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.UserPreferencesPage })));
 
 
 // ============================================================================
@@ -263,6 +265,7 @@ function AppShell() {
       case 'settings-audit': return <AuditLogsPage />;
       case 'settings-security': return <SecuritySettingsPage />;
       case 'settings-health': return <SystemHealthPage />;
+      case 'settings-preferences': return <UserPreferencesPage />;
       // Legacy fallbacks
       case 'assets':
       case 'asset-detail': return <AssetsPage />;
@@ -375,6 +378,7 @@ function AppShell() {
     'settings-audit': 'Audit Logs',
     'settings-security': 'Security',
     'settings-health': 'System Health',
+    'settings-preferences': 'My Preferences',
     // Legacy
     'assets': 'Asset Register',
     'asset-detail': 'Asset Details',
@@ -385,6 +389,7 @@ function AppShell() {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <GlobalSearch />
+      <CommandPalette />
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Bar */}
@@ -407,6 +412,28 @@ function AppShell() {
             <span className="text-xs text-muted-foreground">iAssetsPro</span>
           </div>
           <div className="flex-1" />
+          {/* Command Palette trigger */}
+          <TooltipProvider delayDuration={0}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="hidden sm:flex h-8 w-auto gap-2 px-3 text-muted-foreground hover:text-foreground hover:bg-muted"
+                  onClick={() => {
+                    if ((window as any).__openCommandPalette) (window as any).__openCommandPalette();
+                  }}
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  <span className="text-xs">Navigate...</span>
+                  <kbd className="pointer-events-none hidden sm:inline-flex h-5 select-none items-center gap-0.5 rounded border bg-muted/50 px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+                    ⌘⇧K
+                  </kbd>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Command Palette (⌘⇧K)</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <div className="flex items-center gap-1">
             {/* Theme Toggle */}
             <TooltipProvider delayDuration={0}>
