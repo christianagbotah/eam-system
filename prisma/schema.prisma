@@ -349,6 +349,8 @@ model MaintenanceRequest {
   plannedEnd        DateTime?
   estimatedHours    Float?
   slaHours          Float?
+  escalationLevel   Int       @default(0)         // 0=none, 1=supervisor, 2=manager
+  lastEscalatedAt   DateTime?
   notes             String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -439,6 +441,9 @@ model WorkOrder {
 
   // Status History relations
   statusHistory      WorkOrderStatusHistory[]
+
+  escalationLevel          Int       @default(0)         // 0=none, 1=supervisor, 2=manager
+  lastEscalatedAt         DateTime?
 
   // Repair module relations
   repairMaterialRequests  RepairMaterialRequest[]
@@ -549,6 +554,22 @@ model AuditLog {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("audit_logs")
+}
+
+// ============================================================================
+// 7.5 ESCALATION LOG
+// ============================================================================
+
+model EscalationLog {
+  id          String   @id @default(cuid())
+  entityType  String                           // maintenance_request, work_order, safety_incident
+  entityId    String                           // reference to the entity
+  level       Int                              // 1=first escalation, 2=second escalation
+  reason      String                           // description of why escalated
+  notifiedUsers String                         // JSON array of user IDs who were notified
+  createdAt   DateTime @default(now())
+
+  @@map("escalation_logs")
 }
 
 // ============================================================================
@@ -1245,6 +1266,8 @@ model SafetyIncident {
   daysLost          Int       @default(0)
   cost              Float?
   notes             String?
+  escalationLevel   Int       @default(0)         // 0=none, 1=officer, 2=manager
+  lastEscalatedAt   DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

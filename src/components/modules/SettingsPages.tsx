@@ -40,7 +40,7 @@ import {
   Radio, Ruler, GraduationCap, TriangleAlert, Activity, BrainCircuit,
   GitBranch, ScanLine, Truck, FolderOpen, Target, TrendingUp, Zap, Mail,
   Send, ShieldAlert, ShieldCheck, BarChart3, Package, ClipboardList, Gauge, X,
-  AlertCircle, FileBarChart, EyeOff, Save, Wifi,
+  AlertCircle, FileBarChart, EyeOff, Save, Wifi, Play,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { EmptyState, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
@@ -2244,6 +2244,9 @@ export function SettingsGeneralPage() {
       {/* Email Configuration (SMTP) — only visible to admins / system_settings.update */}
       <SmtpConfigCard />
 
+      {/* Escalation Settings — only visible to admins */}
+      <EscalationSettingsCard />
+
       <Button onClick={handleSave} disabled={saving}>{saving ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Saving...</> : 'Save Changes'}</Button>
     </div>
   );
@@ -2462,6 +2465,342 @@ function SmtpConfigCard() {
             <Badge className="bg-red-100 text-red-700 border-red-200 gap-1">
               <XCircle className="h-3 w-3" /> Email Failed
             </Badge>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Escalation Settings Card ──────────────────────────────────────────────
+interface EscalationConfigData {
+  enabled: boolean;
+  maintenanceRequests: { enabled: boolean; level1ThresholdHours: number; level2ThresholdHours: number; cooldownMinutes: number };
+  workOrders: { enabled: boolean; level1ThresholdHours: number; level2ThresholdHours: number; cooldownMinutes: number };
+  safetyIncidents: { enabled: boolean; level1ThresholdHours: number; level2ThresholdHours: number; cooldownMinutes: number };
+  lastCheckAt: string | null;
+  lastCheckResults: {
+    maintenanceRequests: { checked: number; level1: number; level2: number; skipped: number };
+    workOrders: { checked: number; level1: number; level2: number; skipped: number };
+    safetyIncidents: { checked: number; level1: number; level2: number; skipped: number };
+  } | null;
+}
+
+function EscalationSettingsCard() {
+  const { hasPermission: hp, isAdmin: isAdm } = useAuthStore();
+  const canManage = hp('system_settings.update') || isAdm();
+
+  const [config, setConfig] = useState<EscalationConfigData>({
+    enabled: true,
+    maintenanceRequests: { enabled: true, level1ThresholdHours: 24, level2ThresholdHours: 48, cooldownMinutes: 360 },
+    workOrders: { enabled: true, level1ThresholdHours: 0, level2ThresholdHours: 48, cooldownMinutes: 360 },
+    safetyIncidents: { enabled: true, level1ThresholdHours: 4, level2ThresholdHours: 8, cooldownMinutes: 240 },
+    lastCheckAt: null,
+    lastCheckResults: null,
+  });
+  const [saving, setSaving] = useState(false);
+  const [runningCheck, setRunningCheck] = useState(false);
+  const [checkResult, setCheckResult] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    api.get<EscalationConfigData>('/api/escalation/config').then(res => {
+      if (res.success && res.data) setConfig(res.data as EscalationConfigData);
+      setLoaded(true);
+    });
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const res = await api.put('/api/escalation/config', config);
+    if (res.success) {
+      toast.success('Escalation settings saved');
+    } else {
+      toast.error(res.error || 'Failed to save escalation settings');
+    }
+    setSaving(false);
+  };
+
+  const handleRunCheck = async () => {
+    setRunningCheck(true);
+    setCheckResult(null);
+    try {
+      const res = await api.post<{ message: string; results: NonNullable<EscalationConfigData['lastCheckResults']> }>('/api/escalation/check');
+      if (res.success && res.data) {
+        setCheckResult(res.data.message || 'Check complete');
+        toast.success(res.data.message || 'Escalation check complete');
+        // Refresh config to get updated lastCheckAt
+        api.get<EscalationConfigData>('/api/escalation/config').then(r => {
+          if (r.success && r.data) setConfig(r.data as EscalationConfigData);
+        });
+      } else {
+        setCheckResult(res.error || 'Check failed');
+        toast.error(res.error || 'Escalation check failed');
+      }
+    } catch (err: any) {
+      setCheckResult(err.message || 'Check failed');
+      toast.error('Failed to run escalation check');
+    }
+    setRunningCheck(false);
+  };
+
+  if (!canManage || !loaded) return null;
+
+  const totalEscalated = config.lastCheckResults
+    ? (config.lastCheckResults.maintenanceRequests.level1 + config.lastCheckResults.maintenanceRequests.level2
+      + config.lastCheckResults.workOrders.level1 + config.lastCheckResults.workOrders.level2
+      + config.lastCheckResults.safetyIncidents.level1 + config.lastCheckResults.safetyIncidents.level2)
+    : 0;
+
+  return (
+    <Card className="mt-6">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              Escalation Settings
+            </CardTitle>
+            <CardDescription>Auto-escalate overdue maintenance requests, work orders, and safety incidents</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="esc-enabled" className="text-sm">Auto-Escalation</Label>
+            <Switch
+              id="esc-enabled"
+              checked={config.enabled}
+              onCheckedChange={v => setConfig(c => ({ ...c, enabled: v }))}
+            />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {/* Summary of last check */}
+        {config.lastCheckAt && (
+          <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Last check</span>
+              <span className="font-medium">{new Date(config.lastCheckAt).toLocaleString()}</span>
+            </div>
+            {config.lastCheckResults && (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-amber-600">{config.lastCheckResults.maintenanceRequests.level1 + config.lastCheckResults.maintenanceRequests.level2}</p>
+                    <p className="text-[10px] text-muted-foreground">MR Escalated</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-orange-600">{config.lastCheckResults.workOrders.level1 + config.lastCheckResults.workOrders.level2}</p>
+                    <p className="text-[10px] text-muted-foreground">WO Escalated</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-lg font-bold text-red-600">{config.lastCheckResults.safetyIncidents.level1 + config.lastCheckResults.safetyIncidents.level2}</p>
+                    <p className="text-[10px] text-muted-foreground">Safety Escalated</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Total items checked</span>
+                  <span className="font-medium">{config.lastCheckResults.maintenanceRequests.checked + config.lastCheckResults.workOrders.checked + config.lastCheckResults.safetyIncidents.checked}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Total skipped (cooldown)</span>
+                  <span className="font-medium">{config.lastCheckResults.maintenanceRequests.skipped + config.lastCheckResults.workOrders.skipped + config.lastCheckResults.safetyIncidents.skipped}</span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        <Separator />
+
+        {/* Threshold Configuration */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Maintenance Requests */}
+          <div className="space-y-3 rounded-lg border border-border/60 p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold">Maintenance Requests</p>
+              <Switch
+                checked={config.maintenanceRequests.enabled}
+                onCheckedChange={v => setConfig(c => ({
+                  ...c, maintenanceRequests: { ...c.maintenanceRequests, enabled: v },
+                }))}
+                className="scale-90"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Level 1 (hrs) — Supervisor</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={config.maintenanceRequests.level1ThresholdHours}
+                  onChange={e => setConfig(c => ({
+                    ...c, maintenanceRequests: { ...c.maintenanceRequests, level1ThresholdHours: parseInt(e.target.value) || 24 },
+                  }))}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Level 2 (hrs) — Manager</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={config.maintenanceRequests.level2ThresholdHours}
+                  onChange={e => setConfig(c => ({
+                    ...c, maintenanceRequests: { ...c.maintenanceRequests, level2ThresholdHours: parseInt(e.target.value) || 48 },
+                  }))}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Cooldown (min)</Label>
+                <Input
+                  type="number"
+                  min={30}
+                  max={1440}
+                  value={config.maintenanceRequests.cooldownMinutes}
+                  onChange={e => setConfig(c => ({
+                    ...c, maintenanceRequests: { ...c.maintenanceRequests, cooldownMinutes: parseInt(e.target.value) || 360 },
+                  }))}
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Work Orders */}
+          <div className="space-y-3 rounded-lg border border-border/60 p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold">Work Orders</p>
+              <Switch
+                checked={config.workOrders.enabled}
+                onCheckedChange={v => setConfig(c => ({
+                  ...c, workOrders: { ...c.workOrders, enabled: v },
+                }))}
+                className="scale-90"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Level 1 (hrs) — Technician+Supv</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={720}
+                  value={config.workOrders.level1ThresholdHours}
+                  onChange={e => setConfig(c => ({
+                    ...c, workOrders: { ...c.workOrders, level1ThresholdHours: parseInt(e.target.value) || 0 },
+                  }))}
+                  className="h-8 text-xs"
+                />
+                <p className="text-[10px] text-muted-foreground">0 = based on plannedEnd only</p>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Level 2 (hrs) — Manager</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={config.workOrders.level2ThresholdHours}
+                  onChange={e => setConfig(c => ({
+                    ...c, workOrders: { ...c.workOrders, level2ThresholdHours: parseInt(e.target.value) || 48 },
+                  }))}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Cooldown (min)</Label>
+                <Input
+                  type="number"
+                  min={30}
+                  max={1440}
+                  value={config.workOrders.cooldownMinutes}
+                  onChange={e => setConfig(c => ({
+                    ...c, workOrders: { ...c.workOrders, cooldownMinutes: parseInt(e.target.value) || 360 },
+                  }))}
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Safety Incidents */}
+          <div className="space-y-3 rounded-lg border border-red-200 dark:border-red-900/40 p-3 bg-red-50/30 dark:bg-red-950/10">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-red-700 dark:text-red-400">Safety Incidents</p>
+              <Switch
+                checked={config.safetyIncidents.enabled}
+                onCheckedChange={v => setConfig(c => ({
+                  ...c, safetyIncidents: { ...c.safetyIncidents, enabled: v },
+                }))}
+                className="scale-90"
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Level 1 (hrs) — Officer</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={config.safetyIncidents.level1ThresholdHours}
+                  onChange={e => setConfig(c => ({
+                    ...c, safetyIncidents: { ...c.safetyIncidents, level1ThresholdHours: parseInt(e.target.value) || 4 },
+                  }))}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Level 2 (hrs) — Plant Manager</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={720}
+                  value={config.safetyIncidents.level2ThresholdHours}
+                  onChange={e => setConfig(c => ({
+                    ...c, safetyIncidents: { ...c.safetyIncidents, level2ThresholdHours: parseInt(e.target.value) || 8 },
+                  }))}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Cooldown (min)</Label>
+                <Input
+                  type="number"
+                  min={30}
+                  max={1440}
+                  value={config.safetyIncidents.cooldownMinutes}
+                  onChange={e => setConfig(c => ({
+                    ...c, safetyIncidents: { ...c.safetyIncidents, cooldownMinutes: parseInt(e.target.value) || 240 },
+                  }))}
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* Action buttons */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={handleSave} disabled={saving || !config.enabled} size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            {saving ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+            Save Settings
+          </Button>
+          <Button
+            onClick={handleRunCheck}
+            disabled={runningCheck}
+            variant="outline"
+            size="sm"
+            className="border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/30"
+          >
+            {runningCheck ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Play className="h-3.5 w-3.5 mr-1.5" />}
+            Run Escalation Check Now
+          </Button>
+          {checkResult && (
+            <p className="text-xs text-muted-foreground">{checkResult}</p>
           )}
         </div>
       </CardContent>
