@@ -135,7 +135,7 @@ export function SettingsUsersPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Search users..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add User</Button>
+          {(hasPermission('users.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add User</Button>}
         </div>
       </div>
 
@@ -179,9 +179,9 @@ export function SettingsUsersPage() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(u)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                        {(hasPermission('users.update') || isAdmin()) && <DropdownMenuItem onClick={() => openEdit(u)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>}
                         <DropdownMenuItem onClick={() => { setSelectedUser(u); setResetPwd(''); setResetOpen(true); }}><Key className="h-3.5 w-3.5 mr-2" />Reset Password</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => toggleStatus(u)}>{u.status === 'active' ? <UserPlus className="h-3.5 w-3.5 mr-2" /> : <UserMinus className="h-3.5 w-3.5 mr-2" />}{u.status === 'active' ? 'Deactivate' : 'Activate'}</DropdownMenuItem>
+                        {(hasPermission('users.update') || isAdmin()) && <DropdownMenuItem onClick={() => toggleStatus(u)}>{u.status === 'active' ? <UserPlus className="h-3.5 w-3.5 mr-2" /> : <UserMinus className="h-3.5 w-3.5 mr-2" />}{u.status === 'active' ? 'Deactivate' : 'Activate'}</DropdownMenuItem>}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -449,7 +449,7 @@ export function SettingsRolesPage() {
           <h1 className="text-xl md:text-2xl font-bold tracking-tight">Roles & Permissions</h1>
           <p className="text-muted-foreground text-xs md:text-sm mt-0.5">Manage system roles and their associated permissions</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm"><Plus className="h-4 w-4 mr-1.5" /><span className="hidden sm:inline">Create</span> Role</Button>
+        {(hasPermission('roles.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm"><Plus className="h-4 w-4 mr-1.5" /><span className="hidden sm:inline">Create</span> Role</Button>}
       </div>
 
       {/* ─── Mobile: Role selector dropdown above permissions ─── */}
@@ -492,10 +492,10 @@ export function SettingsRolesPage() {
           {/* Mobile action buttons for selected role */}
           {selectedRoleData && (
             <div className="flex items-center gap-1.5 mt-2">
-              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => openEditRole(selectedRoleData)}>
+              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => openEditRole(selectedRoleData)} disabled={!hasPermission('roles.update') && !isAdmin()}>
                 <Pencil className="h-3 w-3 mr-1" />Edit
               </Button>
-              {!selectedRoleData.isSystem && (
+              {!selectedRoleData.isSystem && (hasPermission('roles.delete') || isAdmin()) && (
                 <Button variant="outline" size="sm" className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleDeleteRole(selectedRoleData)}>
                   <Trash2 className="h-3 w-3 mr-1" />Delete
                 </Button>
@@ -541,8 +541,8 @@ export function SettingsRolesPage() {
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-36">
-                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEditRole(role); }}><Pencil className="h-3 w-3 mr-2" />Edit</DropdownMenuItem>
-                      {!role.isSystem && <DropdownMenuItem className="text-red-600" onClick={(e) => { e.stopPropagation(); handleDeleteRole(role); }}><Trash2 className="h-3 w-3 mr-2" />Delete</DropdownMenuItem>}
+                      {(hasPermission('roles.update') || isAdmin()) && <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEditRole(role); }}><Pencil className="h-3 w-3 mr-2" />Edit</DropdownMenuItem>}
+                      {!role.isSystem && (hasPermission('roles.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={(e) => { e.stopPropagation(); handleDeleteRole(role); }}><Trash2 className="h-3 w-3 mr-2" />Delete</DropdownMenuItem>}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -1565,7 +1565,7 @@ export function SettingsPlantsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Plants</h1>
           <p className="text-muted-foreground text-sm mt-1">Manage plant locations and facilities</p>
         </div>
-        <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Plant</Button>
+        {(hasPermission('system_settings.update') || isAdmin()) && <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Plant</Button>}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {plants.length === 0 ? (
@@ -1588,8 +1588,8 @@ export function SettingsPlantsPage() {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => openEdit(p)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
-                      <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(p)}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>
+                      {(hasPermission('system_settings.update') || isAdmin()) && <DropdownMenuItem onClick={() => openEdit(p)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>}
+                      {(hasPermission('system_settings.update') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(p)}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -1683,7 +1683,7 @@ export function SettingsDepartmentsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Departments</h1>
           <p className="text-muted-foreground text-sm mt-1">Manage organizational departments</p>
         </div>
-        <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Department</Button>
+        {(hasPermission('system_settings.update') || isAdmin()) && <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Department</Button>}
       </div>
       <Card className="border-0 shadow-sm dark:bg-card overflow-hidden">
         <div className="overflow-x-auto">
@@ -1716,8 +1716,8 @@ export function SettingsDepartmentsPage() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEdit(d)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
-                        <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(d)}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>
+                        {(hasPermission('system_settings.update') || isAdmin()) && <DropdownMenuItem onClick={() => openEdit(d)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                        {(hasPermission('system_settings.update') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(d)}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -2662,7 +2662,7 @@ export function SettingsBackupPage() {
               ].map(exp => {
                 const I = exp.icon;
                 return (
-                  <Button key={exp.label} variant="outline" onClick={() => handleExport(exp.label)} className="h-auto py-3">
+                  {(hasPermission('reports.export') || isAdmin()) && <Button key={exp.label} variant="outline" onClick={() => handleExport(exp.label)} className="h-auto py-3">
                     <div className="flex flex-col items-center gap-1.5">
                       <I className="h-5 w-5 text-muted-foreground" />
                       <span className="text-xs">Export {exp.label} CSV</span>

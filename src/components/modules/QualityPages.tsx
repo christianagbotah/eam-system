@@ -51,6 +51,7 @@ export function QualityInspectionsPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [editLoading, setEditLoading] = useState(false);
+  const { hasPermission, isAdmin } = useAuthStore();
   const inspStatusColors: Record<string, string> = { passed: 'bg-emerald-50 text-emerald-700 border-emerald-200', failed: 'bg-red-50 text-red-700 border-red-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', pending: 'bg-sky-50 text-sky-700 border-sky-200' };
   const loadInspections = async () => {
     const res = await api.get('/api/quality-inspections');
@@ -96,7 +97,7 @@ export function QualityInspectionsPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Quality Inspections</h1><p className="text-muted-foreground text-sm mt-1">Schedule, conduct, and track quality inspections</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Inspection</Button>
+        {(hasPermission('quality.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Inspection</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {[
@@ -120,7 +121,7 @@ export function QualityInspectionsPage() {
               <TableCell><Badge variant="outline" className={inspStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
               <TableCell className="text-sm">{r.inspectedBy?.fullName || '-'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{formatDate(r.scheduledDate)}</TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('quality.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('quality.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ))}
         </TableBody></Table>
@@ -158,6 +159,7 @@ export function QualityNcrPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [editLoading, setEditLoading] = useState(false);
+  const { hasPermission, isAdmin } = useAuthStore();
   const sevColors: Record<string, string> = { critical: 'bg-red-50 text-red-700 border-red-200', major: 'bg-orange-50 text-orange-700 border-orange-200', minor: 'bg-amber-50 text-amber-700 border-amber-200' };
   const ncrStatusColors: Record<string, string> = { open: 'bg-amber-50 text-amber-700 border-amber-200', investigating: 'bg-sky-50 text-sky-700 border-sky-200', root_cause_found: 'bg-violet-50 text-violet-700 border-violet-200', corrective_action: 'bg-indigo-50 text-indigo-700 border-indigo-200', closed: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
   const loadNcrs = async () => {
@@ -205,7 +207,7 @@ export function QualityNcrPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Non-Conformance Reports</h1><p className="text-muted-foreground text-sm mt-1">Manage non-conformances, investigations, and dispositions</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New NCR</Button>
+        {(hasPermission('quality.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New NCR</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {[
@@ -230,7 +232,7 @@ export function QualityNcrPage() {
               <TableCell><Badge variant="secondary" className="text-[11px]">{r.type}</Badge></TableCell>
               <TableCell className="text-sm">{r.raisedBy?.fullName || '-'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{formatDate(r.createdAt)}</TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('quality.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('quality.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ))}
         </TableBody></Table>
@@ -268,6 +270,7 @@ export function QualityAuditsPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [editLoading, setEditLoading] = useState(false);
+  const { hasPermission, isAdmin } = useAuthStore();
   const auditStatusColors: Record<string, string> = { planned: 'bg-sky-50 text-sky-700 border-sky-200', in_progress: 'bg-amber-50 text-amber-700 border-amber-200', completed: 'bg-emerald-50 text-emerald-700 border-emerald-200', closed: 'bg-slate-100 text-slate-500 border-slate-200' };
   const loadAudits = async () => {
     const res = await api.get('/api/quality-audits');
@@ -314,7 +317,7 @@ export function QualityAuditsPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Quality Audits</h1><p className="text-muted-foreground text-sm mt-1">Plan and execute internal, external, and supplier audits</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Audit</Button>
+        {(hasPermission('quality.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Audit</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {[
@@ -338,7 +341,7 @@ export function QualityAuditsPage() {
               <TableCell><Badge variant="outline" className={auditStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
               <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{r.scope || '-'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{formatDate(r.scheduledDate)}</TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('quality.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('quality.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ))}
         </TableBody></Table>
@@ -374,6 +377,7 @@ export function QualityControlPlansPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [editLoading, setEditLoading] = useState(false);
+  const { hasPermission, isAdmin } = useAuthStore();
   const cpStatusColors: Record<string, string> = { active: 'bg-emerald-50 text-emerald-700 border-emerald-200', draft: 'bg-slate-100 text-slate-600 border-slate-200', under_review: 'bg-amber-50 text-amber-700 border-amber-200', archived: 'bg-slate-100 text-slate-500 border-slate-200' };
   const loadPlans = async () => {
     const res = await api.get('/api/quality-control-plans');
@@ -420,7 +424,7 @@ export function QualityControlPlansPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Quality Control Plans</h1><p className="text-muted-foreground text-sm mt-1">Define and manage control plans for products and processes</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Plan</Button>
+        {(hasPermission('quality.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Plan</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {[
@@ -444,7 +448,7 @@ export function QualityControlPlansPage() {
               <TableCell><Badge variant="outline" className={r.isActive ? cpStatusColors.active : cpStatusColors.draft}>{r.isActive ? 'ACTIVE' : 'INACTIVE'}</Badge></TableCell>
               <TableCell className="text-center"><Badge variant="secondary" className="text-[11px]">{r.sampleSize || '-'}</Badge></TableCell>
               <TableCell className="text-sm text-muted-foreground">{formatDate(r.createdAt)}</TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('quality.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('quality.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ))}
         </TableBody></Table>
@@ -482,6 +486,7 @@ export function QualitySpcPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [editLoading, setEditLoading] = useState(false);
+  const { hasPermission, isAdmin } = useAuthStore();
   const spcStatusColors: Record<string, string> = { in_control: 'bg-emerald-50 text-emerald-700 border-emerald-200', warning: 'bg-amber-50 text-amber-700 border-amber-200', out_of_control: 'bg-red-50 text-red-700 border-red-200' };
   const cpkColor = (v: number) => v >= 1.33 ? 'text-emerald-600 font-semibold' : v >= 1.0 ? 'text-amber-600 font-semibold' : 'text-red-600 font-semibold';
   const fetchSpcData = useCallback(async () => {
@@ -541,7 +546,7 @@ export function QualitySpcPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Statistical Process Control</h1><p className="text-muted-foreground text-sm mt-1">Monitor process stability with SPC charts and capability indices</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Process</Button>
+        {(hasPermission('quality.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Process</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
@@ -564,7 +569,7 @@ export function QualitySpcPage() {
                 <TableCell className={`text-right font-mono text-sm ${cpkColor(r.cp)}`}>{r.samples.length > 1 ? r.cp.toFixed(2) : '-'}</TableCell>
                 <TableCell className={`text-right font-mono text-sm ${cpkColor(r.cpk)}`}>{r.samples.length > 1 ? r.cpk.toFixed(2) : '-'}</TableCell>
                 <TableCell><Badge variant="outline" className={spcStatusColors[r.controlStatus] || ''}>{(r.controlStatus || 'in_control').replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('quality.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('quality.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
@@ -608,6 +613,7 @@ export function QualityCapaPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [editLoading, setEditLoading] = useState(false);
+  const { hasPermission, isAdmin } = useAuthStore();
   const capaPriorityColors: Record<string, string> = { critical: 'bg-red-50 text-red-700 border-red-200', high: 'bg-orange-50 text-orange-700 border-orange-200', medium: 'bg-amber-50 text-amber-700 border-amber-200', low: 'bg-slate-100 text-slate-600 border-slate-200' };
   const capaStatusColors: Record<string, string> = { open: 'bg-amber-50 text-amber-700 border-amber-200', in_progress: 'bg-sky-50 text-sky-700 border-sky-200', implemented: 'bg-violet-50 text-violet-700 border-violet-200', verified: 'bg-emerald-50 text-emerald-700 border-emerald-200', closed: 'bg-slate-100 text-slate-500 border-slate-200' };
   const loadCapas = async () => {
@@ -655,7 +661,7 @@ export function QualityCapaPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Corrective & Preventive Actions</h1><p className="text-muted-foreground text-sm mt-1">Manage CAPAs for continuous quality improvement</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New CAPA</Button>
+        {(hasPermission('quality.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New CAPA</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {[
@@ -681,7 +687,7 @@ export function QualityCapaPage() {
               <TableCell><Badge variant="outline" className={capaPriorityColors[r.severity] || ''}>{r.severity.toUpperCase()}</Badge></TableCell>
               <TableCell><Badge variant="outline" className={capaStatusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
               <TableCell className="text-sm text-muted-foreground">{formatDate(r.dueDate)}</TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('quality.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('quality.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ))}
         </TableBody></Table>

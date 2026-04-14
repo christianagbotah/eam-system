@@ -46,6 +46,7 @@ export function ProductionWorkCentersPage() {
   const [form, setForm] = useState({ name: '', type: 'production', location: '', capacity: '', description: '' });
   const [wcData, setWcData] = useState<any[]>([]);
   const [kpisData, setKpisData] = useState({ total: 0, active: 0, idle: 0, maintenance: 0 });
+  const { hasPermission, isAdmin } = useAuthStore();
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     (async () => {
@@ -94,7 +95,7 @@ export function ProductionWorkCentersPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Work Centers</h1><p className="text-muted-foreground text-sm mt-1">Define and manage production work centers, lines, and cells</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Work Center</Button>
+        {(hasPermission('production.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Work Center</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
@@ -115,7 +116,7 @@ export function ProductionWorkCentersPage() {
                 <TableCell className="text-sm text-muted-foreground">{r.location || '—'}</TableCell>
                 <TableCell className="text-right text-sm font-medium">{r.capacity ? `${r.capacity} ${r.capacityUnit || 'units/hour'}` : '—'}</TableCell>
                 <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('production.update') || isAdmin()) && <DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('production.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
@@ -222,6 +223,7 @@ export function ProductionSchedulingPage() {
   const [form, setForm] = useState({ product: '', workCenterId: '', startDate: '', endDate: '', priority: 'medium', quantity: '' });
   const [scheduleData, setScheduleData] = useState<any[]>([]);
   const [workCenters, setWorkCenters] = useState<any[]>([]);
+  const { hasPermission, isAdmin } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [kpisData, setKpisData] = useState({ total: 0, inProgress: 0, delayed: 0, onTrack: 0 });
   const fetchScheduleData = async () => {
@@ -328,7 +330,7 @@ export function ProductionSchedulingPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Production Scheduling</h1><p className="text-muted-foreground text-sm mt-1">Create and manage production schedules and sequencing</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Schedule Job</Button>
+        {(hasPermission('production.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Schedule Job</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
@@ -727,6 +729,7 @@ export function ProductionOrdersPage() {
   const [workCenters, setWorkCenters] = useState<any[]>([]);
   const [kpisData, setKpisData] = useState({ total: 0, inProgress: 0, completed: 0, cancelled: 0 });
   const [kpiEndpointData, setKpiEndpointData] = useState<any>(null);
+  const { hasPermission, isAdmin } = useAuthStore();
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const fetchOrders = async () => {
@@ -818,7 +821,7 @@ export function ProductionOrdersPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Production Orders</h1><p className="text-muted-foreground text-sm mt-1">Create and manage production orders from planning through completion</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Order</Button>
+        {(hasPermission('production.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Order</Button>}
       </div>
       <div className={`grid grid-cols-1 sm:grid-cols-2 ${kpiEndpointData ? 'md:grid-cols-3 xl:grid-cols-6' : 'xl:grid-cols-4'} gap-4`}>
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
@@ -859,7 +862,7 @@ export function ProductionOrdersPage() {
                     </Button>
                   )}
                 </div></TableCell>
-                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Cancel</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('production.update') || isAdmin()) && <DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('production.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Cancel</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
               </TableRow>
               );
             })}
@@ -894,6 +897,7 @@ export function ProductionBatchesPage() {
   const [batches, setBatches] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [kpisData, setKpisData] = useState({ total: 0, inProgress: 0, completed: 0, onHold: 0 });
+  const { hasPermission, isAdmin } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const fetchBatches = async () => {
     const res = await api.get('/api/production-batches');
@@ -953,7 +957,7 @@ export function ProductionBatchesPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Batch Management</h1><p className="text-muted-foreground text-sm mt-1">Track production batches, lot numbers, and traceability</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Batch</Button>
+        {(hasPermission('production.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Batch</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpis.map(k => { const I = k.icon; return (<Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>); })}
@@ -977,7 +981,7 @@ export function ProductionBatchesPage() {
                 <TableCell className="text-sm text-muted-foreground">{r.endDate ? formatDate(r.endDate) : '—'}</TableCell>
                 <TableCell><Badge variant="outline" className={statusColors[r.status] || ''}>{r.status.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
                 <TableCell><div className="flex items-center gap-2"><div className="w-14 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${yieldPct >= 97 ? 'bg-emerald-500' : yieldPct > 0 ? 'bg-amber-500' : 'bg-slate-300'}`} style={{ width: `${yieldPct > 0 ? Math.min(yieldPct, 100) : 0}%` }} /></div><span className={`text-xs font-medium w-10 ${yieldPct >= 97 ? 'text-emerald-600' : yieldPct > 0 ? 'text-amber-600' : 'text-muted-foreground'}`}>{yieldPct > 0 ? `${yieldPct}%` : '—'}</span></div></TableCell>
-                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('production.update') || isAdmin()) && <DropdownMenuItem><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('production.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
               </TableRow>
               );
             })}

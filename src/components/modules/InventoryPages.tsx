@@ -39,6 +39,7 @@ import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, format
 import { AsyncSearchableSelect, SearchableSelect } from '@/components/ui/searchable-select';
 
 export function InventoryPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -150,8 +151,8 @@ export function InventoryPage() {
           <p className="text-muted-foreground text-sm mt-1">Manage spare parts, consumables, and supplies</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { setMovItemId(''); setMovQty(''); setMovReason(''); setMovType('in'); setMovementOpen(true); }} className="gap-1.5"><ArrowUpDown className="h-4 w-4" />Stock Movement</Button>
-          <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Item</Button>
+          {(hasPermission('inventory.stock_movements') || isAdmin()) && <Button variant="outline" onClick={() => { setMovItemId(''); setMovQty(''); setMovReason(''); setMovType('in'); setMovementOpen(true); }} className="gap-1.5"><ArrowUpDown className="h-4 w-4" />Stock Movement</Button>}
+          {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Item</Button>}
         </div>
       </div>
 
@@ -291,10 +292,10 @@ export function InventoryPage() {
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(i)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                          {(hasPermission('inventory.update') || isAdmin()) && <DropdownMenuItem onClick={() => openEdit(i)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>}
                           <DropdownMenuItem onClick={() => loadMovements(i.id)}><History className="h-3.5 w-3.5 mr-2" />Movements</DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem className="text-red-600" onClick={() => setDeleteId(i.id)}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>
+                          {(hasPermission('inventory.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => setDeleteId(i.id)}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -500,6 +501,7 @@ export function InventoryItemsPage() {
 }
 
 export function InventoryCategoriesPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -560,8 +562,8 @@ export function InventoryCategoriesPage() {
             </div>
             <Badge variant="secondary" className="text-[10px] h-5">{cat._count?.assets ?? 0} items</Badge>
             <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-              <button onClick={() => { setSelectedCat(cat); setForm({ name: cat.name, code: cat.code || '', description: cat.description || '', parentId: cat.parentId || '' }); setEditOpen(true); }} className="p-1 rounded hover:bg-muted"><Pencil className="h-3.5 w-3.5 text-muted-foreground" /></button>
-              <button onClick={async () => { if (confirm('Delete this category?')) { const r = await api.delete(`/api/asset-categories/${cat.id}`); if (r.success) { toast.success('Category deleted'); fetchCategories(); } else toast.error(r.error || 'Failed to delete'); } }} className="p-1 rounded hover:bg-red-50"><Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-red-500" /></button>
+              {(hasPermission('inventory.update') || isAdmin()) && <button onClick={() => { setSelectedCat(cat); setForm({ name: cat.name, code: cat.code || '', description: cat.description || '', parentId: cat.parentId || '' }); setEditOpen(true); }} className="p-1 rounded hover:bg-muted"><Pencil className="h-3.5 w-3.5 text-muted-foreground" /></button>}
+              {(hasPermission('inventory.delete') || isAdmin()) && <button onClick={async () => { if (confirm('Delete this category?')) { const r = await api.delete(`/api/asset-categories/${cat.id}`); if (r.success) { toast.success('Category deleted'); fetchCategories(); } else toast.error(r.error || 'Failed to delete'); } }} className="p-1 rounded hover:bg-red-50"><Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-red-500" /></button>}
             </div>
           </div>
           {hasChildren && isExpanded && renderTree(cat.id, depth + 1)}
@@ -605,7 +607,7 @@ export function InventoryCategoriesPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Search categories..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Category</Button>
+          {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Category</Button>}
         </div>
       </div>
 
@@ -693,6 +695,7 @@ export function InventoryCategoriesPage() {
   );
 }
 export function InventoryLocationsPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -748,7 +751,7 @@ export function InventoryLocationsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Inventory Locations</h1>
           <p className="text-muted-foreground mt-1">Manage warehouse locations, bins, and storage areas</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />Add Location</Button>
+        {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />Add Location</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpiCards.map(k => { const I = k.icon; return (
@@ -870,6 +873,7 @@ export function InventoryTransactionsPage() {
   );
 }
 export function InventoryAdjustmentsPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
@@ -942,7 +946,7 @@ export function InventoryAdjustmentsPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Inventory Adjustments</h1><p className="text-muted-foreground mt-1">Record stock adjustments, write-offs, and corrections</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Adjustment</Button>
+        {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Adjustment</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpiCards.map(k => { const I = k.icon; return (
@@ -998,6 +1002,7 @@ export function InventoryAdjustmentsPage() {
   );
 }
 export function InventoryRequestsPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterPriority, setFilterPriority] = useState<string>('all');
@@ -1059,7 +1064,7 @@ export function InventoryRequestsPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Inventory Requests</h1><p className="text-muted-foreground mt-1">Submit and track material requisitions from work orders</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Request</Button>
+        {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Request</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpiCards.map(k => { const I = k.icon; return (
@@ -1129,6 +1134,7 @@ export function InventoryRequestsPage() {
   );
 }
 export function InventoryTransfersPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
@@ -1199,7 +1205,7 @@ export function InventoryTransfersPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Inventory Transfers</h1><p className="text-muted-foreground mt-1">Transfer inventory items between locations</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Transfer</Button>
+        {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Transfer</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpiCards.map(k => { const I = k.icon; return (
@@ -1225,9 +1231,9 @@ export function InventoryTransfersPage() {
                 <TableCell><Badge variant="outline" className={transferStatusColors[t.status]}>{t.status?.replace('_', ' ').toUpperCase()}</Badge></TableCell>
                 <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{formatDate(t.createdAt)}</TableCell>
                 <TableCell className="hidden lg:table-cell">
-                  {t.status === 'pending' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(t.id, 'approve')}>Approve</Button>}
-                  {t.status === 'in_transit' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(t.id, 'complete')}>Complete</Button>}
-                  {(t.status === 'pending' || t.status === 'in_transit') && <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => handleAction(t.id, 'cancel')}>Cancel</Button>}
+                  {(hasPermission('inventory.update') || isAdmin()) && t.status === 'pending' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(t.id, 'approve')}>Approve</Button>}
+                  {(hasPermission('inventory.update') || isAdmin()) && t.status === 'in_transit' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(t.id, 'complete')}>Complete</Button>}
+                  {(hasPermission('inventory.delete') || isAdmin()) && (t.status === 'pending' || t.status === 'in_transit') && <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => handleAction(t.id, 'cancel')}>Cancel</Button>}
                 </TableCell>
               </TableRow>
             ))}
@@ -1307,6 +1313,7 @@ export function InventoryTransfersPage() {
   );
 }
 export function InventorySuppliersPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
@@ -1365,7 +1372,7 @@ export function InventorySuppliersPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Suppliers</h1><p className="text-muted-foreground mt-1">Manage supplier information, contacts, and performance metrics</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />Add Supplier</Button>
+        {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />Add Supplier</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpiCards.map(k => { const I = k.icon; return (
@@ -1427,6 +1434,7 @@ export function InventorySuppliersPage() {
   );
 }
 export function InventoryPurchaseOrdersPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
@@ -1496,7 +1504,7 @@ export function InventoryPurchaseOrdersPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Purchase Orders</h1><p className="text-muted-foreground mt-1">Create and manage purchase orders for inventory replenishment</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New PO</Button>
+        {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New PO</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpiCards.map(k => { const I = k.icon; return (
@@ -1522,7 +1530,7 @@ export function InventoryPurchaseOrdersPage() {
                 <TableCell><Badge variant="outline" className={poStatusColors[po.status]}>{po.status?.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
                 <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(po.createdAt)}</TableCell>
                 <TableCell className="hidden lg:table-cell">
-                  {po.status === 'draft' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(po.id, 'approve')}>Approve</Button>}
+                  {(hasPermission('inventory.update') || isAdmin()) && po.status === 'draft' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(po.id, 'approve')}>Approve</Button>}
                 </TableCell>
               </TableRow>
             ))}
@@ -1567,6 +1575,7 @@ export function InventoryPurchaseOrdersPage() {
   );
 }
 export function InventoryReceivingPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [search, setSearch] = useState('');
   const [filterCondition, setFilterCondition] = useState<string>('all');
   const [loading, setLoading] = useState(true);
@@ -1635,7 +1644,7 @@ export function InventoryReceivingPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Receiving</h1><p className="text-muted-foreground mt-1">Receive delivered items and update inventory stock levels</p></div>
-        <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New GRN</Button>
+        {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New GRN</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {kpiCards.map(k => { const I = k.icon; return (

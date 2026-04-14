@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 export function IotDevicesPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [devices, setDevices] = useState<any[]>([]);
   const [kpis, setKpis] = useState<any>({ total: 0, online: 0, offline: 0, warning: 0, error: 0, alerting: 0 });
   const [loading, setLoading] = useState(true);
@@ -168,7 +169,7 @@ export function IotDevicesPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">IoT Devices</h1><p className="text-muted-foreground text-sm mt-1">Register and manage IoT sensors, gateways, and connected devices</p></div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Add Device</Button></DialogTrigger>
+          <DialogTrigger asChild>{(hasPermission('iot.create') || isAdmin()) && <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Add Device</Button>}</DialogTrigger>
           <DialogContent className="sm:max-w-[480px]">
             <DialogHeader><DialogTitle>Register New Device</DialogTitle><DialogDescription>Add a new IoT device to the registry.</DialogDescription></DialogHeader>
             <div className="grid gap-4 py-2">
@@ -255,7 +256,7 @@ export function IotDevicesPage() {
               </ChartContainer>
             </div>)}
             </>)}
-            <DialogFooter><Button variant="outline" onClick={() => handleDelete(detailDevice.id)} className="text-red-600 border-red-200 hover:bg-red-50"><Trash2 className="h-4 w-4 mr-1.5" />Remove Device</Button><Button variant="outline" onClick={() => setDetailDevice(null)}>Close</Button></DialogFooter>
+            <DialogFooter>{(hasPermission('iot.delete') || isAdmin()) && <Button variant="outline" onClick={() => handleDelete(detailDevice.id)} className="text-red-600 border-red-200 hover:bg-red-50"><Trash2 className="h-4 w-4 mr-1.5" />Remove Device</Button>}<Button variant="outline" onClick={() => setDetailDevice(null)}>Close</Button></DialogFooter>
           </>)}
         </DialogContent>
       </Dialog>
@@ -613,6 +614,7 @@ export function IotMonitoringPage() {
 }
 
 export function IotRulesPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [rules, setRules] = useState<any[]>([]);
   const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -697,7 +699,7 @@ export function IotRulesPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">IoT Rules</h1><p className="text-muted-foreground text-sm mt-1">Configure automation rules and alert thresholds for IoT sensor data</p></div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Create Rule</Button></DialogTrigger>
+          <DialogTrigger asChild>{(hasPermission('iot.create') || isAdmin()) && <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Create Rule</Button>}</DialogTrigger>
           <DialogContent className="sm:max-w-[500px]">
             <DialogHeader><DialogTitle>Create Automation Rule</DialogTitle><DialogDescription>Define conditions and actions for automated alerts.</DialogDescription></DialogHeader>
             <div className="grid gap-4 py-2">
@@ -759,7 +761,7 @@ export function IotRulesPage() {
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => toggleRule(rule.id)}>{rule.isActive ? <><Pause className="h-4 w-4 mr-2" />Pause</> : <><Play className="h-4 w-4 mr-2" />Activate</>}</DropdownMenuItem>
-                        <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(rule.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>
+                        {(hasPermission('iot.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(rule.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>

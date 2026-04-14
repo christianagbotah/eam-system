@@ -52,6 +52,8 @@ export function SafetyIncidentsPage() {
   const [editForm, setEditForm] = useState<any>({});
   const [editLoading, setEditLoading] = useState(false);
 
+  const { hasPermission, isAdmin } = useAuthStore();
+
   const fetchData = async () => {
     try {
       const res = await api.get<any>('/api/safety-incidents');
@@ -145,7 +147,7 @@ export function SafetyIncidentsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Safety Incidents</h1>
           <p className="text-muted-foreground mt-1">Report, investigate, and track safety incidents and near-misses</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        {(hasPermission('safety.create') || isAdmin()) && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />Report Incident</Button>
           </DialogTrigger>
@@ -183,7 +185,7 @@ export function SafetyIncidentsPage() {
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Submit Report</Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       {loading ? <LoadingSkeleton /> : <>
@@ -245,7 +247,7 @@ export function SafetyIncidentsPage() {
                       <TableCell><div className="flex items-center gap-2"><Avatar className="h-6 w-6"><AvatarFallback className="text-[10px] bg-emerald-100 text-emerald-700">{getInitials(i.reportedBy?.fullName || '')}</AvatarFallback></Avatar><span className="text-sm whitespace-nowrap">{i.reportedBy?.fullName || ''}</span></div></TableCell>
                       <TableCell><Badge variant="outline" className={statusColors[i.status] || ''}>{i.status}</Badge></TableCell>
                       <TableCell className="text-sm text-muted-foreground max-w-[140px] truncate">{i.rootCause || '—'}</TableCell>
-                      <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(i)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(i); setEditForm({...i}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(i.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                      <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(i)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('safety.update') || isAdmin()) && <DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(i); setEditForm({...i}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('safety.delete') || isAdmin()) && <><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(i.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></>}</DropdownMenuContent></DropdownMenu></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -336,6 +338,8 @@ export function SafetyInspectionsPage() {
   const [editForm, setEditForm] = useState<any>({});
   const [editLoading, setEditLoading] = useState(false);
 
+  const { hasPermission, isAdmin } = useAuthStore();
+
   const fetchData = async () => {
     try {
       const res = await api.get<any>('/api/safety-inspections');
@@ -417,7 +421,7 @@ export function SafetyInspectionsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Safety Inspections</h1>
           <p className="text-muted-foreground mt-1">Schedule and conduct safety inspections and workplace audits</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        {(hasPermission('safety.create') || isAdmin()) && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />New Inspection</Button></DialogTrigger>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader><DialogTitle>Create Inspection</DialogTitle><DialogDescription>Schedule a new safety inspection with checklist items</DialogDescription></DialogHeader>
@@ -457,7 +461,7 @@ export function SafetyInspectionsPage() {
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Create</Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -504,7 +508,7 @@ export function SafetyInspectionsPage() {
                       ) : <span className="text-sm text-muted-foreground">—</span>}
                     </TableCell>
                     <TableCell><Badge variant="outline" className={statusColors[i.status] || ''}>{i.status?.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(i)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(i); setEditForm({...i}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(i.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(i)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('safety.update') || isAdmin()) && <DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(i); setEditForm({...i}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('safety.delete') || isAdmin()) && <><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(i.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></>}</DropdownMenuContent></DropdownMenu></TableCell>
                   </TableRow>
                   );
                 })}
@@ -587,6 +591,7 @@ export function SafetyTrainingPage() {
   const [editItem, setEditItem] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>({});
   const [editLoading, setEditLoading] = useState(false);
+  const { hasPermission, isAdmin } = useAuthStore();
 
   const fetchData = async () => {
     try {
@@ -667,7 +672,7 @@ export function SafetyTrainingPage() {
           <h1 className="text-2xl font-bold tracking-tight">Safety Training</h1>
           <p className="text-muted-foreground mt-1">Manage safety training programs, certifications, and compliance</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        {(hasPermission('safety.create') || isAdmin()) && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />New Training</Button></DialogTrigger>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader><DialogTitle>Create Training Record</DialogTitle><DialogDescription>Add a new safety training course or session</DialogDescription></DialogHeader>
@@ -694,7 +699,7 @@ export function SafetyTrainingPage() {
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Create</Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -729,7 +734,7 @@ export function SafetyTrainingPage() {
                     <TableCell className="text-sm text-muted-foreground">{t.location || '—'}</TableCell>
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(t.scheduledDate)}</TableCell>
                     <TableCell><Badge variant="outline" className={statusColors[t.status] || ''}>{t.status?.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(t)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(t); setEditForm({...t}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(t.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(t)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('safety.update') || isAdmin()) && <DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(t); setEditForm({...t}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('safety.delete') || isAdmin()) && <><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(t.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></>}</DropdownMenuContent></DropdownMenu></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -815,6 +820,7 @@ export function SafetyEquipmentPage() {
   const [editItem, setEditItem] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>({});
   const [editLoading, setEditLoading] = useState(false);
+  const { hasPermission, isAdmin } = useAuthStore();
 
   const fetchData = async () => {
     try {
@@ -912,7 +918,7 @@ export function SafetyEquipmentPage() {
           <h1 className="text-2xl font-bold tracking-tight">Safety Equipment</h1>
           <p className="text-muted-foreground mt-1">Track PPE, safety devices, and emergency equipment inventory</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        {(hasPermission('safety.create') || isAdmin()) && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />Register Equipment</Button></DialogTrigger>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader><DialogTitle>Register Equipment</DialogTitle><DialogDescription>Add a new safety equipment item</DialogDescription></DialogHeader>
@@ -936,7 +942,7 @@ export function SafetyEquipmentPage() {
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Register</Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -974,7 +980,7 @@ export function SafetyEquipmentPage() {
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(eq.lastInspected)}</TableCell>
                     <TableCell className="text-sm whitespace-nowrap"><span className={dStatus === 'expired' ? 'text-red-600 font-medium' : dStatus === 'expiring' ? 'text-amber-600 font-medium' : 'text-muted-foreground'}>{formatDate(eq.nextInspection)}</span></TableCell>
                     <TableCell><Badge variant="outline" className={statusColors[dStatus] || ''}>{dStatus?.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(eq)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(eq); setEditForm({...eq}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(eq.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(eq)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('safety.update') || isAdmin()) && <DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(eq); setEditForm({...eq}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('safety.delete') || isAdmin()) && <><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(eq.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></>}</DropdownMenuContent></DropdownMenu></TableCell>
                   </TableRow>
                   );
                 })}
@@ -1052,6 +1058,7 @@ export function SafetyPermitsPage() {
   const [editItem, setEditItem] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>({});
   const [editLoading, setEditLoading] = useState(false);
+  const { hasPermission, isAdmin } = useAuthStore();
 
   const fetchData = async () => {
     try {
@@ -1132,7 +1139,7 @@ export function SafetyPermitsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Safety Permits</h1>
           <p className="text-muted-foreground mt-1">Manage work permits including hot work, confined space, and electrical permits</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        {(hasPermission('safety.create') || isAdmin()) && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />Request Permit</Button></DialogTrigger>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader><DialogTitle>Request Work Permit</DialogTitle><DialogDescription>Submit a new safety work permit request</DialogDescription></DialogHeader>
@@ -1174,7 +1181,7 @@ export function SafetyPermitsPage() {
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Submit Request</Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+        </Dialog>}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -1211,7 +1218,7 @@ export function SafetyPermitsPage() {
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(p.startDate)}</TableCell>
                     <TableCell className="text-sm whitespace-nowrap"><span className={p.status === 'expired' || p.status === 'cancelled' ? 'text-red-600 font-medium' : 'text-muted-foreground'}>{formatDate(p.endDate)}</span></TableCell>
                     <TableCell><Badge variant="outline" className={statusColors[p.status] || ''}>{p.status?.replace(/_/g, ' ')}</Badge></TableCell>
-                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(p)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem><DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(p); setEditForm({...p}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(p.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem className="cursor-pointer" onClick={() => setViewItem(p)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('safety.update') || isAdmin()) && <DropdownMenuItem className="cursor-pointer" onClick={() => { setEditItem(p); setEditForm({...p}); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('safety.delete') || isAdmin()) && <><DropdownMenuSeparator /><DropdownMenuItem className="cursor-pointer text-red-600" onClick={() => handleDelete(p.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></>}</DropdownMenuContent></DropdownMenu></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
