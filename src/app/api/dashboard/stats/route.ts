@@ -316,7 +316,7 @@ export async function GET(request: NextRequest) {
       // Completed WOs with actual hours for MTBF/MTTR
       db.workOrder.findMany({
         where: { ...plantFilter, status: { in: ['completed', 'closed'] }, actualEnd: { not: null }, actualStart: { not: null } },
-        select: { id: true, actualStart: true, actualEnd: true, actualHours: true, completedAt: true, type: true },
+        select: { id: true, actualStart: true, actualEnd: true, actualHours: true, updatedAt: true, type: true },
         orderBy: { actualEnd: 'desc' },
         take: 200,
       }),
