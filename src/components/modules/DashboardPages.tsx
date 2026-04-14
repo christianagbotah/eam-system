@@ -19,7 +19,10 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLe
 import {
   ClipboardList, Wrench, Eye, Plus, CheckCircle2, AlertTriangle,
   TrendingUp, Factory, Shield, BarChart3, Package, Zap,
-  AlertCircle, Wifi, Activity,
+  AlertCircle, Wifi, Activity, Clock, ArrowUpRight, ArrowDownRight,
+  Target, Gauge, DollarSign, CalendarClock, WrenchIcon,
+  Timer, Users, LayoutDashboard, Bell, Settings, FileText,
+  Hammer, HardHat, ClipboardCheck, PieChartIcon,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, MiniBarChart, ProgressRing, LoadingSkeleton } from '@/components/shared/helpers';
 
@@ -56,10 +59,79 @@ const weeklyTrendConfig = {
   productionOrders: { label: 'Production', color: '#06b6d4' },
 } as const;
 
+const assetConditionConfig = {
+  new: { label: 'New', color: '#10b981' },
+  good: { label: 'Good', color: '#14b8a6' },
+  fair: { label: 'Fair', color: '#f59e0b' },
+  poor: { label: 'Poor', color: '#f97316' },
+  out_of_service: { label: 'Out of Service', color: '#ef4444' },
+} as const;
+
+// ===== Helper: TrendIndicator component =====
+function TrendIndicator({ value, label }: { value: number; label?: string }) {
+  if (value === 0) return <span className="text-xs text-muted-foreground">{label || 'No change'}</span>;
+  const isPositive = value > 0;
+  return (
+    <span className={`text-xs font-semibold flex items-center gap-0.5 ${isPositive ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+      {isPositive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+      {Math.abs(value)}%{label && ` ${label}`}
+    </span>
+  );
+}
+
+// ===== Helper: Clickable KPI Card =====
+function KPICard({ label, value, sublabel, color, bgColor, borderColor, iconBg, iconColor, icon, barData, showRing, ringValue, trend, onClick }: {
+  label: string;
+  value: string | number;
+  sublabel?: string;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  iconBg: string;
+  iconColor: string;
+  icon: React.ElementType;
+  barData?: number[];
+  showRing?: boolean;
+  ringValue?: number;
+  trend?: number;
+  onClick?: () => void;
+}) {
+  const Icon = icon;
+  const content = (
+    <Card className={`border ${borderColor} ${bgColor} hover:shadow-lg transition-all duration-300 group overflow-hidden relative ${onClick ? 'cursor-pointer' : ''}`}>
+      <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 dark:to-transparent rounded-bl-full" />
+      <CardContent className="p-5 relative">
+        <div className="flex items-start justify-between mb-4">
+          <div className={`h-10 w-10 rounded-xl ${iconBg} flex items-center justify-center group-hover:scale-110 transition-transform duration-300`}>
+            <Icon className={`h-5 w-5 ${iconColor}`} />
+          </div>
+          {showRing ? (
+            <ProgressRing value={ringValue || 0} color={color} size={48} strokeWidth={4} />
+          ) : barData && barData.some(v => v > 0) ? (
+            <MiniBarChart data={barData} color={color} maxVal={Math.max(...barData, 1)} />
+          ) : null}
+        </div>
+        <div className="space-y-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+          <p className="text-3xl font-bold tracking-tight" style={{ color: color }}>{value}</p>
+          <div className="flex items-center gap-2">
+            {sublabel && <p className="text-xs text-muted-foreground font-medium">{sublabel}</p>}
+            {trend !== undefined && <TrendIndicator value={trend} />}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+  if (onClick) {
+    return <div onClick={onClick}>{content}</div>;
+  }
+  return content;
+}
+
 export function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const { user, hasPermission } = useAuthStore();
+  const { user, hasPermission, isAdmin } = useAuthStore();
   const { navigate } = useNavigationStore();
 
   useEffect(() => {
@@ -87,6 +159,22 @@ export function DashboardPage() {
       productionOrders: wt.productionOrders[i] ?? 0,
     }));
   }, [stats?.weeklyTrends, weekLabels]);
+
+  // Asset condition data for pie chart (before early return for hooks rule)
+  const assetConditionData = useMemo(() => {
+    const byCond = stats?.assetHealth?.byCondition || {};
+    return Object.entries(byCond)
+      .map(([condition, count]) => ({ condition, count }))
+      .filter(d => d.count > 0);
+  }, [stats?.assetHealth?.byCondition]);
+
+  // Role detection
+  const userRoles = stats?.userRoles || [];
+  const isTechnician = userRoles.includes('maintenance_technician');
+  const isSupervisor = userRoles.includes('maintenance_supervisor');
+  const isPlanner = userRoles.includes('maintenance_planner');
+  const isManager = isAdmin() || userRoles.includes('maintenance_manager');
+  const isOperator = userRoles.includes('production_operator');
 
   if (loading) return <LoadingSkeleton />;
 
@@ -132,16 +220,19 @@ export function DashboardPage() {
   const qualityIssues = stats?.quality?.openNcrs || 0;
   const lowStockItems = stats?.inventoryAlerts?.lowStock || 0;
 
-  const kpiCards = [
-    {
-      label: 'Pending Requests', value: pendingReqs,
-      sublabel: `${stats?.createdTodayMR || 0} new today`,
-      color: '#f59e0b', bgColor: 'bg-amber-50 dark:bg-amber-950/30',
-      borderColor: 'border-amber-100 dark:border-amber-900/40',
-      iconBg: 'bg-amber-100 dark:bg-amber-900/50', iconColor: 'text-amber-600 dark:text-amber-400',
-      icon: ClipboardList, permission: 'maintenance_requests.view',
-      barData: stats?.weeklyTrends?.maintenanceRequests || [0, 0, 0, 0, 0, 0, 0],
-    },
+  // Cost change trend
+  const costTrend = stats?.costAnalysis?.changePercent || 0;
+
+  // ===== Role-Based Personal KPI Cards =====
+  const myKPIs = stats?.myKPIs || { activeWorkOrders: 0, pendingTasks: 0, completedThisWeek: 0, toolsCheckedOut: 0, unreadNotifications: 0 };
+  const supervisorKPIs = stats?.supervisorKPIs || { pendingApprovals: 0, teamActiveWOs: 0 };
+  const plannerKPIs = stats?.plannerKPIs || { planningQueue: 0, pmSchedulesDue: 0 };
+  const maintenanceKPIs = stats?.maintenanceKPIs || { mtbf: 0, mttr: 0, plannedRatio: 0, preventiveCount: 0, reactiveCount: 0 };
+  const pmAlerts = stats?.pmScheduleAlerts || { dueSoon: 0, overdue: 0 };
+  const costAnalysis = stats?.costAnalysis || { thisMonthTotal: 0, lastMonthTotal: 0, changePercent: 0, thisMonthLabor: 0, thisMonthParts: 0, thisMonthContractor: 0, byCategory: {} };
+
+  // Primary KPI cards (always visible)
+  const primaryKPICards = [
     {
       label: 'Active Work Orders', value: activeWOs,
       sublabel: `${stats?.createdTodayWO || 0} created today`,
@@ -150,6 +241,7 @@ export function DashboardPage() {
       iconBg: 'bg-emerald-100 dark:bg-emerald-900/50', iconColor: 'text-emerald-600 dark:text-emerald-400',
       icon: Wrench, permission: 'work_orders.view',
       barData: stats?.weeklyTrends?.workOrders || [0, 0, 0, 0, 0, 0, 0],
+      onClick: () => navigate('work-orders'),
     },
     {
       label: 'Completion Rate', value: `${completionRate}%`,
@@ -158,85 +250,54 @@ export function DashboardPage() {
       borderColor: 'border-teal-100 dark:border-teal-900/40',
       iconBg: 'bg-teal-100 dark:bg-teal-900/50', iconColor: 'text-teal-600 dark:text-teal-400',
       icon: CheckCircle2, permission: 'work_orders.view',
-      barData: [0, 0, 0, 0, 0, 0, 0],
       showRing: true, ringValue: completionRate,
     },
     {
       label: 'Overdue', value: overdueWOs,
-      sublabel: overdueWOs > 0 ? 'Need immediate attention' : 'All on track',
+      sublabel: overdueWOs > 0 ? 'Need attention' : 'All on track',
       color: overdueWOs > 0 ? '#ef4444' : '#10b981',
       bgColor: overdueWOs > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30',
       borderColor: overdueWOs > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40',
       iconBg: overdueWOs > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50',
       iconColor: overdueWOs > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400',
       icon: AlertTriangle, permission: 'work_orders.view',
-      barData: [0, 0, 0, 0, 0, 0, 0],
-    },
-    // ===== Cross-Module KPI Cards (Row 2) =====
-    {
-      label: 'Assets at Risk', value: assetsAtRisk,
-      sublabel: `${stats?.assetHealth?.poor || 0} poor, ${stats?.assetHealth?.critical || 0} critical`,
-      color: '#f97316', bgColor: 'bg-orange-50 dark:bg-orange-950/30',
-      borderColor: 'border-orange-100 dark:border-orange-900/40',
-      iconBg: 'bg-orange-100 dark:bg-orange-900/50', iconColor: 'text-orange-600 dark:text-orange-400',
-      icon: AlertTriangle, permission: 'assets.view',
-      barData: [0, 0, 0, 0, 0, 0, 0],
+      onClick: overdueWOs > 0 ? () => navigate('work-orders') : undefined,
     },
     {
-      label: 'Safety Incidents', value: safetyIncidents,
-      sublabel: `${stats?.safetyAlerts?.overdueInspections || 0} overdue inspections`,
-      color: '#ef4444', bgColor: 'bg-red-50 dark:bg-red-950/30',
-      borderColor: 'border-red-100 dark:border-red-900/40',
-      iconBg: 'bg-red-100 dark:bg-red-900/50', iconColor: 'text-red-600 dark:text-red-400',
-      icon: Shield, permission: 'safety.view',
-      barData: [0, 0, 0, 0, 0, 0, 0],
-    },
-    {
-      label: 'Active Production', value: activeProduction,
-      sublabel: `${stats?.production?.completionRate || 0}% completion rate`,
-      color: '#06b6d4', bgColor: 'bg-cyan-50 dark:bg-cyan-950/30',
-      borderColor: 'border-cyan-100 dark:border-cyan-900/40',
-      iconBg: 'bg-cyan-100 dark:bg-cyan-900/50', iconColor: 'text-cyan-600 dark:text-cyan-400',
-      icon: Factory, permission: 'production.view',
-      barData: stats?.weeklyTrends?.productionOrders || [0, 0, 0, 0, 0, 0, 0],
-    },
-    {
-      label: 'IoT Alerts', value: iotAlerts,
-      sublabel: `${stats?.iotStatus?.offlineCount || 0} devices offline`,
-      color: '#8b5cf6', bgColor: 'bg-violet-50 dark:bg-violet-950/30',
-      borderColor: 'border-violet-100 dark:border-violet-900/40',
-      iconBg: 'bg-violet-100 dark:bg-violet-900/50', iconColor: 'text-violet-600 dark:text-violet-400',
-      icon: Wifi, permission: 'iot.view',
-      barData: [0, 0, 0, 0, 0, 0, 0],
-    },
-    {
-      label: 'Quality Issues', value: qualityIssues,
-      sublabel: `${stats?.quality?.failedInspections || 0} failed inspections`,
-      color: '#ec4899', bgColor: 'bg-pink-50 dark:bg-pink-950/30',
-      borderColor: 'border-pink-100 dark:border-pink-900/40',
-      iconBg: 'bg-pink-100 dark:bg-pink-900/50', iconColor: 'text-pink-600 dark:text-pink-400',
-      icon: AlertCircle, permission: 'quality.view',
-      barData: [0, 0, 0, 0, 0, 0, 0],
-    },
-    {
-      label: 'Low Stock Items', value: lowStockItems,
-      sublabel: `${stats?.inventoryAlerts?.pendingRequests || 0} pending requests`,
+      label: 'Pending Requests', value: pendingReqs,
+      sublabel: `${stats?.createdTodayMR || 0} new today`,
       color: '#f59e0b', bgColor: 'bg-amber-50 dark:bg-amber-950/30',
       borderColor: 'border-amber-100 dark:border-amber-900/40',
       iconBg: 'bg-amber-100 dark:bg-amber-900/50', iconColor: 'text-amber-600 dark:text-amber-400',
-      icon: Package, permission: 'inventory.view',
-      barData: [0, 0, 0, 0, 0, 0, 0],
+      icon: ClipboardList, permission: 'maintenance_requests.view',
+      barData: stats?.weeklyTrends?.maintenanceRequests || [0, 0, 0, 0, 0, 0, 0],
+      onClick: () => navigate('maintenance-requests'),
     },
   ];
 
-  const visibleKpis = kpiCards.filter(c => hasPermission(c.permission));
+  const visiblePrimaryKPIs = primaryKPICards.filter(c => hasPermission(c.permission));
 
-  const quickActions = [
-    { label: 'New Request', icon: Plus, permission: 'maintenance_requests.create', page: 'create-mr' as PageName, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50', border: 'border-amber-200 hover:border-amber-300 dark:border-amber-900/40' },
-    { label: 'New Work Order', icon: Wrench, permission: 'work_orders.create', page: 'work-orders' as PageName, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50', border: 'border-emerald-200 hover:border-emerald-300 dark:border-emerald-900/40' },
-    { label: 'All Requests', icon: ClipboardList, permission: 'maintenance_requests.view', page: 'maintenance-requests' as PageName, color: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/30 dark:hover:bg-sky-950/50', border: 'border-sky-200 hover:border-sky-300 dark:border-sky-900/40' },
-    { label: 'All Work Orders', icon: Eye, permission: 'work_orders.view', page: 'work-orders' as PageName, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50', border: 'border-violet-200 hover:border-violet-300 dark:border-violet-900/40' },
-  ].filter(a => hasPermission(a.permission));
+  // ===== Role-Based Quick Actions =====
+  const allQuickActions = [
+    // Common actions
+    { label: 'New Request', icon: Plus, permission: 'maintenance_requests.create', page: 'create-mr' as PageName, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50', border: 'border-amber-200 hover:border-amber-300 dark:border-amber-900/40', roles: ['all'] },
+    { label: 'View WOs', icon: Wrench, permission: 'work_orders.view', page: 'work-orders' as PageName, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50', border: 'border-emerald-200 hover:border-emerald-300 dark:border-emerald-900/40', roles: ['all'] },
+    { label: 'View Requests', icon: ClipboardList, permission: 'maintenance_requests.view', page: 'maintenance-requests' as PageName, color: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/30 dark:hover:bg-sky-950/50', border: 'border-sky-200 hover:border-sky-300 dark:border-sky-900/40', roles: ['all'] },
+    // Technician actions
+    { label: 'My Active WOs', icon: HardHat, permission: 'work_orders.view', page: 'work-orders' as PageName, color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 hover:bg-orange-100 dark:bg-orange-950/30 dark:hover:bg-orange-950/50', border: 'border-orange-200 hover:border-orange-300 dark:border-orange-900/40', roles: ['maintenance_technician'] },
+    // Supervisor actions
+    { label: 'Approvals', icon: ClipboardCheck, permission: 'maintenance_requests.view', page: 'maintenance-requests' as PageName, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50', border: 'border-violet-200 hover:border-violet-300 dark:border-violet-900/40', roles: ['maintenance_supervisor', 'admin'] },
+    { label: 'Team WOs', icon: Users, permission: 'work_orders.view', page: 'work-orders' as PageName, color: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50 hover:bg-cyan-100 dark:bg-cyan-950/30 dark:hover:bg-cyan-950/50', border: 'border-cyan-200 hover:border-cyan-300 dark:border-cyan-900/40', roles: ['maintenance_supervisor', 'admin'] },
+    // Planner actions
+    { label: 'PM Schedules', icon: CalendarClock, permission: 'pm_schedules.view', page: 'pm-schedules' as PageName, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/30 dark:hover:bg-teal-950/50', border: 'border-teal-200 hover:border-teal-300 dark:border-teal-900/40', roles: ['maintenance_planner', 'admin'] },
+    // Manager/Admin actions
+    { label: 'Reports', icon: FileText, permission: 'reports.view', page: 'reports-maintenance' as PageName, color: 'text-fuchsia-600 dark:text-fuchsia-400', bg: 'bg-fuchsia-50 hover:bg-fuchsia-100 dark:bg-fuchsia-950/30 dark:hover:bg-fuchsia-950/50', border: 'border-fuchsia-200 hover:border-fuchsia-300 dark:border-fuchsia-900/40', roles: ['maintenance_manager', 'admin'] },
+    { label: 'Settings', icon: Settings, permission: 'system_settings.view', page: 'settings-general' as PageName, color: 'text-slate-600 dark:text-slate-400', bg: 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-950/30 dark:hover:bg-slate-950/50', border: 'border-slate-200 hover:border-slate-300 dark:border-slate-900/40', roles: ['admin'] },
+  ];
+
+  const visibleQuickActions = allQuickActions
+    .filter(a => hasPermission(a.permission))
+    .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)));
 
   // Cross-module overview data
   const crossModuleData = [
@@ -244,8 +305,8 @@ export function DashboardPage() {
     { label: 'Safety', value: safetyIncidents, detail: `${stats?.safetyAlerts?.overdueInspections || 0} overdue`, color: 'bg-red-500', textColor: 'text-red-600 dark:text-red-400', bgColor: 'bg-red-50 dark:bg-red-950/30', borderColor: 'border-red-100 dark:border-red-900/40' },
     { label: 'Production', value: activeProduction, detail: `${stats?.production?.completionRate || 0}% done`, color: 'bg-cyan-500', textColor: 'text-cyan-600 dark:text-cyan-400', bgColor: 'bg-cyan-50 dark:bg-cyan-950/30', borderColor: 'border-cyan-100 dark:border-cyan-900/40' },
     { label: 'IoT', value: stats?.iotStatus?.totalDevices || 0, detail: `${stats?.iotStatus?.offlineCount || 0} offline`, color: 'bg-violet-500', textColor: 'text-violet-600 dark:text-violet-400', bgColor: 'bg-violet-50 dark:bg-violet-950/30', borderColor: 'border-violet-100 dark:border-violet-900/40' },
-    { label: 'Quality', value: qualityIssues, detail: `${stats?.quality?.pendingAudits || 0} audits pending`, color: 'bg-pink-500', textColor: 'text-pink-600 dark:text-pink-400', bgColor: 'bg-pink-50 dark:bg-pink-950/30', borderColor: 'border-pink-100 dark:border-pink-900/40' },
-    { label: 'Inventory', value: lowStockItems, detail: `${stats?.inventoryAlerts?.pendingRequests || 0} requests`, color: 'bg-amber-500', textColor: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-100 dark:border-amber-900/40' },
+    { label: 'Quality', value: qualityIssues, detail: `${stats?.quality?.pendingAudits || 0} audits`, color: 'bg-pink-500', textColor: 'text-pink-600 dark:text-pink-400', bgColor: 'bg-pink-50 dark:bg-pink-950/30', borderColor: 'border-pink-100 dark:border-pink-900/40' },
+    { label: 'Inventory', value: lowStockItems, detail: `${stats?.inventoryAlerts?.pendingRequests || 0} reqs`, color: 'bg-amber-500', textColor: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-100 dark:border-amber-900/40' },
   ];
 
   return (
@@ -256,6 +317,9 @@ export function DashboardPage() {
           <div className="flex items-center gap-2.5">
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Operations Dashboard</span>
+            <Badge variant="outline" className="text-[10px] font-mono gap-1 border-primary/20 bg-primary/5 text-primary ml-1">
+              {userRoles[0]?.replace(/_/g, ' ') || 'User'}
+            </Badge>
           </div>
           <h1 className="text-2xl lg:text-3xl font-bold tracking-tight">
             Welcome back, <span className="text-primary">{user?.fullName?.split(' ')[0] || 'User'}</span>
@@ -263,6 +327,12 @@ export function DashboardPage() {
           <p className="text-sm text-muted-foreground">Real-time maintenance operations overview &middot; {format(new Date(), 'EEEE, MMMM d, yyyy')}</p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
+          {myKPIs.unreadNotifications > 0 && (
+            <Badge variant="destructive" className="text-[11px] font-mono gap-1.5">
+              <Bell className="h-3 w-3" />
+              {myKPIs.unreadNotifications} new
+            </Badge>
+          )}
           <Badge variant="outline" className="text-[11px] font-mono gap-1.5 border-primary/20 bg-primary/5 text-primary">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             Live
@@ -270,34 +340,120 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* ===== KPI Cards Row 1 (Maintenance Core) ===== */}
-      {visibleKpis.length > 0 && (
+      {/* ===== My Personal KPIs (Role-Based) ===== */}
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+        {/* Always visible: My Active WOs */}
+        <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-emerald-100 dark:border-emerald-900/40 bg-emerald-50 dark:bg-emerald-950/30 transition-all hover:shadow-sm">
+          <div className="h-9 w-9 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center shrink-0">
+            <Wrench className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">My Active WOs</p>
+            <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{myKPIs.activeWorkOrders}</p>
+          </div>
+        </div>
+        {/* Always visible: Pending Tasks */}
+        <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 transition-all hover:shadow-sm">
+          <div className="h-9 w-9 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0">
+            <ClipboardList className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pending Tasks</p>
+            <p className="text-xl font-bold text-amber-600 dark:text-amber-400">{myKPIs.pendingTasks}</p>
+          </div>
+        </div>
+        {/* Always visible: Completed This Week */}
+        <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 transition-all hover:shadow-sm">
+          <div className="h-9 w-9 rounded-lg bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Done This Week</p>
+            <p className="text-xl font-bold text-teal-600 dark:text-teal-400">{myKPIs.completedThisWeek}</p>
+          </div>
+        </div>
+
+        {/* Technician: Tools Checked Out */}
+        {isTechnician && (
+          <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-violet-100 dark:border-violet-900/40 bg-violet-50 dark:bg-violet-950/30 transition-all hover:shadow-sm">
+            <div className="h-9 w-9 rounded-lg bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center shrink-0">
+              <Hammer className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Tools Out</p>
+              <p className="text-xl font-bold text-violet-600 dark:text-violet-400">{myKPIs.toolsCheckedOut}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Supervisor: Team Workload */}
+        {isSupervisor && (
+          <>
+            <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-orange-100 dark:border-orange-900/40 bg-orange-50 dark:bg-orange-950/30 transition-all hover:shadow-sm">
+              <div className="h-9 w-9 rounded-lg bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center shrink-0">
+                <ClipboardCheck className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pending Approvals</p>
+                <p className="text-xl font-bold text-orange-600 dark:text-orange-400">{supervisorKPIs.pendingApprovals}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-cyan-100 dark:border-cyan-900/40 bg-cyan-50 dark:bg-cyan-950/30 transition-all hover:shadow-sm">
+              <div className="h-9 w-9 rounded-lg bg-cyan-100 dark:bg-cyan-900/50 flex items-center justify-center shrink-0">
+                <Users className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Team Active WOs</p>
+                <p className="text-xl font-bold text-cyan-600 dark:text-cyan-400">{supervisorKPIs.teamActiveWOs}</p>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Planner: Planning Queue */}
+        {isPlanner && (
+          <>
+            <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 transition-all hover:shadow-sm">
+              <div className="h-9 w-9 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center shrink-0">
+                <LayoutDashboard className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Planning Queue</p>
+                <p className="text-xl font-bold text-sky-600 dark:text-sky-400">{plannerKPIs.planningQueue}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 transition-all hover:shadow-sm">
+              <div className="h-9 w-9 rounded-lg bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center shrink-0">
+                <CalendarClock className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PMs Due</p>
+                <p className="text-xl font-bold text-teal-600 dark:text-teal-400">{plannerKPIs.pmSchedulesDue}</p>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Operator fallback */}
+        {isOperator && (
+          <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-pink-100 dark:border-pink-900/40 bg-pink-50 dark:bg-pink-950/30 transition-all hover:shadow-sm">
+            <div className="h-9 w-9 rounded-lg bg-pink-100 dark:bg-pink-900/50 flex items-center justify-center shrink-0">
+              <Bell className="h-4 w-4 text-pink-600 dark:text-pink-400" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Notifications</p>
+              <p className="text-xl font-bold text-pink-600 dark:text-pink-400">{myKPIs.unreadNotifications}</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ===== Primary KPI Cards Row ===== */}
+      {visiblePrimaryKPIs.length > 0 && (
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
-          {visibleKpis.slice(0, 4).map((card) => {
-            const Icon = card.icon;
-            return (
-              <Card key={card.label} className={`border ${card.borderColor} ${card.bgColor} hover:shadow-lg transition-all duration-300 group overflow-hidden relative`}>
-                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 dark:to-transparent rounded-bl-full" />
-                <CardContent className="p-5 relative">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className={`h-10 w-10 rounded-xl ${card.iconBg} flex items-center justify-center group-hover:scale-110 transition-transform duration-300`}>
-                      <Icon className={`h-5 w-5 ${card.iconColor}`} />
-                    </div>
-                    {card.showRing ? (
-                      <ProgressRing value={card.ringValue || 0} color={card.color} size={48} strokeWidth={4} />
-                    ) : (
-                      <MiniBarChart data={card.barData} color={card.color} maxVal={Math.max(...card.barData, 1)} />
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{card.label}</p>
-                    <p className="text-3xl font-bold tracking-tight" style={{ color: card.color }}>{card.value}</p>
-                    <p className="text-xs text-muted-foreground font-medium">{card.sublabel}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+          {visiblePrimaryKPIs.map((card) => (
+            <KPICard key={card.label} {...card} />
+          ))}
         </div>
       )}
 
@@ -321,34 +477,118 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* ===== KPI Cards Row 2 (Cross-Module) ===== */}
-      {visibleKpis.length > 4 && (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-          {visibleKpis.slice(4).map((card) => {
-            const Icon = card.icon;
-            return (
-              <Card key={card.label} className={`border ${card.borderColor} ${card.bgColor} hover:shadow-lg transition-all duration-300 group overflow-hidden relative`}>
-                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 dark:to-transparent rounded-bl-full" />
-                <CardContent className="p-5 relative">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className={`h-10 w-10 rounded-xl ${card.iconBg} flex items-center justify-center group-hover:scale-110 transition-transform duration-300`}>
-                      <Icon className={`h-5 w-5 ${card.iconColor}`} />
-                    </div>
-                    {card.showRing ? (
-                      <ProgressRing value={card.ringValue || 0} color={card.color} size={48} strokeWidth={4} />
-                    ) : card.barData.some(v => v > 0) ? (
-                      <MiniBarChart data={card.barData} color={card.color} maxVal={Math.max(...card.barData, 1)} />
-                    ) : null}
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{card.label}</p>
-                    <p className="text-3xl font-bold tracking-tight" style={{ color: card.color }}>{card.value}</p>
-                    <p className="text-xs text-muted-foreground font-medium">{card.sublabel}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+      {/* ===== Enhanced KPIs Row (Manager/Admin only or all) ===== */}
+      {(isManager || isPlanner || isSupervisor) && (
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+          {/* MTTR Card */}
+          <KPICard
+            label="MTTR (Avg Repair Time)"
+            value={`${maintenanceKPIs.mttr}h`}
+            sublabel="Mean Time To Repair"
+            color="#f59e0b"
+            bgColor="bg-amber-50 dark:bg-amber-950/30"
+            borderColor="border-amber-100 dark:border-amber-900/40"
+            iconBg="bg-amber-100 dark:bg-amber-900/50"
+            iconColor="text-amber-600 dark:text-amber-400"
+            icon={Timer}
+          />
+          {/* MTBF Card */}
+          <KPICard
+            label="MTBF (Uptime)"
+            value={maintenanceKPIs.mtbf >= 24 ? `${Math.round(maintenanceKPIs.mtbf / 24)}d` : `${maintenanceKPIs.mtbf}h`}
+            sublabel="Mean Time Between Failures"
+            color="#10b981"
+            bgColor="bg-emerald-50 dark:bg-emerald-950/30"
+            borderColor="border-emerald-100 dark:border-emerald-900/40"
+            iconBg="bg-emerald-100 dark:bg-emerald-900/50"
+            iconColor="text-emerald-600 dark:text-emerald-400"
+            icon={Gauge}
+            showRing
+            ringValue={Math.min(100, Math.round(maintenanceKPIs.mtbf / 72 * 100))}
+          />
+          {/* Planned Maintenance Ratio */}
+          <KPICard
+            label="Planned Ratio"
+            value={`${maintenanceKPIs.plannedRatio}%`}
+            sublabel={`${maintenanceKPIs.preventiveCount} prev vs ${maintenanceKPIs.reactiveCount} reactive`}
+            color="#14b8a6"
+            bgColor="bg-teal-50 dark:bg-teal-950/30"
+            borderColor="border-teal-100 dark:border-teal-900/40"
+            iconBg="bg-teal-100 dark:bg-teal-900/50"
+            iconColor="text-teal-600 dark:text-teal-400"
+            icon={Target}
+            showRing
+            ringValue={maintenanceKPIs.plannedRatio}
+          />
+          {/* Monthly Cost */}
+          <KPICard
+            label="Maintenance Cost"
+            value={`$${costAnalysis.thisMonthTotal.toLocaleString()}`}
+            sublabel={costAnalysis.lastMonthTotal > 0 ? `vs $${costAnalysis.lastMonthTotal.toLocaleString()} last month` : 'This month'}
+            color={costTrend > 0 ? '#ef4444' : '#10b981'}
+            bgColor={costTrend > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}
+            borderColor={costTrend > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40'}
+            iconBg={costTrend > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50'}
+            iconColor={costTrend > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}
+            icon={DollarSign}
+            trend={costTrend}
+          />
+        </div>
+      )}
+
+      {/* ===== PM Alerts & Compliance Row ===== */}
+      {(isManager || isPlanner) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* PM Overdue */}
+          <KPICard
+            label="PM Overdue"
+            value={pmAlerts.overdue}
+            sublabel={pmAlerts.overdue > 0 ? 'Action required' : 'All on schedule'}
+            color={pmAlerts.overdue > 0 ? '#ef4444' : '#10b981'}
+            bgColor={pmAlerts.overdue > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}
+            borderColor={pmAlerts.overdue > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40'}
+            iconBg={pmAlerts.overdue > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50'}
+            iconColor={pmAlerts.overdue > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}
+            icon={CalendarClock}
+            onClick={pmAlerts.overdue > 0 ? () => navigate('pm-schedules') : undefined}
+          />
+          {/* PM Due Soon */}
+          <KPICard
+            label="PM Due Soon (7d)"
+            value={pmAlerts.dueSoon}
+            sublabel="Within next 7 days"
+            color="#f59e0b"
+            bgColor="bg-amber-50 dark:bg-amber-950/30"
+            borderColor="border-amber-100 dark:border-amber-900/40"
+            iconBg="bg-amber-100 dark:bg-amber-900/50"
+            iconColor="text-amber-600 dark:text-amber-400"
+            icon={Clock}
+          />
+          {/* Assets at Risk */}
+          <KPICard
+            label="Assets at Risk"
+            value={assetsAtRisk}
+            sublabel={`${stats?.assetHealth?.poor || 0} poor, ${stats?.assetHealth?.critical || 0} critical`}
+            color="#f97316"
+            bgColor="bg-orange-50 dark:bg-orange-950/30"
+            borderColor="border-orange-100 dark:border-orange-900/40"
+            iconBg="bg-orange-100 dark:bg-orange-900/50"
+            iconColor="text-orange-600 dark:text-orange-400"
+            icon={AlertTriangle}
+            onClick={() => navigate('assets')}
+          />
+          {/* Compliance Summary */}
+          <KPICard
+            label="Compliance"
+            value={stats?.safetyAlerts?.overdueInspections || 0}
+            sublabel="Overdue inspections"
+            color={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? '#ef4444' : '#10b981'}
+            bgColor={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}
+            borderColor={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40'}
+            iconBg={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50'}
+            iconColor={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}
+            icon={Shield}
+          />
         </div>
       )}
 
@@ -418,7 +658,7 @@ export function DashboardPage() {
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-lg bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center">
-                <Package className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                <PieChartIcon className="h-4 w-4 text-violet-600 dark:text-violet-400" />
               </div>
               <div>
                 <CardTitle className="text-base font-semibold">WO by Type</CardTitle>
@@ -551,15 +791,119 @@ export function DashboardPage() {
         </Card>
       </div>
 
+      {/* ===== Asset Health + Cost Breakdown Row (Manager/Admin) ===== */}
+      {(isManager || isPlanner) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Asset Health Distribution */}
+          <Card className="border">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-lg bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center">
+                  <WrenchIcon className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-semibold">Asset Health Distribution</CardTitle>
+                  <CardDescription className="text-xs mt-0.5">{stats?.assetHealth?.total || 0} total active assets</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {assetConditionData.length > 0 ? (
+                <ChartContainer config={assetConditionConfig} className="h-[240px] w-full">
+                  <PieChart>
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Pie
+                      data={assetConditionData}
+                      cx="50%"
+                      cy="45%"
+                      innerRadius={50}
+                      outerRadius={80}
+                      paddingAngle={3}
+                      dataKey="count"
+                      nameKey="condition"
+                    >
+                      {assetConditionData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <ChartLegend content={<ChartLegendContent nameKey="condition" />} className="flex-wrap gap-x-4 gap-y-1" />
+                  </PieChart>
+                </ChartContainer>
+              ) : (
+                <EmptyState icon={WrenchIcon} title="No assets" description="No active assets found." />
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Cost Breakdown */}
+          <Card className="border">
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
+                  <DollarSign className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div>
+                  <CardTitle className="text-base font-semibold">Cost Breakdown</CardTitle>
+                  <CardDescription className="text-xs mt-0.5">This month maintenance spending</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0 space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="px-3 py-3 rounded-xl border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 text-center">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Labor</p>
+                  <p className="text-lg font-bold text-sky-600 dark:text-sky-400">${costAnalysis.thisMonthLabor.toLocaleString()}</p>
+                </div>
+                <div className="px-3 py-3 rounded-xl border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 text-center">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Parts</p>
+                  <p className="text-lg font-bold text-amber-600 dark:text-amber-400">${costAnalysis.thisMonthParts.toLocaleString()}</p>
+                </div>
+                <div className="px-3 py-3 rounded-xl border border-violet-100 dark:border-violet-900/40 bg-violet-50 dark:bg-violet-950/30 text-center">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Contractor</p>
+                  <p className="text-lg font-bold text-violet-600 dark:text-violet-400">${costAnalysis.thisMonthContractor.toLocaleString()}</p>
+                </div>
+              </div>
+              {/* Cost by type stacked bar */}
+              <div className="space-y-2">
+                {Object.entries(costAnalysis.byCategory)
+                  .filter(([, v]) => v.totalCost > 0)
+                  .sort((a, b) => b[1].totalCost - a[1].totalCost)
+                  .slice(0, 5)
+                  .map(([type, costs]) => {
+                    const maxCost = Math.max(...Object.values(costAnalysis.byCategory).map(v => v.totalCost), 1);
+                    return (
+                      <div key={type} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium capitalize">{type.replace(/_/g, ' ')}</span>
+                          <span className="text-xs font-bold text-muted-foreground">${Math.round(costs.totalCost).toLocaleString()}</span>
+                        </div>
+                        <div className="h-2 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-700"
+                            style={{ width: `${(costs.totalCost / maxCost) * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                {Object.keys(costAnalysis.byCategory).length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-4">No cost data available</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* ===== Quick Actions ===== */}
-      {quickActions.length > 0 && (
+      {visibleQuickActions.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
             <Zap className="h-4 w-4 text-primary" />
             Quick Actions
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {quickActions.map(action => {
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {visibleQuickActions.map(action => {
               const Icon = action.icon;
               return (
                 <button

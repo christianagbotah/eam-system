@@ -167,11 +167,18 @@ export async function GET(request: NextRequest) {
       return last7Days.map((d) => map.get(d) || 0);
     }
 
+    // Date boundaries for this month and last month
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
     const [
       // Asset health
       assetPoorCount,
       assetCriticalCount,
       assetTotalCount,
+      assetByCondition,
 
       // Safety alerts
       safetyOpenIncidents,
@@ -201,6 +208,40 @@ export async function GET(request: NextRequest) {
       weeklyWoResult,
       weeklyMrResult,
       weeklyProdResult,
+
+      // ===== Enhanced KPIs =====
+
+      // Maintenance KPIs: MTBF, MTTR, planned vs reactive
+      completedWOsForKPI,
+      preventiveWOsForKPI,
+      correctiveWOsForKPI,
+
+      // PM schedules
+      pmSchedulesDue,
+      pmSchedulesOverdue,
+
+      // Cost analysis: this month vs last month
+      thisMonthCostResult,
+      lastMonthCostResult,
+      costByTypeResult,
+
+      // My assigned work orders (for technician/supervisor dashboards)
+      myActiveWOs,
+      myPendingTasks,
+      myCompletedThisWeek,
+
+      // Tools checked out (for technicians)
+      myToolsCheckedOut,
+
+      // Team workload (for supervisors)
+      teamPendingApprovals,
+      teamActiveWOs,
+
+      // Planning queue (for planners)
+      planningQueueWOs,
+
+      // Recent notifications count
+      unreadNotifications,
     ] = await Promise.all([
       // Asset health: poor condition
       db.asset.count({ where: { condition: 'poor', isActive: true, ...plantFilter } }),
@@ -208,6 +249,12 @@ export async function GET(request: NextRequest) {
       db.asset.count({ where: { criticality: 'critical', isActive: true, ...plantFilter } }),
       // Asset total
       db.asset.count({ where: { isActive: true, ...plantFilter } }),
+      // Asset by condition breakdown
+      db.asset.groupBy({
+        by: ['condition'],
+        _count: { condition: true },
+        where: { isActive: true, ...plantFilter },
+      }),
 
       // Safety: open incidents (open + investigating)
       db.safetyIncident.count({ where: { ...plantFilter, status: { in: ['open', 'investigating'] } } }),
@@ -263,6 +310,114 @@ export async function GET(request: NextRequest) {
       db.$queryRaw(Prisma.sql`SELECT date(createdAt) as day, COUNT(*) as count FROM maintenance_requests WHERE createdAt >= date('now', '-6 days') GROUP BY date(createdAt) ORDER BY day`),
       // Weekly trends: production orders created per day
       db.$queryRaw(Prisma.sql`SELECT date(createdAt) as day, COUNT(*) as count FROM production_orders WHERE createdAt >= date('now', '-6 days') GROUP BY date(createdAt) ORDER BY day`),
+
+      // ===== Enhanced KPIs =====
+
+      // Completed WOs with actual hours for MTBF/MTTR
+      db.workOrder.findMany({
+        where: { ...plantFilter, status: { in: ['completed', 'closed'] }, actualEnd: { not: null }, actualStart: { not: null } },
+        select: { id: true, actualStart: true, actualEnd: true, actualHours: true, completedAt: true, type: true },
+        orderBy: { actualEnd: 'desc' },
+        take: 200,
+      }),
+
+      // Preventive vs corrective count for planned ratio
+      db.workOrder.count({ where: { ...plantFilter, type: 'preventive' } }),
+      db.workOrder.count({ where: { ...plantFilter, type: { in: ['corrective', 'emergency'] } } }),
+
+      // PM schedules due (nextDueDate within 7 days)
+      db.pmSchedule.count({
+        where: {
+          ...plantFilter,
+          isActive: true,
+          nextDueDate: { lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+        },
+      }),
+
+      // PM schedules overdue
+      db.pmSchedule.count({
+        where: {
+          ...plantFilter,
+          isActive: true,
+          nextDueDate: { lt: new Date() },
+        },
+      }),
+
+      // This month cost
+      db.workOrder.aggregate({
+        where: { ...plantFilter, createdAt: { gte: thisMonthStart }, status: { notIn: ['cancelled'] } },
+        _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
+        _count: true,
+      }),
+
+      // Last month cost
+      db.workOrder.aggregate({
+        where: { ...plantFilter, createdAt: { gte: lastMonthStart, lte: lastMonthEnd }, status: { notIn: ['cancelled'] } },
+        _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
+        _count: true,
+      }),
+
+      // Cost by WO type
+      db.workOrder.groupBy({
+        by: ['type'],
+        _sum: { totalCost: true, laborCost: true, partsCost: true },
+        where: { ...plantFilter, status: { notIn: ['cancelled', 'draft'] } },
+      }),
+
+      // My active WOs (assigned to me, not terminal)
+      db.workOrder.count({
+        where: {
+          ...plantFilter,
+          assignedTo: session.userId,
+          status: { in: ['assigned', 'in_progress', 'waiting_parts', 'on_hold'] },
+        },
+      }),
+
+      // My pending tasks (MRs I submitted that are pending, or WOs assigned to me in assigned status)
+      db.maintenanceRequest.count({
+        where: { ...plantFilter, requestedBy: session.userId, status: { in: ['pending', 'in_progress', 'approved'] } },
+      }),
+
+      // My completed this week
+      db.workOrder.count({
+        where: {
+          ...plantFilter,
+          assignedTo: session.userId,
+          status: 'completed',
+          updatedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+      }),
+
+      // Tools checked out by me
+      db.tool.count({
+        where: { status: 'checked_out', assignedToId: session.userId },
+      }),
+
+      // Team pending approvals (for supervisors)
+      isAdm || session.roles.includes('maintenance_supervisor')
+        ? db.maintenanceRequest.count({
+            where: { ...plantFilter, status: { in: ['pending', 'in_progress'] } },
+          })
+        : Promise.resolve(0),
+
+      // Team active WOs (for supervisors)
+      isAdm || session.roles.includes('maintenance_supervisor')
+        ? db.workOrder.count({
+            where: { ...plantFilter, status: { in: ['assigned', 'in_progress', 'waiting_parts'] } },
+          })
+        : Promise.resolve(0),
+
+      // Planning queue (for planners)
+      isAdm || session.roles.includes('maintenance_planner')
+        ? db.workOrder.count({
+            where: { ...plantFilter, status: { in: ['draft', 'approved', 'requested'] } },
+          })
+        : Promise.resolve(0),
+
+      // Unread notification count
+      db.notification.count({
+        where: { userId: session.userId, isRead: false },
+      }),
     ]);
 
     // Calculate low stock from inventory items
@@ -281,6 +436,64 @@ export async function GET(request: NextRequest) {
       maintenanceRequests: fillTrendArray(weeklyMrResult),
       productionOrders: fillTrendArray(weeklyProdResult),
     };
+
+    // ===== Compute Enhanced KPIs =====
+
+    // MTTR (Mean Time To Repair) in hours: avg of actualHours for completed WOs
+    const wosWithActualHours = completedWOsForKPI.filter(w => w.actualHours && w.actualHours > 0);
+    const mttr = wosWithActualHours.length > 0
+      ? Math.round((wosWithActualHours.reduce((sum, w) => sum + (w.actualHours || 0), 0) / wosWithActualHours.length) * 10) / 10
+      : 0;
+
+    // MTBF (Mean Time Between Failures) in hours: avg time between completed corrective/emergency WOs
+    const failureWOs = completedWOsForKPI
+      .filter(w => w.type === 'corrective' || w.type === 'emergency')
+      .filter(w => w.actualEnd && w.actualStart)
+      .sort((a, b) => new Date(a.actualEnd!).getTime() - new Date(b.actualEnd!).getTime());
+    let mtbf = 0;
+    if (failureWOs.length >= 2) {
+      let totalHours = 0;
+      for (let i = 1; i < failureWOs.length; i++) {
+        const diff = new Date(failureWOs[i].actualEnd!).getTime() - new Date(failureWOs[i - 1].actualEnd!).getTime();
+        totalHours += diff / (1000 * 60 * 60);
+      }
+      mtbf = Math.round(totalHours / (failureWOs.length - 1));
+    } else if (failureWOs.length === 1) {
+      // Use 30-day window as denominator
+      const diff = Date.now() - new Date(failureWOs[0].actualEnd!).getTime();
+      mtbf = Math.round(diff / (1000 * 60 * 60));
+    }
+
+    // Planned vs reactive ratio
+    const totalMaintWOs = preventiveWOsForKPI + correctiveWOsForKPI;
+    const plannedRatio = totalMaintWOs > 0
+      ? Math.round((preventiveWOsForKPI / totalMaintWOs) * 100)
+      : 0;
+
+    // Asset condition breakdown
+    const assetConditionMap: Record<string, number> = {};
+    assetByCondition.forEach((r) => {
+      assetConditionMap[r.condition] = r._count.condition;
+    });
+
+    // Cost analysis
+    const thisMonthTotal = thisMonthCostResult._sum.totalCost || 0;
+    const lastMonthTotal = lastMonthCostResult._sum.totalCost || 0;
+    const costChangePercent = lastMonthTotal > 0
+      ? Math.round(((thisMonthTotal - lastMonthTotal) / lastMonthTotal) * 100)
+      : thisMonthTotal > 0 ? 100 : 0;
+
+    const costByCategory: Record<string, { totalCost: number; laborCost: number; partsCost: number }> = {};
+    costByTypeResult.forEach((r) => {
+      costByCategory[r.type] = {
+        totalCost: r._sum.totalCost || 0,
+        laborCost: r._sum.laborCost || 0,
+        partsCost: r._sum.partsCost || 0,
+      };
+    });
+
+    // User roles for frontend role detection
+    const userRoles = session.roles || [];
 
     return NextResponse.json({
       success: true,
@@ -332,6 +545,7 @@ export async function GET(request: NextRequest) {
           poor: assetPoorCount,
           critical: assetCriticalCount,
           total: assetTotalCount,
+          byCondition: assetConditionMap,
         },
         safetyAlerts: {
           openIncidents: safetyOpenIncidents,
@@ -357,6 +571,58 @@ export async function GET(request: NextRequest) {
           pendingRequests: inventoryPendingRequests,
         },
         weeklyTrends,
+
+        // ===== Enhanced KPIs =====
+
+        // Maintenance KPIs
+        maintenanceKPIs: {
+          mtbf, // hours between failures
+          mttr, // hours to repair
+          plannedRatio, // % planned vs reactive
+          preventiveCount: preventiveWOsForKPI,
+          reactiveCount: correctiveWOsForKPI,
+        },
+
+        // PM Schedules
+        pmScheduleAlerts: {
+          dueSoon: pmSchedulesDue - pmSchedulesOverdue,
+          overdue: pmSchedulesOverdue,
+        },
+
+        // Cost Analysis
+        costAnalysis: {
+          thisMonthTotal: Math.round(thisMonthTotal * 100) / 100,
+          lastMonthTotal: Math.round(lastMonthTotal * 100) / 100,
+          changePercent: costChangePercent,
+          thisMonthLabor: Math.round((thisMonthCostResult._sum.laborCost || 0) * 100) / 100,
+          thisMonthParts: Math.round((thisMonthCostResult._sum.partsCost || 0) * 100) / 100,
+          thisMonthContractor: Math.round((thisMonthCostResult._sum.contractorCost || 0) * 100) / 100,
+          byCategory: costByCategory,
+        },
+
+        // ===== Role-Based Personal KPIs =====
+        myKPIs: {
+          activeWorkOrders: myActiveWOs,
+          pendingTasks: myPendingTasks,
+          completedThisWeek: myCompletedThisWeek,
+          toolsCheckedOut: myToolsCheckedOut,
+          unreadNotifications,
+        },
+
+        // Supervisor KPIs
+        supervisorKPIs: {
+          pendingApprovals: teamPendingApprovals,
+          teamActiveWOs,
+        },
+
+        // Planner KPIs
+        plannerKPIs: {
+          planningQueue: planningQueueWOs,
+          pmSchedulesDue: pmSchedulesDue,
+        },
+
+        // User roles for frontend
+        userRoles,
       },
     });
   } catch (error: unknown) {

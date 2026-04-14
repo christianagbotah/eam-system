@@ -424,7 +424,7 @@ export interface DashboardStats {
   recentRequests: MaintenanceRequest[];
   recentWorkOrders: WorkOrder[];
   // Cross-module KPIs
-  assetHealth: { poor: number; critical: number; total: number };
+  assetHealth: { poor: number; critical: number; total: number; byCondition: Record<string, number> };
   safetyAlerts: { openIncidents: number; overdueInspections: number };
   production: { activeOrders: number; overdueOrders: number; completionRate: number };
   iotStatus: { totalDevices: number; offlineCount: number; alertCount: number };
@@ -435,6 +435,44 @@ export interface DashboardStats {
     maintenanceRequests: number[];
     productionOrders: number[];
   };
+  // Enhanced KPIs
+  maintenanceKPIs: {
+    mtbf: number;
+    mttr: number;
+    plannedRatio: number;
+    preventiveCount: number;
+    reactiveCount: number;
+  };
+  pmScheduleAlerts: {
+    dueSoon: number;
+    overdue: number;
+  };
+  costAnalysis: {
+    thisMonthTotal: number;
+    lastMonthTotal: number;
+    changePercent: number;
+    thisMonthLabor: number;
+    thisMonthParts: number;
+    thisMonthContractor: number;
+    byCategory: Record<string, { totalCost: number; laborCost: number; partsCost: number }>;
+  };
+  // Role-based personal KPIs
+  myKPIs: {
+    activeWorkOrders: number;
+    pendingTasks: number;
+    completedThisWeek: number;
+    toolsCheckedOut: number;
+    unreadNotifications: number;
+  };
+  supervisorKPIs: {
+    pendingApprovals: number;
+    teamActiveWOs: number;
+  };
+  plannerKPIs: {
+    planningQueue: number;
+    pmSchedulesDue: number;
+  };
+  userRoles: string[];
 }
 
 export interface Notification {

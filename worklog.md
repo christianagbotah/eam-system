@@ -651,3 +651,76 @@ Stage Summary:
 - Recent exports history persisted in localStorage
 - Drag-and-drop file import with result summary
 - ESLint clean, app loads successfully
+
+---
+Task ID: 15
+Agent: Main Coordinator
+Task: Phase 3C - Enhanced Dashboard with Role-Based KPIs
+
+Work Log:
+
+### 1. Enhanced Dashboard API (`/api/dashboard/stats/route.ts`)
+- **Maintenance KPIs section**: Added MTBF (Mean Time Between Failures) and MTTR (Mean Time To Repair) calculations from completed WOs with actual hours. Planned vs reactive maintenance ratio from preventive/corrective/emergency WO counts.
+- **Asset Health enhancement**: Added `byCondition` breakdown (new, good, fair, poor, out_of_service) via groupBy query on Asset model.
+- **PM Schedule Alerts**: Added `dueSoon` (nextDueDate within 7 days) and `overdue` (past due date) counts from PmSchedule model.
+- **Cost Analysis section**: Aggregated this month vs last month maintenance costs (totalCost, laborCost, partsCost, contractorCost) via WorkOrder aggregate queries. Cost by WO type breakdown via groupBy. Calculated month-over-month percentage change.
+- **Role-Based Personal KPIs**: Added `myKPIs` (activeWorkOrders, pendingTasks, completedThisWeek, toolsCheckedOut, unreadNotifications), `supervisorKPIs` (pendingApprovals, teamActiveWOs), `plannerKPIs` (planningQueue, pmSchedulesDue).
+- **User roles**: Returns `userRoles` array for frontend role detection.
+- All new queries run in parallel via Promise.all with existing queries (27 parallel queries total).
+- Respects plant scope for multi-plant data isolation.
+
+### 2. Enhanced TypeScript Types (`src/types/index.ts`)
+- Extended `DashboardStats.assetHealth` with `byCondition: Record<string, number>`.
+- Added `maintenanceKPIs` interface: mtbf, mttr, plannedRatio, preventiveCount, reactiveCount.
+- Added `pmScheduleAlerts` interface: dueSoon, overdue.
+- Added `costAnalysis` interface: thisMonthTotal, lastMonthTotal, changePercent, thisMonthLabor, thisMonthParts, thisMonthContractor, byCategory.
+- Added `myKPIs` interface: activeWorkOrders, pendingTasks, completedThisWeek, toolsCheckedOut, unreadNotifications.
+- Added `supervisorKPIs` interface: pendingApprovals, teamActiveWOs.
+- Added `plannerKPIs` interface: planningQueue, pmSchedulesDue.
+- Added `userRoles: string[]`.
+
+### 3. Enhanced Dashboard Page (`src/components/modules/DashboardPages.tsx`)
+- **New `TrendIndicator` component**: Shows up/down arrows with percentage change, color-coded (red for increase in cost, green for decrease).
+- **New `KPICard` component**: Reusable clickable KPI card with optional trend indicator, onClick handler for navigation, and consistent styling.
+- **Role badge in header**: Displays the user's primary role next to the welcome message.
+- **Notification badge**: Shows unread notification count with bell icon (destructive badge).
+- **My Personal KPIs row** (5-column responsive grid):
+  - All users: My Active WOs, Pending Tasks, Done This Week
+  - Technicians: Tools Checked Out
+  - Supervisors: Pending Approvals, Team Active WOs
+  - Planners: Planning Queue, PMs Due
+  - Operators: Notifications
+- **Enhanced KPI row** (Manager/Admin/Planner/Supervisor):
+  - MTTR (Avg Repair Time) with timer icon
+  - MTBF (Uptime) with gauge icon and progress ring
+  - Planned Ratio with target icon and progress ring
+  - Monthly Cost with dollar icon and trend indicator (up/down arrow with %)
+- **PM Alerts & Compliance row** (Manager/Planner):
+  - PM Overdue (clickable to PM schedules)
+  - PM Due Soon (7 days)
+  - Assets at Risk (clickable to assets)
+  - Compliance (overdue inspections)
+- **Asset Health Distribution** pie chart (Manager/Planner): Donut chart showing assets by condition with ChartLegend.
+- **Cost Breakdown** card (Manager/Planner): 3-column grid (Labor, Parts, Contractor) + horizontal bar chart of cost by WO type.
+- **Role-based Quick Actions**: Up to 5 actions filtered by role (New Request, View WOs, View Requests, My Active WOs, Approvals, Team WOs, PM Schedules, Reports, Settings).
+- **Clickable cards**: Overdue WOs, PM Overdue, Assets at Risk navigate to respective filtered pages.
+- **All existing dashboard sections preserved**: Welcome header, KPI cards, cross-module overview, weekly trends chart, WO status/type charts, MR status/priority, operations summary, recent activity panels, system health footer.
+
+### 4. Quality
+- ESLint passes with zero errors
+- React hooks rule compliance (moved useMemo before early return)
+- Dev server compiles and serves successfully (HTTP 200)
+
+Stage Summary:
+- 1 API route enhanced (`/api/dashboard/stats`)
+- 1 type interface extended (`DashboardStats`)
+- 1 page component fully rewritten (`DashboardPages.tsx`)
+- 2 new sub-components created (`TrendIndicator`, `KPICard`)
+- 7 new data sections in API response
+- 6 role-based personal KPI tiles
+- 4 enhanced KPI cards (MTTR, MTBF, Planned Ratio, Cost)
+- 4 compliance/alert cards (PM Overdue, PM Due Soon, Assets at Risk, Compliance)
+- 2 new charts (Asset Health pie, Cost breakdown bars)
+- Clickable cards for navigation to filtered views
+- Role-based quick actions filtered by user roles
+- ESLint clean, app loads successfully
