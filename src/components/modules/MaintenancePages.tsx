@@ -53,6 +53,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLe
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { FileUpload } from '@/components/shared/FileUpload';
 export function MaintenanceRequestsPage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -898,6 +899,9 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               {(!mr.comments || mr.comments.length === 0) && <p className="text-sm text-muted-foreground text-center py-4">No comments yet</p>}
             </CardContent>
           </Card>
+
+          {/* Attachments */}
+          <FileUpload entityType="maintenance_request" entityId={id} />
 
           {/* Status History */}
           <Card className="border-0 shadow-sm">
@@ -2023,6 +2027,9 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               </ScrollArea>
             </CardContent>
           </Card>
+
+          {/* Attachments */}
+          <FileUpload entityType="work_order" entityId={id} />
 
           {/* Time Logs — Enhanced with Summary Bar */}
           <Card className="border-0 shadow-sm">

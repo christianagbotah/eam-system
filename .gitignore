@@ -61,6 +61,7 @@ db/*.db-journal
 # Upload / download directories
 /upload/
 /download/
+/public/uploads/
 
 # Source analysis (reference files from original project)
 /source-analysis/

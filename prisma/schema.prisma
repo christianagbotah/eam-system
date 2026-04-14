@@ -187,6 +187,9 @@ model User {
   repairCompSupApproved        RepairCompletion[]    @relation("RepairCompSupApproved")
   repairCompPlannerClosed      RepairCompletion[]    @relation("RepairCompPlannerClosed")
 
+  // Attachment relations
+  attachments                  Attachment[]
+
   @@map("users")
 }
 
@@ -2033,4 +2036,26 @@ model RepairCompletion {
   plannerClosedBy        User?     @relation("RepairCompPlannerClosed", fields: [plannerClosedById], references: [id])
 
   @@map("repair_completions")
+}
+
+// ============================================================================
+// FILE ATTACHMENTS
+// ============================================================================
+
+model Attachment {
+  id          String   @id @default(cuid())
+  fileName    String
+  fileType    String   // MIME type
+  fileSize    Int      // bytes
+  filePath    String   // relative path on disk
+  entityType  String   // e.g. 'work_order', 'maintenance_request', 'asset', 'safety_incident'
+  entityId    String
+  uploadedById String
+  uploadedAt  DateTime @default(now())
+  description String?
+
+  uploadedBy User @relation(fields: [uploadedById], references: [id])
+
+  @@index([entityType, entityId])
+  @@map("attachments")
 }
