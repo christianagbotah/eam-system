@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
+import { notifyUser } from '@/lib/notifications';
 
 // Helper: generate request number MR-YYYYMM-NNNN
 async function generateRequestNumber(): Promise<string> {
@@ -141,6 +142,19 @@ export async function POST(request: NextRequest) {
       resolvedPlantId = userPlant?.plantId ?? null;
     }
 
+    // Auto-detect the worker's department supervisor
+    let autoSupervisorId: string | null = null;
+    const resolvedDepartmentId = departmentId || null;
+    if (resolvedDepartmentId) {
+      const department = await db.department.findUnique({
+        where: { id: resolvedDepartmentId },
+        select: { supervisorId: true },
+      });
+      if (department?.supervisorId) {
+        autoSupervisorId = department.supervisorId;
+      }
+    }
+
     const mr = await db.maintenanceRequest.create({
       data: {
         requestNumber,
@@ -149,9 +163,10 @@ export async function POST(request: NextRequest) {
         priority: priority || 'medium',
         category: category || null,
         assetId: assetId || null,
-        departmentId: departmentId || null,
+        departmentId: resolvedDepartmentId,
         plantId: resolvedPlantId,
         requestedBy: session.userId,
+        supervisorId: autoSupervisorId,
         machineDownStatus: machineDownStatus || false,
         estimatedHours: estimatedHours || null,
         slaHours: slaHours || null,
@@ -164,6 +179,19 @@ export async function POST(request: NextRequest) {
         supervisor: { select: { id: true, fullName: true, username: true } },
       },
     });
+
+    // Send notification to the auto-detected supervisor
+    if (autoSupervisorId && autoSupervisorId !== session.userId) {
+      await notifyUser(
+        autoSupervisorId,
+        'mr_assigned',
+        'New Maintenance Request Pending Review',
+        `A new maintenance request ${mr.requestNumber} has been submitted for your review: ${mr.title}`,
+        'maintenance_request',
+        mr.id,
+        `mr-detail?id=${mr.id}`,
+      );
+    }
 
     return NextResponse.json({ success: true, data: mr }, { status: 201 });
   } catch (error: unknown) {

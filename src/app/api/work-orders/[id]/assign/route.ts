@@ -20,7 +20,7 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { assignedTo, teamLeaderId, assignedSupervisorId, assignmentType } = body;
+    const { assignedTo, teamLeaderId, assignedSupervisorId, assignmentType, teamMembers } = body;
 
     if (!assignedTo) {
       return NextResponse.json(
@@ -68,14 +68,40 @@ export async function POST(
       where: { workOrderId: id, userId: assignedTo },
     });
     if (!existingMember) {
+      const isTeamLeader = assignedTo === teamLeaderId;
       await db.workOrderTeamMember.create({
         data: {
           workOrderId: id,
           userId: assignedTo,
-          role: teamLeaderId === assignedTo ? 'team_leader' : 'assistant',
+          role: isTeamLeader ? 'team_leader' : 'assistant',
+          accessLevel: isTeamLeader ? 'full' : 'read_only',
           assignedAt: now,
         },
       });
+    }
+
+    // Create team member records if teamMembers array is provided
+    if (teamMembers && Array.isArray(teamMembers) && teamMembers.length > 0) {
+      for (const member of teamMembers) {
+        if (!member.userId || !member.role) continue;
+
+        // Skip if already a team member
+        const alreadyMember = await db.workOrderTeamMember.findFirst({
+          where: { workOrderId: id, userId: member.userId },
+        });
+        if (alreadyMember) continue;
+
+        const isTeamLeader = member.userId === teamLeaderId;
+        await db.workOrderTeamMember.create({
+          data: {
+            workOrderId: id,
+            userId: member.userId,
+            role: isTeamLeader ? 'team_leader' : member.role,
+            accessLevel: isTeamLeader ? 'full' : 'read_only',
+            assignedAt: now,
+          },
+        });
+      }
     }
 
     // Domain-specific audit log (status change is handled by state machine via WorkOrderStatusHistory)
@@ -89,6 +115,7 @@ export async function POST(
         newValues: JSON.stringify({
           assignedTo: assignee.fullName,
           assignmentType: assignmentType || 'direct',
+          teamMembersCount: teamMembers?.length || 1,
         }),
       },
     });
@@ -104,6 +131,23 @@ export async function POST(
         id,
         `wo-detail?id=${id}`,
       );
+    }
+
+    // Notify team members (excluding assignee and session user)
+    if (teamMembers && Array.isArray(teamMembers)) {
+      for (const member of teamMembers) {
+        if (member.userId !== session.userId && member.userId !== assignedTo) {
+          await notifyUser(
+            member.userId,
+            'wo_assigned',
+            'Work Order Team Assignment',
+            `You have been assigned to team for ${wo.woNumber}: ${wo.title}`,
+            'work_order',
+            id,
+            `wo-detail?id=${id}`,
+          );
+        }
+      }
     }
 
     // Re-fetch with includes to return full object (state machine returns plain record)

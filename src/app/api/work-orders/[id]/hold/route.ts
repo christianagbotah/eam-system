@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 import { executeTransition } from '@/lib/state-machine';
 
 /**
@@ -57,6 +58,34 @@ export async function POST(
         timestamp: new Date(),
       },
     });
+
+    // Notify supervisor, planner, and team members
+    const notifyTargets: string[] = [wo.assignedSupervisorId, wo.plannerId, wo.teamLeaderId].filter(
+      (uid): uid is string => !!uid && uid !== session.userId,
+    );
+
+    // Also get all team members
+    const teamMembers = await db.workOrderTeamMember.findMany({
+      where: { workOrderId: id },
+      select: { userId: true },
+    });
+    for (const member of teamMembers) {
+      if (member.userId !== session.userId && !notifyTargets.includes(member.userId)) {
+        notifyTargets.push(member.userId);
+      }
+    }
+
+    for (const targetId of notifyTargets) {
+      await notifyUser(
+        targetId,
+        'wo_on_hold',
+        'Work Order Placed On Hold',
+        `${wo.woNumber} has been placed on hold. Reason: ${reason}`,
+        'work_order',
+        id,
+        `wo-detail?id=${id}`,
+      );
+    }
 
     // Re-fetch with includes
     const updated = await db.workOrder.findUnique({

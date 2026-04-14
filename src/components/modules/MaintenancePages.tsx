@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
-import type { MaintenanceRequest, WorkOrder, User, PageName } from '@/types';
+import type { MaintenanceRequest, WorkOrder, WOTeamMember, PersonalTool, User, PageName } from '@/types';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,6 +20,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SearchableSelect, AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -41,6 +42,8 @@ import {
   Building2,
   ArrowRightLeft, FileText, CheckSquare, Filter, ArrowUpDown, BookOpen, ShieldAlert,
   PieChart as PieChartIcon, Gauge, ListChecks, Shield, ShieldCheck, HardHat, MapPin,
+  Crown, Timer, Hourglass, UserPlus, Workflow, ChevronRight, ExternalLink, Hammer,
+  PackageSearch, ClipboardCheck,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -361,8 +364,108 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
 }
 
 // ============================================================================
-// MR DETAIL PAGE
+// MR DETAIL PAGE — Enhanced with Workflow Timeline, SLA Timer, Assign Planner, Convert to WO
 // ============================================================================
+
+// --- SLA Timer Sub-component ---
+function SLATimerDisplay({ slaHours, slaStartedAt, status }: { slaHours?: number; slaStartedAt?: string; status: string }) {
+  const [remaining, setRemaining] = useState<{ hours: number; minutes: number; seconds: number; breached: boolean } | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!slaHours || !slaStartedAt || status === 'converted' || status === 'rejected') {
+      setRemaining(null);
+      if (timerRef.current) clearInterval(timerRef.current);
+      return;
+    }
+    const calc = () => {
+      const deadline = new Date(slaStartedAt).getTime() + slaHours * 3600 * 1000;
+      const now = Date.now();
+      const diff = deadline - now;
+      if (diff <= 0) {
+        setRemaining({ hours: 0, minutes: 0, seconds: 0, breached: true });
+      } else {
+        setRemaining({ hours: Math.floor(diff / 3600000), minutes: Math.floor((diff % 3600000) / 60000), seconds: Math.floor((diff % 60000) / 1000), breached: false });
+      }
+    };
+    calc();
+    timerRef.current = setInterval(calc, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [slaHours, slaStartedAt, status]);
+
+  if (!remaining) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    <Card className={`border-0 shadow-sm ${remaining.breached ? 'border-l-4 border-l-red-500 bg-red-50/50' : 'border-l-4 border-l-amber-500 bg-amber-50/50'}`}>
+      <CardContent className="p-4 flex items-center gap-3">
+        <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${remaining.breached ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+          <Hourglass className="h-5 w-5" />
+        </div>
+        <div className="flex-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SLA Timer</p>
+          <p className={`text-lg font-bold font-mono ${remaining.breached ? 'text-red-600' : 'text-amber-700'}`}>
+            {remaining.breached ? 'BREACHED' : `${pad(remaining.hours)}:${pad(remaining.minutes)}:${pad(remaining.seconds)}`}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-muted-foreground">{remaining.breached ? 'Time exceeded' : 'Time remaining'}</p>
+          <p className="text-xs text-muted-foreground">{slaHours}h SLA window</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// --- Workflow Timeline Sub-component ---
+function MRWorkflowTimeline({ mr }: { mr: MaintenanceRequest }) {
+  const steps = [
+    { key: 'submitted', label: 'Submitted', icon: <Send className="h-4 w-4" />, info: mr.requester?.fullName, time: mr.createdAt, isComplete: true },
+    { key: 'supervisor_review', label: 'Supervisor Review', icon: <ClipboardCheck className="h-4 w-4" />, info: mr.reviewer?.fullName, isComplete: ['supervisor_review', 'approved', 'assigned_to_planner', 'work_order_created'].includes(mr.workflowStatus) || mr.status === 'converted', isCurrent: mr.status === 'pending' && !mr.workflowStatus },
+    { key: 'approved', label: 'Approved', icon: <CheckCircle2 className="h-4 w-4" />, info: mr.approver?.fullName || mr.reviewer?.fullName, time: mr.approvedAt, isComplete: ['approved', 'assigned_to_planner', 'work_order_created'].includes(mr.workflowStatus) || mr.status === 'converted', isCurrent: mr.status === 'approved' && !mr.plannerId },
+    { key: 'assigned_to_planner', label: 'Assigned to Planner', icon: <UserPlus className="h-4 w-4" />, info: mr.planner?.fullName, isComplete: ['assigned_to_planner', 'work_order_created'].includes(mr.workflowStatus) || mr.status === 'converted', isCurrent: mr.status === 'approved' && !!mr.plannerId },
+    { key: 'work_order_created', label: 'Work Order Created', icon: <ClipboardList className="h-4 w-4" />, info: mr.workOrder?.woNumber, isComplete: mr.status === 'converted', isCurrent: false },
+  ];
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader><CardTitle className="text-base flex items-center gap-2"><Workflow className="h-4 w-4 text-emerald-600" />Workflow Progress</CardTitle></CardHeader>
+      <CardContent>
+        <div className="relative">
+          {steps.map((step, i) => {
+            const dotColor = step.isComplete ? 'bg-emerald-500 text-emerald-500 ring-emerald-100' : step.isCurrent ? 'bg-amber-500 text-amber-500 ring-amber-100' : 'bg-slate-300 text-slate-300 ring-slate-100';
+            const lineColor = step.isComplete ? 'bg-emerald-300' : 'bg-slate-200';
+            return (
+              <div key={step.key} className="flex items-start gap-4 relative">
+                {/* Connector Line */}
+                {i < steps.length - 1 && (
+                  <div className="absolute left-[19px] top-[40px] w-0.5 h-[calc(100%-8px)] z-0" style={{ backgroundColor: lineColor.replace('bg-', '#') === lineColor ? undefined : undefined }}>
+                    <div className={`w-0.5 h-full ${lineColor}`} />
+                  </div>
+                )}
+                {/* Dot */}
+                <div className={`relative z-10 h-10 w-10 rounded-full flex items-center justify-center shrink-0 ring-4 ${dotColor} ${step.isCurrent ? 'animate-pulse' : ''}`}>
+                  <div className={step.isComplete ? 'text-white' : step.isCurrent ? 'text-white' : 'text-slate-400'}>
+                    {step.isComplete ? <Check className="h-4 w-4 text-white" /> : step.icon}
+                  </div>
+                </div>
+                {/* Content */}
+                <div className="flex-1 pb-6 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <p className={`text-sm font-semibold ${step.isComplete ? 'text-emerald-700' : step.isCurrent ? 'text-amber-700' : 'text-slate-400'}`}>{step.label}</p>
+                    {step.isCurrent && <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 animate-pulse">Current</Badge>}
+                    {step.isComplete && !step.isCurrent && <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">Done</Badge>}
+                  </div>
+                  {step.info && <p className="text-xs text-muted-foreground mt-0.5">{step.info}</p>}
+                  {step.time && <p className="text-[10px] text-muted-foreground">{formatDateTime(step.time)}</p>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void; onUpdate: () => void }) {
   const [mr, setMr] = useState<MaintenanceRequest | null>(null);
@@ -372,6 +475,29 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectNotes, setRejectNotes] = useState('');
   const { hasPermission } = useAuthStore();
+
+  // Assign to Planner dialog
+  const [assignPlannerOpen, setAssignPlannerOpen] = useState(false);
+  const [plannerId, setPlannerId] = useState('');
+  const [plannerLoading, setPlannerLoading] = useState(false);
+
+  // Enhanced Convert to WO dialog
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [convertForm, setConvertForm] = useState({
+    title: '',
+    priority: 'medium' as string,
+    failureDescription: '',
+    causeDescription: '',
+    actionDescription: '',
+    assignmentType: 'direct' as 'direct' | 'via_supervisor',
+    technicianId: '',
+    departmentSupervisorId: '',
+    teamMembers: [] as Array<{ userId: string; role: string; isTeamLeader: boolean }>,
+    estimatedHours: '',
+    plannedStart: '',
+    plannedEnd: '',
+  });
+  const [convertLoading, setConvertLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -412,20 +538,86 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     setActionLoading(false);
   };
 
-  const handleConvert = async () => {
-    setActionLoading(true);
-    const res = await api.post(`/api/maintenance-requests/${id}/convert`, {
-      title: mr?.title,
-      priority: mr?.priority,
+  const handleAssignPlanner = async () => {
+    if (!plannerId) { toast.error('Please select a planner'); return; }
+    setPlannerLoading(true);
+    const res = await api.post(`/api/maintenance-requests/${id}/assign-planner`, { plannerId });
+    if (res.success) {
+      toast.success('Planner assigned successfully');
+      setAssignPlannerOpen(false);
+      setPlannerId('');
+      handleRefresh();
+    } else {
+      toast.error(res.error || 'Failed to assign planner');
+    }
+    setPlannerLoading(false);
+  };
+
+  const openConvertDialog = () => {
+    if (!mr) return;
+    setConvertForm({
+      title: mr.title,
+      priority: mr.priority === 'urgent' ? 'high' : mr.priority,
+      failureDescription: mr.description || '',
+      causeDescription: '',
+      actionDescription: '',
+      assignmentType: 'direct',
+      technicianId: '',
+      departmentSupervisorId: '',
+      teamMembers: [],
+      estimatedHours: '',
+      plannedStart: '',
+      plannedEnd: '',
     });
+    setConvertOpen(true);
+  };
+
+  const handleConvert = async () => {
+    if (!convertForm.title) { toast.error('Title is required'); return; }
+    setConvertLoading(true);
+    const payload: any = {
+      title: convertForm.title,
+      priority: convertForm.priority,
+      failureDescription: convertForm.failureDescription || undefined,
+      causeDescription: convertForm.causeDescription || undefined,
+      actionDescription: convertForm.actionDescription || undefined,
+      assignmentType: convertForm.assignmentType,
+      estimatedHours: convertForm.estimatedHours ? parseFloat(convertForm.estimatedHours) : undefined,
+      plannedStart: convertForm.plannedStart || undefined,
+      plannedEnd: convertForm.plannedEnd || undefined,
+    };
+    if (convertForm.assignmentType === 'direct' && convertForm.technicianId) {
+      payload.technicianId = convertForm.technicianId;
+      payload.teamMembers = convertForm.teamMembers;
+    }
+    if (convertForm.assignmentType === 'via_supervisor' && convertForm.departmentSupervisorId) {
+      payload.departmentSupervisorId = convertForm.departmentSupervisorId;
+    }
+    const res = await api.post(`/api/maintenance-requests/${id}/convert`, payload);
     if (res.success) {
       toast.success('Converted to Work Order');
+      setConvertOpen(false);
       handleRefresh();
       onUpdate();
     } else {
       toast.error(res.error || 'Conversion failed');
     }
-    setActionLoading(false);
+    setConvertLoading(false);
+  };
+
+  const addTeamMember = () => {
+    setConvertForm(f => ({ ...f, teamMembers: [...f.teamMembers, { userId: '', role: 'assistant', isTeamLeader: false }] }));
+  };
+
+  const removeTeamMember = (idx: number) => {
+    setConvertForm(f => ({ ...f, teamMembers: f.teamMembers.filter((_, i) => i !== idx) }));
+  };
+
+  const updateTeamMember = (idx: number, field: string, value: string | boolean) => {
+    setConvertForm(f => ({
+      ...f,
+      teamMembers: f.teamMembers.map((m, i) => i === idx ? { ...m, [field]: value } : m),
+    }));
   };
 
   const handleComment = async () => {
@@ -440,6 +632,9 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
 
   if (loading) return <LoadingSkeleton />;
   if (!mr) return <div className="p-6">Request not found</div>;
+
+  const canAssignPlanner = mr.status === 'approved' && hasPermission('maintenance_requests.assign_planner');
+  const canConvert = mr.status === 'approved' && hasPermission('maintenance_requests.convert');
 
   return (
     <div className="page-content">
@@ -466,8 +661,13 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               </Button>
             </>
           )}
-          {mr.status === 'approved' && hasPermission('maintenance_requests.convert') && (
-            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={handleConvert}>
+          {canAssignPlanner && (
+            <Button size="sm" variant="outline" className="border-violet-200 text-violet-700 hover:bg-violet-50" onClick={() => setAssignPlannerOpen(true)}>
+              <UserPlus className="h-4 w-4 mr-1" />Assign to Planner
+            </Button>
+          )}
+          {canConvert && (
+            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={openConvertDialog}>
               <RefreshCw className="h-4 w-4 mr-1" />Convert to WO
             </Button>
           )}
@@ -488,9 +688,173 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
         </DialogContent>
       </Dialog>
 
+      {/* Assign to Planner Dialog */}
+      <Dialog open={assignPlannerOpen} onOpenChange={setAssignPlannerOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Assign to Planner</DialogTitle><DialogDescription>Select a planner to handle this maintenance request.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Planner *</Label>
+              <AsyncSearchableSelect
+                value={plannerId}
+                onValueChange={setPlannerId}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/users?role=planner');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                      value: u.id,
+                      label: `${u.fullName} (${u.username})`,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Search for a planner..."
+                searchPlaceholder="Search planners by name..."
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAssignPlannerOpen(false)}>Cancel</Button>
+              <Button className="bg-violet-600 hover:bg-violet-700 text-white" disabled={plannerLoading || !plannerId} onClick={handleAssignPlanner}>
+                {plannerLoading ? 'Assigning...' : 'Assign Planner'}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Enhanced Convert to WO Dialog */}
+      <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Convert to Work Order</DialogTitle><DialogDescription>Create a comprehensive work order from this maintenance request.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            {/* Basic Info */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Title *</Label><Input value={convertForm.title} onChange={e => setConvertForm(f => ({ ...f, title: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Priority</Label>
+                <Select value={convertForm.priority} onValueChange={v => setConvertForm(f => ({ ...f, priority: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem><SelectItem value="emergency">Emergency</SelectItem></SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <Separator />
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Failure Analysis</p>
+            <div className="space-y-1.5"><Label>Failure Description</Label><Textarea value={convertForm.failureDescription} onChange={e => setConvertForm(f => ({ ...f, failureDescription: e.target.value }))} placeholder="What failed and how..." rows={3} /></div>
+            <div className="space-y-1.5"><Label>Cause Description</Label><Textarea value={convertForm.causeDescription} onChange={e => setConvertForm(f => ({ ...f, causeDescription: e.target.value }))} placeholder="Root cause analysis..." rows={2} /></div>
+            <div className="space-y-1.5"><Label>Action Description</Label><Textarea value={convertForm.actionDescription} onChange={e => setConvertForm(f => ({ ...f, actionDescription: e.target.value }))} placeholder="Corrective actions to take..." rows={2} /></div>
+
+            <Separator />
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Assignment</p>
+            <div className="space-y-1.5">
+              <Label>Assignment Type</Label>
+              <Select value={convertForm.assignmentType} onValueChange={v => setConvertForm(f => ({ ...f, assignmentType: v as any }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="direct">Direct to Technician</SelectItem><SelectItem value="via_supervisor">Via Department Supervisor</SelectItem></SelectContent>
+              </Select>
+            </div>
+
+            {convertForm.assignmentType === 'direct' && (
+              <>
+                <div className="space-y-1.5"><Label>Primary Technician</Label>
+                  <AsyncSearchableSelect
+                    value={convertForm.technicianId}
+                    onValueChange={v => setConvertForm(f => ({ ...f, technicianId: v }))}
+                    fetchOptions={async () => {
+                      const res = await api.get('/api/users?role=technician');
+                      if (res.success && res.data) {
+                        return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                          value: u.id,
+                          label: `${u.fullName} (${u.username})`,
+                        }));
+                      }
+                      return [];
+                    }}
+                    placeholder="Search technicians..."
+                    searchPlaceholder="Search by name..."
+                  />
+                </div>
+                {/* Team Members */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Team Members</Label>
+                    <Button size="sm" variant="outline" onClick={addTeamMember}><Plus className="h-3 w-3 mr-1" />Add Member</Button>
+                  </div>
+                  {convertForm.teamMembers.length === 0 && <p className="text-xs text-muted-foreground">No additional team members added.</p>}
+                  {convertForm.teamMembers.map((tm, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-3 rounded-lg border bg-muted/30">
+                      <div className="flex-1 grid grid-cols-2 gap-2">
+                        <AsyncSearchableSelect
+                          value={tm.userId}
+                          onValueChange={v => updateTeamMember(idx, 'userId', v)}
+                          fetchOptions={async () => {
+                            const res = await api.get('/api/users?role=technician');
+                            if (res.success && res.data) return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                            return [];
+                          }}
+                          placeholder="Select user..."
+                          searchPlaceholder="Search..."
+                        />
+                        <Select value={tm.role} onValueChange={v => updateTeamMember(idx, 'role', v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="specialist">Specialist</SelectItem></SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-1.5">
+                          <Checkbox checked={tm.isTeamLeader} onCheckedChange={v => updateTeamMember(idx, 'isTeamLeader', !!v)} />
+                          <span className="text-[11px] text-muted-foreground whitespace-nowrap">Leader</span>
+                        </div>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-600" onClick={() => removeTeamMember(idx)}><X className="h-3.5 w-3.5" /></Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {convertForm.assignmentType === 'via_supervisor' && (
+              <div className="space-y-1.5"><Label>Department Supervisor</Label>
+                <AsyncSearchableSelect
+                  value={convertForm.departmentSupervisorId}
+                  onValueChange={v => setConvertForm(f => ({ ...f, departmentSupervisorId: v }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/users?role=supervisor');
+                    if (res.success && res.data) return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                    return [];
+                  }}
+                  placeholder="Search supervisors..."
+                  searchPlaceholder="Search by name..."
+                />
+              </div>
+            )}
+
+            <Separator />
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Scheduling</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5"><Label>Est. Hours</Label><Input type="number" step="0.5" value={convertForm.estimatedHours} onChange={e => setConvertForm(f => ({ ...f, estimatedHours: e.target.value }))} placeholder="e.g. 4" /></div>
+              <div className="space-y-1.5"><Label>Planned Start</Label><Input type="datetime-local" value={convertForm.plannedStart} onChange={e => setConvertForm(f => ({ ...f, plannedStart: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Planned End</Label><Input type="datetime-local" value={convertForm.plannedEnd} onChange={e => setConvertForm(f => ({ ...f, plannedEnd: e.target.value }))} /></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConvertOpen(false)}>Cancel</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={convertLoading} onClick={handleConvert}>
+              {convertLoading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Converting...</> : <><RefreshCw className="h-4 w-4 mr-1" />Create Work Order</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* SLA Timer */}
+      <SLATimerDisplay slaHours={(mr as any).slaHours} slaStartedAt={(mr as any).slaStartedAt} status={mr.status} />
+
       {/* Body */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
+          {/* Workflow Timeline */}
+          <MRWorkflowTimeline mr={mr} />
+
           <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Description</CardTitle></CardHeader>
             <CardContent>
@@ -564,6 +928,12 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 <>
                   <Separator />
                   <div className="flex justify-between"><span className="text-muted-foreground">Approved</span><span className="font-medium">{formatDateTime(mr.approvedAt)}</span></div>
+                </>
+              )}
+              {mr.plannerId && (
+                <>
+                  <Separator />
+                  <div className="flex justify-between"><span className="text-muted-foreground">Planner</span><span className="font-medium">{mr.planner?.fullName || 'Assigned'}</span></div>
                 </>
               )}
               {mr.reviewNotes && (
@@ -984,7 +1354,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
 }
 
 // ============================================================================
-// WORK ORDER DETAIL PAGE
+// WORK ORDER DETAIL PAGE — Enhanced with Team Management, Personal Tools, Role-Based UI
 // ============================================================================
 
 export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void; onUpdate: () => void }) {
@@ -994,7 +1364,7 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const [comment, setComment] = useState('');
   const [actionDialog, setActionDialog] = useState<string | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, user, isAdmin } = useAuthStore();
   // Edit WO
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
@@ -1021,11 +1391,34 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     performedBy: { fullName: string } | null;
     notes: string | null; createdAt: string;
   }>>([]);
+  // Personal tools
+  const [personalTools, setPersonalTools] = useState<PersonalTool[]>([]);
+  const [ptOpen, setPtOpen] = useState(false);
+  const [ptLoading, setPtLoading] = useState(false);
+  const [ptForm, setPtForm] = useState({ toolName: '', toolCode: '', condition: 'good' as PersonalTool['condition'], notes: '' });
+  // Add team member dialog
+  const [addTeamMemberOpen, setAddTeamMemberOpen] = useState(false);
+  const [newMemberUserId, setNewMemberUserId] = useState('');
+  const [newMemberRole, setNewMemberRole] = useState('assistant');
+  const [addMemberLoading, setAddMemberLoading] = useState(false);
+  // Enhanced complete dialog fields
+  const [completeRootCause, setCompleteRootCause] = useState('');
+  const [completeFindings, setCompleteFindings] = useState('');
+  const [completeCorrectiveAction, setCompleteCorrectiveAction] = useState('');
+  const [completeRequestReview, setCompleteRequestReview] = useState(true);
+  // Live session timer
+  const [sessionDuration, setSessionDuration] = useState<number | null>(null);
+  const sessionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchWO = useCallback(async () => {
     const res = await api.get<WorkOrder>(`/api/work-orders/${id}`);
     if (res.success && res.data) setWo(res.data);
     setLoading(false);
+  }, [id]);
+
+  const fetchPersonalTools = useCallback(async () => {
+    const res = await api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`);
+    if (res.success && res.data) setPersonalTools(res.data);
   }, [id]);
 
   useEffect(() => {
@@ -1044,8 +1437,43 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     api.get(`/api/work-orders/${id}/status-history`).then(res => {
       if (active && res.success && res.data) setStatusHistory(res.data);
     });
+    // Fetch personal tools
+    api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`).then(res => {
+      if (active && res.success && res.data) setPersonalTools(res.data);
+    });
     return () => { active = false; };
   }, [id]);
+
+  // Role-based access check
+  const fullAccess = useMemo(() => {
+    if (!wo || !user) return false;
+    if (isAdmin()) return true;
+    if (wo.teamLeaderId === user.id) return true;
+    return false;
+  }, [wo, user]);
+
+  const isReadOnly = useMemo(() => {
+    if (!wo || !user) return false;
+    if (fullAccess) return false;
+    return wo.teamMembers?.some(tm => tm.userId === user.id && tm.accessLevel === 'read_only') || false;
+  }, [wo, user, fullAccess]);
+
+  // Live session timer: find unmatched start/resume without pause
+  useEffect(() => {
+    if (!wo?.timeLogs || wo.timeLogs.length === 0) {
+      setSessionDuration(null);
+      if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
+      return;
+    }
+    const sorted = [...wo.timeLogs].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const lastStart = [...sorted].reverse().find(t => t.action === 'start' || t.action === 'resume');
+    if (!lastStart?.startTime) { setSessionDuration(null); return; }
+    const startTime = new Date(lastStart.startTime).getTime();
+    const calc = () => setSessionDuration((Date.now() - startTime) / 1000);
+    calc();
+    sessionTimerRef.current = setInterval(calc, 1000);
+    return () => { if (sessionTimerRef.current) clearInterval(sessionTimerRef.current); };
+  }, [wo?.timeLogs]);
 
   const handleAction = async (action: string, extra?: Record<string, unknown>) => {
     setActionLoading(true);
@@ -1171,6 +1599,36 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     setMatLoading(false);
   };
 
+  // Personal tools handlers
+  const handleAddPersonalTool = async () => {
+    if (!ptForm.toolName) { toast.error('Tool name is required'); return; }
+    setPtLoading(true);
+    const res = await api.post(`/api/work-orders/${id}/personal-tools`, ptForm);
+    if (res.success) { toast.success('Tool added'); setPtOpen(false); setPtForm({ toolName: '', toolCode: '', condition: 'good', notes: '' }); fetchPersonalTools(); }
+    else { toast.error(res.error || 'Failed to add tool'); }
+    setPtLoading(false);
+  };
+
+  const handleRemovePersonalTool = async (idx: number) => {
+    const tool = personalTools[idx];
+    if (!tool?.id) return;
+    setPtLoading(true);
+    const res = await api.delete(`/api/work-orders/${id}/personal-tools/${tool.id}`);
+    if (res.success) { toast.success('Tool removed'); fetchPersonalTools(); }
+    else { toast.error(res.error || 'Failed to remove tool'); }
+    setPtLoading(false);
+  };
+
+  // Add team member handler
+  const handleAddTeamMember = async () => {
+    if (!newMemberUserId) { toast.error('Please select a user'); return; }
+    setAddMemberLoading(true);
+    const res = await api.post(`/api/work-orders/${id}/team-members`, { userId: newMemberUserId, role: newMemberRole });
+    if (res.success) { toast.success('Team member added'); setAddTeamMemberOpen(false); setNewMemberUserId(''); setNewMemberRole('assistant'); fetchWO(); }
+    else { toast.error(res.error || 'Failed to add team member'); }
+    setAddMemberLoading(false);
+  };
+
   if (loading) return <LoadingSkeleton />;
   if (!wo) return <div className="p-6">Work order not found</div>;
 
@@ -1193,9 +1651,29 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   // Special actions that need dialogs
   const needsDialog = new Set(['assign', 'complete']);
   const canEdit = !['closed', 'cancelled'].includes(wo.status);
+  const readOnlyDisabled = isReadOnly;
+
+  // Format session duration
+  const formatSessionDuration = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
 
   return (
     <div className="page-content">
+      {/* Read-Only Banner */}
+      {isReadOnly && (
+        <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-3">
+          <Eye className="h-5 w-5 text-amber-600 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Read-Only Access</p>
+            <p className="text-xs text-amber-700">You have read-only access to this work order. Action buttons are disabled.</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start gap-3 flex-wrap">
         <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
@@ -1212,13 +1690,13 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white"><CheckCircle2 className="h-4 w-4 mr-1" />Actions</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={readOnlyDisabled}><CheckCircle2 className="h-4 w-4 mr-1" />Actions</Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {canEdit && <DropdownMenuItem onClick={openEditWO}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}
-            {canEdit && <DropdownMenuSeparator />}
+            {canEdit && !isReadOnly && <DropdownMenuItem onClick={openEditWO}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}
+            {canEdit && !isReadOnly && <DropdownMenuSeparator />}
             {transitionActions.map(ta => (
-              <DropdownMenuItem key={ta.toStatus} onClick={() => {
+              <DropdownMenuItem key={ta.toStatus} disabled={isReadOnly} onClick={() => {
                 if (needsDialog.has(ta.actionName)) {
                   setActionDialog(ta.actionName);
                 } else if (ta.requiresReason) {
@@ -1258,16 +1736,40 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
         </DialogContent>
       </Dialog>
 
-      {/* Complete Dialog */}
+      {/* Complete Dialog — Enhanced */}
       <Dialog open={actionDialog === 'complete'} onOpenChange={() => setActionDialog(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Complete Work Order</DialogTitle><DialogDescription>Mark this work order as completed.</DialogDescription></DialogHeader>
-          <div className="space-y-4">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Complete Work Order</DialogTitle><DialogDescription>Mark this work order as completed with full details.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2">
+            {/* Summary */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="p-3 rounded-lg bg-muted/50 text-center">
+                <p className="text-xs text-muted-foreground">Total Time</p>
+                <p className="text-lg font-bold">{wo.actualHours || 0}h</p>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50 text-center">
+                <p className="text-xs text-muted-foreground">Materials Used</p>
+                <p className="text-lg font-bold">{wo.materials?.length || 0}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50 text-center">
+                <p className="text-xs text-muted-foreground">Total Cost</p>
+                <p className="text-lg font-bold">GHS {wo.totalCost.toFixed(2)}</p>
+              </div>
+            </div>
             <div className="space-y-2">
-              <Label>Completion Notes</Label>
+              <Label>Completion Notes *</Label>
               <Textarea value={completionNotes} onChange={e => setCompletionNotes(e.target.value)} placeholder="What was done?" rows={3} />
             </div>
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={() => handleAction('complete', { completionNotes })}>
+            <Separator />
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Failure Analysis</p>
+            <div className="space-y-2"><Label>Root Cause</Label><Textarea value={completeRootCause} onChange={e => setCompleteRootCause(e.target.value)} placeholder="What caused the failure..." rows={2} /></div>
+            <div className="space-y-2"><Label>Findings</Label><Textarea value={completeFindings} onChange={e => setCompleteFindings(e.target.value)} placeholder="What was discovered during the repair..." rows={2} /></div>
+            <div className="space-y-2"><Label>Corrective Action</Label><Textarea value={completeCorrectiveAction} onChange={e => setCompleteCorrectiveAction(e.target.value)} placeholder="Actions taken to prevent recurrence..." rows={2} /></div>
+            <div className="flex items-center gap-2">
+              <Checkbox checked={completeRequestReview} onCheckedChange={v => setCompleteRequestReview(!!v)} id="request-review" />
+              <Label htmlFor="request-review" className="text-sm cursor-pointer">Request Supervisor Review</Label>
+            </div>
+            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading || !completionNotes.trim()} onClick={() => handleAction('complete', { completionNotes, rootCause: completeRootCause, findings: completeFindings, correctiveAction: completeCorrectiveAction, requestSupervisorReview: completeRequestReview })}>
               {actionLoading ? 'Completing...' : 'Mark as Completed'}
             </Button>
           </div>
@@ -1466,13 +1968,32 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             </CardContent>
           </Card>
 
-          {/* Time Logs */}
+          {/* Time Logs — Enhanced with Summary Bar */}
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {wo.actualHours || 0}h total</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setTlAction('start'); setTlHours(''); setTlNotes(''); setTimeLogOpen(true); }}><Clock className="h-3.5 w-3.5" />Log Time</Button>
+              <Button size="sm" variant="outline" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => { setTlAction('start'); setTlHours(''); setTlNotes(''); setTimeLogOpen(true); }}><Clock className="h-3.5 w-3.5" />Log Time</Button>
             </CardHeader>
             <CardContent>
+              {/* Time Summary Bar */}
+              <div className="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-lg bg-muted/50">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center"><Clock className="h-4 w-4" /></div>
+                  <div><p className="text-[10px] text-muted-foreground uppercase">Total Logged</p><p className="text-sm font-bold">{wo.actualHours || 0}h</p></div>
+                </div>
+                {wo.actualStart && (
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><Play className="h-4 w-4" /></div>
+                    <div><p className="text-[10px] text-muted-foreground uppercase">Started At</p><p className="text-sm font-bold">{formatDateTime(wo.actualStart)}</p></div>
+                  </div>
+                )}
+                {sessionDuration !== null && (
+                  <div className="flex items-center gap-2 ml-auto">
+                    <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center animate-pulse"><Timer className="h-4 w-4" /></div>
+                    <div><p className="text-[10px] text-muted-foreground uppercase">Current Session</p><p className="text-sm font-bold font-mono text-amber-700">{formatSessionDuration(sessionDuration)}</p></div>
+                  </div>
+                )}
+              </div>
               {(!wo.timeLogs || wo.timeLogs.length === 0) ? (
                 <p className="text-sm text-muted-foreground">No time logs recorded yet.</p>
               ) : (
@@ -1501,7 +2022,7 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base">Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.materials?.length || 0} items</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setMatName(''); setMatQty(''); setMatCost(''); setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" />Add Material</Button>
+              <Button size="sm" variant="outline" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => { setMatName(''); setMatQty(''); setMatCost(''); setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" />Add Material</Button>
             </CardHeader>
             <CardContent>
               {(!wo.materials || wo.materials.length === 0) ? (
@@ -1558,6 +2079,91 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               )}
             </CardContent>
           </Card>
+
+          {/* Personal Tools On-Site */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle className="text-base flex items-center gap-2"><Hammer className="h-4 w-4 text-orange-600" />Personal Tools On-Site</CardTitle><CardDescription className="text-xs">{personalTools.length} tools</CardDescription></div>
+              <Button size="sm" variant="outline" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => setPtOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
+            </CardHeader>
+            <CardContent>
+              {personalTools.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No personal tools recorded on-site.</p>
+              ) : (
+                <div className="grid gap-2">
+                  {personalTools.map((tool, idx) => (
+                    <div key={tool.id || idx} className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30">
+                      <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center shrink-0"><Hammer className="h-4 w-4" /></div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium">{tool.toolName}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {tool.toolCode && <span className="font-mono">{tool.toolCode}</span>}
+                          <Badge variant="outline" className={`text-[10px] ${tool.condition === 'new' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : tool.condition === 'good' ? 'bg-sky-50 text-sky-700 border-sky-200' : tool.condition === 'fair' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{tool.condition}</Badge>
+                        </div>
+                        {tool.notes && <p className="text-xs text-muted-foreground mt-0.5">{tool.notes}</p>}
+                      </div>
+                      {!readOnlyDisabled && (
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-600 shrink-0" disabled={ptLoading} onClick={() => handleRemovePersonalTool(idx)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Personal Tool Add Dialog */}
+          <Dialog open={ptOpen} onOpenChange={setPtOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader><DialogTitle>Add Personal Tool</DialogTitle><DialogDescription>Record a personal tool brought on-site.</DialogDescription></DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-1.5"><Label>Tool Name *</Label><Input value={ptForm.toolName} onChange={e => setPtForm(f => ({ ...f, toolName: e.target.value }))} placeholder="e.g. Digital Multimeter" /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5"><Label>Tool Code</Label><Input value={ptForm.toolCode} onChange={e => setPtForm(f => ({ ...f, toolCode: e.target.value }))} placeholder="e.g. DM-001" /></div>
+                  <div className="space-y-1.5"><Label>Condition</Label>
+                    <Select value={ptForm.condition} onValueChange={v => setPtForm(f => ({ ...f, condition: v as PersonalTool['condition'] }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-1.5"><Label>Notes</Label><Textarea value={ptForm.notes} onChange={e => setPtForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any additional notes..." rows={2} /></div>
+                <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={ptLoading} onClick={handleAddPersonalTool}>{ptLoading ? 'Adding...' : 'Add Tool'}</Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Add Team Member Dialog */}
+          <Dialog open={addTeamMemberOpen} onOpenChange={setAddTeamMemberOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader><DialogTitle>Add Team Member</DialogTitle><DialogDescription>Add a new member to this work order team.</DialogDescription></DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-1.5"><Label>User *</Label>
+                  <AsyncSearchableSelect
+                    value={newMemberUserId}
+                    onValueChange={setNewMemberUserId}
+                    fetchOptions={async () => {
+                      const res = await api.get('/api/users');
+                      if (res.success && res.data) return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                      return [];
+                    }}
+                    placeholder="Search users..."
+                    searchPlaceholder="Search by name..."
+                  />
+                </div>
+                <div className="space-y-1.5"><Label>Role</Label>
+                  <Select value={newMemberRole} onValueChange={setNewMemberRole}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="specialist">Specialist</SelectItem><SelectItem value="supervisor">Supervisor</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setAddTeamMemberOpen(false)}>Cancel</Button>
+                  <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={addMemberLoading || !newMemberUserId} onClick={handleAddTeamMember}>{addMemberLoading ? 'Adding...' : 'Add Member'}</Button>
+                </DialogFooter>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {/* Timeline */}
           <Card className="border-0 shadow-sm">
@@ -1634,21 +2240,43 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             </Card>
           )}
 
-          {/* Team Members */}
-          {wo.teamMembers && wo.teamMembers.length > 0 && (
-            <Card className="border-0 shadow-sm">
-              <CardHeader><CardTitle className="text-base">Team</CardTitle></CardHeader>
-              <CardContent className="space-y-2">
-                {wo.teamMembers.map(tm => (
-                  <div key={tm.id} className="flex items-center gap-2 text-sm">
-                    <Avatar className="h-6 w-6"><AvatarFallback className="text-[9px]">{getInitials(tm.userName || 'U')}</AvatarFallback></Avatar>
-                    <span className="font-medium">{tm.userName}</span>
-                    <Badge variant="outline" className="text-[10px] capitalize ml-auto">{tm.role}</Badge>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          {/* Team Members — Enhanced */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Team</CardTitle>
+              {(fullAccess || isAdmin()) && (
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTeamMemberOpen(true)}><UserPlus className="h-3.5 w-3.5" />Add Member</Button>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {(!wo.teamMembers || wo.teamMembers.length === 0) ? (
+                <p className="text-sm text-muted-foreground">No team members assigned.</p>
+              ) : (
+                wo.teamMembers.map(tm => {
+                  const isTeamLeader = tm.userId === wo.teamLeaderId;
+                  const isReadOnlyMember = tm.accessLevel === 'read_only';
+                  return (
+                    <div key={tm.id} className="flex items-center gap-3 p-2 rounded-lg border bg-muted/30">
+                      <Avatar className="h-8 w-8 shrink-0">
+                        <AvatarFallback className="text-[10px]">{getInitials(tm.userName || tm.user?.fullName || 'U')}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium truncate">{tm.userName || tm.user?.fullName || 'Unknown'}</span>
+                          {isTeamLeader && <Crown className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <Badge variant="outline" className="text-[10px] capitalize">{tm.role}</Badge>
+                          {isTeamLeader && <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-200">Full Access</Badge>}
+                          {isReadOnlyMember && <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-600 border-slate-200">Read Only</Badge>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

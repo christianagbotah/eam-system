@@ -20,7 +20,18 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { title, priority } = body;
+    const {
+      title,
+      priority,
+      assignmentType,
+      assignedTo,
+      teamLeaderId,
+      teamMembers,
+      assignedSupervisorId,
+      failureDescription,
+      causeDescription,
+      actionDescription,
+    } = body;
 
     const mr = await db.maintenanceRequest.findUnique({ where: { id } });
     if (!mr) {
@@ -32,6 +43,18 @@ export async function POST(
         { success: false, error: 'This request has already been converted to a work order' },
         { status: 400 }
       );
+    }
+
+    // Validate team members if provided
+    if (teamMembers && Array.isArray(teamMembers)) {
+      for (const member of teamMembers) {
+        if (!member.userId || !member.role) {
+          return NextResponse.json(
+            { success: false, error: 'Each team member must have userId and role' },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     // Generate work order number
@@ -48,6 +71,10 @@ export async function POST(
     }
     const woNumber = `WO-${monthStr}-${String(seq).padStart(4, '0')}`;
 
+    // Determine initial WO status: "assigned" if assignee/team provided, otherwise "approved"
+    const hasAssignment = assignedTo || (teamMembers && teamMembers.length > 0);
+    const woStatus = hasAssignment ? 'assigned' : 'approved';
+
     // Create the work order
     const wo = await db.workOrder.create({
       data: {
@@ -56,7 +83,7 @@ export async function POST(
         description: mr.description,
         type: 'corrective',
         priority: priority || mr.priority || 'medium',
-        status: 'approved',
+        status: woStatus,
         maintenanceRequestId: mr.id,
         assetId: mr.assetId,
         departmentId: mr.departmentId,
@@ -65,6 +92,14 @@ export async function POST(
         plannedStart: mr.plannedStart,
         plannedEnd: mr.plannedEnd,
         plannerId: session.userId,
+        assignedTo: assignedTo || null,
+        teamLeaderId: teamLeaderId || null,
+        assignedSupervisorId: assignedSupervisorId || null,
+        assignmentType: assignmentType || (assignedTo ? 'direct' : null),
+        assignedBy: session.userId,
+        failureDescription: failureDescription || null,
+        causeDescription: causeDescription || null,
+        actionDescription: actionDescription || null,
       },
       include: {
         assignee: { select: { id: true, fullName: true, username: true } },
@@ -74,6 +109,41 @@ export async function POST(
         maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
       },
     });
+
+    // Create team member records if provided
+    if (teamMembers && teamMembers.length > 0) {
+      const teamMemberData = teamMembers.map((member: { userId: string; role: string }) => {
+        const isTeamLeader = member.userId === teamLeaderId;
+        return {
+          workOrderId: wo.id,
+          userId: member.userId,
+          role: isTeamLeader ? 'team_leader' : member.role,
+          accessLevel: isTeamLeader ? 'full' : 'read_only',
+          assignedAt: now,
+        };
+      });
+
+      await db.workOrderTeamMember.createMany({ data: teamMemberData });
+    }
+
+    // If assignedTo is provided but not in teamMembers, ensure they're a team member too
+    if (assignedTo && !(teamMembers && teamMembers.some((m: { userId: string }) => m.userId === assignedTo))) {
+      const isTeamLeader = assignedTo === teamLeaderId;
+      const existingMember = await db.workOrderTeamMember.findFirst({
+        where: { workOrderId: wo.id, userId: assignedTo },
+      });
+      if (!existingMember) {
+        await db.workOrderTeamMember.create({
+          data: {
+            workOrderId: wo.id,
+            userId: assignedTo,
+            role: isTeamLeader ? 'team_leader' : 'assistant',
+            accessLevel: isTeamLeader ? 'full' : 'read_only',
+            assignedAt: now,
+          },
+        });
+      }
+    }
 
     // Execute MR status transition via state machine (validates + updates + creates comment)
     const result = await executeTransition(
@@ -94,7 +164,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: result.error }, { status: 400 });
     }
 
-    // Domain-specific audit log (status change handled by state machine via MaintenanceRequestComment)
+    // Domain-specific audit log
     await db.auditLog.create({
       data: {
         userId: session.userId,
@@ -102,7 +172,14 @@ export async function POST(
         entityType: 'maintenance_request',
         entityId: id,
         oldValues: JSON.stringify({}),
-        newValues: JSON.stringify({ workOrderId: wo.id, woNumber: wo.woNumber }),
+        newValues: JSON.stringify({
+          workOrderId: wo.id,
+          woNumber: wo.woNumber,
+          assignedTo: assignedTo || null,
+          teamLeaderId: teamLeaderId || null,
+          teamMembersCount: teamMembers?.length || 0,
+          assignmentType: assignmentType || null,
+        }),
       },
     });
 
@@ -113,6 +190,62 @@ export async function POST(
         'mr_converted',
         'MR Converted to Work Order',
         `Your request has been converted to WO ${wo.woNumber}`,
+        'work_order',
+        wo.id,
+        `wo-detail?id=${wo.id}`,
+      );
+    }
+
+    // Notify team leader if provided
+    if (teamLeaderId && teamLeaderId !== session.userId) {
+      await notifyUser(
+        teamLeaderId,
+        'wo_assigned',
+        'Work Order Team Lead Assignment',
+        `You have been assigned as team leader for ${wo.woNumber}: ${wo.title}`,
+        'work_order',
+        wo.id,
+        `wo-detail?id=${wo.id}`,
+      );
+    }
+
+    // Notify direct assignee if provided and different from team leader
+    if (assignedTo && assignedTo !== session.userId && assignedTo !== teamLeaderId) {
+      await notifyUser(
+        assignedTo,
+        'wo_assigned',
+        'Work Order Assigned',
+        `You have been assigned ${wo.woNumber}: ${wo.title}`,
+        'work_order',
+        wo.id,
+        `wo-detail?id=${wo.id}`,
+      );
+    }
+
+    // Notify team members
+    if (teamMembers && teamMembers.length > 0) {
+      for (const member of teamMembers) {
+        if (member.userId !== session.userId && member.userId !== assignedTo && member.userId !== teamLeaderId) {
+          await notifyUser(
+            member.userId,
+            'wo_assigned',
+            'Work Order Team Assignment',
+            `You have been assigned to team for ${wo.woNumber}: ${wo.title}`,
+            'work_order',
+            wo.id,
+            `wo-detail?id=${wo.id}`,
+          );
+        }
+      }
+    }
+
+    // Notify supervisor when assignment type is via_supervisor
+    if (assignedSupervisorId && assignedSupervisorId !== session.userId) {
+      await notifyUser(
+        assignedSupervisorId,
+        'wo_assigned',
+        'Work Order Pending Your Review',
+        `Work order ${wo.woNumber} has been created and assigned to your team for review`,
         'work_order',
         wo.id,
         `wo-detail?id=${wo.id}`,

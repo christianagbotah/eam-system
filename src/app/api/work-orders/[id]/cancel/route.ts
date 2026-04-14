@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 import { executeTransition } from '@/lib/state-machine';
 
 /**
@@ -66,6 +67,48 @@ export async function POST(
         timestamp: new Date(),
       },
     });
+
+    // Notify all team members and requester
+    const notifyTargets: string[] = [];
+
+    // Add team members
+    const teamMembers = await db.workOrderTeamMember.findMany({
+      where: { workOrderId: id },
+      select: { userId: true },
+    });
+    for (const member of teamMembers) {
+      if (member.userId !== session.userId && !notifyTargets.includes(member.userId)) {
+        notifyTargets.push(member.userId);
+      }
+    }
+
+    // Add assignee
+    if (wo.assignedTo && wo.assignedTo !== session.userId && !notifyTargets.includes(wo.assignedTo)) {
+      notifyTargets.push(wo.assignedTo);
+    }
+
+    // Add requester from linked MR
+    if (wo.maintenanceRequestId) {
+      const linkedMR = await db.maintenanceRequest.findUnique({
+        where: { id: wo.maintenanceRequestId },
+        select: { requestedBy: true },
+      });
+      if (linkedMR?.requestedBy && linkedMR.requestedBy !== session.userId && !notifyTargets.includes(linkedMR.requestedBy)) {
+        notifyTargets.push(linkedMR.requestedBy);
+      }
+    }
+
+    for (const targetId of notifyTargets) {
+      await notifyUser(
+        targetId,
+        'wo_cancelled',
+        'Work Order Cancelled',
+        `${wo.woNumber} has been cancelled. Reason: ${reason}`,
+        'work_order',
+        id,
+        `wo-detail?id=${id}`,
+      );
+    }
 
     // Re-fetch with includes
     const updated = await db.workOrder.findUnique({

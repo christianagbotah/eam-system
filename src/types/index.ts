@@ -116,11 +116,15 @@ export interface MaintenanceRequest {
   reviewNotes?: string;
   plannerId?: string;
   workOrderId?: string;
+  slaHours?: number;
+  slaStartedAt?: string;
   createdAt: string;
   updatedAt: string;
   // Joined
   requester?: { id: string; fullName: string; username: string };
   reviewer?: { id: string; fullName: string; username: string };
+  approver?: { id: string; fullName: string; username: string };
+  planner?: { id: string; fullName: string; username: string };
   comments?: MRComment[];
   statusHistory?: MRStatusHistory[];
   workOrder?: { id: string; woNumber: string; title: string; status: string };
@@ -194,6 +198,7 @@ export interface WorkOrder {
   materials?: WOMaterial[];
   comments?: WOComment[];
   statusHistory?: WOStatusHistory[];
+  personalTools?: PersonalTool[];
   creator?: { id: string; fullName: string };
   request?: {
     id: string;
@@ -209,8 +214,10 @@ export interface WOTeamMember {
   userId?: string;
   userName?: string;
   role: string;
+  accessLevel?: 'full' | 'read_only';
   hours?: number;
   createdAt: string;
+  user?: { id: string; fullName: string; username: string; department?: string };
 }
 
 export interface WOTimeLog {
@@ -256,6 +263,24 @@ export interface WOStatusHistory {
   changedByName?: string;
   reason?: string;
   createdAt: string;
+}
+
+export interface WOTeamMemberExtended {
+  id: string;
+  workOrderId: string;
+  userId: string;
+  role: string;
+  accessLevel: 'full' | 'read_only';
+  assignedAt: string;
+  user?: { id: string; fullName: string; username: string; department?: string };
+}
+
+export interface PersonalTool {
+  id?: string;
+  toolName: string;
+  toolCode?: string;
+  condition: 'new' | 'good' | 'fair' | 'poor';
+  notes?: string;
 }
 
 // Dashboard

@@ -162,110 +162,533 @@ export function ReportsAssetPage() {
   );
 }
 export function ReportsMaintenancePage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
-  const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
+  const [reportData, setReportData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [techSort, setTechSort] = useState<'completedCount' | 'avgHoursPerWO' | 'totalHours'>('completedCount');
 
-  useEffect(() => {
-    Promise.all([
-      api.get<DashboardStats>('/api/dashboard/stats'),
-      api.get<WorkOrder[]>('/api/work-orders'),
-      api.get<MaintenanceRequest[]>('/api/maintenance-requests'),
-    ]).then(([statsRes, woRes, mrRes]) => {
-      if (statsRes.success && statsRes.data) setStats(statsRes.data);
-      if (woRes.success && woRes.data) setWorkOrders(woRes.data);
-      if (mrRes.success && mrRes.data) setRequests(mrRes.data);
+  const fetchReport = useCallback(() => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
+    api.get<any>(`/api/reports/maintenance?${params.toString()}`).then(res => {
+      if (res.success && res.data) setReportData(res.data);
+      else setReportData(null);
       setLoading(false);
+    }).catch(() => { setReportData(null); setLoading(false); });
+  }, [startDate, endDate]);
+
+  useEffect(() => { fetchReport(); }, [fetchReport]);
+
+  const s = reportData?.summary;
+  const recentWOs = reportData?.recentWorkOrders || [];
+
+  const kpiCards = [
+    { label: 'Total Work Orders', value: s?.totalWOs ?? 0, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Completion Rate', value: `${s?.completionRate ?? 0}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Avg Completion Time', value: `${s?.avgCompletionHours ?? 0}h`, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Avg Cost / WO', value: formatCurrency(s?.avgCostPerWO), icon: DollarSign, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
+    { label: 'SLA Compliance', value: `${s?.slaComplianceRate ?? 0}%`, icon: ShieldCheck, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    { label: 'Overdue', value: s?.overdueWOs ?? 0, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+  ];
+
+  // WO type colors
+  const typeColorMap: Record<string, string> = { preventive: 'bg-emerald-500', corrective: 'bg-amber-500', emergency: 'bg-red-500', inspection: 'bg-sky-500', predictive: 'bg-violet-500', project: 'bg-teal-500' };
+  const priorityColorMap: Record<string, string> = { low: 'bg-slate-400', medium: 'bg-sky-500', high: 'bg-amber-500', critical: 'bg-red-500', emergency: 'bg-red-600' };
+
+  // Chart colors
+  const CHART_COLORS = ['#059669', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#f97316', '#6366f1'];
+
+  // PDF export handler
+  const handlePdfExport = () => {
+    if (!reportData || !s) return;
+    exportPDF({
+      title: `Maintenance Report - ${startDate} to ${endDate}`,
+      subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      filename: `maintenance-report-${startDate}-to-${endDate}`,
+      orientation: 'landscape',
+      summary: [
+        { label: 'Total Work Orders', value: String(s.totalWOs) },
+        { label: 'Completed', value: `${s.completedWOs} (${s.completionRate}%)` },
+        { label: 'Avg Completion Time', value: `${s.avgCompletionHours}h` },
+        { label: 'Avg Cost/WO', value: formatCurrency(s.avgCostPerWO) },
+        { label: 'Total Cost', value: formatCurrency(s.totalCost) },
+        { label: 'SLA Compliance', value: `${s.slaComplianceRate}%` },
+        { label: 'Overdue', value: String(s.overdueWOs) },
+        { label: 'Total MRs', value: String(s.totalMRs) },
+        { label: 'MR Conversion Rate', value: `${s.mrConversionRate}%` },
+      ],
+      headers: ['WO Number', 'Title', 'Type', 'Priority', 'Status', 'Asset', 'Assigned To', 'Est Hours', 'Actual Hours', 'Total Cost', 'Created'],
+      rows: recentWOs.map((wo: any) => [
+        wo.woNumber || '', wo.title || '', wo.type || '', wo.priority || '', wo.status || '',
+        wo.assetName || '-', wo.assigneeName || '-',
+        wo.estimatedHours?.toString() || '-', wo.actualHours?.toString() || '-',
+        formatCurrency(wo.totalCost), wo.createdAt ? formatDate(wo.createdAt) : '-',
+      ]),
     });
-  }, []);
+  };
 
-  const totalWOs = stats?.totalWorkOrders || 0;
-  const completedWOs = stats?.completedWorkOrders || 0;
-  const completionRate = totalWOs > 0 ? Math.round((completedWOs / totalWOs) * 100) : 0;
-  const avgCost = workOrders.length > 0 ? (workOrders.reduce((sum, wo) => sum + (wo.totalCost || 0), 0) / workOrders.length) : 0;
-  const overdue = stats?.overdueWorkOrders || 0;
+  // CSV export handler
+  const handleCsvExport = () => {
+    if (!reportData) return;
+    exportCSV(
+      `maintenance-report-${startDate}-to-${endDate}`,
+      ['WO Number', 'Title', 'Type', 'Priority', 'Status', 'Asset', 'Assigned To', 'Team Leader', 'Estimated Hours', 'Actual Hours', 'Material Cost', 'Labor Cost', 'Total Cost', 'Created Date', 'Completed Date'],
+      recentWOs.map((wo: any) => [
+        wo.woNumber || '', wo.title || '', wo.type || '', wo.priority || '', wo.status || '',
+        wo.assetName || '-', wo.assigneeName || '-', wo.teamLeaderName || '-',
+        wo.estimatedHours?.toString() || '', wo.actualHours?.toString() || '',
+        (wo.materialCost || 0).toString(), (wo.laborCost || 0).toString(), (wo.totalCost || 0).toString(),
+        wo.createdAt ? formatDate(wo.createdAt) : '', wo.completedDate ? formatDate(wo.completedDate) : '',
+      ]),
+    );
+  };
 
-  const typeBreakdown = [
-    { type: 'Preventive', count: stats?.preventiveWO || 0, color: 'bg-emerald-500' },
-    { type: 'Corrective', count: stats?.correctiveWO || 0, color: 'bg-amber-500' },
-    { type: 'Emergency', count: stats?.emergencyWO || 0, color: 'bg-red-500' },
-    { type: 'Inspection', count: stats?.inspectionWO || 0, color: 'bg-sky-500' },
-    { type: 'Predictive', count: stats?.predictiveWO || 0, color: 'bg-violet-500' },
-  ];
+  // Technician sort handler
+  const sortedTechnicians = useMemo(() => {
+    const techs = reportData?.technicianProductivity || [];
+    return [...techs].sort((a: any, b: any) => (b[techSort] || 0) - (a[techSort] || 0));
+  }, [reportData, techSort]);
 
-  const priorityCounts = [
-    { priority: 'Low', count: workOrders.filter(wo => wo.priority === 'low').length },
-    { priority: 'Medium', count: workOrders.filter(wo => wo.priority === 'medium').length },
-    { priority: 'High', count: workOrders.filter(wo => wo.priority === 'high').length },
-    { priority: 'Critical/Emergency', count: workOrders.filter(wo => wo.priority === 'critical' || wo.priority === 'emergency').length },
-  ];
-
-  const recentMRs = [...requests].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 10);
-
-  const summaryCards = [
-    { label: 'Total Work Orders', value: totalWOs, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Completion Rate', value: `${completionRate}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Avg WO Cost', value: formatCurrency(avgCost), icon: DollarSign, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Overdue', value: overdue, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
-  ];
+  if (loading && !reportData) return <div className="page-content"><LoadingSkeleton /></div>;
 
   return (
     <div className="page-content">
-      <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Reports</h1><p className="text-muted-foreground mt-1">Reports on work orders, PM compliance, costs, and maintenance performance</p></div>
-      {loading ? <LoadingSkeleton /> : (<>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {summaryCards.map(k => { const I = k.icon; return (
-            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
-          ); })}
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Maintenance Reports</h1>
+          <p className="text-muted-foreground mt-1">Comprehensive maintenance analytics with date range filtering and export capabilities</p>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="border"><CardHeader><CardTitle className="text-base">WO by Type</CardTitle><CardDescription className="text-xs">Work order type distribution</CardDescription></CardHeader><CardContent>
-            <div className="space-y-3">
-              {typeBreakdown.filter(t => t.count > 0).map(t => {
-                const pct = totalWOs > 0 ? Math.round((t.count / totalWOs) * 100) : 0;
-                return (
-                  <div key={t.type} className="flex items-center gap-3">
-                    <span className="text-sm font-medium w-28">{t.type}</span>
-                    <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className={`h-full ${t.color} rounded-full transition-all`} style={{ width: `${pct}%` }} /></div>
-                    <span className="text-sm font-semibold w-16 text-right">{t.count}</span>
+      </div>
+
+      {/* Date Range + Actions */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <DateRangePicker startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate} />
+        <Button size="sm" onClick={fetchReport} disabled={loading}>
+          {loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1.5" />}
+          Generate Report
+        </Button>
+        <Button variant="outline" size="sm" onClick={handlePdfExport} disabled={!reportData}>
+          <FileDown className="h-4 w-4 mr-1.5" />Export PDF
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleCsvExport} disabled={!reportData}>
+          <Download className="h-4 w-4 mr-1.5" />Export CSV
+        </Button>
+      </div>
+
+      {loading && <LoadingSkeleton />}
+      {!loading && reportData && (
+        <>
+          {/* KPI Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+            {kpiCards.map(k => { const I = k.icon; return (
+              <Card key={k.label} className="border border-border/60 shadow-sm"><CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className={`h-10 w-10 rounded-xl ${k.color} flex items-center justify-center shrink-0`}><I className="h-4.5 w-4.5" /></div>
+                  <div className="min-w-0">
+                    <p className="text-xl font-bold truncate">{k.value}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{k.label}</p>
                   </div>
-                );
-              })}
-            </div>
-          </CardContent></Card>
-          <Card className="border"><CardHeader><CardTitle className="text-base">Priority Breakdown</CardTitle><CardDescription className="text-xs">Work orders by priority level</CardDescription></CardHeader><CardContent>
-            <div className="space-y-3">
-              {priorityCounts.map(p => {
-                const pct = workOrders.length > 0 ? Math.round((p.count / workOrders.length) * 100) : 0;
-                return (
-                  <div key={p.priority} className="flex items-center gap-3">
-                    <span className="text-sm font-medium w-36">{p.priority}</span>
-                    <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full transition-all ${p.priority.includes('Critical') ? 'bg-red-500' : p.priority === 'High' ? 'bg-amber-500' : p.priority === 'Medium' ? 'bg-sky-500' : 'bg-slate-400'}`} style={{ width: `${pct}%` }} /></div>
-                    <span className="text-sm font-semibold w-16 text-right">{p.count}</span>
+                </div>
+              </CardContent></Card>
+            ); })}
+          </div>
+
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="flex-wrap h-auto gap-1">
+              <TabsTrigger value="overview" className="text-xs"><BarChart3 className="h-3.5 w-3.5 mr-1" />Overview</TabsTrigger>
+              <TabsTrigger value="technicians" className="text-xs"><Users className="h-3.5 w-3.5 mr-1" />Technician Productivity</TabsTrigger>
+              <TabsTrigger value="materials" className="text-xs"><Package className="h-3.5 w-3.5 mr-1" />Materials & Costs</TabsTrigger>
+              <TabsTrigger value="downtime" className="text-xs"><Clock className="h-3.5 w-3.5 mr-1" />Downtime</TabsTrigger>
+              <TabsTrigger value="assets" className="text-xs"><Building2 className="h-3.5 w-3.5 mr-1" />Asset Reliability</TabsTrigger>
+              <TabsTrigger value="data" className="text-xs"><FileText className="h-3.5 w-3.5 mr-1" />Detailed Data</TabsTrigger>
+            </TabsList>
+
+            {/* Tab 1: Overview */}
+            <TabsContent value="overview" className="space-y-6 mt-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* WO by Type Bar Chart */}
+                <Card className="border border-border/60 shadow-sm">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Work Orders by Type</CardTitle><CardDescription className="text-xs">Distribution of WO types</CardDescription></CardHeader>
+                  <CardContent>
+                    {(reportData.woByType || []).length > 0 ? (
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={reportData.woByType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="type" tick={{ fontSize: 11 }} />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
+                            {(reportData.woByType || []).map((_: any, i: number) => (
+                              <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : <EmptyState icon={BarChart3} title="No type data" description="Work orders will appear here." />}
+                  </CardContent>
+                </Card>
+
+                {/* WO by Priority */}
+                <Card className="border border-border/60 shadow-sm">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Work Orders by Priority</CardTitle><CardDescription className="text-xs">Priority level breakdown</CardDescription></CardHeader>
+                  <CardContent>
+                    {(reportData.woByPriority || []).length > 0 ? (
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={reportData.woByPriority} layout="vertical" margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis type="number" tick={{ fontSize: 11 }} />
+                          <YAxis type="category" dataKey="priority" tick={{ fontSize: 11 }} width={80} />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Bar dataKey="count" name="Count" radius={[0, 4, 4, 0]}>
+                            {(reportData.woByPriority || []).map((entry: any) => (
+                              <Cell key={entry.priority} fill={priorityColorMap[entry.priority] || CHART_COLORS[0]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : <EmptyState icon={BarChart3} title="No priority data" description="Work orders will appear here." />}
+                  </CardContent>
+                </Card>
+
+                {/* WO by Status */}
+                <Card className="border border-border/60 shadow-sm">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Work Orders by Status</CardTitle><CardDescription className="text-xs">Current status distribution</CardDescription></CardHeader>
+                  <CardContent>
+                    {(reportData.woByStatus || []).length > 0 ? (
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={reportData.woByStatus} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="status" tick={{ fontSize: 10 }} angle={-25} textAnchor="end" height={50} />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Bar dataKey="count" name="Count" fill="#059669" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : <EmptyState icon={BarChart3} title="No status data" description="Work orders will appear here." />}
+                  </CardContent>
+                </Card>
+
+                {/* Monthly Trend */}
+                <Card className="border border-border/60 shadow-sm">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Monthly WO Trend</CardTitle><CardDescription className="text-xs">Created vs completed by month</CardDescription></CardHeader>
+                  <CardContent>
+                    {(reportData.woByMonth || []).length > 0 ? (
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={reportData.woByMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <ChartLegend content={<ChartLegendContent />} />
+                          <Bar dataKey="count" name="Created" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="completedCount" name="Completed" fill="#059669" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : <EmptyState icon={TrendingUp} title="No monthly data" description="Work orders will appear here over time." />}
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+
+            {/* Tab 2: Technician Productivity */}
+            <TabsContent value="technicians" className="mt-6">
+              <Card className="border border-border/60 shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Technician Productivity</CardTitle>
+                  <CardDescription className="text-xs">Assigned vs completed WOs, avg hours per WO</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Technician</TableHead>
+                          <TableHead className="text-right cursor-pointer select-none" onClick={() => setTechSort(techSort === 'assignedCount' ? 'completedCount' : 'assignedCount')}>
+                            <span className="flex items-center justify-end gap-1">Assigned <ArrowUpDown className="h-3 w-3" /></span>
+                          </TableHead>
+                          <TableHead className="text-right cursor-pointer select-none" onClick={() => setTechSort('completedCount')}>
+                            <span className="flex items-center justify-end gap-1">Completed <ArrowUpDown className="h-3 w-3" /></span>
+                          </TableHead>
+                          <TableHead className="text-right cursor-pointer select-none" onClick={() => setTechSort('avgHoursPerWO')}>
+                            <span className="flex items-center justify-end gap-1">Avg Hrs/WO <ArrowUpDown className="h-3 w-3" /></span>
+                          </TableHead>
+                          <TableHead className="text-right cursor-pointer select-none" onClick={() => setTechSort('totalHours')}>
+                            <span className="flex items-center justify-end gap-1">Total Hours <ArrowUpDown className="h-3 w-3" /></span>
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sortedTechnicians.length === 0 ? (
+                          <TableRow><TableCell colSpan={5}><EmptyState icon={Users} title="No technician data" description="Assign work orders to technicians to see productivity metrics." /></TableCell></TableRow>
+                        ) : sortedTechnicians.map((tech: any) => (
+                          <TableRow key={tech.userId} className="hover:bg-muted/30">
+                            <TableCell className="font-medium">{tech.userName}</TableCell>
+                            <TableCell className="text-right">{tech.assignedCount}</TableCell>
+                            <TableCell className="text-right text-emerald-600 font-medium">{tech.completedCount}</TableCell>
+                            <TableCell className="text-right">{tech.avgHoursPerWO}h</TableCell>
+                            <TableCell className="text-right">{tech.totalHours}h</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
-                );
-              })}
-            </div>
-          </CardContent></Card>
-        </div>
-        <Card className="border"><CardHeader><CardTitle className="text-base">Recent Maintenance Requests</CardTitle><CardDescription className="text-xs">Latest submitted requests</CardDescription></CardHeader><CardContent>
-          <Table><TableHeader><TableRow><TableHead>Request #</TableHead><TableHead>Title</TableHead><TableHead className="hidden sm:table-cell">Asset</TableHead><TableHead>Priority</TableHead><TableHead>Status</TableHead><TableHead className="hidden lg:table-cell">Created</TableHead></TableRow></TableHeader><TableBody>
-            {recentMRs.length === 0 ? (
-              <TableRow><TableCell colSpan={6}><EmptyState icon={ClipboardList} title="No maintenance requests" description="Requests will appear here once submitted." /></TableCell></TableRow>
-            ) : recentMRs.map(mr => (
-              <TableRow key={mr.id} className="hover:bg-muted/30">
-                <TableCell className="font-mono text-xs">{mr.requestNumber}</TableCell>
-                <TableCell className="font-medium max-w-[200px] truncate">{mr.title}</TableCell>
-                <TableCell className="text-sm hidden sm:table-cell">{mr.assetName || '-'}</TableCell>
-                <TableCell><PriorityBadge priority={mr.priority} /></TableCell>
-                <TableCell><StatusBadge status={mr.status} /></TableCell>
-                <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{formatDate(mr.createdAt)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody></Table>
-        </CardContent></Card>
-      </>)}
+                </CardContent>
+              </Card>
+
+              {/* Repair Completion Metrics */}
+              {reportData.repairCompletion && (
+                <Card className="border border-border/60 shadow-sm mt-6">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Repair Completion Metrics</CardTitle><CardDescription className="text-xs">Quality and timeliness of repair work</CardDescription></CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                      {[
+                        { label: 'Total Repairs', value: reportData.repairCompletion.totalCompleted },
+                        { label: 'Avg Rework Count', value: reportData.repairCompletion.avgReworkCount },
+                        { label: 'Rework Rate', value: `${reportData.repairCompletion.reworkRate}%` },
+                        { label: 'Avg Supervisor Review', value: `${reportData.repairCompletion.avgSupervisorReviewTimeHours}h` },
+                        { label: 'Avg Closure Time', value: `${reportData.repairCompletion.avgClosureTimeHours}h` },
+                      ].map((item: any, i: number) => (
+                        <div key={i} className="text-center p-3 rounded-lg bg-muted/40">
+                          <p className="text-lg font-bold">{item.value}</p>
+                          <p className="text-[11px] text-muted-foreground">{item.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            {/* Tab 3: Materials & Costs */}
+            <TabsContent value="materials" className="mt-6 space-y-6">
+              <Card className="border border-border/60 shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Material Consumption</CardTitle>
+                  <CardDescription className="text-xs">Top materials by cost for the selected period</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Item Name</TableHead>
+                          <TableHead className="text-right">Total Qty</TableHead>
+                          <TableHead className="text-right">Total Cost</TableHead>
+                          <TableHead className="text-right">WO Count</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(reportData.materialConsumption || []).length === 0 ? (
+                          <TableRow><TableCell colSpan={4}><EmptyState icon={Package} title="No material data" description="Material usage will appear here once work orders use materials." /></TableCell></TableRow>
+                        ) : reportData.materialConsumption.map((mat: any, i: number) => (
+                          <TableRow key={i} className="hover:bg-muted/30">
+                            <TableCell className="font-medium">{mat.itemName}</TableCell>
+                            <TableCell className="text-right">{mat.totalQuantity}</TableCell>
+                            <TableCell className="text-right font-medium">{formatCurrency(mat.totalCost)}</TableCell>
+                            <TableCell className="text-right">{mat.woCount}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Cost Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Card className="border border-border/60 shadow-sm"><CardContent className="p-4 text-center">
+                  <p className="text-2xl font-bold text-emerald-600">{formatCurrency(s?.totalCost)}</p>
+                  <p className="text-xs text-muted-foreground">Total Maintenance Cost</p>
+                </CardContent></Card>
+                <Card className="border border-border/60 shadow-sm"><CardContent className="p-4 text-center">
+                  <p className="text-2xl font-bold text-sky-600">{formatCurrency(s?.avgCostPerWO)}</p>
+                  <p className="text-xs text-muted-foreground">Average Cost per WO</p>
+                </CardContent></Card>
+                <Card className="border border-border/60 shadow-sm"><CardContent className="p-4 text-center">
+                  <p className="text-2xl font-bold text-amber-600">{s?.totalWOs ?? 0}</p>
+                  <p className="text-xs text-muted-foreground">Total Work Orders</p>
+                </CardContent></Card>
+              </div>
+            </TabsContent>
+
+            {/* Tab 4: Downtime Analysis */}
+            <TabsContent value="downtime" className="mt-6 space-y-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label: 'Total Events', value: reportData.downtimeAnalysis?.totalEvents ?? 0, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+                  { label: 'Total Downtime', value: `${reportData.downtimeAnalysis?.totalMinutes ?? 0} min`, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+                  { label: 'Avg Duration', value: `${reportData.downtimeAnalysis?.avgDurationMinutes ?? 0} min`, icon: TrendingUp, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+                  { label: 'SLA Breaches', value: s?.slaBreachedWOs ?? 0, icon: ShieldAlert, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+                ].map((k: any) => { const I = k.icon; return (
+                  <Card key={k.label} className="border border-border/60 shadow-sm"><CardContent className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`h-9 w-9 rounded-lg ${k.color} flex items-center justify-center shrink-0`}><I className="h-4 w-4" /></div>
+                      <div className="min-w-0">
+                        <p className="text-lg font-bold truncate">{k.value}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">{k.label}</p>
+                      </div>
+                    </div>
+                  </CardContent></Card>
+                ); })}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* By Category */}
+                <Card className="border border-border/60 shadow-sm">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Downtime by Category</CardTitle></CardHeader>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader><TableRow><TableHead>Category</TableHead><TableHead className="text-right">Events</TableHead><TableHead className="text-right">Total Min</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {(reportData.downtimeAnalysis?.byCategory || []).length === 0 ? (
+                            <TableRow><TableCell colSpan={3}><EmptyState icon={Clock} title="No downtime data" description="Downtime events will appear here." /></TableCell></TableRow>
+                          ) : reportData.downtimeAnalysis.byCategory.map((dt: any) => (
+                            <TableRow key={dt.category} className="hover:bg-muted/30">
+                              <TableCell className="font-medium capitalize">{dt.category}</TableCell>
+                              <TableCell className="text-right">{dt.count}</TableCell>
+                              <TableCell className="text-right font-medium">{dt.totalMinutes} min</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* By Impact Level */}
+                <Card className="border border-border/60 shadow-sm">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Downtime by Impact Level</CardTitle></CardHeader>
+                  <CardContent>
+                    {(reportData.downtimeAnalysis?.byImpactLevel || []).length > 0 ? (
+                      <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={reportData.downtimeAnalysis.byImpactLevel} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="impactLevel" tick={{ fontSize: 11 }} />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Bar dataKey="count" name="Events" radius={[4, 4, 0, 0]}>
+                            {(reportData.downtimeAnalysis.byImpactLevel || []).map((entry: any) => (
+                              <Cell key={entry.impactLevel} fill={priorityColorMap[entry.impactLevel] || CHART_COLORS[0]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : <EmptyState icon={ShieldAlert} title="No impact data" description="Impact level data will appear here." />}
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+
+            {/* Tab 5: Asset Reliability */}
+            <TabsContent value="assets" className="mt-6">
+              <Card className="border border-border/60 shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Top Assets by Work Order Count</CardTitle>
+                  <CardDescription className="text-xs">Assets with most maintenance activity in the period</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Asset</TableHead>
+                          <TableHead className="text-right">WO Count</TableHead>
+                          <TableHead className="text-right">Downtime (min)</TableHead>
+                          <TableHead className="text-right">Total Cost</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(reportData.topAssets || []).length === 0 ? (
+                          <TableRow><TableCell colSpan={4}><EmptyState icon={Building2} title="No asset data" description="Assets with work orders will appear here." /></TableCell></TableRow>
+                        ) : reportData.topAssets.map((asset: any, i: number) => (
+                          <TableRow key={i} className="hover:bg-muted/30">
+                            <TableCell className="font-medium">{asset.assetName}</TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant="outline" className={asset.woCount > 5 ? 'bg-red-50 text-red-700 border-red-200' : asset.woCount > 2 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}>
+                                {asset.woCount}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">{asset.downtimeMinutes} min</TableCell>
+                            <TableCell className="text-right font-medium">{formatCurrency(asset.totalCost)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Tab 6: Detailed Data */}
+            <TabsContent value="data" className="mt-6">
+              <Card className="border border-border/60 shadow-sm">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Detailed Work Order Data</CardTitle>
+                  <CardDescription className="text-xs">{recentWOs.length} work orders in the selected date range</CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-background z-10">
+                        <TableRow>
+                          <TableHead>WO #</TableHead>
+                          <TableHead>Title</TableHead>
+                          <TableHead className="hidden md:table-cell">Type</TableHead>
+                          <TableHead>Priority</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="hidden lg:table-cell">Asset</TableHead>
+                          <TableHead className="hidden xl:table-cell">Assigned To</TableHead>
+                          <TableHead className="hidden xl:table-cell">Team Leader</TableHead>
+                          <TableHead className="text-right hidden md:table-cell">Est Hrs</TableHead>
+                          <TableHead className="text-right hidden md:table-cell">Act Hrs</TableHead>
+                          <TableHead className="text-right hidden lg:table-cell">Total Cost</TableHead>
+                          <TableHead className="hidden lg:table-cell">Created</TableHead>
+                          <TableHead className="hidden xl:table-cell">Completed</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {recentWOs.length === 0 ? (
+                          <TableRow><TableCell colSpan={13}><EmptyState icon={ClipboardList} title="No work orders in date range" description="Adjust the date range to see work order data." /></TableCell></TableRow>
+                        ) : recentWOs.map((wo: any) => (
+                          <TableRow key={wo.id} className="hover:bg-muted/30">
+                            <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
+                            <TableCell className="font-medium max-w-[180px] truncate">{wo.title}</TableCell>
+                            <TableCell className="hidden md:table-cell">
+                              <Badge variant="outline" className={`${typeColorMap[wo.type] || 'bg-slate-100 text-slate-700'} text-white border-0 text-[10px]`}>
+                                {wo.type?.toUpperCase()}
+                              </Badge>
+                            </TableCell>
+                            <TableCell><PriorityBadge priority={wo.priority} /></TableCell>
+                            <TableCell><StatusBadge status={wo.status} /></TableCell>
+                            <TableCell className="text-sm hidden lg:table-cell max-w-[140px] truncate">{wo.assetName || '-'}</TableCell>
+                            <TableCell className="text-sm hidden xl:table-cell">{wo.assigneeName || '-'}</TableCell>
+                            <TableCell className="text-sm hidden xl:table-cell">{wo.teamLeaderName || '-'}</TableCell>
+                            <TableCell className="text-right hidden md:table-cell">{wo.estimatedHours ?? '-'}</TableCell>
+                            <TableCell className="text-right hidden md:table-cell">{wo.actualHours ?? '-'}</TableCell>
+                            <TableCell className="text-right hidden lg:table-cell">{formatCurrency(wo.totalCost)}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden lg:table-cell whitespace-nowrap">{wo.createdAt ? formatDate(wo.createdAt) : '-'}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden xl:table-cell whitespace-nowrap">{wo.completedDate ? formatDate(wo.completedDate) : '-'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </>
+      )}
+
+      {!loading && !reportData && (
+        <EmptyState icon={ClipboardCheck} title="No data available" description="Generate a report with the date range above to see maintenance analytics." />
+      )}
     </div>
   );
 }

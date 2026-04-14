@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/authStore';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -78,6 +79,12 @@ export function RepairMaterialRequestsPage() {
   const [page, setPage] = useState(1);
 
   const [createForm, setCreateForm] = useState({ workOrderId: '', itemName: '', itemId: '', quantityRequested: '', unit: 'each', unitCost: '', reason: '', notes: '' });
+  // Reject dialog
+  const [rejectDialogTarget, setRejectDialogTarget] = useState<{ type: string; id: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  // Quantity dialog
+  const [quantityDialogTarget, setQuantityDialogTarget] = useState<{ type: string; id: string; max: number; field: string } | null>(null);
+  const [quantityValue, setQuantityValue] = useState('');
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
@@ -125,10 +132,25 @@ export function RepairMaterialRequestsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Cancel this material request?')) return;
     const res = await api.delete(`/api/repairs/material-requests/${id}`);
     if (res.success) { toast.success('Request cancelled'); fetchRequests(); }
     else toast.error(res.error || 'Failed to cancel');
+  };
+
+  const handleRejectConfirm = () => {
+    if (!rejectDialogTarget || !rejectReason.trim()) { toast.error('Reason is required'); return; }
+    const actionMap: Record<string, string> = { supervisor_reject: 'supervisor_reject', storekeeper_reject: 'storekeeper_reject' };
+    handleAction(rejectDialogTarget.id, actionMap[rejectDialogTarget.type] || rejectDialogTarget.type, { notes: rejectReason });
+    setRejectDialogTarget(null); setRejectReason('');
+  };
+
+  const handleQuantityConfirm = () => {
+    if (!quantityDialogTarget) return;
+    const q = parseFloat(quantityValue);
+    if (isNaN(q) || q <= 0) { toast.error('Enter a valid quantity'); return; }
+    if (quantityDialogTarget.max && q > quantityDialogTarget.max) { toast.error(`Quantity cannot exceed ${quantityDialogTarget.max}`); return; }
+    handleAction(quantityDialogTarget.id, quantityDialogTarget.type, { [quantityDialogTarget.field]: q });
+    setQuantityDialogTarget(null); setQuantityValue('');
   };
 
   const filtered = requests.filter((r) => !searchText || r.itemName?.toLowerCase().includes(searchText.toLowerCase()) || r.workOrder?.woNumber?.toLowerCase().includes(searchText.toLowerCase()));
@@ -213,21 +235,21 @@ export function RepairMaterialRequestsPage() {
                           {r.status === 'pending' && (
                             <>
                               <DropdownMenuItem onClick={() => handleAction(r.id, 'supervisor_approve')}><ShieldCheck className="h-4 w-4 mr-2" /> Supervisor Approve</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => { const n = prompt('Rejection reason:'); if (n) handleAction(r.id, 'supervisor_reject', { notes: n }); }} className="text-red-600"><XCircle className="h-4 w-4 mr-2" /> Supervisor Reject</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => { setRejectDialogTarget({ type: 'supervisor_reject', id: r.id }); }} className="text-red-600"><XCircle className="h-4 w-4 mr-2" /> Supervisor Reject</DropdownMenuItem>
                               <DropdownMenuItem onClick={() => handleDelete(r.id)} className="text-red-600"><Ban className="h-4 w-4 mr-2" /> Cancel</DropdownMenuItem>
                             </>
                           )}
                           {r.status === 'supervisor_approved' && (
                             <>
                               <DropdownMenuItem onClick={() => handleAction(r.id, 'storekeeper_approve')}><Warehouse className="h-4 w-4 mr-2" /> Store Approve</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => { const n = prompt('Rejection reason:'); if (n) handleAction(r.id, 'storekeeper_reject', { notes: n }); }} className="text-red-600"><XCircle className="h-4 w-4 mr-2" /> Store Reject</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => { setRejectDialogTarget({ type: 'storekeeper_reject', id: r.id }); }} className="text-red-600"><XCircle className="h-4 w-4 mr-2" /> Store Reject</DropdownMenuItem>
                             </>
                           )}
                           {r.status === 'storekeeper_approved' && (
-                            <DropdownMenuItem onClick={() => { const q = prompt(`Issue quantity (max ${r.quantityApproved}):`, String(r.quantityApproved)); if (q) handleAction(r.id, 'issue', { quantityApproved: parseFloat(q) }); }}><PackageCheck className="h-4 w-4 mr-2" /> Issue Material</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setQuantityDialogTarget({ type: 'issue', id: r.id, max: r.quantityApproved, field: 'quantityApproved' }); }}><PackageCheck className="h-4 w-4 mr-2" /> Issue Material</DropdownMenuItem>
                           )}
                           {r.status === 'issued' && (
-                            <DropdownMenuItem onClick={() => { const q = prompt('Return quantity:', String(r.quantityIssued)); if (q) handleAction(r.id, 'record_return', { quantityApproved: parseFloat(q) }); }}><RotateCcw className="h-4 w-4 mr-2" /> Record Return</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setQuantityDialogTarget({ type: 'record_return', id: r.id, max: r.quantityIssued, field: 'quantityIssued' }); }}><RotateCcw className="h-4 w-4 mr-2" /> Record Return</DropdownMenuItem>
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -295,6 +317,30 @@ export function RepairMaterialRequestsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Reject Reason Dialog */}
+      <Dialog open={!!rejectDialogTarget} onOpenChange={(open) => { if (!open) setRejectDialogTarget(null); setRejectReason(''); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Reject Request</DialogTitle><DialogDescription>Please provide a reason for rejection.</DialogDescription></DialogHeader>
+          <Textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Reason for rejection..." rows={3} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectDialogTarget(null); setRejectReason(''); }}>Cancel</Button>
+            <Button variant="destructive" onClick={handleRejectConfirm}>Reject</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quantity Dialog */}
+      <Dialog open={!!quantityDialogTarget} onOpenChange={(open) => { if (!open) setQuantityDialogTarget(null); setQuantityValue(''); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>{quantityDialogTarget?.type === 'issue' ? 'Issue Quantity' : 'Return Quantity'}</DialogTitle><DialogDescription>{quantityDialogTarget?.type === 'issue' ? `Enter quantity to issue (max ${quantityDialogTarget?.max || 0})` : 'Enter quantity to return'}</DialogDescription></DialogHeader>
+          <Input type="number" value={quantityValue} onChange={e => setQuantityValue(e.target.value)} placeholder="Enter quantity" min="0" max={quantityDialogTarget?.max} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setQuantityDialogTarget(null); setQuantityValue(''); }}>Cancel</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleQuantityConfirm}>Confirm</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -310,6 +356,9 @@ export function RepairToolRequestsPage() {
   const [searchText, setSearchText] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ workOrderId: '', toolId: '', toolName: '', reason: '', notes: '' });
+  // Reject dialog
+  const [rejectDialogTarget, setRejectDialogTarget] = useState<{ type: string; id: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
@@ -338,6 +387,13 @@ export function RepairToolRequestsPage() {
   };
 
   const filtered = requests.filter((r) => !searchText || r.toolName?.toLowerCase().includes(searchText.toLowerCase()));
+
+  const handleRejectConfirm = () => {
+    if (!rejectDialogTarget || !rejectReason.trim()) { toast.error('Reason is required'); return; }
+    const actionMap: Record<string, string> = { tool_supervisor_reject: 'supervisor_reject', tool_storekeeper_reject: 'storekeeper_reject' };
+    handleAction(rejectDialogTarget.id, actionMap[rejectDialogTarget.type] || rejectDialogTarget.type, { notes: rejectReason });
+    setRejectDialogTarget(null); setRejectReason('');
+  };
 
   return (
     <div className="space-y-6">
@@ -394,8 +450,8 @@ export function RepairToolRequestsPage() {
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {r.status === 'pending' && (<><DropdownMenuItem onClick={() => handleAction(r.id, 'supervisor_approve')}><ShieldCheck className="h-4 w-4 mr-2" /> Approve</DropdownMenuItem><DropdownMenuItem onClick={() => { const n = prompt('Rejection reason:'); if (n) handleAction(r.id, 'supervisor_reject', { notes: n }); }} className="text-red-600"><XCircle className="h-4 w-4 mr-2" /> Reject</DropdownMenuItem></>)}
-                          {r.status === 'supervisor_approved' && (<><DropdownMenuItem onClick={() => handleAction(r.id, 'storekeeper_approve')}><Warehouse className="h-4 w-4 mr-2" /> Store Approve</DropdownMenuItem><DropdownMenuItem onClick={() => { const n = prompt('Reason:'); if (n) handleAction(r.id, 'storekeeper_reject', { notes: n }); }} className="text-red-600"><XCircle className="h-4 w-4 mr-2" /> Store Reject</DropdownMenuItem></>)}
+                          {r.status === 'pending' && (<><DropdownMenuItem onClick={() => handleAction(r.id, 'supervisor_approve')}><ShieldCheck className="h-4 w-4 mr-2" /> Approve</DropdownMenuItem><DropdownMenuItem onClick={() => { setRejectDialogTarget({ type: 'tool_supervisor_reject', id: r.id }); }} className="text-red-600"><XCircle className="h-4 w-4 mr-2" /> Reject</DropdownMenuItem></>)}
+                          {r.status === 'supervisor_approved' && (<><DropdownMenuItem onClick={() => handleAction(r.id, 'storekeeper_approve')}><Warehouse className="h-4 w-4 mr-2" /> Store Approve</DropdownMenuItem><DropdownMenuItem onClick={() => { setRejectDialogTarget({ type: 'tool_storekeeper_reject', id: r.id }); }} className="text-red-600"><XCircle className="h-4 w-4 mr-2" /> Store Reject</DropdownMenuItem></>)}
                           {r.status === 'storekeeper_approved' && (<DropdownMenuItem onClick={() => handleAction(r.id, 'issue')}><Wrench className="h-4 w-4 mr-2" /> Issue Tool</DropdownMenuItem>)}
                           {r.status === 'issued' && (<DropdownMenuItem onClick={() => handleAction(r.id, 'return')}><RotateCcw className="h-4 w-4 mr-2" /> Return Tool</DropdownMenuItem>)}
                         </DropdownMenuContent>
@@ -444,6 +500,18 @@ export function RepairToolRequestsPage() {
           <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate}><Send className="h-4 w-4 mr-2" /> Submit</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Reject Reason Dialog */}
+      <Dialog open={!!rejectDialogTarget} onOpenChange={(open) => { if (!open) setRejectDialogTarget(null); setRejectReason(''); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Reject Tool Request</DialogTitle><DialogDescription>Please provide a reason for rejection.</DialogDescription></DialogHeader>
+          <Textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Reason for rejection..." rows={3} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectDialogTarget(null); setRejectReason(''); }}>Cancel</Button>
+            <Button variant="destructive" onClick={handleRejectConfirm}>Reject</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -458,6 +526,9 @@ export function RepairToolTransfersPage() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ toolId: '', fromUserId: '', toUserId: '', reason: '', notes: '' });
+  // Reject dialog
+  const [rejectDialogTarget, setRejectDialogTarget] = useState<{ type: string; id: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const fetchTransfers = useCallback(async () => {
     setLoading(true);
@@ -482,6 +553,12 @@ export function RepairToolTransfersPage() {
     const res = await api.post(`/api/repairs/tool-transfers/${id}`, { action, ...extra });
     if (res.success) { toast.success('Done'); fetchTransfers(); }
     else toast.error(res.error || 'Failed');
+  };
+
+  const handleRejectConfirm = () => {
+    if (!rejectDialogTarget || !rejectReason.trim()) { toast.error('Reason is required'); return; }
+    handleAction(rejectDialogTarget.id, 'storekeeper_reject', { notes: rejectReason });
+    setRejectDialogTarget(null); setRejectReason('');
   };
 
   return (
@@ -533,7 +610,7 @@ export function RepairToolTransfersPage() {
                           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => handleAction(t.id, 'storekeeper_approve')}><CheckCircle2 className="h-4 w-4 mr-2" /> Approve Transfer</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => { const n = prompt('Rejection reason:'); if (n) handleAction(t.id, 'storekeeper_reject', { notes: n }); }} className="text-red-600"><XCircle className="h-4 w-4 mr-2" /> Reject</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setRejectDialogTarget({ type: 'transfer_storekeeper_reject', id: t.id }); }} className="text-red-600"><XCircle className="h-4 w-4 mr-2" /> Reject</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}
@@ -591,6 +668,18 @@ export function RepairToolTransfersPage() {
           <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate}>Submit Transfer</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Reject Reason Dialog */}
+      <Dialog open={!!rejectDialogTarget} onOpenChange={(open) => { if (!open) setRejectDialogTarget(null); setRejectReason(''); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Reject Transfer</DialogTitle><DialogDescription>Please provide a reason for rejection.</DialogDescription></DialogHeader>
+          <Textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="Reason for rejection..." rows={3} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectDialogTarget(null); setRejectReason(''); }}>Cancel</Button>
+            <Button variant="destructive" onClick={handleRejectConfirm}>Reject</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -604,6 +693,9 @@ export function RepairDowntimePage() {
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ workOrderId: '', assetName: '', assetId: '', downtimeStart: '', downtimeEnd: '', reason: '', category: 'unplanned', impactLevel: 'medium', productionLoss: '', notes: '' });
+  // End downtime dialog
+  const [endDowntimeTarget, setEndDowntimeTarget] = useState<string | null>(null);
+  const [endDowntimeTime, setEndDowntimeTime] = useState('');
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -625,16 +717,20 @@ export function RepairDowntimePage() {
     else toast.error(res.error || 'Failed');
   };
 
-  const handleEndDowntime = async (id: string) => {
-    const endTime = prompt('Enter end time (YYYY-MM-DD HH:mm):', new Date().toISOString().slice(0, 16));
-    if (!endTime) return;
-    const res = await api.put(`/api/repairs/downtime/${id}`, { downtimeEnd: endTime });
+  const handleEndDowntime = async (recordId: string) => {
+    setEndDowntimeTarget(recordId);
+    setEndDowntimeTime(new Date().toISOString().slice(0, 16));
+  };
+
+  const handleEndDowntimeConfirm = async () => {
+    if (!endDowntimeTarget || !endDowntimeTime) return;
+    const res = await api.put(`/api/repairs/downtime/${endDowntimeTarget}`, { downtimeEnd: endDowntimeTime });
     if (res.success) { toast.success('Downtime ended'); fetchRecords(); }
     else toast.error(res.error || 'Failed');
+    setEndDowntimeTarget(null);
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this downtime record?')) return;
     const res = await api.delete(`/api/repairs/downtime/${id}`);
     if (res.success) { toast.success('Deleted'); fetchRecords(); }
     else toast.error(res.error || 'Failed');
@@ -748,6 +844,20 @@ export function RepairDowntimePage() {
           <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate}>Save</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* End Downtime Dialog */}
+      <Dialog open={!!endDowntimeTarget} onOpenChange={(open) => { if (!open) setEndDowntimeTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>End Downtime</DialogTitle><DialogDescription>Set the end time for this downtime event.</DialogDescription></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5"><Label>End Time *</Label><Input type="datetime-local" value={endDowntimeTime} onChange={e => setEndDowntimeTime(e.target.value)} /></div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEndDowntimeTarget(null)}>Cancel</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleEndDowntimeConfirm}>End Downtime</Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -762,6 +872,9 @@ export function RepairCompletionPage() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({ completionNotes: '', findings: '', rootCause: '', correctiveAction: '', totalLaborHours: '', totalMaterialCost: '', totalToolCost: '', totalDowntimeMinutes: '', closureNotes: '' });
+  // Rework reason dialog
+  const [reworkDialogOpen, setReworkDialogOpen] = useState(false);
+  const [reworkReasonValue, setReworkReasonValue] = useState('');
 
   const fetchCompletion = async () => {
     if (!woId) return;
@@ -786,7 +899,7 @@ export function RepairCompletionPage() {
       totalToolCost: form.totalToolCost ? parseFloat(form.totalToolCost) : undefined,
       totalDowntimeMinutes: form.totalDowntimeMinutes ? parseFloat(form.totalDowntimeMinutes) : undefined,
       closureNotes: form.closureNotes || undefined,
-      ...(action === 'supervisor_request_rework' ? { reworkReason: prompt('Enter rework reason:') } : {}),
+      ...(action === 'supervisor_request_rework' ? { reworkReason: reworkReasonValue } : {}),
       ...(action === 'supervisor_approve' ? { supervisorReviewNotes: form.completionNotes } : {}),
     });
     if (res.success) {
@@ -855,7 +968,7 @@ export function RepairCompletionPage() {
                   <Button onClick={() => handleSubmit('submit')} disabled={submitting}><CheckCircle2 className="h-4 w-4 mr-2" /> {completion.supervisorStatus === 'rework_requested' ? 'Resubmit Completion' : 'Submit Completion'}</Button>
                 )}
                 {completion.supervisorStatus === 'pending_review' && (
-                  <Button variant="destructive" onClick={() => handleSubmit('supervisor_request_rework')} disabled={submitting}><RotateCcw className="h-4 w-4 mr-2" /> Request Rework</Button>
+                  <Button variant="destructive" onClick={() => { setReworkDialogOpen(true); }} disabled={submitting}><RotateCcw className="h-4 w-4 mr-2" /> Request Rework</Button>
                 )}
                 {completion.supervisorStatus === 'pending_review' && (
                   <Button variant="outline" className="border-green-600 text-green-600" onClick={() => handleSubmit('supervisor_approve')} disabled={submitting}><ShieldCheck className="h-4 w-4 mr-2" /> Supervisor Approve</Button>
@@ -875,6 +988,18 @@ export function RepairCompletionPage() {
       {woId && !loading && !completion && (
         <EmptyState icon={ClipboardList} title="No completion record found" description="Enter a valid Work Order ID to load completion data" />
       )}
+
+      {/* Rework Reason Dialog */}
+      <Dialog open={reworkDialogOpen} onOpenChange={setReworkDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Request Rework</DialogTitle><DialogDescription>Please provide a reason for requesting rework.</DialogDescription></DialogHeader>
+          <Textarea value={reworkReasonValue} onChange={e => setReworkReasonValue(e.target.value)} placeholder="Rework reason..." rows={3} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setReworkDialogOpen(false); setReworkReasonValue(''); }}>Cancel</Button>
+            <Button variant="destructive" disabled={!reworkReasonValue.trim() || submitting} onClick={() => { setReworkDialogOpen(false); handleSubmit('supervisor_request_rework'); }}>Request Rework</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -75,7 +75,7 @@ export async function POST(
       },
     });
 
-    // Notify assigned user and requester (from linked MR if exists)
+    // Notify assigned user, requester (from linked MR), and all team members
     const notifyTargets: string[] = [];
     if (wo.assignedTo && wo.assignedTo !== session.userId) {
       notifyTargets.push(wo.assignedTo);
@@ -88,6 +88,16 @@ export async function POST(
       });
       if (linkedMR?.requestedBy && linkedMR.requestedBy !== session.userId && !notifyTargets.includes(linkedMR.requestedBy)) {
         notifyTargets.push(linkedMR.requestedBy);
+      }
+    }
+    // Add all team members
+    const teamMembers = await db.workOrderTeamMember.findMany({
+      where: { workOrderId: id },
+      select: { userId: true },
+    });
+    for (const member of teamMembers) {
+      if (member.userId !== session.userId && !notifyTargets.includes(member.userId)) {
+        notifyTargets.push(member.userId);
       }
     }
     for (const targetId of notifyTargets) {

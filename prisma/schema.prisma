@@ -403,6 +403,7 @@ model WorkOrder {
   actionDescription   String?
   plantId             String?
   notes               String?
+  personalTools       String    @default("[]")          // JSON: [{toolName, toolCode, condition, notes}]
   isLocked            Boolean   @default(false)
   lockedBy            String?                        // → User
   lockedAt            DateTime?
@@ -443,11 +444,12 @@ model WorkOrder {
 }
 
 model WorkOrderTeamMember {
-  id          String   @id @default(cuid())
-  workOrderId String
-  userId      String
-  role        String   @default("assistant")  // team_leader, assistant, specialist
-  assignedAt  DateTime @default(now())
+  id           String   @id @default(cuid())
+  workOrderId  String
+  userId       String
+  role         String   @default("assistant")  // team_leader, assistant, specialist
+  accessLevel  String   @default("full")      // full (team leader), read_only (other members)
+  assignedAt   DateTime @default(now())
 
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -460,6 +462,7 @@ model WorkOrderTimeLog {
   workOrderId String
   userId      String
   action      String                         // start, pause, resume, complete
+  duration    Float?                          // hours for this log entry (pause/complete)
   notes       String?
   timestamp   DateTime @default(now())
 

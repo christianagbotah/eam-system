@@ -58,13 +58,13 @@ export async function POST(
       return NextResponse.json({ success: false, error: result.error }, { status: 400 });
     }
 
-    // Notify the requester
+    // Notify the requester with rejection reason
     if (mr.requestedBy && mr.requestedBy !== session.userId) {
       await notifyUser(
         mr.requestedBy,
         'mr_rejected',
         'Maintenance Request Rejected',
-        `Your request ${mr.requestNumber} has been rejected`,
+        `Your request ${mr.requestNumber} has been rejected. Reason: ${reason}`,
         'maintenance_request',
         id,
         `mr-detail?id=${id}`,

@@ -116,8 +116,8 @@ export async function POST(
       },
     });
 
-    // Notify supervisors
-    const notifyTargets = [wo.assignedSupervisorId, wo.teamLeaderId].filter(
+    // Notify supervisors and planner
+    const notifyTargets = [wo.assignedSupervisorId, wo.teamLeaderId, wo.plannerId].filter(
       (uid): uid is string => !!uid && uid !== session.userId,
     );
     for (const targetId of notifyTargets) {
