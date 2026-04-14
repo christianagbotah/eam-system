@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
 
     if (session) {
       if (!isAdmin(session)) {
-        if (session.roles.includes('technician')) {
+        if (session.roles.includes('maintenance_technician')) {
           // Technicians see WOs assigned to them
           where.assignedTo = session.userId;
         }

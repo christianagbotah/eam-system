@@ -20,10 +20,10 @@ export async function GET(request: NextRequest) {
 
     if (session && !isAdm) {
       // Non-admin: show own items or items assigned to them
-      if (session.roles.includes('technician')) {
+      if (session.roles.includes('maintenance_technician')) {
         (woWhere as Record<string, unknown>).assignedTo = session.userId;
         (mrWhere as Record<string, unknown>).requestedBy = session.userId;
-      } else if (session.roles.includes('operator')) {
+      } else if (session.roles.includes('production_operator')) {
         (mrWhere as Record<string, unknown>).requestedBy = session.userId;
         // Operators only see WOs created from their requests
         const myMRIds = await db.maintenanceRequest.findMany({
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
           // No MRs, so no WOs to show
           (woWhere as Record<string, unknown>).id = '__none__';
         }
-      } else if (session.roles.includes('supervisor')) {
+      } else if (session.roles.includes('maintenance_supervisor')) {
         // Supervisors see their department's requests
         (mrWhere as Record<string, unknown>).supervisorId = session.userId;
       }
@@ -73,6 +73,7 @@ export async function GET(request: NextRequest) {
       // Pending approvals (requests in 'pending' or 'in_progress' workflow)
       db.maintenanceRequest.count({
         where: {
+          ...plantFilter,
           status: { in: ['pending', 'in_progress'] },
         },
       }),
@@ -202,42 +203,44 @@ export async function GET(request: NextRequest) {
       db.asset.count({ where: { isActive: true, ...plantFilter } }),
 
       // Safety: open incidents (open + investigating)
-      db.safetyIncident.count({ where: { status: { in: ['open', 'investigating'] } } }),
+      db.safetyIncident.count({ where: { ...plantFilter, status: { in: ['open', 'investigating'] } } }),
       // Safety: overdue inspections (scheduled date past, not completed/failed)
       db.safetyInspection.count({
         where: {
+          ...plantFilter,
           scheduledDate: { lt: new Date() },
           status: { notIn: ['completed', 'failed'] },
         },
       }),
 
       // Production: active orders (in_progress)
-      db.productionOrder.count({ where: { status: 'in_progress' } }),
+      db.productionOrder.count({ where: { ...plantFilter, status: 'in_progress' } }),
       // Production: overdue orders (past scheduled end, not completed/cancelled)
       db.productionOrder.count({
         where: {
+          ...plantFilter,
           scheduledEnd: { lt: new Date() },
           status: { notIn: ['completed', 'cancelled'] },
         },
       }),
       // Production: completed orders for rate calculation
-      db.productionOrder.count({ where: { status: 'completed' } }),
+      db.productionOrder.count({ where: { ...plantFilter, status: 'completed' } }),
       // Production: total orders
-      db.productionOrder.count(),
+      db.productionOrder.count({ where: { ...plantFilter } }),
 
       // IoT: total devices
-      db.iotDevice.count(),
+      db.iotDevice.count({ where: { ...plantFilter } }),
       // IoT: offline devices
-      db.iotDevice.count({ where: { status: 'offline' } }),
+      db.iotDevice.count({ where: { ...plantFilter, status: 'offline' } }),
       // IoT: active/new alerts
-      db.iotAlert.count({ where: { status: 'active' } }),
+      db.iotAlert.count({ where: { ...plantFilter, status: 'active' } }),
 
       // Quality: open NCRs (open + investigating + root_cause_found + corrective_action)
-      db.nonConformanceReport.count({ where: { status: { in: ['open', 'investigating'] } } }),
+      db.nonConformanceReport.count({ where: { ...plantFilter, status: { in: ['open', 'investigating'] } } }),
       // Quality: failed inspections
-      db.qualityInspection.count({ where: { status: 'failed' } }),
+      db.qualityInspection.count({ where: { ...plantFilter, status: 'failed' } }),
       // Quality: pending audits (planned + in_progress)
-      db.qualityAudit.count({ where: { status: { in: ['planned', 'in_progress'] } } }),
+      db.qualityAudit.count({ where: { ...plantFilter, status: { in: ['planned', 'in_progress'] } } }),
 
       // Inventory: low stock items
       db.inventoryItem.findMany({
@@ -245,7 +248,7 @@ export async function GET(request: NextRequest) {
         select: { id: true, currentStock: true, minStockLevel: true },
       }),
       // Inventory: pending requests
-      db.inventoryRequest.count({ where: { status: { in: ['pending', 'partially_fulfilled'] } } }),
+      db.inventoryRequest.count({ where: { ...plantFilter, status: { in: ['pending', 'partially_fulfilled'] } } }),
 
       // Weekly trends: work orders created per day
       db.$queryRaw(Prisma.sql`SELECT date(createdAt) as day, COUNT(*) as count FROM work_orders WHERE createdAt >= date('now', '-6 days') GROUP BY date(createdAt) ORDER BY day`),

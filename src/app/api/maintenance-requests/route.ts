@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 
@@ -52,10 +52,10 @@ export async function GET(request: NextRequest) {
 
     if (session) {
       if (!isAdmin(session)) {
-        if (session.roles.includes('operator')) {
+        if (session.roles.includes('production_operator')) {
           // Operators see their own requests
           where.requestedBy = session.userId;
-        } else if (session.roles.includes('supervisor')) {
+        } else if (session.roles.includes('maintenance_supervisor')) {
           // Supervisors see their department's requests
           where.supervisorId = session.userId;
         }
@@ -109,6 +109,10 @@ export async function POST(request: NextRequest) {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!hasPermission(session, 'maintenance_requests.create') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const body = await request.json();

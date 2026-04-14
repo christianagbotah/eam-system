@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     if (status) where.status = status;
     if (requestedById) where.requestedById = requestedById;
 
-    if (session && !isAdmin(session) && !session.roles.includes('supervisor') && !session.roles.includes('planner') && !session.roles.includes('store_keeper')) {
+    if (session && !isAdmin(session) && !session.roles.includes('maintenance_supervisor') && !session.roles.includes('maintenance_planner') && !session.roles.includes('store_keeper')) {
       where.requestedById = session.userId;
     }
 

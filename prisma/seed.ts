@@ -518,6 +518,8 @@ const rolePermissionBundles: Record<string, string[]> = {
   // ── 13. HR MANAGER: full HRMS ──
   hr_manager: [
     'dashboard.view', 'dashboard.stats',
+    'operations.view',
+    'system_settings.view',
     'documents.view', 'documents.upload', 'documents.download',
     'notifications.view', 'notifications.manage',
     'users.view', 'users.create', 'users.update',

@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Store keepers and admins see all; technicians see their own
-    if (session && !session.roles.includes('admin') && !session.roles.includes('store_keeper') && !session.roles.includes('supervisor') && !session.roles.includes('planner')) {
+    if (session && !session.roles.includes('admin') && !session.roles.includes('store_keeper') && !session.roles.includes('maintenance_supervisor') && !session.roles.includes('maintenance_planner')) {
       const userFilter = { OR: [{ fromUserId: session.userId }, { toUserId: session.userId }, { requestedById: session.userId }] };
       if (where.OR && search) {
         // Merge search OR with user filter
