@@ -25,6 +25,8 @@ export async function GET(
       );
     }
 
+    // Note: CorrectiveAction model has no plantId field — plant-scope IDOR check not applicable
+
     return NextResponse.json({ success: true, data: capa });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load CAPA';

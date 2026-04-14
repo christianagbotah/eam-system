@@ -25,6 +25,8 @@ export async function GET(
       );
     }
 
+    // Note: SafetyInspection model has no plantId field — plant-scope IDOR check not applicable
+
     return NextResponse.json({ success: true, data: inspection });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load safety inspection';

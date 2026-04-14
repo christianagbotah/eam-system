@@ -25,6 +25,8 @@ export async function GET(
       );
     }
 
+    // Note: SafetyTraining model has no plantId field — plant-scope IDOR check not applicable
+
     return NextResponse.json({ success: true, data: training });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load safety training';

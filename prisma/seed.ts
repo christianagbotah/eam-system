@@ -10,6 +10,7 @@ const db = new PrismaClient();
 const modulePermissions: Record<string, string[]> = {
   // ── CORE (~47) ──
   dashboard: ['view', 'stats'],
+  chat: ['view'],
   users: ['view', 'create', 'update', 'delete', 'manage', 'assign_role', 'assign_plant', 'reset_password'],
   roles: ['view', 'create', 'update', 'delete', 'manage'],
   permissions: ['view'],
@@ -169,7 +170,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 2. PLANT MANAGER: broad view + limited create/update ──
   plant_manager: [
-    'dashboard.view', 'dashboard.stats',
+    'dashboard.view', 'dashboard.stats', 'chat.view',
     'users.view',
     'roles.view',
     'permissions.view',
@@ -232,7 +233,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 3. MAINTENANCE MANAGER: full RWOP + MRMP + assets ──
   maintenance_manager: [
-    'dashboard.view', 'dashboard.stats',
+    'dashboard.view', 'dashboard.stats', 'chat.view',
     'documents.view', 'documents.upload', 'documents.download',
     'notifications.view', 'notifications.manage',
     'assets.view', 'assets.view_all', 'assets.create', 'assets.update', 'assets.delete',
@@ -278,7 +279,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 4. MAINTENANCE PLANNER: RWOP manage + MRMP manage ──
   maintenance_planner: [
-    'dashboard.view', 'dashboard.stats',
+    'dashboard.view', 'dashboard.stats', 'chat.view',
     'documents.view', 'documents.upload', 'documents.download',
     'notifications.view',
     'assets.view', 'assets.view_all', 'assets.create', 'assets.update',
@@ -321,7 +322,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 5. MAINTENANCE SUPERVISOR: RWOP manage + execute ──
   maintenance_supervisor: [
-    'dashboard.view',
+    'dashboard.view', 'chat.view',
     'documents.view', 'documents.upload', 'documents.download',
     'notifications.view',
     'assets.view', 'assets.view_all', 'assets.update',
@@ -354,7 +355,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 6. MAINTENANCE TECHNICIAN: own WOs, execute, PM execute ──
   maintenance_technician: [
-    'dashboard.view',
+    'dashboard.view', 'chat.view',
     'documents.view', 'documents.download',
     'notifications.view',
     'assets.view', 'assets.view_own',
@@ -377,7 +378,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 7. PRODUCTION MANAGER: full MPMP ──
   production_manager: [
-    'dashboard.view', 'dashboard.stats',
+    'dashboard.view', 'dashboard.stats', 'chat.view',
     'documents.view', 'documents.upload', 'documents.download',
     'notifications.view', 'notifications.manage',
     'assets.view', 'assets.view_all', 'assets.health', 'assets.criticality',
@@ -403,7 +404,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 8. PRODUCTION OPERATOR: own data entry, surveys ──
   production_operator: [
-    'dashboard.view',
+    'dashboard.view', 'chat.view',
     'documents.view', 'documents.download',
     'notifications.view',
     'assets.view', 'assets.view_own',
@@ -421,7 +422,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 9. INVENTORY MANAGER: full IMS ──
   inventory_manager: [
-    'dashboard.view', 'dashboard.stats',
+    'dashboard.view', 'dashboard.stats', 'chat.view',
     'documents.view', 'documents.upload', 'documents.download',
     'notifications.view', 'notifications.manage',
     'inventory.view', 'inventory.view_all', 'inventory.create', 'inventory.update',
@@ -448,7 +449,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 10. TOOLS SHOP ATTENDANT: tool checkout, returns, transfers ──
   tools_shop_attendant: [
-    'dashboard.view',
+    'dashboard.view', 'chat.view',
     'documents.view', 'documents.download',
     'notifications.view',
     'tools.view', 'tools.create', 'tools.update', 'tools.checkout', 'tools.return', 'tools.transfer', 'tools.manage',
@@ -461,7 +462,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 11. STORE KEEPER: IMS limited ──
   store_keeper: [
-    'dashboard.view',
+    'dashboard.view', 'chat.view',
     'documents.view', 'documents.download',
     'notifications.view',
     'inventory.view', 'inventory.stock_in', 'inventory.stock_out',
@@ -480,7 +481,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 11. QUALITY MANAGER: quality + calibration ──
   quality_manager: [
-    'dashboard.view', 'dashboard.stats',
+    'dashboard.view', 'dashboard.stats', 'chat.view',
     'documents.view', 'documents.upload', 'documents.download',
     'notifications.view', 'notifications.manage',
     'quality_inspections.view', 'quality_inspections.create', 'quality_inspections.update', 'quality_inspections.delete',
@@ -500,7 +501,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 12. SAFETY OFFICER: full TRAC ──
   safety_officer: [
-    'dashboard.view',
+    'dashboard.view', 'chat.view',
     'documents.view', 'documents.upload', 'documents.download',
     'notifications.view', 'notifications.manage',
     'safety_incidents.view', 'safety_incidents.create', 'safety_incidents.update', 'safety_incidents.manage',
@@ -517,7 +518,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 13. HR MANAGER: full HRMS ──
   hr_manager: [
-    'dashboard.view', 'dashboard.stats',
+    'dashboard.view', 'dashboard.stats', 'chat.view',
     'operations.view',
     'system_settings.view',
     'documents.view', 'documents.upload', 'documents.download',
@@ -538,7 +539,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 14. IOT ENGINEER: full IOT ──
   iot_engineer: [
-    'dashboard.view',
+    'dashboard.view', 'chat.view',
     'documents.view', 'documents.upload', 'documents.download',
     'notifications.view',
     'assets.view', 'assets.view_all',
@@ -555,7 +556,7 @@ const rolePermissionBundles: Record<string, string[]> = {
 
   // ── 15. VIEWER: read-only across most modules ──
   viewer: [
-    'dashboard.view',
+    'dashboard.view', 'chat.view',
     'documents.view',
     'notifications.view',
     'users.view',

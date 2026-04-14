@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 
 export async function GET(
   request: NextRequest,
@@ -27,6 +28,14 @@ export async function GET(
         { success: false, error: 'Production order not found' },
         { status: 404 }
       );
+    }
+
+    // IDOR protection: ensure user has access to this order's plant
+    if (order.plantId) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope.isScoped && plantScope.plantId && order.plantId !== plantScope.plantId) {
+        return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+      }
     }
 
     return NextResponse.json({ success: true, data: order });

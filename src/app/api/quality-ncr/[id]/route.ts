@@ -28,6 +28,8 @@ export async function GET(
       );
     }
 
+    // Note: NonConformanceReport model has no plantId field — plant-scope IDOR check not applicable
+
     return NextResponse.json({ success: true, data: ncr });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load NCR';
