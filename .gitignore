@@ -69,3 +69,4 @@ db/*.db-journal
 .accesslog
 .config
 .stats
+.git-credentials
