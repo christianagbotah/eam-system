@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
-import { getSession } from '@/lib/auth';
+import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 
 const DATA_FILE = join(process.cwd(), 'data', 'backups.json');
 
@@ -52,6 +52,9 @@ export async function POST(req: NextRequest) {
     const session = getSession({ headers: req.headers } as Request);
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (!hasPermission(session, 'system_settings.update') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
     const body = await req.json();
     const { type, size, status } = body as { type?: string; size?: string; status?: string };
