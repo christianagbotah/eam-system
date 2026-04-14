@@ -895,3 +895,21 @@ Work Log:
 Stage Summary:
 - Commit 9c9c610 pushed to GitHub
 - All phases from 1A through 3F now complete
+
+---
+Task ID: logo-fix
+Agent: Main Agent
+Task: Fix Z logo issue - broken favicon
+
+Work Log:
+- Diagnosed that public/logo.svg was a 38KB JPEG binary disguised as SVG
+- Browser couldn't render it as favicon (expected SVG markup, got binary JFIF data)
+- Created proper SVG logo with emerald gradient, gear icon, and checkmark (1.3KB)
+- Fixed package.json dev script to remove problematic `tee` pipe that caused background instability
+- Verified app serves HTTP 200 and logo.svg returns valid SVG
+- Lint passes clean
+
+Stage Summary:
+- Commit 840e519 pushed to GitHub
+- Favicon now renders correctly as proper SVG
+- Dev server script simplified for better background process stability
