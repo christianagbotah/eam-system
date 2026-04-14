@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -702,10 +703,7 @@ export function IotRulesPage() {
             <div className="grid gap-4 py-2">
               <div className="space-y-2"><Label>Rule Name *</Label><Input placeholder="High Temperature Alert" value={newRule.name} onChange={e => setNewRule({ ...newRule, name: e.target.value })} /></div>
               <div className="space-y-2"><Label>Device *</Label>
-                <Select value={newRule.deviceId} onValueChange={v => { const dev = devices.find((d: any) => d.id === v); setNewRule({ ...newRule, deviceId: v, parameter: dev?.parameter || newRule.parameter }); }}>
-                  <SelectTrigger><SelectValue placeholder="Select device" /></SelectTrigger>
-                  <SelectContent>{devices.map((d: any) => <SelectItem key={d.id} value={d.id}>{d.name} ({d.deviceCode})</SelectItem>)}</SelectContent>
-                </Select>
+                <AsyncSearchableSelect value={newRule.deviceId} onValueChange={v => { const dev = devices.find((d: any) => d.id === v); setNewRule({ ...newRule, deviceId: v, parameter: dev?.parameter || newRule.parameter }); }} placeholder="Select device..." searchPlaceholder="Search devices..." fetchOptions={async () => { const res = await api.get('/api/iot/devices?limit=999'); if (res.success && res.data) return res.data.map((d: any) => ({ value: d.id, label: `${d.name} (${d.deviceCode})` })); return []; }} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2"><Label>Parameter</Label><Input placeholder="Temperature" value={newRule.parameter} onChange={e => setNewRule({ ...newRule, parameter: e.target.value })} /></div>

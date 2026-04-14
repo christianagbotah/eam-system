@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
@@ -360,7 +361,7 @@ export function ProductionSchedulingPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Product *</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Product name" /></div>
-              <div className="space-y-2"><Label>Work Center</Label><Select value={form.workCenterId} onValueChange={v => setForm(f => ({ ...f, workCenterId: v }))}><SelectTrigger><SelectValue placeholder="Select work center" /></SelectTrigger><SelectContent>{workCenters.map(wc => <SelectItem key={wc.id} value={wc.id}>{wc.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Work Center</Label><AsyncSearchableSelect value={form.workCenterId} onValueChange={v => setForm(f => ({ ...f, workCenterId: v }))} placeholder="Select work center..." searchPlaceholder="Search work centers..." fetchOptions={async () => { const res = await api.get('/api/work-centers?limit=999'); if (res.success && res.data) return res.data.map((wc: any) => ({ value: wc.id, label: `${wc.name} (${wc.code})` })); return []; }} /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
@@ -874,7 +875,7 @@ export function ProductionOrdersPage() {
               <div className="space-y-2"><Label>Priority</Label><Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Work Center</Label><Select value={form.workCenterId} onValueChange={v => setForm(f => ({ ...f, workCenterId: v }))}><SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger><SelectContent>{workCenters.map(wc => <SelectItem key={wc.id} value={wc.id}>{wc.name}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Work Center</Label><AsyncSearchableSelect value={form.workCenterId} onValueChange={v => setForm(f => ({ ...f, workCenterId: v }))} placeholder="Select work center..." searchPlaceholder="Search work centers..." fetchOptions={async () => { const res = await api.get('/api/work-centers?limit=999'); if (res.success && res.data) return res.data.map((wc: any) => ({ value: wc.id, label: `${wc.name} (${wc.code})` })); return []; }} /></div>
               <div className="space-y-2"><Label>Due Date</Label><Input type="date" value={form.scheduledEnd} onChange={e => setForm(f => ({ ...f, scheduledEnd: e.target.value }))} /></div>
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional notes..." rows={2} /></div>
@@ -988,7 +989,7 @@ export function ProductionBatchesPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Product *</Label><Input value={form.productName} onChange={e => setForm(f => ({ ...f, productName: e.target.value }))} placeholder="Product name" /></div>
-              <div className="space-y-2"><Label>Order #</Label><Select value={form.orderId} onValueChange={v => setForm(f => ({ ...f, orderId: v }))}><SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger><SelectContent>{orders.filter(o => o.status !== 'cancelled').map(o => <SelectItem key={o.id} value={o.id}>{o.orderNumber}</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>Order #</Label><AsyncSearchableSelect value={form.orderId} onValueChange={v => setForm(f => ({ ...f, orderId: v }))} placeholder="Select order..." searchPlaceholder="Search orders..." fetchOptions={async () => { const res = await api.get('/api/production-orders?limit=999'); if (res.success && res.data) return res.data.filter((o: any) => o.status !== 'cancelled').map((o: any) => ({ value: o.id, label: `${o.orderNumber} — ${o.title}` })); return []; }} /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Quantity *</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" /></div>

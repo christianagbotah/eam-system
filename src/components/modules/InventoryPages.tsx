@@ -36,7 +36,7 @@ import {
   XCircle, Loader2,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
-import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
+import { AsyncSearchableSelect, SearchableSelect } from '@/components/ui/searchable-select';
 
 export function InventoryPage() {
   const [items, setItems] = useState<any[]>([]);
@@ -424,10 +424,22 @@ export function InventoryPage() {
               </Select>
             </div>
             <div className="space-y-1.5"><Label>Item *</Label>
-              <Select value={movItemId} onValueChange={setMovItemId}>
-                <SelectTrigger><SelectValue placeholder="Select item..." /></SelectTrigger>
-                <SelectContent>{items.map(it => <SelectItem key={it.id} value={it.id}>{it.name} ({it.itemCode})</SelectItem>)}</SelectContent>
-              </Select>
+              <AsyncSearchableSelect
+                value={movItemId}
+                onValueChange={setMovItemId}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/inventory?limit=999');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).map((it: any) => ({
+                      value: it.id,
+                      label: `${it.name} (${it.itemCode})`,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select item..."
+                searchPlaceholder="Search items..."
+              />
             </div>
             <div className="space-y-1.5"><Label>Quantity *</Label><Input type="number" value={movQty} onChange={e => setMovQty(e.target.value)} placeholder="Enter quantity" /></div>
             <div className="space-y-1.5"><Label>Reason</Label><Textarea value={movReason} onChange={e => setMovReason(e.target.value)} placeholder="Optional reason..." rows={2} /></div>
@@ -1087,7 +1099,24 @@ export function InventoryRequestsPage() {
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader><DialogTitle>New Inventory Request</DialogTitle><DialogDescription>Submit a material requisition for inventory items.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="space-y-2"><Label>Item *</Label><Select value={form.item} onValueChange={v => setForm({ ...form, item: v })}><SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{inventoryItems.filter((i: any) => i.isActive).map((i: any) => <SelectItem key={i.id} value={i.id}>{i.name} ({i.itemCode})</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Item *</Label>
+              <AsyncSearchableSelect
+                value={form.item}
+                onValueChange={v => setForm({ ...form, item: v })}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/inventory?limit=999');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).filter((i: any) => i.isActive !== false).map((i: any) => ({
+                      value: i.id,
+                      label: `${i.name} (${i.itemCode})`,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select item..."
+                searchPlaceholder="Search items..."
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Quantity *</Label><Input type="number" placeholder="10" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
               <div className="space-y-2"><Label>Priority *</Label><Select value={form.priority} onValueChange={v => setForm({ ...form, priority: v })}><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="urgent">Urgent</SelectItem></SelectContent></Select></div>
@@ -1214,12 +1243,63 @@ export function InventoryTransfersPage() {
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader><DialogTitle>New Inventory Transfer</DialogTitle><DialogDescription>Create a transfer request to move items between locations.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="space-y-2"><Label>Item *</Label><Select value={form.item} onValueChange={v => setForm({ ...form, item: v })}><SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{inventoryItems.filter((i: any) => i.isActive).map((i: any) => <SelectItem key={i.id} value={i.id}>{i.name} ({i.itemCode})</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Item *</Label>
+              <AsyncSearchableSelect
+                value={form.item}
+                onValueChange={v => setForm({ ...form, item: v })}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/inventory?limit=999');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).filter((i: any) => i.isActive !== false).map((i: any) => ({
+                      value: i.id,
+                      label: `${i.name} (${i.itemCode})`,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select item..."
+                searchPlaceholder="Search items..."
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Quantity *</Label><Input type="number" placeholder="10" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
-              <div className="space-y-2"><Label>From Location *</Label><Select value={form.fromLocation} onValueChange={v => setForm({ ...form, fromLocation: v })}><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent>{locations.filter((l: any) => l.isActive).map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name} ({l.code})</SelectItem>)}</SelectContent></Select></div>
+              <div className="space-y-2"><Label>From Location *</Label>
+                <AsyncSearchableSelect
+                  value={form.fromLocation}
+                  onValueChange={v => setForm({ ...form, fromLocation: v })}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/inventory/locations?limit=999');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).filter((l: any) => l.isActive !== false).map((l: any) => ({
+                        value: l.id,
+                        label: `${l.name} (${l.code})`,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select location..."
+                  searchPlaceholder="Search locations..."
+                />
+              </div>
             </div>
-            <div className="space-y-2"><Label>To Location *</Label><Select value={form.toLocation} onValueChange={v => setForm({ ...form, toLocation: v })}><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent>{locations.filter((l: any) => l.isActive).map((l: any) => <SelectItem key={l.id} value={l.id}>{l.name} ({l.code})</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>To Location *</Label>
+              <AsyncSearchableSelect
+                value={form.toLocation}
+                onValueChange={v => setForm({ ...form, toLocation: v })}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/inventory/locations?limit=999');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).filter((l: any) => l.isActive !== false).map((l: any) => ({
+                      value: l.id,
+                      label: `${l.name} (${l.code})`,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select location..."
+                searchPlaceholder="Search locations..."
+              />
+            </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Additional notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={3} /></div>
           </div>
           <DialogFooter>
@@ -1458,7 +1538,24 @@ export function InventoryPurchaseOrdersPage() {
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader><DialogTitle>New Purchase Order</DialogTitle><DialogDescription>Create a new purchase order for inventory items.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="space-y-2"><Label>Supplier *</Label><Select value={form.supplier} onValueChange={v => setForm({ ...form, supplier: v })}><SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger><SelectContent>{suppliers.filter((s: any) => s.isActive).map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name} ({s.code})</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>Supplier *</Label>
+              <AsyncSearchableSelect
+                value={form.supplier}
+                onValueChange={v => setForm({ ...form, supplier: v })}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/suppliers?limit=999');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).filter((s: any) => s.isActive !== false).map((s: any) => ({
+                      value: s.id,
+                      label: `${s.name} (${s.code})`,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select supplier..."
+                searchPlaceholder="Search suppliers..."
+              />
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Priority *</Label><Select value={form.priority} onValueChange={v => setForm({ ...form, priority: v })}><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="urgent">Urgent</SelectItem></SelectContent></Select></div>
               <div className="space-y-2"><Label>Expected Date</Label><Input type="date" value={form.expectedDate} onChange={e => setForm({ ...form, expectedDate: e.target.value })} /></div>
@@ -1577,11 +1674,18 @@ export function InventoryReceivingPage() {
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader><DialogTitle>New Goods Receipt Note</DialogTitle><DialogDescription>Record received items against a purchase order.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="space-y-2"><Label>PO Item *</Label><Select value={form.purchaseOrder ? `${form.purchaseOrder}-${form.itemId}` : ''} onValueChange={v => { const [poId, itemId] = v.split('-'); setForm({ ...form, purchaseOrder: poId, itemId }); }}><SelectTrigger><SelectValue placeholder="Select PO item" /></SelectTrigger><SelectContent>
-              {purchaseOrders.filter((po: any) => ['approved', 'partially_received'].includes(po.status)).map((po: any) => (
-                <SelectItem key={po.id} value={`${po.id}`} className="font-mono text-xs">{po.poNumber} — {po.supplier?.name}</SelectItem>
-              ))}
-            </SelectContent></Select></div>
+            <div className="space-y-2"><Label>PO *</Label>
+              <SearchableSelect
+                value={form.purchaseOrder || ''}
+                onValueChange={v => { const [poId, itemId] = v.split('-'); setForm({ ...form, purchaseOrder: poId, itemId }); }}
+                options={purchaseOrders.filter((po: any) => ['approved', 'partially_received'].includes(po.status)).map((po: any) => ({
+                  value: po.id,
+                  label: `${po.poNumber} — ${po.supplier?.name || ''}`,
+                }))}
+                placeholder="Select PO..."
+                searchPlaceholder="Search POs..."
+              />
+            </div>
             {form.purchaseOrder && form.itemId && <div className="text-xs text-muted-foreground bg-muted rounded-md p-2">Item: {availablePOItems.find((pi: any) => pi.id === form.itemId && pi.poId === form.purchaseOrder)?.item?.name || 'Select an item'} — Remaining: {availablePOItems.find((pi: any) => pi.id === form.itemId && pi.poId === form.purchaseOrder)?.remaining || 0}</div>}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Quantity *</Label><Input type="number" placeholder="10" value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>

@@ -35,6 +35,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
 
 export function SafetyIncidentsPage() {
@@ -432,7 +433,7 @@ export function SafetyInspectionsPage() {
                   <div className="space-y-2"><Label>Area</Label><Input placeholder="e.g. Building A" value={form.area} onChange={e => setForm(p => ({ ...p, area: e.target.value }))} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Inspector ID</Label><Input placeholder="User ID (optional)" value={form.inspector} onChange={e => setForm(p => ({ ...p, inspector: e.target.value }))} /></div>
+                  <div className="space-y-2"><Label>Inspector</Label><AsyncSearchableSelect value={form.inspector} onValueChange={v => setForm(p => ({ ...p, inspector: v }))} placeholder="Select inspector..." fetchOptions={async () => { const res = await api.get('/api/users?limit=999'); if (res.success && res.data) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username || ''})` })); return []; }} /></div>
                   <div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={form.scheduledDate} onChange={e => setForm(p => ({ ...p, scheduledDate: e.target.value }))} /></div>
                 </div>
                 <div className="space-y-3">

@@ -31,6 +31,7 @@ import {
   ArrowLeftRight, PackageCheck, PackageOpen,
 } from 'lucide-react';
 import { EmptyState, LoadingSkeleton } from '@/components/shared/helpers';
+import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 
 // ============================================================================
 // SHARED HELPERS
@@ -244,10 +245,30 @@ export function RepairMaterialRequestsPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>New Material Request</DialogTitle><DialogDescription>Request materials/spare parts for a work order</DialogDescription></DialogHeader>
           <div className="space-y-4">
-            <div><Label>Work Order ID *</Label><Input value={createForm.workOrderId} onChange={(e) => setCreateForm({ ...createForm, workOrderId: e.target.value })} placeholder="Enter work order ID" /></div>
+            <div><Label>Work Order ID *</Label><AsyncSearchableSelect
+                value={createForm.workOrderId}
+                onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v }))}
+                placeholder="Select work order..."
+                searchPlaceholder="Search work orders..."
+                fetchOptions={async () => {
+                  const res = await api.get('/api/work-orders?limit=999');
+                  if (res.success && res.data) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` }));
+                  return [];
+                }}
+              /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Item Name *</Label><Input value={createForm.itemName} onChange={(e) => setCreateForm({ ...createForm, itemName: e.target.value })} placeholder="e.g. Bearing 6205" /></div>
-              <div><Label>Inventory Item ID</Label><Input value={createForm.itemId} onChange={(e) => setCreateForm({ ...createForm, itemId: e.target.value })} placeholder="Optional link to inventory" /></div>
+              <div><Label>Inventory Item ID</Label><AsyncSearchableSelect
+                value={createForm.itemId}
+                onValueChange={(v) => setCreateForm(f => ({ ...f, itemId: v }))}
+                placeholder="Select inventory item..."
+                searchPlaceholder="Search inventory..."
+                fetchOptions={async () => {
+                  const res = await api.get('/api/inventory?limit=999');
+                  if (res.success && res.data) return res.data.map((i: any) => ({ value: i.id, label: `${i.name} (${i.itemCode})` }));
+                  return [];
+                }}
+              /></div>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div><Label>Quantity *</Label><Input type="number" value={createForm.quantityRequested} onChange={(e) => setCreateForm({ ...createForm, quantityRequested: e.target.value })} /></div>
@@ -392,10 +413,30 @@ export function RepairToolRequestsPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>New Tool Request</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div><Label>Work Order ID *</Label><Input value={createForm.workOrderId} onChange={(e) => setCreateForm({ ...createForm, workOrderId: e.target.value })} /></div>
+            <div><Label>Work Order ID *</Label><AsyncSearchableSelect
+                value={createForm.workOrderId}
+                onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v }))}
+                placeholder="Select work order..."
+                searchPlaceholder="Search work orders..."
+                fetchOptions={async () => {
+                  const res = await api.get('/api/work-orders?limit=999');
+                  if (res.success && res.data) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` }));
+                  return [];
+                }}
+              /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Tool Name *</Label><Input value={createForm.toolName} onChange={(e) => setCreateForm({ ...createForm, toolName: e.target.value })} placeholder="e.g. Torque Wrench" /></div>
-              <div><Label>Tool ID</Label><Input value={createForm.toolId} onChange={(e) => setCreateForm({ ...createForm, toolId: e.target.value })} placeholder="Optional" /></div>
+              <div><Label>Tool ID</Label><AsyncSearchableSelect
+                value={createForm.toolId}
+                onValueChange={(v) => setCreateForm(f => ({ ...f, toolId: v }))}
+                placeholder="Select tool..."
+                searchPlaceholder="Search tools..."
+                fetchOptions={async () => {
+                  const res = await api.get('/api/tools?limit=999');
+                  if (res.success && res.data) return res.data.map((t: any) => ({ value: t.id, label: `${t.name} (${t.toolCode})` }));
+                  return [];
+                }}
+              /></div>
             </div>
             <div><Label>Reason *</Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} /></div>
             <div><Label>Notes</Label><Textarea value={createForm.notes} onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })} /></div>
@@ -509,10 +550,40 @@ export function RepairToolTransfersPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>New Tool Transfer Request</DialogTitle><DialogDescription>Request transfer of a tool to another technician</DialogDescription></DialogHeader>
           <div className="space-y-4">
-            <div><Label>Tool ID *</Label><Input value={createForm.toolId} onChange={(e) => setCreateForm({ ...createForm, toolId: e.target.value })} placeholder="Enter tool ID" /></div>
+            <div><Label>Tool ID *</Label><AsyncSearchableSelect
+                value={createForm.toolId}
+                onValueChange={(v) => setCreateForm(f => ({ ...f, toolId: v }))}
+                placeholder="Select tool..."
+                searchPlaceholder="Search tools..."
+                fetchOptions={async () => {
+                  const res = await api.get('/api/tools?limit=999');
+                  if (res.success && res.data) return res.data.map((t: any) => ({ value: t.id, label: `${t.name} (${t.toolCode})` }));
+                  return [];
+                }}
+              /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>From User ID *</Label><Input value={createForm.fromUserId} onChange={(e) => setCreateForm({ ...createForm, fromUserId: e.target.value })} /></div>
-              <div><Label>To User ID *</Label><Input value={createForm.toUserId} onChange={(e) => setCreateForm({ ...createForm, toUserId: e.target.value })} /></div>
+              <div><Label>From User ID *</Label><AsyncSearchableSelect
+                value={createForm.fromUserId}
+                onValueChange={(v) => setCreateForm(f => ({ ...f, fromUserId: v }))}
+                placeholder="Select from user..."
+                searchPlaceholder="Search users..."
+                fetchOptions={async () => {
+                  const res = await api.get('/api/users?limit=999');
+                  if (res.success && res.data) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                  return [];
+                }}
+              /></div>
+              <div><Label>To User ID *</Label><AsyncSearchableSelect
+                value={createForm.toUserId}
+                onValueChange={(v) => setCreateForm(f => ({ ...f, toUserId: v }))}
+                placeholder="Select to user..."
+                searchPlaceholder="Search users..."
+                fetchOptions={async () => {
+                  const res = await api.get('/api/users?limit=999');
+                  if (res.success && res.data) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                  return [];
+                }}
+              /></div>
             </div>
             <div><Label>Reason *</Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} /></div>
             <div><Label>Notes</Label><Textarea value={createForm.notes} onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })} /></div>
@@ -628,10 +699,30 @@ export function RepairDowntimePage() {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Log Downtime</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div><Label>Work Order ID *</Label><Input value={createForm.workOrderId} onChange={(e) => setCreateForm({ ...createForm, workOrderId: e.target.value })} /></div>
+            <div><Label>Work Order ID *</Label><AsyncSearchableSelect
+                value={createForm.workOrderId}
+                onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v }))}
+                placeholder="Select work order..."
+                searchPlaceholder="Search work orders..."
+                fetchOptions={async () => {
+                  const res = await api.get('/api/work-orders?limit=999');
+                  if (res.success && res.data) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` }));
+                  return [];
+                }}
+              /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Asset Name *</Label><Input value={createForm.assetName} onChange={(e) => setCreateForm({ ...createForm, assetName: e.target.value })} /></div>
-              <div><Label>Asset ID</Label><Input value={createForm.assetId} onChange={(e) => setCreateForm({ ...createForm, assetId: e.target.value })} /></div>
+              <div><Label>Asset ID</Label><AsyncSearchableSelect
+                value={createForm.assetId}
+                onValueChange={(v) => setCreateForm(f => ({ ...f, assetId: v }))}
+                placeholder="Select asset..."
+                searchPlaceholder="Search assets..."
+                fetchOptions={async () => {
+                  const res = await api.get('/api/assets?limit=999');
+                  if (res.success && res.data) return res.data.map((a: any) => ({ value: a.id, label: `${a.name} (${a.assetTag})` }));
+                  return [];
+                }}
+              /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Start Time *</Label><Input type="datetime-local" value={createForm.downtimeStart} onChange={(e) => setCreateForm({ ...createForm, downtimeStart: e.target.value })} /></div>

@@ -961,7 +961,24 @@ export function AssetsBomPage() {
                   searchPlaceholder="Search assets..."
                 />
               </div>
-            <div><Label>Component</Label><Select value={form.component} onValueChange={v => setForm(f => ({ ...f, component: v }))}><SelectTrigger><SelectValue placeholder="Select component" /></SelectTrigger><SelectContent>{assets.map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({a.assetTag})</SelectItem>)}</SelectContent></Select></div>
+            <div><Label>Component</Label>
+                <AsyncSearchableSelect
+                  value={form.component}
+                  onValueChange={v => setForm(f => ({ ...f, component: v }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/assets?limit=999');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                        value: a.id,
+                        label: `${a.name} (${a.assetTag})`,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select component..."
+                  searchPlaceholder="Search components..."
+                />
+              </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Part Number</Label><Input placeholder="e.g. SPD-4521-A" value={form.partNumber} onChange={e => setForm(f => ({ ...f, partNumber: e.target.value }))} /></div>
               <div className="grid grid-cols-2 gap-3">
@@ -1297,7 +1314,24 @@ export function AssetsDigitalTwinPage() {
         <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Create Digital Twin</DialogTitle><DialogDescription>Create a new digital replica for an asset</DialogDescription></DialogHeader>
           <div className="space-y-4">
             <div><Label>Twin Name</Label><Input placeholder="e.g. Centrifugal Pump P-101" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
-            <div><Label>Asset</Label><Select value={form.asset} onValueChange={v => setForm(f => ({ ...f, asset: v }))}><SelectTrigger><SelectValue placeholder="Select asset" /></SelectTrigger><SelectContent>{assets.map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({a.assetTag})</SelectItem>)}</SelectContent></Select></div>
+            <div><Label>Asset</Label>
+                <AsyncSearchableSelect
+                  value={form.asset}
+                  onValueChange={v => setForm(f => ({ ...f, asset: v }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/assets?limit=999');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                        value: a.id,
+                        label: `${a.name} (${a.assetTag})`,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select asset..."
+                  searchPlaceholder="Search assets..."
+                />
+              </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="pump">Pump</SelectItem><SelectItem value="motor">Motor</SelectItem><SelectItem value="compressor">Compressor</SelectItem><SelectItem value="valve">Valve</SelectItem><SelectItem value="heat_exchanger">Heat Exchanger</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent></Select></div>
               <div><Label>Sync Interval</Label><Select value={form.syncInterval} onValueChange={v => setForm(f => ({ ...f, syncInterval: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="real_time">Real-time</SelectItem><SelectItem value="1min">1 min</SelectItem><SelectItem value="5min">5 min</SelectItem><SelectItem value="15min">15 min</SelectItem></SelectContent></Select></div>

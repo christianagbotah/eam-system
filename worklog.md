@@ -263,3 +263,21 @@ Stage Summary:
 - Auth protection restored via proxy.ts
 - Global search (Ctrl+K) allows searching across all entity types
 - All changes pass lint (zero errors)
+
+---
+Task ID: 7
+Agent: Main Agent + 4 Subagents
+Task: Convert remaining entity reference fields to searchable selects across 6 files
+
+Work Log:
+- Identified 24+ remaining fields that still use text Input or non-searchable Select
+- RepairsPages.tsx: 8 fields (workOrderId, itemId, toolId, fromUserId, toUserId, assetId)
+- ProductionPages.tsx: 3 fields (workCenterId x2, orderId)
+- InventoryPages.tsx: 7 fields (item x3, location x2, supplier, po item)
+- AssetPages.tsx: 2 fields (BOM component, Digital Twin asset)
+- IoTPages.tsx: 1 field (alert rule deviceId)
+- SafetyPages.tsx: 1 field (inspector ID)
+- QualityPages.tsx: 2 fields (auditor, assignedTo)
+
+Stage Summary:
+- Converting all remaining fields to AsyncSearchableSelect pattern
