@@ -366,3 +366,76 @@ Stage Summary:
 - Password policy hardened
 - Token logging eliminated
 - All changes pass ESLint with zero errors
+
+---
+Task ID: 7B
+Agent: Security Hardening (continued)
+Task: Phase 1D + 1G - IDOR fix + Chat sidebar
+
+Work Log:
+- Added plant-scope validation to 6 detail endpoints (assets, WOs, MRs, safety-incidents, production-orders, quality-inspections)
+- 10 additional endpoints annotated as N/A (no plantId in schema)
+- Fixed Chat sidebar perm from '' to 'chat.view'
+- Added chat.view permission to seed.ts modulePermissions and all 15 non-admin role bundles
+
+Stage Summary:
+- Commit 175a9d8 pushed to GitHub
+- Non-admin users can no longer access records from other plants via IDOR
+- Chat page now visible to all authenticated users
+
+---
+Task ID: 8
+Agent: Enterprise Features Implementation
+Task: Phase 2 - Email, WebSocket, File Attachments, Escalation Timers
+
+Work Log:
+
+### Phase 2A: Email Notification System
+- Installed nodemailer for SMTP email delivery
+- Created src/lib/email.ts with sendEmail(), sendNotificationEmail(), testSmtpConnection()
+- Enhanced notifyUser() to auto-send emails alongside in-app + WS notifications
+- Created SMTP config API (GET/PUT /api/settings/smtp-config)
+- Created test email endpoint (POST /api/settings/test-email)
+- Created SMTP status check endpoint (GET /api/settings/smtp-status)
+- Added SMTP configuration card to Settings General page
+- Branded HTML email template with app header, action button, footer
+
+### Phase 2B: Real-time WebSocket Notifications
+- Created mini-services/notification-service/ (Socket.io on port 3004)
+- HTTP admin API on port 3005 for server-to-server notification pushing
+- Created src/lib/ws-notify.ts with wsNotify(), wsBroadcast(), wsNotifyMultiple()
+- Enhanced notifyUser() to auto-push WebSocket notifications
+- Created src/hooks/useWebSocket.ts - React hook for real-time connections
+- Enhanced NotificationPopover with bell ring animation and live connection indicator
+
+### Phase 2C: File/Document Attachment System
+- Added Attachment model to Prisma schema (65 models total)
+- POST /api/attachments: Upload files (10MB max, images/PDFs/docs/spreadsheets/ZIPs)
+- GET /api/attachments: List attachments by entity
+- GET /api/attachments/[id]: Download files with proper headers
+- DELETE /api/attachments/[id]: Remove files (permission-gated)
+- Created FileUpload component: drag-and-drop, progress, file type icons
+- Integrated into WO and MR detail pages
+
+### Phase 2D: Escalation Timer System
+- Added escalationLevel + lastEscalatedAt to MR, WO, SafetyIncident models
+- Created EscalationLog model for audit trail
+- POST /api/escalation/check: Auto-escalates overdue items
+- Two-level escalation: L1 (direct contacts), L2 (management)
+- Configurable thresholds: MR (24h/48h), WO (plannedEnd+48h), Safety (4h/8h)
+- GET/PUT /api/escalation/config: Manage settings
+- GET /api/escalation/summary: Dashboard with overdue counts
+- Added Escalation Settings card to Settings General page
+- Cron-ready with x-escalation-secret header support
+
+Stage Summary:
+- 4 commits pushed to GitHub (d5b302b, 562dd34, e83475b, + worklog)
+- 30+ new files created
+- 4 new Prisma models (Attachment, EscalationLog)
+- 3 new fields on existing models (escalationLevel, lastEscalatedAt)
+- 1 new mini-service (notification-service)
+- 3 new API route groups (attachments, escalation, smtp)
+- 2 new shared components (FileUpload, EscalationSettingsCard)
+- 1 new React hook (useWebSocket)
+- 2 new lib utilities (email.ts, ws-notify.ts)
+- All notification channels unified: in-app DB + WebSocket real-time + email
