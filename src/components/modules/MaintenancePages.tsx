@@ -2789,16 +2789,7 @@ export function PmSchedulesPage() {
 
 // --- MaintenanceWorkOrdersPage separator ---
 export function MaintenanceWorkOrdersPage() {
-  const { navigate } = useNavigationStore();
-  return (
-    <div className="page-content">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Work Orders</h1>
-        <p className="text-muted-foreground mt-1">Create, track, and manage all maintenance work orders</p>
-      </div>
-      <WorkOrdersPage />
-    </div>
-  );
+  return <WorkOrdersPage />;
 }
 
 export function MaintenanceDashboardPage() {

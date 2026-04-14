@@ -529,16 +529,7 @@ export function AssetDetailPage({ id, onBack }: { id: string; onBack: () => void
 
 // --- AssetsMachinesPage separator ---
 export function AssetsMachinesPage() {
-  const { navigate } = useNavigationStore();
-  return (
-    <div className="page-content">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Machines</h1>
-        <p className="text-muted-foreground mt-1">View and manage all registered machines and equipment</p>
-      </div>
-      <AssetsPage />
-    </div>
-  );
+  return <AssetsPage />;
 }
 
 export function AssetsHierarchyPage() {
