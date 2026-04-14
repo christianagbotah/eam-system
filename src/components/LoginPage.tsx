@@ -350,7 +350,9 @@ export default function LoginPage() {
                   { user: 'op2', pass: 'password123', role: 'Operator', desc: 'Data entry (Kumasi)', color: 'bg-slate-100 text-slate-600 border-slate-200' },
                   // ── Store / Inventory ──
                   { user: 'inv_mgr1', pass: 'password123', role: 'Inv. Manager', desc: 'Full inventory', color: 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200' },
-                  { user: 'store1', pass: 'password123', role: 'Store Keeper', desc: 'Stock operations', color: 'bg-rose-100 text-rose-700 border-rose-200' },
+                  { user: 'store1', pass: 'password123', role: 'Store Keeper', desc: 'Stock operations (Tema)', color: 'bg-rose-100 text-rose-700 border-rose-200' },
+                  { user: 'store2', pass: 'password123', role: 'Store Keeper', desc: 'Stock operations (Kumasi)', color: 'bg-rose-100 text-rose-700 border-rose-200' },
+                  { user: 'toolshop1', pass: 'password123', role: 'Tools Shop Att.', desc: 'Tool checkout & transfers', color: 'bg-pink-100 text-pink-700 border-pink-200' },
                   // ── Quality / Safety / HR / IoT ──
                   { user: 'qual_mgr1', pass: 'password123', role: 'Quality Mgr', desc: 'Quality & calibration', color: 'bg-cyan-100 text-cyan-700 border-cyan-200' },
                   { user: 'safety1', pass: 'password123', role: 'Safety Officer', desc: 'HSE management', color: 'bg-red-100 text-red-700 border-red-200' },

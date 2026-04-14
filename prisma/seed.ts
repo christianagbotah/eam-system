@@ -142,6 +142,7 @@ const roleDefinitions = [
   { name: 'Production Operator', slug: 'production_operator', description: 'Production data entry and survey completion', level: 30, isSystem: false },
   { name: 'Inventory Manager', slug: 'inventory_manager', description: 'Full inventory, parts, and procurement management', level: 85, isSystem: false },
   { name: 'Store Keeper', slug: 'store_keeper', description: 'Day-to-day store operations and stock management', level: 45, isSystem: false },
+  { name: 'Tools Shop Attendant', slug: 'tools_shop_attendant', description: 'Manage tool checkout, returns, and transfers for maintenance operations', level: 47, isSystem: false },
   { name: 'Quality Manager', slug: 'quality_manager', description: 'Quality inspections, NCR, audits, and calibration', level: 85, isSystem: false },
   { name: 'Safety Officer', slug: 'safety_officer', description: 'Full safety management including incidents and inspections', level: 75, isSystem: false },
   { name: 'HR Manager', slug: 'hr_manager', description: 'Full HRMS including employees, shifts, training, skills', level: 85, isSystem: false },
@@ -445,7 +446,20 @@ const rolePermissionBundles: Record<string, string[]> = {
     'analytics.view',
   ],
 
-  // ── 10. STORE KEEPER: IMS limited ──
+  // ── 10. TOOLS SHOP ATTENDANT: tool checkout, returns, transfers ──
+  tools_shop_attendant: [
+    'dashboard.view',
+    'documents.view', 'documents.download',
+    'notifications.view',
+    'tools.view', 'tools.create', 'tools.update', 'tools.checkout', 'tools.return', 'tools.transfer', 'tools.manage',
+    'assets.view',
+    'work_orders.view', 'work_orders.view_all',
+    'maintenance_requests.view',
+    'inventory.view',
+    'reports.view', 'reports.export',
+  ],
+
+  // ── 11. STORE KEEPER: IMS limited ──
   store_keeper: [
     'dashboard.view',
     'documents.view', 'documents.download',
@@ -907,6 +921,8 @@ async function seed() {
     { username: 'hr1', email: 'hr1@iassetspro.com', fullName: 'Afia HR Manager', staffId: 'HRM-001', roleSlug: 'hr_manager', department: 'Engineering', plantId: temaFactory.id },
     { username: 'iot1', email: 'iot1@iassetspro.com', fullName: 'Emmanuel IoT Engineer', staffId: 'IOT-001', roleSlug: 'iot_engineer', department: 'Engineering', plantId: takoradiFacility.id },
     { username: 'viewer1', email: 'viewer1@iassetspro.com', fullName: 'Grace Viewer', staffId: 'VWR-001', roleSlug: 'viewer', department: 'Utilities', plantId: temaFactory.id },
+    { username: 'toolshop1', email: 'toolshop1@iassetspro.com', fullName: 'Kofi Tools Shop', staffId: 'TLS-001', roleSlug: 'tools_shop_attendant', department: 'Maintenance', plantId: temaFactory.id },
+    { username: 'store2', email: 'store2@iassetspro.com', fullName: 'Ama Store Attendant', staffId: 'STK-002', roleSlug: 'store_keeper', department: 'Warehouse & Logistics', plantId: kumasiPlant.id },
   ];
 
   const demoPassword = await hash('password123', 10);
