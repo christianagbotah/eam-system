@@ -578,3 +578,76 @@ Stage Summary:
 - Auto-refreshing dashboard with manual refresh
 - System metrics: uptime, memory, database stats, module counts, overdue items
 - ESLint clean, app loads successfully
+
+---
+Task ID: 14
+Agent: Main Coordinator
+Task: Phase 3B - Enhanced Data Backup & Export System
+
+Work Log:
+
+### 1. API Endpoint: `/api/admin/data-export/route.ts`
+- Created new admin-only GET endpoint for comprehensive data export
+- Auth check: requires authenticated session + admin role (401/403 guards)
+- Query parameters: `format` (json|csv), `modules` (comma-separated module keys)
+- Supported modules: assets, work-orders, maintenance-requests, inventory, users, safety-incidents, quality-inspections, production-orders, pm-schedules
+- Rate limiting: max 1 export per 5 minutes per user (in-memory Map with auto-cleanup)
+- JSON format: Returns structured object with module names as keys, includes metadata (exportedAt, version, summary with record counts)
+- CSV format: Returns multi-section CSV with `### Module Name (N records)` section headers; proper CSV escaping for commas, quotes, newlines
+- For each module, selects only safe fields (excludes passwordHash, etc.) via configurable field lists
+- Date fields serialized to ISO strings for both formats
+- File download with proper Content-Disposition headers
+- Custom response headers: `X-Total-Records`, `X-Modules-Exported`
+- Returns 429 with remaining wait time on rate limit breach
+
+### 2. API Endpoint: `/api/admin/import-data/route.ts`
+- Created new admin-only POST endpoint for data import via multipart form data
+- Auth check: requires authenticated session + admin role (401/403 guards)
+- Accepts JSON file upload via FormData (`file` field)
+- Validates file type (.json only) and structure before importing
+- Supports 5 import modules: assets, inventory, users, plants, departments
+- Import order matters: plants → departments → users → assets → inventory (foreign key dependencies)
+- Duplicate detection: checks by unique fields (assetTag, itemCode, username/email, plant code, department code+plantId)
+- Skips existing records; never overwrites or deletes
+- Per-module required field validation with descriptive error messages
+- User passwords hashed with bcrypt (12 rounds) on import
+- Returns comprehensive import summary: totalRecords, importedCount, skippedCount, errorCount per module
+- Error tracking: collects all errors per module with record index and description
+
+### 3. Enhanced SettingsBackupPage (`src/components/modules/SettingsPages.tsx`)
+- Added imports: `Checkbox`, `Alert/AlertDescription/AlertTitle`, `FileDown`, `FileUp`, `Info`, `getAuthHeaders`
+- **Data Export Section**:
+  - Format selection: JSON or CSV via visual radio card selector with icons and descriptions
+  - Module selection: 9 module checkboxes with colored icons, select/deselect all toggle, selected count indicator
+  - Export button with loading spinner state showing module count
+  - Rate limit warning display (Alert component with destructive variant)
+  - Uses native fetch for blob download (not apiFetch) to handle binary responses
+  - Saves export metadata to localStorage for history tracking
+- **Import Section**:
+  - Drag-and-drop file upload zone with visual hover state
+  - File browse button fallback
+  - Info Alert listing supported modules
+  - Import result summary: 4-column grid (Total, Imported, Skipped, Errors) with color-coded numbers
+  - Per-module breakdown with Badge indicators (imported/skipped/errors)
+  - Error viewer button (shows first 5 errors via toast)
+- **Recent Exports History**:
+  - Stored in localStorage (key: `eam_recent_exports`, max 20 entries)
+  - Empty state with icon
+  - List with format icon, module count, relative timestamp, record count, format badge
+  - Clear history button
+- **Preserved existing features**: Manual backup, restore file upload, backup history table
+
+### 4. Quality
+- ESLint passes with zero errors (fixed `module` variable naming in import-data route)
+- Dev server compiles and serves successfully (HTTP 200)
+
+Stage Summary:
+- 2 new API routes created (`/api/admin/data-export`, `/api/admin/import-data`)
+- 1 page component enhanced (SettingsBackupPage) with comprehensive export/import UI
+- 3 files created, 1 file modified (SettingsPages.tsx)
+- 9 exportable modules with selective export
+- 5 importable modules with deduplication and validation
+- Rate limiting: 5-minute cooldown per user
+- Recent exports history persisted in localStorage
+- Drag-and-drop file import with result summary
+- ESLint clean, app loads successfully

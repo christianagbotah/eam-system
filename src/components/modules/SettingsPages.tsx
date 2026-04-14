@@ -5,10 +5,12 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
-import { api, apiFetch } from '@/lib/api';
+import { api, apiFetch, getAuthHeaders } from '@/lib/api';
 import type { PageName, User, Role, Permission, Module, UserRole, Notification, CompanyProfile } from '@/types';
 
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -41,6 +43,7 @@ import {
   GitBranch, ScanLine, Truck, FolderOpen, Target, TrendingUp, Zap, Mail,
   Send, ShieldAlert, ShieldCheck, BarChart3, Package, ClipboardList, Gauge, X,
   AlertCircle, FileBarChart, EyeOff, Save, Wifi, Play, Monitor, HeartPulse, Server, MessageSquare,
+  FileDown, FileUp, Info,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { EmptyState, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
@@ -3406,11 +3409,50 @@ export function SecuritySettingsPage() {
 }
 
 export function SettingsBackupPage() {
+  const { isAdmin: isUserAdmin } = useAuthStore();
   const [backingUp, setBackingUp] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [backupHistory, setBackupHistory] = useState<Array<{ id: string; date: string; type: string; size: string; status: string }>>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
 
+  // Enhanced export state
+  const [exportFormat, setExportFormat] = useState<'json' | 'csv'>('json');
+  const [selectedModules, setSelectedModules] = useState<string[]>([
+    'assets', 'work-orders', 'maintenance-requests', 'inventory', 'users',
+  ]);
+  const [exporting, setExporting] = useState(false);
+  const [rateLimitInfo, setRateLimitInfo] = useState<string | null>(null);
+
+  // Enhanced import state
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    summary: { totalRecords: number; importedCount: number; skippedCount: number; errorCount: number };
+    [key: string]: any;
+  } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+
+  // Recent exports history (localStorage)
+  const [recentExports, setRecentExports] = useState<Array<{
+    id: string; date: string; format: string; modules: string[]; recordCount: number;
+  }>>([]);
+
+  // Export module options
+  const exportModules = useMemo(() => [
+    { key: 'assets', label: 'Assets', icon: Box, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { key: 'work-orders', label: 'Work Orders', icon: ClipboardList, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { key: 'maintenance-requests', label: 'Maintenance Requests', icon: Wrench, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { key: 'inventory', label: 'Inventory', icon: Package, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    { key: 'users', label: 'Users', icon: Users, color: 'text-pink-600 bg-pink-50 dark:bg-pink-900/30 dark:text-pink-400' },
+    { key: 'safety-incidents', label: 'Safety Incidents', icon: HardHat, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+    { key: 'quality-inspections', label: 'Quality Inspections', icon: FlaskConical, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
+    { key: 'production-orders', label: 'Production Orders', icon: Factory, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400' },
+    { key: 'pm-schedules', label: 'PM Schedules', icon: Calendar, color: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400' },
+  ], []);
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const importFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Load backup history and recent exports
   const loadBackupHistory = useCallback(() => {
     api.get<Array<{ id: string; date: string; type: string; size: string; status: string }>>('/api/backups').then(res => {
       if (res.success && res.data) setBackupHistory(res.data);
@@ -3420,17 +3462,115 @@ export function SettingsBackupPage() {
 
   useEffect(() => {
     loadBackupHistory();
+    // Load recent exports from localStorage
+    try {
+      const stored = localStorage.getItem('eam_recent_exports');
+      if (stored) setRecentExports(JSON.parse(stored));
+    } catch { /* ignore */ }
   }, [loadBackupHistory]);
+
+  const saveExportHistory = useCallback((entry: typeof recentExports[number]) => {
+    setRecentExports(prev => {
+      const updated = [entry, ...prev].slice(0, 20); // Keep last 20
+      localStorage.setItem('eam_recent_exports', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
 
   const lastBackup = backupHistory.find(b => b.status === 'completed');
 
   const summaryCards = [
     { label: 'Last Backup', value: lastBackup?.date ? format(new Date(lastBackup.date), 'MMM d, HH:mm') : 'Never', icon: History, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Backup Size', value: lastBackup?.size || '-', icon: Database, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Total Exports', value: recentExports.length.toString(), icon: FileDown, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
     { label: 'Auto-backup', value: 'Enabled', icon: RefreshCw, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'Total Backups', value: backupHistory.filter(b => b.status === 'completed').length.toString(), icon: Layers, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
+  // Toggle module selection
+  const toggleModule = useCallback((moduleKey: string) => {
+    setSelectedModules(prev =>
+      prev.includes(moduleKey)
+        ? prev.filter(m => m !== moduleKey)
+        : [...prev, moduleKey]
+    );
+    setRateLimitInfo(null);
+  }, []);
+
+  // Select/deselect all modules
+  const toggleAllModules = useCallback(() => {
+    if (selectedModules.length === exportModules.length) {
+      setSelectedModules([]);
+    } else {
+      setSelectedModules(exportModules.map(m => m.key));
+    }
+    setRateLimitInfo(null);
+  }, [selectedModules.length, exportModules]);
+
+  // Handle enhanced export
+  const handleEnhancedExport = async () => {
+    if (selectedModules.length === 0) {
+      toast.error('Please select at least one module to export');
+      return;
+    }
+    setExporting(true);
+    setRateLimitInfo(null);
+    try {
+      const modules = selectedModules.join(',');
+      const response = await fetch(`/api/admin/data-export?format=${exportFormat}&modules=${modules}`, {
+        headers: { ...getAuthHeaders() },
+      });
+
+      if (response.status === 429) {
+        const errorData = await response.json();
+        setRateLimitInfo(errorData.error || 'Rate limit exceeded. Please wait before trying again.');
+        toast.error(errorData.error || 'Rate limit exceeded');
+        setExporting(false);
+        return;
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        toast.error(errorData.error || 'Export failed');
+        setExporting(false);
+        return;
+      }
+
+      // Determine filename and content type
+      const contentType = response.headers.get('content-type') || '';
+      const contentDisposition = response.headers.get('content-disposition') || '';
+      const totalRecords = response.headers.get('x-total-records') || '0';
+      const modulesExported = response.headers.get('x-modules-exported') || '0';
+
+      // Extract filename from content-disposition
+      let filename = `eam-export-${new Date().toISOString().slice(0, 10)}.${exportFormat}`;
+      const filenameMatch = contentDisposition.match(/filename="?([^";\n]+)"?/);
+      if (filenameMatch) filename = filenameMatch[1];
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      // Record in recent exports history
+      saveExportHistory({
+        id: `exp_${Date.now()}`,
+        date: new Date().toISOString(),
+        format: exportFormat,
+        modules: selectedModules,
+        recordCount: parseInt(totalRecords, 10) || 0,
+      });
+
+      toast.success(`Exported ${totalRecords} records from ${modulesExported} module(s) as ${exportFormat.toUpperCase()}`);
+    } catch (err: any) {
+      toast.error(err.message || 'Export failed');
+    }
+    setExporting(false);
+  };
+
+  // Legacy backup (kept for backward compatibility)
   const handleBackup = async () => {
     setBackingUp(true);
     try {
@@ -3450,23 +3590,18 @@ export function SettingsBackupPage() {
       a.click();
       URL.revokeObjectURL(url);
 
-      // Record the backup in history via API
       const sizeKB = new Blob([jsonStr]).size / 1024;
       const sizeStr = sizeKB > 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB.toFixed(1)} KB`;
       await api.post('/api/backups', { type: 'Manual', size: sizeStr, status: 'completed' });
       loadBackupHistory();
-
       toast.success('Backup completed and downloaded successfully');
     } catch (err: any) {
-      // Record failed backup
       await api.post('/api/backups', { type: 'Manual', size: '0 KB', status: 'failed' }).catch(() => {});
       loadBackupHistory();
       toast.error(err.message || 'Backup failed');
     }
     setBackingUp(false);
   };
-
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleRestore = async () => {
     fileInputRef.current?.click();
@@ -3491,45 +3626,71 @@ export function SettingsBackupPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleExport = async (type: string) => {
-    let endpoint = '';
-    let filename = '';
-    if (type === 'Assets') { endpoint = '/api/assets?limit=9999'; filename = 'assets.csv'; }
-    else if (type === 'Inventory') { endpoint = '/api/inventory?limit=9999'; filename = 'inventory.csv'; }
-    else if (type === 'Work Orders') { endpoint = '/api/work-orders?limit=9999'; filename = 'work-orders.csv'; }
-    if (!endpoint) return;
-    try {
-      const res = await api.get(endpoint);
-      const items = Array.isArray(res.data) ? res.data : (Array.isArray(res) ? res : []);
-      if (items.length === 0) { toast.info(`No ${type.toLowerCase()} data to export`); return; }
-      const headers = Object.keys(items[0]);
-      const csvRows = [headers.join(',')];
-      for (const item of items) {
-        csvRows.push(headers.map(h => {
-          const val = String(item[h] ?? '');
-          return val.includes(',') || val.includes('"') || val.includes('\n') ? `"${val.replace(/"/g, '""')}"` : val;
-        }).join(','));
-      }
-      const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `iassetspro-${filename}`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success(`${type} exported successfully`);
-    } catch {
-      toast.error(`Failed to export ${type.toLowerCase()}`);
+  // Handle import via API
+  const handleImport = async (file: File) => {
+    if (!file.name.endsWith('.json')) {
+      toast.error('Only JSON files are accepted for import');
+      return;
     }
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await apiFetch('/api/admin/import-data', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.success && res.data) {
+        setImportResult(res.data as typeof importResult);
+        const summary = res.data.summary;
+        toast.success(`Import complete: ${summary.importedCount} imported, ${summary.skippedCount} skipped, ${summary.errorCount} errors`);
+      } else {
+        toast.error(res.error || 'Import failed');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Import failed');
+    }
+    setImporting(false);
+  };
+
+  // Import drag and drop handlers
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleImport(file);
+  }, []);
+
+  const onImportFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleImport(file);
+    if (importFileInputRef.current) importFileInputRef.current.value = '';
   };
 
   return (
     <div className="page-content">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Backup & Restore</h1>
-        <p className="text-muted-foreground mt-1">Manage system backups, data exports, and disaster recovery</p>
+        <h1 className="text-2xl font-bold tracking-tight">Backup & Data Export</h1>
+        <p className="text-muted-foreground mt-1">Manage system backups, export data, and import records</p>
       </div>
       <input ref={fileInputRef} type="file" accept=".json,.sql,.zip" className="hidden" onChange={onFileSelected} />
+      <input ref={importFileInputRef} type="file" accept=".json" className="hidden" onChange={onImportFileSelected} />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3541,7 +3702,7 @@ export function SettingsBackupPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Manual Backup */}
         <Card>
-          <CardHeader><CardTitle className="text-base">Manual Backup</CardTitle><CardDescription>Create an immediate backup of all system data</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Database className="h-4 w-4" />Manual Backup</CardTitle><CardDescription>Create an immediate backup of all system data as JSON</CardDescription></CardHeader>
           <CardContent>
             <Button onClick={handleBackup} disabled={backingUp} className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto">
               {backingUp ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Creating Backup...</> : <><Database className="h-4 w-4 mr-2" />Create Backup Now</>}
@@ -3549,45 +3710,273 @@ export function SettingsBackupPage() {
           </CardContent>
         </Card>
 
-        {/* Data Export */}
-        <Card>
-          <CardHeader><CardTitle className="text-base">Data Export</CardTitle><CardDescription>Export specific data as CSV files</CardDescription></CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {[
-                { label: 'Assets', icon: Box },
-                { label: 'Inventory', icon: Package },
-                { label: 'Work Orders', icon: ClipboardList },
-              ].map(exp => {
-                const I = exp.icon;
-                return (hasPermission('reports.export') || isAdmin()) ? (
-                  <Button key={exp.label} variant="outline" onClick={() => handleExport(exp.label)} className="h-auto py-3">
-                    <div className="flex flex-col items-center gap-1.5">
-                      <I className="h-5 w-5 text-muted-foreground" />
-                      <span className="text-xs">Export {exp.label} CSV</span>
-                    </div>
-                  </Button>
-                ) : null;
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Restore */}
-        <Card className="lg:col-span-2">
-          <CardHeader><CardTitle className="text-base">Restore Data</CardTitle><CardDescription>Upload a backup file to restore system data</CardDescription></CardHeader>
+        <Card>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Archive className="h-4 w-4" />Restore Data</CardTitle><CardDescription>Upload a backup file to inspect (restore coming soon)</CardDescription></CardHeader>
           <CardContent>
-            <div className="border-2 border-dashed rounded-xl p-8 text-center hover:border-emerald-300 transition-colors">
-              <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-              <p className="text-sm font-medium mb-1">Drag & drop backup file here</p>
-              <p className="text-xs text-muted-foreground mb-4">or click to browse (.sql, .json, .zip)</p>
-              <Button variant="outline" size="sm" disabled={restoring} onClick={handleRestore}>
-                {restoring ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Restoring...</> : 'Choose File'}
-              </Button>
-            </div>
+            <Button variant="outline" disabled={restoring} onClick={handleRestore} className="w-full sm:w-auto">
+              {restoring ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Loading...</> : <><Upload className="h-4 w-4 mr-2" />Choose Backup File</>}
+            </Button>
           </CardContent>
         </Card>
       </div>
+
+      {/* Enhanced Data Export */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2"><FileDown className="h-4 w-4" />Data Export</CardTitle>
+          <CardDescription>Comprehensively export data from selected modules in JSON or CSV format</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Rate limit warning */}
+          {rateLimitInfo && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Rate Limited</AlertTitle>
+              <AlertDescription>{rateLimitInfo}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* Format Selection */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Export Format</Label>
+            <div className="flex gap-3">
+              {(['json', 'csv'] as const).map(fmt => (
+                <label
+                  key={fmt}
+                  className={`flex items-center gap-2.5 px-4 py-2.5 rounded-lg border-2 cursor-pointer transition-all ${
+                    exportFormat === fmt
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                      : 'border-muted hover:border-muted-foreground/30'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="exportFormat"
+                    value={fmt}
+                    checked={exportFormat === fmt}
+                    onChange={() => setExportFormat(fmt)}
+                    className="sr-only"
+                  />
+                  <div className={`h-8 w-8 rounded-md flex items-center justify-center ${
+                    exportFormat === fmt ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
+                  }`}
+                  >
+                    {fmt === 'json' ? <FileBarChart className="h-4 w-4" /> : <Gauge className="h-4 w-4" />}
+                  </div>
+                  <div>
+                    <p className={`text-sm font-medium ${exportFormat === fmt ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{fmt.toUpperCase()}</p>
+                    <p className="text-[11px] text-muted-foreground">{fmt === 'json' ? 'Structured data with metadata' : 'Spreadsheet-compatible format'}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Module Selection */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Modules to Export</Label>
+              <button
+                onClick={toggleAllModules}
+                className="text-xs text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-medium"
+              >
+                {selectedModules.length === exportModules.length ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {exportModules.map(mod => {
+                const isSelected = selectedModules.includes(mod.key);
+                const I = mod.icon;
+                return (
+                  <label
+                    key={mod.key}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-all ${
+                      isSelected
+                        ? 'border-emerald-300 bg-emerald-50/50 dark:border-emerald-700 dark:bg-emerald-900/20'
+                        : 'border-muted hover:border-muted-foreground/30'
+                    }`}
+                  >
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => toggleModule(mod.key)}
+                    />
+                    <div className={`h-7 w-7 rounded-md flex items-center justify-center shrink-0 ${mod.color}`}>
+                      <I className="h-3.5 w-3.5" />
+                    </div>
+                    <span className={`text-sm ${isSelected ? 'font-medium text-emerald-700 dark:text-emerald-300' : ''}`}>{mod.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {selectedModules.length} of {exportModules.length} modules selected
+            </p>
+          </div>
+
+          {/* Export Button */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <Button
+              onClick={handleEnhancedExport}
+              disabled={exporting || selectedModules.length === 0}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {exporting ? (
+                <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Exporting {selectedModules.length} module(s)...</>
+              ) : (
+                <><Download className="h-4 w-4 mr-2" />Export as {exportFormat.toUpperCase()}</>
+              )}
+            </Button>
+            {selectedModules.length === 0 && (
+              <p className="text-xs text-muted-foreground">Select at least one module above</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Import Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2"><FileUp className="h-4 w-4" />Import Data</CardTitle>
+          <CardDescription>Import assets, inventory items, users, plants, and departments from a JSON file. Existing records are skipped (no duplicates).</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertTitle>Supported modules</AlertTitle>
+            <AlertDescription className="text-xs">
+              Assets, Inventory Items, Users, Plants, Departments. Passwords for imported users are hashed securely.
+            </AlertDescription>
+          </Alert>
+
+          <div
+            className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
+              dragOver ? 'border-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10' : 'hover:border-muted-foreground/30'
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <Upload className={`h-10 w-10 mx-auto mb-3 transition-colors ${dragOver ? 'text-emerald-500' : 'text-muted-foreground'}`} />
+            <p className="text-sm font-medium mb-1">Drag & drop JSON file here</p>
+            <p className="text-xs text-muted-foreground mb-4">or click to browse (.json only)</p>
+            <Button variant="outline" size="sm" disabled={importing} onClick={() => importFileInputRef.current?.click()}>
+              {importing ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Importing...</> : 'Choose File'}
+            </Button>
+          </div>
+
+          {/* Import Result Summary */}
+          {importResult && (
+            <div className="rounded-lg border p-4 space-y-3">
+              <h4 className="text-sm font-semibold">Import Result</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="text-center">
+                  <p className="text-lg font-bold text-sky-600">{importResult.summary.totalRecords}</p>
+                  <p className="text-[11px] text-muted-foreground">Total Records</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-emerald-600">{importResult.summary.importedCount}</p>
+                  <p className="text-[11px] text-muted-foreground">Imported</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-amber-600">{importResult.summary.skippedCount}</p>
+                  <p className="text-[11px] text-muted-foreground">Skipped (exists)</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-lg font-bold text-red-600">{importResult.summary.errorCount}</p>
+                  <p className="text-[11px] text-muted-foreground">Errors</p>
+                </div>
+              </div>
+              {/* Per-module breakdown */}
+              <div className="space-y-2 mt-2">
+                {Object.entries(importResult).filter(([k]) => k !== 'summary').map(([module, record]: [string, any]) => (
+                  <div key={module} className="flex items-center justify-between text-xs bg-muted/40 rounded-md px-3 py-2">
+                    <span className="font-medium capitalize">{module}</span>
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">
+                        +{record.imported} imported
+                      </Badge>
+                      <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                        {record.skipped} skipped
+                      </Badge>
+                      {record.errors.length > 0 && (
+                        <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200">
+                          {record.errors.length} errors
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Show first few errors */}
+              {importResult.summary.errorCount > 0 && (
+                <div className="mt-2">
+                  <button
+                    onClick={() => {
+                      const allErrors = Object.entries(importResult)
+                        .filter(([k]) => k !== 'summary')
+                        .flatMap(([, r]: [string, any]) => r.errors);
+                      if (allErrors.length > 0) {
+                        toast.info(allErrors.slice(0, 5).join('\n'));
+                      }
+                    }}
+                    className="text-xs text-red-600 hover:text-red-700 font-medium"
+                  >
+                    View first 5 errors
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Recent Exports History */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Recent Exports</CardTitle>
+            {recentExports.length > 0 && (
+              <button
+                onClick={() => { setRecentExports([]); localStorage.removeItem('eam_recent_exports'); }}
+                className="text-xs text-muted-foreground hover:text-red-500 font-medium"
+              >Clear history</button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {recentExports.length === 0 ? (
+            <div className="text-center py-6">
+              <FileDown className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">No exports yet</p>
+              <p className="text-xs text-muted-foreground">Your export history will appear here</p>
+            </div>
+          ) : (
+            <div className="max-h-64 overflow-y-auto space-y-2">
+              {recentExports.map(exp => (
+                <div key={exp.id} className="flex items-center justify-between rounded-lg border px-3 py-2.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`h-8 w-8 rounded-md flex items-center justify-center shrink-0 ${
+                      exp.format === 'json' ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
+                    }`}>
+                      {exp.format === 'json' ? <FileBarChart className="h-4 w-4" /> : <Gauge className="h-4 w-4" />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {exp.modules.length === exportModules.length ? 'All modules' : `${exp.modules.length} module(s)`}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {formatDistanceToNow(new Date(exp.date), { addSuffix: true })} &middot; {exp.recordCount.toLocaleString()} records &middot; {exp.format.toUpperCase()}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] shrink-0 uppercase">{exp.format}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Backup History */}
       <Card>
