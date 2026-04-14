@@ -1716,8 +1716,8 @@ export function SettingsDepartmentsPage() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        {(hasPermission('system_settings.update') || isAdmin()) && <DropdownMenuItem onClick={() => openEdit(d)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
-                        {(hasPermission('system_settings.update') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(d)}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>
+                        {(hasPermission('system_settings.update') || isAdmin()) && <DropdownMenuItem onClick={() => openEdit(d)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>}
+                        {(hasPermission('system_settings.update') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(d)}><Trash2 className="h-3.5 w-3.5 mr-2" />Delete</DropdownMenuItem>}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -2661,14 +2661,14 @@ export function SettingsBackupPage() {
                 { label: 'Work Orders', icon: ClipboardList },
               ].map(exp => {
                 const I = exp.icon;
-                return (
-                  {(hasPermission('reports.export') || isAdmin()) && <Button key={exp.label} variant="outline" onClick={() => handleExport(exp.label)} className="h-auto py-3">
+                return (hasPermission('reports.export') || isAdmin()) ? (
+                  <Button key={exp.label} variant="outline" onClick={() => handleExport(exp.label)} className="h-auto py-3">
                     <div className="flex flex-col items-center gap-1.5">
                       <I className="h-5 w-5 text-muted-foreground" />
                       <span className="text-xs">Export {exp.label} CSV</span>
                     </div>
                   </Button>
-                );
+                ) : null;
               })}
             </div>
           </CardContent>
