@@ -40,7 +40,7 @@ import {
   Radio, Ruler, GraduationCap, TriangleAlert, Activity, BrainCircuit,
   GitBranch, ScanLine, Truck, FolderOpen, Target, TrendingUp, Zap, Mail,
   Send, ShieldAlert, ShieldCheck, BarChart3, Package, ClipboardList, Gauge, X,
-  AlertCircle, FileBarChart,
+  AlertCircle, FileBarChart, EyeOff, Save, Wifi,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { EmptyState, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
@@ -2241,8 +2241,231 @@ export function SettingsGeneralPage() {
         </Card>
       </div>
 
+      {/* Email Configuration (SMTP) — only visible to admins / system_settings.update */}
+      <SmtpConfigCard />
+
       <Button onClick={handleSave} disabled={saving}>{saving ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Saving...</> : 'Save Changes'}</Button>
     </div>
+  );
+}
+
+// ─── SMTP Configuration Card ─────────────────────────────────────────────────
+interface SmtpConfig {
+  host: string;
+  port: string;
+  secure: boolean;
+  user: string;
+  pass: string;
+  from: string;
+}
+
+function SmtpConfigCard() {
+  const { hasPermission: hp, isAdmin: isAdm, user } = useAuthStore();
+  const canManage = hp('system_settings.update') || isAdm();
+
+  const [smtp, setSmtp] = useState<SmtpConfig>({
+    host: '',
+    port: '587',
+    secure: false,
+    user: '',
+    pass: '',
+    from: '',
+  });
+  const [showPass, setShowPass] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [sendingTest, setSendingTest] = useState(false);
+  const [connStatus, setConnStatus] = useState<'idle' | 'success' | 'fail' | 'testing'>('idle');
+  const [testEmailStatus, setTestEmailStatus] = useState<'idle' | 'success' | 'fail'>('idle');
+
+  useEffect(() => {
+    api.get<SmtpConfig>('/api/settings/smtp-config').then(res => {
+      if (res.success && res.data) {
+        setSmtp(prev => ({ ...prev, ...res.data, pass: '' }));
+      }
+    });
+  }, []);
+
+  const handleSaveSmtp = async () => {
+    setSaving(true);
+    const res = await api.put('/api/settings/smtp-config', smtp);
+    if (res.success) {
+      toast.success('SMTP configuration saved');
+    } else {
+      toast.error(res.error || 'Failed to save SMTP config');
+    }
+    setSaving(false);
+  };
+
+  const handleTestConnection = async () => {
+    setConnStatus('testing');
+    try {
+      const res = await api.get('/api/settings/smtp-status');
+      if (res.success && (res.data as any)?.connected) {
+        setConnStatus('success');
+        toast.success('SMTP connection successful');
+      } else {
+        setConnStatus('fail');
+        toast.error('SMTP connection failed');
+      }
+    } catch {
+      setConnStatus('fail');
+      toast.error('Unable to test SMTP connection');
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    setSendingTest(true);
+    setTestEmailStatus('idle');
+    try {
+      const res = await api.post('/api/settings/test-email', { email: user?.email });
+      if (res.success) {
+        setTestEmailStatus('success');
+        toast.success(res.message || 'Test email sent');
+      } else {
+        setTestEmailStatus('fail');
+        toast.error(res.error || 'Failed to send test email');
+      }
+    } catch {
+      setTestEmailStatus('fail');
+      toast.error('Failed to send test email');
+    }
+    setSendingTest(false);
+  };
+
+  if (!canManage) return null;
+
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+            <Mail className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div>
+            <CardTitle className="text-base">Email Configuration (SMTP)</CardTitle>
+            <CardDescription>Configure outgoing email for system notifications</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label>SMTP Host</Label>
+            <Input
+              value={smtp.host}
+              onChange={e => setSmtp(s => ({ ...s, host: e.target.value }))}
+              placeholder="smtp.example.com"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>SMTP Port</Label>
+            <Input
+              value={smtp.port}
+              onChange={e => setSmtp(s => ({ ...s, port: e.target.value }))}
+              placeholder="587"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>From Email</Label>
+            <Input
+              value={smtp.from}
+              onChange={e => setSmtp(s => ({ ...s, from: e.target.value }))}
+              placeholder="noreply@company.com"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Username</Label>
+            <Input
+              value={smtp.user}
+              onChange={e => setSmtp(s => ({ ...s, user: e.target.value }))}
+              placeholder="SMTP username"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Password</Label>
+            <div className="relative">
+              <Input
+                type={showPass ? 'text' : 'password'}
+                value={smtp.pass}
+                onChange={e => setSmtp(s => ({ ...s, pass: e.target.value }))}
+                placeholder="••••••••"
+              />
+              <button
+                type="button"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setShowPass(v => !v)}
+              >
+                {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="flex items-end gap-3">
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={smtp.secure}
+                onCheckedChange={v => setSmtp(s => ({ ...s, secure: v }))}
+              />
+              <Label>Use SSL/TLS</Label>
+            </div>
+          </div>
+        </div>
+
+        <Separator />
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            onClick={handleSaveSmtp}
+            disabled={saving}
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            {saving ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+            Save SMTP Config
+          </Button>
+          <Button
+            onClick={handleTestConnection}
+            disabled={testing || !smtp.host}
+            variant="outline"
+            size="sm"
+          >
+            {testing ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5 mr-1.5" />}
+            Test Connection
+          </Button>
+          <Button
+            onClick={handleSendTestEmail}
+            disabled={sendingTest || !smtp.host}
+            variant="outline"
+            size="sm"
+          >
+            {sendingTest ? <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Send className="h-3.5 w-3.5 mr-1.5" />}
+            Send Test Email
+          </Button>
+
+          {/* Connection status indicators */}
+          {connStatus === 'success' && (
+            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 gap-1">
+              <CheckCircle2 className="h-3 w-3" /> Connected
+            </Badge>
+          )}
+          {connStatus === 'fail' && (
+            <Badge className="bg-red-100 text-red-700 border-red-200 gap-1">
+              <XCircle className="h-3 w-3" /> Connection Failed
+            </Badge>
+          )}
+          {testEmailStatus === 'success' && (
+            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 gap-1">
+              <CheckCircle2 className="h-3 w-3" /> Email Sent
+            </Badge>
+          )}
+          {testEmailStatus === 'fail' && (
+            <Badge className="bg-red-100 text-red-700 border-red-200 gap-1">
+              <XCircle className="h-3 w-3" /> Email Failed
+            </Badge>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

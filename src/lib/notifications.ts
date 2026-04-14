@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { wsNotify } from '@/lib/ws-notify';
 
 export async function createNotification(params: {
   userId: string;
@@ -35,5 +36,26 @@ export async function notifyUser(
   entityId?: string,
   actionUrl?: string,
 ) {
-  return createNotification({ userId, type, title, message, entityType, entityId, actionUrl });
+  const notification = await createNotification({ userId, type, title, message, entityType, entityId, actionUrl });
+
+  // Fire-and-forget: push real-time notification via WebSocket
+  wsNotify(userId, 'notification', {
+    type,
+    title,
+    message,
+    entityType,
+    entityId,
+    actionUrl,
+  }).catch(() => {
+    // Silently ignore WS failures
+  });
+
+  // Fire-and-forget: also send email notification
+  import('@/lib/email').then(({ sendNotificationEmail }) => {
+    sendNotificationEmail(userId, title, message, actionUrl).catch(() => {
+      // Silently ignore email failures
+    });
+  });
+
+  return notification;
 }

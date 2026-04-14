@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
 import { timeAgo } from '@/components/shared/helpers';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import type { PageName, Notification } from '@/types';
 
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,9 @@ function NotificationPopover() {
   const [loading, setLoading] = useState(false);
   const [selectedNotif, setSelectedNotif] = useState<Notification | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [pulseAnimation, setPulseAnimation] = useState(false);
+  const { on: wsOn, connected } = useWebSocket();
+  const pulseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const typeColors: Record<string, string> = {
     mr_assigned: 'bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400',
@@ -63,11 +67,17 @@ function NotificationPopover() {
     info: MessageSquare,
   };
 
+  const triggerPulse = useCallback(() => {
+    setPulseAnimation(true);
+    if (pulseTimeoutRef.current) clearTimeout(pulseTimeoutRef.current);
+    pulseTimeoutRef.current = setTimeout(() => setPulseAnimation(false), 2000);
+  }, []);
+
   const loadNotifications = useCallback(() => {
     setLoading(true);
     api.get('/api/notifications').then(res => {
       if (res.success && res.data) {
-        const data = (res.data as any).notifications || res.data;
+        const data = (res.data as Record<string, unknown>).notifications || res.data;
         setNotifications(Array.isArray(data) ? data : []);
       }
       setLoading(false);
@@ -79,6 +89,7 @@ function NotificationPopover() {
     if (newOpen) loadNotifications();
   };
 
+  // Initial load and polling fallback
   useEffect(() => {
     loadNotifications();
     const interval = setInterval(() => {
@@ -86,6 +97,29 @@ function NotificationPopover() {
     }, 60000);
     return () => clearInterval(interval);
   }, [loadNotifications]);
+
+  // WebSocket: listen for real-time notifications
+  useEffect(() => {
+    const cleanup = wsOn('notification', (data: unknown) => {
+      const notification = data as Record<string, unknown>;
+      console.log('[NotificationPopover] Received real-time notification:', notification);
+
+      // Trigger bell pulse animation
+      triggerPulse();
+
+      // Refresh the notification list to show the new notification
+      loadNotifications();
+    });
+
+    return cleanup;
+  }, [wsOn, loadNotifications, triggerPulse]);
+
+  // Cleanup pulse timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (pulseTimeoutRef.current) clearTimeout(pulseTimeoutRef.current);
+    };
+  }, []);
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
@@ -122,11 +156,15 @@ function NotificationPopover() {
       <Popover open={open} onOpenChange={handlePopoverChange}>
         <PopoverTrigger asChild>
           <Button variant="ghost" size="icon" className="relative h-9 w-9 hover:bg-muted transition-colors">
-            <Bell className="h-4 w-4 text-muted-foreground" />
+            <Bell className={`h-4 w-4 text-muted-foreground transition-transform duration-300 ${pulseAnimation ? 'animate-bell-ring text-emerald-500 scale-110' : ''}`} />
             {unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-h-[16px] min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white shadow-sm">
+              <span className={`absolute -top-0.5 -right-0.5 min-h-[16px] min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm transition-transform duration-300 ${pulseAnimation ? 'bg-emerald-400 scale-125' : 'bg-emerald-500'}`}>
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
+            )}
+            {/* WebSocket connected indicator dot */}
+            {connected && (
+              <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-emerald-400 border border-background" />
             )}
           </Button>
         </PopoverTrigger>
@@ -142,12 +180,17 @@ function NotificationPopover() {
                 </span>
               )}
             </div>
-            {unreadCount > 0 && (
-              <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1 px-2" onClick={handleMarkAllRead}>
-                <Check className="h-3 w-3" />
-                Mark all read
-              </Button>
-            )}
+            <div className="flex items-center gap-1">
+              {unreadCount > 0 && (
+                <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground gap-1 px-2" onClick={handleMarkAllRead}>
+                  <Check className="h-3 w-3" />
+                  Mark all read
+                </Button>
+              )}
+              <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${connected ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-muted text-muted-foreground'}`}>
+                {connected ? 'Live' : 'Polling'}
+              </span>
+            </div>
           </div>
 
           {/* Notification list */}

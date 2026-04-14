@@ -369,6 +369,22 @@ header[class*="bg-header"] {
 }
 
 /* ============================================================================
+   NOTIFICATION BELL ANIMATION
+   ============================================================================ */
+@keyframes bell-ring {
+  0% { transform: rotate(0deg); }
+  15% { transform: rotate(14deg); }
+  30% { transform: rotate(-12deg); }
+  45% { transform: rotate(10deg); }
+  60% { transform: rotate(-8deg); }
+  75% { transform: rotate(4deg); }
+  100% { transform: rotate(0deg); }
+}
+.animate-bell-ring {
+  animation: bell-ring 0.8s ease-in-out;
+}
+
+/* ============================================================================
    DARK MODE DASHBOARD OVERRIDES
    ============================================================================ */
 .dark .dark\:bg-amber-950\/30 { background-color: oklch(0.22 0.04 75 / 0.3); }
