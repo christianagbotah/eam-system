@@ -1,8 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getSession, isAdmin } from '@/lib/auth';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const isAdm = isAdmin(session);
+
     const modules = await db.systemModule.findMany({
       include: {
         companyModules: true,
@@ -35,9 +43,9 @@ export async function GET() {
         version: m.version,
         isCore: m.isCore,
         isSystemLicensed: m.isSystemLicensed,
-        licenseKey: m.licenseKey,
-        validFrom: m.validFrom,
-        validUntil: m.validUntil,
+        licenseKey: isAdm ? m.licenseKey : null,
+        validFrom: isAdm ? m.validFrom : null,
+        validUntil: isAdm ? m.validUntil : null,
         // Company module activation status
         isEnabled: companyModule?.isEnabled ?? false,
         isActive: companyModule?.isActive ?? false,

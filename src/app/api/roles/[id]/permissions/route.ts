@@ -24,6 +24,11 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Role not found' }, { status: 404 });
     }
 
+    // Prevent non-admin users from modifying system roles (privilege escalation protection)
+    if (role.isSystem && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Cannot modify system role permissions' }, { status: 403 });
+    }
+
     const body = await request.json();
     const { permissionIds } = body;
 

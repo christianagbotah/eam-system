@@ -25,43 +25,45 @@ export async function GET(request: NextRequest) {
     startDate.setDate(startDate.getDate() - parseInt(period));
     startDate.setHours(0, 0, 0, 0);
 
-    // Run queries individually with safe model access
+    // Run queries individually with safe model access — ALL queries use plantFilter
+    const pf = Object.keys(plantFilter).length > 0 ? plantFilter : undefined;
+
     const mttrData = hasModel(db, 'workOrder')
-      ? await db.workOrder.aggregate({ where: { status: 'completed', actualHours: { gt: 0 } }, _avg: { actualHours: true } }).catch(() => ({ _avg: { actualHours: 0 } }))
+      ? await db.workOrder.aggregate({ where: { ...pf, status: 'completed', actualHours: { gt: 0 } }, _avg: { actualHours: true } }).catch(() => ({ _avg: { actualHours: 0 } }))
       : { _avg: { actualHours: 0 } };
 
     const totalCompletedWOs = hasModel(db, 'workOrder')
-      ? await db.workOrder.count({ where: { status: 'completed' } }).catch(() => 0)
+      ? await db.workOrder.count({ where: { ...pf, status: 'completed' } }).catch(() => 0)
       : 0;
 
     const pmSchedulesTotal = hasModel(db, 'pmSchedule')
-      ? await db.pmSchedule.count({ where: { isActive: true } }).catch(() => 0)
+      ? await db.pmSchedule.count({ where: { ...pf, isActive: true } }).catch(() => 0)
       : 0;
 
     const pmOverdue = hasModel(db, 'pmSchedule')
-      ? await db.pmSchedule.count({ where: { isActive: true, nextDueDate: { lte: new Date() } } }).catch(() => 0)
+      ? await db.pmSchedule.count({ where: { ...pf, isActive: true, nextDueDate: { lte: new Date() } } }).catch(() => 0)
       : 0;
 
     const woByStatus = hasModel(db, 'workOrder')
-      ? await db.workOrder.groupBy({ by: ['status'], _count: { status: true } }).catch(() => [])
+      ? await db.workOrder.groupBy({ by: ['status'], _count: { status: true }, where: pf }).catch(() => [])
       : [];
 
     const woByType = hasModel(db, 'workOrder')
-      ? await db.workOrder.groupBy({ by: ['type'], _count: { type: true } }).catch(() => [])
+      ? await db.workOrder.groupBy({ by: ['type'], _count: { type: true }, where: pf }).catch(() => [])
       : [];
 
     const assetByCondition = hasModel(db, 'asset')
-      ? await db.asset.groupBy({ by: ['condition'], _count: { condition: true } }).catch(() => [])
+      ? await db.asset.groupBy({ by: ['condition'], _count: { condition: true }, where: { ...pf, isActive: true } }).catch(() => [])
       : [];
 
     const assetByStatus = hasModel(db, 'asset')
-      ? await db.asset.groupBy({ by: ['status'], _count: { status: true } }).catch(() => [])
+      ? await db.asset.groupBy({ by: ['status'], _count: { status: true }, where: { ...pf, isActive: true } }).catch(() => [])
       : [];
 
     const topAssets = hasModel(db, 'workOrder')
       ? await db.workOrder.groupBy({
           by: ['assetName'],
-          where: { assetName: { not: null } },
+          where: { ...pf, assetName: { not: null } },
           _count: { id: true },
           orderBy: { _count: { id: 'desc' } },
           take: 8,
@@ -69,13 +71,13 @@ export async function GET(request: NextRequest) {
       : [];
 
     const woByPriority = hasModel(db, 'workOrder')
-      ? await db.workOrder.groupBy({ by: ['priority'], _count: { priority: true } }).catch(() => [])
+      ? await db.workOrder.groupBy({ by: ['priority'], _count: { priority: true }, where: pf }).catch(() => [])
       : [];
 
     const mrByCategory = hasModel(db, 'maintenanceRequest')
       ? await db.maintenanceRequest.groupBy({
           by: ['category'],
-          where: { category: { not: null } },
+          where: { ...pf, category: { not: null } },
           _count: { category: true },
         }).catch(() => [])
       : [];
@@ -83,23 +85,24 @@ export async function GET(request: NextRequest) {
     const totalCost = hasModel(db, 'workOrder')
       ? await db.workOrder.aggregate({
           _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
+          where: pf,
         }).catch(() => ({ _sum: { totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0 } }))
       : { _sum: { totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0 } };
 
     const inventoryValue = hasModel(db, 'inventoryItem')
-      ? await db.inventoryItem.aggregate({ _sum: { unitCost: true }, where: { isActive: true } }).catch(() => ({ _sum: { unitCost: 0 } }))
+      ? await db.inventoryItem.aggregate({ _sum: { unitCost: true }, where: { ...pf, isActive: true } }).catch(() => ({ _sum: { unitCost: 0 } }))
       : { _sum: { unitCost: 0 } };
 
     const lowStockCount = hasModel(db, 'inventoryItem')
       ? await db.inventoryItem.count({
-          where: { isActive: true, currentStock: { lte: db.inventoryItem.fields.minStockLevel } },
+          where: { ...pf, isActive: true, currentStock: { lte: db.inventoryItem.fields.minStockLevel } },
         }).catch(() => 0)
       : 0;
 
     // Get daily trend
     const recentWOs = hasModel(db, 'workOrder')
       ? await db.workOrder.findMany({
-          where: { createdAt: { gte: startDate } },
+          where: { ...pf, createdAt: { gte: startDate } },
           select: { createdAt: true, status: true },
           orderBy: { createdAt: 'asc' },
         }).catch(() => [])
@@ -132,7 +135,7 @@ export async function GET(request: NextRequest) {
     // SLA
     const completedWOs = hasModel(db, 'workOrder')
       ? await db.workOrder.findMany({
-          where: { status: 'completed', plannedEnd: { not: null }, actualEnd: { not: null } },
+          where: { ...pf, status: 'completed', plannedEnd: { not: null }, actualEnd: { not: null } },
           select: { actualEnd: true, plannedEnd: true },
         }).catch(() => [])
       : [];

@@ -29,6 +29,13 @@ async function generateRequestNumber(): Promise<string> {
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    if (!hasPermission(session, 'maintenance_requests.view') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
 
     const status = searchParams.get('status');
@@ -39,7 +46,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
 
     // Resolve plant scope (validates X-Plant-ID against user's plant access)
-    const plantScope = session ? await getPlantScope(request, session) : null;
+    const plantScope = await getPlantScope(request, session);
 
     // Build where clause with role-based filtering
     const where: Record<string, unknown> = {};
@@ -50,17 +57,21 @@ export async function GET(request: NextRequest) {
       where.title = { contains: search };
     }
 
-    if (session) {
-      if (!isAdmin(session)) {
-        if (session.roles.includes('production_operator')) {
-          // Operators see their own requests
-          where.requestedBy = session.userId;
-        } else if (session.roles.includes('maintenance_supervisor')) {
-          // Supervisors see their department's requests
-          where.supervisorId = session.userId;
-        }
-        // Planners and admins see all
+    if (!isAdmin(session)) {
+      if (session.roles.includes('production_operator')) {
+        // Operators see their own requests
+        where.requestedBy = session.userId;
+      } else if (session.roles.includes('maintenance_supervisor')) {
+        // Supervisors see their department's requests
+        where.supervisorId = session.userId;
+      } else if (session.roles.includes('maintenance_technician')) {
+        // Technicians see WOs linked to them via maintenance requests
+        where.OR = [
+          { requestedBy: session.userId },
+          { workOrder: { assignedTo: session.userId } },
+        ];
       }
+      // Planners and admins see all
     }
 
     // Apply plant scoping filter

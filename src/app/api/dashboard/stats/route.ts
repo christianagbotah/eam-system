@@ -1,17 +1,24 @@
 import { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 import { Prisma } from '@prisma/client';
 
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
-    const isAdm = session ? isAdmin(session) : false;
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    if (!hasPermission(session, 'dashboard.view') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
+    const isAdm = isAdmin(session);
 
     // Resolve plant scope for multi-plant data isolation
-    const plantScope = session ? await getPlantScope(request, session) : null;
+    const plantScope = await getPlantScope(request, session);
     const plantFilter = getPlantFilterWhere(plantScope);
 
     // Build base where clauses for role-based filtering

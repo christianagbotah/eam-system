@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 
 // Helper: generate WO number WO-YYYYMM-NNNN
@@ -27,6 +27,13 @@ async function generateWoNumber(): Promise<string> {
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    if (!hasPermission(session, 'work_orders.view') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
 
     const status = searchParams.get('status');
@@ -38,7 +45,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
 
     // Resolve plant scope (validates X-Plant-ID against user's plant access)
-    const plantScope = session ? await getPlantScope(request, session) : null;
+    const plantScope = await getPlantScope(request, session);
 
     // Build where clause with role-based filtering
     const where: Record<string, unknown> = {};
@@ -49,14 +56,24 @@ export async function GET(request: NextRequest) {
       where.title = { contains: search };
     }
 
-    if (session) {
-      if (!isAdmin(session)) {
-        if (session.roles.includes('maintenance_technician')) {
-          // Technicians see WOs assigned to them
+    if (!isAdmin(session)) {
+      if (session.roles.includes('maintenance_technician')) {
+        // Technicians see WOs assigned to them or where they are team members
+        const teamWoIds = await db.workOrderTeamMember.findMany({
+          where: { userId: session.userId },
+          select: { workOrderId: true },
+        });
+        const teamIds = teamWoIds.map(t => t.workOrderId);
+        if (teamIds.length > 0) {
+          where.OR = [
+            { assignedTo: session.userId },
+            { id: { in: teamIds } },
+          ];
+        } else {
           where.assignedTo = session.userId;
         }
-        // Planners and supervisors see all
       }
+      // Planners and supervisors see all
     }
 
     if (assignedTo) {
@@ -120,6 +137,9 @@ export async function POST(request: NextRequest) {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    if (!hasPermission(session, 'work_orders.create') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const body = await request.json();
