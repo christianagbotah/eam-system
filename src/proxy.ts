@@ -2,22 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSessionAsync } from '@/lib/auth';
 
 /**
- * Auth & Plant-Scoping Middleware
+ * Auth & Plant-Scoping Proxy (Next.js 16 convention)
+ *
+ * Next.js 16 replaces the "middleware" file convention with "proxy".
+ * This file is placed at src/proxy.ts and exports a named `proxy` function
+ * instead of the legacy `middleware` function.
  *
  * Protects all /api/* routes (except public auth endpoints) by validating the Bearer token.
  * Enforces multi-plant data isolation via X-Plant-ID header.
  *
  * Public routes (no auth required):
- * - /api/auth/login  — login endpoint
+ * - /api/auth/login              — login endpoint
+ * - /api/auth/forgot-password    — forgot password endpoint
+ * - /api/auth/reset-password     — reset password endpoint
  *
  * Internal routes (X-PM-Cron-Secret header for server-to-server):
  * - /api/pm-schedules/check-due — PM cron job trigger
  */
 
-const PUBLIC_PATHS = ['/api/auth/login'];
+const PUBLIC_PATHS = [
+  '/api/auth/login',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+];
 const INTERNAL_SECRET = process.env.PM_CRON_SECRET || 'eam-pm-cron-secret-2025';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Only handle /api/* routes
@@ -65,6 +75,7 @@ export async function middleware(request: NextRequest) {
   requestHeaders.set('x-session-user-id', session.userId);
   requestHeaders.set('x-session-roles', session.roles.join(','));
   requestHeaders.set('x-session-permissions', session.permissions.join(','));
+  requestHeaders.set('x-user-plant-id', '');
 
   // Pass through X-Plant-ID as x-user-plant-id for downstream route handler convenience.
   // NOTE: Route handlers MUST use getPlantScope() from @/lib/plant-scope for actual
@@ -82,8 +93,7 @@ export async function middleware(request: NextRequest) {
   });
 }
 
-// Force Node.js runtime for Prisma Client compatibility
-export const runtime = 'nodejs';
+// NOTE: Proxy always runs on Node.js runtime — no need to export runtime config
 
 export const config = {
   matcher: ['/api/:path*'],

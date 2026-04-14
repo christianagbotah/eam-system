@@ -7,6 +7,7 @@ import { getInitials } from '@/components/shared/helpers';
 import { LoadingScreen, LoadingSkeleton } from '@/components/shared/helpers';
 import Sidebar from '@/components/shared/Sidebar';
 import NotificationPopover from '@/components/shared/NotificationPopover';
+import GlobalSearch from '@/components/shared/GlobalSearch';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -376,6 +377,7 @@ function AppShell() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      <GlobalSearch />
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Bar */}

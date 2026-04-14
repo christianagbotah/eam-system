@@ -759,75 +759,154 @@ async function seed() {
   console.log('');
 
   // ══════════════════════════════════════════════════════════════════════════
-  // STEP 4: CREATE DEFAULT PLANT & DEPARTMENT
+  // STEP 4: CREATE DEFAULT PLANTS & DEPARTMENTS (Ghana Enterprise)
   // ══════════════════════════════════════════════════════════════════════════
-  console.log('🏭 Creating default plant & department...');
+  console.log('🏭 Creating default plants & departments...');
 
-  const plant = await db.plant.create({
+  // ── 3 Ghanaian Plants ──
+  const temaFactory = await db.plant.create({
     data: {
-      name: 'Main Plant',
-      code: 'MP-001',
-      location: 'Industrial Zone A',
-      country: 'US',
-      city: 'Houston',
+      name: 'Tema Factory',
+      code: 'TEM-001',
+      location: 'Tema Heavy Industrial Area',
+      country: 'Ghana',
+      city: 'Tema',
       isActive: true,
     },
   });
-  console.log('  ✅ Created Main Plant');
+  console.log('  ✅ Created Tema Factory (TEM-001) — Tema, Greater Accra');
 
-  const dept = await db.department.create({
+  const kumasiPlant = await db.plant.create({
     data: {
-      name: 'Maintenance',
-      code: 'MAINT',
-      plantId: plant.id,
+      name: 'Kumasi Plant',
+      code: 'KUM-001',
+      location: 'Kaase Industrial Area',
+      country: 'Ghana',
+      city: 'Kumasi',
+      isActive: true,
     },
   });
-  console.log('  ✅ Created Maintenance Department\n');
+  console.log('  ✅ Created Kumasi Plant (KUM-001) — Kumasi, Ashanti');
+
+  const takoradiFacility = await db.plant.create({
+    data: {
+      name: 'Takoradi Facility',
+      code: 'TAK-001',
+      location: 'Sekondi-Takoradi Industrial Zone',
+      country: 'Ghana',
+      city: 'Takoradi',
+      isActive: true,
+    },
+  });
+  console.log('  ✅ Created Takoradi Facility (TAK-001) — Takoradi, Western');
+
+  // Primary plant for demo data (Tema Factory)
+  const plant = temaFactory;
+
+  // ── 7 Ghana-Typical Departments ──
+  const deptMaint = await db.department.create({
+    data: { name: 'Maintenance', code: 'MAINT', plantId: temaFactory.id },
+  });
+  const deptProd = await db.department.create({
+    data: { name: 'Production', code: 'PROD', plantId: temaFactory.id },
+  });
+  const deptQC = await db.department.create({
+    data: { name: 'Quality Control', code: 'QC', plantId: temaFactory.id },
+  });
+  const deptEng = await db.department.create({
+    data: { name: 'Engineering', code: 'ENG', plantId: temaFactory.id },
+  });
+  const deptHSE = await db.department.create({
+    data: { name: 'Health Safety & Environment', code: 'HSE', plantId: temaFactory.id },
+  });
+  const deptWH = await db.department.create({
+    data: { name: 'Warehouse & Logistics', code: 'WH', plantId: temaFactory.id },
+  });
+  const deptUtil = await db.department.create({
+    data: { name: 'Utilities', code: 'UTIL', plantId: temaFactory.id },
+  });
+
+  // Additional departments for Kumasi Plant
+  const deptMaintK = await db.department.create({
+    data: { name: 'Maintenance', code: 'MAINT-K', plantId: kumasiPlant.id },
+  });
+  const deptProdK = await db.department.create({
+    data: { name: 'Production', code: 'PROD-K', plantId: kumasiPlant.id },
+  });
+
+  // Additional departments for Takoradi Facility
+  const deptMaintT = await db.department.create({
+    data: { name: 'Maintenance', code: 'MAINT-T', plantId: takoradiFacility.id },
+  });
+  const deptProdT = await db.department.create({
+    data: { name: 'Production', code: 'PROD-T', plantId: takoradiFacility.id },
+  });
+
+  // Primary department for demo data
+  const dept = deptMaint;
+
+  console.log('  ✅ Created 7 departments on Tema Factory');
+  console.log('  ✅ Created 2 departments on Kumasi Plant');
+  console.log('  ✅ Created 2 departments on Takoradi Facility\n');
 
   // ══════════════════════════════════════════════════════════════════════════
   // STEP 5: CREATE USERS
   // ══════════════════════════════════════════════════════════════════════════
   console.log('👤 Creating users...');
 
-  // Admin user (password: admin123)
+  // Admin user (password: admin123) — assigned to Tema Factory, Maintenance
   const adminPassword = await hash('admin123', 10);
   const admin = await db.user.create({
     data: {
       username: 'admin',
-      email: 'admin@eam.local',
+      email: 'admin@iassetspro.com',
       passwordHash: adminPassword,
       fullName: 'System Administrator',
       staffId: 'ADM-001',
       department: 'Maintenance',
       status: 'active',
       userRoles: { create: { roleId: createdRoles['admin'] } },
-      plantAccess: { create: { plantId: plant.id, accessLevel: 'admin', isPrimary: true } },
+      plantAccess: {
+        createMany: {
+          data: [
+            { plantId: temaFactory.id, accessLevel: 'admin', isPrimary: true },
+            { plantId: kumasiPlant.id, accessLevel: 'admin', isPrimary: false },
+            { plantId: takoradiFacility.id, accessLevel: 'admin', isPrimary: false },
+          ],
+        },
+      },
     },
   });
-  console.log('  ✅ Admin: admin / admin123');
+  console.log('  ✅ Admin: admin / admin123 (Tema Factory)');
 
-  // Original demo users (password: password123)
-  const originalDemoUsers = [
-    { username: 'planner1', email: 'planner@eam.local', fullName: 'John Planner', staffId: 'PLN-001', roleSlug: 'maintenance_planner', department: 'Maintenance' },
-    { username: 'supervisor1', email: 'supervisor@eam.local', fullName: 'Jane Supervisor', staffId: 'SUP-001', roleSlug: 'maintenance_supervisor', department: 'Production', supervisorDept: true },
-    { username: 'tech1', email: 'tech@eam.local', fullName: 'Bob Technician', staffId: 'TEC-001', roleSlug: 'maintenance_technician', department: 'Maintenance' },
-    { username: 'operator1', email: 'operator@eam.local', fullName: 'Alice Operator', staffId: 'OPR-001', roleSlug: 'production_operator', department: 'Production' },
+  // Original demo users (password: password123) — spread across Ghana plants
+  const originalDemoUsers: Array<{
+    username: string; email: string; fullName: string; staffId: string;
+    roleSlug: string; department: string; supervisorDept?: boolean; plantId: string;
+  }> = [
+    { username: 'planner1', email: 'planner@iassetspro.com', fullName: 'Kwame Planner', staffId: 'PLN-001', roleSlug: 'maintenance_planner', department: 'Maintenance', plantId: temaFactory.id },
+    { username: 'supervisor1', email: 'supervisor@iassetspro.com', fullName: 'Ama Supervisor', staffId: 'SUP-001', roleSlug: 'maintenance_supervisor', department: 'Production', supervisorDept: true, plantId: temaFactory.id },
+    { username: 'tech1', email: 'tech@iassetspro.com', fullName: 'Kofi Technician', staffId: 'TEC-001', roleSlug: 'maintenance_technician', department: 'Maintenance', plantId: temaFactory.id },
+    { username: 'operator1', email: 'operator@iassetspro.com', fullName: 'Akua Operator', staffId: 'OPR-001', roleSlug: 'production_operator', department: 'Production', plantId: temaFactory.id },
   ];
 
-  // New demo users (password: password123)
-  const newDemoUsers = [
-    { username: 'manager1', email: 'manager1@eam.local', fullName: 'Carlos Plant Manager', staffId: 'PMG-001', roleSlug: 'plant_manager', department: 'Operations' },
-    { username: 'maint_mgr1', email: 'maint_mgr1@eam.local', fullName: 'Diana Maint Manager', staffId: 'MMG-001', roleSlug: 'maintenance_manager', department: 'Maintenance' },
-    { username: 'tech2', email: 'tech2@eam.local', fullName: 'Evan Technician', staffId: 'TEC-002', roleSlug: 'maintenance_technician', department: 'Maintenance' },
-    { username: 'prod_mgr1', email: 'prod_mgr1@eam.local', fullName: 'Fiona Prod Manager', staffId: 'PRM-001', roleSlug: 'production_manager', department: 'Production' },
-    { username: 'op2', email: 'op2@eam.local', fullName: 'George Operator', staffId: 'OPR-002', roleSlug: 'production_operator', department: 'Production' },
-    { username: 'inv_mgr1', email: 'inv_mgr1@eam.local', fullName: 'Helen Inv Manager', staffId: 'IVM-001', roleSlug: 'inventory_manager', department: 'Warehouse' },
-    { username: 'store1', email: 'store1@eam.local', fullName: 'Ivan Store Keeper', staffId: 'STK-001', roleSlug: 'store_keeper', department: 'Warehouse' },
-    { username: 'qual_mgr1', email: 'qual_mgr1@eam.local', fullName: 'Julia Quality Mgr', staffId: 'QAM-001', roleSlug: 'quality_manager', department: 'Quality' },
-    { username: 'safety1', email: 'safety1@eam.local', fullName: 'Kevin Safety Officer', staffId: 'SAF-001', roleSlug: 'safety_officer', department: 'HSE' },
-    { username: 'hr1', email: 'hr1@eam.local', fullName: 'Laura HR Manager', staffId: 'HRM-001', roleSlug: 'hr_manager', department: 'Human Resources' },
-    { username: 'iot1', email: 'iot1@eam.local', fullName: 'Mike IoT Engineer', staffId: 'IOT-001', roleSlug: 'iot_engineer', department: 'Engineering' },
-    { username: 'viewer1', email: 'viewer1@eam.local', fullName: 'Nancy Viewer', staffId: 'VWR-001', roleSlug: 'viewer', department: 'Management' },
+  // New demo users (password: password123) — distributed across 3 Ghana plants
+  const newDemoUsers: Array<{
+    username: string; email: string; fullName: string; staffId: string;
+    roleSlug: string; department: string; plantId: string;
+  }> = [
+    { username: 'manager1', email: 'manager1@iassetspro.com', fullName: 'Nana Plant Manager', staffId: 'PMG-001', roleSlug: 'plant_manager', department: 'Maintenance', plantId: temaFactory.id },
+    { username: 'maint_mgr1', email: 'maint_mgr1@iassetspro.com', fullName: 'Efua Maint Manager', staffId: 'MMG-001', roleSlug: 'maintenance_manager', department: 'Maintenance', plantId: temaFactory.id },
+    { username: 'tech2', email: 'tech2@iassetspro.com', fullName: 'Yaw Technician', staffId: 'TEC-002', roleSlug: 'maintenance_technician', department: 'Maintenance', plantId: kumasiPlant.id },
+    { username: 'prod_mgr1', email: 'prod_mgr1@iassetspro.com', fullName: 'Adwoa Prod Manager', staffId: 'PRM-001', roleSlug: 'production_manager', department: 'Production', plantId: temaFactory.id },
+    { username: 'op2', email: 'op2@iassetspro.com', fullName: 'Kwabena Operator', staffId: 'OPR-002', roleSlug: 'production_operator', department: 'Production', plantId: kumasiPlant.id },
+    { username: 'inv_mgr1', email: 'inv_mgr1@iassetspro.com', fullName: 'Abena Inv Manager', staffId: 'IVM-001', roleSlug: 'inventory_manager', department: 'Warehouse & Logistics', plantId: temaFactory.id },
+    { username: 'store1', email: 'store1@iassetspro.com', fullName: 'Kwaku Store Keeper', staffId: 'STK-001', roleSlug: 'store_keeper', department: 'Warehouse & Logistics', plantId: temaFactory.id },
+    { username: 'qual_mgr1', email: 'qual_mgr1@iassetspro.com', fullName: 'Ama Quality Mgr', staffId: 'QAM-001', roleSlug: 'quality_manager', department: 'Quality Control', plantId: temaFactory.id },
+    { username: 'safety1', email: 'safety1@iassetspro.com', fullName: 'Kojo Safety Officer', staffId: 'SAF-001', roleSlug: 'safety_officer', department: 'Health Safety & Environment', plantId: temaFactory.id },
+    { username: 'hr1', email: 'hr1@iassetspro.com', fullName: 'Afia HR Manager', staffId: 'HRM-001', roleSlug: 'hr_manager', department: 'Engineering', plantId: temaFactory.id },
+    { username: 'iot1', email: 'iot1@iassetspro.com', fullName: 'Emmanuel IoT Engineer', staffId: 'IOT-001', roleSlug: 'iot_engineer', department: 'Engineering', plantId: takoradiFacility.id },
+    { username: 'viewer1', email: 'viewer1@iassetspro.com', fullName: 'Grace Viewer', staffId: 'VWR-001', roleSlug: 'viewer', department: 'Utilities', plantId: temaFactory.id },
   ];
 
   const demoPassword = await hash('password123', 10);
@@ -843,7 +922,7 @@ async function seed() {
         department: u.department,
         status: 'active',
         userRoles: { create: { roleId: createdRoles[u.roleSlug] } },
-        plantAccess: { create: { plantId: plant.id, accessLevel: 'write', isPrimary: false } },
+        plantAccess: { create: { plantId: u.plantId, accessLevel: 'write', isPrimary: false } },
       },
     });
   }
@@ -1140,7 +1219,7 @@ async function seed() {
           ...item,
           plantId: plant.id,
           createdById: admin.id,
-          location: 'Main Store',
+          location: 'Tema Main Store',
           binLocation: `A-${Math.ceil(Math.random() * 5)}-${Math.ceil(Math.random() * 10)}`,
           specification: '{}',
           imageUrls: '[]',
@@ -1435,24 +1514,25 @@ async function seed() {
     update: {},
     create: {
       id: 'default',
-      companyName: 'Demo Industries Ltd.',
-      tradingName: 'Demo Industries',
-      address: '123 Industrial Boulevard',
-      city: 'Houston',
-      region: 'Texas',
-      country: 'US',
-      postalCode: '77001',
-      phone: '+1 (555) 123-4567',
-      email: 'info@demoinustries.com',
-      website: 'www.demoinustries.com',
+      companyName: 'iAssetsPro Demo Company',
+      tradingName: 'iAssetsPro',
+      address: 'Tema Heavy Industrial Area, Free Zone',
+      city: 'Accra',
+      region: 'Greater Accra',
+      country: 'Ghana',
+      postalCode: 'TA23',
+      phone: '+233 (0) 302 123 456',
+      email: 'info@iassetspro.com',
+      website: 'www.iassetspro.com',
       industry: 'manufacturing',
       employeeCount: '100-500',
-      currency: 'USD',
-      timezone: 'America/Chicago',
+      currency: 'GHS',
+      timezone: 'Africa/Accra',
+      dateFormat: 'DD/MM/YYYY',
     },
   });
 
-  console.log('  ✅ Company profile created\n');
+  console.log('  ✅ Company profile created (Ghana — Accra, Greater Accra)\n');
 
   // ══════════════════════════════════════════════════════════════════════════
   // FINAL SUMMARY
@@ -1463,12 +1543,14 @@ async function seed() {
   const finalUserCount = await db.user.count();
 
   console.log('═════════════════════════════════════════════════════════════');
-  console.log(`  🎉 iAssetsPro seeding complete!`);
+  console.log(`  🎉 iAssetsPro seeding complete! (Ghana Enterprise Edition)`);
   console.log('═════════════════════════════════════════════════════════════');
   console.log(`  📋 Permissions:     ${finalPermCount}`);
   console.log(`  🔑 Roles:           ${finalRoleCount}`);
   console.log(`  🔗 Role-Perms:      ${finalRolePermCount}`);
   console.log(`  👥 Users:           ${finalUserCount}`);
+  console.log(`  🏭 Plants:          3 (Tema, Kumasi, Takoradi)`);
+  console.log(`  🏢 Departments:     11 (7 on Tema, 2 on Kumasi, 2 on Takoradi)`);
   console.log('═════════════════════════════════════════════════════════════');
   console.log('\nDefault users:\n');
   console.log('  Admin:               admin / admin123');

@@ -36,10 +36,10 @@ import {
   XCircle, Loader2,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
+import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 
 export function InventoryPage() {
   const [items, setItems] = useState<any[]>([]);
-  const [plantList, setPlantList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -76,9 +76,8 @@ export function InventoryPage() {
   const [form, setForm] = useState(emptyForm);
 
   const loadData = useCallback(() => {
-    Promise.all([api.get<any[]>('/api/inventory'), api.get<any[]>('/api/plants')]).then(([iRes, pRes]) => {
+    api.get<any[]>('/api/inventory').then((iRes) => {
       if (iRes.success && iRes.data) setItems(Array.isArray(iRes.data) ? iRes.data : []);
-      if (pRes.success && pRes.data) setPlantList(Array.isArray(pRes.data) ? pRes.data : []);
       setLoading(false);
     });
   }, []);
@@ -330,10 +329,22 @@ export function InventoryPage() {
                 </Select>
               </div>
               <div className="space-y-1.5"><Label>Plant</Label>
-                <Select value={form.plantId} onValueChange={v => setForm(f => ({ ...f, plantId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                  <SelectContent>{plantList.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-                </Select>
+                <AsyncSearchableSelect
+                  value={form.plantId}
+                  onValueChange={(val) => setForm(f => ({ ...f, plantId: val }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/plants');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((p: any) => ({
+                        value: p.id,
+                        label: p.name,
+                        group: p.city || p.location || undefined,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select plant..."
+                />
               </div>
             </div>
             <div className="grid grid-cols-4 gap-3">
@@ -344,10 +355,42 @@ export function InventoryPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Unit Cost ($)</Label><Input type="number" value={form.unitCost} onChange={e => setForm(f => ({ ...f, unitCost: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label>Supplier</Label><Input value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Supplier</Label>
+                <AsyncSearchableSelect
+                  value={form.supplier}
+                  onValueChange={(val) => setForm(f => ({ ...f, supplier: val }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/suppliers');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((s: any) => ({
+                        value: s.id,
+                        label: s.name,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select supplier..."
+                />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Location</Label><Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Location</Label>
+                <AsyncSearchableSelect
+                  value={form.location}
+                  onValueChange={(val) => setForm(f => ({ ...f, location: val }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/inventory/locations');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((l: any) => ({
+                        value: l.id,
+                        label: l.name + (l.code ? ` (${l.code})` : ''),
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select location..."
+                />
+              </div>
               <div className="space-y-1.5"><Label>Bin Location</Label><Input value={form.binLocation} onChange={e => setForm(f => ({ ...f, binLocation: e.target.value }))} /></div>
             </div>
           </div>
@@ -579,15 +622,22 @@ export function InventoryCategoriesPage() {
             <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Category description..." rows={2} /></div>
             <div className="space-y-2">
               <Label>Parent Category</Label>
-              <Select value={form.parentId} onValueChange={v => setForm(f => ({ ...f, parentId: v }))}>
-                <SelectTrigger><SelectValue placeholder="None (root category)" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None (root category)</SelectItem>
-                  {categories.map((c: any) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AsyncSearchableSelect
+                value={form.parentId}
+                onValueChange={(v) => setForm(f => ({ ...f, parentId: v }))}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/asset-categories');
+                  if (res.success && res.data) {
+                    const cats = Array.isArray(res.data) ? res.data : (res.data.categories || []);
+                    return cats.map((c: any) => ({
+                      value: c.id,
+                      label: c.name + (c.code ? ` (${c.code})` : ''),
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="None (root category)"
+              />
             </div>
           </div>
           <DialogFooter>
@@ -607,15 +657,23 @@ export function InventoryCategoriesPage() {
             <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} /></div>
             <div className="space-y-2">
               <Label>Parent Category</Label>
-              <Select value={form.parentId} onValueChange={v => setForm(f => ({ ...f, parentId: v }))}>
-                <SelectTrigger><SelectValue placeholder="None (root)" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None (root category)</SelectItem>
-                  {categories.filter((c: any) => c.id !== selectedCat?.id).map((c: any) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AsyncSearchableSelect
+                value={form.parentId}
+                onValueChange={(v) => setForm(f => ({ ...f, parentId: v }))}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/asset-categories');
+                  if (res.success && res.data) {
+                    const cats = Array.isArray(res.data) ? res.data : (res.data.categories || []);
+                    return cats.filter((c: any) => c.id !== selectedCat?.id).map((c: any) => ({
+                      value: c.id,
+                      label: c.name + (c.code ? ` (${c.code})` : ''),
+                    }));
+                  }
+                  return [];
+                }}
+                deps={[selectedCat]}
+                placeholder="None (root)"
+              />
             </div>
           </div>
           <DialogFooter>

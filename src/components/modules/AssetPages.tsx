@@ -18,6 +18,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AsyncSearchableSelect, SearchableSelect } from '@/components/ui/searchable-select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -65,7 +66,7 @@ export function AssetsPage() {
     if (pageParams?.id && !detailId) setDetailId(pageParams.id);
   }, [pageParams]);
 
-  const emptyForm = { name: '', assetTag: '', serialNumber: '', categoryId: '', manufacturer: '', model: '', yearManufactured: '', condition: 'new', status: 'operational', criticality: 'medium', location: '', building: '', floor: '', area: '', plantId: '', departmentId: '', description: '', purchaseDate: '', purchaseCost: '', expectedLifeYears: '' };
+  const emptyForm = { name: '', assetTag: '', serialNumber: '', categoryId: '', manufacturer: '', model: '', yearManufactured: '', condition: 'new', status: 'operational', criticality: 'medium', location: '', building: '', floor: '', area: '', plantId: '', departmentId: '', assignedToId: '', parentId: '', description: '', purchaseDate: '', purchaseCost: '', expectedLifeYears: '' };
   const [form, setForm] = useState(emptyForm);
 
   const loadData = useCallback(() => {
@@ -97,7 +98,7 @@ export function AssetsPage() {
   }), [assets]);
 
   const openCreate = () => { setEditId(null); setForm(emptyForm); setDialogOpen(true); };
-  const openEdit = (a: any) => { setEditId(a.id); setForm({ name: a.name, assetTag: a.assetTag, serialNumber: a.serialNumber || '', categoryId: a.categoryId || '', manufacturer: a.manufacturer || '', model: a.model || '', yearManufactured: a.yearManufactured?.toString() || '', condition: a.condition || 'new', status: a.status || 'operational', criticality: a.criticality || 'medium', location: a.location || '', building: a.building || '', floor: a.floor || '', area: a.area || '', plantId: a.plantId || '', departmentId: a.departmentId || '', description: a.description || '', purchaseDate: a.purchaseDate ? a.purchaseDate.slice(0, 10) : '', purchaseCost: a.purchaseCost?.toString() || '', expectedLifeYears: a.expectedLifeYears?.toString() || '' }); setDialogOpen(true); };
+  const openEdit = (a: any) => { setEditId(a.id); setForm({ name: a.name, assetTag: a.assetTag, serialNumber: a.serialNumber || '', categoryId: a.categoryId || '', manufacturer: a.manufacturer || '', model: a.model || '', yearManufactured: a.yearManufactured?.toString() || '', condition: a.condition || 'new', status: a.status || 'operational', criticality: a.criticality || 'medium', location: a.location || '', building: a.building || '', floor: a.floor || '', area: a.area || '', plantId: a.plantId || '', departmentId: a.departmentId || '', assignedToId: a.assignedToId || '', parentId: a.parentId || '', description: a.description || '', purchaseDate: a.purchaseDate ? a.purchaseDate.slice(0, 10) : '', purchaseCost: a.purchaseCost?.toString() || '', expectedLifeYears: a.expectedLifeYears?.toString() || '' }); setDialogOpen(true); };
 
   const handleSave = async () => {
     if (!form.name || !form.assetTag) { toast.error('Name and asset tag required'); return; }
@@ -226,10 +227,22 @@ export function AssetsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Serial Number</Label><Input value={form.serialNumber} onChange={e => setForm(f => ({ ...f, serialNumber: e.target.value }))} /></div>
               <div className="space-y-1.5"><Label>Category</Label>
-                <Select value={form.categoryId} onValueChange={v => setForm(f => ({ ...f, categoryId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
-                  <SelectContent>{categories.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
-                </Select>
+                <AsyncSearchableSelect
+                  value={form.categoryId}
+                  onValueChange={v => setForm(f => ({ ...f, categoryId: v }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/asset-categories');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((c: any) => ({
+                        value: c.id,
+                        label: c.name,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select category..."
+                  searchPlaceholder="Search categories..."
+                />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3">
@@ -265,12 +278,80 @@ export function AssetsPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Plant</Label>
-                <Select value={form.plantId} onValueChange={v => setForm(f => ({ ...f, plantId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select plant" /></SelectTrigger>
-                  <SelectContent>{plantList.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-                </Select>
+                <AsyncSearchableSelect
+                  value={form.plantId}
+                  onValueChange={v => setForm(f => ({ ...f, plantId: v }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/plants');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((p: any) => ({
+                        value: p.id,
+                        label: p.name,
+                        group: p.city || p.location || undefined,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select plant..."
+                  searchPlaceholder="Search plants..."
+                />
               </div>
-              <div className="space-y-1.5"><Label>Department ID</Label><Input value={form.departmentId} onChange={e => setForm(f => ({ ...f, departmentId: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Department</Label>
+                <AsyncSearchableSelect
+                  value={form.departmentId}
+                  onValueChange={v => setForm(f => ({ ...f, departmentId: v }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/departments');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
+                        value: d.id,
+                        label: `${d.name} (${d.code || ''})`,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select department..."
+                  searchPlaceholder="Search departments..."
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Assigned To</Label>
+                <AsyncSearchableSelect
+                  value={form.assignedToId}
+                  onValueChange={v => setForm(f => ({ ...f, assignedToId: v }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/users');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                        value: u.id,
+                        label: `${u.fullName || u.username} (${u.username || ''})`,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select user..."
+                  searchPlaceholder="Search users..."
+                />
+              </div>
+              <div className="space-y-1.5"><Label>Parent Asset</Label>
+                <AsyncSearchableSelect
+                  value={form.parentId}
+                  onValueChange={v => setForm(f => ({ ...f, parentId: v }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/assets?limit=999');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                        value: a.id,
+                        label: `${a.name} [${a.assetTag || ''}]`,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select parent asset..."
+                  searchPlaceholder="Search assets..."
+                />
+              </div>
             </div>
             <div className="space-y-1.5"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} /></div>
             <div className="grid grid-cols-3 gap-3">
@@ -862,7 +943,24 @@ export function AssetsBomPage() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Add BOM Component</DialogTitle><DialogDescription>Add a new component to a Bill of Materials</DialogDescription></DialogHeader>
           <div className="space-y-4">
-            <div><Label>Parent Asset</Label><Select value={form.parentAsset} onValueChange={v => setForm(f => ({ ...f, parentAsset: v }))}><SelectTrigger><SelectValue placeholder="Select parent asset" /></SelectTrigger><SelectContent>{assets.map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({a.assetTag})</SelectItem>)}</SelectContent></Select></div>
+            <div><Label>Parent Asset</Label>
+                <AsyncSearchableSelect
+                  value={form.parentAsset}
+                  onValueChange={v => setForm(f => ({ ...f, parentAsset: v }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/assets?limit=999');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                        value: a.id,
+                        label: `${a.name} [${a.assetTag || ''}]`,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select parent asset..."
+                  searchPlaceholder="Search assets..."
+                />
+              </div>
             <div><Label>Component</Label><Select value={form.component} onValueChange={v => setForm(f => ({ ...f, component: v }))}><SelectTrigger><SelectValue placeholder="Select component" /></SelectTrigger><SelectContent>{assets.map(a => <SelectItem key={a.id} value={a.id}>{a.name} ({a.assetTag})</SelectItem>)}</SelectContent></Select></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Part Number</Label><Input placeholder="e.g. SPD-4521-A" value={form.partNumber} onChange={e => setForm(f => ({ ...f, partNumber: e.target.value }))} /></div>

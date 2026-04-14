@@ -18,6 +18,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SearchableSelect, AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -48,7 +49,6 @@ import {
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
-
 export function MaintenanceRequestsPage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -218,7 +218,9 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('medium');
-  const [assetName, setAssetName] = useState('');
+  const [assetId, setAssetId] = useState('');
+  const [departmentId, setDepartmentId] = useState('');
+  const [supervisorId, setSupervisorId] = useState('');
   const [location, setLocation] = useState('');
   const [category, setCategory] = useState('');
   const [machineDown, setMachineDown] = useState(false);
@@ -227,7 +229,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const res = await api.post('/api/maintenance-requests', { title, description, priority, assetName, location, category, machineDown });
+    const res = await api.post('/api/maintenance-requests', { title, description, priority, assetId, departmentId, supervisorId, location, category, machineDown });
     if (res.success) {
       toast.success('Maintenance request created');
       onSuccess();
@@ -279,11 +281,67 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label>Asset / Machine</Label>
-          <Input value={assetName} onChange={e => setAssetName(e.target.value)} placeholder="e.g. Conveyor Belt B3" />
+          <AsyncSearchableSelect
+            value={assetId}
+            onValueChange={setAssetId}
+            fetchOptions={async () => {
+              const res = await api.get('/api/assets');
+              if (res.success && res.data) {
+                return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                  value: a.id,
+                  label: `${a.name} [${a.assetTag}]`,
+                  badge: a.status,
+                }));
+              }
+              return [];
+            }}
+            placeholder="Select asset..."
+            searchPlaceholder="Search assets by name or tag..."
+          />
         </div>
+        <div className="space-y-2">
+          <Label>Department</Label>
+          <AsyncSearchableSelect
+            value={departmentId}
+            onValueChange={setDepartmentId}
+            fetchOptions={async () => {
+              const res = await api.get('/api/departments');
+              if (res.success && res.data) {
+                return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
+                  value: d.id,
+                  label: d.name,
+                }));
+              }
+              return [];
+            }}
+            placeholder="Select department..."
+            searchPlaceholder="Search departments..."
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label>Location</Label>
           <Input value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Production Line 2" />
+        </div>
+        <div className="space-y-2">
+          <Label>Supervisor</Label>
+          <AsyncSearchableSelect
+            value={supervisorId}
+            onValueChange={setSupervisorId}
+            fetchOptions={async () => {
+              const res = await api.get('/api/users');
+              if (res.success && res.data) {
+                return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                  value: u.id,
+                  label: u.fullName,
+                }));
+              }
+              return [];
+            }}
+            placeholder="Select supervisor..."
+            searchPlaceholder="Search users..."
+          />
         </div>
       </div>
       <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-100">
@@ -789,7 +847,9 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
   const [description, setDescription] = useState('');
   const [type, setType] = useState('corrective');
   const [priority, setPriority] = useState('medium');
-  const [assetName, setAssetName] = useState('');
+  const [assetId, setAssetId] = useState('');
+  const [departmentId, setDepartmentId] = useState('');
+  const [assignedToId, setAssignedToId] = useState('');
   const [estimatedHours, setEstimatedHours] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -797,7 +857,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     e.preventDefault();
     setLoading(true);
     const res = await api.post('/api/work-orders', {
-      title, description, type, priority, assetName,
+      title, description, type, priority, assetId, departmentId, assignedToId,
       estimatedHours: estimatedHours ? parseFloat(estimatedHours) : undefined,
     });
     if (res.success) {
@@ -851,7 +911,63 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label>Asset / Machine</Label>
-          <Input value={assetName} onChange={e => setAssetName(e.target.value)} placeholder="e.g. Pump Station A" />
+          <AsyncSearchableSelect
+            value={assetId}
+            onValueChange={setAssetId}
+            fetchOptions={async () => {
+              const res = await api.get('/api/assets');
+              if (res.success && res.data) {
+                return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                  value: a.id,
+                  label: `${a.name} [${a.assetTag}]`,
+                  badge: a.status,
+                }));
+              }
+              return [];
+            }}
+            placeholder="Select asset..."
+            searchPlaceholder="Search assets by name or tag..."
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Department</Label>
+          <AsyncSearchableSelect
+            value={departmentId}
+            onValueChange={setDepartmentId}
+            fetchOptions={async () => {
+              const res = await api.get('/api/departments');
+              if (res.success && res.data) {
+                return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
+                  value: d.id,
+                  label: d.name,
+                }));
+              }
+              return [];
+            }}
+            placeholder="Select department..."
+            searchPlaceholder="Search departments..."
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label>Assigned To</Label>
+          <AsyncSearchableSelect
+            value={assignedToId}
+            onValueChange={setAssignedToId}
+            fetchOptions={async () => {
+              const res = await api.get('/api/users');
+              if (res.success && res.data) {
+                return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                  value: u.id,
+                  label: `${u.fullName} (${u.username})`,
+                }));
+              }
+              return [];
+            }}
+            placeholder="Select technician..."
+            searchPlaceholder="Search technicians..."
+          />
         </div>
         <div className="space-y-2">
           <Label>Est. Hours</Label>
@@ -879,7 +995,6 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const [actionDialog, setActionDialog] = useState<string | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
   const { hasPermission } = useAuthStore();
-  const [users, setUsers] = useState<User[]>([]);
   // Edit WO
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
@@ -921,7 +1036,6 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
         setLoading(false);
       }
     });
-    api.get<User[]>('/api/users').then(res => { if (res.success && res.data) setUsers(res.data); });
     // Fetch available transitions from state machine
     api.get(`/api/work-orders/${id}/transitions`).then(res => {
       if (active && res.success && res.data) setAvailableTransitions(res.data);
@@ -998,6 +1112,9 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     setEditForm({
       title: wo.title, description: wo.description || '', type: wo.type,
       priority: wo.priority, estimatedHours: wo.estimatedHours?.toString() || '',
+      assetId: (wo as any).assetId || '',
+      departmentId: (wo as any).departmentId || '',
+      assignedToId: (wo as any).assignedToId || '',
       plannedStart: wo.plannedStart ? wo.plannedStart.slice(0, 16) : '',
       plannedEnd: wo.plannedEnd ? wo.plannedEnd.slice(0, 16) : '',
       failureDescription: wo.failureDescription || '',
@@ -1021,6 +1138,9 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     if (editForm.failureDescription !== undefined) payload.failureDescription = editForm.failureDescription;
     if (editForm.causeDescription !== undefined) payload.causeDescription = editForm.causeDescription;
     if (editForm.actionDescription !== undefined) payload.actionDescription = editForm.actionDescription;
+    if (editForm.assetId) payload.assetId = editForm.assetId;
+    if (editForm.departmentId) payload.departmentId = editForm.departmentId;
+    if (editForm.assignedToId) payload.assignedToId = editForm.assignedToId;
     const res = await api.put(`/api/work-orders/${id}`, payload);
     if (res.success) { toast.success('Work order updated'); setEditOpen(false); fetchWO(); }
     else { toast.error(res.error || 'Update failed'); }
@@ -1119,15 +1239,22 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
       <Dialog open={actionDialog === 'assign'} onOpenChange={() => setActionDialog(null)}>
         <DialogContent>
           <DialogHeader><DialogTitle>Assign Work Order</DialogTitle><DialogDescription>Select a technician to assign this work order.</DialogDescription></DialogHeader>
-          <Select onValueChange={(val) => {
-            const u = users.find(x => x.id === val);
-            if (u) handleAction('assign', { assignedToId: u.id, assignedToName: u.fullName });
-          }}>
-            <SelectTrigger><SelectValue placeholder="Select technician..." /></SelectTrigger>
-            <SelectContent>
-              {users.map(u => <SelectItem key={u.id} value={u.id}>{u.fullName} ({u.username})</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <AsyncSearchableSelect
+            value=""
+            onValueChange={(val) => handleAction('assign', { assignedToId: val, assignedToName: val })}
+            fetchOptions={async () => {
+              const res = await api.get('/api/users');
+              if (res.success && res.data) {
+                return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                  value: u.id,
+                  label: `${u.fullName} (${u.username})`,
+                }));
+              }
+              return [];
+            }}
+            placeholder="Select technician..."
+            searchPlaceholder="Search technicians..."
+          />
         </DialogContent>
       </Dialog>
 
@@ -1168,8 +1295,67 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Asset / Machine</Label>
+                <AsyncSearchableSelect
+                  value={editForm.assetId || ''}
+                  onValueChange={v => setEditForm(f => ({ ...f, assetId: v }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/assets');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                        value: a.id,
+                        label: `${a.name} [${a.assetTag}]`,
+                        badge: a.status,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select asset..."
+                  searchPlaceholder="Search assets by name or tag..."
+                />
+              </div>
+              <div className="space-y-1.5"><Label>Department</Label>
+                <AsyncSearchableSelect
+                  value={editForm.departmentId || ''}
+                  onValueChange={v => setEditForm(f => ({ ...f, departmentId: v }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/departments');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
+                        value: d.id,
+                        label: d.name,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select department..."
+                  searchPlaceholder="Search departments..."
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Assigned To</Label>
+                <AsyncSearchableSelect
+                  value={editForm.assignedToId || ''}
+                  onValueChange={v => setEditForm(f => ({ ...f, assignedToId: v }))}
+                  fetchOptions={async () => {
+                    const res = await api.get('/api/users');
+                    if (res.success && res.data) {
+                      return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                        value: u.id,
+                        label: `${u.fullName} (${u.username})`,
+                      }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Select technician..."
+                  searchPlaceholder="Search technicians..."
+                />
+              </div>
               <div className="space-y-1.5"><Label>Est. Hours</Label><Input type="number" value={editForm.estimatedHours || ''} onChange={e => setEditForm(f => ({ ...f, estimatedHours: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Planned Start</Label><Input type="datetime-local" value={editForm.plannedStart || ''} onChange={e => setEditForm(f => ({ ...f, plannedStart: e.target.value }))} /></div>
               <div className="space-y-1.5"><Label>Planned End</Label><Input type="datetime-local" value={editForm.plannedEnd || ''} onChange={e => setEditForm(f => ({ ...f, plannedEnd: e.target.value }))} /></div>
             </div>
@@ -1487,12 +1673,11 @@ export function PmSchedulesPage() {
   const [formPriority, setFormPriority] = useState('medium');
   const [formEstDuration, setFormEstDuration] = useState('');
   const [formAssignedToId, setFormAssignedToId] = useState('');
+  const [formDepartmentId, setFormDepartmentId] = useState('');
   const [formAutoGenWO, setFormAutoGenWO] = useState(true);
   const [formLeadDays, setFormLeadDays] = useState('3');
   const [formNextDueDate, setFormNextDueDate] = useState('');
 
-  const [assets, setAssets] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
   const [pmAnalytics, setPmAnalytics] = useState<any>(null);
 
   const fetchSchedules = useCallback(async () => {
@@ -1506,19 +1691,7 @@ export function PmSchedulesPage() {
     setLoading(false);
   }, [dueSoonFilter]);
 
-  const fetchLookups = useCallback(async () => {
-    try {
-      const [assetRes, userRes] = await Promise.all([
-        api.get('/api/assets?limit=200'),
-        api.get('/api/users'),
-      ]);
-      if (assetRes.success) setAssets(assetRes.data || []);
-      if (userRes.success) setUsers((userRes.data || []).filter((u: any) => u.status === 'active'));
-    } catch { /* ignore */ }
-  }, []);
-
   useEffect(() => { fetchSchedules(); }, [fetchSchedules]);
-  useEffect(() => { fetchLookups(); }, [fetchLookups]);
 
   useEffect(() => {
     api.get('/api/pm-analytics').then(res => {
@@ -1543,7 +1716,7 @@ export function PmSchedulesPage() {
     setFormTitle(''); setFormDesc(''); setFormAssetId('');
     setFormFreqType('monthly'); setFormFreqValue('1');
     setFormPriority('medium'); setFormEstDuration('');
-    setFormAssignedToId(''); setFormAutoGenWO(true);
+    setFormAssignedToId(''); setFormDepartmentId(''); setFormAutoGenWO(true);
     setFormLeadDays('3'); setFormNextDueDate('');
   };
 
@@ -1557,6 +1730,7 @@ export function PmSchedulesPage() {
     setFormPriority(item.priority || 'medium');
     setFormEstDuration(item.estimatedDuration ? String(item.estimatedDuration) : '');
     setFormAssignedToId(item.assignedToId || '');
+    setFormDepartmentId(item.departmentId || '');
     setFormAutoGenWO(item.autoGenerateWO !== false);
     setFormLeadDays(String(item.leadDays || 3));
     setFormNextDueDate(item.nextDueDate ? item.nextDueDate.split('T')[0] : '');
@@ -1574,6 +1748,7 @@ export function PmSchedulesPage() {
         priority: formPriority,
         estimatedDuration: formEstDuration ? parseFloat(formEstDuration) : null,
         assignedToId: formAssignedToId || null,
+        departmentId: formDepartmentId || null,
         autoGenerateWO: formAutoGenWO,
         leadDays: parseInt(formLeadDays, 10) || 3,
         nextDueDate: formNextDueDate || null,
@@ -1860,14 +2035,23 @@ export function PmSchedulesPage() {
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Asset *</Label>
-              <Select value={formAssetId} onValueChange={setFormAssetId}>
-                <SelectTrigger><SelectValue placeholder="Select asset" /></SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {assets.map(a => (
-                    <SelectItem key={a.id} value={a.id}>{a.name} ({a.assetTag})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AsyncSearchableSelect
+                value={formAssetId}
+                onValueChange={setFormAssetId}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/assets');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                      value: a.id,
+                      label: `${a.name} [${a.assetTag}]`,
+                      badge: a.status,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select asset..."
+                searchPlaceholder="Search assets by name or tag..."
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
@@ -1905,14 +2089,41 @@ export function PmSchedulesPage() {
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Assigned To</Label>
-              <Select value={formAssignedToId} onValueChange={setFormAssignedToId}>
-                <SelectTrigger><SelectValue placeholder="Select technician" /></SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {users.map(u => (
-                    <SelectItem key={u.id} value={u.id}>{u.fullName}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AsyncSearchableSelect
+                value={formAssignedToId}
+                onValueChange={setFormAssignedToId}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/users');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                      value: u.id,
+                      label: u.fullName,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select technician..."
+                searchPlaceholder="Search technicians..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Department</Label>
+              <AsyncSearchableSelect
+                value={formDepartmentId}
+                onValueChange={setFormDepartmentId}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/departments');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
+                      value: d.id,
+                      label: d.name,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select department..."
+                searchPlaceholder="Search departments..."
+              />
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Next Due Date</Label>
@@ -2507,7 +2718,7 @@ export function MaintenanceToolsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', category: '', location: '', serialNumber: '', condition: '' });
+  const [form, setForm] = useState({ name: '', category: '', location: '', serialNumber: '', condition: '', plantId: '', assignedToId: '' });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tools, setTools] = useState<any[]>([]);
@@ -2566,7 +2777,7 @@ export function MaintenanceToolsPage() {
       if (res.success) {
         toast.success('Tool added successfully');
         setCreateOpen(false);
-        setForm({ name: '', category: '', location: '', serialNumber: '', condition: '' });
+        setForm({ name: '', category: '', location: '', serialNumber: '', condition: '', plantId: '', assignedToId: '' });
         loadTools();
       } else {
         toast.error(res.error || 'Failed to add tool');
@@ -2594,11 +2805,67 @@ export function MaintenanceToolsPage() {
                 <div className="grid gap-4 py-2">
                   <div className="grid gap-2"><Label className="text-xs">Tool Name</Label><Input placeholder="e.g. Torque Wrench 1/2 inch" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="grid gap-2"><Label className="text-xs">Category</Label><Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger><SelectContent><SelectItem value="Hand Tool">Hand Tool</SelectItem><SelectItem value="Power Tool">Power Tool</SelectItem><SelectItem value="Measurement">Measurement</SelectItem><SelectItem value="Safety">Safety</SelectItem><SelectItem value="Specialty">Specialty</SelectItem></SelectContent></Select></div>
+                    <div className="grid gap-2"><Label className="text-xs">Category</Label>
+                      <SearchableSelect
+                        value={form.category}
+                        onValueChange={v => setForm({ ...form, category: v })}
+                        options={[
+                          { value: 'Hand Tool', label: 'Hand Tool', group: 'Tool Types' },
+                          { value: 'Power Tool', label: 'Power Tool', group: 'Tool Types' },
+                          { value: 'Measurement', label: 'Measurement', group: 'Tool Types' },
+                          { value: 'Safety', label: 'Safety', group: 'Tool Types' },
+                          { value: 'Cutting', label: 'Cutting', group: 'Tool Types' },
+                          { value: 'Welding', label: 'Welding', group: 'Tool Types' },
+                          { value: 'Lifting', label: 'Lifting', group: 'Tool Types' },
+                          { value: 'Pneumatic', label: 'Pneumatic', group: 'Tool Types' },
+                          { value: 'Electrical', label: 'Electrical', group: 'Tool Types' },
+                        ]}
+                        placeholder="Select category..."
+                        searchPlaceholder="Search categories..."
+                        groupBy={false}
+                      />
+                    </div>
                     <div className="grid gap-2"><Label className="text-xs">Condition</Label><Select value={form.condition} onValueChange={v => setForm({ ...form, condition: v })}><SelectTrigger><SelectValue placeholder="Condition" /></SelectTrigger><SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent></Select></div>
                   </div>
                   <div className="grid gap-2"><Label className="text-xs">Location</Label><Input placeholder="e.g. Tool Room A-1" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} /></div>
                   <div className="grid gap-2"><Label className="text-xs">Serial Number</Label><Input placeholder="e.g. SN-2024-001" value={form.serialNumber} onChange={e => setForm({ ...form, serialNumber: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label className="text-xs">Plant</Label>
+                    <AsyncSearchableSelect
+                      value={form.plantId}
+                      onValueChange={v => setForm({ ...form, plantId: v })}
+                      fetchOptions={async () => {
+                        const res = await api.get('/api/plants');
+                        if (res.success && res.data) {
+                          return (Array.isArray(res.data) ? res.data : []).map((p: any) => ({
+                            value: p.id,
+                            label: p.name,
+                            group: p.city || p.location || undefined,
+                          }));
+                        }
+                        return [];
+                      }}
+                      placeholder="Select plant..."
+                      searchPlaceholder="Search plants..."
+                    />
+                  </div>
+                  <div className="grid gap-2"><Label className="text-xs">Assigned To</Label>
+                    <AsyncSearchableSelect
+                      value={form.assignedToId}
+                      onValueChange={v => setForm({ ...form, assignedToId: v })}
+                      fetchOptions={async () => {
+                        const res = await api.get('/api/users');
+                        if (res.success && res.data) {
+                          return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                            value: u.id,
+                            label: `${u.fullName || u.username} (${u.username || ''})`,
+                          }));
+                        }
+                        return [];
+                      }}
+                      placeholder="Select user..."
+                      searchPlaceholder="Search users..."
+                    />
+                  </div>
                 </div>
                 <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving}>{saving ? 'Adding...' : 'Add Tool'}</Button></DialogFooter>
               </DialogContent>

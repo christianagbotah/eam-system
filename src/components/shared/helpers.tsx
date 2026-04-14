@@ -17,6 +17,102 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 
 // ============================================================================
+// CURRENCY & NUMBER FORMATTING (Ghana GHS by default)
+// ============================================================================
+
+const CURRENCY_MAP: Record<string, { code: string; symbol: string; locale: string }> = {
+  GHS: { code: 'GHS', symbol: '₵', locale: 'en-GH' },
+  USD: { code: 'USD', symbol: '$', locale: 'en-US' },
+  EUR: { code: 'EUR', symbol: '€', locale: 'de-DE' },
+  GBP: { code: 'GBP', symbol: '£', locale: 'en-GB' },
+  NGN: { code: 'NGN', symbol: '₦', locale: 'en-NG' },
+};
+
+/** Get company currency from localStorage (set during login) */
+function getCompanyCurrency(): string {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('company_currency') || 'GHS';
+  }
+  return 'GHS';
+}
+
+/** Format a number as currency (default GHS) */
+export function formatCurrency(amount: number | undefined | null, currencyCode?: string): string {
+  if (amount == null || isNaN(amount)) return '-';
+  const code = currencyCode || getCompanyCurrency();
+  const curr = CURRENCY_MAP[code] || CURRENCY_MAP.GHS;
+
+  try {
+    return new Intl.NumberFormat(curr.locale, {
+      style: 'currency',
+      currency: curr.code,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    // Fallback: manual formatting
+    const formatted = Math.abs(amount).toLocaleString(undefined, {
+      minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
+      maximumFractionDigits: 2,
+    });
+    return `${amount < 0 ? '-' : ''}${curr.symbol}${formatted}`;
+  }
+}
+
+/** Format a number with commas (e.g. 1,234,567) */
+export function formatNumber(num: number | undefined | null, decimals?: number): string {
+  if (num == null || isNaN(num)) return '-';
+  return num.toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+/** Format percentage */
+export function formatPercent(value: number | undefined | null, decimals = 1): string {
+  if (value == null || isNaN(value)) return '-';
+  return `${value >= 0 ? '+' : ''}${value.toFixed(decimals)}%`;
+}
+
+/** Ghana-aware date format from company settings */
+export function getDateFormat(): string {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('company_date_format') || 'dd/MM/yyyy';
+  }
+  return 'dd/MM/yyyy';
+}
+
+/** Map stored date format to date-fns pattern */
+function mapDateFormat(stored: string): string {
+  const map: Record<string, string> = {
+    'DD/MM/YYYY': 'dd/MM/yyyy',
+    'MM/DD/YYYY': 'MM/dd/yyyy',
+    'YYYY-MM-DD': 'yyyy-MM-dd',
+    'dd/MM/yyyy': 'dd/MM/yyyy',
+    'MM/dd/yyyy': 'MM/dd/yyyy',
+  };
+  return map[stored] || 'dd/MM/yyyy';
+}
+
+/** Format date using company date format */
+export function formatDateLocal(d?: string | Date): string {
+  if (!d) return '-';
+  const fmt = mapDateFormat(getDateFormat());
+  try {
+    return format(new Date(d), fmt);
+  } catch {
+    return '-';
+  }
+}
+
+/** Get Ghana regions list */
+export const GHANA_REGIONS = [
+  'Greater Accra', 'Ashanti', 'Western', 'Eastern', 'Central',
+  'Northern', 'Volta', 'Upper East', 'Upper West', 'Bono',
+  'Bono East', 'Ahafo', 'Savannah', 'North East', 'Oti', 'Western North',
+] as const;
+
+// ============================================================================
 // HELPERS
 // ============================================================================
 

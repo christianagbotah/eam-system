@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { EmptyState, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
+import { AsyncSearchableSelect, MultiSearchableSelect } from '@/components/ui/searchable-select';
 
 // SettingsUsersPage
 export function SettingsUsersPage() {
@@ -206,15 +207,33 @@ export function SettingsUsersPage() {
             </div>
             <div className="space-y-1.5"><Label>Password *</Label><Input type="password" value={createForm.password} onChange={e => setCreateForm(f => ({ ...f, password: e.target.value }))} /></div>
             <div className="space-y-1.5">
+              <Label>Department</Label>
+              <AsyncSearchableSelect
+                value={createForm.department}
+                onValueChange={v => setCreateForm(f => ({ ...f, department: v }))}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/departments');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
+                      value: d.id,
+                      label: `${d.name} (${d.code})`,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select department..."
+                searchPlaceholder="Search departments..."
+              />
+            </div>
+            <div className="space-y-1.5">
               <Label>Roles</Label>
-              <div className="grid grid-cols-2 gap-2 mt-1">
-                {roles.map(r => (
-                  <label key={r.id} className="flex items-center gap-2 text-sm p-2 rounded-md bg-muted/30 cursor-pointer">
-                    <input type="checkbox" checked={createForm.roleIds.includes(r.id)} onChange={e => setCreateForm(f => ({ ...f, roleIds: e.target.checked ? [...f.roleIds, r.id] : f.roleIds.filter(id => id !== r.id) }))} className="rounded" />
-                    <span>{r.name}</span>
-                  </label>
-                ))}
-              </div>
+              <MultiSearchableSelect
+                values={createForm.roleIds}
+                onValuesChange={roleIds => setCreateForm(f => ({ ...f, roleIds }))}
+                options={roles.map(r => ({ value: r.id, label: r.name }))}
+                placeholder="Select roles..."
+                searchPlaceholder="Search roles..."
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Status</Label>
@@ -245,15 +264,33 @@ export function SettingsUsersPage() {
               <div className="space-y-1.5"><Label>Phone</Label><Input value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} /></div>
             </div>
             <div className="space-y-1.5">
+              <Label>Department</Label>
+              <AsyncSearchableSelect
+                value={editForm.department}
+                onValueChange={v => setEditForm(f => ({ ...f, department: v }))}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/departments');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
+                      value: d.id,
+                      label: `${d.name} (${d.code})`,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select department..."
+                searchPlaceholder="Search departments..."
+              />
+            </div>
+            <div className="space-y-1.5">
               <Label>Roles</Label>
-              <div className="grid grid-cols-2 gap-2 mt-1">
-                {roles.map(r => (
-                  <label key={r.id} className="flex items-center gap-2 text-sm p-2 rounded-md bg-muted/30 cursor-pointer">
-                    <input type="checkbox" checked={editForm.roleIds.includes(r.id)} onChange={e => setEditForm(f => ({ ...f, roleIds: e.target.checked ? [...f.roleIds, r.id] : f.roleIds.filter(id => id !== r.id) }))} className="rounded" />
-                    <span>{r.name}</span>
-                  </label>
-                ))}
-              </div>
+              <MultiSearchableSelect
+                values={editForm.roleIds}
+                onValuesChange={roleIds => setEditForm(f => ({ ...f, roleIds }))}
+                options={roles.map(r => ({ value: r.id, label: r.name }))}
+                placeholder="Select roles..."
+                searchPlaceholder="Search roles..."
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Status</Label>
@@ -1701,22 +1738,60 @@ export function SettingsDepartmentsPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Plant</Label>
-              <Select value={form.plantId} onValueChange={v => setForm(f => ({ ...f, plantId: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select plant" /></SelectTrigger>
-                <SelectContent>{plants.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-              </Select>
+              <AsyncSearchableSelect
+                value={form.plantId}
+                onValueChange={v => setForm(f => ({ ...f, plantId: v }))}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/plants');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).map((p: any) => ({
+                      value: p.id,
+                      label: p.name,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select plant..."
+                searchPlaceholder="Search plants..."
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Parent Department</Label>
-              <Select value={form.parentId} onValueChange={v => setForm(f => ({ ...f, parentId: v }))}>
-                <SelectTrigger><SelectValue placeholder="None (top-level)" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None</SelectItem>
-                  {departments.filter(d => d.id !== editId).map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <AsyncSearchableSelect
+                value={form.parentId}
+                onValueChange={v => setForm(f => ({ ...f, parentId: v }))}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/departments');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : [])
+                      .filter((d: any) => d.id !== editId)
+                      .map((d: any) => ({ value: d.id, label: d.name }));
+                  }
+                  return [];
+                }}
+                placeholder="None (top-level)"
+                searchPlaceholder="Search departments..."
+              />
             </div>
-            <div className="space-y-1.5"><Label>Supervisor ID</Label><Input value={form.supervisorId} onChange={e => setForm(f => ({ ...f, supervisorId: e.target.value }))} placeholder="User ID" /></div>
+            <div className="space-y-1.5">
+              <Label>Supervisor</Label>
+              <AsyncSearchableSelect
+                value={form.supervisorId}
+                onValueChange={v => setForm(f => ({ ...f, supervisorId: v }))}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/users');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                      value: u.id,
+                      label: u.fullName,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select supervisor..."
+                searchPlaceholder="Search users..."
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>

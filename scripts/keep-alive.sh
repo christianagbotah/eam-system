@@ -22,10 +22,10 @@
       curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ --max-time 5 2>/dev/null > /dev/null
     done
     
-    echo "[$(date)] Server (PID $SERVER_PID) exited, restarting in 2s..."
+    echo "[$(date)] Server (PID $SERVER_PID) exited, restarting in 3s..."
     wait $SERVER_PID 2>/dev/null
-    sleep 2
-    rm -rf .next
+    sleep 3
+    rm -rf .next 2>/dev/null
   done
 ) &
 disown
