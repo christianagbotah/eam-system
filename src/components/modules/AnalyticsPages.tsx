@@ -25,7 +25,7 @@ import {
   PieChart, Pie, Cell, AreaChart, Area, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
-import { EmptyState, StatusBadge, PriorityBadge, LoadingSkeleton, formatDate } from '@/components/shared/helpers';
+import { EmptyState, StatusBadge, PriorityBadge, LoadingSkeleton, formatDate, formatCurrency } from '@/components/shared/helpers';
 
 export function AnalyticsPage() {
   const [data, setData] = useState<any>(null);
@@ -143,19 +143,19 @@ export function AnalyticsPage() {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center p-3 rounded-lg bg-muted/50">
-              <p className="text-xl font-bold">${((costs.totalMaintenanceCost || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+              <p className="text-xl font-bold">{formatCurrency(costs.totalMaintenanceCost || 0)}</p>
               <p className="text-xs text-muted-foreground">Total Maint. Cost</p>
             </div>
             <div className="text-center p-3 rounded-lg bg-muted/50">
-              <p className="text-xl font-bold">${((costs.totalLaborCost || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+              <p className="text-xl font-bold">{formatCurrency(costs.totalLaborCost || 0)}</p>
               <p className="text-xs text-muted-foreground">Labor Cost</p>
             </div>
             <div className="text-center p-3 rounded-lg bg-muted/50">
-              <p className="text-xl font-bold">${((costs.totalPartsCost || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+              <p className="text-xl font-bold">{formatCurrency(costs.totalPartsCost || 0)}</p>
               <p className="text-xs text-muted-foreground">Parts Cost</p>
             </div>
             <div className="text-center p-3 rounded-lg bg-muted/50">
-              <p className="text-xl font-bold">${((costs.inventoryValue || 0)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+              <p className="text-xl font-bold">{formatCurrency(costs.inventoryValue || 0)}</p>
               <p className="text-xs text-muted-foreground">Inventory Value</p>
             </div>
           </div>
@@ -633,7 +633,7 @@ export function AnalyticsDowntimePage() {
     { label: 'Downtime Events', value: totalEvents, icon: TrendingDown, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
     { label: 'Avg Resolution (Hrs)', value: avgResolutionTime, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'Most Affected', value: mostAffected.length > 0 ? mostAffected[0][0] : '-', icon: AlertTriangle, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
-    { label: 'Cost Impact', value: `$${costImpact.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Cost Impact', value: formatCurrency(costImpact), icon: DollarSign, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
   ];
 
   return (
@@ -674,7 +674,7 @@ export function AnalyticsDowntimePage() {
               <TableCell><PriorityBadge priority={wo.priority} /></TableCell>
               <TableCell><StatusBadge status={wo.status} /></TableCell>
               <TableCell className="text-right text-muted-foreground hidden lg:table-cell">{wo.actualHours || '-'}</TableCell>
-              <TableCell className="text-right font-medium hidden lg:table-cell">${(wo.totalCost || 0).toLocaleString()}</TableCell>
+              <TableCell className="text-right font-medium hidden lg:table-cell">{formatCurrency(wo.totalCost || 0)}</TableCell>
               <TableCell className="text-xs text-muted-foreground hidden xl:table-cell">{formatDate(wo.createdAt)}</TableCell>
             </TableRow>
           ))}
@@ -710,7 +710,7 @@ export function AnalyticsEnergyPage() {
 
   const summaryCards = [
     { label: 'Total Consumption', value: totalConsumption > 0 ? `${(totalConsumption / 1000).toFixed(1)} MWh` : '0 MWh', icon: Zap, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Total Cost', value: totalCost > 0 ? `$${(totalCost / 1000).toFixed(1)}k` : '$0', icon: TrendingUp, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Total Cost', value: totalCost > 0 ? `₵${(totalCost / 1000).toFixed(1)}k` : '₵0', icon: TrendingUp, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
     { label: 'Avg Daily', value: `${avgDailyConsumption} kWh`, icon: BarChart3, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
     { label: 'Efficiency Score', value: `${efficiencyScore}%`, icon: Target, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
@@ -837,7 +837,7 @@ export function AnalyticsEnergyPage() {
                         <span className="text-sm font-semibold">{m.consumption.toLocaleString()}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground hidden md:table-cell">${m.cost.toLocaleString()}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{formatCurrency(m.cost)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

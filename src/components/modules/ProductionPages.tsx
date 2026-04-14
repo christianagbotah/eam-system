@@ -553,8 +553,8 @@ export function ProductionEfficiencyPage() {
     { label: 'Completion Rate', value: `${kpisData.completionRate}%`, icon: Gauge, color: 'text-emerald-600 bg-emerald-50' },
     { label: 'On-Time Delivery', value: `${kpisData.onTimeDeliveryRate}%`, icon: Activity, color: 'text-sky-600 bg-sky-50' },
     { label: 'Avg Yield', value: `${kpisData.avgYield}%`, icon: ShieldCheck, color: 'text-amber-600 bg-amber-50' },
-    { label: 'Open Order Value', value: `$${kpisData.openOrderValue.toLocaleString()}`, icon: DollarSign, color: 'text-violet-600 bg-violet-50' },
-    { label: 'Completed Value', value: `$${kpisData.completedValue.toLocaleString()}`, icon: TrendingUp, color: 'text-teal-600 bg-teal-50' },
+    { label: 'Open Order Value', value: `₵${kpisData.openOrderValue.toLocaleString()}`, icon: DollarSign, color: 'text-violet-600 bg-violet-50' },
+    { label: 'Completed Value', value: `₵${kpisData.completedValue.toLocaleString()}`, icon: TrendingUp, color: 'text-teal-600 bg-teal-50' },
   ];
   return (
     <div className="page-content">

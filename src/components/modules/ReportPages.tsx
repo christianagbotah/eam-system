@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
+import { exportPDF } from '@/lib/export-pdf';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
 
@@ -27,14 +28,14 @@ import {
   FileBarChart, FileSpreadsheet, Download, Plus, Search, Filter, Calendar,
   Eye, Printer, Share, BarChart3, DollarSign, RefreshCw, Clock, Settings,
   Loader2,
-  ArrowUpDown, FileText, Users,
+  ArrowUpDown, FileText, FileDown, Users,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer,
 } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { format } from 'date-fns';
-import { EmptyState, StatusBadge, PriorityBadge, formatDate, formatDateTime, LoadingSkeleton } from '@/components/shared/helpers';
+import { EmptyState, StatusBadge, PriorityBadge, formatDate, formatDateTime, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 
 // Shared date range state hook
 const useDateRange = () => {
@@ -205,7 +206,7 @@ export function ReportsMaintenancePage() {
   const summaryCards = [
     { label: 'Total Work Orders', value: totalWOs, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
     { label: 'Completion Rate', value: `${completionRate}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Avg WO Cost', value: `$${avgCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: DollarSign, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Avg WO Cost', value: formatCurrency(avgCost), icon: DollarSign, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'Overdue', value: overdue, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
   ];
 
@@ -292,7 +293,7 @@ export function ReportsInventoryPage() {
 
   const summaryCards = [
     { label: 'Total Items', value: totalItems, icon: Package, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Total Value', value: `$${totalValue.toLocaleString()}`, icon: DollarSign, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Total Value', value: formatCurrency(totalValue), icon: DollarSign, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
     { label: 'Low Stock', value: lowStock.length, icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'Out of Stock', value: outOfStock.length, icon: XCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
   ];
@@ -326,7 +327,7 @@ export function ReportsInventoryPage() {
                 <TableCell className="text-sm hidden md:table-cell">{item.category || '-'}</TableCell>
                 <TableCell className={`text-right font-medium ${isOut ? 'text-red-600' : isLow ? 'text-amber-600' : ''}`}>{item.currentStock || 0}</TableCell>
                 <TableCell className="text-right text-muted-foreground hidden sm:table-cell">{item.minStockLevel || 0}</TableCell>
-                <TableCell className="text-right font-medium">${value.toLocaleString()}</TableCell>
+                <TableCell className="text-right font-medium">{formatCurrency(value)}</TableCell>
                 <TableCell className="hidden lg:table-cell">{isOut ? <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">OUT OF STOCK</Badge> : isLow ? <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">LOW STOCK</Badge> : <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">OK</Badge>}</TableCell>
               </TableRow>
             );
@@ -414,6 +415,16 @@ export function ReportsProductionPage() {
         <DateRangePicker startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate} />
         <Button variant="outline" size="sm" onClick={() => exportCSV('production-orders', ['Order Number', 'Product', 'Status', 'Priority', 'Start Date', 'End Date'], orders.map(o => [o.orderNumber || '', o.title || '', o.status || '', o.priority || '', o.scheduledStart ? new Date(o.scheduledStart).toISOString().slice(0, 10) : '', o.scheduledEnd ? new Date(o.scheduledEnd).toISOString().slice(0, 10) : '']))}>
           <Download className="h-4 w-4 mr-1.5" />Export CSV
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => exportPDF({
+          title: 'Production Reports',
+          subtitle: `Date Range: ${startDate} to ${endDate}`,
+          filename: 'production-orders',
+          headers: ['Order Number', 'Product', 'Status', 'Priority', 'Start Date', 'End Date'],
+          rows: orders.map(o => [o.orderNumber || '', o.title || '', o.status || '', o.priority || '', o.scheduledStart ? new Date(o.scheduledStart).toISOString().slice(0, 10) : '', o.scheduledEnd ? new Date(o.scheduledEnd).toISOString().slice(0, 10) : '']),
+          summary: summaryCards.map(k => ({ label: k.label, value: String(k.value) })),
+        })}>
+          <FileDown className="h-4 w-4 mr-1.5" />Export PDF
         </Button>
       </div>
       {totalOrders === 0 ? (
@@ -573,6 +584,16 @@ export function ReportsQualityPage() {
         <DateRangePicker startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate} />
         <Button variant="outline" size="sm" onClick={() => exportCSV('quality-inspections', ['ID', 'Type', 'Status', 'Result', 'Date', 'Inspector'], inspections.map(i => [i.inspectionNumber || i.id || '', i.type || '', i.status || '', i.result || i.status || '', i.createdAt ? new Date(i.createdAt).toISOString().slice(0, 10) : '', i.inspector || '']))}>
           <Download className="h-4 w-4 mr-1.5" />Export CSV
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => exportPDF({
+          title: 'Quality Reports',
+          subtitle: `Date Range: ${startDate} to ${endDate}`,
+          filename: 'quality-inspections',
+          headers: ['ID', 'Type', 'Status', 'Result', 'Date', 'Inspector'],
+          rows: inspections.map(i => [i.inspectionNumber || i.id || '', i.type || '', i.status || '', i.result || i.status || '', i.createdAt ? new Date(i.createdAt).toISOString().slice(0, 10) : '', i.inspector || '']),
+          summary: summaryCards.map(k => ({ label: k.label, value: String(k.value) })),
+        })}>
+          <FileDown className="h-4 w-4 mr-1.5" />Export PDF
         </Button>
       </div>
       {inspections.length === 0 && ncrs.length === 0 && audits.length === 0 ? (
@@ -813,6 +834,16 @@ export function ReportsSafetyPage() {
         <Button variant="outline" size="sm" onClick={() => exportCSV('safety-incidents', ['ID', 'Title', 'Severity', 'Status', 'Date', 'Reported By'], incidents.map(i => [i.incidentNumber || i.id || '', i.title || '', i.severity || '', i.status || '', i.createdAt ? new Date(i.createdAt).toISOString().slice(0, 10) : '', i.reportedBy || '']))}>
           <Download className="h-4 w-4 mr-1.5" />Export CSV
         </Button>
+        <Button variant="outline" size="sm" onClick={() => exportPDF({
+          title: 'Safety Reports',
+          subtitle: `Date Range: ${startDate} to ${endDate}`,
+          filename: 'safety-incidents',
+          headers: ['ID', 'Title', 'Severity', 'Status', 'Date', 'Reported By'],
+          rows: incidents.map(i => [i.incidentNumber || i.id || '', i.title || '', i.severity || '', i.status || '', i.createdAt ? new Date(i.createdAt).toISOString().slice(0, 10) : '', i.reportedBy || '']),
+          summary: summaryCards.map(k => ({ label: k.label, value: String(k.value) })),
+        })}>
+          <FileDown className="h-4 w-4 mr-1.5" />Export PDF
+        </Button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {summaryCards.map(k => { const I = k.icon; return (
@@ -1019,6 +1050,16 @@ export function ReportsFinancialPage() {
         <Button variant="outline" size="sm" onClick={() => exportCSV('financial-work-orders', ['WO Number', 'Title', 'Type', 'Priority', 'Cost', 'Status'], workOrders.map(wo => [wo.woNumber || '', wo.title || '', wo.type || '', wo.priority || '', (wo.totalCost || 0).toString(), wo.status || '']))}>
           <Download className="h-4 w-4 mr-1.5" />Export CSV
         </Button>
+        <Button variant="outline" size="sm" onClick={() => exportPDF({
+          title: 'Financial Reports',
+          subtitle: `Date Range: ${startDate} to ${endDate}`,
+          filename: 'financial-work-orders',
+          headers: ['WO Number', 'Title', 'Type', 'Priority', 'Cost', 'Status'],
+          rows: workOrders.map(wo => [wo.woNumber || '', wo.title || '', wo.type || '', wo.priority || '', `$${(wo.totalCost || 0).toLocaleString()}`, wo.status || '']),
+          summary: summaryCards.map(k => ({ label: k.label, value: String(k.value) })),
+        })}>
+          <FileDown className="h-4 w-4 mr-1.5" />Export PDF
+        </Button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {summaryCards.map(k => { const I = k.icon; return (
@@ -1158,7 +1199,7 @@ export function ReportsCustomPage() {
           rows.push({ key: 'total', label: 'Total Cost', value: `$${totalCost.toLocaleString()}` });
           rows.push({ key: 'labor', label: 'Total Labor Cost', value: `$${wos.reduce((s, wo) => s + (wo.laborCost || 0), 0).toLocaleString()}` });
           rows.push({ key: 'material', label: 'Total Material Cost', value: `$${wos.reduce((s, wo) => s + (wo.materialCost || 0), 0).toLocaleString()}` });
-          rows.push({ key: 'avg', label: 'Avg Cost per WO', value: wos.length > 0 ? `$${Math.round(totalCost / wos.length).toLocaleString()}` : '$0' });
+          rows.push({ key: 'avg', label: 'Avg Cost per WO', value: wos.length > 0 ? `₵${Math.round(totalCost / wos.length).toLocaleString()}` : '₵0' });
         } else if (metric === 'hours') {
           const totalActual = wos.reduce((s, wo) => s + (wo.actualHours || 0), 0);
           const totalEst = wos.reduce((s, wo) => s + (wo.estimatedHours || 0), 0);
@@ -1181,7 +1222,7 @@ export function ReportsCustomPage() {
           const totalCurrent = items.reduce((s, a) => s + (a.currentValue || 0), 0);
           rows.push({ key: 'purchase', label: 'Total Purchase Cost', value: `$${totalPurchase.toLocaleString()}` });
           rows.push({ key: 'current', label: 'Total Current Value', value: `$${totalCurrent.toLocaleString()}` });
-          rows.push({ key: 'avg', label: 'Avg per Asset', value: items.length > 0 ? `$${Math.round(totalCurrent / items.length).toLocaleString()}` : '$0' });
+          rows.push({ key: 'avg', label: 'Avg per Asset', value: items.length > 0 ? `₵${Math.round(totalCurrent / items.length).toLocaleString()}` : '₵0' });
         } else if (metric === 'priority') {
           const condMap: Record<string, number> = {};
           items.forEach(a => { const c = a.condition || 'unknown'; condMap[c] = (condMap[c] || 0) + 1; });
@@ -1200,7 +1241,7 @@ export function ReportsCustomPage() {
           const lowStock = items.filter(i => i.currentStock <= i.minStockLevel).length;
           rows.push({ key: 'totalValue', label: 'Total Inventory Value', value: `$${totalValue.toLocaleString()}` });
           rows.push({ key: 'lowStock', label: 'Low Stock Items', value: lowStock });
-          rows.push({ key: 'avg', label: 'Avg Value per Item', value: items.length > 0 ? `$${Math.round(totalValue / items.length).toLocaleString()}` : '$0' });
+          rows.push({ key: 'avg', label: 'Avg Value per Item', value: items.length > 0 ? `₵${Math.round(totalValue / items.length).toLocaleString()}` : '₵0' });
         } else {
           rows.push({ key: 'total', label: 'Total Items', value: items.length });
           rows.push({ key: 'totalStock', label: 'Total Stock Units', value: items.reduce((s, i) => s + (i.currentStock || 0), 0) });

@@ -179,7 +179,7 @@ export function InventoryPage() {
               ${(kpi?.totalValue ?? stats.totalValue).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {kpi?.avgUnitCost != null ? `Avg $${kpi.avgUnitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/unit` : 'total inventory value'}
+              {kpi?.avgUnitCost != null ? `Avg ₵${kpi.avgUnitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/unit` : 'total inventory value'}
             </p>
           </CardContent>
         </Card>
@@ -285,7 +285,7 @@ export function InventoryPage() {
                         <p className="text-[10px] text-muted-foreground mt-0.5">Min: {i.minStockLevel}</p>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm hidden md:table-cell">{i.unitCost ? `$${i.unitCost.toLocaleString()}` : '-'}</TableCell>
+                    <TableCell className="text-sm hidden md:table-cell">{i.unitCost ? `₵${i.unitCost.toLocaleString()}` : '-'}</TableCell>
                     <TableCell className="text-sm hidden lg:table-cell">{i.location || '-'}</TableCell>
                     <TableCell>
                       <DropdownMenu>
@@ -354,7 +354,7 @@ export function InventoryPage() {
               <div className="space-y-1.5"><Label>Reorder Qty</Label><Input type="number" value={form.reorderQuantity} onChange={e => setForm(f => ({ ...f, reorderQuantity: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Unit Cost ($)</Label><Input type="number" value={form.unitCost} onChange={e => setForm(f => ({ ...f, unitCost: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Unit Cost (₵)</Label><Input type="number" value={form.unitCost} onChange={e => setForm(f => ({ ...f, unitCost: e.target.value }))} /></div>
               <div className="space-y-1.5"><Label>Supplier</Label>
                 <AsyncSearchableSelect
                   value={form.supplier}

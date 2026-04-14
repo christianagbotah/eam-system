@@ -30,7 +30,7 @@ import {
   Timer, Activity, Ban, ChevronDown, ClipboardList, BarChart3,
   ArrowLeftRight, PackageCheck, PackageOpen,
 } from 'lucide-react';
-import { EmptyState, LoadingSkeleton } from '@/components/shared/helpers';
+import { EmptyState, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 
 // ============================================================================
@@ -197,7 +197,7 @@ export function RepairMaterialRequestsPage() {
               <TableBody>
                 {filtered.map((r) => (
                   <TableRow key={r.id}>
-                    <TableCell><div className="font-medium">{r.itemName}</div><div className="text-xs text-muted-foreground">{r.unit} | ${r.unitCost || 0}/unit</div></TableCell>
+                    <TableCell><div className="font-medium">{r.itemName}</div><div className="text-xs text-muted-foreground">{r.unit} | {formatCurrency(r.unitCost || 0)}/unit</div></TableCell>
                     <TableCell><Badge variant="outline">{r.workOrder?.woNumber}</Badge></TableCell>
                     <TableCell>
                       <div className="font-medium">{r.quantityRequested}</div>
@@ -284,7 +284,7 @@ export function RepairMaterialRequestsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label>Unit Cost ($)</Label><Input type="number" step="0.01" value={createForm.unitCost} onChange={(e) => setCreateForm({ ...createForm, unitCost: e.target.value })} /></div>
+              <div><Label>Unit Cost (₵)</Label><Input type="number" step="0.01" value={createForm.unitCost} onChange={(e) => setCreateForm({ ...createForm, unitCost: e.target.value })} /></div>
             </div>
             <div><Label>Reason *</Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} placeholder="Why is this material needed?" /></div>
             <div><Label>Notes</Label><Textarea value={createForm.notes} onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })} /></div>
@@ -742,7 +742,7 @@ export function RepairDowntimePage() {
                 </Select>
               </div>
             </div>
-            <div><Label>Production Loss ($)</Label><Input type="number" step="0.01" value={createForm.productionLoss} onChange={(e) => setCreateForm({ ...createForm, productionLoss: e.target.value })} /></div>
+            <div><Label>Production Loss (₵)</Label><Input type="number" step="0.01" value={createForm.productionLoss} onChange={(e) => setCreateForm({ ...createForm, productionLoss: e.target.value })} /></div>
             <div><Label>Reason *</Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} /></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate}>Save</Button></DialogFooter>
@@ -843,8 +843,8 @@ export function RepairCompletionPage() {
               <div><Label>Corrective Action</Label><Textarea value={form.correctiveAction} onChange={(e) => setForm({ ...form, correctiveAction: e.target.value })} /></div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div><Label>Labor Hours</Label><Input type="number" step="0.5" value={form.totalLaborHours} onChange={(e) => setForm({ ...form, totalLaborHours: e.target.value })} placeholder={String(completion.totalLaborHours || 0)} /></div>
-                <div><Label>Material Cost ($)</Label><Input type="number" step="0.01" value={form.totalMaterialCost} onChange={(e) => setForm({ ...form, totalMaterialCost: e.target.value })} placeholder={String(completion.totalMaterialCost || 0)} /></div>
-                <div><Label>Tool Cost ($)</Label><Input type="number" step="0.01" value={form.totalToolCost} onChange={(e) => setForm({ ...form, totalToolCost: e.target.value })} placeholder={String(completion.totalToolCost || 0)} /></div>
+                <div><Label>Material Cost (₵)</Label><Input type="number" step="0.01" value={form.totalMaterialCost} onChange={(e) => setForm({ ...form, totalMaterialCost: e.target.value })} placeholder={String(completion.totalMaterialCost || 0)} /></div>
+                <div><Label>Tool Cost (₵)</Label><Input type="number" step="0.01" value={form.totalToolCost} onChange={(e) => setForm({ ...form, totalToolCost: e.target.value })} placeholder={String(completion.totalToolCost || 0)} /></div>
                 <div><Label>Downtime (min)</Label><Input type="number" value={form.totalDowntimeMinutes} onChange={(e) => setForm({ ...form, totalDowntimeMinutes: e.target.value })} placeholder={String(completion.totalDowntimeMinutes || 0)} /></div>
               </div>
 
