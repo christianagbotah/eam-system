@@ -515,3 +515,66 @@ Stage Summary:
 - Session management with cache synchronization
 - ESLint passes with zero errors
 - App compiles and loads successfully (HTTP 200)
+
+---
+Task ID: 13
+Agent: Main Coordinator
+Task: Phase 3A - System Health Dashboard
+
+Work Log:
+
+### 1. API Endpoint (`/api/admin/system-health/route.ts`)
+- Created new admin-only GET endpoint for system health metrics
+- Auth check: requires authenticated session + admin role (401/403 guards)
+- Queries 16 data points in parallel using Promise.all:
+  - User, Asset, WorkOrder, MaintenanceRequest, InventoryItem, SafetyIncident, QualityInspection, ProductionOrder counts
+  - Active sessions count (non-expired)
+  - Last 10 audit log entries with user join
+  - Overdue work orders (past plannedEnd, not terminal)
+  - Breached SLA work orders
+  - Role, Permission, Plant, Department, PmSchedule counts
+- System metrics: process.uptime(), process.memoryUsage(), fs.statSync on db/custom.db
+- Returns formatted data with human-readable sizes and uptime strings
+- Admin-only access required
+
+### 2. SystemHealthPage Component (`src/components/modules/SettingsPages.tsx`)
+- Added `SystemHealthData` interface for API response typing
+- Exported `SystemHealthPage()` function component
+- Admin-only access check with EmptyState fallback
+- Loading skeleton while data loads
+- Auto-refresh every 60 seconds with manual refresh button
+- Dashboard layout with 5 sections:
+  - **System Status Card**: Green/red status dot, uptime, heap usage progress bar, RSS/heap memory
+  - **Database Card**: Total records, DB file size, tables count, plants, departments
+  - **Active Users Card**: Total users, active sessions, roles, permissions, overdue WOs, breached SLAs
+  - **Module Statistics Card**: 8-module grid (Assets, WOs, MRs, Inventory, Safety, Quality, Production, PM Schedules) with colored icon tiles
+  - **Recent Activity Table**: Last 10 audit log entries with action, entity, details, user, time ago
+- Emerald/green for healthy status, amber for warnings, red for critical
+- Responsive design (3-col → 1-col on mobile)
+- Added `HeartPulse`, `Server`, `MessageSquare` icon imports
+
+### 3. Routing (`src/components/EAMApp.tsx`)
+- Added lazy import for `SystemHealthPage`
+- Added `case 'settings-health'` to page switch
+- Added `'settings-health': 'System Health'` to page title mapping
+
+### 4. Sidebar (`src/components/shared/Sidebar.tsx`)
+- Added "System Health" menu item under Settings section
+- Uses `HeartPulse` icon (already imported)
+- Visible to users with `system_settings.view` permission
+
+### 5. Types (`src/types/index.ts`)
+- Added `'settings-health'` to `PageName` union type
+
+### 6. Quality
+- ESLint passes with zero errors
+- Dev server compiles and serves successfully (HTTP 200)
+
+Stage Summary:
+- 1 new API route created (`/api/admin/system-health`)
+- 1 new page component (`SystemHealthPage`) with full dashboard UI
+- 4 files modified (EAMApp.tsx, Sidebar.tsx, SettingsPages.tsx, types/index.ts)
+- Admin-only access enforced on both API and frontend
+- Auto-refreshing dashboard with manual refresh
+- System metrics: uptime, memory, database stats, module counts, overdue items
+- ESLint clean, app loads successfully

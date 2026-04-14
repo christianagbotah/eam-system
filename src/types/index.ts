@@ -592,4 +592,5 @@ export type PageName =
   | 'settings-company'
   | 'settings-plants'
   | 'settings-departments'
-  | 'settings-security';
+  | 'settings-security'
+  | 'settings-health';

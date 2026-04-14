@@ -40,7 +40,7 @@ import {
   Radio, Ruler, GraduationCap, TriangleAlert, Activity, BrainCircuit,
   GitBranch, ScanLine, Truck, FolderOpen, Target, TrendingUp, Zap, Mail,
   Send, ShieldAlert, ShieldCheck, BarChart3, Package, ClipboardList, Gauge, X,
-  AlertCircle, FileBarChart, EyeOff, Save, Wifi, Play, Monitor,
+  AlertCircle, FileBarChart, EyeOff, Save, Wifi, Play, Monitor, HeartPulse, Server, MessageSquare,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { EmptyState, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
@@ -3655,5 +3655,340 @@ interface ChatMessage {
   senderName?: string;
   messageType: string;
   createdAt: string;
+}
+
+// ============================================================================
+// SystemHealthPage
+// ============================================================================
+
+interface SystemHealthData {
+  status: string;
+  timestamp: string;
+  uptime: string;
+  uptimeSeconds: number;
+  memory: {
+    rss: string;
+    heapUsed: string;
+    heapTotal: string;
+    external: string;
+    rssBytes: number;
+    heapUsedBytes: number;
+    heapTotalBytes: number;
+  };
+  database: {
+    totalRecords: number;
+    dbSize: string;
+    dbSizeBytes: number;
+    tables: number;
+  };
+  users: {
+    total: number;
+    roles: number;
+    permissions: number;
+    activeSessions: number;
+  };
+  organization: {
+    plants: number;
+    departments: number;
+  };
+  modules: {
+    assets: number;
+    workOrders: number;
+    maintenanceRequests: number;
+    inventoryItems: number;
+    safetyIncidents: number;
+    qualityInspections: number;
+    productionOrders: number;
+    pmSchedules: number;
+  };
+  overdue: {
+    workOrders: number;
+    breachedSlas: number;
+    total: number;
+  };
+  recentActivity: {
+    id: string;
+    action: string;
+    entity: string;
+    entityId: string;
+    details: string;
+    user: { fullName: string; username: string } | null;
+    createdAt: string;
+  }[];
+}
+
+export function SystemHealthPage() {
+  const { isAdmin } = useAuthStore();
+  const [data, setData] = useState<SystemHealthData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState<string>('');
+
+  const fetchHealth = useCallback(() => {
+    api.get<SystemHealthData>('/api/admin/system-health').then(res => {
+      if (res.success && res.data) {
+        setData(res.data);
+        setLastRefresh(new Date().toLocaleTimeString());
+      }
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 60000);
+    return () => clearInterval(interval);
+  }, [fetchHealth]);
+
+  const heapPercent = data ? Math.round((data.memory.heapUsedBytes / data.memory.heapTotalBytes) * 100) : 0;
+  const isHealthy = data?.status === 'healthy';
+  const hasWarnings = data ? data.overdue.total > 0 : false;
+
+  if (!isAdmin()) {
+    return (
+      <div className="page-content">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <EmptyState icon={ShieldAlert} title="Access Denied" description="System Health is available to administrators only." />
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) return <LoadingSkeleton />;
+
+  if (!data) {
+    return (
+      <div className="page-content">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <EmptyState icon={AlertCircle} title="Unable to Load" description="Failed to fetch system health data." />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page-content">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight">System Health</h1>
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+              hasWarnings
+                ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
+                : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+            }`}>
+              <span className={`h-2 w-2 rounded-full ${hasWarnings ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'}`} />
+              {hasWarnings ? 'Warnings' : 'All Systems Go'}
+            </div>
+          </div>
+          <p className="text-muted-foreground text-sm mt-1">
+            Auto-refreshes every 60s &middot; Last: {lastRefresh}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={fetchHealth}>
+          <RefreshCw className="h-4 w-4 mr-1.5" />Refresh Now
+        </Button>
+      </div>
+
+      {/* Top Row: System Status + Database + Active Users */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        {/* System Status */}
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold">System Status</CardTitle>
+              <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                <Server className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className={`h-3 w-3 rounded-full ${isHealthy ? 'bg-emerald-500 shadow-sm shadow-emerald-200 dark:shadow-emerald-900' : 'bg-red-500'}`} />
+              <span className="text-sm font-medium capitalize">{data.status}</span>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Uptime</span>
+                <span className="font-medium tabular-nums">{data.uptime}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Heap Usage</span>
+                <span className="font-medium tabular-nums">{heapPercent}%</span>
+              </div>
+              <div className="w-full bg-muted rounded-full h-1.5">
+                <div
+                  className={`h-1.5 rounded-full transition-all ${heapPercent > 80 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                  style={{ width: `${Math.min(heapPercent, 100)}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">RSS Memory</span>
+                <span className="font-medium tabular-nums">{data.memory.rss}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Heap</span>
+                <span className="font-medium tabular-nums">{data.memory.heapUsed} / {data.memory.heapTotal}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Database */}
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold">Database</CardTitle>
+              <div className="h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                <Database className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Total Records</span>
+              <span className="font-semibold text-sm tabular-nums">{data.database.totalRecords.toLocaleString()}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">DB Size</span>
+              <span className="font-medium tabular-nums">{data.database.dbSize}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Tables</span>
+              <span className="font-medium tabular-nums">{data.database.tables}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Plants</span>
+              <span className="font-medium tabular-nums">{data.organization.plants}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Departments</span>
+              <span className="font-medium tabular-nums">{data.organization.departments}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Active Users */}
+        <Card className="border-0 shadow-sm">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold">Active Users</CardTitle>
+              <div className="h-8 w-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center">
+                <Users className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Total Users</span>
+              <span className="font-semibold text-sm tabular-nums">{data.users.total}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Active Sessions</span>
+              <span className="font-medium tabular-nums">{data.users.activeSessions}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Roles</span>
+              <span className="font-medium tabular-nums">{data.users.roles}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Permissions</span>
+              <span className="font-medium tabular-nums">{data.users.permissions}</span>
+            </div>
+            <div className="mt-2 pt-2 border-t">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Overdue WOs</span>
+                <Badge variant="outline" className={`text-[10px] font-medium ${data.overdue.workOrders > 0 ? 'border-amber-300 text-amber-600' : 'border-emerald-300 text-emerald-600'}`}>
+                  {data.overdue.workOrders}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between text-xs mt-1.5">
+                <span className="text-muted-foreground">Breached SLAs</span>
+                <Badge variant="outline" className={`text-[10px] font-medium ${data.overdue.breachedSlas > 0 ? 'border-red-300 text-red-600' : 'border-emerald-300 text-emerald-600'}`}>
+                  {data.overdue.breachedSlas}
+                </Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Module Statistics */}
+      <Card className="border-0 shadow-sm mb-4">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Module Statistics</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+            {([
+              { label: 'Assets', value: data.modules.assets, icon: Building2, color: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' },
+              { label: 'Work Orders', value: data.modules.workOrders, icon: ClipboardList, color: 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' },
+              { label: 'Requests', value: data.modules.maintenanceRequests, icon: MessageSquare, color: 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' },
+              { label: 'Inventory', value: data.modules.inventoryItems, icon: Package, color: 'bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400' },
+              { label: 'Safety', value: data.modules.safetyIncidents, icon: HardHat, color: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' },
+              { label: 'Quality', value: data.modules.qualityInspections, icon: ShieldCheck, color: 'bg-cyan-100 text-cyan-600 dark:bg-cyan-900/30 dark:text-cyan-400' },
+              { label: 'Production', value: data.modules.productionOrders, icon: Factory, color: 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' },
+              { label: 'PM Schedules', value: data.modules.pmSchedules, icon: Clock, color: 'bg-pink-100 text-pink-600 dark:bg-pink-900/30 dark:text-pink-400' },
+            ] as const).map((mod) => (
+              <div key={mod.label} className="flex flex-col items-center gap-1.5 p-3 rounded-lg bg-muted/40 dark:bg-muted/20">
+                <div className={`h-9 w-9 rounded-lg ${mod.color} flex items-center justify-center`}>
+                  <mod.icon className="h-4 w-4" />
+                </div>
+                <span className="text-base font-bold tabular-nums">{mod.value.toLocaleString()}</span>
+                <span className="text-[10px] text-muted-foreground text-center leading-tight">{mod.label}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Recent Activity */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Recent Activity</CardTitle>
+          <CardDescription className="text-xs">Last 10 audit log entries</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Action</TableHead>
+                  <TableHead className="text-xs">Entity</TableHead>
+                  <TableHead className="text-xs hidden md:table-cell">Details</TableHead>
+                  <TableHead className="text-xs hidden sm:table-cell">User</TableHead>
+                  <TableHead className="text-xs">Time</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.recentActivity.length === 0 ? (
+                  <TableRow><TableCell colSpan={5} className="h-32 text-center text-sm text-muted-foreground">No recent activity</TableCell></TableRow>
+                ) : data.recentActivity.map((entry) => (
+                  <TableRow key={entry.id}>
+                    <TableCell>
+                      <Badge variant="outline" className="text-[10px] font-mono">{entry.action}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      <span className="font-medium">{entry.entity}</span>
+                      {entry.entityId && <span className="text-muted-foreground ml-1 font-mono text-[10px]">#{entry.entityId.slice(0, 8)}</span>}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground hidden md:table-cell max-w-[200px] truncate">
+                      {entry.details || '—'}
+                    </TableCell>
+                    <TableCell className="text-xs hidden sm:table-cell">
+                      {entry.user ? entry.user.fullName : 'System'}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                      {timeAgo(entry.createdAt)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
