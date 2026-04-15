@@ -1765,6 +1765,67 @@ model RiskAssessment {
 }
 
 // ============================================================================
+// LOTO (Lock-Out/Tag-Out) Records
+// ============================================================================
+model LotoRecord {
+  id                String    @id @default(cuid())
+  lotoNumber        String    @unique                    // LOTO-YYYYMM-NNNN
+  title             String
+  description       String?
+  assetId           String?
+  departmentId      String?
+  plantId           String?
+  workOrderId       String?                                // linked WO if applicable
+
+  // LOTO type and scope
+  lotoType          String    @default("routine")           // routine, emergency, planned_maintenance, shutdown
+  energySource      String                               // electrical, mechanical, hydraulic, pneumatic, thermal, chemical, other
+  energySourceDesc   String?                              // specific description of the energy source
+
+  // Requester info
+  requestedById     String?
+  requestDate       DateTime  @default(now())
+  scheduledDate     DateTime?
+  requiredFromDate   DateTime?
+  requiredToDate     DateTime?
+
+  // Approval workflow
+  supervisorId      String?
+  supervisorApprovedAt DateTime?
+  safetyOfficerId   String?
+  safetyOfficerApprovedAt DateTime?
+
+  // Execution
+  status            String    @default("pending")          // pending, approved, in_progress, completed, cancelled, expired
+  startedAt         DateTime?
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+  cancelledReason    String?
+
+  // LOTO details (JSON arrays)
+  isolationPoints  String                               // JSON array of isolation point descriptions
+  lockDevices       String                               // JSON array of lock device IDs/descriptions
+  tagNumbers        String                               // JSON array of tag numbers
+  verifiedBy        String?                              // JSON array of verifier names
+  verificationDate   DateTime?
+
+  // Workers affected
+  affectedWorkers   String?                              // JSON array of worker names/IDs
+  workerCount       Int?
+
+  // Sign-off
+  appliedBy         String?                              // who applied the lock
+  removedBy         String?                              // who removed the lock
+  removedAt         DateTime?
+
+  notes             String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("loto_records")
+}
+
+// ============================================================================
 // 23. ASSET EXTENDED
 // ============================================================================
 
