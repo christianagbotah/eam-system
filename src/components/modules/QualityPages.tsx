@@ -16,6 +16,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Separator } from '@/components/ui/separator';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -717,6 +720,260 @@ export function QualityCapaPage() {
 }
 
 // ============================================================================
-// SAFETY SUBPAGES
+// CALIBRATIONS SUBPAGE
 // ============================================================================
+
+export function QualityCalibrationsPage() {
+  const [search, setSearch] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [form, setForm] = useState({ instrumentName: '', serialNumber: '', title: '', description: '', calibrationDate: '', nextDueDate: '', status: 'calibrated', standardUsed: '', result: '', uncertainty: '', notes: '' });
+  const [calData, setCalData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [calKpis, setCalKpis] = useState({ total: 0, calibrated: 0, dueSoon: 0, overdue: 0 });
+  const [viewItem, setViewItem] = useState<any>(null);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [editItem, setEditItem] = useState<any>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editLoading, setEditLoading] = useState(false);
+  const { hasPermission, isAdmin } = useAuthStore();
+
+  const calStatusColors: Record<string, string> = {
+    calibrated: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    out_of_calibration: 'bg-red-50 text-red-700 border-red-200',
+    due: 'bg-amber-50 text-amber-700 border-amber-200',
+  };
+  const resultColors: Record<string, string> = {
+    pass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    fail: 'bg-red-50 text-red-700 border-red-200',
+    adjusted: 'bg-amber-50 text-amber-700 border-amber-200',
+  };
+
+  const loadCalibrations = async () => {
+    try {
+      const res = await api.get('/api/calibrations');
+      if (res.success && Array.isArray(res.data)) setCalData(res.data);
+      const kpiRes = await api.get('/api/calibrations?limit=1');
+      if (kpiRes.success) setCalKpis((kpiRes as any).kpis || { total: 0, calibrated: 0, dueSoon: 0, overdue: 0 });
+    } catch {} finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadCalibrations(); }, []);
+
+  const filtered = useMemo(() => calData.filter((r: any) => {
+    if (filterStatus !== 'all' && r.status !== filterStatus) return false;
+    if (search && !r.title.toLowerCase().includes(search.toLowerCase()) && !(r.calibrationNumber || '').toLowerCase().includes(search.toLowerCase()) && !(r.instrumentName || '').toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  }), [calData, search, filterStatus]);
+
+  const handleCreate = async () => {
+    if (!form.instrumentName) { toast.error('Instrument name is required'); return; }
+    try {
+      const res = await api.post('/api/calibrations', {
+        instrumentName: form.instrumentName, serialNumber: form.serialNumber || undefined,
+        title: form.title || undefined, description: form.description || undefined,
+        calibrationDate: form.calibrationDate || undefined, nextDueDate: form.nextDueDate || undefined,
+        status: form.status, standardUsed: form.standardUsed || undefined,
+        result: form.result || undefined, uncertainty: form.uncertainty || undefined,
+        notes: form.notes || undefined,
+      });
+      if (res.success) { toast.success('Calibration record created'); setCreateOpen(false); setForm({ instrumentName: '', serialNumber: '', title: '', description: '', calibrationDate: '', nextDueDate: '', status: 'calibrated', standardUsed: '', result: '', uncertainty: '', notes: '' }); loadCalibrations(); }
+      else toast.error(res.error || 'Failed to create calibration record');
+    } catch { toast.error('Failed to create calibration record'); }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    try {
+      const res = await api.delete(`/api/calibrations/${deleteId}`);
+      if (res.success) { toast.success('Calibration record deleted'); setDeleteId(null); loadCalibrations(); }
+      else toast.error(res.error || 'Failed to delete');
+    } catch { toast.error('Failed to delete'); }
+  };
+
+  const handleView = (r: any) => { setViewItem(r); setViewOpen(true); };
+
+  const handleEdit = (r: any) => {
+    setEditItem(r);
+    setEditForm({
+      instrumentName: r.instrumentName || '', serialNumber: r.serialNumber || '',
+      title: r.title || '', description: r.description || '',
+      calibrationDate: r.calibrationDate ? r.calibrationDate.split('T')[0] : '',
+      nextDueDate: r.nextDueDate ? r.nextDueDate.split('T')[0] : '',
+      status: r.status || 'calibrated', standardUsed: r.standardUsed || '',
+      result: r.result || '', uncertainty: r.uncertainty?.toString() || '', notes: r.notes || '',
+    });
+    setEditOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!editItem) return;
+    setEditLoading(true);
+    try {
+      const res = await api.put(`/api/calibrations/${editItem.id}`, editForm);
+      if (res.success) { toast.success('Calibration record updated'); setEditOpen(false); loadCalibrations(); }
+      else toast.error(res.error || 'Failed to update');
+    } catch { toast.error('Failed to update'); }
+    finally { setEditLoading(false); }
+  };
+
+  if (loading) return <LoadingSkeleton />;
+
+  const kpiCards = [
+    { label: 'Total Records', value: calKpis.total, icon: FlaskConical, color: 'from-emerald-500 to-teal-500' },
+    { label: 'Calibrated', value: calKpis.calibrated, icon: CheckCircle2, color: 'from-emerald-500 to-green-500' },
+    { label: 'Due Soon', value: calKpis.dueSoon, icon: AlertCircle, color: 'from-amber-500 to-yellow-500' },
+    { label: 'Overdue', value: calKpis.overdue, icon: XCircle, color: 'from-red-500 to-orange-500' },
+  ];
+
+  return (
+    <div className="page-content">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Calibrations</h1>
+          <p className="text-muted-foreground mt-1">Track instrument calibrations, results, and due dates</p>
+        </div>
+        {(hasPermission('quality.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-2" />New Calibration</Button>}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {kpiCards.map(k => { const Icon = k.icon; return (
+          <Card key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between">
+                <div><p className="text-sm text-muted-foreground">{k.label}</p><p className="text-2xl font-bold mt-1">{k.value}</p></div>
+                <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${k.color} flex items-center justify-center`}><Icon className="h-5 w-5 text-white" /></div>
+              </div>
+            </CardContent>
+          </Card>
+        ); })}
+      </div>
+
+      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+        <CardContent className="p-4 sm:p-6">
+          <div className="filter-row mb-4">
+            <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search calibrations..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} /></div>
+            <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="calibrated">Calibrated</SelectItem><SelectItem value="out_of_calibration">Out of Calibration</SelectItem><SelectItem value="due">Due</SelectItem></SelectContent></Select>
+          </div>
+          <div className="overflow-x-auto rounded-lg border max-h-[420px] overflow-y-auto">
+            <Table>
+              <TableHeader sticky><TableRow className="bg-muted/50"><TableHead className="font-semibold">ID</TableHead><TableHead className="font-semibold">Instrument</TableHead><TableHead className="font-semibold">Serial #</TableHead><TableHead className="font-semibold">Status</TableHead><TableHead className="font-semibold">Result</TableHead><TableHead className="font-semibold">Cal Date</TableHead><TableHead className="font-semibold">Next Due</TableHead><TableHead className="w-10"></TableHead></TableRow></TableHeader>
+              <TableBody>
+                {filtered.length === 0 ? <TableRow><TableCell colSpan={8}><EmptyState icon={FlaskConical} title="No calibration records found" description="Try adjusting your search or filters" /></TableCell></TableRow> : filtered.map(r => (
+                  <TableRow key={r.id} className="cursor-pointer hover:bg-muted/30">
+                    <TableCell className="font-mono text-xs font-semibold">{r.calibrationNumber}</TableCell>
+                    <TableCell className="font-medium max-w-[180px] truncate">{r.instrumentName || r.title}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{r.serialNumber || '-'}</TableCell>
+                    <TableCell><Badge variant="outline" className={calStatusColors[r.status] || ''}>{(r.status || '').replace(/_/g, ' ')}</Badge></TableCell>
+                    <TableCell>{r.result ? <Badge variant="outline" className={resultColors[r.result] || ''}>{r.result.toUpperCase()}</Badge> : <span className="text-muted-foreground">—</span>}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(r.calibrationDate)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{r.nextDueDate ? formatDate(r.nextDueDate) : '-'}</TableCell>
+                    <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => handleView(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('quality.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleEdit(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('quality.delete') || isAdmin()) && <><DropdownMenuSeparator /><DropdownMenuItem className="text-red-600" onClick={() => setDeleteId(r.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem></>}</DropdownMenuContent></DropdownMenu></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+            <span>Showing {filtered.length} of {calData.length} records</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>Delete Calibration Record</AlertDialogTitle><AlertDialogDescription>Are you sure you want to delete this calibration record? This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDelete}>Delete</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Calibration Details</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-4">
+            <div><Label className="text-xs text-muted-foreground">Calibration #</Label><p className="text-sm font-medium font-mono">{viewItem?.calibrationNumber || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Instrument</Label><p className="text-sm font-medium">{viewItem?.instrumentName || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Serial Number</Label><p className="text-sm font-medium">{viewItem?.serialNumber || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Status</Label><Badge variant="outline" className={calStatusColors[viewItem?.status] || ''}>{(viewItem?.status || '').replace(/_/g, ' ')}</Badge></div>
+            <div><Label className="text-xs text-muted-foreground">Result</Label>{viewItem?.result ? <Badge variant="outline" className={resultColors[viewItem?.result] || ''}>{viewItem.result.toUpperCase()}</Badge> : <span className="text-sm">—</span>}</div>
+            <div><Label className="text-xs text-muted-foreground">Uncertainty</Label><p className="text-sm font-medium">{viewItem?.uncertainty ? `${viewItem.uncertainty}` : '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Standard Used</Label><p className="text-sm font-medium">{viewItem?.standardUsed || '-'}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Calibration Date</Label><p className="text-sm font-medium">{formatDate(viewItem?.calibrationDate)}</p></div>
+            <div><Label className="text-xs text-muted-foreground">Next Due Date</Label><p className="text-sm font-medium">{viewItem?.nextDueDate ? formatDate(viewItem.nextDueDate) : '-'}</p></div>
+            <div className="col-span-2"><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm font-medium whitespace-pre-wrap">{viewItem?.description || '-'}</p></div>
+            <div className="col-span-2"><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm font-medium whitespace-pre-wrap">{viewItem?.notes || '-'}</p></div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>New Calibration Record</DialogTitle><DialogDescription>Record a new instrument calibration.</DialogDescription></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2"><Label>Instrument Name *</Label><Input placeholder="e.g. Pressure Gauge PG-001" value={form.instrumentName} onChange={e => setForm(f => ({ ...f, instrumentName: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Serial Number</Label><Input placeholder="SN-XXXX" value={form.serialNumber} onChange={e => setForm(f => ({ ...f, serialNumber: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>Standard Used</Label><Input placeholder="Reference standard" value={form.standardUsed} onChange={e => setForm(f => ({ ...f, standardUsed: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Calibration Date</Label><Input type="date" value={form.calibrationDate} onChange={e => setForm(f => ({ ...f, calibrationDate: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>Next Due Date</Label><Input type="date" value={form.nextDueDate} onChange={e => setForm(f => ({ ...f, nextDueDate: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Status</Label>
+                <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="calibrated">Calibrated</SelectItem><SelectItem value="out_of_calibration">Out of Calibration</SelectItem><SelectItem value="due">Due</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2"><Label>Result</Label>
+                <Select value={form.result} onValueChange={v => setForm(f => ({ ...f, result: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent><SelectItem value="pass">Pass</SelectItem><SelectItem value="fail">Fail</SelectItem><SelectItem value="adjusted">Adjusted</SelectItem></SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2"><Label>Uncertainty</Label><Input type="number" step="0.01" placeholder="e.g. 0.05" value={form.uncertainty} onChange={e => setForm(f => ({ ...f, uncertainty: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea rows={2} placeholder="Calibration details..." value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Notes</Label><Textarea rows={2} placeholder="Additional notes..." value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Record</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Edit Calibration Record</DialogTitle><DialogDescription>Update calibration details.</DialogDescription></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2"><Label>Instrument Name</Label><Input value={editForm.instrumentName || ''} onChange={e => setEditForm(f => ({ ...f, instrumentName: e.target.value }))} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Serial Number</Label><Input value={editForm.serialNumber || ''} onChange={e => setEditForm(f => ({ ...f, serialNumber: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>Standard Used</Label><Input value={editForm.standardUsed || ''} onChange={e => setEditForm(f => ({ ...f, standardUsed: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Calibration Date</Label><Input type="date" value={editForm.calibrationDate || ''} onChange={e => setEditForm(f => ({ ...f, calibrationDate: e.target.value }))} /></div>
+              <div className="space-y-2"><Label>Next Due Date</Label><Input type="date" value={editForm.nextDueDate || ''} onChange={e => setEditForm(f => ({ ...f, nextDueDate: e.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Status</Label>
+                <Select value={editForm.status || ''} onValueChange={v => setEditForm(f => ({ ...f, status: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="calibrated">Calibrated</SelectItem><SelectItem value="out_of_calibration">Out of Calibration</SelectItem><SelectItem value="due">Due</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2"><Label>Result</Label>
+                <Select value={editForm.result || ''} onValueChange={v => setEditForm(f => ({ ...f, result: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger><SelectContent><SelectItem value="pass">Pass</SelectItem><SelectItem value="fail">Fail</SelectItem><SelectItem value="adjusted">Adjusted</SelectItem></SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2"><Label>Uncertainty</Label><Input type="number" step="0.01" value={editForm.uncertainty || ''} onChange={e => setEditForm(f => ({ ...f, uncertainty: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Description</Label><Textarea rows={2} value={editForm.description || ''} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} /></div>
+            <div className="space-y-2"><Label>Notes</Label><Textarea rows={2} value={editForm.notes || ''} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} /></div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={handleSave} disabled={editLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{editLoading ? 'Saving...' : 'Save Changes'}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
