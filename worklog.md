@@ -913,3 +913,25 @@ Stage Summary:
 - Commit 840e519 pushed to GitHub
 - Favicon now renders correctly as proper SVG
 - Dev server script simplified for better background process stability
+
+---
+Task ID: 1
+Agent: main
+Task: Make Convert to WO dialog mobile-friendly
+
+Work Log:
+- Analyzed Convert to WO dialog in MaintenancePages.tsx for mobile responsiveness issues
+- Identified 4 problem areas: dialog width, basic info grid, team member cards, scheduling grid
+- Fixed dialog container: 95vw on mobile, auto-width on sm+
+- Fixed Basic Info grid: grid-cols-1 on mobile, sm:grid-cols-2 on tablet+
+- Fixed Team member cards: changed from flex-inline to vertical space-y-2 layout
+  - Select fields: grid-cols-1 on mobile, sm:grid-cols-2 on tablet+
+  - Leader checkbox + delete button: full-width row with justify-between
+- Fixed Scheduling grid: grid-cols-1 on mobile, sm:grid-cols-3 on tablet+
+- Renamed 'Leader' label to 'Team Leader' for clarity
+
+Stage Summary:
+- Commit 729c9f0 pushed to GitHub
+- All grid layouts now collapse to single column on mobile
+- Dialog takes 95% viewport width on mobile for maximum usability
+- Server PID 10509 still healthy on port 3000
