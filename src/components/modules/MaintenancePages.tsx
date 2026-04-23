@@ -722,11 +722,11 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
 
       {/* Enhanced Convert to WO Dialog */}
       <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto w-[95vw] max-w-[95vw] sm:w-auto sm:max-w-2xl">
           <DialogHeader><DialogTitle>Convert to Work Order</DialogTitle><DialogDescription>Create a comprehensive work order from this maintenance request.</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
             {/* Basic Info */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Title *</Label><Input value={convertForm.title} onChange={e => setConvertForm(f => ({ ...f, title: e.target.value }))} /></div>
               <div className="space-y-1.5"><Label>Priority</Label>
                 <Select value={convertForm.priority} onValueChange={v => setConvertForm(f => ({ ...f, priority: v }))}>
@@ -780,8 +780,8 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                   </div>
                   {convertForm.teamMembers.length === 0 && <p className="text-xs text-muted-foreground">No additional team members added.</p>}
                   {convertForm.teamMembers.map((tm, idx) => (
-                    <div key={idx} className="flex items-center gap-2 p-3 rounded-lg border bg-muted/30">
-                      <div className="flex-1 grid grid-cols-2 gap-2">
+                    <div key={idx} className="p-3 rounded-lg border bg-muted/30 space-y-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <AsyncSearchableSelect
                           value={tm.userId}
                           onValueChange={v => updateTeamMember(idx, 'userId', v)}
@@ -798,10 +798,10 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                           <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="specialist">Specialist</SelectItem></SelectContent>
                         </Select>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
                           <Checkbox checked={tm.isTeamLeader} onCheckedChange={v => updateTeamMember(idx, 'isTeamLeader', !!v)} />
-                          <span className="text-[11px] text-muted-foreground whitespace-nowrap">Leader</span>
+                          <span className="text-[11px] text-muted-foreground whitespace-nowrap">Team Leader</span>
                         </div>
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-600" onClick={() => removeTeamMember(idx)}><X className="h-3.5 w-3.5" /></Button>
                       </div>
@@ -829,7 +829,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
 
             <Separator />
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Scheduling</p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1.5"><Label>Est. Hours</Label><Input type="number" step="0.5" value={convertForm.estimatedHours} onChange={e => setConvertForm(f => ({ ...f, estimatedHours: e.target.value }))} placeholder="e.g. 4" /></div>
               <div className="space-y-1.5"><Label>Planned Start</Label><Input type="datetime-local" value={convertForm.plannedStart} onChange={e => setConvertForm(f => ({ ...f, plannedStart: e.target.value }))} /></div>
               <div className="space-y-1.5"><Label>Planned End</Label><Input type="datetime-local" value={convertForm.plannedEnd} onChange={e => setConvertForm(f => ({ ...f, plannedEnd: e.target.value }))} /></div>
