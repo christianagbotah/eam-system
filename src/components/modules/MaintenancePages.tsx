@@ -477,7 +477,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectNotes, setRejectNotes] = useState('');
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, user } = useAuthStore();
 
   // Assign to Planner dialog
   const [assignPlannerOpen, setAssignPlannerOpen] = useState(false);
@@ -646,8 +646,8 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   if (loading) return <LoadingSkeleton />;
   if (!mr) return <div className="p-6">Request not found</div>;
 
-  const canAssignPlanner = mr.status === 'approved' && hasPermission('maintenance_requests.assign_planner');
-  const canConvert = mr.status === 'approved' && hasPermission('maintenance_requests.convert');
+  const canAssignPlanner = mr.status === 'approved' && hasPermission('maintenance_requests.assign_planner') && !mr.plannerId;
+  const canConvert = mr.status === 'approved' && hasPermission('maintenance_requests.convert_to_wo') && (mr.plannerId === user?.id || !mr.plannerId);
 
   return (
     <div className="page-content">
