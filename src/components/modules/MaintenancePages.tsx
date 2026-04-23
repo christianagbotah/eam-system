@@ -232,7 +232,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const res = await api.post('/api/maintenance-requests', { title, description, priority, assetId, departmentId, supervisorId, category, machineDownStatus: machineDown });
+    const res = await api.post('/api/maintenance-requests', { title, description, priority, assetId, departmentId, category, machineDownStatus: machineDown });
     if (res.success) {
       toast.success('Maintenance request created');
       onSuccess();
