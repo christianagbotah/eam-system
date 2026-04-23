@@ -591,11 +591,20 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
       plannedEnd: convertForm.plannedEnd || undefined,
     };
     if (convertForm.assignmentType === 'direct' && convertForm.technicianId) {
-      payload.technicianId = convertForm.technicianId;
-      payload.teamMembers = convertForm.teamMembers;
+      payload.assignedTo = convertForm.technicianId;
+      // Find team leader from team members
+      const teamLeader = convertForm.teamMembers.find((tm: any) => tm.isTeamLeader);
+      if (teamLeader) {
+        payload.teamLeaderId = teamLeader.userId;
+      }
+      // Send team members without isTeamLeader flag (backend doesn't expect it)
+      payload.teamMembers = convertForm.teamMembers.map((tm: any) => ({
+        userId: tm.userId,
+        role: tm.role,
+      }));
     }
     if (convertForm.assignmentType === 'via_supervisor' && convertForm.departmentSupervisorId) {
-      payload.departmentSupervisorId = convertForm.departmentSupervisorId;
+      payload.assignedSupervisorId = convertForm.departmentSupervisorId;
     }
     const res = await api.post(`/api/maintenance-requests/${id}/convert`, payload);
     if (res.success) {
