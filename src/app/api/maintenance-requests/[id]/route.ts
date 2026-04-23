@@ -13,6 +13,10 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }
 
+    if (!hasPermission(session, 'maintenance_requests.view') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
     const { id } = await params;
     const mr = await db.maintenanceRequest.findUnique({
       where: { id },

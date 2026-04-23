@@ -203,7 +203,7 @@ export function MaintenanceRequestsPage() {
                   <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate hidden xl:table-cell">{(mr as any).asset?.name || mr.assetName || '-'}</TableCell>
                   <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{formatDate(mr.createdAt)}</TableCell>
                   <TableCell>
-                    {mr.machineDown && <Badge variant="destructive" className="text-[10px]">DOWN</Badge>}
+                    {mr.machineDownStatus && <Badge variant="destructive" className="text-[10px]">DOWN</Badge>}
                   </TableCell>
                 </TableRow>
               ))}
@@ -225,8 +225,6 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   const [priority, setPriority] = useState('medium');
   const [assetId, setAssetId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
-  const [supervisorId, setSupervisorId] = useState('');
-  const [location, setLocation] = useState('');
   const [category, setCategory] = useState('');
   const [machineDown, setMachineDown] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -234,7 +232,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const res = await api.post('/api/maintenance-requests', { title, description, priority, assetId, departmentId, supervisorId, location, category, machineDown });
+    const res = await api.post('/api/maintenance-requests', { title, description, priority, assetId, departmentId, supervisorId, category, machineDownStatus: machineDown });
     if (res.success) {
       toast.success('Maintenance request created');
       onSuccess();
@@ -324,31 +322,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
           />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Location</Label>
-          <Input value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g. Production Line 2" />
-        </div>
-        <div className="space-y-2">
-          <Label>Supervisor</Label>
-          <AsyncSearchableSelect
-            value={supervisorId}
-            onValueChange={setSupervisorId}
-            fetchOptions={async () => {
-              const res = await api.get('/api/users');
-              if (res.success && res.data) {
-                return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
-                  value: u.id,
-                  label: u.fullName,
-                }));
-              }
-              return [];
-            }}
-            placeholder="Select supervisor..."
-            searchPlaceholder="Search users..."
-          />
-        </div>
-      </div>
+
       <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-100">
         <Switch checked={machineDown} onCheckedChange={setMachineDown} />
         <div>
@@ -422,9 +396,9 @@ function SLATimerDisplay({ slaHours, slaStartedAt, status }: { slaHours?: number
 function MRWorkflowTimeline({ mr }: { mr: MaintenanceRequest }) {
   const steps = [
     { key: 'submitted', label: 'Submitted', icon: <Send className="h-4 w-4" />, info: mr.requester?.fullName, time: mr.createdAt, isComplete: true },
-    { key: 'supervisor_review', label: 'Supervisor Review', icon: <ClipboardCheck className="h-4 w-4" />, info: mr.reviewer?.fullName, isComplete: ['supervisor_review', 'approved', 'assigned_to_planner', 'work_order_created'].includes(mr.workflowStatus) || mr.status === 'converted', isCurrent: mr.status === 'pending' && !mr.workflowStatus },
-    { key: 'approved', label: 'Approved', icon: <CheckCircle2 className="h-4 w-4" />, info: mr.approver?.fullName || mr.reviewer?.fullName, time: mr.approvedAt, isComplete: ['approved', 'assigned_to_planner', 'work_order_created'].includes(mr.workflowStatus) || mr.status === 'converted', isCurrent: mr.status === 'approved' && !mr.plannerId },
-    { key: 'assigned_to_planner', label: 'Assigned to Planner', icon: <UserPlus className="h-4 w-4" />, info: mr.planner?.fullName, isComplete: ['assigned_to_planner', 'work_order_created'].includes(mr.workflowStatus) || mr.status === 'converted', isCurrent: mr.status === 'approved' && !!mr.plannerId },
+    { key: 'supervisor_review', label: 'Supervisor Review', icon: <ClipboardCheck className="h-4 w-4" />, info: mr.supervisor?.fullName, isComplete: ['supervisor_review', 'approved', 'assigned_to_planner', 'work_order_created'].includes(mr.workflowStatus) || mr.status === 'converted', isCurrent: mr.status === 'pending' && !mr.workflowStatus },
+    { key: 'approved', label: 'Approved', icon: <CheckCircle2 className="h-4 w-4" />, info: mr.approver?.fullName || mr.supervisor?.fullName, time: mr.approvedAt, isComplete: ['approved', 'assigned_to_planner', 'work_order_created'].includes(mr.workflowStatus) || mr.status === 'converted', isCurrent: mr.status === 'approved' && !mr.assignedPlannerId },
+    { key: 'assigned_to_planner', label: 'Assigned to Planner', icon: <UserPlus className="h-4 w-4" />, info: mr.assignedPlanner?.fullName, isComplete: ['assigned_to_planner', 'work_order_created'].includes(mr.workflowStatus) || mr.status === 'converted', isCurrent: mr.status === 'approved' && !!mr.assignedPlannerId },
     { key: 'work_order_created', label: 'Work Order Created', icon: <ClipboardList className="h-4 w-4" />, info: mr.workOrder?.woNumber, isComplete: mr.status === 'converted', isCurrent: false },
   ];
 
@@ -527,7 +501,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     } else if (action === 'reject') {
       res = await api.post(`/api/maintenance-requests/${id}/reject`, { reason: notes || '' });
     } else {
-      res = await api.put(`/api/maintenance-requests/${id}`, { action, reviewNotes: notes });
+      res = await api.put(`/api/maintenance-requests/${id}`, { action, notes: notes });
     }
     if (res.success) {
       toast.success(`Request ${action === 'approve' ? 'approved' : 'rejected'} successfully`);
@@ -646,8 +620,8 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   if (loading) return <LoadingSkeleton />;
   if (!mr) return <div className="p-6">Request not found</div>;
 
-  const canAssignPlanner = mr.status === 'approved' && hasPermission('maintenance_requests.assign_planner') && !mr.plannerId;
-  const canConvert = mr.status === 'approved' && hasPermission('maintenance_requests.convert_to_wo') && (mr.plannerId === user?.id || !mr.plannerId);
+  const canAssignPlanner = mr.status === 'approved' && hasPermission('maintenance_requests.assign_planner') && !mr.assignedPlannerId;
+  const canConvert = mr.status === 'approved' && hasPermission('maintenance_requests.convert_to_wo') && (mr.assignedPlannerId === user?.id || !mr.assignedPlannerId);
 
   return (
     <div className="page-content">
@@ -659,20 +633,20 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             <span className="font-mono text-sm text-muted-foreground">{mr.requestNumber}</span>
             <StatusBadge status={mr.status} />
             <PriorityBadge priority={mr.priority} />
-            {mr.machineDown && <Badge variant="destructive" className="text-[10px]">MACHINE DOWN</Badge>}
+            {mr.machineDownStatus && <Badge variant="destructive" className="text-[10px]">MACHINE DOWN</Badge>}
           </div>
           <h1 className="text-xl font-bold mt-1">{mr.title}</h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {mr.status === 'pending' && hasPermission('maintenance_requests.reject') && (
+            <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectDialogOpen(true)}>
+              <XCircle className="h-4 w-4 mr-1" />Reject
+            </Button>
+          )}
           {mr.status === 'pending' && hasPermission('maintenance_requests.approve') && (
-            <>
-              <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectDialogOpen(true)}>
-                <XCircle className="h-4 w-4 mr-1" />Reject
-              </Button>
-              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={() => setApproveDialogOpen(true)}>
-                <CheckCircle2 className="h-4 w-4 mr-1" />Approve
-              </Button>
-            </>
+            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={() => setApproveDialogOpen(true)}>
+              <CheckCircle2 className="h-4 w-4 mr-1" />Approve
+            </Button>
           )}
           {canAssignPlanner && (
             <Button size="sm" variant="outline" className="border-violet-200 text-violet-700 hover:bg-violet-50" onClick={() => setAssignPlannerOpen(true)}>
@@ -957,16 +931,16 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                   <div className="flex justify-between"><span className="text-muted-foreground">Approved</span><span className="font-medium">{formatDateTime(mr.approvedAt)}</span></div>
                 </>
               )}
-              {mr.plannerId && (
+              {mr.assignedPlannerId && (
                 <>
                   <Separator />
-                  <div className="flex justify-between"><span className="text-muted-foreground">Planner</span><span className="font-medium">{mr.planner?.fullName || 'Assigned'}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Planner</span><span className="font-medium">{mr.assignedPlanner?.fullName || 'Assigned'}</span></div>
                 </>
               )}
-              {mr.reviewNotes && (
+              {mr.notes && (
                 <>
                   <Separator />
-                  <div><span className="text-muted-foreground">Review Notes</span><p className="mt-1 text-xs">{mr.reviewNotes}</p></div>
+                  <div><span className="text-muted-foreground">Review Notes</span><p className="mt-1 text-xs">{mr.notes}</p></div>
                 </>
               )}
             </CardContent>

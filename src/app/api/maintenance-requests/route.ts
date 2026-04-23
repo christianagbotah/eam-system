@@ -136,6 +136,7 @@ export async function POST(request: NextRequest) {
       departmentId,
       plantId,
       machineDownStatus,
+      supervisorId: explicitSupervisorId,
       estimatedHours,
       slaHours,
       plannedStart,
@@ -158,16 +159,16 @@ export async function POST(request: NextRequest) {
       resolvedPlantId = userPlant?.plantId ?? null;
     }
 
-    // Auto-detect the worker's department supervisor
-    let autoSupervisorId: string | null = null;
+    // Use explicitly provided supervisorId, or auto-detect from department
+    let resolvedSupervisorId = explicitSupervisorId || null;
     const resolvedDepartmentId = departmentId || null;
-    if (resolvedDepartmentId) {
+    if (!resolvedSupervisorId && resolvedDepartmentId) {
       const department = await db.department.findUnique({
         where: { id: resolvedDepartmentId },
         select: { supervisorId: true },
       });
       if (department?.supervisorId) {
-        autoSupervisorId = department.supervisorId;
+        resolvedSupervisorId = department.supervisorId;
       }
     }
 
@@ -182,7 +183,7 @@ export async function POST(request: NextRequest) {
         departmentId: resolvedDepartmentId,
         plantId: resolvedPlantId,
         requestedBy: session.userId,
-        supervisorId: autoSupervisorId,
+        supervisorId: resolvedSupervisorId,
         machineDownStatus: machineDownStatus || false,
         estimatedHours: estimatedHours || null,
         slaHours: slaHours || null,

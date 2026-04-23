@@ -14,7 +14,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasAnyPermission(session, ['maintenance_requests.update', 'maintenance_requests.*'])) {
+    if (!hasAnyPermission(session, ['maintenance_requests.update', 'maintenance_requests.convert_to_wo', 'maintenance_requests.*'])) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -31,6 +31,9 @@ export async function POST(
       failureDescription,
       causeDescription,
       actionDescription,
+      estimatedHours,
+      plannedStart,
+      plannedEnd,
     } = body;
 
     const mr = await db.maintenanceRequest.findUnique({ where: { id } });
@@ -88,9 +91,9 @@ export async function POST(
         assetId: mr.assetId,
         departmentId: mr.departmentId,
         plantId: mr.plantId,
-        estimatedHours: mr.estimatedHours,
-        plannedStart: mr.plannedStart,
-        plannedEnd: mr.plannedEnd,
+        estimatedHours: estimatedHours ?? mr.estimatedHours,
+        plannedStart: plannedStart ? new Date(plannedStart) : mr.plannedStart,
+        plannedEnd: plannedEnd ? new Date(plannedEnd) : mr.plannedEnd,
         plannerId: session.userId,
         assignedTo: assignedTo || null,
         teamLeaderId: teamLeaderId || null,
