@@ -6,7 +6,7 @@ import { useNavigationStore } from '@/stores/navigationStore';
 import { getInitials } from '@/components/shared/helpers';
 import { LoadingScreen, LoadingSkeleton } from '@/components/shared/helpers';
 import Sidebar from '@/components/shared/Sidebar';
-import MobileBottomNav from '@/components/shared/MobileBottomNav';
+import { MobileBottomNav } from '@/components/shared/MobileBottomNav';
 import NotificationPopover from '@/components/shared/NotificationPopover';
 import GlobalSearch from '@/components/shared/GlobalSearch';
 import CommandPalette from '@/components/CommandPalette';
