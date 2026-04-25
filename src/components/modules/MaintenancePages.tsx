@@ -473,8 +473,8 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     // Section 3: Resource Assignment
     departmentIds: [] as string[],
     assignType: 'technician' as 'technician' | 'supervisor',
-    technicians: [] as Array<{ userId: string }>,
-    supervisors: [] as Array<{ userId: string }>,
+    technicians: [] as Array<{ userId: string; label: string }>,
+    supervisors: [] as Array<{ userId: string; label: string }>,
     teamLeaderId: '',
     requiredParts: [] as string[],
     requiredTools: [] as string[],
@@ -644,13 +644,13 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   };
 
   // Helper: add/remove items from multi-select arrays
-  const addToArray = (field: 'departmentIds' | 'technicians' | 'supervisors' | 'requiredParts' | 'requiredTools', id: string) => {
+  const addToArray = (field: 'departmentIds' | 'technicians' | 'supervisors' | 'requiredParts' | 'requiredTools', id: string, label?: string) => {
     setConvertForm(f => {
       const arr = [...f[field]];
       if (field === 'departmentIds' || field === 'requiredParts' || field === 'requiredTools') {
         if (!(arr as string[]).includes(id)) (arr as string[]).push(id);
       } else {
-        (arr as Array<{ userId: string }>).push({ userId: id });
+        (arr as Array<{ userId: string; label: string }>).push({ userId: id, label: label || id });
       }
       return { ...f, [field]: arr };
     });
@@ -778,122 +778,382 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
         </DialogContent>
       </Dialog>
 
-      {/* Enhanced Convert to WO Dialog */}
+      {/* Enhanced Convert to WO Dialog — 4-Section Layout */}
       <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto w-[95vw] max-w-[95vw] sm:w-auto sm:max-w-2xl">
-          <DialogHeader><DialogTitle>Convert to Work Order</DialogTitle><DialogDescription>Create a comprehensive work order from this maintenance request.</DialogDescription></DialogHeader>
-          <div className="grid gap-4 py-2">
-            {/* Basic Info */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Title *</Label><Input value={convertForm.title} onChange={e => setConvertForm(f => ({ ...f, title: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label>Priority</Label>
-                <Select value={convertForm.priority} onValueChange={v => setConvertForm(f => ({ ...f, priority: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem><SelectItem value="emergency">Emergency</SelectItem></SelectContent>
-                </Select>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto w-[95vw] max-w-[95vw] sm:w-auto sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-emerald-600" />Convert to Work Order</DialogTitle>
+            <DialogDescription>Create a comprehensive work order from this maintenance request.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-5 py-2">
+
+            {/* ============================================================ */}
+            {/* SECTION 1: Request Information (Read-only, blue background) */}
+            {/* ============================================================ */}
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6">
+              <h3 className="text-sm font-semibold text-blue-800 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <FileText className="h-4 w-4" />Request Information
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-[11px] text-blue-600 font-medium uppercase">Request Number</p>
+                  <p className="text-sm font-semibold">{mr.requestNumber}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-blue-600 font-medium uppercase">Machine / Asset</p>
+                  <p className="text-sm font-semibold">{mr.asset?.name || mr.assetName || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-blue-600 font-medium uppercase">Location</p>
+                  <p className="text-sm font-semibold">{mr.location || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-blue-600 font-medium uppercase">Breakdown</p>
+                  <Badge variant={mr.machineDownStatus ? 'destructive' : 'secondary'} className="text-xs">
+                    {mr.machineDownStatus ? 'Yes' : 'No'}
+                  </Badge>
+                </div>
+                <div className="sm:col-span-2 lg:col-span-4">
+                  <p className="text-[11px] text-blue-600 font-medium uppercase">Problem Description</p>
+                  <p className="text-sm text-blue-900 mt-0.5 whitespace-pre-wrap bg-white/60 rounded-lg p-3 border border-blue-100 max-h-28 overflow-y-auto">{mr.description || 'No description provided.'}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-blue-600 font-medium uppercase">Requested By</p>
+                  <p className="text-sm font-semibold">{mr.requester?.fullName || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-blue-600 font-medium uppercase">Date Sent</p>
+                  <p className="text-sm font-semibold">{formatDateTime(mr.createdAt)}</p>
+                </div>
               </div>
             </div>
 
-            <Separator />
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Failure Analysis</p>
-            <div className="space-y-1.5"><Label>Failure Description</Label><Textarea value={convertForm.failureDescription} onChange={e => setConvertForm(f => ({ ...f, failureDescription: e.target.value }))} placeholder="What failed and how..." rows={3} /></div>
-            <div className="space-y-1.5"><Label>Cause Description</Label><Textarea value={convertForm.causeDescription} onChange={e => setConvertForm(f => ({ ...f, causeDescription: e.target.value }))} placeholder="Root cause analysis..." rows={2} /></div>
-            <div className="space-y-1.5"><Label>Action Description</Label><Textarea value={convertForm.actionDescription} onChange={e => setConvertForm(f => ({ ...f, actionDescription: e.target.value }))} placeholder="Corrective actions to take..." rows={2} /></div>
-
-            <Separator />
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Assignment</p>
-            <div className="space-y-1.5">
-              <Label>Assignment Type</Label>
-              <Select value={convertForm.assignmentType} onValueChange={v => setConvertForm(f => ({ ...f, assignmentType: v as any }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="direct">Direct to Technician</SelectItem><SelectItem value="via_supervisor">Via Department Supervisor</SelectItem></SelectContent>
-              </Select>
+            {/* ============================================================ */}
+            {/* SECTION 2: Work Order Details (purple background) */}
+            {/* ============================================================ */}
+            <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-6">
+              <h3 className="text-sm font-semibold text-purple-800 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <ClipboardCheck className="h-4 w-4" />Work Order Details
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Work Order Type</Label>
+                  <Select value={convertForm.workOrderType} onValueChange={v => setConvertForm(f => ({ ...f, workOrderType: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="breakdown">Breakdown</SelectItem>
+                      <SelectItem value="preventive">Preventive</SelectItem>
+                      <SelectItem value="corrective">Corrective</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Priority</Label>
+                  <Select value={convertForm.priority} onValueChange={v => setConvertForm(f => ({ ...f, priority: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Trade Activity</Label>
+                  <Select value={convertForm.tradeActivity} onValueChange={v => setConvertForm(f => ({ ...f, tradeActivity: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mechanical">Mechanical</SelectItem>
+                      <SelectItem value="electrical">Electrical</SelectItem>
+                      <SelectItem value="civil">Civil</SelectItem>
+                      <SelectItem value="facility">Facility</SelectItem>
+                      <SelectItem value="workshop">Workshop</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Est. Hours</Label>
+                  <Input
+                    value={convertForm.estimatedHoursDisplay || convertForm.estimatedHours}
+                    onChange={e => handleEstHoursChange(e.target.value)}
+                    placeholder="2.5 or 2:30"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Supports 2.5 or 2:30 format</p>
+                </div>
+                <div className="sm:col-span-2 lg:col-span-4 space-y-1.5">
+                  <Label className="text-xs">Technical Description</Label>
+                  <Textarea
+                    value={convertForm.technicalDescription}
+                    onChange={e => setConvertForm(f => ({ ...f, technicalDescription: e.target.value }))}
+                    placeholder="Detailed technical description of the work to be performed..."
+                    rows={3}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Scheduled Date</Label>
+                  <Input
+                    type="datetime-local"
+                    value={convertForm.scheduledDate}
+                    onChange={e => setConvertForm(f => ({ ...f, scheduledDate: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Delivery Date</Label>
+                  <Input
+                    type="date"
+                    value={convertForm.deliveryDate}
+                    onChange={e => setConvertForm(f => ({ ...f, deliveryDate: e.target.value }))}
+                  />
+                </div>
+              </div>
             </div>
 
-            {convertForm.assignmentType === 'direct' && (
-              <>
-                <div className="space-y-1.5"><Label>Primary Technician</Label>
+            {/* ============================================================ */}
+            {/* SECTION 3: Resource Assignment (green background) */}
+            {/* ============================================================ */}
+            <div className="bg-green-50 border-2 border-green-200 rounded-xl p-6">
+              <h3 className="text-sm font-semibold text-green-800 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <Users className="h-4 w-4" />Resource Assignment
+              </h3>
+              <div className="grid gap-4">
+
+                {/* Department(s) Multi-select */}
+                <div className="space-y-2">
+                  <Label className="text-xs">Department(s)</Label>
+                  <div className="flex flex-wrap gap-1.5 min-h-[38px] p-2 border rounded-md bg-white">
+                    {convertForm.departmentIds.length === 0 && <span className="text-sm text-muted-foreground">Select departments...</span>}
+                    {convertForm.departmentIds.map(dId => {
+                      const dept = departments.find(d => d.id === dId);
+                      return dept ? (
+                        <Badge key={dId} variant="secondary" className="gap-1 bg-green-100 text-green-800 border-green-200">
+                          {dept.name}
+                          <button onClick={() => removeFromArray('departmentIds', dId)} className="ml-0.5 hover:text-red-600"><X className="h-3 w-3" /></button>
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                  <Select onValueChange={v => addToArray('departmentIds', v)}>
+                    <SelectTrigger><SelectValue placeholder="Add department..." /></SelectTrigger>
+                    <SelectContent>
+                      {departments.filter(d => !convertForm.departmentIds.includes(d.id)).map(d => (
+                        <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Assign To Toggle */}
+                <div className="space-y-2">
+                  <Label className="text-xs">Assign To</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant={convertForm.assignType === 'technician' ? 'default' : 'outline'}
+                      className={convertForm.assignType === 'technician' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}
+                      onClick={() => setConvertForm(f => ({ ...f, assignType: 'technician' }))}
+                    >
+                      <Wrench className="h-3.5 w-3.5 mr-1" />Technician(s)
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={convertForm.assignType === 'supervisor' ? 'default' : 'outline'}
+                      className={convertForm.assignType === 'supervisor' ? 'bg-violet-600 hover:bg-violet-700 text-white' : ''}
+                      onClick={() => setConvertForm(f => ({ ...f, assignType: 'supervisor' }))}
+                    >
+                      <Shield className="h-3.5 w-3.5 mr-1" />Supervisor(s)
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Technicians Multi-select (filtered by departments) */}
+                {convertForm.assignType === 'technician' && (
+                  <div className="space-y-2">
+                    <Label className="text-xs">Technicians</Label>
+                    <div className="flex flex-wrap gap-1.5 min-h-[38px] p-2 border rounded-md bg-white">
+                      {convertForm.technicians.length === 0 && <span className="text-sm text-muted-foreground">Search and add technicians...</span>}
+                      {convertForm.technicians.map(t => (
+                        <Badge key={t.userId} variant="secondary" className="gap-1">
+                          {t.label}
+                          <button onClick={() => removeFromArray('technicians', t.userId)} className="ml-0.5 hover:text-red-600"><X className="h-3 w-3" /></button>
+                        </Badge>
+                      ))}
+                    </div>
+                    <AsyncSearchableSelect
+                      value=""
+                      onValueChange={(v, label) => { if (v) addToArray('technicians', v, label || undefined); }}
+                      fetchOptions={async () => {
+                        const params = new URLSearchParams();
+                        params.set('role', 'technician');
+                        if (convertForm.departmentIds.length > 0) {
+                          params.set('departmentIds', convertForm.departmentIds.join(','));
+                        }
+                        const res = await api.get(`/api/users?${params}`);
+                        if (res.success && res.data) {
+                          const users = Array.isArray(res.data) ? res.data : [];
+                          return users
+                            .filter((u: any) => !convertForm.technicians.some(t => t.userId === u.id))
+                            .map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                        }
+                        return [];
+                      }}
+                      placeholder="Search technicians..."
+                      searchPlaceholder="Search by name..."
+                    />
+                  </div>
+                )}
+
+                {/* Supervisors Multi-select (filtered by departments) */}
+                {convertForm.assignType === 'supervisor' && (
+                  <div className="space-y-2">
+                    <Label className="text-xs">Supervisors</Label>
+                    <div className="flex flex-wrap gap-1.5 min-h-[38px] p-2 border rounded-md bg-white">
+                      {convertForm.supervisors.length === 0 && <span className="text-sm text-muted-foreground">Search and add supervisors...</span>}
+                      {convertForm.supervisors.map(s => (
+                        <Badge key={s.userId} variant="secondary" className="gap-1">
+                          {s.label}
+                          <button onClick={() => removeFromArray('supervisors', s.userId)} className="ml-0.5 hover:text-red-600"><X className="h-3 w-3" /></button>
+                        </Badge>
+                      ))}
+                    </div>
+                    <AsyncSearchableSelect
+                      value=""
+                      onValueChange={(v, label) => { if (v) addToArray('supervisors', v, label || undefined); }}
+                      fetchOptions={async () => {
+                        const params = new URLSearchParams();
+                        params.set('role', 'supervisor');
+                        if (convertForm.departmentIds.length > 0) {
+                          params.set('departmentIds', convertForm.departmentIds.join(','));
+                        }
+                        const res = await api.get(`/api/users?${params}`);
+                        if (res.success && res.data) {
+                          const users = Array.isArray(res.data) ? res.data : [];
+                          return users
+                            .filter((u: any) => !convertForm.supervisors.some(s => s.userId === u.id))
+                            .map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                        }
+                        return [];
+                      }}
+                      placeholder="Search supervisors..."
+                      searchPlaceholder="Search by name..."
+                    />
+                  </div>
+                )}
+
+                {/* Team Leader */}
+                <div className="space-y-2">
+                  <Label className="text-xs flex items-center gap-1"><Crown className="h-3 w-3 text-amber-500" />Team Leader</Label>
                   <AsyncSearchableSelect
-                    value={convertForm.technicianId}
-                    onValueChange={v => setConvertForm(f => ({ ...f, technicianId: v }))}
+                    value={convertForm.teamLeaderId}
+                    onValueChange={v => setConvertForm(f => ({ ...f, teamLeaderId: v }))}
                     fetchOptions={async () => {
-                      const res = await api.get('/api/users?role=technician');
+                      const res = await api.get('/api/users');
                       if (res.success && res.data) {
-                        return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
-                          value: u.id,
-                          label: `${u.fullName} (${u.username})`,
-                        }));
+                        const users = Array.isArray(res.data) ? res.data : [];
+                        return users
+                          .filter((u: any) => u.id !== convertForm.teamLeaderId)
+                          .map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
                       }
                       return [];
                     }}
-                    placeholder="Search technicians..."
+                    placeholder="Search team leader..."
                     searchPlaceholder="Search by name..."
                   />
                 </div>
-                {/* Team Members */}
+
+                {/* Required Spare Parts */}
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>Team Members</Label>
-                    <Button size="sm" variant="outline" onClick={addTeamMember}><Plus className="h-3 w-3 mr-1" />Add Member</Button>
+                  <Label className="text-xs flex items-center gap-1"><PackageSearch className="h-3.5 w-3.5" />Required Spare Parts</Label>
+                  <div className="flex flex-wrap gap-1.5 min-h-[38px] p-2 border rounded-md bg-white">
+                    {convertForm.requiredParts.length === 0 && <span className="text-sm text-muted-foreground">Select spare parts from inventory...</span>}
+                    {convertForm.requiredParts.map(partId => {
+                      const item = inventoryItems.find(i => i.id === partId);
+                      return item ? (
+                        <Badge key={partId} variant="secondary" className="gap-1">
+                          {item.itemName || item.name}
+                          <button onClick={() => removeFromArray('requiredParts', partId)} className="ml-0.5 hover:text-red-600"><X className="h-3 w-3" /></button>
+                        </Badge>
+                      ) : null;
+                    })}
                   </div>
-                  {convertForm.teamMembers.length === 0 && <p className="text-xs text-muted-foreground">No additional team members added.</p>}
-                  {convertForm.teamMembers.map((tm, idx) => (
-                    <div key={idx} className="p-3 rounded-lg border bg-muted/30 space-y-2">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <AsyncSearchableSelect
-                          value={tm.userId}
-                          onValueChange={v => updateTeamMember(idx, 'userId', v)}
-                          fetchOptions={async () => {
-                            const res = await api.get('/api/users?role=technician');
-                            if (res.success && res.data) return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-                            return [];
-                          }}
-                          placeholder="Select user..."
-                          searchPlaceholder="Search..."
-                        />
-                        <Select value={tm.role} onValueChange={v => updateTeamMember(idx, 'role', v)}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="specialist">Specialist</SelectItem></SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <Checkbox checked={tm.isTeamLeader} onCheckedChange={v => updateTeamMember(idx, 'isTeamLeader', !!v)} />
-                          <span className="text-[11px] text-muted-foreground whitespace-nowrap">Team Leader</span>
-                        </div>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-600" onClick={() => removeTeamMember(idx)}><X className="h-3.5 w-3.5" /></Button>
-                      </div>
-                    </div>
-                  ))}
+                  <Select onValueChange={v => addToArray('requiredParts', v)}>
+                    <SelectTrigger><SelectValue placeholder="Add spare part..." /></SelectTrigger>
+                    <SelectContent>
+                      {inventoryItems.filter(i => !convertForm.requiredParts.includes(i.id)).slice(0, 50).map(i => (
+                        <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </>
-            )}
 
-            {convertForm.assignmentType === 'via_supervisor' && (
-              <div className="space-y-1.5"><Label>Department Supervisor</Label>
-                <AsyncSearchableSelect
-                  value={convertForm.departmentSupervisorId}
-                  onValueChange={v => setConvertForm(f => ({ ...f, departmentSupervisorId: v }))}
-                  fetchOptions={async () => {
-                    const res = await api.get('/api/users?role=supervisor');
-                    if (res.success && res.data) return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-                    return [];
-                  }}
-                  placeholder="Search supervisors..."
-                  searchPlaceholder="Search by name..."
-                />
+                {/* Required Tools */}
+                <div className="space-y-2">
+                  <Label className="text-xs flex items-center gap-1"><Hammer className="h-3.5 w-3.5" />Required Tools</Label>
+                  <div className="flex flex-wrap gap-1.5 min-h-[38px] p-2 border rounded-md bg-white">
+                    {convertForm.requiredTools.length === 0 && <span className="text-sm text-muted-foreground">Select tools...</span>}
+                    {convertForm.requiredTools.map(toolId => {
+                      const tool = toolsData.find(t => t.id === toolId);
+                      return tool ? (
+                        <Badge key={toolId} variant="secondary" className="gap-1">
+                          {tool.toolName || tool.name}
+                          <button onClick={() => removeFromArray('requiredTools', toolId)} className="ml-0.5 hover:text-red-600"><X className="h-3 w-3" /></button>
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                  <Select onValueChange={v => addToArray('requiredTools', v)}>
+                    <SelectTrigger><SelectValue placeholder="Add tool..." /></SelectTrigger>
+                    <SelectContent>
+                      {toolsData.filter(t => !convertForm.requiredTools.includes(t.id)).slice(0, 50).map(t => (
+                        <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            )}
-
-            <Separator />
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Scheduling</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="space-y-1.5"><Label>Est. Hours</Label><Input type="number" step="0.5" value={convertForm.estimatedHours} onChange={e => setConvertForm(f => ({ ...f, estimatedHours: e.target.value }))} placeholder="e.g. 4" /></div>
-              <div className="space-y-1.5"><Label>Planned Start</Label><Input type="datetime-local" value={convertForm.plannedStart} onChange={e => setConvertForm(f => ({ ...f, plannedStart: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label>Planned End</Label><Input type="datetime-local" value={convertForm.plannedEnd} onChange={e => setConvertForm(f => ({ ...f, plannedEnd: e.target.value }))} /></div>
             </div>
+
+            {/* ============================================================ */}
+            {/* SECTION 4: Safety Notes (amber background) */}
+            {/* ============================================================ */}
+            <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-6">
+              <h3 className="text-sm font-semibold text-amber-800 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <ShieldAlert className="h-4 w-4" />Safety Notes
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2 space-y-1.5">
+                  <Label className="text-xs">Safety Notes</Label>
+                  <Textarea
+                    value={convertForm.safetyNotes}
+                    onChange={e => setConvertForm(f => ({ ...f, safetyNotes: e.target.value }))}
+                    placeholder="Any safety hazards, precautions, or lockout/tagout requirements..."
+                    rows={3}
+                  />
+                </div>
+                <div className="sm:col-span-2 space-y-1.5">
+                  <Label className="text-xs flex items-center gap-1"><HardHat className="h-3.5 w-3.5" />PPE Required</Label>
+                  <Input
+                    value={convertForm.ppeRequired}
+                    onChange={e => setConvertForm(f => ({ ...f, ppeRequired: e.target.value }))}
+                    placeholder="e.g. Safety glasses, gloves, helmet, hearing protection"
+                  />
+                </div>
+                <div className="sm:col-span-2 space-y-1.5">
+                  <Label className="text-xs">General Notes</Label>
+                  <Textarea
+                    value={convertForm.notes}
+                    onChange={e => setConvertForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="Any additional notes or special instructions..."
+                    rows={2}
+                  />
+                </div>
+              </div>
+            </div>
+
           </div>
-          <DialogFooter>
+          <DialogFooter className="mt-2">
             <Button variant="outline" onClick={() => setConvertOpen(false)}>Cancel</Button>
             <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={convertLoading} onClick={handleConvert}>
               {convertLoading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Converting...</> : <><RefreshCw className="h-4 w-4 mr-1" />Create Work Order</>}
