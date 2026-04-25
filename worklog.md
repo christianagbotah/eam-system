@@ -935,3 +935,67 @@ Stage Summary:
 - All grid layouts now collapse to single column on mobile
 - Dialog takes 95% viewport width on mobile for maximum usability
 - Server PID 10509 still healthy on port 3000
+
+---
+Task ID: 16
+Agent: Main Coordinator
+Task: Source parity migration — MR module (Convert-to-WO dialog, Create MR form, Assign-to-Planner dialog)
+
+Work Log:
+
+### 1. Comprehensive Source Audit
+- Analyzed source CI4 backend: Controllers, Models, Services, DTOs, Entities, Config
+- Analyzed source Next.js frontend: 80+ pages across 6 role-specific layouts
+- Analyzed source-other-context: 50+ documentation files (permissions, roadmaps, weekly summaries)
+- Created complete catalog of all source forms, fields, workflows, and UI components
+- Identified all permission definitions and API endpoints in source
+
+### 2. Gap Analysis (Source vs Current)
+- **Convert-to-WO dialog**: Source has 4 sections (Request Info, WO Details, Resource Assignment, Safety Notes). Current had flat 2-section layout missing: WO Type, Trade Activity, Delivery Date, Departments multi-select, Required Parts/Tools, Safety Notes, PPE, Team Leader as separate select, Technical Description.
+- **MR Create form**: Source has Item Type toggle (Select Machine / Enter Manually) with conditional fields. Current had static asset dropdown.
+- **Assign-to-Planner dialog**: Source has Planner Type toggle (Engineering/Production) and Notes textarea. Current had simple planner select only.
+
+### 3. Schema Changes (prisma/schema.prisma)
+- Added `tradeActivity` (String?) to WorkOrder — mechanical, electrical, civil, facility, workshop, other
+- Added `safetyNotes` (String?) to WorkOrder — safety precautions / LOTO requirements
+- Added `ppeRequired` (String?) to WorkOrder — PPE requirements
+- Pushed schema to SQLite and regenerated Prisma client
+
+### 4. Backend Changes (convert/route.ts)
+- Expanded destructured body to accept 10 new fields: workOrderType, tradeActivity, technicalDescription, deliveryDateRequired, safetyNotes, ppeRequired, notes, requiredParts, requiredTools
+- WO type now uses `workOrderType` from form instead of hardcoded 'corrective'
+- Description uses `technicalDescription` if provided, falls back to MR description
+- plannedEnd uses `deliveryDateRequired` if provided
+- Creates WorkOrderMaterial records for requiredParts (from InventoryItem) and requiredTools (from Tool)
+- Audit log updated with new fields
+
+### 5. Convert-to-WO Dialog Rewrite (4-Section Layout)
+- **Section 1: Request Information** (blue bg): Read-only display of MR details — Request #, Asset, Location, Breakdown status, Problem Description, Requested By, Date Sent
+- **Section 2: Work Order Details** (purple bg): WO Type select, Priority select, Trade Activity select, Technical Description textarea, Scheduled Date, Delivery Date, Est. Hours (supports "2.5" or "2:30" format)
+- **Section 3: Resource Assignment** (green bg): Department multi-select tags, Technician/Supervisor toggle, Technician dynamic list (SearchableSelect filtered by department), Supervisor dynamic list, Team Leader SearchableSelect, Required Spare Parts multi-select from inventory, Required Tools multi-select from tools
+- **Section 4: Safety Notes** (amber bg): Safety Notes textarea, PPE Required input, General Notes textarea
+- Dialog width increased to sm:max-w-4xl for larger layout
+
+### 6. MR Create Form Update (Item Type Toggle)
+- Added Item Type toggle: "Select Machine" / "Enter Manually" (matching source pattern)
+- Machine path: Machine/Asset dropdown + Machine Down Yes/No select + optional Location
+- Manual path: Asset Name text input + Location text input
+- Added Location field to both modes
+- Reordered fields to match source layout (Title → Description → Item Type → Asset/Machine → Department → Category → Priority)
+- Submits `itemType`, `assetName`, and `location` to API
+
+### 7. Assign-to-Planner Dialog Update
+- Added Planner Type toggle: "Engineering Planner" / "Production Planner" (matching source)
+- Added Notes textarea for planner instructions
+- Increased dialog width to sm:max-w-lg
+- Sends `plannerType` and `notes` in API payload
+
+Stage Summary:
+- 3 schema fields added to WorkOrder model
+- 1 backend API route enhanced (convert endpoint with 10 new fields + material creation)
+- 1 dialog completely rewritten (Convert-to-WO with 4 sections, ~400 lines)
+- 1 form enhanced (MR Create with Item Type toggle)
+- 1 dialog enhanced (Assign-to-Planner with type + notes)
+- 2 commits pushed to GitHub (76a31a3, dc3f563)
+- All changes follow source project patterns for migration parity
+- ESLint passes cleanly on modified files
