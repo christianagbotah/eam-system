@@ -1178,3 +1178,70 @@ Stage Summary:
 - 1 new API route created (`/api/trades`)
 - All changes backward compatible with existing API calls
 - Pre-existing lint errors in loto-records, IoTPages.tsx, QualityPages.tsx are unrelated
+
+---
+Task ID: 16
+Agent: Main Coordinator
+Task: Enterprise-grade Worker Assignment for Convert-to-WO Form
+
+Work Log:
+
+### 1. Schema & Seed Enhancements
+- User model already had `primaryTrade String?` field (added in previous commit)
+- Updated `prisma/seed.ts` to add `primaryTrade` values to all 19 seeded users
+- Trade values assigned based on role: Mechanical Fitter, Electrician, Mechanical Engineer, Production Supervisor, etc.
+- Added `db.userSkill.deleteMany()` to seed cleanup transaction
+- Re-seeded database successfully
+
+### 2. New API Endpoint (`/api/workers/route.ts`)
+- Created GET endpoint for fetching workers with department filtering
+- Query params: `departmentIds` (comma-separated), `plantId`, `search`, `role` (technician/supervisor)
+- Department filtering: looks up Department names from IDs, then filters users by `department IN names`
+- Search: searches by `fullName`, `staffId`, `username` with case-insensitive contains
+- Role filtering: maps 'technician' → `maintenance_technician`, 'supervisor' → `maintenance_supervisor/maintenance_manager/plant_manager`
+- Returns: id, fullName, staffId, username, department, trade (from primaryTrade), primaryRole, primaryRoleSlug, isTechnician, roles[]
+- Requires authentication (any authenticated user)
+- Limited to 100 results, ordered by fullName
+
+### 3. WorkerAssignmentSelector Component (`src/components/shared/WorkerAssignmentSelector.tsx`)
+- Created comprehensive enterprise-grade component for worker selection
+- **Trade color helper** (`getTradeColor`): Maps trade keywords to color-coded badges:
+  - Mechanical/Fitter → orange, Electrical → blue, Civil → amber, Instrumentation/IoT → cyan
+  - Welding → red, Workshop/Machine → purple, HSE/Safety → rose, Quality → teal
+  - Store/Supply → indigo, Production/Operator → emerald, Engineer → sky, Other → gray
+- **DepartmentSelector** sub-component: Multi-select with removable green badges, dropdown to add
+- **DesktopAssignToggle** / **MobileAssignToggle**: Segmented control for Technician/Supervisor mode
+- **DesktopWorkerTable**: Compact table with select-all checkbox, radio button for team leader, name+staff ID, trade badge, department badge. Max height 320px with scroll.
+- **MobileWorkerList**: Card-based layout with checkbox, avatar, name, trade badge, department, crown-icon team leader toggle. Max height 400px with scroll. Touch-friendly 44px+ targets.
+- Auto-selects first worker as team leader when adding first worker
+- Clears team leader when that worker is deselected
+- Summary bar: selected count, team leader name, clear all button
+- Hint text when workers selected but no team leader designated
+
+### 4. Integration into MaintenancePages.tsx
+- Replaced WorkerAssignmentPicker usage with WorkerAssignmentSelector in both desktop and mobile views
+- Simplified convertForm state: removed `technicians`/`supervisors` arrays, replaced with `selectedWorkerIds: string[]`
+- Removed `usersMap` state (no longer needed since workers are fetched with names included)
+- Updated `handleConvert` to build team members from `selectedWorkerIds`:
+  - All selected workers become team members with role 'team_leader' or 'assistant'
+  - First selected worker becomes primary assignee (`assignedTo`)
+  - Team leader ID sent to `teamLeaderId` field
+  - Supervisor mode: team leader also sent as `assignedSupervisorId`
+- Updated `openConvertDialog` to reset `selectedWorkerIds: []`
+- Preserved all existing functionality: parts, tools, safety sections unchanged
+
+### 5. Quality
+- TypeScript: No new errors introduced (all pre-existing errors in loto-records, IoTPages, QualityPages are unrelated)
+- ESLint: 6 pre-existing errors in other files, zero new errors
+- Dev server compiles and serves successfully (HTTP 200)
+- Commit pushed to GitHub: dfb3ad4
+
+Stage Summary:
+- 1 new API route created (`/api/workers`) with department filtering and role-based querying
+- 1 new shared component (`WorkerAssignmentSelector.tsx`) with full desktop/mobile responsive design
+- 1 file modified (`MaintenancePages.tsx`): simplified form state, replaced WorkerAssignmentPicker, updated convert handler
+- Seed data updated with trade/skill values for all 19 users
+- Worker trade displayed as color-coded badges by trade category
+- Multi-worker selection with checkboxes, team leader via radio buttons/crown icons
+- Department multi-select filters available worker pool
+- Full mobile-responsive design with card layout and touch-friendly targets
