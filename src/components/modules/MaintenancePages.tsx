@@ -227,12 +227,18 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   const [departmentId, setDepartmentId] = useState('');
   const [category, setCategory] = useState('');
   const [machineDown, setMachineDown] = useState(false);
+  const [itemType, setItemType] = useState<'machine' | 'manual'>('machine');
+  const [manualAssetName, setManualAssetName] = useState('');
+  const [location, setLocation] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const res = await api.post('/api/maintenance-requests', { title, description, priority, assetId, departmentId, category, machineDownStatus: machineDown });
+    const payload: any = { title, description, priority, departmentId, category, machineDownStatus: machineDown, itemType, location };
+    if (itemType === 'machine' && assetId) payload.assetId = assetId;
+    if (itemType === 'manual' && manualAssetName) payload.assetName = manualAssetName;
+    const res = await api.post('/api/maintenance-requests', payload);
     if (res.success) {
       toast.success('Maintenance request created');
       onSuccess();
@@ -252,56 +258,85 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
         <Label>Description</Label>
         <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Detailed description of the issue, including any relevant observations" rows={3} />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Priority</Label>
-          <Select value={priority} onValueChange={setPriority}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="low">Low</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-              <SelectItem value="urgent">Urgent</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Category</Label>
-          <Select value={category} onValueChange={setCategory}>
-            <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="mechanical">Mechanical</SelectItem>
-              <SelectItem value="electrical">Electrical</SelectItem>
-              <SelectItem value="hydraulic">Hydraulic</SelectItem>
-              <SelectItem value="pneumatic">Pneumatic</SelectItem>
-              <SelectItem value="instrumentation">Instrumentation</SelectItem>
-              <SelectItem value="structural">Structural</SelectItem>
-              <SelectItem value="other">Other</SelectItem>
-            </SelectContent>
-          </Select>
+
+      {/* Item Type Toggle — matches source: Select Machine / Enter Manually */}
+      <div className="space-y-2">
+        <Label>Item Type *</Label>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setItemType('machine')}
+            className={`px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
+              itemType === 'machine'
+                ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
+                : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
+            }`}
+          >
+            <Settings className="h-4 w-4 inline mr-1.5" />
+            Select Machine
+          </button>
+          <button
+            type="button"
+            onClick={() => setItemType('manual')}
+            className={`px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
+              itemType === 'manual'
+                ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
+                : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
+            }`}
+          >
+            <Pencil className="h-4 w-4 inline mr-1.5" />
+            Enter Manually
+          </button>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Asset / Machine</Label>
-          <AsyncSearchableSelect
-            value={assetId}
-            onValueChange={setAssetId}
-            fetchOptions={async () => {
-              const res = await api.get('/api/assets');
-              if (res.success && res.data) {
-                return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
-                  value: a.id,
-                  label: `${a.name} [${a.assetTag}]`,
-                  badge: a.status,
-                }));
-              }
-              return [];
-            }}
-            placeholder="Select asset..."
-            searchPlaceholder="Search assets by name or tag..."
-          />
+
+      {itemType === 'machine' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Label>Machine / Asset *</Label>
+            <AsyncSearchableSelect
+              value={assetId}
+              onValueChange={setAssetId}
+              fetchOptions={async () => {
+                const res = await api.get('/api/assets');
+                if (res.success && res.data) {
+                  return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                    value: a.id,
+                    label: `${a.name} [${a.assetTag}]`,
+                    badge: a.status,
+                  }));
+                }
+                return [];
+              }}
+              placeholder="Select machine..."
+              searchPlaceholder="Search machines by name or tag..."
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Machine Down?</Label>
+            <Select value={machineDown ? 'Yes' : 'No'} onValueChange={v => setMachineDown(v === 'Yes')}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="No">No — Machine Running</SelectItem>
+                <SelectItem value="Yes">Yes — Machine Down</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Label>Asset Name *</Label>
+            <Input value={manualAssetName} onChange={e => setManualAssetName(e.target.value)} placeholder="Enter asset/item name" required />
+          </div>
+          <div className="space-y-2">
+            <Label>Location</Label>
+            <Input value={location} onChange={e => setLocation(e.target.value)} placeholder="Location of the item" />
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label>Department</Label>
           <AsyncSearchableSelect
@@ -321,15 +356,44 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
             searchPlaceholder="Search departments..."
           />
         </div>
-      </div>
-
-      <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-100">
-        <Switch checked={machineDown} onCheckedChange={setMachineDown} />
-        <div>
-          <Label className="text-sm font-medium text-red-700">Machine is Down</Label>
-          <p className="text-[11px] text-red-500">Enable if this issue has caused a machine shutdown</p>
+        <div className="space-y-2">
+          <Label>Category</Label>
+          <Select value={category} onValueChange={setCategory}>
+            <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="mechanical">Mechanical</SelectItem>
+              <SelectItem value="electrical">Electrical</SelectItem>
+              <SelectItem value="hydraulic">Hydraulic</SelectItem>
+              <SelectItem value="pneumatic">Pneumatic</SelectItem>
+              <SelectItem value="instrumentation">Instrumentation</SelectItem>
+              <SelectItem value="structural">Structural</SelectItem>
+              <SelectItem value="other">Other</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label>Priority</Label>
+          <Select value={priority} onValueChange={setPriority}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="low">Low</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="urgent">Urgent</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {itemType === 'machine' && !machineDown && (
+          <div className="space-y-2">
+            <Label>Location</Label>
+            <Input value={location} onChange={e => setLocation(e.target.value)} placeholder="Location of the machine" />
+          </div>
+        )}
+      </div>
+
       <DialogFooter>
         <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={loading}>
           {loading ? 'Creating...' : 'Submit Request'}
@@ -456,6 +520,8 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   // Assign to Planner dialog
   const [assignPlannerOpen, setAssignPlannerOpen] = useState(false);
   const [plannerId, setPlannerId] = useState('');
+  const [plannerType, setPlannerType] = useState('engineering');
+  const [plannerNotes, setPlannerNotes] = useState('');
   const [plannerLoading, setPlannerLoading] = useState(false);
 
   // Enhanced Convert to WO dialog
@@ -533,11 +599,12 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const handleAssignPlanner = async () => {
     if (!plannerId) { toast.error('Please select a planner'); return; }
     setPlannerLoading(true);
-    const res = await api.post(`/api/maintenance-requests/${id}/assign-planner`, { plannerId });
+    const res = await api.post(`/api/maintenance-requests/${id}/assign-planner`, { plannerId, plannerType, notes: plannerNotes });
     if (res.success) {
       toast.success('Planner assigned successfully');
       setAssignPlannerOpen(false);
       setPlannerId('');
+      setPlannerNotes('');
       handleRefresh();
     } else {
       toast.error(res.error || 'Failed to assign planner');
@@ -753,20 +820,52 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
         onConfirm={() => handleAction('approve', '')}
       />
 
-      {/* Assign to Planner Dialog */}
+      {/* Assign to Planner Dialog — matches source: planner type + notes */}
       <Dialog open={assignPlannerOpen} onOpenChange={setAssignPlannerOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Assign to Planner</DialogTitle><DialogDescription>Select a planner to handle this maintenance request.</DialogDescription></DialogHeader>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Assign to Planner</DialogTitle><DialogDescription>Select a planner type and planner to handle this maintenance request.</DialogDescription></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Planner *</Label>
+              <Label>Planner Type *</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPlannerType('engineering')}
+                  className={`px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
+                    plannerType === 'engineering'
+                      ? 'border-violet-600 bg-violet-50 text-violet-800'
+                      : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
+                  }`}
+                >
+                  <Settings className="h-4 w-4 inline mr-1.5" />
+                  Engineering Planner
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPlannerType('production')}
+                  className={`px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
+                    plannerType === 'production'
+                      ? 'border-violet-600 bg-violet-50 text-violet-800'
+                      : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
+                  }`}
+                >
+                  <Target className="h-4 w-4 inline mr-1.5" />
+                  Production Planner
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Select Planner *</Label>
               <AsyncSearchableSelect
                 value={plannerId}
                 onValueChange={setPlannerId}
                 fetchOptions={async () => {
-                  const res = await api.get('/api/users?role=planner');
+                  const params = new URLSearchParams();
+                  params.set('role', 'planner');
+                  const res = await api.get(`/api/users?${params.toString()}`);
                   if (res.success && res.data) {
-                    return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                    const users = Array.isArray(res.data) ? res.data : [];
+                    return users.map((u: any) => ({
                       value: u.id,
                       label: `${u.fullName} (${u.username})`,
                     }));
@@ -776,6 +875,10 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 placeholder="Search for a planner..."
                 searchPlaceholder="Search planners by name..."
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Notes</Label>
+              <Textarea value={plannerNotes} onChange={e => setPlannerNotes(e.target.value)} placeholder="Any notes for the planner..." rows={2} />
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAssignPlannerOpen(false)}>Cancel</Button>
