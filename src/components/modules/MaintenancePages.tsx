@@ -55,6 +55,7 @@ import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
 import { useIsMobile } from '@/components/shared/ResponsiveDialog';
 import { FileUpload } from '@/components/shared/FileUpload';
 import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSelector';
+// WorkerAssignmentPicker still used by WO Detail page
 import { WorkerAssignmentPicker, type SelectedWorker } from '@/components/shared/WorkerAssignmentPicker';
 export function MaintenanceRequestsPage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
@@ -534,8 +535,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     // Section 3: Resource Assignment
     departmentIds: [] as string[],
     assignType: 'technician' as 'technician' | 'supervisor',
-    technicians: [] as SelectedWorker[],
-    supervisors: [] as SelectedWorker[],
+    selectedWorkerIds: [] as string[],
     teamLeaderId: '',
     requiredParts: [] as string[],
     requiredTools: [] as string[],
@@ -549,7 +549,6 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const [departments, setDepartments] = useState<any[]>([]);
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
   const [toolsData, setToolsData] = useState<any[]>([]);
-  const [usersMap, setUsersMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let active = true;
@@ -620,8 +619,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
       estimatedHoursDisplay: '',
       departmentIds: mr.departmentId ? [mr.departmentId] : [],
       assignType: 'technician',
-      technicians: [],
-      supervisors: [],
+      selectedWorkerIds: [],
       teamLeaderId: '',
       requiredParts: [],
       requiredTools: [],
@@ -671,22 +669,20 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
       requiredParts: convertForm.requiredParts.length > 0 ? convertForm.requiredParts : undefined,
       requiredTools: convertForm.requiredTools.length > 0 ? convertForm.requiredTools : undefined,
     };
-    if (convertForm.assignType === 'technician') {
-      if (convertForm.technicians.length > 0) {
-        payload.assignedTo = convertForm.technicians[0].userId || convertForm.technicians[0].id;
-      }
-      if (convertForm.teamLeaderId) {
-        payload.teamLeaderId = convertForm.teamLeaderId;
-      }
-      if (convertForm.technicians.length > 1) {
-        payload.teamMembers = convertForm.technicians.slice(1).map(t => ({
-          userId: t.userId || t.id,
-          role: 'assistant',
-        }));
-      }
+    // Build team members from selected workers
+    if (convertForm.selectedWorkerIds.length > 0) {
+      const teamMembers = convertForm.selectedWorkerIds.map(workerId => ({
+        userId: workerId,
+        role: workerId === convertForm.teamLeaderId ? 'team_leader' : 'assistant',
+      }));
+      payload.teamMembers = teamMembers;
+      payload.assignedTo = convertForm.selectedWorkerIds[0];
+      payload.teamLeaderId = convertForm.teamLeaderId || null;
     }
-    if (convertForm.assignType === 'supervisor' && convertForm.supervisors.length > 0) {
-      payload.assignedSupervisorId = convertForm.supervisors[0].userId || convertForm.supervisors[0].id;
+    if (convertForm.assignType === 'supervisor') {
+      if (convertForm.teamLeaderId) {
+        payload.assignedSupervisorId = convertForm.teamLeaderId;
+      }
     }
     const res = await api.post(`/api/maintenance-requests/${id}/convert`, payload);
     if (res.success) {
@@ -996,62 +992,19 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             {/* SECTION 3: Resource Assignment (green background) */}
             {/* ============================================================ */}
             <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 sm:p-6">
-              <h3 className="text-sm font-semibold text-green-800 uppercase tracking-wider flex items-center gap-2 mb-4">
-                <Users className="h-4 w-4" />Resource Assignment
-              </h3>
               <div className="grid gap-4">
-
-                {/* Assign To Toggle */}
-                <div className="space-y-2">
-                  <Label className="text-xs">Assign To</Label>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <Button
-                      size="sm"
-                      variant={convertForm.assignType === 'technician' ? 'default' : 'outline'}
-                      className={convertForm.assignType === 'technician' ? 'bg-emerald-600 hover:bg-emerald-700 text-white min-h-[44px]' : 'min-h-[44px]'}
-                      onClick={() => setConvertForm(f => ({ ...f, assignType: 'technician' }))}
-                    >
-                      <Wrench className="h-3.5 w-3.5 mr-1" />Technician(s)
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={convertForm.assignType === 'supervisor' ? 'default' : 'outline'}
-                      className={convertForm.assignType === 'supervisor' ? 'bg-violet-600 hover:bg-violet-700 text-white min-h-[44px]' : 'min-h-[44px]'}
-                      onClick={() => setConvertForm(f => ({ ...f, assignType: 'supervisor' }))}
-                    >
-                      <Shield className="h-3.5 w-3.5 mr-1" />Supervisor(s)
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Worker Assignment Picker */}
-                {convertForm.assignType === 'technician' && (
-                  <WorkerAssignmentPicker
-                    departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-                    selectedDepartmentIds={convertForm.departmentIds}
-                    onDepartmentChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
-                    selectedWorkers={convertForm.technicians}
-                    onWorkersChange={(workers) => setConvertForm(f => ({ ...f, technicians: workers }))}
-                    teamLeaderId={convertForm.teamLeaderId}
-                    onTeamLeaderChange={(id) => setConvertForm(f => ({ ...f, teamLeaderId: id }))}
-                    mode="technician"
-                    showTeamLeader={true}
-                  />
-                )}
-
-                {convertForm.assignType === 'supervisor' && (
-                  <WorkerAssignmentPicker
-                    departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-                    selectedDepartmentIds={convertForm.departmentIds}
-                    onDepartmentChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
-                    selectedWorkers={convertForm.supervisors}
-                    onWorkersChange={(workers) => setConvertForm(f => ({ ...f, supervisors: workers }))}
-                    teamLeaderId={''}
-                    onTeamLeaderChange={() => {}}
-                    mode="supervisor"
-                    showTeamLeader={false}
-                  />
-                )}
+                <WorkerAssignmentSelector
+                  selectedWorkerIds={convertForm.selectedWorkerIds}
+                  teamLeaderId={convertForm.teamLeaderId}
+                  onSelectedWorkersChange={(ids) => setConvertForm(f => ({ ...f, selectedWorkerIds: ids }))}
+                  onTeamLeaderChange={(id) => setConvertForm(f => ({ ...f, teamLeaderId: id }))}
+                  departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
+                  selectedDepartmentIds={convertForm.departmentIds}
+                  onDepartmentsChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
+                  assignType={convertForm.assignType}
+                  onAssignTypeChange={(type) => setConvertForm(f => ({ ...f, assignType: type }))}
+                  label="Resource Assignment"
+                />
 
                 {/* Required Spare Parts */}
                 <div className="space-y-2">
@@ -1319,36 +1272,19 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               </div>
             </div>
 
-            {/* Worker Assignment Picker — compact mode for mobile */}
-            {convertForm.assignType === 'technician' && (
-              <WorkerAssignmentPicker
-                departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-                selectedDepartmentIds={convertForm.departmentIds}
-                onDepartmentChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
-                selectedWorkers={convertForm.technicians}
-                onWorkersChange={(workers) => setConvertForm(f => ({ ...f, technicians: workers }))}
-                teamLeaderId={convertForm.teamLeaderId}
-                onTeamLeaderChange={(id) => setConvertForm(f => ({ ...f, teamLeaderId: id }))}
-                mode="technician"
-                showTeamLeader={true}
-                compact={true}
-              />
-            )}
-
-            {convertForm.assignType === 'supervisor' && (
-              <WorkerAssignmentPicker
-                departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-                selectedDepartmentIds={convertForm.departmentIds}
-                onDepartmentChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
-                selectedWorkers={convertForm.supervisors}
-                onWorkersChange={(workers) => setConvertForm(f => ({ ...f, supervisors: workers }))}
-                teamLeaderId={''}
-                onTeamLeaderChange={() => {}}
-                mode="supervisor"
-                showTeamLeader={false}
-                compact={true}
-              />
-            )}
+            {/* Worker Assignment Selector — mobile */}
+            <WorkerAssignmentSelector
+              selectedWorkerIds={convertForm.selectedWorkerIds}
+              teamLeaderId={convertForm.teamLeaderId}
+              onSelectedWorkersChange={(ids) => setConvertForm(f => ({ ...f, selectedWorkerIds: ids }))}
+              onTeamLeaderChange={(id) => setConvertForm(f => ({ ...f, teamLeaderId: id }))}
+              departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
+              selectedDepartmentIds={convertForm.departmentIds}
+              onDepartmentsChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
+              assignType={convertForm.assignType}
+              onAssignTypeChange={(type) => setConvertForm(f => ({ ...f, assignType: type }))}
+              label="Resource Assignment"
+            />
 
             {/* Parts & Tools in collapsible sections */}
             <Accordion type="multiple" className="space-y-2">
