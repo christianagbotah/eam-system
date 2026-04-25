@@ -1130,3 +1130,51 @@ Stage Summary:
 - Created: `src/components/shared/MobileStepperSheet.tsx`
 - Modified: `src/components/modules/MaintenancePages.tsx` (conditional mobile/desktop rendering for Convert-to-WO dialog)
 - Server PID 13976 still healthy on port 3000
+
+---
+Task ID: 2
+Agent: Backend Enhancement
+Task: Trade/Skill Management - Schema, Seed Data, API Routes for Worker Assignment Features
+
+Work Log:
+
+### 1. Prisma Schema Updates (`prisma/schema.prisma`)
+- Added `Trade` model (section 15.5) with fields: id, name, code, category, description, color, isActive, timestamps
+- Added `UserSkill` model with fields: id, userId, tradeId, proficiencyLevel, yearsExperience, certified, createdAt
+- Added `primaryTrade` (String?) and `userSkills` (UserSkill[]) fields to User model
+- Trade has unique constraints on name and code; UserSkill has unique constraint on [userId, tradeId]
+- Positioned Trade/UserSkill models before the IoT section (section 15)
+- Pushed schema to SQLite DB and regenerated Prisma client successfully
+
+### 2. Trade Seed Script (`prisma/seed-trades.ts`)
+- Created standalone seed script using @prisma/client directly
+- Inserted 8 common trades with names, codes, categories, descriptions, and color badges:
+  - Mechanical (MECH, #ef4444), Electrical (ELEC, #f59e0b), Instrumentation & Control (INST, #3b82f6)
+  - Civil & Structural (CIVIL, #8b5cf6), HVAC (HVAC, #06b6d4), Plumbing (PLMB, #10b981)
+  - Welding & Fabrication (WELD, #f97316), Painting & Coating (PAINT, #ec4899)
+- Script has idempotent behavior (skips existing trades by code)
+- Successfully executed, all 8 trades seeded
+
+### 3. Enhanced Users API (`src/app/api/users/route.ts`)
+- Added `departmentIds` query parameter: comma-separated department IDs → looks up department names from DB → filters users by matching department field
+- Added `role` query parameter: filters users who have a UserRole with the specified role slug (looks up Role by slug, then uses `some` filter on userRoles)
+- Added `includeSkills` query parameter ("true"): conditionally includes `userSkills` with nested trade info in the Prisma `include` clause
+- When includeSkills is active, response adds `primaryTrade` field and `skills` array (each skill includes trade id/name/code/category/color + proficiencyLevel/yearsExperience/certified)
+- Backward compatible: existing `department`, `status`, `search` parameters still work
+
+### 4. New Trades API (`src/app/api/trades/route.ts`)
+- Created GET endpoint returning all active trades ordered by category then name
+- Requires authenticated session (401 guard)
+- Returns `{ success: true, data: [...] }` format
+
+### 5. Departments API Verification
+- Verified existing `/api/departments/route.ts` already returns department objects with `id`, `name`, `code`, plus supervisor, parent, and plant relations
+- No changes needed
+
+Stage Summary:
+- 2 new Prisma models added (Trade, UserSkill) with 2 new fields on User model
+- 1 new seed script created (`prisma/seed-trades.ts`) with 8 trades seeded
+- 1 existing API route enhanced (`/api/users`) with 3 new query parameters (departmentIds, role, includeSkills)
+- 1 new API route created (`/api/trades`)
+- All changes backward compatible with existing API calls
+- Pre-existing lint errors in loto-records, IoTPages.tsx, QualityPages.tsx are unrelated

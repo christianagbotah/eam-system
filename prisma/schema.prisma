@@ -171,6 +171,10 @@ model User {
   // Session Management
   sessions              Session[]
 
+  // Trade / Skill relations
+  primaryTrade   String?
+  userSkills     UserSkill[]
+
   // Repair module relations
   repairMatReqRequested       RepairMaterialRequest[] @relation("RepairMatReqRequested")
   repairMatReqSupApproved     RepairMaterialRequest[] @relation("RepairMatReqSupApproved")
@@ -905,8 +909,44 @@ model MaintenanceRequestComment {
 
 
 // ============================================================================
-// 15. IoT / CONDITION MONITORING
+// 15.5 TRADE / SKILL MANAGEMENT
 // ============================================================================
+
+model Trade {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  code        String   @unique
+  category    String?                      // mechanical, electrical, civil, instrumentation, hvac, plumbing, welding
+  description String?
+  color       String   @default("#6b7280")  // badge color hex
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userSkills  UserSkill[]
+
+  @@map("trades")
+}
+
+model UserSkill {
+  id               String   @id @default(cuid())
+  userId           String
+  tradeId          String
+  proficiencyLevel String   @default("intermediate")  // beginner, intermediate, advanced, expert
+  yearsExperience  Int?
+  certified        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trade Trade @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tradeId])
+  @@map("user_skills")
+}
+
+// ============================================================================
+// 15. IoT / CONDITION MONITORING
+// ==============================================================================
 
 model IotDevice {
   id              String    @id @default(cuid())

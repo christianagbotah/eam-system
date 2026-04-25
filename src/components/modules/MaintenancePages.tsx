@@ -54,6 +54,7 @@ import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
 import { useIsMobile } from '@/components/shared/ResponsiveDialog';
 import { FileUpload } from '@/components/shared/FileUpload';
+import { WorkerAssignmentPicker, type SelectedWorker } from '@/components/shared/WorkerAssignmentPicker';
 export function MaintenanceRequestsPage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -532,8 +533,8 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     // Section 3: Resource Assignment
     departmentIds: [] as string[],
     assignType: 'technician' as 'technician' | 'supervisor',
-    technicians: [] as Array<{ userId: string; label: string }>,
-    supervisors: [] as Array<{ userId: string; label: string }>,
+    technicians: [] as SelectedWorker[],
+    supervisors: [] as SelectedWorker[],
     teamLeaderId: '',
     requiredParts: [] as string[],
     requiredTools: [] as string[],
@@ -671,20 +672,20 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     };
     if (convertForm.assignType === 'technician') {
       if (convertForm.technicians.length > 0) {
-        payload.assignedTo = convertForm.technicians[0].userId;
+        payload.assignedTo = convertForm.technicians[0].userId || convertForm.technicians[0].id;
       }
       if (convertForm.teamLeaderId) {
         payload.teamLeaderId = convertForm.teamLeaderId;
       }
       if (convertForm.technicians.length > 1) {
         payload.teamMembers = convertForm.technicians.slice(1).map(t => ({
-          userId: t.userId,
+          userId: t.userId || t.id,
           role: 'assistant',
         }));
       }
     }
     if (convertForm.assignType === 'supervisor' && convertForm.supervisors.length > 0) {
-      payload.assignedSupervisorId = convertForm.supervisors[0].userId;
+      payload.assignedSupervisorId = convertForm.supervisors[0].userId || convertForm.supervisors[0].id;
     }
     const res = await api.post(`/api/maintenance-requests/${id}/convert`, payload);
     if (res.success) {
@@ -712,26 +713,19 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   };
 
   // Helper: add/remove items from multi-select arrays
-  const addToArray = (field: 'departmentIds' | 'technicians' | 'supervisors' | 'requiredParts' | 'requiredTools', id: string) => {
+  const addToArray = (field: 'departmentIds' | 'requiredParts' | 'requiredTools', id: string) => {
     setConvertForm(f => {
-      const arr = [...f[field]];
-      if (field === 'departmentIds' || field === 'requiredParts' || field === 'requiredTools') {
-        if (!(arr as string[]).includes(id)) (arr as string[]).push(id);
-      } else {
-        const label = usersMap[id] || id;
-        (arr as Array<{ userId: string; label: string }>).push({ userId: id, label });
-      }
+      const arr = [...f[field]] as string[];
+      if (!arr.includes(id)) arr.push(id);
       return { ...f, [field]: arr };
     });
   };
 
-  const removeFromArray = (field: 'departmentIds' | 'technicians' | 'supervisors' | 'requiredParts' | 'requiredTools', id: string) => {
-    setConvertForm(f => {
-      if (field === 'departmentIds' || field === 'requiredParts' || field === 'requiredTools') {
-        return { ...f, [field]: (f[field] as string[]).filter(x => x !== id) };
-      }
-      return { ...f, [field]: (f[field] as Array<{ userId: string }>).filter(x => x.userId !== id) };
-    });
+  const removeFromArray = (field: 'departmentIds' | 'requiredParts' | 'requiredTools', id: string) => {
+    setConvertForm(f => ({
+      ...f,
+      [field]: (f[field] as string[]).filter(x => x !== id),
+    }));
   };
 
   const handleComment = async () => {
@@ -1006,31 +1000,6 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               </h3>
               <div className="grid gap-4">
 
-                {/* Department(s) Multi-select */}
-                <div className="space-y-2">
-                  <Label className="text-xs">Department(s)</Label>
-                  <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
-                    {convertForm.departmentIds.length === 0 && <span className="text-sm text-muted-foreground">Select departments...</span>}
-                    {convertForm.departmentIds.map(dId => {
-                      const dept = departments.find(d => d.id === dId);
-                      return dept ? (
-                        <Badge key={dId} variant="secondary" className="gap-1 bg-green-100 text-green-800 border-green-200">
-                          {dept.name}
-                          <button onClick={() => removeFromArray('departmentIds', dId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
-                        </Badge>
-                      ) : null;
-                    })}
-                  </div>
-                  <Select onValueChange={v => addToArray('departmentIds', v)}>
-                    <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add department..." /></SelectTrigger>
-                    <SelectContent>
-                      {departments.filter(d => !convertForm.departmentIds.includes(d.id)).map(d => (
-                        <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
                 {/* Assign To Toggle */}
                 <div className="space-y-2">
                   <Label className="text-xs">Assign To</Label>
@@ -1054,100 +1023,34 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                   </div>
                 </div>
 
-                {/* Technicians Multi-select (filtered by departments) */}
+                {/* Worker Assignment Picker */}
                 {convertForm.assignType === 'technician' && (
-                  <div className="space-y-2">
-                    <Label className="text-xs">Technicians</Label>
-                    <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
-                      {convertForm.technicians.length === 0 && <span className="text-sm text-muted-foreground">Search and add technicians...</span>}
-                      {convertForm.technicians.map(t => (
-                        <Badge key={t.userId} variant="secondary" className="gap-1">
-                          {t.label}
-                          <button onClick={() => removeFromArray('technicians', t.userId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
-                        </Badge>
-                      ))}
-                    </div>
-                    <AsyncSearchableSelect
-                      value=""
-                      onValueChange={v => { if (v) addToArray('technicians', v); }}
-                      fetchOptions={async () => {
-                        const params = new URLSearchParams();
-                        params.set('role', 'technician');
-                        if (convertForm.departmentIds.length > 0) {
-                          params.set('departmentIds', convertForm.departmentIds.join(','));
-                        }
-                        const res = await api.get(`/api/users?${params}`);
-                        if (res.success && res.data) {
-                          const users = Array.isArray(res.data) ? res.data : [];
-                          return users
-                            .filter((u: any) => !convertForm.technicians.some(t => t.userId === u.id))
-                            .map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-                        }
-                        return [];
-                      }}
-                      placeholder="Search technicians..."
-                      searchPlaceholder="Search by name..."
-                    />
-                  </div>
-                )}
-
-                {/* Supervisors Multi-select (filtered by departments) */}
-                {convertForm.assignType === 'supervisor' && (
-                  <div className="space-y-2">
-                    <Label className="text-xs">Supervisors</Label>
-                    <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
-                      {convertForm.supervisors.length === 0 && <span className="text-sm text-muted-foreground">Search and add supervisors...</span>}
-                      {convertForm.supervisors.map(s => (
-                        <Badge key={s.userId} variant="secondary" className="gap-1">
-                          {s.label}
-                          <button onClick={() => removeFromArray('supervisors', s.userId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
-                        </Badge>
-                      ))}
-                    </div>
-                    <AsyncSearchableSelect
-                      value=""
-                      onValueChange={v => { if (v) addToArray('supervisors', v); }}
-                      fetchOptions={async () => {
-                        const params = new URLSearchParams();
-                        params.set('role', 'supervisor');
-                        if (convertForm.departmentIds.length > 0) {
-                          params.set('departmentIds', convertForm.departmentIds.join(','));
-                        }
-                        const res = await api.get(`/api/users?${params}`);
-                        if (res.success && res.data) {
-                          const users = Array.isArray(res.data) ? res.data : [];
-                          return users
-                            .filter((u: any) => !convertForm.supervisors.some(s => s.userId === u.id))
-                            .map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-                        }
-                        return [];
-                      }}
-                      placeholder="Search supervisors..."
-                      searchPlaceholder="Search by name..."
-                    />
-                  </div>
-                )}
-
-                {/* Team Leader */}
-                <div className="space-y-2">
-                  <Label className="text-xs flex items-center gap-1"><Crown className="h-3 w-3 text-amber-500" />Team Leader</Label>
-                  <AsyncSearchableSelect
-                    value={convertForm.teamLeaderId}
-                    onValueChange={v => setConvertForm(f => ({ ...f, teamLeaderId: v }))}
-                    fetchOptions={async () => {
-                      const res = await api.get('/api/users');
-                      if (res.success && res.data) {
-                        const users = Array.isArray(res.data) ? res.data : [];
-                        return users
-                          .filter((u: any) => u.id !== convertForm.teamLeaderId)
-                          .map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-                      }
-                      return [];
-                    }}
-                    placeholder="Search team leader..."
-                    searchPlaceholder="Search by name..."
+                  <WorkerAssignmentPicker
+                    departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
+                    selectedDepartmentIds={convertForm.departmentIds}
+                    onDepartmentChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
+                    selectedWorkers={convertForm.technicians}
+                    onWorkersChange={(workers) => setConvertForm(f => ({ ...f, technicians: workers }))}
+                    teamLeaderId={convertForm.teamLeaderId}
+                    onTeamLeaderChange={(id) => setConvertForm(f => ({ ...f, teamLeaderId: id }))}
+                    mode="technician"
+                    showTeamLeader={true}
                   />
-                </div>
+                )}
+
+                {convertForm.assignType === 'supervisor' && (
+                  <WorkerAssignmentPicker
+                    departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
+                    selectedDepartmentIds={convertForm.departmentIds}
+                    onDepartmentChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
+                    selectedWorkers={convertForm.supervisors}
+                    onWorkersChange={(workers) => setConvertForm(f => ({ ...f, supervisors: workers }))}
+                    teamLeaderId={''}
+                    onTeamLeaderChange={() => {}}
+                    mode="supervisor"
+                    showTeamLeader={false}
+                  />
+                )}
 
                 {/* Required Spare Parts */}
                 <div className="space-y-2">
@@ -1386,31 +1289,6 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
         ) : stepKey === 'resources' ? (
           /* === MOBILE STEP 3: Resource Assignment === */
           <div className="space-y-4">
-            {/* Department chips */}
-            <div className="space-y-2">
-              <Label className="text-xs font-medium">Departments</Label>
-              <div className="flex flex-wrap gap-2 min-h-[44px] p-3 border rounded-xl bg-muted/30">
-                {convertForm.departmentIds.length === 0 && <span className="text-sm text-muted-foreground">Tap below to add...</span>}
-                {convertForm.departmentIds.map(dId => {
-                  const dept = departments.find(d => d.id === dId);
-                  return dept ? (
-                    <Badge key={dId} variant="secondary" className="gap-1 px-2.5 py-1 bg-green-100 text-green-800 border-green-200 rounded-lg">
-                      {dept.name}
-                      <button onClick={() => removeFromArray('departmentIds', dId)} className="ml-0.5 h-6 w-6 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
-                    </Badge>
-                  ) : null;
-                })}
-              </div>
-              <Select onValueChange={v => addToArray('departmentIds', v)}>
-                <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="+ Add department..." /></SelectTrigger>
-                <SelectContent>
-                  {departments.filter(d => !convertForm.departmentIds.includes(d.id)).map(d => (
-                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             {/* Assign To toggle — segmented control style */}
             <div className="space-y-2">
               <Label className="text-xs font-medium">Assign To</Label>
@@ -1440,89 +1318,36 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               </div>
             </div>
 
-            {/* Technicians/Supervisors multi-select */}
+            {/* Worker Assignment Picker — compact mode for mobile */}
             {convertForm.assignType === 'technician' && (
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Technicians</Label>
-                <div className="flex flex-wrap gap-2 min-h-[44px] p-3 border rounded-xl bg-muted/30">
-                  {convertForm.technicians.length === 0 && <span className="text-sm text-muted-foreground">Search and add...</span>}
-                  {convertForm.technicians.map(t => (
-                    <Badge key={t.userId} variant="secondary" className="gap-1 px-2.5 py-1 rounded-lg">
-                      {t.label}
-                      <button onClick={() => removeFromArray('technicians', t.userId)} className="ml-0.5 h-6 w-6 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
-                    </Badge>
-                  ))}
-                </div>
-                <AsyncSearchableSelect
-                  value=""
-                  onValueChange={v => { if (v) addToArray('technicians', v); }}
-                  fetchOptions={async () => {
-                    const params = new URLSearchParams();
-                    params.set('role', 'technician');
-                    if (convertForm.departmentIds.length > 0) params.set('departmentIds', convertForm.departmentIds.join(','));
-                    const res = await api.get(`/api/users?${params}`);
-                    if (res.success && res.data) {
-                      const users = Array.isArray(res.data) ? res.data : [];
-                      return users.filter((u: any) => !convertForm.technicians.some(t => t.userId === u.id)).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-                    }
-                    return [];
-                  }}
-                  placeholder="Search technicians..."
-                  searchPlaceholder="Search by name..."
-                />
-              </div>
+              <WorkerAssignmentPicker
+                departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
+                selectedDepartmentIds={convertForm.departmentIds}
+                onDepartmentChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
+                selectedWorkers={convertForm.technicians}
+                onWorkersChange={(workers) => setConvertForm(f => ({ ...f, technicians: workers }))}
+                teamLeaderId={convertForm.teamLeaderId}
+                onTeamLeaderChange={(id) => setConvertForm(f => ({ ...f, teamLeaderId: id }))}
+                mode="technician"
+                showTeamLeader={true}
+                compact={true}
+              />
             )}
 
             {convertForm.assignType === 'supervisor' && (
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Supervisors</Label>
-                <div className="flex flex-wrap gap-2 min-h-[44px] p-3 border rounded-xl bg-muted/30">
-                  {convertForm.supervisors.length === 0 && <span className="text-sm text-muted-foreground">Search and add...</span>}
-                  {convertForm.supervisors.map(s => (
-                    <Badge key={s.userId} variant="secondary" className="gap-1 px-2.5 py-1 rounded-lg">
-                      {s.label}
-                      <button onClick={() => removeFromArray('supervisors', s.userId)} className="ml-0.5 h-6 w-6 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
-                    </Badge>
-                  ))}
-                </div>
-                <AsyncSearchableSelect
-                  value=""
-                  onValueChange={v => { if (v) addToArray('supervisors', v); }}
-                  fetchOptions={async () => {
-                    const params = new URLSearchParams();
-                    params.set('role', 'supervisor');
-                    if (convertForm.departmentIds.length > 0) params.set('departmentIds', convertForm.departmentIds.join(','));
-                    const res = await api.get(`/api/users?${params}`);
-                    if (res.success && res.data) {
-                      const users = Array.isArray(res.data) ? res.data : [];
-                      return users.filter((u: any) => !convertForm.supervisors.some(s => s.userId === u.id)).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-                    }
-                    return [];
-                  }}
-                  placeholder="Search supervisors..."
-                  searchPlaceholder="Search by name..."
-                />
-              </div>
-            )}
-
-            {/* Team Leader */}
-            <div className="space-y-2">
-              <Label className="text-xs font-medium flex items-center gap-1"><Crown className="h-3.5 w-3.5 text-amber-500" />Team Leader</Label>
-              <AsyncSearchableSelect
-                value={convertForm.teamLeaderId}
-                onValueChange={v => setConvertForm(f => ({ ...f, teamLeaderId: v }))}
-                fetchOptions={async () => {
-                  const res = await api.get('/api/users');
-                  if (res.success && res.data) {
-                    const users = Array.isArray(res.data) ? res.data : [];
-                    return users.filter((u: any) => u.id !== convertForm.teamLeaderId).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-                  }
-                  return [];
-                }}
-                placeholder="Search team leader..."
-                searchPlaceholder="Search by name..."
+              <WorkerAssignmentPicker
+                departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
+                selectedDepartmentIds={convertForm.departmentIds}
+                onDepartmentChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
+                selectedWorkers={convertForm.supervisors}
+                onWorkersChange={(workers) => setConvertForm(f => ({ ...f, supervisors: workers }))}
+                teamLeaderId={''}
+                onTeamLeaderChange={() => {}}
+                mode="supervisor"
+                showTeamLeader={false}
+                compact={true}
               />
-            </div>
+            )}
 
             {/* Parts & Tools in collapsible sections */}
             <Accordion type="multiple" className="space-y-2">

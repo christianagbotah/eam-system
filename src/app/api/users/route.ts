@@ -12,8 +12,11 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const department = searchParams.get('department');
+    const departmentIds = searchParams.get('departmentIds');
     const status = searchParams.get('status');
     const search = searchParams.get('search');
+    const role = searchParams.get('role');
+    const includeSkills = searchParams.get('includeSkills') === 'true';
 
     const where: Record<string, unknown> = {};
     if (department) where.department = department;
@@ -26,24 +29,79 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    // Department-based filtering: look up department names from IDs
+    if (departmentIds) {
+      const deptIds = departmentIds.split(',').filter(Boolean);
+      if (deptIds.length > 0) {
+        const depts = await db.department.findMany({
+          where: { id: { in: deptIds } },
+          select: { name: true },
+        });
+        const deptNames = depts.map((d) => d.name);
+        if (deptNames.length > 0) {
+          where.department = { in: deptNames };
+        }
+      }
+    }
+
+    // Role-based filtering: find users with a specific role slug
+    if (role) {
+      const roleRecord = await db.role.findUnique({
+        where: { slug: role },
+        select: { id: true },
+      });
+      if (roleRecord) {
+        where.userRoles = {
+          some: { roleId: roleRecord.id },
+        };
+      }
+    }
+
+    // Build include clause conditionally
+    const include: Record<string, unknown> = {
+      userRoles: {
+        include: { role: { select: { id: true, name: true, slug: true } } },
+      },
+      plantAccess: {
+        include: { plant: { select: { id: true, name: true, code: true } } },
+      },
+    };
+
+    if (includeSkills) {
+      include.userSkills = {
+        include: {
+          trade: {
+            select: { id: true, name: true, code: true, category: true, color: true },
+          },
+        },
+      };
+    }
+
     const users = await db.user.findMany({
       where: Object.keys(where).length > 0 ? where : undefined,
-      include: {
-        userRoles: {
-          include: { role: { select: { id: true, name: true, slug: true } } },
-        },
-        plantAccess: {
-          include: { plant: { select: { id: true, name: true, code: true } } },
-        },
-      },
+      include,
       orderBy: { createdAt: 'asc' },
     });
 
     // Remove passwordHash from each user
     const safeUsers = users.map(({ passwordHash: _, ...user }) => ({
       ...user,
+      primaryTrade: user.primaryTrade,
       roles: user.userRoles.map((ur) => ur.role),
       plants: user.plantAccess.map((up) => up.plant),
+      ...(includeSkills
+        ? {
+            skills:
+              (user as Record<string, unknown>).userSkills != null
+                ? ((user as Record<string, unknown>).userSkills as Array<{ trade: Record<string, unknown>; proficiencyLevel: string; yearsExperience: number | null; certified: boolean }>).map((us) => ({
+                    ...us.trade,
+                    proficiencyLevel: us.proficiencyLevel,
+                    yearsExperience: us.yearsExperience,
+                    certified: us.certified,
+                  }))
+                : [],
+          }
+        : {}),
     }));
 
     return NextResponse.json({ success: true, data: safeUsers });

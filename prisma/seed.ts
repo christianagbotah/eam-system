@@ -668,6 +668,7 @@ async function seed() {
     db.notification.deleteMany(),
     db.userPlant.deleteMany(),
     db.userRole.deleteMany(),
+    db.userSkill.deleteMany(),
     db.user.deleteMany(),
     db.statusTransition.deleteMany(),
     db.companyModule.deleteMany(),
@@ -900,32 +901,34 @@ async function seed() {
   const originalDemoUsers: Array<{
     username: string; email: string; fullName: string; staffId: string;
     roleSlug: string; department: string; supervisorDept?: boolean; plantId: string;
+    primaryTrade?: string;
   }> = [
-    { username: 'planner1', email: 'planner@iassetspro.com', fullName: 'Kwame Planner', staffId: 'PLN-001', roleSlug: 'maintenance_planner', department: 'Maintenance', plantId: temaFactory.id },
-    { username: 'supervisor1', email: 'supervisor@iassetspro.com', fullName: 'Ama Supervisor', staffId: 'SUP-001', roleSlug: 'maintenance_supervisor', department: 'Production', supervisorDept: true, plantId: temaFactory.id },
-    { username: 'tech1', email: 'tech@iassetspro.com', fullName: 'Kofi Technician', staffId: 'TEC-001', roleSlug: 'maintenance_technician', department: 'Maintenance', plantId: temaFactory.id },
-    { username: 'operator1', email: 'operator@iassetspro.com', fullName: 'Akua Operator', staffId: 'OPR-001', roleSlug: 'production_operator', department: 'Production', plantId: temaFactory.id },
+    { username: 'planner1', email: 'planner@iassetspro.com', fullName: 'Kwame Planner', staffId: 'PLN-001', roleSlug: 'maintenance_planner', department: 'Maintenance', plantId: temaFactory.id, primaryTrade: 'Mechanical Engineer' },
+    { username: 'supervisor1', email: 'supervisor@iassetspro.com', fullName: 'Ama Supervisor', staffId: 'SUP-001', roleSlug: 'maintenance_supervisor', department: 'Production', supervisorDept: true, plantId: temaFactory.id, primaryTrade: 'Production Supervisor' },
+    { username: 'tech1', email: 'tech@iassetspro.com', fullName: 'Kofi Technician', staffId: 'TEC-001', roleSlug: 'maintenance_technician', department: 'Maintenance', plantId: temaFactory.id, primaryTrade: 'Mechanical Fitter' },
+    { username: 'operator1', email: 'operator@iassetspro.com', fullName: 'Akua Operator', staffId: 'OPR-001', roleSlug: 'production_operator', department: 'Production', plantId: temaFactory.id, primaryTrade: 'Machine Operator' },
   ];
 
   // New demo users (password: password123) — distributed across 3 Ghana plants
   const newDemoUsers: Array<{
     username: string; email: string; fullName: string; staffId: string;
     roleSlug: string; department: string; plantId: string;
+    primaryTrade?: string;
   }> = [
-    { username: 'manager1', email: 'manager1@iassetspro.com', fullName: 'Nana Plant Manager', staffId: 'PMG-001', roleSlug: 'plant_manager', department: 'Maintenance', plantId: temaFactory.id },
-    { username: 'maint_mgr1', email: 'maint_mgr1@iassetspro.com', fullName: 'Efua Maint Manager', staffId: 'MMG-001', roleSlug: 'maintenance_manager', department: 'Maintenance', plantId: temaFactory.id },
-    { username: 'tech2', email: 'tech2@iassetspro.com', fullName: 'Yaw Technician', staffId: 'TEC-002', roleSlug: 'maintenance_technician', department: 'Maintenance', plantId: kumasiPlant.id },
-    { username: 'prod_mgr1', email: 'prod_mgr1@iassetspro.com', fullName: 'Adwoa Prod Manager', staffId: 'PRM-001', roleSlug: 'production_manager', department: 'Production', plantId: temaFactory.id },
-    { username: 'op2', email: 'op2@iassetspro.com', fullName: 'Kwabena Operator', staffId: 'OPR-002', roleSlug: 'production_operator', department: 'Production', plantId: kumasiPlant.id },
-    { username: 'inv_mgr1', email: 'inv_mgr1@iassetspro.com', fullName: 'Abena Inv Manager', staffId: 'IVM-001', roleSlug: 'inventory_manager', department: 'Warehouse & Logistics', plantId: temaFactory.id },
-    { username: 'store1', email: 'store1@iassetspro.com', fullName: 'Kwaku Store Keeper', staffId: 'STK-001', roleSlug: 'store_keeper', department: 'Warehouse & Logistics', plantId: temaFactory.id },
-    { username: 'qual_mgr1', email: 'qual_mgr1@iassetspro.com', fullName: 'Ama Quality Mgr', staffId: 'QAM-001', roleSlug: 'quality_manager', department: 'Quality Control', plantId: temaFactory.id },
-    { username: 'safety1', email: 'safety1@iassetspro.com', fullName: 'Kojo Safety Officer', staffId: 'SAF-001', roleSlug: 'safety_officer', department: 'Health Safety & Environment', plantId: temaFactory.id },
-    { username: 'hr1', email: 'hr1@iassetspro.com', fullName: 'Afia HR Manager', staffId: 'HRM-001', roleSlug: 'hr_manager', department: 'Engineering', plantId: temaFactory.id },
-    { username: 'iot1', email: 'iot1@iassetspro.com', fullName: 'Emmanuel IoT Engineer', staffId: 'IOT-001', roleSlug: 'iot_engineer', department: 'Engineering', plantId: takoradiFacility.id },
-    { username: 'viewer1', email: 'viewer1@iassetspro.com', fullName: 'Grace Viewer', staffId: 'VWR-001', roleSlug: 'viewer', department: 'Utilities', plantId: temaFactory.id },
-    { username: 'toolshop1', email: 'toolshop1@iassetspro.com', fullName: 'Kofi Tools Shop', staffId: 'TLS-001', roleSlug: 'tools_shop_attendant', department: 'Maintenance', plantId: temaFactory.id },
-    { username: 'store2', email: 'store2@iassetspro.com', fullName: 'Ama Store Attendant', staffId: 'STK-002', roleSlug: 'store_keeper', department: 'Warehouse & Logistics', plantId: kumasiPlant.id },
+    { username: 'manager1', email: 'manager1@iassetspro.com', fullName: 'Nana Plant Manager', staffId: 'PMG-001', roleSlug: 'plant_manager', department: 'Maintenance', plantId: temaFactory.id, primaryTrade: 'Operations Manager' },
+    { username: 'maint_mgr1', email: 'maint_mgr1@iassetspro.com', fullName: 'Efua Maint Manager', staffId: 'MMG-001', roleSlug: 'maintenance_manager', department: 'Maintenance', plantId: temaFactory.id, primaryTrade: 'Mechanical Engineer' },
+    { username: 'tech2', email: 'tech2@iassetspro.com', fullName: 'Yaw Technician', staffId: 'TEC-002', roleSlug: 'maintenance_technician', department: 'Maintenance', plantId: kumasiPlant.id, primaryTrade: 'Electrician' },
+    { username: 'prod_mgr1', email: 'prod_mgr1@iassetspro.com', fullName: 'Adwoa Prod Manager', staffId: 'PRM-001', roleSlug: 'production_manager', department: 'Production', plantId: temaFactory.id, primaryTrade: 'Production Manager' },
+    { username: 'op2', email: 'op2@iassetspro.com', fullName: 'Kwabena Operator', staffId: 'OPR-002', roleSlug: 'production_operator', department: 'Production', plantId: kumasiPlant.id, primaryTrade: 'Machine Operator' },
+    { username: 'inv_mgr1', email: 'inv_mgr1@iassetspro.com', fullName: 'Abena Inv Manager', staffId: 'IVM-001', roleSlug: 'inventory_manager', department: 'Warehouse & Logistics', plantId: temaFactory.id, primaryTrade: 'Supply Chain' },
+    { username: 'store1', email: 'store1@iassetspro.com', fullName: 'Kwaku Store Keeper', staffId: 'STK-001', roleSlug: 'store_keeper', department: 'Warehouse & Logistics', plantId: temaFactory.id, primaryTrade: 'Storekeeping' },
+    { username: 'qual_mgr1', email: 'qual_mgr1@iassetspro.com', fullName: 'Ama Quality Mgr', staffId: 'QAM-001', roleSlug: 'quality_manager', department: 'Quality Control', plantId: temaFactory.id, primaryTrade: 'Quality Engineer' },
+    { username: 'safety1', email: 'safety1@iassetspro.com', fullName: 'Kojo Safety Officer', staffId: 'SAF-001', roleSlug: 'safety_officer', department: 'Health Safety & Environment', plantId: temaFactory.id, primaryTrade: 'HSE Officer' },
+    { username: 'hr1', email: 'hr1@iassetspro.com', fullName: 'Afia HR Manager', staffId: 'HRM-001', roleSlug: 'hr_manager', department: 'Engineering', plantId: temaFactory.id, primaryTrade: 'Human Resources' },
+    { username: 'iot1', email: 'iot1@iassetspro.com', fullName: 'Emmanuel IoT Engineer', staffId: 'IOT-001', roleSlug: 'iot_engineer', department: 'Engineering', plantId: takoradiFacility.id, primaryTrade: 'Instrumentation Technician' },
+    { username: 'viewer1', email: 'viewer1@iassetspro.com', fullName: 'Grace Viewer', staffId: 'VWR-001', roleSlug: 'viewer', department: 'Utilities', plantId: temaFactory.id, primaryTrade: 'Utility Technician' },
+    { username: 'toolshop1', email: 'toolshop1@iassetspro.com', fullName: 'Kofi Tools Shop', staffId: 'TLS-001', roleSlug: 'tools_shop_attendant', department: 'Maintenance', plantId: temaFactory.id, primaryTrade: 'Workshop Technician' },
+    { username: 'store2', email: 'store2@iassetspro.com', fullName: 'Ama Store Attendant', staffId: 'STK-002', roleSlug: 'store_keeper', department: 'Warehouse & Logistics', plantId: kumasiPlant.id, primaryTrade: 'Storekeeping' },
   ];
 
   const demoPassword = await hash('password123', 10);
@@ -939,6 +942,7 @@ async function seed() {
         fullName: u.fullName,
         staffId: u.staffId,
         department: u.department,
+        primaryTrade: u.primaryTrade || null,
         status: 'active',
         userRoles: { create: { roleId: createdRoles[u.roleSlug] } },
         plantAccess: { create: { plantId: u.plantId, accessLevel: 'write', isPrimary: false } },
