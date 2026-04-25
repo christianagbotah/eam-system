@@ -1113,3 +1113,20 @@ Stage Summary:
 - ConfirmDialog renders as bottom-positioned sheet on mobile
 - Commit: 9522598 pushed to GitHub
 - Pre-existing build errors remain (sessionCache, loto-records) - NOT related to our changes
+---
+Task ID: 1
+Agent: main
+Task: Implement mobile-native UI patterns for Convert-to-WO dialog
+
+Work Log:
+- Created `MobileStepperSheet` component at `/src/components/shared/MobileStepperSheet.tsx` — a native-feeling bottom drawer using vaul with step navigation (dot indicators, back/next buttons, action button on final step)
+- Modified `MaintenancePages.tsx` to use `MobileStepperSheet` for Convert-to-WO on mobile (< 768px) and keep existing `ResponsiveDialog` with 4-section layout on desktop
+- Mobile stepper presents 4 steps: Request Info (read-only summary), WO Details (stacked form fields), Resources (chips, segmented control, accordions for parts/tools), Safety Notes
+- Applied mobile-native patterns: rounded-xl inputs (h-12), segmented toggle control for assign-to, collapsible accordion for parts/tools, compact 2-col grid for read-only data
+- Verified existing Create MR and Assign-to-Planner dialogs already use ResponsiveDialog (bottom sheet on mobile) with mobile-friendly grid layouts
+- No type errors in modified files
+
+Stage Summary:
+- Created: `src/components/shared/MobileStepperSheet.tsx`
+- Modified: `src/components/modules/MaintenancePages.tsx` (conditional mobile/desktop rendering for Convert-to-WO dialog)
+- Server PID 13976 still healthy on port 3000

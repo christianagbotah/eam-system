@@ -51,6 +51,8 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
+import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
+import { useIsMobile } from '@/components/shared/ResponsiveDialog';
 import { FileUpload } from '@/components/shared/FileUpload';
 export function MaintenanceRequestsPage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
@@ -506,6 +508,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const [rejectNotes, setRejectNotes] = useState('');
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
   const { hasPermission, user } = useAuthStore();
+  const isMobile = useIsMobile();
 
   // Assign to Planner dialog
   const [assignPlannerOpen, setAssignPlannerOpen] = useState(false);
@@ -862,7 +865,8 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
           </div>
       </ResponsiveDialog>
 
-      {/* Enhanced Convert to WO Dialog — 4-Section Layout (ResponsiveDialog) */}
+      {/* Enhanced Convert to WO Dialog — Mobile Stepper / Desktop 4-Section Layout */}
+      {!isMobile ? (
       <ResponsiveDialog open={convertOpen} onOpenChange={setConvertOpen} large desktopMaxWidth="sm:max-w-4xl" title={<span className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-emerald-600" />Convert to Work Order</span>} description="Create a comprehensive work order from this maintenance request." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setConvertOpen(false)}>Cancel</Button><Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={convertLoading} onClick={handleConvert}>{convertLoading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Converting...</> : <><RefreshCw className="h-4 w-4 mr-1" />Create Work Order</>}</Button></div>}>
           <div className="grid gap-5 py-2">
 
@@ -1237,6 +1241,392 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
 
           </div>
       </ResponsiveDialog>
+      ) : (
+      /* ==================== MOBILE: Stepper bottom sheet ==================== */
+      <MobileStepperSheet
+        open={convertOpen}
+        onOpenChange={setConvertOpen}
+        title="Convert to Work Order"
+        description="Create a work order from this maintenance request."
+        steps={[
+          { key: 'info', label: 'Request', icon: FileText },
+          { key: 'details', label: 'Details', icon: ClipboardCheck },
+          { key: 'resources', label: 'Resources', icon: Users },
+          { key: 'safety', label: 'Safety', icon: ShieldAlert },
+        ]}
+        actionLabel="Create Work Order"
+        actionLoading={convertLoading}
+        onAction={handleConvert}
+      >
+        {(stepKey) => stepKey === 'info' ? (
+          /* === MOBILE STEP 1: Request Info — compact card layout === */
+          <div className="space-y-3">
+            <div className="bg-blue-50 rounded-xl p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Request #</p>
+                  <p className="text-sm font-bold text-blue-900 mt-0.5">{mr.requestNumber}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Machine</p>
+                  <p className="text-sm font-bold text-blue-900 mt-0.5 truncate">{mr.asset?.name || mr.assetName || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Location</p>
+                  <p className="text-sm font-bold text-blue-900 mt-0.5">{mr.location || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Breakdown</p>
+                  <Badge variant={mr.machineDownStatus ? 'destructive' : 'secondary'} className="text-xs">
+                    {mr.machineDownStatus ? 'Yes' : 'No'}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider mb-1.5">Problem Description</p>
+              <div className="bg-muted/50 rounded-xl p-3 text-sm text-foreground whitespace-pre-wrap max-h-32 overflow-y-auto">
+                {mr.description || 'No description provided.'}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-muted/50 rounded-xl p-3">
+                <p className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">Requested By</p>
+                <p className="text-sm font-medium mt-0.5">{mr.requester?.fullName || '-'}</p>
+              </div>
+              <div className="bg-muted/50 rounded-xl p-3">
+                <p className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">Date Sent</p>
+                <p className="text-sm font-medium mt-0.5">{formatDateTime(mr.createdAt)}</p>
+              </div>
+            </div>
+          </div>
+        ) : stepKey === 'details' ? (
+          /* === MOBILE STEP 2: WO Details — full-width stacked form === */
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">Work Order Type</Label>
+              <Select value={convertForm.workOrderType} onValueChange={v => setConvertForm(f => ({ ...f, workOrderType: v }))}>
+                <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="breakdown">Breakdown</SelectItem>
+                  <SelectItem value="preventive">Preventive</SelectItem>
+                  <SelectItem value="corrective">Corrective</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Priority</Label>
+                <Select value={convertForm.priority} onValueChange={v => setConvertForm(f => ({ ...f, priority: v }))}>
+                  <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Trade</Label>
+                <Select value={convertForm.tradeActivity} onValueChange={v => setConvertForm(f => ({ ...f, tradeActivity: v }))}>
+                  <SelectTrigger className="h-12 rounded-xl"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mechanical">Mechanical</SelectItem>
+                    <SelectItem value="electrical">Electrical</SelectItem>
+                    <SelectItem value="civil">Civil</SelectItem>
+                    <SelectItem value="facility">Facility</SelectItem>
+                    <SelectItem value="workshop">Workshop</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Est. Hours</Label>
+                <Input
+                  className="h-12 rounded-xl"
+                  value={convertForm.estimatedHoursDisplay || convertForm.estimatedHours}
+                  onChange={e => handleEstHoursChange(e.target.value)}
+                  placeholder="2.5 or 2:30"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Scheduled</Label>
+                <Input
+                  className="h-12 rounded-xl"
+                  type="datetime-local"
+                  value={convertForm.scheduledDate}
+                  onChange={e => setConvertForm(f => ({ ...f, scheduledDate: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">Delivery Date</Label>
+              <Input
+                className="h-12 rounded-xl"
+                type="date"
+                value={convertForm.deliveryDate}
+                onChange={e => setConvertForm(f => ({ ...f, deliveryDate: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">Technical Description</Label>
+              <Textarea
+                className="rounded-xl min-h-[100px]"
+                value={convertForm.technicalDescription}
+                onChange={e => setConvertForm(f => ({ ...f, technicalDescription: e.target.value }))}
+                placeholder="Detailed technical description..."
+                rows={4}
+              />
+            </div>
+          </div>
+        ) : stepKey === 'resources' ? (
+          /* === MOBILE STEP 3: Resource Assignment === */
+          <div className="space-y-4">
+            {/* Department chips */}
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">Departments</Label>
+              <div className="flex flex-wrap gap-2 min-h-[44px] p-3 border rounded-xl bg-muted/30">
+                {convertForm.departmentIds.length === 0 && <span className="text-sm text-muted-foreground">Tap below to add...</span>}
+                {convertForm.departmentIds.map(dId => {
+                  const dept = departments.find(d => d.id === dId);
+                  return dept ? (
+                    <Badge key={dId} variant="secondary" className="gap-1 px-2.5 py-1 bg-green-100 text-green-800 border-green-200 rounded-lg">
+                      {dept.name}
+                      <button onClick={() => removeFromArray('departmentIds', dId)} className="ml-0.5 h-6 w-6 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
+                    </Badge>
+                  ) : null;
+                })}
+              </div>
+              <Select onValueChange={v => addToArray('departmentIds', v)}>
+                <SelectTrigger className="h-12 rounded-xl"><SelectValue placeholder="+ Add department..." /></SelectTrigger>
+                <SelectContent>
+                  {departments.filter(d => !convertForm.departmentIds.includes(d.id)).map(d => (
+                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Assign To toggle — segmented control style */}
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">Assign To</Label>
+              <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setConvertForm(f => ({ ...f, assignType: 'technician' }))}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                    convertForm.assignType === 'technician'
+                      ? 'bg-background shadow-sm text-emerald-700'
+                      : 'text-muted-foreground'
+                  }`}
+                >
+                  <Wrench className="h-4 w-4" />Technicians
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConvertForm(f => ({ ...f, assignType: 'supervisor' }))}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                    convertForm.assignType === 'supervisor'
+                      ? 'bg-background shadow-sm text-violet-700'
+                      : 'text-muted-foreground'
+                  }`}
+                >
+                  <Shield className="h-4 w-4" />Supervisors
+                </button>
+              </div>
+            </div>
+
+            {/* Technicians/Supervisors multi-select */}
+            {convertForm.assignType === 'technician' && (
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Technicians</Label>
+                <div className="flex flex-wrap gap-2 min-h-[44px] p-3 border rounded-xl bg-muted/30">
+                  {convertForm.technicians.length === 0 && <span className="text-sm text-muted-foreground">Search and add...</span>}
+                  {convertForm.technicians.map(t => (
+                    <Badge key={t.userId} variant="secondary" className="gap-1 px-2.5 py-1 rounded-lg">
+                      {t.label}
+                      <button onClick={() => removeFromArray('technicians', t.userId)} className="ml-0.5 h-6 w-6 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
+                    </Badge>
+                  ))}
+                </div>
+                <AsyncSearchableSelect
+                  value=""
+                  onValueChange={v => { if (v) addToArray('technicians', v); }}
+                  fetchOptions={async () => {
+                    const params = new URLSearchParams();
+                    params.set('role', 'technician');
+                    if (convertForm.departmentIds.length > 0) params.set('departmentIds', convertForm.departmentIds.join(','));
+                    const res = await api.get(`/api/users?${params}`);
+                    if (res.success && res.data) {
+                      const users = Array.isArray(res.data) ? res.data : [];
+                      return users.filter((u: any) => !convertForm.technicians.some(t => t.userId === u.id)).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Search technicians..."
+                  searchPlaceholder="Search by name..."
+                />
+              </div>
+            )}
+
+            {convertForm.assignType === 'supervisor' && (
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Supervisors</Label>
+                <div className="flex flex-wrap gap-2 min-h-[44px] p-3 border rounded-xl bg-muted/30">
+                  {convertForm.supervisors.length === 0 && <span className="text-sm text-muted-foreground">Search and add...</span>}
+                  {convertForm.supervisors.map(s => (
+                    <Badge key={s.userId} variant="secondary" className="gap-1 px-2.5 py-1 rounded-lg">
+                      {s.label}
+                      <button onClick={() => removeFromArray('supervisors', s.userId)} className="ml-0.5 h-6 w-6 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
+                    </Badge>
+                  ))}
+                </div>
+                <AsyncSearchableSelect
+                  value=""
+                  onValueChange={v => { if (v) addToArray('supervisors', v); }}
+                  fetchOptions={async () => {
+                    const params = new URLSearchParams();
+                    params.set('role', 'supervisor');
+                    if (convertForm.departmentIds.length > 0) params.set('departmentIds', convertForm.departmentIds.join(','));
+                    const res = await api.get(`/api/users?${params}`);
+                    if (res.success && res.data) {
+                      const users = Array.isArray(res.data) ? res.data : [];
+                      return users.filter((u: any) => !convertForm.supervisors.some(s => s.userId === u.id)).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                    }
+                    return [];
+                  }}
+                  placeholder="Search supervisors..."
+                  searchPlaceholder="Search by name..."
+                />
+              </div>
+            )}
+
+            {/* Team Leader */}
+            <div className="space-y-2">
+              <Label className="text-xs font-medium flex items-center gap-1"><Crown className="h-3.5 w-3.5 text-amber-500" />Team Leader</Label>
+              <AsyncSearchableSelect
+                value={convertForm.teamLeaderId}
+                onValueChange={v => setConvertForm(f => ({ ...f, teamLeaderId: v }))}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/users');
+                  if (res.success && res.data) {
+                    const users = Array.isArray(res.data) ? res.data : [];
+                    return users.filter((u: any) => u.id !== convertForm.teamLeaderId).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                  }
+                  return [];
+                }}
+                placeholder="Search team leader..."
+                searchPlaceholder="Search by name..."
+              />
+            </div>
+
+            {/* Parts & Tools in collapsible sections */}
+            <Accordion type="multiple" className="space-y-2">
+              <AccordionItem value="parts" className="border rounded-xl px-1">
+                <AccordionTrigger className="text-xs font-medium py-3 px-2">
+                  <span className="flex items-center gap-1.5"><PackageSearch className="h-3.5 w-3.5" />Spare Parts {convertForm.requiredParts.length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5">{convertForm.requiredParts.length}</Badge>}</span>
+                </AccordionTrigger>
+                <AccordionContent className="px-2 pb-3 space-y-2">
+                  {convertForm.requiredParts.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {convertForm.requiredParts.map(partId => {
+                        const item = inventoryItems.find(i => i.id === partId);
+                        return item ? (
+                          <Badge key={partId} variant="secondary" className="gap-1">
+                            {item.itemName || item.name}
+                            <button onClick={() => removeFromArray('requiredParts', partId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+                  <Select onValueChange={v => addToArray('requiredParts', v)}>
+                    <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="+ Add spare part..." /></SelectTrigger>
+                    <SelectContent>
+                      {inventoryItems.filter(i => !convertForm.requiredParts.includes(i.id)).slice(0, 50).map(i => (
+                        <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem value="tools" className="border rounded-xl px-1">
+                <AccordionTrigger className="text-xs font-medium py-3 px-2">
+                  <span className="flex items-center gap-1.5"><Hammer className="h-3.5 w-3.5" />Tools {convertForm.requiredTools.length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5">{convertForm.requiredTools.length}</Badge>}</span>
+                </AccordionTrigger>
+                <AccordionContent className="px-2 pb-3 space-y-2">
+                  {convertForm.requiredTools.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {convertForm.requiredTools.map(toolId => {
+                        const tool = toolsData.find(t => t.id === toolId);
+                        return tool ? (
+                          <Badge key={toolId} variant="secondary" className="gap-1">
+                            {tool.toolName || tool.name}
+                            <button onClick={() => removeFromArray('requiredTools', toolId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+                  <Select onValueChange={v => addToArray('requiredTools', v)}>
+                    <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="+ Add tool..." /></SelectTrigger>
+                    <SelectContent>
+                      {toolsData.filter(t => !convertForm.requiredTools.includes(t.id)).slice(0, 50).map(t => (
+                        <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
+        ) : stepKey === 'safety' ? (
+          /* === MOBILE STEP 4: Safety Notes === */
+          <div className="space-y-4">
+            <div className="bg-amber-50 rounded-xl p-4">
+              <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5 mb-3">
+                <ShieldAlert className="h-4 w-4" />Safety Information
+              </p>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Safety Notes</Label>
+                  <Textarea
+                    className="rounded-xl min-h-[100px]"
+                    value={convertForm.safetyNotes}
+                    onChange={e => setConvertForm(f => ({ ...f, safetyNotes: e.target.value }))}
+                    placeholder="Hazards, precautions, lockout/tagout..."
+                    rows={3}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium flex items-center gap-1"><HardHat className="h-3.5 w-3.5" />PPE Required</Label>
+                  <Input
+                    className="h-12 rounded-xl"
+                    value={convertForm.ppeRequired}
+                    onChange={e => setConvertForm(f => ({ ...f, ppeRequired: e.target.value }))}
+                    placeholder="Safety glasses, gloves, helmet..."
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">General Notes</Label>
+                  <Textarea
+                    className="rounded-xl min-h-[80px]"
+                    value={convertForm.notes}
+                    onChange={e => setConvertForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="Additional notes or instructions..."
+                    rows={2}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </MobileStepperSheet>
+      )}
 
       {/* SLA Timer */}
       <SLATimerDisplay slaHours={(mr as any).slaHours} slaStartedAt={(mr as any).slaStartedAt} status={mr.status} />
