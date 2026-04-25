@@ -1057,3 +1057,37 @@ Stage Summary:
 - All dialogs now render as native bottom sheets on mobile (≤768px) and centered dialogs on desktop
 - Sticky footer buttons on mobile for all action dialogs
 - Zero new lint/build errors introduced
+
+---
+Task ID: 16
+Agent: Main Coordinator
+Task: Native mobile UI — ResponsiveDialog bottom sheets, MobileBottomNav, mobile touch targets
+
+Work Log:
+- Created `ResponsiveDialog` component (`src/components/shared/ResponsiveDialog.tsx`) — renders as bottom Sheet on mobile (<768px) and centered Dialog on desktop
+- Updated `Sheet` component (`src/components/ui/sheet.tsx`) to support `hideClose` prop to prevent duplicate close buttons
+- Exported `useIsMobile` hook from ResponsiveDialog for reuse
+- Converted ALL 16+ dialogs in MaintenancePages.tsx to use ResponsiveDialog:
+  - Create MR, Reject, Assign Planner, Convert to WO, Create WO, Assign WO, Complete WO, Edit WO, Time Log, Add Material, Reason, Personal Tool, Add Team Member, PM Schedule dialogs
+- Mobile optimizations for Convert-to-WO dialog:
+  - `p-4 sm:p-6` responsive section padding on all 4 colored sections
+  - `min-h-[44px]` touch targets on all SelectTrigger, Input, badge remove buttons
+  - `flex-col sm:flex-row` for assign-to toggle buttons (full-width on mobile)
+  - `min-h-[44px] min-w-[44px]` for badge remove button hit targets
+- Updated ConfirmDialog to use `useIsMobile` hook — positions as action sheet (bottom) on mobile
+- Created `MobileBottomNav` component (`src/components/shared/MobileBottomNav.tsx`):
+  - Fixed bottom navigation bar with 4 tabs: More (menu), Home, Requests, Work Orders
+  - Hidden on desktop (`lg:hidden`)
+  - iOS safe area inset padding (`env(safe-area-inset-bottom)`)
+  - Active indicator dot and highlighted icon
+  - "More" button opens mobile sidebar
+- Integrated MobileBottomNav into EAMApp.tsx app shell
+- Added `pb-16 lg:pb-0` bottom padding to main content area to prevent bottom nav overlap
+
+Stage Summary:
+- 2 commits pushed to GitHub (e183c85, 6fed3aa)
+- 5 new/modified files: ResponsiveDialog.tsx (new), MobileBottomNav.tsx (new), sheet.tsx (modified), ConfirmDialog.tsx (modified), EAMApp.tsx (modified)
+- MaintenancePages.tsx: 16+ dialogs converted to native mobile bottom sheets
+- All form elements have 44px minimum touch targets on mobile
+- Bottom navigation bar integrated for mobile users
+- ESLint passes cleanly (0 new errors)
