@@ -15,9 +15,7 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog';
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
@@ -150,15 +148,9 @@ export function SafetyIncidentsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Safety Incidents</h1>
           <p className="text-muted-foreground mt-1">Report, investigate, and track safety incidents and near-misses</p>
         </div>
-        {(hasPermission('safety.create') || isAdmin()) && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />Report Incident</Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Report New Incident</DialogTitle>
-              <DialogDescription>Fill in the details of the safety incident</DialogDescription>
-            </DialogHeader>
+        {(hasPermission('safety.create') || isAdmin()) && <>
+          <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 mr-2" />Report Incident</Button>
+          <ResponsiveDialog open={dialogOpen} onOpenChange={setDialogOpen} title="Report New Incident" description="Fill in the details of the safety incident">
             <ScrollArea className="max-h-[70vh]">
               <div className="space-y-4 py-2 pr-3">
                 <div className="space-y-2"><Label>Title</Label><Input placeholder="Brief description of incident" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} /></div>
@@ -183,12 +175,13 @@ export function SafetyIncidentsPage() {
                 </div>
               </div>
             </ScrollArea>
-            <DialogFooter>
+            
+            <div className="flex justify-end gap-2 pt-4">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Submit Report</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>}
+            </div>
+          </ResponsiveDialog>
+        </>}
       </div>
 
       {loading ? <LoadingSkeleton /> : <>
@@ -264,9 +257,7 @@ export function SafetyIncidentsPage() {
       </div>
       </>}
 
-      <Dialog open={!!viewItem} onOpenChange={() => setViewItem(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Incident Details</DialogTitle></DialogHeader>
+      <ResponsiveDialog open={!!viewItem} onOpenChange={(v) => !v && setViewItem(null)} title="Incident Details" large>
           <div className="grid grid-cols-2 gap-4">
             <div><Label className="text-xs text-muted-foreground">Title</Label><p className="text-sm font-medium">{viewItem?.title || '-'}</p></div>
             <div><Label className="text-xs text-muted-foreground">Type</Label><p className="text-sm font-medium">{viewItem?.type?.replace(/_/g, ' ') || '-'}</p></div>
@@ -279,12 +270,9 @@ export function SafetyIncidentsPage() {
             <div className="col-span-2"><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm font-medium">{viewItem?.description || '-'}</p></div>
             <div className="col-span-2"><Label className="text-xs text-muted-foreground">Corrective Action</Label><p className="text-sm font-medium">{viewItem?.correctiveAction || '-'}</p></div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </ResponsiveDialog>
 
-      <Dialog open={!!editItem} onOpenChange={() => setEditItem(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Edit Incident</DialogTitle></DialogHeader>
+      <ResponsiveDialog open={!!editItem} onOpenChange={(v) => !v && setEditItem(null)} title="Edit Incident" large>
           <div className="grid gap-4 py-2">
             <div className="space-y-2"><Label>Title</Label><Input value={editForm.title || ''} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Description</Label><Textarea rows={3} value={editForm.description || ''} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} /></div>
@@ -316,12 +304,11 @@ export function SafetyIncidentsPage() {
               <div className="space-y-2"><Label>Corrective Action</Label><Input value={editForm.correctiveAction || ''} onChange={e => setEditForm(p => ({ ...p, correctiveAction: e.target.value }))} /></div>
             </div>
           </div>
-          <DialogFooter>
+          <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button>
             <Button onClick={handleSave} disabled={editLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{editLoading ? 'Saving...' : 'Save Changes'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </ResponsiveDialog>
     </div>
   );
 }
@@ -424,10 +411,9 @@ export function SafetyInspectionsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Safety Inspections</h1>
           <p className="text-muted-foreground mt-1">Schedule and conduct safety inspections and workplace audits</p>
         </div>
-        {(hasPermission('safety.create') || isAdmin()) && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />New Inspection</Button></DialogTrigger>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader><DialogTitle>Create Inspection</DialogTitle><DialogDescription>Schedule a new safety inspection with checklist items</DialogDescription></DialogHeader>
+        {(hasPermission('safety.create') || isAdmin()) && <>
+          <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 mr-2" />New Inspection</Button>
+          <ResponsiveDialog open={dialogOpen} onOpenChange={setDialogOpen} title="Create Inspection" description="Schedule a new safety inspection with checklist items">
             <ScrollArea className="max-h-[70vh]">
               <div className="space-y-4 py-2 pr-3">
                 <div className="space-y-2"><Label>Title</Label><Input placeholder="Inspection title" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} /></div>
@@ -459,12 +445,13 @@ export function SafetyInspectionsPage() {
                 </div>
               </div>
             </ScrollArea>
-            <DialogFooter>
+            
+            <div className="flex justify-end gap-2 pt-4">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Create</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>}
+            </div>
+          </ResponsiveDialog>
+        </>}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -524,9 +511,7 @@ export function SafetyInspectionsPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={!!viewItem} onOpenChange={() => setViewItem(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Inspection Details</DialogTitle></DialogHeader>
+      <ResponsiveDialog open={!!viewItem} onOpenChange={() => setViewItem(null)} title="Inspection Details" large>
           <div className="grid grid-cols-2 gap-4">
             <div><Label className="text-xs text-muted-foreground">Title</Label><p className="text-sm font-medium">{viewItem?.title || '-'}</p></div>
             <div><Label className="text-xs text-muted-foreground">Type</Label><p className="text-sm font-medium">{viewItem?.type?.replace(/_/g, ' ') || '-'}</p></div>
@@ -539,12 +524,9 @@ export function SafetyInspectionsPage() {
             <div className="col-span-2"><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm font-medium">{viewItem?.description || '-'}</p></div>
             <div className="col-span-2"><Label className="text-xs text-muted-foreground">Findings</Label><p className="text-sm font-medium">{viewItem?.findings || '-'}</p></div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </ResponsiveDialog>
 
-      <Dialog open={!!editItem} onOpenChange={() => setEditItem(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Edit Inspection</DialogTitle></DialogHeader>
+      <ResponsiveDialog open={!!editItem} onOpenChange={() => setEditItem(null)} title="Edit Inspection" large>
           <div className="grid gap-4 py-2">
             <div className="space-y-2"><Label>Title</Label><Input value={editForm.title || ''} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Description</Label><Textarea rows={3} value={editForm.description || ''} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} /></div>
@@ -572,12 +554,11 @@ export function SafetyInspectionsPage() {
             </div>
             <div className="space-y-2"><Label>Findings</Label><Textarea rows={2} value={editForm.findings || ''} onChange={e => setEditForm(p => ({ ...p, findings: e.target.value }))} /></div>
           </div>
-          <DialogFooter>
+          <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button>
             <Button onClick={handleSave} disabled={editLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{editLoading ? 'Saving...' : 'Save Changes'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </ResponsiveDialog>
     </div>
   );
 }
@@ -675,10 +656,9 @@ export function SafetyTrainingPage() {
           <h1 className="text-2xl font-bold tracking-tight">Safety Training</h1>
           <p className="text-muted-foreground mt-1">Manage safety training programs, certifications, and compliance</p>
         </div>
-        {(hasPermission('safety.create') || isAdmin()) && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />New Training</Button></DialogTrigger>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader><DialogTitle>Create Training Record</DialogTitle><DialogDescription>Add a new safety training course or session</DialogDescription></DialogHeader>
+        {(hasPermission('safety.create') || isAdmin()) && <>
+          <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 mr-2" />New Training</Button>
+          <ResponsiveDialog open={dialogOpen} onOpenChange={setDialogOpen} title="Create Training Record" description="Add a new safety training course or session">
             <ScrollArea className="max-h-[70vh]">
               <div className="space-y-4 py-2 pr-3">
                 <div className="space-y-2"><Label>Course Name</Label><Input placeholder="e.g. Fire Safety Training" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} /></div>
@@ -697,12 +677,13 @@ export function SafetyTrainingPage() {
                 <div className="space-y-2"><Label>Location</Label><Input placeholder="e.g. Training Room A" value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))} /></div>
               </div>
             </ScrollArea>
-            <DialogFooter>
+            
+            <div className="flex justify-end gap-2 pt-4">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Create</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>}
+            </div>
+          </ResponsiveDialog>
+        </>}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -749,9 +730,7 @@ export function SafetyTrainingPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={!!viewItem} onOpenChange={() => setViewItem(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Training Details</DialogTitle></DialogHeader>
+      <ResponsiveDialog open={!!viewItem} onOpenChange={() => setViewItem(null)} title="Training Details" large>
           <div className="grid grid-cols-2 gap-4">
             <div><Label className="text-xs text-muted-foreground">Title</Label><p className="text-sm font-medium">{viewItem?.title || '-'}</p></div>
             <div><Label className="text-xs text-muted-foreground">Type</Label><p className="text-sm font-medium">{viewItem?.type?.replace(/_/g, ' ') || '-'}</p></div>
@@ -764,12 +743,9 @@ export function SafetyTrainingPage() {
             <div><Label className="text-xs text-muted-foreground">Attendees</Label><p className="text-sm font-medium">{viewItem?.attendees || '-'}</p></div>
             <div className="col-span-2"><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm font-medium">{viewItem?.description || '-'}</p></div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </ResponsiveDialog>
 
-      <Dialog open={!!editItem} onOpenChange={() => setEditItem(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Edit Training</DialogTitle></DialogHeader>
+      <ResponsiveDialog open={!!editItem} onOpenChange={() => setEditItem(null)} title="Edit Training" large>
           <div className="grid gap-4 py-2">
             <div className="space-y-2"><Label>Title</Label><Input value={editForm.title || ''} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Description</Label><Textarea rows={3} value={editForm.description || ''} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} /></div>
@@ -800,12 +776,11 @@ export function SafetyTrainingPage() {
               <div className="space-y-2"><Label>Completed Date</Label><Input type="date" value={editForm.completedDate ? String(editForm.completedDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, completedDate: e.target.value || null }))} /></div>
             </div>
           </div>
-          <DialogFooter>
+          <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button>
             <Button onClick={handleSave} disabled={editLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{editLoading ? 'Saving...' : 'Save Changes'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </ResponsiveDialog>
     </div>
   );
 }
@@ -921,10 +896,9 @@ export function SafetyEquipmentPage() {
           <h1 className="text-2xl font-bold tracking-tight">Safety Equipment</h1>
           <p className="text-muted-foreground mt-1">Track PPE, safety devices, and emergency equipment inventory</p>
         </div>
-        {(hasPermission('safety.create') || isAdmin()) && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />Register Equipment</Button></DialogTrigger>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader><DialogTitle>Register Equipment</DialogTitle><DialogDescription>Add a new safety equipment item</DialogDescription></DialogHeader>
+        {(hasPermission('safety.create') || isAdmin()) && <>
+          <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 mr-2" />Register Equipment</Button>
+          <ResponsiveDialog open={dialogOpen} onOpenChange={setDialogOpen} title="Register Equipment" description="Add a new safety equipment item">
             <ScrollArea className="max-h-[70vh]">
               <div className="space-y-4 py-2 pr-3">
                 <div className="space-y-2"><Label>Equipment Name</Label><Input placeholder="e.g. Safety Helmet" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></div>
@@ -940,12 +914,13 @@ export function SafetyEquipmentPage() {
                 </div>
               </div>
             </ScrollArea>
-            <DialogFooter>
+            
+            <div className="flex justify-end gap-2 pt-4">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Register</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>}
+            </div>
+          </ResponsiveDialog>
+        </>}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -996,9 +971,7 @@ export function SafetyEquipmentPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={!!viewItem} onOpenChange={() => setViewItem(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Equipment Details</DialogTitle></DialogHeader>
+      <ResponsiveDialog open={!!viewItem} onOpenChange={() => setViewItem(null)} title="Equipment Details" large>
           <div className="grid grid-cols-2 gap-4">
             <div><Label className="text-xs text-muted-foreground">Name</Label><p className="text-sm font-medium">{viewItem?.name || '-'}</p></div>
             <div><Label className="text-xs text-muted-foreground">Type</Label><p className="text-sm font-medium">{viewItem?.type?.replace(/_/g, ' ') || '-'}</p></div>
@@ -1010,12 +983,9 @@ export function SafetyEquipmentPage() {
             <div><Label className="text-xs text-muted-foreground">Next Inspection</Label><p className="text-sm font-medium">{viewItem?.nextInspection ? formatDate(viewItem.nextInspection) : '-'}</p></div>
             <div className="col-span-2"><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm font-medium">{viewItem?.description || '-'}</p></div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </ResponsiveDialog>
 
-      <Dialog open={!!editItem} onOpenChange={() => setEditItem(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Edit Equipment</DialogTitle></DialogHeader>
+      <ResponsiveDialog open={!!editItem} onOpenChange={() => setEditItem(null)} title="Edit Equipment" large>
           <div className="grid gap-4 py-2">
             <div className="space-y-2"><Label>Name</Label><Input value={editForm.name || ''} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Description</Label><Textarea rows={3} value={editForm.description || ''} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} /></div>
@@ -1037,12 +1007,11 @@ export function SafetyEquipmentPage() {
               <div className="space-y-2"><Label>Next Inspection</Label><Input type="date" value={editForm.nextInspection ? String(editForm.nextInspection).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, nextInspection: e.target.value || null }))} /></div>
             </div>
           </div>
-          <DialogFooter>
+          <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button>
             <Button onClick={handleSave} disabled={editLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{editLoading ? 'Saving...' : 'Save Changes'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </ResponsiveDialog>
     </div>
   );
 }
@@ -1142,10 +1111,9 @@ export function SafetyPermitsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Safety Permits</h1>
           <p className="text-muted-foreground mt-1">Manage work permits including hot work, confined space, and electrical permits</p>
         </div>
-        {(hasPermission('safety.create') || isAdmin()) && <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild><Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"><Plus className="h-4 w-4 mr-2" />Request Permit</Button></DialogTrigger>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader><DialogTitle>Request Work Permit</DialogTitle><DialogDescription>Submit a new safety work permit request</DialogDescription></DialogHeader>
+        {(hasPermission('safety.create') || isAdmin()) && <>
+          <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 mr-2" />Request Permit</Button>
+          <ResponsiveDialog open={dialogOpen} onOpenChange={setDialogOpen} title="Request Work Permit" description="Submit a new safety work permit request">
             <ScrollArea className="max-h-[70vh]">
               <div className="space-y-4 py-2 pr-3">
                 <div className="space-y-2"><Label>Permit Type</Label>
@@ -1179,12 +1147,13 @@ export function SafetyPermitsPage() {
                 </div>
               </div>
             </ScrollArea>
-            <DialogFooter>
+            
+            <div className="flex justify-end gap-2 pt-4">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer" onClick={handleCreate}>Submit Request</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>}
+            </div>
+          </ResponsiveDialog>
+        </>}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -1233,9 +1202,7 @@ export function SafetyPermitsPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={!!viewItem} onOpenChange={() => setViewItem(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Permit Details</DialogTitle></DialogHeader>
+      <ResponsiveDialog open={!!viewItem} onOpenChange={() => setViewItem(null)} title="Permit Details" large>
           <div className="grid grid-cols-2 gap-4">
             <div><Label className="text-xs text-muted-foreground">Title</Label><p className="text-sm font-medium">{viewItem?.title || '-'}</p></div>
             <div><Label className="text-xs text-muted-foreground">Type</Label><p className="text-sm font-medium">{viewItem?.type?.replace(/_/g, ' ') || '-'}</p></div>
@@ -1247,12 +1214,9 @@ export function SafetyPermitsPage() {
             <div><Label className="text-xs text-muted-foreground">Hazards</Label><p className="text-sm font-medium">{viewItem?.hazards || '-'}</p></div>
             <div className="col-span-2"><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm font-medium">{viewItem?.description || '-'}</p></div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </ResponsiveDialog>
 
-      <Dialog open={!!editItem} onOpenChange={() => setEditItem(null)}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Edit Permit</DialogTitle></DialogHeader>
+      <ResponsiveDialog open={!!editItem} onOpenChange={(v) => !v && setEditItem(null)} title="Edit Permit" large>
           <div className="grid gap-4 py-2">
             <div className="space-y-2"><Label>Title</Label><Input value={editForm.title || ''} onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Description</Label><Textarea rows={3} value={editForm.description || ''} onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))} /></div>
@@ -1279,12 +1243,11 @@ export function SafetyPermitsPage() {
               <div className="space-y-2"><Label>End Date</Label><Input type="date" value={editForm.endDate ? String(editForm.endDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, endDate: e.target.value || null }))} /></div>
             </div>
           </div>
-          <DialogFooter>
+          <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button>
             <Button onClick={handleSave} disabled={editLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{editLoading ? 'Saving...' : 'Save Changes'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </ResponsiveDialog>
     </div>
   );
 }

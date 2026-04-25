@@ -15,7 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog';
+} from '@/components/ui/dialog'
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';;
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -122,8 +123,8 @@ export function ProductionWorkCentersPage() {
           </TableBody></Table>
         </div>
       </CardContent></Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent><DialogHeader><DialogTitle>New Work Center</DialogTitle><DialogDescription>Add a new production work center.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Work Center</h2><p className="text-sm text-muted-foreground">Add a new production work center.</p></div>
           <div className="space-y-4">
             <div className="space-y-2"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Work center name" /></div>
             <div className="grid grid-cols-2 gap-4">
@@ -133,9 +134,9 @@ export function ProductionWorkCentersPage() {
             <div className="space-y-2"><Label>Capacity (units/hr)</Label><Input type="number" value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: e.target.value }))} placeholder="0" /></div>
             <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Description..." rows={2} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create</Button></div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -358,8 +359,8 @@ export function ProductionSchedulingPage() {
           </TableBody></Table>
         </div>
       </CardContent></Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent><DialogHeader><DialogTitle>Schedule New Job</DialogTitle><DialogDescription>Create a new production schedule entry.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Schedule New Job</h2><p className="text-sm text-muted-foreground">Create a new production schedule entry.</p></div>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Product *</Label><Input value={form.product} onChange={e => setForm(f => ({ ...f, product: e.target.value }))} placeholder="Product name" /></div>
@@ -374,9 +375,9 @@ export function ProductionSchedulingPage() {
               <div className="space-y-2"><Label>Quantity</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" /></div>
             </div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? 'Scheduling...' : 'Schedule'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? 'Scheduling...' : 'Schedule'}</Button></div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -869,8 +870,8 @@ export function ProductionOrdersPage() {
           </TableBody></Table>
         </div>
       </CardContent></Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent><DialogHeader><DialogTitle>New Production Order</DialogTitle><DialogDescription>Create a new production order.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Production Order</h2><p className="text-sm text-muted-foreground">Create a new production order.</p></div>
           <div className="space-y-4">
             <div className="space-y-2"><Label>Product / Title *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Product name" /></div>
             <div className="grid grid-cols-2 gap-4">
@@ -883,9 +884,9 @@ export function ProductionOrdersPage() {
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional notes..." rows={2} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Order</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Order</Button></div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -988,8 +989,8 @@ export function ProductionBatchesPage() {
           </TableBody></Table>
         </div>
       </CardContent></Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent><DialogHeader><DialogTitle>New Batch</DialogTitle><DialogDescription>Start a new production batch.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Batch</h2><p className="text-sm text-muted-foreground">Start a new production batch.</p></div>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Product *</Label><Input value={form.productName} onChange={e => setForm(f => ({ ...f, productName: e.target.value }))} placeholder="Product name" /></div>
@@ -1001,9 +1002,9 @@ export function ProductionBatchesPage() {
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Batch notes..." rows={2} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Batch</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Batch</Button></div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }

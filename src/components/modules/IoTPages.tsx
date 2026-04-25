@@ -17,7 +17,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
+} from '@/components/ui/dialog'
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';;
 import { Textarea } from '@/components/ui/textarea';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -168,10 +169,10 @@ export function IotDevicesPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">IoT Devices</h1><p className="text-muted-foreground text-sm mt-1">Register and manage IoT sensors, gateways, and connected devices</p></div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>{(hasPermission('iot.create') || isAdmin()) && <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Add Device</Button>}</DialogTrigger>
-          <DialogContent className="sm:max-w-[480px]">
-            <DialogHeader><DialogTitle>Register New Device</DialogTitle><DialogDescription>Add a new IoT device to the registry.</DialogDescription></DialogHeader>
+        <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+          {(hasPermission('iot.create') || isAdmin()) && <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Add Device</Button>}
+          
+            <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Register New Device</h2><p className="text-sm text-muted-foreground">Add a new IoT device to the registry.</p></div>
             <div className="grid gap-4 py-2">
               <div className="space-y-2"><Label>Device Name *</Label><Input placeholder="Temperature Sensor - Room X" value={newDevice.name} onChange={e => setNewDevice({ ...newDevice, name: e.target.value })} /></div>
               <div className="grid grid-cols-2 gap-4">
@@ -185,9 +186,9 @@ export function IotDevicesPage() {
                 <div className="space-y-2"><Label>Group</Label><Input placeholder="Environmental" value={newDevice.groupId} onChange={e => setNewDevice({ ...newDevice, groupId: e.target.value })} /></div>
               </div>
             </div>
-            <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Registering...' : 'Register Device'}</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+            <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Registering...' : 'Register Device'}</Button></div>
+          
+        </ResponsiveDialog>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -233,10 +234,10 @@ export function IotDevicesPage() {
         </TableBody></Table>
       </Card>
 
-      <Dialog open={!!detailDevice} onOpenChange={() => setDetailDevice(null)}>
-        <DialogContent className="sm:max-w-[600px]">
+      <ResponsiveDialog open={!!detailDevice} onOpenChange={() => setDetailDevice(null)}>
+        
           {detailDevice && (<>
-            <DialogHeader><DialogTitle className="flex items-center gap-2">{detailDevice.name}<Badge variant="outline" className={`${statusColor[detailDevice.status] || ''} capitalize ml-2`}>{detailDevice.status}</Badge></DialogTitle><DialogDescription className="font-mono text-xs">{detailDevice.deviceCode || detailDevice.id}</DialogDescription></DialogHeader>
+            <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight" className="flex items-center gap-2">{detailDevice.name}<Badge variant="outline" className={`${statusColor[detailDevice.status] || ''} capitalize ml-2`}>{detailDevice.status}</Badge></h2><p className="text-sm text-muted-foreground" className="font-mono text-xs">{detailDevice.deviceCode || detailDevice.id}</p></div>
             {detailLoading ? <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : (<>
             <div className="grid grid-cols-2 gap-4 text-sm">
               {[['Type', detailDevice.type], ['Protocol', detailDevice.protocol?.toUpperCase()], ['Location', detailDevice.location || '-'], ['Asset', detailDevice.asset?.name || '-'], ['Group', detailDevice.groupId || '-'], ['Last Seen', detailDevice.lastSeen ? timeAgo(detailDevice.lastSeen) : 'Never'], ['Battery', detailDevice.batteryLevel != null ? `${detailDevice.batteryLevel}%` : 'Wired'], ['Signal', signalLabel(detailDevice.signalStrength)], ['Parameter', detailDevice.parameter], ['Last Reading', detailDevice.lastReading != null ? `${detailDevice.lastReading} ${detailDevice.unit}` : 'No data'], ['Threshold', (detailDevice.thresholdMin != null || detailDevice.thresholdMax != null) ? `${detailDevice.thresholdMin ?? '—'} ~ ${detailDevice.thresholdMax ?? '—'} ${detailDevice.unit}` : '-'], ['Readings', `${detailDevice._count?.readings ?? 0}`], ['Alerts', `${detailDevice._count?.alerts ?? 0}`]].map(([label, val]) => (
@@ -256,19 +257,19 @@ export function IotDevicesPage() {
               </ChartContainer>
             </div>)}
             </>)}
-            <DialogFooter>{(hasPermission('iot.delete') || isAdmin()) && <Button variant="outline" onClick={() => handleDelete(detailDevice.id)} className="text-red-600 border-red-200 hover:bg-red-50"><Trash2 className="h-4 w-4 mr-1.5" />Remove Device</Button>}<Button variant="outline" onClick={() => setDetailDevice(null)}>Close</Button></DialogFooter>
+            <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">{(hasPermission('iot.delete') || isAdmin()) && <Button variant="outline" onClick={() => handleDelete(detailDevice.id)} className="text-red-600 border-red-200 hover:bg-red-50"><Trash2 className="h-4 w-4 mr-1.5" />Remove Device</Button>}<Button variant="outline" onClick={() => setDetailDevice(null)}>Close</Button></div>
           </>)}
-        </DialogContent>
-      </Dialog>
+        
+      </ResponsiveDialog>
 
       {/* Edit Device Dialog */}
-      <Dialog open={!!editDevice} onOpenChange={(open) => { if (!open) { setEditDevice(null); setEditForm({}); } }}>
-        <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto">
+      <ResponsiveDialog open={!!editDevice} onOpenChange={(open) => { if (!open) { setEditDevice(null); setEditForm({}); } }}>
+        
           {editDevice && (<>
-            <DialogHeader>
-              <DialogTitle>Edit Device</DialogTitle>
-              <DialogDescription className="font-mono text-xs">{editDevice.deviceCode || editDevice.id}</DialogDescription>
-            </DialogHeader>
+            <div className="space-y-1.5 mb-4">
+              <h2 className="text-lg font-semibold leading-none tracking-tight">Edit Device</h2>
+              <p className="text-sm text-muted-foreground" className="font-mono text-xs">{editDevice.deviceCode || editDevice.id}</p>
+            </div>
             <div className="grid gap-4 py-2">
               <div className="space-y-2">
                 <Label>Device Name *</Label>
@@ -339,15 +340,15 @@ export function IotDevicesPage() {
                 <Textarea value={editForm.description || ''} onChange={e => setEditForm({ ...editForm, description: e.target.value })} placeholder="Optional device description..." rows={3} />
               </div>
             </div>
-            <DialogFooter>
+            <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
               <Button variant="outline" onClick={() => { setEditDevice(null); setEditForm({}); }}>Cancel</Button>
               <Button onClick={handleEditSave} disabled={editLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">
                 {editLoading ? 'Saving...' : 'Save Changes'}
               </Button>
-            </DialogFooter>
+            </div>
           </>)}
-        </DialogContent>
-      </Dialog>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -698,10 +699,10 @@ export function IotRulesPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">IoT Rules</h1><p className="text-muted-foreground text-sm mt-1">Configure automation rules and alert thresholds for IoT sensor data</p></div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>{(hasPermission('iot.create') || isAdmin()) && <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Create Rule</Button>}</DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader><DialogTitle>Create Automation Rule</DialogTitle><DialogDescription>Define conditions and actions for automated alerts.</DialogDescription></DialogHeader>
+        <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+          {(hasPermission('iot.create') || isAdmin()) && <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Create Rule</Button>}
+          
+            <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Create Automation Rule</h2><p className="text-sm text-muted-foreground">Define conditions and actions for automated alerts.</p></div>
             <div className="grid gap-4 py-2">
               <div className="space-y-2"><Label>Rule Name *</Label><Input placeholder="High Temperature Alert" value={newRule.name} onChange={e => setNewRule({ ...newRule, name: e.target.value })} /></div>
               <div className="space-y-2"><Label>Device *</Label>
@@ -717,9 +718,9 @@ export function IotRulesPage() {
                 <div className="space-y-2"><Label>Cooldown (min)</Label><Input type="number" placeholder="5" value={newRule.cooldownMinutes} onChange={e => setNewRule({ ...newRule, cooldownMinutes: e.target.value })} /></div>
               </div>
             </div>
-            <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Creating...' : 'Create Rule'}</Button></DialogFooter>
-          </DialogContent>
-        </Dialog>
+            <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Creating...' : 'Create Rule'}</Button></div>
+          
+        </ResponsiveDialog>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">

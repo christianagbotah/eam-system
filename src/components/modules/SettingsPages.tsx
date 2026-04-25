@@ -24,7 +24,8 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog';
+} from '@/components/ui/dialog'
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';;
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -198,9 +199,9 @@ export function SettingsUsersPage() {
       </Card>
 
       {/* Create Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Create User</DialogTitle><DialogDescription>Add a new user to the system.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Create User</h2><p className="text-sm text-muted-foreground">Add a new user to the system.</p></div>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Full Name *</Label><Input value={createForm.fullName} onChange={e => setCreateForm(f => ({ ...f, fullName: e.target.value }))} /></div>
@@ -248,17 +249,17 @@ export function SettingsUsersPage() {
               </Select>
             </div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleCreate} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}Create User</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
 
       {/* Edit Dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Edit User</DialogTitle><DialogDescription>Update user information.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={editOpen} onOpenChange={setEditOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Edit User</h2><p className="text-sm text-muted-foreground">Update user information.</p></div>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Full Name *</Label><Input value={editForm.fullName} onChange={e => setEditForm(f => ({ ...f, fullName: e.target.value }))} /></div>
@@ -305,26 +306,26 @@ export function SettingsUsersPage() {
               </Select>
             </div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
             <Button onClick={handleEdit} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}Save Changes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
 
       {/* Reset Password Dialog */}
-      <Dialog open={resetOpen} onOpenChange={setResetOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader><DialogTitle>Reset Password</DialogTitle><DialogDescription>Set a new password for {selectedUser?.fullName}.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={resetOpen} onOpenChange={setResetOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Reset Password</h2><p className="text-sm text-muted-foreground">Set a new password for {selectedUser?.fullName}.</p></div>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5"><Label>New Password *</Label><Input type="password" value={resetPwd} onChange={e => setResetPwd(e.target.value)} /></div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setResetOpen(false)}>Cancel</Button>
             <Button onClick={handleResetPassword} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}Reset</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -670,38 +671,38 @@ export function SettingsRolesPage() {
       )}
 
       {/* Create Role Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Create Role</DialogTitle><DialogDescription>Add a new role to the system.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Create Role</h2><p className="text-sm text-muted-foreground">Add a new role to the system.</p></div>
           <div className="grid gap-4 py-2">
             <div className="space-y-1.5"><Label>Name *</Label><Input value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Slug *</Label><Input value={createForm.slug} onChange={e => setCreateForm(f => ({ ...f, slug: e.target.value }))} placeholder="e.g. technician" /></div>
             <div className="space-y-1.5"><Label>Description</Label><Input value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Level</Label><Input type="number" min={1} max={100} value={createForm.level} onChange={e => setCreateForm(f => ({ ...f, level: parseInt(e.target.value) || 1 }))} /></div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleCreateRole} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}Create</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
 
       {/* Edit Role Dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Edit Role</DialogTitle><DialogDescription>Update role information.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={editOpen} onOpenChange={setEditOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Edit Role</h2><p className="text-sm text-muted-foreground">Update role information.</p></div>
           <div className="grid gap-4 py-2">
             <div className="space-y-1.5"><Label>Name *</Label><Input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Slug</Label><Input value={editForm.slug} disabled={selectedRole?.isSystem} onChange={e => setEditForm(f => ({ ...f, slug: e.target.value }))} className={selectedRole?.isSystem ? 'bg-muted' : ''} /></div>
             <div className="space-y-1.5"><Label>Description</Label><Input value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Level</Label><Input type="number" min={1} max={100} value={editForm.level} onChange={e => setEditForm(f => ({ ...f, level: parseInt(e.target.value) || 1 }))} /></div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
             <Button onClick={handleEditRole} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -1615,9 +1616,9 @@ export function SettingsPlantsPage() {
         ))}
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>{editId ? 'Edit Plant' : 'Create Plant'}</DialogTitle><DialogDescription>{editId ? 'Update plant details.' : 'Add a new plant location.'}</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">{editId ? 'Edit Plant' : 'Create Plant'}</h2><p className="text-sm text-muted-foreground">{editId ? 'Update plant details.' : 'Add a new plant location.'}</p></div>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
@@ -1629,12 +1630,12 @@ export function SettingsPlantsPage() {
               <div className="space-y-1.5"><Label>Country</Label><Input value={form.country} onChange={e => setForm(f => ({ ...f, country: e.target.value }))} /></div>
             </div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}{editId ? 'Save' : 'Create'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -1733,9 +1734,9 @@ export function SettingsDepartmentsPage() {
         </div>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>{editId ? 'Edit Department' : 'Create Department'}</DialogTitle><DialogDescription>{editId ? 'Update department details.' : 'Add a new department.'}</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">{editId ? 'Edit Department' : 'Create Department'}</h2><p className="text-sm text-muted-foreground">{editId ? 'Update department details.' : 'Add a new department.'}</p></div>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
@@ -1798,12 +1799,12 @@ export function SettingsDepartmentsPage() {
               />
             </div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}{editId ? 'Save' : 'Create'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -3572,12 +3573,12 @@ export function SettingsIntegrationsPage() {
       </div>
 
       {/* Configure Dialog */}
-      <Dialog open={configOpen} onOpenChange={setConfigOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{selected?.connected ? 'Configure' : 'Connect'} {selected?.name}</DialogTitle>
-            <DialogDescription>{selected?.description}</DialogDescription>
-          </DialogHeader>
+      <ResponsiveDialog open={configOpen} onOpenChange={setConfigOpen}>
+        
+          <div className="space-y-1.5 mb-4">
+            <h2 className="text-lg font-semibold leading-none tracking-tight">{selected?.connected ? 'Configure' : 'Connect'} {selected?.name}</h2>
+            <p className="text-sm text-muted-foreground">{selected?.description}</p>
+          </div>
           <div className="space-y-4">
             {selected?.fields?.includes('url') && (
               <div className="space-y-2"><Label>Server URL</Label><Input value={configForm.url} onChange={e => setConfigForm(f => ({ ...f, url: e.target.value }))} placeholder="https://example.com/api" /></div>
@@ -3595,12 +3596,12 @@ export function SettingsIntegrationsPage() {
               <div className="space-y-2"><Label>Webhook URL</Label><Input value={configForm.webhookUrl} onChange={e => setConfigForm(f => ({ ...f, webhookUrl: e.target.value }))} placeholder="https://your-server.com/webhook" /></div>
             )}
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setConfigOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? 'Saving...' : selected?.connected ? 'Save Configuration' : 'Connect'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }

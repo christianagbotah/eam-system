@@ -15,14 +15,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 
 import {
   Bell,
@@ -259,21 +252,20 @@ function NotificationPopover() {
       </Popover>
 
       {/* Notification Detail Dialog */}
-      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="sm:max-w-lg">
+      <ResponsiveDialog open={detailOpen} onOpenChange={setDetailOpen}>
           {selectedNotif && (
             <>
-              <DialogHeader>
+              <div className="space-y-1.5 mb-4">
                 <div className="flex items-center gap-3">
                   <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${(typeColors[selectedNotif.type] || typeColors.info)}`}>
                     {React.createElement(typeIcons[selectedNotif.type] || MessageSquare, { className: 'h-5 w-5' })}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <DialogTitle className="text-base">{selectedNotif.title}</DialogTitle>
-                    <DialogDescription className="text-xs mt-0.5">{timeAgo(selectedNotif.createdAt)}</DialogDescription>
+                    <h2 className="text-base font-semibold leading-none tracking-tight">{selectedNotif.title}</h2>
+                    <p className="text-xs mt-0.5 text-muted-foreground">{timeAgo(selectedNotif.createdAt)}</p>
                   </div>
                 </div>
-              </DialogHeader>
+              </div>
               <div className="space-y-4 py-2">
                 <div className="rounded-lg bg-muted/40 border p-4">
                   <p className="text-sm leading-relaxed">{selectedNotif.message}</p>
@@ -308,7 +300,7 @@ function NotificationPopover() {
                   </div>
                 </div>
               </div>
-              <DialogFooter className="gap-2 sm:gap-0">
+              <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
                 {selectedNotif.actionUrl && (
                   <Button onClick={handleGoToAction} className="gap-1.5">
                     <ExternalLink className="h-3.5 w-3.5" />
@@ -318,11 +310,10 @@ function NotificationPopover() {
                 <Button variant="outline" onClick={() => setDetailOpen(false)}>
                   Close
                 </Button>
-              </DialogFooter>
+              </div>
             </>
           )}
-        </DialogContent>
-      </Dialog>
+      </ResponsiveDialog>
     </>
   );
 }

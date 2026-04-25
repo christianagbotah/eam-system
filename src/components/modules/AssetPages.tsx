@@ -23,7 +23,8 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog';
+} from '@/components/ui/dialog'
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';;
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -219,9 +220,9 @@ export function AssetsPage() {
         </div>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editId ? 'Edit Asset' : 'Create Asset'}</DialogTitle><DialogDescription>{editId ? 'Update asset information.' : 'Register a new asset.'}</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">{editId ? 'Edit Asset' : 'Create Asset'}</h2><p className="text-sm text-muted-foreground">{editId ? 'Update asset information.' : 'Register a new asset.'}</p></div>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
@@ -363,23 +364,23 @@ export function AssetsPage() {
               <div className="space-y-1.5"><Label>Expected Life (years)</Label><Input type="number" value={form.expectedLifeYears} onChange={e => setForm(f => ({ ...f, expectedLifeYears: e.target.value }))} /></div>
             </div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}{editId ? 'Save Changes' : 'Create Asset'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Delete Asset</DialogTitle><DialogDescription>Are you sure you want to delete this asset? This action cannot be undone.</DialogDescription></DialogHeader>
-          <DialogFooter className="gap-2">
+      <ResponsiveDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Delete Asset</h2><p className="text-sm text-muted-foreground">Are you sure you want to delete this asset? This action cannot be undone.</p></div>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -935,8 +936,8 @@ export function AssetsBomPage() {
           {filtered.length === 0 && <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground text-sm">No BOM items found</TableCell></TableRow>}
         </TableBody></Table></div>
       </CardContent></Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Add BOM Component</DialogTitle><DialogDescription>Add a new component to a Bill of Materials</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Add BOM Component</h2><p className="text-sm text-muted-foreground">Add a new component to a Bill of Materials</p></div>
           <div className="space-y-4">
             <div><Label>Parent Asset</Label>
                 <AsyncSearchableSelect
@@ -984,9 +985,9 @@ export function AssetsBomPage() {
             <div><Label>Specification</Label><Textarea placeholder="Component specifications..." value={form.specification} onChange={e => setForm(f => ({ ...f, specification: e.target.value }))} /></div>
             <div><Label>Revision</Label><Input placeholder="e.g. A" value={form.revision} onChange={e => setForm(f => ({ ...f, revision: e.target.value }))} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.parentAsset || !form.component}>{saving ? 'Saving...' : 'Add Component'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.parentAsset || !form.component}>{saving ? 'Saving...' : 'Add Component'}</Button></div>
+        
+      </ResponsiveDialog>
       </>}
     </div>
   );
@@ -1145,8 +1146,8 @@ export function AssetsConditionMonitoringPage() {
           {filtered.length === 0 && <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground text-sm">{monitoringData ? 'No monitoring data available' : 'Loading...'}</TableCell></TableRow>}
         </TableBody></Table></div>
       </CardContent></Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Add Monitoring Point</DialogTitle><DialogDescription>Configure a new condition monitoring point</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Add Monitoring Point</h2><p className="text-sm text-muted-foreground">Configure a new condition monitoring point</p></div>
           <div className="space-y-4">
             <div><Label>Asset</Label><Input placeholder="e.g. Main Compressor A" value={form.asset} onChange={e => setForm(f => ({ ...f, asset: e.target.value }))} /></div>
             <div><Label>Parameter</Label><Select value={form.parameter} onValueChange={v => setForm(f => ({ ...f, parameter: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="vibration">Vibration</SelectItem><SelectItem value="temperature">Temperature</SelectItem><SelectItem value="pressure">Pressure</SelectItem><SelectItem value="flow">Flow Rate</SelectItem><SelectItem value="current">Current</SelectItem></SelectContent></Select></div>
@@ -1156,9 +1157,9 @@ export function AssetsConditionMonitoringPage() {
             </div>
             <div><Label>Alert Threshold</Label><Input placeholder="e.g. 90" value={form.alertThreshold} onChange={e => setForm(f => ({ ...f, alertThreshold: e.target.value }))} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.asset}>{saving ? 'Saving...' : 'Add Point'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.asset}>{saving ? 'Saving...' : 'Add Point'}</Button></div>
+        
+      </ResponsiveDialog>
       </>}
     </div>
   );
@@ -1307,8 +1308,8 @@ export function AssetsDigitalTwinPage() {
           </CardContent>
         </Card>
       )}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Create Digital Twin</DialogTitle><DialogDescription>Create a new digital replica for an asset</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Create Digital Twin</h2><p className="text-sm text-muted-foreground">Create a new digital replica for an asset</p></div>
           <div className="space-y-4">
             <div><Label>Twin Name</Label><Input placeholder="e.g. Centrifugal Pump P-101" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
             <div><Label>Asset</Label>
@@ -1334,9 +1335,9 @@ export function AssetsDigitalTwinPage() {
               <div><Label>Sync Interval</Label><Select value={form.syncInterval} onValueChange={v => setForm(f => ({ ...f, syncInterval: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="real_time">Real-time</SelectItem><SelectItem value="1min">1 min</SelectItem><SelectItem value="5min">5 min</SelectItem><SelectItem value="15min">15 min</SelectItem></SelectContent></Select></div>
             </div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.name || !form.asset}>{saving ? 'Creating...' : 'Create Twin'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.name || !form.asset}>{saving ? 'Creating...' : 'Create Twin'}</Button></div>
+        
+      </ResponsiveDialog>
       </>}
     </div>
   );

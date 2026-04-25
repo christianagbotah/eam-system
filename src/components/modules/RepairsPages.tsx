@@ -17,7 +17,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog';
+} from '@/components/ui/dialog'
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';;
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -186,17 +187,17 @@ function RejectDialog({ open, onClose, onConfirm, title }: {
   const [reason, setReason] = useState('');
   useEffect(() => { if (!open) setReason(''); }, [open]);
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>Please provide a reason (minimum 10 characters).</DialogDescription></DialogHeader>
+    <ResponsiveDialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">{title}</h2><p className="text-sm text-muted-foreground">Please provide a reason (minimum 10 characters).</p></div>
         <Textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason for rejection..." rows={3} />
         {reason.length > 0 && reason.length < 10 && <p className="text-xs text-amber-600">{10 - reason.length} more characters needed</p>}
-        <DialogFooter>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button variant="destructive" disabled={reason.trim().length < 10} onClick={() => { onConfirm(reason); onClose(); }}>Reject</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      
+    </ResponsiveDialog>
   );
 }
 
@@ -209,9 +210,9 @@ function QuantityDialog({ open, onClose, onConfirm, title, description, max, fie
   const q = parseFloat(value);
   const valid = !isNaN(q) && q > 0 && q <= max;
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>
+    <ResponsiveDialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">{title}</h2><p className="text-sm text-muted-foreground">{description}</p></div>
         <div className="space-y-2">
           <Label>{fieldLabel}</Label>
           <Input type="number" value={value} onChange={e => setValue(e.target.value)} placeholder="Enter quantity" min={1} max={max} />
@@ -220,12 +221,12 @@ function QuantityDialog({ open, onClose, onConfirm, title, description, max, fie
             {valid && <span className="text-emerald-600 font-medium">{formatCurrency(q * 0)} estimated</span>}
           </div>
         </div>
-        <DialogFooter>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={!valid} onClick={() => { onConfirm(q); onClose(); }}>Confirm</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      
+    </ResponsiveDialog>
   );
 }
 
@@ -241,9 +242,9 @@ function ConditionSelectDialog({ open, onClose, onConfirm }: {
     { value: 'damaged', label: 'Damaged', color: 'bg-red-100 text-red-800' },
   ];
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Select Tool Condition</DialogTitle><DialogDescription>Assess the current condition of the tool.</DialogDescription></DialogHeader>
+    <ResponsiveDialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Select Tool Condition</h2><p className="text-sm text-muted-foreground">Assess the current condition of the tool.</p></div>
         <div className="grid grid-cols-2 gap-2">
           {options.map(o => (
             <button key={o.value} onClick={() => setCondition(o.value)}
@@ -252,12 +253,12 @@ function ConditionSelectDialog({ open, onClose, onConfirm }: {
             </button>
           ))}
         </div>
-        <DialogFooter>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { onConfirm(condition); onClose(); }}>Confirm</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      
+    </ResponsiveDialog>
   );
 }
 
@@ -638,9 +639,9 @@ export function RepairMaterialRequestsPage() {
       </Sheet>
 
       {/* Create Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>New Material Request</DialogTitle><DialogDescription>Request materials/spare parts for a work order</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Material Request</h2><p className="text-sm text-muted-foreground">Request materials/spare parts for a work order</p></div>
           <div className="space-y-4">
             <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v }))} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && res.data) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
             <div className="grid grid-cols-2 gap-3">
@@ -657,9 +658,9 @@ export function RepairMaterialRequestsPage() {
             <div><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} placeholder="Why is this material needed?" rows={3} /></div>
             <div><Label>Notes</Label><Textarea value={createForm.notes} onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })} placeholder="Additional information..." rows={2} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={submitting} className="gap-2"><Send className="h-4 w-4" /> Submit Request</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={submitting} className="gap-2"><Send className="h-4 w-4" /> Submit Request</Button></div>
+        
+      </ResponsiveDialog>
 
       <RejectDialog open={rejectOpen} onClose={() => { setRejectOpen(false); setRejectTarget(null); }} onConfirm={(reason) => { if (rejectTarget) handleAction(rejectTarget.id, rejectTarget.action, { notes: reason }); }} title="Reject Material Request" />
       <QuantityDialog open={qtyOpen} onClose={() => { setQtyOpen(false); setQtyTarget(null); }} onConfirm={(qty) => { if (qtyTarget) handleAction(qtyTarget.id, qtyTarget.action, { [qtyTarget.field]: qty }); }} title={qtyTarget?.action === 'issue' ? 'Issue Quantity' : 'Return Quantity'} description={qtyTarget?.action === 'issue' ? `Enter quantity to issue (max ${qtyTarget?.max || 0})` : `Enter quantity to return (max ${qtyTarget?.max || 0})`} max={qtyTarget?.max || 0} fieldLabel={qtyTarget?.action === 'issue' ? 'Quantity to Issue' : 'Quantity to Return'} />
@@ -902,9 +903,9 @@ export function RepairToolRequestsPage() {
       </Sheet>
 
       {/* Create Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>New Tool Request</DialogTitle><DialogDescription>Request tools for a repair work order</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Tool Request</h2><p className="text-sm text-muted-foreground">Request tools for a repair work order</p></div>
           <div className="space-y-4">
             <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v }))} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && res.data) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
             <div className="grid grid-cols-2 gap-3">
@@ -915,9 +916,9 @@ export function RepairToolRequestsPage() {
             <div><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} placeholder="Why is this tool needed?" rows={3} /></div>
             <div><Label>Notes</Label><Textarea value={createForm.notes} onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })} placeholder="Additional information..." rows={2} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={submitting} className="gap-2"><Send className="h-4 w-4" /> Submit</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={submitting} className="gap-2"><Send className="h-4 w-4" /> Submit</Button></div>
+        
+      </ResponsiveDialog>
 
       <RejectDialog open={rejectOpen} onClose={() => { setRejectOpen(false); setRejectTarget(null); }} onConfirm={(reason) => { if (rejectTarget) handleAction(rejectTarget.id, rejectTarget.action, { notes: reason }); }} title="Reject Tool Request" />
       <ConditionSelectDialog open={conditionOpen} onClose={() => { setConditionOpen(false); setConditionTarget(null); }} onConfirm={(condition) => { if (conditionTarget) handleAction(conditionTarget, 'return', { toolConditionAtReturn: condition }); }} />
@@ -1175,9 +1176,9 @@ export function RepairToolTransfersPage() {
       </Sheet>
 
       {/* Create Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>New Tool Transfer Request</DialogTitle><DialogDescription>Request transfer of a tool to another technician</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Tool Transfer Request</h2><p className="text-sm text-muted-foreground">Request transfer of a tool to another technician</p></div>
           <div className="space-y-4">
             <div><Label>Tool *</Label><AsyncSearchableSelect value={createForm.toolId} onValueChange={(v) => setCreateForm(f => ({ ...f, toolId: v }))} placeholder="Select tool..." searchPlaceholder="Search tools..." fetchOptions={async () => { const res = await api.get('/api/tools?limit=999'); if (res.success && res.data) return res.data.map((t: any) => ({ value: t.id, label: `${t.name} (${t.toolCode})` })); return []; }} /></div>
             <div className="relative">
@@ -1192,9 +1193,9 @@ export function RepairToolTransfersPage() {
             <div><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} placeholder="Why is this transfer needed?" rows={3} /></div>
             <div><Label>Notes</Label><Textarea value={createForm.notes} onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })} placeholder="Additional information..." rows={2} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={submitting} className="gap-2"><Send className="h-4 w-4" /> Submit Transfer</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={submitting} className="gap-2"><Send className="h-4 w-4" /> Submit Transfer</Button></div>
+        
+      </ResponsiveDialog>
 
       <RejectDialog open={rejectOpen} onClose={() => { setRejectOpen(false); setRejectTarget(null); }} onConfirm={(reason) => { if (rejectTarget) handleAction(rejectTarget, 'storekeeper_reject', { notes: reason }); }} title="Reject Transfer Request" />
       <ConditionSelectDialog open={conditionOpen} onClose={() => { setConditionOpen(false); setConditionTarget(null); }} onConfirm={(condition) => { if (conditionTarget) handleAction(conditionTarget, 'storekeeper_approve', { toolConditionAtTransfer: condition }); }} />
@@ -1310,9 +1311,9 @@ export function RepairDowntimePage() {
         </CardContent>
       </Card>
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Log Downtime</DialogTitle></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Log Downtime</h2></div>
           <div className="space-y-4">
             <div><Label>Work Order ID *</Label><AsyncSearchableSelect
                 value={createForm.workOrderId}
@@ -1360,23 +1361,23 @@ export function RepairDowntimePage() {
             <div><Label>Production Loss (₵)</Label><Input type="number" step="0.01" value={createForm.productionLoss} onChange={(e) => setCreateForm({ ...createForm, productionLoss: e.target.value })} /></div>
             <div><Label>Reason *</Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate}>Save</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate}>Save</Button></div>
+        
+      </ResponsiveDialog>
 
       {/* End Downtime Dialog */}
-      <Dialog open={!!endDowntimeTarget} onOpenChange={(open) => { if (!open) setEndDowntimeTarget(null); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>End Downtime</DialogTitle><DialogDescription>Set the end time for this downtime event.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={!!endDowntimeTarget} onOpenChange={(open) => { if (!open) setEndDowntimeTarget(null); }}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">End Downtime</h2><p className="text-sm text-muted-foreground">Set the end time for this downtime event.</p></div>
           <div className="space-y-4">
             <div className="space-y-1.5"><Label>End Time *</Label><Input type="datetime-local" value={endDowntimeTime} onChange={e => setEndDowntimeTime(e.target.value)} /></div>
-            <DialogFooter>
+            <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
               <Button variant="outline" onClick={() => setEndDowntimeTarget(null)}>Cancel</Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleEndDowntimeConfirm}>End Downtime</Button>
-            </DialogFooter>
+            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -1509,16 +1510,16 @@ export function RepairCompletionPage() {
       )}
 
       {/* Rework Reason Dialog */}
-      <Dialog open={reworkDialogOpen} onOpenChange={setReworkDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Request Rework</DialogTitle><DialogDescription>Please provide a reason for requesting rework.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={reworkDialogOpen} onOpenChange={setReworkDialogOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Request Rework</h2><p className="text-sm text-muted-foreground">Please provide a reason for requesting rework.</p></div>
           <Textarea value={reworkReasonValue} onChange={e => setReworkReasonValue(e.target.value)} placeholder="Rework reason..." rows={3} />
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => { setReworkDialogOpen(false); setReworkReasonValue(''); }}>Cancel</Button>
             <Button variant="destructive" disabled={!reworkReasonValue.trim() || submitting} onClick={() => { setReworkDialogOpen(false); handleSubmit('supervisor_request_rework'); }}>Request Rework</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }

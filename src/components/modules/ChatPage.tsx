@@ -19,7 +19,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from '@/components/ui/dialog'
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';;
 import {
   Search, Send, Plus, MessageSquare, X, Users,
   ArrowLeft,
@@ -366,12 +367,12 @@ export function ChatPage() {
       </div>
 
       {/* New Conversation Dialog */}
-      <Dialog open={showNewConv} onOpenChange={setShowNewConv}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New Conversation</DialogTitle>
-            <DialogDescription>Search for a user to start a conversation</DialogDescription>
-          </DialogHeader>
+      <ResponsiveDialog open={showNewConv} onOpenChange={setShowNewConv}>
+        
+          <div className="space-y-1.5 mb-4">
+            <h2 className="text-lg font-semibold leading-none tracking-tight">New Conversation</h2>
+            <p className="text-sm text-muted-foreground">Search for a user to start a conversation</p>
+          </div>
           <div className="space-y-3">
             <Input
               value={searchUsers}
@@ -402,8 +403,8 @@ export function ChatPage() {
               ))}
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        
+      </ResponsiveDialog>
     </div>
   );
 }

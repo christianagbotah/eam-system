@@ -16,7 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog';
+} from '@/components/ui/dialog'
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';;
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -178,8 +179,8 @@ export function OperationsMeterReadingsPage() {
         </TableBody></Table></div>
       </CardContent></Card>
       </>)}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Record New Reading</DialogTitle><DialogDescription>Enter the meter reading details below</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Record New Reading</h2><p className="text-sm text-muted-foreground">Enter the meter reading details below</p></div>
           <div className="space-y-4">
             <div><Label>Meter Name</Label><Input placeholder="e.g. Main Electricity Meter" value={form.meter} onChange={e => setForm(f => ({ ...f, meter: e.target.value }))} /></div>
             <div className="grid grid-cols-2 gap-3">
@@ -189,11 +190,11 @@ export function OperationsMeterReadingsPage() {
             <div><Label>Reading Date</Label><Input type="date" value={form.readingDate} onChange={e => setForm(f => ({ ...f, readingDate: e.target.value }))} /></div>
             <div><Label>Notes</Label><Textarea placeholder="Optional notes..." value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.meter || !form.value}>{saving ? 'Saving...' : 'Record Reading'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={!!viewItem} onOpenChange={open => { if (!open) setViewItem(null); }}>
-        <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Reading Details</DialogTitle><DialogDescription>View meter reading information</DialogDescription></DialogHeader>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.meter || !form.value}>{saving ? 'Saving...' : 'Record Reading'}</Button></div>
+        
+      </ResponsiveDialog>
+      <ResponsiveDialog open={!!viewItem} onOpenChange={open => { if (!open) setViewItem(null); }}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Reading Details</h2><p className="text-sm text-muted-foreground">View meter reading information</p></div>
           {viewItem && <div className="grid grid-cols-2 gap-4 text-sm">
             <div><span className="text-muted-foreground">Meter Name</span><p className="font-medium">{viewItem.meterName || '-'}</p></div>
             <div><span className="text-muted-foreground">Reading Value</span><p className="font-medium">{viewItem.value?.toLocaleString()} <span className="text-xs text-muted-foreground">{viewItem.unit}</span></p></div>
@@ -203,11 +204,11 @@ export function OperationsMeterReadingsPage() {
             <div><span className="text-muted-foreground">Reader</span><p className="font-medium">{viewItem.reader || '-'}</p></div>
             <div><span className="text-muted-foreground">Reading ID</span><p className="font-mono text-xs">{viewItem.readingNumber || viewItem.id?.slice(0, 8)}</p></div>
           </div>}
-          <DialogFooter><Button variant="outline" onClick={() => setViewItem(null)}>Close</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={!!editItem} onOpenChange={open => { if (!open) setEditItem(null); }}>
-        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Edit Reading</DialogTitle><DialogDescription>Update meter reading details</DialogDescription></DialogHeader>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setViewItem(null)}>Close</Button></div>
+        
+      </ResponsiveDialog>
+      <ResponsiveDialog open={!!editItem} onOpenChange={open => { if (!open) setEditItem(null); }}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Edit Reading</h2><p className="text-sm text-muted-foreground">Update meter reading details</p></div>
           <div className="space-y-4">
             <div><Label>Meter Name</Label><Input value={editForm.meterName} onChange={e => setEditForm(f => ({ ...f, meterName: e.target.value }))} /></div>
             <div className="grid grid-cols-2 gap-3">
@@ -220,9 +221,9 @@ export function OperationsMeterReadingsPage() {
             </div>
             <div><Label>Notes</Label><Textarea value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} rows={3} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button><Button onClick={handleEditSave} disabled={editLoading || !editForm.meterName || !editForm.value}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button><Button onClick={handleEditSave} disabled={editLoading || !editForm.meterName || !editForm.value}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -318,8 +319,8 @@ export function OperationsTrainingPage() {
         </TableBody></Table></div>
       </CardContent></Card>
       </>)}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Create New Course</DialogTitle><DialogDescription>Add a new training course to the system</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Create New Course</h2><p className="text-sm text-muted-foreground">Add a new training course to the system</p></div>
           <div className="space-y-4">
             <div><Label>Course Name</Label><Input placeholder="e.g. Advanced Safety Training" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
             <div className="grid grid-cols-2 gap-3">
@@ -329,9 +330,9 @@ export function OperationsTrainingPage() {
             <div><Label>Instructor</Label><Input placeholder="Instructor name" value={form.instructor} onChange={e => setForm(f => ({ ...f, instructor: e.target.value }))} /></div>
             <div><Label>Description</Label><Textarea placeholder="Course description..." value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.name}>{saving ? 'Creating...' : 'Create Course'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.name}>{saving ? 'Creating...' : 'Create Course'}</Button></div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -425,8 +426,8 @@ export function OperationsSurveysPage() {
         </TableBody></Table></div>
       </CardContent></Card>
       </>)}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Create New Survey</DialogTitle><DialogDescription>Set up a new survey for your team</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Create New Survey</h2><p className="text-sm text-muted-foreground">Set up a new survey for your team</p></div>
           <div className="space-y-4">
             <div><Label>Title</Label><Input placeholder="e.g. Monthly Safety Checklist" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} /></div>
             <div><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="safety">Safety</SelectItem><SelectItem value="compliance">Compliance</SelectItem><SelectItem value="audit">Audit</SelectItem><SelectItem value="feedback">Feedback</SelectItem></SelectContent></Select></div>
@@ -434,9 +435,9 @@ export function OperationsSurveysPage() {
             <div><Label>Questions (one per line)</Label><Textarea placeholder="Are fire extinguishers accessible?&#10;Are emergency exits clear?&#10;Is PPE being worn correctly?" rows={4} value={form.questions} onChange={e => setForm(f => ({ ...f, questions: e.target.value }))} /></div>
             <div><Label>Expiry Date</Label><Input type="date" value={form.expiryDate} onChange={e => setForm(f => ({ ...f, expiryDate: e.target.value }))} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.title}>{saving ? 'Creating...' : 'Create Survey'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.title}>{saving ? 'Creating...' : 'Create Survey'}</Button></div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -665,8 +666,8 @@ export function OperationsShiftHandoverPage() {
         </TableBody></Table></div>
       </CardContent></Card>
       </>)}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>New Shift Handover</DialogTitle><DialogDescription>Record handover details for the current shift</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Shift Handover</h2><p className="text-sm text-muted-foreground">Record handover details for the current shift</p></div>
           <div className="space-y-4">
             <div><Label>Shift</Label><Select value={form.shift} onValueChange={v => setForm(f => ({ ...f, shift: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Morning">Morning</SelectItem><SelectItem value="Afternoon">Afternoon</SelectItem><SelectItem value="Night">Night</SelectItem></SelectContent></Select></div>
             <div className="grid grid-cols-2 gap-3">
@@ -678,11 +679,11 @@ export function OperationsShiftHandoverPage() {
             <div><Label>Issues</Label><Textarea placeholder="Any issues encountered..." rows={2} value={form.issues} onChange={e => setForm(f => ({ ...f, issues: e.target.value }))} /></div>
             <div><Label>Escalations</Label><Textarea placeholder="Items to escalate..." rows={2} value={form.escalations} onChange={e => setForm(f => ({ ...f, escalations: e.target.value }))} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.fromOperator || !form.toOperator}>{saving ? 'Saving...' : 'Save Handover'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={!!viewItem} onOpenChange={open => { if (!open) setViewItem(null); }}>
-        <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Handover Details</DialogTitle><DialogDescription>View shift handover information</DialogDescription></DialogHeader>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.fromOperator || !form.toOperator}>{saving ? 'Saving...' : 'Save Handover'}</Button></div>
+        
+      </ResponsiveDialog>
+      <ResponsiveDialog open={!!viewItem} onOpenChange={open => { if (!open) setViewItem(null); }}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Handover Details</h2><p className="text-sm text-muted-foreground">View shift handover information</p></div>
           {viewItem && <div className="grid grid-cols-2 gap-4 text-sm">
             <div><span className="text-muted-foreground">Shift</span><p className="font-medium capitalize">{viewItem.shiftType || '-'}</p></div>
             <div><span className="text-muted-foreground">Status</span><p className="font-medium capitalize">{viewItem.status || '-'}</p></div>
@@ -695,11 +696,11 @@ export function OperationsShiftHandoverPage() {
             <div className="col-span-2"><span className="text-muted-foreground">Safety Notes</span><p className="font-medium">{viewItem.safetyNotes || '-'}</p></div>
             <div className="col-span-2"><span className="text-muted-foreground">Notes</span><p className="font-medium">{viewItem.notes || '-'}</p></div>
           </div>}
-          <DialogFooter><Button variant="outline" onClick={() => setViewItem(null)}>Close</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={!!editItem} onOpenChange={open => { if (!open) setEditItem(null); }}>
-        <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>Edit Handover</DialogTitle><DialogDescription>Update shift handover details</DialogDescription></DialogHeader>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setViewItem(null)}>Close</Button></div>
+        
+      </ResponsiveDialog>
+      <ResponsiveDialog open={!!editItem} onOpenChange={open => { if (!open) setEditItem(null); }}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Edit Handover</h2><p className="text-sm text-muted-foreground">Update shift handover details</p></div>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Shift</Label><Select value={editForm.shift} onValueChange={v => setEditForm(f => ({ ...f, shift: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Morning">Morning</SelectItem><SelectItem value="Afternoon">Afternoon</SelectItem><SelectItem value="Night">Night</SelectItem></SelectContent></Select></div>
@@ -716,9 +717,9 @@ export function OperationsShiftHandoverPage() {
             <div><Label>Tasks Summary</Label><Textarea value={editForm.items} onChange={e => setEditForm(f => ({ ...f, items: e.target.value }))} rows={3} /></div>
             <div><Label>Notes</Label><Textarea value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} rows={3} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button><Button onClick={handleEditSave} disabled={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button><Button onClick={handleEditSave} disabled={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -856,9 +857,9 @@ export function OperationsChecklistsPage() {
       </div>
 
       {/* Create Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Create Checklist</DialogTitle><DialogDescription>Define a new checklist template for routine procedures.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Create Checklist</h2><p className="text-sm text-muted-foreground">Define a new checklist template for routine procedures.</p></div>
           <div className="space-y-4">
             <div className="space-y-2"><Label>Checklist Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g., Monthly Safety Walkthrough" /></div>
             <div className="space-y-2"><Label>Description</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="What is this checklist for..." rows={2} /></div>
@@ -871,20 +872,20 @@ export function OperationsChecklistsPage() {
             </div>
             <div className="space-y-2"><Label>Checklist Items * (one per line)</Label><Textarea value={form.items} onChange={e => setForm(f => ({ ...f, items: e.target.value }))} placeholder={`Check fire extinguisher\nInspect emergency exits\nVerify PPE availability`} rows={6} /></div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleCreate} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? 'Creating...' : 'Create Checklist'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
 
       {/* View Dialog */}
-      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{selected?.name}</DialogTitle>
-            <DialogDescription>{selected?.description}</DialogDescription>
-          </DialogHeader>
+      <ResponsiveDialog open={viewOpen} onOpenChange={setViewOpen}>
+        
+          <div className="space-y-1.5 mb-4">
+            <h2 className="text-lg font-semibold leading-none tracking-tight">{selected?.name}</h2>
+            <p className="text-sm text-muted-foreground">{selected?.description}</p>
+          </div>
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Badge variant="outline" className={`text-[11px] capitalize ${catColors[selected?.category || ''] || ''}`}>{selected?.category}</Badge>
@@ -901,8 +902,8 @@ export function OperationsChecklistsPage() {
               ))}
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        
+      </ResponsiveDialog>
     </div>
   );
 }

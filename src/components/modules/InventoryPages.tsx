@@ -19,7 +19,8 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog';
+} from '@/components/ui/dialog'
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';;
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -307,9 +308,9 @@ export function InventoryPage() {
         </div>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editId ? 'Edit Item' : 'Add Inventory Item'}</DialogTitle><DialogDescription>{editId ? 'Update inventory item.' : 'Add a new item to inventory.'}</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">{editId ? 'Edit Item' : 'Add Inventory Item'}</h2><p className="text-sm text-muted-foreground">{editId ? 'Update inventory item.' : 'Add a new item to inventory.'}</p></div>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Item Code *</Label><Input value={form.itemCode} onChange={e => setForm(f => ({ ...f, itemCode: e.target.value }))} /></div>
@@ -395,28 +396,28 @@ export function InventoryPage() {
               <div className="space-y-1.5"><Label>Bin Location</Label><Input value={form.binLocation} onChange={e => setForm(f => ({ ...f, binLocation: e.target.value }))} /></div>
             </div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}{editId ? 'Save Changes' : 'Add Item'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Delete Inventory Item</DialogTitle><DialogDescription>Are you sure? This action cannot be undone.</DialogDescription></DialogHeader>
-          <DialogFooter className="gap-2">
+      <ResponsiveDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Delete Inventory Item</h2><p className="text-sm text-muted-foreground">Are you sure? This action cannot be undone.</p></div>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete}>Delete</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
 
       {/* Stock Movement Dialog */}
-      <Dialog open={movementOpen} onOpenChange={setMovementOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Stock Movement</DialogTitle><DialogDescription>Record a stock movement.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={movementOpen} onOpenChange={setMovementOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Stock Movement</h2><p className="text-sm text-muted-foreground">Record a stock movement.</p></div>
           <div className="space-y-4">
             <div className="space-y-1.5"><Label>Movement Type</Label>
               <Select value={movType} onValueChange={setMovType}>
@@ -448,8 +449,8 @@ export function InventoryPage() {
               {movLoading ? 'Recording...' : 'Record Movement'}
             </Button>
           </div>
-        </DialogContent>
-      </Dialog>
+        
+      </ResponsiveDialog>
 
       {/* Stock Movements Section */}
       {selectedMovItemId && (
@@ -622,9 +623,9 @@ export function InventoryCategoriesPage() {
       </Card>
 
       {/* Create Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Create Category</DialogTitle><DialogDescription>Add a new inventory category to the hierarchy.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Create Category</h2><p className="text-sm text-muted-foreground">Add a new inventory category to the hierarchy.</p></div>
           <div className="space-y-4">
             <div className="space-y-2"><Label>Category Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g., Electrical Components" /></div>
             <div className="space-y-2"><Label>Code</Label><Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="e.g., ELEC" /></div>
@@ -649,17 +650,17 @@ export function InventoryCategoriesPage() {
               />
             </div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleCreate} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? 'Creating...' : 'Create Category'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
 
       {/* Edit Dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Edit Category</DialogTitle><DialogDescription>Update category details.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={editOpen} onOpenChange={setEditOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Edit Category</h2><p className="text-sm text-muted-foreground">Update category details.</p></div>
           <div className="space-y-4">
             <div className="space-y-2"><Label>Category Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Code</Label><Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} /></div>
@@ -685,12 +686,12 @@ export function InventoryCategoriesPage() {
               />
             </div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
             <Button onClick={handleEdit} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? 'Saving...' : 'Save Changes'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -781,9 +782,9 @@ export function InventoryLocationsPage() {
           </TableBody></Table>
         </div>
       </Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader><DialogTitle>Add New Location</DialogTitle><DialogDescription>Create a new storage location in the warehouse.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Add New Location</h2><p className="text-sm text-muted-foreground">Create a new storage location in the warehouse.</p></div>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Code *</Label><Input placeholder="WH-A1" value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} /></div>
@@ -796,12 +797,12 @@ export function InventoryLocationsPage() {
             <div className="space-y-2"><Label>Capacity</Label><Input type="number" placeholder="500" value={form.capacity} onChange={e => setForm({ ...form, capacity: e.target.value })} /></div>
             <div className="space-y-2"><Label>Address</Label><Input placeholder="Building A, Floor 1" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Create Location</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -977,9 +978,9 @@ export function InventoryAdjustmentsPage() {
           </TableBody></Table>
         </div>
       </Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader><DialogTitle>New Inventory Adjustment</DialogTitle><DialogDescription>Record a stock adjustment for an inventory item.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Inventory Adjustment</h2><p className="text-sm text-muted-foreground">Record a stock adjustment for an inventory item.</p></div>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Item *</Label><Input placeholder="Ball Bearing 6205" value={form.item} onChange={e => setForm({ ...form, item: e.target.value })} /></div>
@@ -992,12 +993,12 @@ export function InventoryAdjustmentsPage() {
             </div>
             <div className="space-y-2"><Label>Reason *</Label><Textarea placeholder="Describe the reason for this adjustment..." value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} rows={3} /></div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">Submit Adjustment</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -1095,9 +1096,9 @@ export function InventoryRequestsPage() {
           </TableBody></Table>
         </div>
       </Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader><DialogTitle>New Inventory Request</DialogTitle><DialogDescription>Submit a material requisition for inventory items.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Inventory Request</h2><p className="text-sm text-muted-foreground">Submit a material requisition for inventory items.</p></div>
           <div className="grid gap-4 py-2">
             <div className="space-y-2"><Label>Item *</Label>
               <AsyncSearchableSelect
@@ -1124,12 +1125,12 @@ export function InventoryRequestsPage() {
             <div className="space-y-2"><Label>Description</Label><Textarea placeholder="Purpose or description..." value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={2} /></div>
             <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Additional notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} /></div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Creating...' : 'Submit Request'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -1240,9 +1241,9 @@ export function InventoryTransfersPage() {
           </TableBody></Table>
         </div>
       </Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader><DialogTitle>New Inventory Transfer</DialogTitle><DialogDescription>Create a transfer request to move items between locations.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Inventory Transfer</h2><p className="text-sm text-muted-foreground">Create a transfer request to move items between locations.</p></div>
           <div className="grid gap-4 py-2">
             <div className="space-y-2"><Label>Item *</Label>
               <AsyncSearchableSelect
@@ -1303,12 +1304,12 @@ export function InventoryTransfersPage() {
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Additional notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={3} /></div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Creating...' : 'Create Transfer'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -1402,9 +1403,9 @@ export function InventorySuppliersPage() {
           </TableBody></Table>
         </div>
       </Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader><DialogTitle>Add New Supplier</DialogTitle><DialogDescription>Register a new supplier in the system.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Add New Supplier</h2><p className="text-sm text-muted-foreground">Register a new supplier in the system.</p></div>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Company Name *</Label><Input placeholder="SKF Industries" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
@@ -1424,12 +1425,12 @@ export function InventorySuppliersPage() {
               <div className="space-y-2"><Label>Country</Label><Input placeholder="Country" value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} /></div>
             </div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Adding...' : 'Add Supplier'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -1537,9 +1538,9 @@ export function InventoryPurchaseOrdersPage() {
           </TableBody></Table>
         </div>
       </Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader><DialogTitle>New Purchase Order</DialogTitle><DialogDescription>Create a new purchase order for inventory items.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Purchase Order</h2><p className="text-sm text-muted-foreground">Create a new purchase order for inventory items.</p></div>
           <div className="grid gap-4 py-2">
             <div className="space-y-2"><Label>Supplier *</Label>
               <AsyncSearchableSelect
@@ -1565,12 +1566,12 @@ export function InventoryPurchaseOrdersPage() {
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Additional notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} /></div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Creating...' : 'Create PO'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -1674,9 +1675,9 @@ export function InventoryReceivingPage() {
           </TableBody></Table>
         </div>
       </Card>
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader><DialogTitle>New Goods Receipt Note</DialogTitle><DialogDescription>Record received items against a purchase order.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Goods Receipt Note</h2><p className="text-sm text-muted-foreground">Record received items against a purchase order.</p></div>
           <div className="grid gap-4 py-2">
             <div className="space-y-2"><Label>PO *</Label>
               <SearchableSelect
@@ -1697,12 +1698,12 @@ export function InventoryReceivingPage() {
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Any observations, discrepancies, or special instructions..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} /></div>
           </div>
-          <DialogFooter>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Receiving...' : 'Receive Items'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
