@@ -461,20 +461,33 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   // Enhanced Convert to WO dialog
   const [convertOpen, setConvertOpen] = useState(false);
   const [convertForm, setConvertForm] = useState({
-    title: '',
+    // Section 2: WO Details
+    workOrderType: 'corrective' as string,
     priority: 'medium' as string,
-    failureDescription: '',
-    causeDescription: '',
-    actionDescription: '',
-    assignmentType: 'direct' as 'direct' | 'via_supervisor',
-    technicianId: '',
-    departmentSupervisorId: '',
-    teamMembers: [] as Array<{ userId: string; role: string; isTeamLeader: boolean }>,
+    tradeActivity: 'mechanical' as string,
+    technicalDescription: '',
+    scheduledDate: '',
+    deliveryDate: '',
     estimatedHours: '',
-    plannedStart: '',
-    plannedEnd: '',
+    estimatedHoursDisplay: '',
+    // Section 3: Resource Assignment
+    departmentIds: [] as string[],
+    assignType: 'technician' as 'technician' | 'supervisor',
+    technicians: [] as Array<{ userId: string }>,
+    supervisors: [] as Array<{ userId: string }>,
+    teamLeaderId: '',
+    requiredParts: [] as string[],
+    requiredTools: [] as string[],
+    // Section 4: Safety
+    safetyNotes: '',
+    ppeRequired: '',
+    notes: '',
   });
   const [convertLoading, setConvertLoading] = useState(false);
+  // Data for dropdowns
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+  const [toolsData, setToolsData] = useState<any[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -531,54 +544,79 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     setPlannerLoading(false);
   };
 
-  const openConvertDialog = () => {
+  const openConvertDialog = async () => {
     if (!mr) return;
     setConvertForm({
-      title: mr.title,
+      workOrderType: 'corrective',
       priority: mr.priority === 'urgent' ? 'high' : mr.priority,
-      failureDescription: mr.description || '',
-      causeDescription: '',
-      actionDescription: '',
-      assignmentType: 'direct',
-      technicianId: '',
-      departmentSupervisorId: '',
-      teamMembers: [],
+      tradeActivity: 'mechanical',
+      technicalDescription: mr.title,
+      scheduledDate: '',
+      deliveryDate: '',
       estimatedHours: '',
-      plannedStart: '',
-      plannedEnd: '',
+      estimatedHoursDisplay: '',
+      departmentIds: mr.departmentId ? [mr.departmentId] : [],
+      assignType: 'technician',
+      technicians: [],
+      supervisors: [],
+      teamLeaderId: '',
+      requiredParts: [],
+      requiredTools: [],
+      safetyNotes: '',
+      ppeRequired: '',
+      notes: '',
     });
+    // Load dropdown data
+    try {
+      const [deptsRes, invRes, toolsRes] = await Promise.all([
+        api.get('/api/departments'),
+        api.get('/api/inventory'),
+        api.get('/api/tools'),
+      ]);
+      if (deptsRes.success && deptsRes.data) setDepartments(Array.isArray(deptsRes.data) ? deptsRes.data : []);
+      if (invRes.success && invRes.data) setInventoryItems(Array.isArray(invRes.data) ? invRes.data : []);
+      if (toolsRes.success && toolsRes.data) setToolsData(Array.isArray(toolsRes.data) ? toolsRes.data : []);
+    } catch (_e) {
+      // Silently handle - dropdowns will just be empty
+    }
     setConvertOpen(true);
   };
 
   const handleConvert = async () => {
-    if (!convertForm.title) { toast.error('Title is required'); return; }
+    if (!mr) return;
     setConvertLoading(true);
     const payload: any = {
-      title: convertForm.title,
+      title: mr.title,
       priority: convertForm.priority,
-      failureDescription: convertForm.failureDescription || undefined,
-      causeDescription: convertForm.causeDescription || undefined,
-      actionDescription: convertForm.actionDescription || undefined,
-      assignmentType: convertForm.assignmentType,
+      workOrderType: convertForm.workOrderType,
+      tradeActivity: convertForm.tradeActivity,
+      technicalDescription: convertForm.technicalDescription || undefined,
+      assignmentType: convertForm.assignType === 'technician' ? 'direct' : 'via_supervisor',
       estimatedHours: convertForm.estimatedHours ? parseFloat(convertForm.estimatedHours) : undefined,
-      plannedStart: convertForm.plannedStart || undefined,
-      plannedEnd: convertForm.plannedEnd || undefined,
+      plannedStart: convertForm.scheduledDate || undefined,
+      deliveryDateRequired: convertForm.deliveryDate || undefined,
+      safetyNotes: convertForm.safetyNotes || undefined,
+      ppeRequired: convertForm.ppeRequired || undefined,
+      notes: convertForm.notes || undefined,
+      requiredParts: convertForm.requiredParts.length > 0 ? convertForm.requiredParts : undefined,
+      requiredTools: convertForm.requiredTools.length > 0 ? convertForm.requiredTools : undefined,
     };
-    if (convertForm.assignmentType === 'direct' && convertForm.technicianId) {
-      payload.assignedTo = convertForm.technicianId;
-      // Find team leader from team members
-      const teamLeader = convertForm.teamMembers.find((tm: any) => tm.isTeamLeader);
-      if (teamLeader) {
-        payload.teamLeaderId = teamLeader.userId;
+    if (convertForm.assignType === 'technician') {
+      if (convertForm.technicians.length > 0) {
+        payload.assignedTo = convertForm.technicians[0].userId;
       }
-      // Send team members without isTeamLeader flag (backend doesn't expect it)
-      payload.teamMembers = convertForm.teamMembers.map((tm: any) => ({
-        userId: tm.userId,
-        role: tm.role,
-      }));
+      if (convertForm.teamLeaderId) {
+        payload.teamLeaderId = convertForm.teamLeaderId;
+      }
+      if (convertForm.technicians.length > 1) {
+        payload.teamMembers = convertForm.technicians.slice(1).map(t => ({
+          userId: t.userId,
+          role: 'assistant',
+        }));
+      }
     }
-    if (convertForm.assignmentType === 'via_supervisor' && convertForm.departmentSupervisorId) {
-      payload.assignedSupervisorId = convertForm.departmentSupervisorId;
+    if (convertForm.assignType === 'supervisor' && convertForm.supervisors.length > 0) {
+      payload.assignedSupervisorId = convertForm.supervisors[0].userId;
     }
     const res = await api.post(`/api/maintenance-requests/${id}/convert`, payload);
     if (res.success) {
@@ -592,19 +630,39 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     setConvertLoading(false);
   };
 
-  const addTeamMember = () => {
-    setConvertForm(f => ({ ...f, teamMembers: [...f.teamMembers, { userId: '', role: 'assistant', isTeamLeader: false }] }));
+  // Helper: handle estimated hours format conversion ("2:30" → "2.5", "2.5" → "2.5")
+  const handleEstHoursChange = (val: string) => {
+    let displayVal = val;
+    let decimalVal = val;
+    if (val.includes(':')) {
+      const [h, m] = val.split(':').map(Number);
+      if (!isNaN(h) && !isNaN(m)) {
+        decimalVal = String(h + m / 60);
+      }
+    }
+    setConvertForm(f => ({ ...f, estimatedHours: decimalVal, estimatedHoursDisplay: displayVal }));
   };
 
-  const removeTeamMember = (idx: number) => {
-    setConvertForm(f => ({ ...f, teamMembers: f.teamMembers.filter((_, i) => i !== idx) }));
+  // Helper: add/remove items from multi-select arrays
+  const addToArray = (field: 'departmentIds' | 'technicians' | 'supervisors' | 'requiredParts' | 'requiredTools', id: string) => {
+    setConvertForm(f => {
+      const arr = [...f[field]];
+      if (field === 'departmentIds' || field === 'requiredParts' || field === 'requiredTools') {
+        if (!(arr as string[]).includes(id)) (arr as string[]).push(id);
+      } else {
+        (arr as Array<{ userId: string }>).push({ userId: id });
+      }
+      return { ...f, [field]: arr };
+    });
   };
 
-  const updateTeamMember = (idx: number, field: string, value: string | boolean) => {
-    setConvertForm(f => ({
-      ...f,
-      teamMembers: f.teamMembers.map((m, i) => i === idx ? { ...m, [field]: value } : m),
-    }));
+  const removeFromArray = (field: 'departmentIds' | 'technicians' | 'supervisors' | 'requiredParts' | 'requiredTools', id: string) => {
+    setConvertForm(f => {
+      if (field === 'departmentIds' || field === 'requiredParts' || field === 'requiredTools') {
+        return { ...f, [field]: (f[field] as string[]).filter(x => x !== id) };
+      }
+      return { ...f, [field]: (f[field] as Array<{ userId: string }>).filter(x => x.userId !== id) };
+    });
   };
 
   const handleComment = async () => {
