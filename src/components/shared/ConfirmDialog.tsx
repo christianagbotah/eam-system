@@ -12,6 +12,8 @@ import {
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
 import { Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useIsMobile } from './ResponsiveDialog';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -36,25 +38,34 @@ export function ConfirmDialog({
   loading = false,
   onConfirm,
 }: ConfirmDialogProps) {
+  const isMobile = useIsMobile();
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent
+        className={cn(
+          isMobile && 'fixed inset-x-4 bottom-4 top-auto translate-y-0 rounded-2xl max-w-none',
+        )}
+      >
         <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
+          <AlertDialogTitle className={cn(isMobile && 'text-base')}>{title}</AlertDialogTitle>
+          <AlertDialogDescription className={cn(isMobile && 'text-sm')}>{description}</AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={loading}>{cancelLabel}</AlertDialogCancel>
+        <AlertDialogFooter className={cn(isMobile && 'flex-col-reverse gap-2 sm:flex-row')}>
+          <AlertDialogCancel disabled={loading} className={cn(isMobile && 'h-11')}>
+            {cancelLabel}
+          </AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
               onConfirm();
             }}
-            className={
+            className={cn(
               variant === 'destructive'
                 ? 'bg-red-600 hover:bg-red-700 text-white'
-                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-            }
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white',
+              isMobile && 'h-11',
+            )}
             disabled={loading}
           >
             {loading ? (

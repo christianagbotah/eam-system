@@ -23,9 +23,6 @@ import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog';
-import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
@@ -53,6 +50,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLe
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { FileUpload } from '@/components/shared/FileUpload';
 export function MaintenanceRequestsPage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
@@ -113,15 +111,12 @@ export function MaintenanceRequestsPage() {
           <p className="text-muted-foreground text-sm mt-1">Manage and track all maintenance requests</p>
         </div>
         {hasPermission('maintenance_requests.create') && (
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />New Request</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Create Maintenance Request</DialogTitle></DialogHeader>
-              <CreateMRForm onSuccess={() => { setCreateOpen(false); handleRefresh(); }} />
-            </DialogContent>
-          </Dialog>
+          <>
+          <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-1.5" />New Request</Button>
+          <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="Create Maintenance Request" footer={<Button type="submit" form="create-mr-form" className="bg-emerald-600 hover:bg-emerald-700 text-white">Submit Request</Button>}>
+            <CreateMRForm onSuccess={() => { setCreateOpen(false); handleRefresh(); }} />
+          </ResponsiveDialog>
+          </>
         )}
       </div>
 
@@ -249,7 +244,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form id="create-mr-form" onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label>Title *</Label>
         <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Brief description of the issue" required />
@@ -394,11 +389,6 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
         )}
       </div>
 
-      <DialogFooter>
-        <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={loading}>
-          {loading ? 'Creating...' : 'Submit Request'}
-        </Button>
-      </DialogFooter>
     </form>
   );
 }
@@ -796,18 +786,9 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
       </div>
 
       {/* Reject Dialog */}
-      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Reject Request</DialogTitle><DialogDescription>Please provide a reason for rejection.</DialogDescription></DialogHeader>
-          <Textarea value={rejectNotes} onChange={e => setRejectNotes(e.target.value)} placeholder="Reason for rejection..." rows={3} />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>Cancel</Button>
-            <Button variant="destructive" disabled={actionLoading} onClick={() => handleAction('reject', rejectNotes)}>
-              {actionLoading ? 'Rejecting...' : 'Reject Request'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ResponsiveDialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen} title="Reject Request" description="Please provide a reason for rejection." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setRejectDialogOpen(false)}>Cancel</Button><Button variant="destructive" disabled={actionLoading} onClick={() => handleAction('reject', rejectNotes)}>{actionLoading ? 'Rejecting...' : 'Reject Request'}</Button></div>}>
+        <Textarea value={rejectNotes} onChange={e => setRejectNotes(e.target.value)} placeholder="Reason for rejection..." rows={3} />
+      </ResponsiveDialog>
 
       {/* Approve Confirmation Dialog */}
       <ConfirmDialog
@@ -820,10 +801,8 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
         onConfirm={() => handleAction('approve', '')}
       />
 
-      {/* Assign to Planner Dialog — matches source: planner type + notes */}
-      <Dialog open={assignPlannerOpen} onOpenChange={setAssignPlannerOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader><DialogTitle>Assign to Planner</DialogTitle><DialogDescription>Select a planner type and planner to handle this maintenance request.</DialogDescription></DialogHeader>
+      {/* Assign to Planner Dialog */}
+      <ResponsiveDialog open={assignPlannerOpen} onOpenChange={setAssignPlannerOpen} title="Assign to Planner" description="Select a planner type and planner to handle this maintenance request." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setAssignPlannerOpen(false)}>Cancel</Button><Button className="bg-violet-600 hover:bg-violet-700 text-white" disabled={plannerLoading || !plannerId} onClick={handleAssignPlanner}>{plannerLoading ? 'Assigning...' : 'Assign Planner'}</Button></div>}>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Planner Type *</Label>
@@ -880,29 +859,17 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               <Label>Notes</Label>
               <Textarea value={plannerNotes} onChange={e => setPlannerNotes(e.target.value)} placeholder="Any notes for the planner..." rows={2} />
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setAssignPlannerOpen(false)}>Cancel</Button>
-              <Button className="bg-violet-600 hover:bg-violet-700 text-white" disabled={plannerLoading || !plannerId} onClick={handleAssignPlanner}>
-                {plannerLoading ? 'Assigning...' : 'Assign Planner'}
-              </Button>
-            </DialogFooter>
           </div>
-        </DialogContent>
-      </Dialog>
+      </ResponsiveDialog>
 
-      {/* Enhanced Convert to WO Dialog — 4-Section Layout */}
-      <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto w-[95vw] max-w-[95vw] sm:w-auto sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-emerald-600" />Convert to Work Order</DialogTitle>
-            <DialogDescription>Create a comprehensive work order from this maintenance request.</DialogDescription>
-          </DialogHeader>
+      {/* Enhanced Convert to WO Dialog — 4-Section Layout (ResponsiveDialog) */}
+      <ResponsiveDialog open={convertOpen} onOpenChange={setConvertOpen} large desktopMaxWidth="sm:max-w-4xl" title={<span className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-emerald-600" />Convert to Work Order</span>} description="Create a comprehensive work order from this maintenance request." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setConvertOpen(false)}>Cancel</Button><Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={convertLoading} onClick={handleConvert}>{convertLoading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Converting...</> : <><RefreshCw className="h-4 w-4 mr-1" />Create Work Order</>}</Button></div>}>
           <div className="grid gap-5 py-2">
 
             {/* ============================================================ */}
             {/* SECTION 1: Request Information (Read-only, blue background) */}
             {/* ============================================================ */}
-            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6">
+            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 sm:p-6">
               <h3 className="text-sm font-semibold text-blue-800 uppercase tracking-wider flex items-center gap-2 mb-4">
                 <FileText className="h-4 w-4" />Request Information
               </h3>
@@ -943,7 +910,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             {/* ============================================================ */}
             {/* SECTION 2: Work Order Details (purple background) */}
             {/* ============================================================ */}
-            <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-6">
+            <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-4 sm:p-6">
               <h3 className="text-sm font-semibold text-purple-800 uppercase tracking-wider flex items-center gap-2 mb-4">
                 <ClipboardCheck className="h-4 w-4" />Work Order Details
               </h3>
@@ -951,7 +918,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 <div className="space-y-1.5">
                   <Label className="text-xs">Work Order Type</Label>
                   <Select value={convertForm.workOrderType} onValueChange={v => setConvertForm(f => ({ ...f, workOrderType: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="breakdown">Breakdown</SelectItem>
                       <SelectItem value="preventive">Preventive</SelectItem>
@@ -963,7 +930,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 <div className="space-y-1.5">
                   <Label className="text-xs">Priority</Label>
                   <Select value={convertForm.priority} onValueChange={v => setConvertForm(f => ({ ...f, priority: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="low">Low</SelectItem>
                       <SelectItem value="medium">Medium</SelectItem>
@@ -975,7 +942,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 <div className="space-y-1.5">
                   <Label className="text-xs">Trade Activity</Label>
                   <Select value={convertForm.tradeActivity} onValueChange={v => setConvertForm(f => ({ ...f, tradeActivity: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="mechanical">Mechanical</SelectItem>
                       <SelectItem value="electrical">Electrical</SelectItem>
@@ -989,6 +956,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 <div className="space-y-1.5">
                   <Label className="text-xs">Est. Hours</Label>
                   <Input
+                    className="min-h-[44px]"
                     value={convertForm.estimatedHoursDisplay || convertForm.estimatedHours}
                     onChange={e => handleEstHoursChange(e.target.value)}
                     placeholder="2.5 or 2:30"
@@ -1007,6 +975,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 <div className="space-y-1.5">
                   <Label className="text-xs">Scheduled Date</Label>
                   <Input
+                    className="min-h-[44px]"
                     type="datetime-local"
                     value={convertForm.scheduledDate}
                     onChange={e => setConvertForm(f => ({ ...f, scheduledDate: e.target.value }))}
@@ -1015,6 +984,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 <div className="space-y-1.5">
                   <Label className="text-xs">Delivery Date</Label>
                   <Input
+                    className="min-h-[44px]"
                     type="date"
                     value={convertForm.deliveryDate}
                     onChange={e => setConvertForm(f => ({ ...f, deliveryDate: e.target.value }))}
@@ -1026,7 +996,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             {/* ============================================================ */}
             {/* SECTION 3: Resource Assignment (green background) */}
             {/* ============================================================ */}
-            <div className="bg-green-50 border-2 border-green-200 rounded-xl p-6">
+            <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 sm:p-6">
               <h3 className="text-sm font-semibold text-green-800 uppercase tracking-wider flex items-center gap-2 mb-4">
                 <Users className="h-4 w-4" />Resource Assignment
               </h3>
@@ -1035,20 +1005,20 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 {/* Department(s) Multi-select */}
                 <div className="space-y-2">
                   <Label className="text-xs">Department(s)</Label>
-                  <div className="flex flex-wrap gap-1.5 min-h-[38px] p-2 border rounded-md bg-white">
+                  <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
                     {convertForm.departmentIds.length === 0 && <span className="text-sm text-muted-foreground">Select departments...</span>}
                     {convertForm.departmentIds.map(dId => {
                       const dept = departments.find(d => d.id === dId);
                       return dept ? (
                         <Badge key={dId} variant="secondary" className="gap-1 bg-green-100 text-green-800 border-green-200">
                           {dept.name}
-                          <button onClick={() => removeFromArray('departmentIds', dId)} className="ml-0.5 hover:text-red-600"><X className="h-3 w-3" /></button>
+                          <button onClick={() => removeFromArray('departmentIds', dId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
                         </Badge>
                       ) : null;
                     })}
                   </div>
                   <Select onValueChange={v => addToArray('departmentIds', v)}>
-                    <SelectTrigger><SelectValue placeholder="Add department..." /></SelectTrigger>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add department..." /></SelectTrigger>
                     <SelectContent>
                       {departments.filter(d => !convertForm.departmentIds.includes(d.id)).map(d => (
                         <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
@@ -1060,11 +1030,11 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 {/* Assign To Toggle */}
                 <div className="space-y-2">
                   <Label className="text-xs">Assign To</Label>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <Button
                       size="sm"
                       variant={convertForm.assignType === 'technician' ? 'default' : 'outline'}
-                      className={convertForm.assignType === 'technician' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}
+                      className={convertForm.assignType === 'technician' ? 'bg-emerald-600 hover:bg-emerald-700 text-white min-h-[44px]' : 'min-h-[44px]'}
                       onClick={() => setConvertForm(f => ({ ...f, assignType: 'technician' }))}
                     >
                       <Wrench className="h-3.5 w-3.5 mr-1" />Technician(s)
@@ -1072,7 +1042,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                     <Button
                       size="sm"
                       variant={convertForm.assignType === 'supervisor' ? 'default' : 'outline'}
-                      className={convertForm.assignType === 'supervisor' ? 'bg-violet-600 hover:bg-violet-700 text-white' : ''}
+                      className={convertForm.assignType === 'supervisor' ? 'bg-violet-600 hover:bg-violet-700 text-white min-h-[44px]' : 'min-h-[44px]'}
                       onClick={() => setConvertForm(f => ({ ...f, assignType: 'supervisor' }))}
                     >
                       <Shield className="h-3.5 w-3.5 mr-1" />Supervisor(s)
@@ -1084,12 +1054,12 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 {convertForm.assignType === 'technician' && (
                   <div className="space-y-2">
                     <Label className="text-xs">Technicians</Label>
-                    <div className="flex flex-wrap gap-1.5 min-h-[38px] p-2 border rounded-md bg-white">
+                    <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
                       {convertForm.technicians.length === 0 && <span className="text-sm text-muted-foreground">Search and add technicians...</span>}
                       {convertForm.technicians.map(t => (
                         <Badge key={t.userId} variant="secondary" className="gap-1">
                           {t.label}
-                          <button onClick={() => removeFromArray('technicians', t.userId)} className="ml-0.5 hover:text-red-600"><X className="h-3 w-3" /></button>
+                          <button onClick={() => removeFromArray('technicians', t.userId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
                         </Badge>
                       ))}
                     </div>
@@ -1121,12 +1091,12 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 {convertForm.assignType === 'supervisor' && (
                   <div className="space-y-2">
                     <Label className="text-xs">Supervisors</Label>
-                    <div className="flex flex-wrap gap-1.5 min-h-[38px] p-2 border rounded-md bg-white">
+                    <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
                       {convertForm.supervisors.length === 0 && <span className="text-sm text-muted-foreground">Search and add supervisors...</span>}
                       {convertForm.supervisors.map(s => (
                         <Badge key={s.userId} variant="secondary" className="gap-1">
                           {s.label}
-                          <button onClick={() => removeFromArray('supervisors', s.userId)} className="ml-0.5 hover:text-red-600"><X className="h-3 w-3" /></button>
+                          <button onClick={() => removeFromArray('supervisors', s.userId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
                         </Badge>
                       ))}
                     </div>
@@ -1178,20 +1148,20 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 {/* Required Spare Parts */}
                 <div className="space-y-2">
                   <Label className="text-xs flex items-center gap-1"><PackageSearch className="h-3.5 w-3.5" />Required Spare Parts</Label>
-                  <div className="flex flex-wrap gap-1.5 min-h-[38px] p-2 border rounded-md bg-white">
+                  <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
                     {convertForm.requiredParts.length === 0 && <span className="text-sm text-muted-foreground">Select spare parts from inventory...</span>}
                     {convertForm.requiredParts.map(partId => {
                       const item = inventoryItems.find(i => i.id === partId);
                       return item ? (
                         <Badge key={partId} variant="secondary" className="gap-1">
                           {item.itemName || item.name}
-                          <button onClick={() => removeFromArray('requiredParts', partId)} className="ml-0.5 hover:text-red-600"><X className="h-3 w-3" /></button>
+                          <button onClick={() => removeFromArray('requiredParts', partId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
                         </Badge>
                       ) : null;
                     })}
                   </div>
                   <Select onValueChange={v => addToArray('requiredParts', v)}>
-                    <SelectTrigger><SelectValue placeholder="Add spare part..." /></SelectTrigger>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add spare part..." /></SelectTrigger>
                     <SelectContent>
                       {inventoryItems.filter(i => !convertForm.requiredParts.includes(i.id)).slice(0, 50).map(i => (
                         <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
@@ -1203,20 +1173,20 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 {/* Required Tools */}
                 <div className="space-y-2">
                   <Label className="text-xs flex items-center gap-1"><Hammer className="h-3.5 w-3.5" />Required Tools</Label>
-                  <div className="flex flex-wrap gap-1.5 min-h-[38px] p-2 border rounded-md bg-white">
+                  <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
                     {convertForm.requiredTools.length === 0 && <span className="text-sm text-muted-foreground">Select tools...</span>}
                     {convertForm.requiredTools.map(toolId => {
                       const tool = toolsData.find(t => t.id === toolId);
                       return tool ? (
                         <Badge key={toolId} variant="secondary" className="gap-1">
                           {tool.toolName || tool.name}
-                          <button onClick={() => removeFromArray('requiredTools', toolId)} className="ml-0.5 hover:text-red-600"><X className="h-3 w-3" /></button>
+                          <button onClick={() => removeFromArray('requiredTools', toolId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
                         </Badge>
                       ) : null;
                     })}
                   </div>
                   <Select onValueChange={v => addToArray('requiredTools', v)}>
-                    <SelectTrigger><SelectValue placeholder="Add tool..." /></SelectTrigger>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add tool..." /></SelectTrigger>
                     <SelectContent>
                       {toolsData.filter(t => !convertForm.requiredTools.includes(t.id)).slice(0, 50).map(t => (
                         <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
@@ -1230,7 +1200,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             {/* ============================================================ */}
             {/* SECTION 4: Safety Notes (amber background) */}
             {/* ============================================================ */}
-            <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-6">
+            <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 sm:p-6">
               <h3 className="text-sm font-semibold text-amber-800 uppercase tracking-wider flex items-center gap-2 mb-4">
                 <ShieldAlert className="h-4 w-4" />Safety Notes
               </h3>
@@ -1247,6 +1217,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 <div className="sm:col-span-2 space-y-1.5">
                   <Label className="text-xs flex items-center gap-1"><HardHat className="h-3.5 w-3.5" />PPE Required</Label>
                   <Input
+                    className="min-h-[44px]"
                     value={convertForm.ppeRequired}
                     onChange={e => setConvertForm(f => ({ ...f, ppeRequired: e.target.value }))}
                     placeholder="e.g. Safety glasses, gloves, helmet, hearing protection"
@@ -1265,14 +1236,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             </div>
 
           </div>
-          <DialogFooter className="mt-2">
-            <Button variant="outline" onClick={() => setConvertOpen(false)}>Cancel</Button>
-            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={convertLoading} onClick={handleConvert}>
-              {convertLoading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Converting...</> : <><RefreshCw className="h-4 w-4 mr-1" />Create Work Order</>}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* SLA Timer */}
       <SLATimerDisplay slaHours={(mr as any).slaHours} slaStartedAt={(mr as any).slaStartedAt} status={mr.status} />
@@ -1485,15 +1449,12 @@ export function WorkOrdersPage() {
           <p className="text-muted-foreground text-sm mt-1">Manage and execute all maintenance work orders</p>
         </div>
         {hasPermission('work_orders.create') && (
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />New Work Order</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Create Work Order</DialogTitle></DialogHeader>
-              <CreateWOForm onSuccess={() => { setCreateOpen(false); handleRefresh(); }} />
-            </DialogContent>
-          </Dialog>
+          <>
+          <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-1.5" />New Work Order</Button>
+          <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="Create Work Order" footer={<Button type="submit" form="create-wo-form" className="bg-emerald-600 hover:bg-emerald-700 text-white">Create WO</Button>}>
+            <CreateWOForm onSuccess={() => { setCreateOpen(false); handleRefresh(); }} />
+          </ResponsiveDialog>
+          </>
         )}
       </div>
 
@@ -1671,7 +1632,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form id="create-wo-form" onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label>Title *</Label>
         <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Work order title" required />
@@ -1775,11 +1736,6 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
           <Input type="number" value={estimatedHours} onChange={e => setEstimatedHours(e.target.value)} placeholder="0" />
         </div>
       </div>
-      <DialogFooter>
-        <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={loading}>
-          {loading ? 'Creating...' : 'Create WO'}
-        </Button>
-      </DialogFooter>
     </form>
   );
 }
@@ -2170,9 +2126,7 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
       </div>
 
       {/* Assign Dialog */}
-      <Dialog open={actionDialog === 'assign'} onOpenChange={() => setActionDialog(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Assign Work Order</DialogTitle><DialogDescription>Select a technician to assign this work order.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={actionDialog === 'assign'} onOpenChange={() => setActionDialog(null)} title="Assign Work Order" description="Select a technician to assign this work order.">
           <AsyncSearchableSelect
             value=""
             onValueChange={(val) => handleAction('assign', { assignedToId: val, assignedToName: val })}
@@ -2189,13 +2143,10 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             placeholder="Select technician..."
             searchPlaceholder="Search technicians..."
           />
-        </DialogContent>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* Complete Dialog — Enhanced */}
-      <Dialog open={actionDialog === 'complete'} onOpenChange={() => setActionDialog(null)}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Complete Work Order</DialogTitle><DialogDescription>Mark this work order as completed with full details.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={actionDialog === 'complete'} onOpenChange={() => setActionDialog(null)} large title="Complete Work Order" description="Mark this work order as completed with full details." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading || !completionNotes.trim()} onClick={() => handleAction('complete', { completionNotes, rootCause: completeRootCause, findings: completeFindings, correctiveAction: completeCorrectiveAction, requestSupervisorReview: completeRequestReview })}>{actionLoading ? 'Completing...' : 'Mark as Completed'}</Button>}>
           <div className="grid gap-4 py-2">
             {/* Summary */}
             <div className="grid grid-cols-3 gap-3">
@@ -2225,17 +2176,11 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               <Checkbox checked={completeRequestReview} onCheckedChange={v => setCompleteRequestReview(!!v)} id="request-review" />
               <Label htmlFor="request-review" className="text-sm cursor-pointer">Request Supervisor Review</Label>
             </div>
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading || !completionNotes.trim()} onClick={() => handleAction('complete', { completionNotes, rootCause: completeRootCause, findings: completeFindings, correctiveAction: completeCorrectiveAction, requestSupervisorReview: completeRequestReview })}>
-              {actionLoading ? 'Completing...' : 'Mark as Completed'}
-            </Button>
           </div>
-        </DialogContent>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* Edit WO Dialog */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Edit Work Order</DialogTitle><DialogDescription>Update work order details.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={editOpen} onOpenChange={setEditOpen} large title="Edit Work Order" description="Update work order details." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={handleEditWO} disabled={actionLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{actionLoading ? 'Saving...' : 'Save Changes'}</Button></div>}>
           <div className="grid gap-4 py-2">
             <div className="space-y-1.5"><Label>Title *</Label><Input value={editForm.title || ''} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Description</Label><Textarea value={editForm.description || ''} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} /></div>
@@ -2323,60 +2268,41 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             <div className="space-y-1.5"><Label>Cause Description</Label><Textarea value={editForm.causeDescription || ''} onChange={e => setEditForm(f => ({ ...f, causeDescription: e.target.value }))} rows={2} /></div>
             <div className="space-y-1.5"><Label>Action Description</Label><Textarea value={editForm.actionDescription || ''} onChange={e => setEditForm(f => ({ ...f, actionDescription: e.target.value }))} rows={2} /></div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-            <Button onClick={handleEditWO} disabled={actionLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{actionLoading ? 'Saving...' : 'Save Changes'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* Time Log Dialog */}
-      <Dialog open={timeLogOpen} onOpenChange={setTimeLogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Log Time</DialogTitle><DialogDescription>Record time spent on this work order.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={timeLogOpen} onOpenChange={setTimeLogOpen} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={handleTimeLog}>{tlLoading ? 'Logging...' : 'Log Time'}</Button>}>
           <div className="space-y-4">
             <div className="space-y-1.5"><Label>Action</Label>
               <Select value={tlAction} onValueChange={setTlAction}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="start">Start</SelectItem><SelectItem value="pause">Pause</SelectItem><SelectItem value="resume">Resume</SelectItem><SelectItem value="complete">Complete</SelectItem></SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5"><Label>Hours Worked</Label><Input type="number" step="0.25" value={tlHours} onChange={e => setTlHours(e.target.value)} placeholder="e.g. 2.5" /></div>
+            <div className="space-y-1.5"><Label>Hours Worked</Label><Input className="min-h-[44px]" type="number" step="0.25" value={tlHours} onChange={e => setTlHours(e.target.value)} placeholder="e.g. 2.5" /></div>
             <div className="space-y-1.5"><Label>Notes</Label><Textarea value={tlNotes} onChange={e => setTlNotes(e.target.value)} placeholder="Optional notes..." rows={2} /></div>
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={handleTimeLog}>
-              {tlLoading ? 'Logging...' : 'Log Time'}
-            </Button>
           </div>
-        </DialogContent>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* Add Material Dialog */}
-      <Dialog open={materialOpen} onOpenChange={setMaterialOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Add Material</DialogTitle><DialogDescription>Add a material or part to this work order.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={materialOpen} onOpenChange={setMaterialOpen} title="Add Material" description="Add a material or part to this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={matLoading} onClick={handleAddMaterial}>{matLoading ? 'Adding...' : 'Add Material'}</Button>}>
           <div className="space-y-4">
-            <div className="space-y-1.5"><Label>Item Name *</Label><Input value={matName} onChange={e => setMatName(e.target.value)} placeholder="e.g. Bearing 6205" /></div>
+            <div className="space-y-1.5"><Label>Item Name *</Label><Input className="min-h-[44px]" value={matName} onChange={e => setMatName(e.target.value)} placeholder="e.g. Bearing 6205" /></div>
             <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5"><Label>Quantity</Label><Input type="number" value={matQty} onChange={e => setMatQty(e.target.value)} placeholder="1" /></div>
-              <div className="space-y-1.5"><Label>Unit Cost</Label><Input type="number" step="0.01" value={matCost} onChange={e => setMatCost(e.target.value)} placeholder="0.00" /></div>
+              <div className="space-y-1.5"><Label>Quantity</Label><Input className="min-h-[44px]" type="number" value={matQty} onChange={e => setMatQty(e.target.value)} placeholder="1" /></div>
+              <div className="space-y-1.5"><Label>Unit Cost</Label><Input className="min-h-[44px]" type="number" step="0.01" value={matCost} onChange={e => setMatCost(e.target.value)} placeholder="0.00" /></div>
               <div className="space-y-1.5"><Label>Unit</Label>
                 <Select value={matUnit} onValueChange={setMatUnit}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="each">Each</SelectItem><SelectItem value="kg">Kg</SelectItem><SelectItem value="meter">Meter</SelectItem><SelectItem value="set">Set</SelectItem><SelectItem value="box">Box</SelectItem></SelectContent>
                 </Select>
               </div>
             </div>
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={matLoading} onClick={handleAddMaterial}>
-              {matLoading ? 'Adding...' : 'Add Material'}
-            </Button>
           </div>
-        </DialogContent>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* Reason Dialog (for transitions requiring a reason like cancel, hold) */}
-      <Dialog open={actionDialog?.startsWith('reason:') || false} onOpenChange={() => setActionDialog(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Confirm Action</DialogTitle><DialogDescription>Please provide a reason for this action.</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={actionDialog?.startsWith('reason:') || false} onOpenChange={() => setActionDialog(null)} title="Confirm Action" description="Please provide a reason for this action.">
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label>Reason *</Label>
@@ -2391,8 +2317,7 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               {actionLoading ? 'Processing...' : 'Confirm'}
             </Button>
           </div>
-        </DialogContent>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* WO Action Confirmation Dialog */}
       <ConfirmDialog
@@ -2589,30 +2514,24 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
           </Card>
 
           {/* Personal Tool Add Dialog */}
-          <Dialog open={ptOpen} onOpenChange={setPtOpen}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader><DialogTitle>Add Personal Tool</DialogTitle><DialogDescription>Record a personal tool brought on-site.</DialogDescription></DialogHeader>
+          <ResponsiveDialog open={ptOpen} onOpenChange={setPtOpen} title="Add Personal Tool" description="Record a personal tool brought on-site." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={ptLoading} onClick={handleAddPersonalTool}>{ptLoading ? 'Adding...' : 'Add Tool'}</Button>}>
               <div className="space-y-4">
-                <div className="space-y-1.5"><Label>Tool Name *</Label><Input value={ptForm.toolName} onChange={e => setPtForm(f => ({ ...f, toolName: e.target.value }))} placeholder="e.g. Digital Multimeter" /></div>
+                <div className="space-y-1.5"><Label>Tool Name *</Label><Input className="min-h-[44px]" value={ptForm.toolName} onChange={e => setPtForm(f => ({ ...f, toolName: e.target.value }))} placeholder="e.g. Digital Multimeter" /></div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5"><Label>Tool Code</Label><Input value={ptForm.toolCode} onChange={e => setPtForm(f => ({ ...f, toolCode: e.target.value }))} placeholder="e.g. DM-001" /></div>
+                  <div className="space-y-1.5"><Label>Tool Code</Label><Input className="min-h-[44px]" value={ptForm.toolCode} onChange={e => setPtForm(f => ({ ...f, toolCode: e.target.value }))} placeholder="e.g. DM-001" /></div>
                   <div className="space-y-1.5"><Label>Condition</Label>
                     <Select value={ptForm.condition} onValueChange={v => setPtForm(f => ({ ...f, condition: v as PersonalTool['condition'] }))}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
                       <SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent>
                     </Select>
                   </div>
                 </div>
                 <div className="space-y-1.5"><Label>Notes</Label><Textarea value={ptForm.notes} onChange={e => setPtForm(f => ({ ...f, notes: e.target.value }))} placeholder="Any additional notes..." rows={2} /></div>
-                <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={ptLoading} onClick={handleAddPersonalTool}>{ptLoading ? 'Adding...' : 'Add Tool'}</Button>
               </div>
-            </DialogContent>
-          </Dialog>
+          </ResponsiveDialog>
 
           {/* Add Team Member Dialog */}
-          <Dialog open={addTeamMemberOpen} onOpenChange={setAddTeamMemberOpen}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader><DialogTitle>Add Team Member</DialogTitle><DialogDescription>Add a new member to this work order team.</DialogDescription></DialogHeader>
+          <ResponsiveDialog open={addTeamMemberOpen} onOpenChange={setAddTeamMemberOpen} title="Add Team Member" description="Add a new member to this work order team." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setAddTeamMemberOpen(false)}>Cancel</Button><Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={addMemberLoading || !newMemberUserId} onClick={handleAddTeamMember}>{addMemberLoading ? 'Adding...' : 'Add Member'}</Button></div>}>
               <div className="space-y-4">
                 <div className="space-y-1.5"><Label>User *</Label>
                   <AsyncSearchableSelect
@@ -2629,17 +2548,12 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 </div>
                 <div className="space-y-1.5"><Label>Role</Label>
                   <Select value={newMemberRole} onValueChange={setNewMemberRole}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
                     <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="specialist">Specialist</SelectItem><SelectItem value="supervisor">Supervisor</SelectItem></SelectContent>
                   </Select>
                 </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setAddTeamMemberOpen(false)}>Cancel</Button>
-                  <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={addMemberLoading || !newMemberUserId} onClick={handleAddTeamMember}>{addMemberLoading ? 'Adding...' : 'Add Member'}</Button>
-                </DialogFooter>
               </div>
-            </DialogContent>
-          </Dialog>
+          </ResponsiveDialog>
 
           {/* Timeline */}
           <Card className="border-0 shadow-sm">
@@ -3120,14 +3034,7 @@ export function PmSchedulesPage() {
       </Card>
 
       {/* Create/Edit Dialog */}
-      <Dialog open={createOpen || !!editItem} onOpenChange={(open) => { if (!open) { setCreateOpen(false); setEditItem(null); } }}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editItem ? 'Edit PM Schedule' : 'New PM Schedule'}</DialogTitle>
-            <DialogDescription>
-              {editItem ? 'Update preventive maintenance schedule' : 'Define a new preventive maintenance schedule for an asset'}
-            </DialogDescription>
-          </DialogHeader>
+      <ResponsiveDialog open={createOpen || !!editItem} onOpenChange={(open) => { if (!open) { setCreateOpen(false); setEditItem(null); } }} title={editItem ? 'Edit PM Schedule' : 'New PM Schedule'} description={editItem ? 'Update preventive maintenance schedule' : 'Define a new preventive maintenance schedule for an asset'} footer={<div className="flex gap-2"><Button variant="outline" onClick={() => { setCreateOpen(false); setEditItem(null); }}>Cancel</Button><Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">{saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}{editItem ? 'Update Schedule' : 'Create Schedule'}</Button></div>}>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Title *</Label>
@@ -3246,15 +3153,7 @@ export function PmSchedulesPage() {
               <p className="text-[11px] text-muted-foreground">Days before due date to generate WO</p>
             </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => { setCreateOpen(false); setEditItem(null); }}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-              {saving ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : null}
-              {editItem ? 'Update Schedule' : 'Create Schedule'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -3499,10 +3398,8 @@ export function MaintenanceCalibrationPage() {
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div><CardTitle className="text-base">Calibration Records</CardTitle><CardDescription className="text-xs">Track all instrument calibrations and due dates</CardDescription></div>
-            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-              <DialogTrigger asChild><Button size="sm" className="gap-1.5"><Plus className="h-3.5 w-3.5" />New Record</Button></DialogTrigger>
-              <DialogContent className="sm:max-w-lg">
-                <DialogHeader><DialogTitle>New Calibration Record</DialogTitle><DialogDescription>Add a new instrument calibration record</DialogDescription></DialogHeader>
+            <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}><Plus className="h-3.5 w-3.5" />New Record</Button>
+            <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="New Calibration Record" description="Add a new instrument calibration record" footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.instrument}>{saving ? 'Creating...' : 'Create Record'}</Button></div>}>
                 <div className="grid gap-4 py-2">
                   <div className="grid gap-2"><Label className="text-xs">Instrument</Label><Input placeholder="e.g. Digital Pressure Gauge" value={form.instrument} onChange={e => setForm({ ...form, instrument: e.target.value })} /></div>
                   <div className="grid grid-cols-2 gap-3">
@@ -3518,9 +3415,7 @@ export function MaintenanceCalibrationPage() {
                     <div className="grid gap-2"><Label className="text-xs">Certificates</Label><Input placeholder="e.g. CERT-2024-001" value={form.certificates} onChange={e => setForm({ ...form, certificates: e.target.value })} /></div>
                   </div>
                 </div>
-                <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.instrument}>{saving ? 'Creating...' : 'Create Record'}</Button></DialogFooter>
-              </DialogContent>
-            </Dialog>
+            </ResponsiveDialog>
           </div>
           <div className="filter-row flex flex-col sm:flex-row gap-2 mt-3">
             <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="Search instruments, serial numbers..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} /></div>
@@ -3713,10 +3608,8 @@ export function MaintenanceRiskAssessmentPage() {
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div><CardTitle className="text-base">Risk Assessments</CardTitle><CardDescription className="text-xs">Risk matrix with likelihood and consequence scoring</CardDescription></div>
-            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-              <DialogTrigger asChild><Button size="sm" className="gap-1.5"><Plus className="h-3.5 w-3.5" />New Assessment</Button></DialogTrigger>
-              <DialogContent className="sm:max-w-lg">
-                <DialogHeader><DialogTitle>New Risk Assessment</DialogTitle><DialogDescription>Evaluate risk for an asset</DialogDescription></DialogHeader>
+            <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}><Plus className="h-3.5 w-3.5" />New Assessment</Button>
+            <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="New Risk Assessment" description="Evaluate risk for an asset" footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.asset || !form.likelihood || !form.consequence}>{saving ? 'Creating...' : 'Create Assessment'}</Button></div>}>
                 <div className="grid gap-4 py-2">
                   <div className="grid gap-2"><Label className="text-xs">Asset</Label><Input placeholder="e.g. CNC Lathe #3" value={form.asset} onChange={e => setForm({ ...form, asset: e.target.value })} /></div>
                   <div className="grid gap-2"><Label className="text-xs">Category</Label><Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}><SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger><SelectContent><SelectItem value="mechanical">Mechanical</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="safety">Safety</SelectItem><SelectItem value="environmental">Environmental</SelectItem><SelectItem value="operational">Operational</SelectItem></SelectContent></Select></div>
@@ -3727,9 +3620,7 @@ export function MaintenanceRiskAssessmentPage() {
                   <div className="grid gap-2"><Label className="text-xs">Mitigation Plan</Label><Textarea placeholder="Describe mitigation measures..." value={form.mitigationPlan} onChange={e => setForm({ ...form, mitigationPlan: e.target.value })} rows={3} /></div>
                   <div className="grid gap-2"><Label className="text-xs">Assessor</Label><Input placeholder="e.g. Sarah Chen" value={form.assessor} onChange={e => setForm({ ...form, assessor: e.target.value })} /></div>
                 </div>
-                <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.asset || !form.likelihood || !form.consequence}>{saving ? 'Creating...' : 'Create Assessment'}</Button></DialogFooter>
-              </DialogContent>
-            </Dialog>
+            </ResponsiveDialog>
           </div>
           <div className="filter-row flex flex-col sm:flex-row gap-2 mt-3">
             <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="Search assets, assessment IDs..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} /></div>
@@ -3763,8 +3654,7 @@ export function MaintenanceRiskAssessmentPage() {
         </CardContent>
       </Card>
       </>}
-      <Dialog open={!!viewItem} onOpenChange={open => { if (!open) setViewItem(null); }}>
-        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto"><DialogHeader><DialogTitle>Risk Assessment Details</DialogTitle><DialogDescription>View assessment information</DialogDescription></DialogHeader>
+      <ResponsiveDialog open={!!viewItem} onOpenChange={open => { if (!open) setViewItem(null); }} title="Risk Assessment Details" description="View assessment information" footer={<Button variant="outline" onClick={() => setViewItem(null)}>Close</Button>}>
           {viewItem && <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="col-span-2"><span className="text-muted-foreground">Title</span><p className="font-medium">{viewItem.title || '-'}</p></div>
             <div><span className="text-muted-foreground">Type</span><p className="font-medium capitalize">{viewItem.type || '-'}</p></div>
@@ -3779,11 +3669,8 @@ export function MaintenanceRiskAssessmentPage() {
             <div className="col-span-2"><span className="text-muted-foreground">Hazards</span><p className="font-medium">{parseJsonArr(viewItem.hazards)}</p></div>
             <div className="col-span-2"><span className="text-muted-foreground">Mitigations</span><p className="font-medium">{parseJsonArr(viewItem.controls)}</p></div>
           </div>}
-          <DialogFooter><Button variant="outline" onClick={() => setViewItem(null)}>Close</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={!!editItem} onOpenChange={open => { if (!open) setEditItem(null); }}>
-        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto"><DialogHeader><DialogTitle>Edit Risk Assessment</DialogTitle><DialogDescription>Update assessment details</DialogDescription></DialogHeader>
+      </ResponsiveDialog>
+      <ResponsiveDialog open={!!editItem} onOpenChange={open => { if (!open) setEditItem(null); }} title="Edit Risk Assessment" description="Update assessment details" footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button><Button onClick={handleEditSave} disabled={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></div>}>
           <div className="space-y-4">
             <div><Label>Title</Label><Input value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div>
             <div className="grid grid-cols-2 gap-3">
@@ -3802,9 +3689,7 @@ export function MaintenanceRiskAssessmentPage() {
             <div><Label>Hazards</Label><Textarea value={editForm.hazards} onChange={e => setEditForm(f => ({ ...f, hazards: e.target.value }))} rows={2} placeholder="Describe hazards..." /></div>
             <div><Label>Mitigations</Label><Textarea value={editForm.mitigations} onChange={e => setEditForm(f => ({ ...f, mitigations: e.target.value }))} rows={2} placeholder="Describe mitigation measures..." /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setEditItem(null)}>Cancel</Button><Button onClick={handleEditSave} disabled={editLoading}>{editLoading ? 'Saving...' : 'Save Changes'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -3893,10 +3778,8 @@ export function MaintenanceToolsPage() {
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div><CardTitle className="text-base">Tool Inventory</CardTitle><CardDescription className="text-xs">Track tool availability, assignments, and condition</CardDescription></div>
-            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-              <DialogTrigger asChild><Button size="sm" className="gap-1.5"><Plus className="h-3.5 w-3.5" />Add Tool</Button></DialogTrigger>
-              <DialogContent className="sm:max-w-lg">
-                <DialogHeader><DialogTitle>Add New Tool</DialogTitle><DialogDescription>Register a new tool in the inventory</DialogDescription></DialogHeader>
+            <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
+            <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="Add New Tool" description="Register a new tool in the inventory" footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving}>{saving ? 'Adding...' : 'Add Tool'}</Button></div>}>
                 <div className="grid gap-4 py-2">
                   <div className="grid gap-2"><Label className="text-xs">Tool Name</Label><Input placeholder="e.g. Torque Wrench 1/2 inch" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
                   <div className="grid grid-cols-2 gap-3">
@@ -3962,9 +3845,7 @@ export function MaintenanceToolsPage() {
                     />
                   </div>
                 </div>
-                <DialogFooter><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving}>{saving ? 'Adding...' : 'Add Tool'}</Button></DialogFooter>
-              </DialogContent>
-            </Dialog>
+            </ResponsiveDialog>
           </div>
           <div className="filter-row flex flex-col sm:flex-row gap-2 mt-3">
             <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="Search tools, locations..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} /></div>
