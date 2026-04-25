@@ -411,6 +411,9 @@ model WorkOrder {
   failureDescription  String?
   causeDescription    String?
   actionDescription   String?
+  tradeActivity       String?                       // mechanical, electrical, civil, facility, workshop, other
+  safetyNotes         String?                       // Safety precautions / LOTO requirements
+  ppeRequired         String?                       // PPE requirements
   plantId             String?
   notes               String?
   personalTools       String    @default("[]")          // JSON: [{toolName, toolCode, condition, notes}]

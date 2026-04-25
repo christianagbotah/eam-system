@@ -23,6 +23,9 @@ export async function POST(
     const {
       title,
       priority,
+      workOrderType,
+      tradeActivity,
+      technicalDescription,
       assignmentType,
       assignedTo,
       teamLeaderId,
@@ -34,6 +37,12 @@ export async function POST(
       estimatedHours,
       plannedStart,
       plannedEnd,
+      deliveryDateRequired,
+      safetyNotes,
+      ppeRequired,
+      notes,
+      requiredParts,
+      requiredTools,
     } = body;
 
     const mr = await db.maintenanceRequest.findUnique({ where: { id } });
@@ -84,7 +93,7 @@ export async function POST(
         woNumber,
         title: title || `WO for ${mr.title}`,
         description: mr.description,
-        type: 'corrective',
+        type: workOrderType || 'corrective',
         priority: priority || mr.priority || 'medium',
         status: woStatus,
         maintenanceRequestId: mr.id,
@@ -93,16 +102,21 @@ export async function POST(
         plantId: mr.plantId,
         estimatedHours: estimatedHours ?? mr.estimatedHours,
         plannedStart: plannedStart ? new Date(plannedStart) : mr.plannedStart,
-        plannedEnd: plannedEnd ? new Date(plannedEnd) : mr.plannedEnd,
+        plannedEnd: deliveryDateRequired ? new Date(deliveryDateRequired) : (plannedEnd ? new Date(plannedEnd) : mr.plannedEnd),
         plannerId: session.userId,
         assignedTo: assignedTo || null,
         teamLeaderId: teamLeaderId || null,
         assignedSupervisorId: assignedSupervisorId || null,
         assignmentType: assignmentType || (assignedTo ? 'direct' : null),
         assignedBy: session.userId,
+        description: technicalDescription || mr.description,
         failureDescription: failureDescription || null,
         causeDescription: causeDescription || null,
         actionDescription: actionDescription || null,
+        tradeActivity: tradeActivity || null,
+        safetyNotes: safetyNotes || null,
+        ppeRequired: ppeRequired || null,
+        notes: notes || null,
       },
       include: {
         assignee: { select: { id: true, fullName: true, username: true } },
@@ -127,6 +141,47 @@ export async function POST(
       });
 
       await db.workOrderTeamMember.createMany({ data: teamMemberData });
+    }
+
+    // Create required parts as material requests if provided
+    if (requiredParts && Array.isArray(requiredParts) && requiredParts.length > 0) {
+      for (const partId of requiredParts) {
+        const part = await db.inventoryItem.findUnique({ where: { id: partId } });
+        if (part) {
+          await db.workOrderMaterial.create({
+            data: {
+              workOrderId: wo.id,
+              itemId: part.id,
+              itemName: part.name,
+              quantity: 0,
+              unitCost: part.unitCost || 0,
+              totalCost: 0,
+              status: 'requested',
+              requestedBy: session.userId,
+            },
+          });
+        }
+      }
+    }
+
+    // Create required tools as material references if provided
+    if (requiredTools && Array.isArray(requiredTools) && requiredTools.length > 0) {
+      for (const toolId of requiredTools) {
+        const tool = await db.tool.findUnique({ where: { id: toolId } });
+        if (tool) {
+          await db.workOrderMaterial.create({
+            data: {
+              workOrderId: wo.id,
+              itemName: tool.name,
+              quantity: 1,
+              unitCost: 0,
+              totalCost: 0,
+              status: 'requested',
+              requestedBy: session.userId,
+            },
+          });
+        }
+      }
     }
 
     // If assignedTo is provided but not in teamMembers, ensure they're a team member too
