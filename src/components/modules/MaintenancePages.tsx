@@ -54,6 +54,7 @@ import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
 import { useIsMobile } from '@/components/shared/ResponsiveDialog';
 import { FileUpload } from '@/components/shared/FileUpload';
+import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSelector';
 import { WorkerAssignmentPicker, type SelectedWorker } from '@/components/shared/WorkerAssignmentPicker';
 export function MaintenanceRequestsPage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
