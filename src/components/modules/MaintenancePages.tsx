@@ -488,6 +488,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const [departments, setDepartments] = useState<any[]>([]);
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
   const [toolsData, setToolsData] = useState<any[]>([]);
+  const [usersMap, setUsersMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let active = true;
@@ -568,14 +569,21 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
     });
     // Load dropdown data
     try {
-      const [deptsRes, invRes, toolsRes] = await Promise.all([
+      const [deptsRes, invRes, toolsRes, usersRes] = await Promise.all([
         api.get('/api/departments'),
         api.get('/api/inventory'),
         api.get('/api/tools'),
+        api.get('/api/users'),
       ]);
       if (deptsRes.success && deptsRes.data) setDepartments(Array.isArray(deptsRes.data) ? deptsRes.data : []);
       if (invRes.success && invRes.data) setInventoryItems(Array.isArray(invRes.data) ? invRes.data : []);
       if (toolsRes.success && toolsRes.data) setToolsData(Array.isArray(toolsRes.data) ? toolsRes.data : []);
+      if (usersRes.success && usersRes.data) {
+        const users = Array.isArray(usersRes.data) ? usersRes.data : [];
+        const map: Record<string, string> = {};
+        users.forEach((u: any) => { map[u.id] = `${u.fullName} (${u.username})`; });
+        setUsersMap(map);
+      }
     } catch (_e) {
       // Silently handle - dropdowns will just be empty
     }
@@ -644,13 +652,14 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   };
 
   // Helper: add/remove items from multi-select arrays
-  const addToArray = (field: 'departmentIds' | 'technicians' | 'supervisors' | 'requiredParts' | 'requiredTools', id: string, label?: string) => {
+  const addToArray = (field: 'departmentIds' | 'technicians' | 'supervisors' | 'requiredParts' | 'requiredTools', id: string) => {
     setConvertForm(f => {
       const arr = [...f[field]];
       if (field === 'departmentIds' || field === 'requiredParts' || field === 'requiredTools') {
         if (!(arr as string[]).includes(id)) (arr as string[]).push(id);
       } else {
-        (arr as Array<{ userId: string; label: string }>).push({ userId: id, label: label || id });
+        const label = usersMap[id] || id;
+        (arr as Array<{ userId: string; label: string }>).push({ userId: id, label });
       }
       return { ...f, [field]: arr };
     });
@@ -983,7 +992,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                     </div>
                     <AsyncSearchableSelect
                       value=""
-                      onValueChange={(v, label) => { if (v) addToArray('technicians', v, label || undefined); }}
+                      onValueChange={v => { if (v) addToArray('technicians', v); }}
                       fetchOptions={async () => {
                         const params = new URLSearchParams();
                         params.set('role', 'technician');
@@ -1020,7 +1029,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                     </div>
                     <AsyncSearchableSelect
                       value=""
-                      onValueChange={(v, label) => { if (v) addToArray('supervisors', v, label || undefined); }}
+                      onValueChange={v => { if (v) addToArray('supervisors', v); }}
                       fetchOptions={async () => {
                         const params = new URLSearchParams();
                         params.set('role', 'supervisor');
