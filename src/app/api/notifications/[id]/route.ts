@@ -92,14 +92,14 @@ export async function PUT(
       );
     }
 
-    const body = await request.json();
-    const { read } = body;
-
-    if (typeof read !== 'boolean') {
-      return NextResponse.json(
-        { success: false, error: 'read boolean is required' },
-        { status: 400 }
-      );
+    let read = true;
+    try {
+      const body = await request.json();
+      if (body && typeof body.read === 'boolean') {
+        read = body.read;
+      }
+    } catch {
+      // No body sent — default to marking as read
     }
 
     const updated = await db.notification.update({

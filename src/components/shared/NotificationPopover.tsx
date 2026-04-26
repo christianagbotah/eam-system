@@ -118,7 +118,7 @@ function NotificationPopover() {
 
   const handleMarkRead = async (n: Notification) => {
     if (!n.isRead) {
-      await api.put(`/api/notifications/${n.id}`);
+      await api.put(`/api/notifications/${n.id}`, { read: true }).catch(() => {});
       setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true } : x));
     }
     setSelectedNotif(n);
