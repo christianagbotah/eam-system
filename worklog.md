@@ -1300,3 +1300,58 @@ Stage Summary:
 - 1 data integrity fix (supervisor assigned to correct department)
 - 3 new test users seeded across Engineering, Production, and Utilities departments
 - Zero new lint errors introduced
+---
+Task ID: mobile-bottom-nav
+Agent: Main Coordinator
+Task: Mobile Bottom Navigation Bar
+
+Work Log:
+
+### 1. Created `MobileBottomNav.tsx` Component (`src/components/shared/MobileBottomNav.tsx`)
+- **Fixed bottom nav bar**: Positioned with `fixed bottom-0 left-0 right-0 z-40`, only renders on mobile via `useIsMobile()` hook (matchMedia 768px breakpoint)
+- **Safe area support**: Uses `env(safe-area-inset-bottom)` for padding-bottom on the nav container
+- **5 navigation tabs**:
+  - Home/Dashboard (`dashboard`) — LayoutDashboard icon
+  - Requests (`maintenance-requests`) — Wrench icon, also active for `mr-detail`, `create-mr`
+  - Work Orders (`maintenance-work-orders`) — ClipboardList icon, also active for `wo-detail`
+  - Assets (`assets-machines`) — Building2 icon, also active for all asset sub-pages
+  - More — Menu icon, opens bottom Sheet
+- **Active state detection**: Uses `useNavigationStore.currentPage` with comprehensive `activePages` matching (including detail pages like `mr-detail`, `wo-detail`)
+- **Active state styling**: Emerald-600 icon/text with bold font weight, green indicator dot at top; inactive uses muted-foreground
+- **Touch-friendly**: 64px height nav bar, flex-1 equal-width buttons, `active:scale-95` press feedback
+- **Visual design**: White/bg-background with subtle top border, backdrop blur (`bg-background/95 backdrop-blur-md`), hidden on desktop (`lg:hidden`)
+- **Permission filtering**: Bottom tabs filtered by `hasPermission()` — only visible modules shown
+- **Accessibility**: Proper `aria-label` on nav and each button, `aria-current="page"` on active tab
+
+### 2. "More" Bottom Sheet
+- Uses shadcn/ui `Sheet` component with `side="bottom"`
+- Rounded top corners (`rounded-t-2xl`), max-height 75vh
+- Drag handle indicator at top
+- Sheet header with "All Modules" title and description
+- 4-column grid layout of module tiles (11 items total):
+  - Repairs & Tools, Inventory, PM Schedules, Reports, Safety, Production, Quality, IoT, Analytics, Operations, Settings
+- Each tile: icon in rounded container + label (2-line clamp)
+- Active tile highlighted with emerald background/ring
+- Permission-filtered — only modules user has access to are shown
+- Tapping a tile navigates and auto-closes the sheet
+
+### 3. Integration (already in place in `EAMApp.tsx`)
+- `MobileBottomNav` already imported and rendered at bottom of AppShell
+- `onMenuOpen` prop passed for potential hamburger sidebar integration
+- Main content area already has `pb-16 lg:pb-0` padding for bottom nav clearance
+- Desktop sidebar hidden on mobile via `hidden lg:flex` class in Sidebar component
+
+### 4. Quality
+- ESLint passes with zero errors on MobileBottomNav.tsx (6 pre-existing errors in other files)
+- Dev server compiles and serves successfully (HTTP 200)
+- No hydration issues — `useIsMobile` defaults to false on SSR
+
+Stage Summary:
+- 1 new component created (`MobileBottomNav.tsx`)
+- 279 lines of code, fully typed with TypeScript
+- Native-app feel with fixed bottom navigation, safe area padding, touch feedback
+- 5 quick-access tabs + 11-item More sheet for full module access
+- Permission-aware filtering on all navigation items
+- Active state tracking across parent and detail pages
+- Already integrated into EAMApp layout
+- Commit e8f914d pushed to GitHub
