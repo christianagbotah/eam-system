@@ -120,7 +120,7 @@ export interface MaintenanceRequest {
   createdAt: string;
   updatedAt: string;
   // Joined
-  requester?: { id: string; fullName: string; username: string };
+  requester?: { id: string; fullName: string; username: string; department?: { id: string; name: string } | string };
   supervisor?: { id: string; fullName: string; username: string };
   approver?: { id: string; fullName: string; username: string };
   assignedPlanner?: { id: string; fullName: string; username: string };

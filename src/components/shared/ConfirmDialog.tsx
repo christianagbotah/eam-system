@@ -44,7 +44,7 @@ export function ConfirmDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent
         className={cn(
-          isMobile && 'fixed inset-x-4 bottom-4 top-auto translate-y-0 rounded-2xl max-w-none',
+          isMobile && 'fixed inset-x-4 bottom-4 top-auto translate-x-0 translate-y-0 rounded-2xl max-w-none',
         )}
       >
         <AlertDialogHeader>

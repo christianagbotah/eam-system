@@ -291,8 +291,8 @@ const rolePermissionBundles: Record<string, string[]> = {
     'meters.view', 'meters.read',
     'tools.view',
     'maintenance_requests.view', 'maintenance_requests.view_all', 'maintenance_requests.create',
-    'maintenance_requests.update', 'maintenance_requests.approve',
-    'maintenance_requests.triage', 'maintenance_requests.assign_planner',
+    'maintenance_requests.update',
+    'maintenance_requests.triage',
     'maintenance_requests.convert_to_wo', 'maintenance_requests.my_queue',
     'work_orders.view', 'work_orders.view_all', 'work_orders.create', 'work_orders.update',
     'work_orders.assign_supervisor', 'work_orders.assign_technician',
@@ -332,6 +332,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'tools.view',
     'maintenance_requests.view', 'maintenance_requests.view_all',
     'maintenance_requests.update', 'maintenance_requests.approve', 'maintenance_requests.reject',
+    'maintenance_requests.assign_planner',
     'work_orders.view', 'work_orders.view_all', 'work_orders.update',
     'work_orders.assign_technician', 'work_orders.complete', 'work_orders.verify',
     'work_orders.reopen', 'work_orders.dashboard',
@@ -1052,8 +1053,8 @@ async function seed() {
   const mrTransitions = [
     { fromStatus: null, toStatus: 'pending', allowedRoleSlugs: JSON.stringify(['operator', 'supervisor', 'planner', 'admin', 'production_operator', 'plant_manager', 'maintenance_manager']) },
     { fromStatus: 'pending', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']) },
-    { fromStatus: 'pending', toStatus: 'approved', allowedRoleSlugs: JSON.stringify(['supervisor', 'planner', 'admin', 'maintenance_supervisor', 'maintenance_planner', 'maintenance_manager', 'plant_manager']) },
-    { fromStatus: 'pending', toStatus: 'rejected', allowedRoleSlugs: JSON.stringify(['supervisor', 'planner', 'admin', 'maintenance_supervisor', 'maintenance_planner', 'maintenance_manager', 'plant_manager']), requiresReason: true },
+    { fromStatus: 'pending', toStatus: 'approved', allowedRoleSlugs: JSON.stringify(['admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']) },
+    { fromStatus: 'pending', toStatus: 'rejected', allowedRoleSlugs: JSON.stringify(['admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager']), requiresReason: true },
     { fromStatus: 'approved', toStatus: 'converted', allowedRoleSlugs: JSON.stringify(['planner', 'admin', 'maintenance_planner', 'maintenance_manager']) },
   ];
 

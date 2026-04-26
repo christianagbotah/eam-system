@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasAnyPermission } from '@/lib/auth';
+import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { executeTransition } from '@/lib/state-machine';
 
@@ -23,12 +23,40 @@ export async function POST(
     const body = await request.json();
     const { notes } = body;
 
-    const mr = await db.maintenanceRequest.findUnique({ where: { id } });
+    // Fetch MR with requester department for access control
+    const mr = await db.maintenanceRequest.findUnique({
+      where: { id },
+      include: {
+        requester: { select: { id: true, fullName: true, username: true, department: true } },
+      },
+    });
     if (!mr) {
       return NextResponse.json(
         { success: false, error: 'Maintenance request not found' },
         { status: 404 }
       );
+    }
+
+    // Access control: only admin or the requester's department supervisor can approve
+    if (!isAdmin(session)) {
+      const currentUser = await db.user.findUnique({
+        where: { id: session.userId },
+        select: { id: true, department: true, roles: { select: { slug: true } } },
+      });
+      const isSupervisor = currentUser?.roles.some((r: any) => r.slug === 'maintenance_supervisor' || r.slug === 'admin');
+      if (!isSupervisor) {
+        return NextResponse.json({ success: false, error: 'Only admin or department supervisor can approve requests' }, { status: 403 });
+      }
+      const requesterDept = mr.requester?.department;
+      const userDept = currentUser?.department;
+      const deptMatch = requesterDept && userDept &&
+        (userDept === requesterDept ||
+          (typeof requesterDept === 'object' && requesterDept?.name && typeof userDept === 'object' && userDept?.name && userDept.name === requesterDept.name) ||
+          (typeof requesterDept === 'object' && requesterDept?.name && typeof userDept === 'string' && userDept === requesterDept.name) ||
+          (typeof userDept === 'object' && userDept?.name && typeof requesterDept === 'string' && requesterDept === userDept.name));
+      if (!deptMatch) {
+        return NextResponse.json({ success: false, error: 'You can only approve requests from your own department' }, { status: 403 });
+      }
     }
 
     // Execute status transition via state machine (validates + updates + creates comment)
@@ -67,7 +95,7 @@ export async function POST(
     const updated = await db.maintenanceRequest.findUnique({
       where: { id },
       include: {
-        requester: { select: { id: true, fullName: true, username: true } },
+        requester: { select: { id: true, fullName: true, username: true, department: true } },
         supervisor: { select: { id: true, fullName: true, username: true } },
         approver: { select: { id: true, fullName: true, username: true } },
         assignedPlanner: { select: { id: true, fullName: true, username: true } },

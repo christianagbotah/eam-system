@@ -738,7 +738,16 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   if (loading) return <LoadingSkeleton />;
   if (!mr) return <div className="p-6">Request not found</div>;
 
-  const canAssignPlanner = mr.status === 'approved' && hasPermission('maintenance_requests.assign_planner') && !mr.assignedPlannerId;
+  // Only admin or the request sender's department supervisor can approve/assign
+  const isAdminUser = useAuthStore.getState().isAdmin();
+  const isDeptSupervisor = user?.roles?.some((r: any) => r.slug === 'maintenance_supervisor' || r.slug === 'admin')
+    && mr.requester?.department
+    && user?.department
+    && (user.department === mr.requester.department || (typeof mr.requester.department === 'object' && mr.requester.department?.name && user.department?.name && user.department.name === (mr.requester.department as any).name));
+
+  const canApprove = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
+  const canReject = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
+  const canAssignPlanner = mr.status === 'approved' && (isAdminUser || isDeptSupervisor) && !mr.assignedPlannerId;
   const canConvert = mr.status === 'approved' && hasPermission('maintenance_requests.convert_to_wo') && (mr.assignedPlannerId === user?.id || !mr.assignedPlannerId);
 
   return (
@@ -756,12 +765,12 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
           <h1 className="text-xl font-bold mt-1">{mr.title}</h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {mr.status === 'pending' && hasPermission('maintenance_requests.reject') && (
+          {canReject && (
             <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectDialogOpen(true)}>
               <XCircle className="h-4 w-4 mr-1" />Reject
             </Button>
           )}
-          {mr.status === 'pending' && hasPermission('maintenance_requests.approve') && (
+          {canApprove && (
             <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={() => setApproveDialogOpen(true)}>
               <CheckCircle2 className="h-4 w-4 mr-1" />Approve
             </Button>
