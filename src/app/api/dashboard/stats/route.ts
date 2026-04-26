@@ -432,9 +432,9 @@ export async function GET(request: NextRequest) {
 
     // Build weekly trend arrays
     const weeklyTrends = {
-      workOrders: fillTrendArray(weeklyWoResult),
-      maintenanceRequests: fillTrendArray(weeklyMrResult),
-      productionOrders: fillTrendArray(weeklyProdResult),
+      workOrders: fillTrendArray(weeklyWoResult as { day: string; count: number }[]),
+      maintenanceRequests: fillTrendArray(weeklyMrResult as { day: string; count: number }[]),
+      productionOrders: fillTrendArray(weeklyProdResult as { day: string; count: number }[]),
     };
 
     // ===== Compute Enhanced KPIs =====

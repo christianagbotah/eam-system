@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { hasPermission, isAdmin } from '@/lib/permissions';
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession();
+    const session = getSession(req);
     if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
     const url = new URL(req.url);
@@ -17,17 +16,16 @@ export async function GET(req: NextRequest) {
 
     if (stats) {
       const where: any = {};
-      if (session.user.plantId) where.plantId = session.user.plantId;
-      
+
       const [total, pending, approved, inProgress, completed, expired, cancelled, activeWorkers] = await Promise.all([
         db.lotoRecord.count({ where }),
         db.lotoRecord.count({ where: { ...where, status: 'pending' } }),
         db.lotoRecord.count({ where: { ...where, status: 'approved' } }),
         db.lotoRecord.count({ where: { ...where, status: 'in_progress' } }),
-        db.lotoRecord.count({ where: ...where, status: 'completed' }),
-        db.lotoRecord.count({ where: ...where, status: 'expired' } }),
-        db.lotoRecord.count({ where: ...where, status: 'cancelled' } }),
-        db.lotoRecord.aggregate({ _sum: true, where: { ...where, status: { in: ['approved', 'in_progress'] } } }).then(r => r._sum.workerCount || 0),
+        db.lotoRecord.count({ where: { ...where, status: 'completed' } }),
+        db.lotoRecord.count({ where: { ...where, status: 'expired' } }),
+        db.lotoRecord.count({ where: { ...where, status: 'cancelled' } }),
+        db.lotoRecord.aggregate({ _sum: { workerCount: true }, where: { ...where, status: { in: ['approved', 'in_progress'] } } }).then(r => r._sum.workerCount || 0),
       ]);
 
       return NextResponse.json({
@@ -37,7 +35,6 @@ export async function GET(req: NextRequest) {
     }
 
     const where: any = {};
-    if (session.user.plantId) where.plantId = session.user.plantId;
     if (status && status !== 'all') where.status = status;
     if (assetId) where.assetId = assetId;
     if (departmentId) where.departmentId = departmentId;
@@ -62,15 +59,16 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, data: records });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch LOTO records';
     console.error('LOTO GET error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to fetch LOTO records' }, { status: 500 });
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession();
+    const session = getSession(req);
     if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     if (!hasPermission(session, 'safety.create') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
@@ -96,12 +94,11 @@ export async function POST(req: NextRequest) {
         title,
         description: description || null,
         assetId: assetId || null,
-        departmentId: departmentId || session.user.departmentId || null,
-        plantId: session.user.plantId || null,
+        departmentId: departmentId || null,
         lotoType: lotoType || 'routine',
         energySource,
         energySourceDesc: energySourceDesc || null,
-        requestedById: session.user.id,
+        requestedById: session.userId,
         scheduledDate: scheduledDate ? new Date(scheduledDate) : null,
         requiredFromDate: requiredFromDate ? new Date(requiredFromDate) : null,
         requiredToDate: requiredToDate ? new Date(requiredToDate) : null,
@@ -113,8 +110,9 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, data: record }, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to create LOTO record';
     console.error('LOTO POST error:', error);
-    return NextResponse.json({ success: false, error: 'Failed to create LOTO record' }, { status: 500 });
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

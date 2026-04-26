@@ -20,8 +20,8 @@ export async function POST(request: NextRequest) {
     const user = await db.user.findFirst({
       where: {
         OR: [
-          { username: { equals: input, mode: 'insensitive' } },
-          { email: { equals: input, mode: 'insensitive' } },
+          { username: { equals: input } },
+          { email: { equals: input } },
         ],
       },
     });

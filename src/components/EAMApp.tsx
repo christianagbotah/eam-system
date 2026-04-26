@@ -42,6 +42,10 @@ const AssetHealthPage = lazy(() => import('./modules/AssetPages').then(m => ({ d
 const MaintenanceRequestsPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceRequestsPage })));
 const MaintenanceWorkOrdersPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceWorkOrdersPage })));
 const PmSchedulesPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.PmSchedulesPage })));
+const PmTemplatesPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.PmTemplatesPage })));
+const PmTriggersPage = lazy(() => import('./modules/PmTriggersPage').then(m => ({ default: m.default })));
+const PmCalendarPage = lazy(() => import('./modules/PmCalendarPage').then(m => ({ default: m.default })));
+
 const MaintenanceDashboardPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceDashboardPage })));
 const MaintenanceAnalyticsPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceAnalyticsPage })));
 const MaintenanceCalibrationPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceCalibrationPage })));
@@ -187,6 +191,9 @@ function AppShell() {
       case 'maintenance-risk-assessment': return <MaintenanceRiskAssessmentPage />;
       case 'maintenance-tools': return <MaintenanceToolsPage />;
       case 'pm-schedules': return <PmSchedulesPage />;
+      case 'pm-templates': return <PmTemplatesPage />;
+      case 'pm-triggers': return <PmTriggersPage />;
+      case 'pm-calendar': return <PmCalendarPage />;
       // Repairs
       case 'repairs-material-requests': return <RepairMaterialRequestsPage />;
       case 'repairs-tool-requests': return <RepairToolRequestsPage />;
@@ -300,6 +307,9 @@ function AppShell() {
     'maintenance-risk-assessment': 'Risk Assessment',
     'maintenance-tools': 'Tools',
     'pm-schedules': 'PM Schedules',
+    'pm-templates': 'PM Templates',
+    'pm-triggers': 'PM Triggers',
+    'pm-calendar': 'PM Calendar',
     // Repairs Module
     'repairs-material-requests': 'Material Requests',
     'repairs-tool-requests': 'Tool Requests',

@@ -178,7 +178,7 @@ export async function GET(req: NextRequest) {
       }
 
       try {
-        // @ts-expect-error - dynamic model access via string key
+        // @ts-ignore - dynamic model access via string key
         const records = await db[modelName].findMany({
           select: selectObj,
           orderBy: { createdAt: 'desc' },

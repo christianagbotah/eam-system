@@ -64,9 +64,13 @@ export async function GET(req: NextRequest) {
           status: { notIn: ['completed', 'closed', 'cancelled', 'draft'] },
         },
       }),
-      // Breached SLA work orders
+      // Breached SLA work orders (overdue + high priority)
       db.workOrder.count({
-        where: { slaBreached: true },
+        where: {
+          plannedEnd: { lt: now },
+          priority: { in: ['critical', 'high'] },
+          status: { notIn: ['completed', 'closed', 'cancelled', 'draft'] },
+        },
       }),
       // Additional counts
       db.role.count(),
@@ -171,7 +175,7 @@ export async function GET(req: NextRequest) {
           action: log.action || 'unknown',
           entity: log.entityType || '',
           entityId: log.entityId || '',
-          details: log.details || '',
+          details: log.newValues || '',
           user: log.user ? { fullName: log.user.fullName, username: log.user.username } : null,
           createdAt: log.createdAt,
         })),

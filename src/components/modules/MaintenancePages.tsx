@@ -40,7 +40,7 @@ import {
   ArrowRightLeft, FileText, CheckSquare, Filter, ArrowUpDown, BookOpen, ShieldAlert,
   PieChart as PieChartIcon, Gauge, ListChecks, Shield, ShieldCheck, HardHat, MapPin,
   Crown, Timer, Hourglass, UserPlus, Workflow, ChevronRight, ExternalLink, Hammer,
-  PackageSearch, ClipboardCheck,
+  PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -4004,6 +4004,679 @@ export function MaintenanceToolsPage() {
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// ============================================================================
+// PM TEMPLATES PAGE
+// ============================================================================
+
+interface PmTemplateItem {
+  id: string;
+  title: string;
+  description?: string | null;
+  type: string;
+  category?: string | null;
+  estimatedDuration: number;
+  priority: string;
+  requiredSkills?: string | null;
+  requiredTools?: string | null;
+  isActive: boolean;
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: { id: string; fullName: string; username: string } | null;
+  _count?: { tasks: number; schedules?: number };
+  tasks?: PmTemplateTaskItem[];
+}
+
+interface PmTemplateTaskItem {
+  id: string;
+  templateId: string;
+  taskNumber: number;
+  description: string;
+  taskType: string;
+  requiredParts?: string | null;
+  estimatedMinutes?: number | null;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+const TEMPLATE_TYPE_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
+  preventive: { label: 'Preventive', color: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/40', icon: CheckCircle2 },
+  predictive: { label: 'Predictive', color: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/30 dark:text-violet-400 dark:border-violet-900/40', icon: TrendingUp },
+  inspection: { label: 'Inspection', color: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/40', icon: Eye },
+  calibration: { label: 'Calibration', color: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/30 dark:text-sky-400 dark:border-sky-900/40', icon: Gauge },
+  lubrication: { label: 'Lubrication', color: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/30 dark:text-teal-400 dark:border-teal-900/40', icon: Droplets },
+};
+
+const TASK_TYPE_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
+  check: { label: 'Check', color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400', icon: CheckSquare },
+  measure: { label: 'Measure', color: 'bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400', icon: Ruler },
+  inspect: { label: 'Inspect', color: 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400', icon: Eye },
+  lubricate: { label: 'Lubricate', color: 'bg-teal-50 text-teal-700 dark:bg-teal-950/30 dark:text-teal-400', icon: Droplets },
+  replace: { label: 'Replace', color: 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400', icon: RotateCcw },
+  record: { label: 'Record', color: 'bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-400', icon: FileText },
+};
+
+function TemplateTypeBadge({ type }: { type: string }) {
+  const cfg = TEMPLATE_TYPE_CONFIG[type] || { label: type, color: 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400', icon: ClipboardList };
+  return (
+    <Badge variant="outline" className={`text-[10px] font-semibold gap-1 ${cfg.color}`}>
+      <cfg.icon className="h-3 w-3" />
+      {cfg.label}
+    </Badge>
+  );
+}
+
+function TaskTypeBadge({ type }: { type: string }) {
+  const cfg = TASK_TYPE_CONFIG[type] || { label: type, color: 'bg-slate-100 text-slate-600', icon: CheckSquare };
+  return (
+    <Badge variant="outline" className={`text-[10px] font-semibold gap-1 ${cfg.color}`}>
+      <cfg.icon className="h-2.5 w-2.5" />
+      {cfg.label}
+    </Badge>
+  );
+}
+
+export function PmTemplatesPage() {
+  const [templates, setTemplates] = useState<PmTemplateItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editItem, setEditItem] = useState<PmTemplateItem | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteTaskConfirmId, setDeleteTaskConfirmId] = useState<string | null>(null);
+
+  // Filters
+  const [searchText, setSearchText] = useState('');
+  const [filterType, setFilterType] = useState('all');
+  const [filterActive, setFilterActive] = useState(true);
+
+  // Template form state
+  const [formTitle, setFormTitle] = useState('');
+  const [formDesc, setFormDesc] = useState('');
+  const [formType, setFormType] = useState('preventive');
+  const [formCategory, setFormCategory] = useState('');
+  const [formPriority, setFormPriority] = useState('medium');
+  const [formDuration, setFormDuration] = useState('');
+  const [formSkills, setFormSkills] = useState('');
+  const [formTools, setFormTools] = useState('');
+
+  // Task builder state
+  const [taskList, setTaskList] = useState<PmTemplateTaskItem[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [tasksExpanded, setTasksExpanded] = useState(false);
+  const [newTaskDesc, setNewTaskDesc] = useState('');
+  const [newTaskType, setNewTaskType] = useState('check');
+  const [newTaskMinutes, setNewTaskMinutes] = useState('');
+  const [newTaskParts, setNewTaskParts] = useState('');
+  const [addTaskLoading, setAddTaskLoading] = useState(false);
+
+  const { hasPermission } = useAuthStore();
+
+  const fetchTemplates = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (filterType !== 'all') params.set('type', filterType);
+      params.set('active', String(filterActive));
+      const res = await api.get<PmTemplateItem[]>(`/api/pm-templates?${params.toString()}`);
+      if (res.success && res.data) setTemplates(res.data);
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, [filterType, filterActive]);
+
+  useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
+
+  const filteredTemplates = useMemo(() => {
+    if (!searchText.trim()) return templates;
+    const q = searchText.toLowerCase();
+    return templates.filter(t =>
+      t.title.toLowerCase().includes(q) ||
+      (t.description || '').toLowerCase().includes(q) ||
+      (t.category || '').toLowerCase().includes(q)
+    );
+  }, [templates, searchText]);
+
+  const stats = useMemo(() => {
+    const total = templates.length;
+    const active = templates.filter(t => t.isActive).length;
+    const totalTasks = templates.reduce((sum, t) => sum + (t._count?.tasks ?? 0), 0);
+    const avgTasks = total > 0 ? (totalTasks / total).toFixed(1) : '0';
+    return { total, active, avgTasks };
+  }, [templates]);
+
+  const fetchTasks = useCallback(async (templateId: string) => {
+    setTasksLoading(true);
+    try {
+      const res = await api.get<{ tasks: PmTemplateTaskItem[] }>(`/api/pm-templates/${templateId}`);
+      if (res.success && res.data && (res.data as any).tasks) {
+        setTaskList((res.data as any).tasks);
+      } else {
+        setTaskList([]);
+      }
+    } catch { setTaskList([]); }
+    setTasksLoading(false);
+  }, []);
+
+  const resetForm = () => {
+    setFormTitle(''); setFormDesc(''); setFormType('preventive');
+    setFormCategory(''); setFormPriority('medium'); setFormDuration('');
+    setFormSkills(''); setFormTools('');
+  };
+
+  const openCreate = () => { resetForm(); setCreateOpen(true); };
+
+  const openEdit = (item: PmTemplateItem) => {
+    setFormTitle(item.title || '');
+    setFormDesc(item.description || '');
+    setFormType(item.type || 'preventive');
+    setFormCategory(item.category || '');
+    setFormPriority(item.priority || 'medium');
+    setFormDuration(String(item.estimatedDuration || ''));
+    // Parse JSON skills/tools back to comma-separated
+    try { setFormSkills(item.requiredSkills ? JSON.parse(item.requiredSkills).join(', ') : ''); } catch { setFormSkills(''); }
+    try { setFormTools(item.requiredTools ? JSON.parse(item.requiredTools).join(', ') : ''); } catch { setFormTools(''); }
+    setEditItem(item);
+    setTasksExpanded(false);
+    setTaskList([]);
+  };
+
+  const handleSave = async () => {
+    if (!formTitle || !formDuration) { toast.error('Title and estimated duration are required'); return; }
+    setSaving(true);
+    try {
+      const skillsArray = formSkills ? formSkills.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const toolsArray = formTools ? formTools.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+      if (editItem) {
+        const res = await api.put(`/api/pm-templates/${editItem.id}`, {
+          title: formTitle,
+          description: formDesc || null,
+          type: formType,
+          category: formCategory || null,
+          priority: formPriority,
+          estimatedDuration: parseInt(formDuration, 10) || 0,
+        });
+        if (res.success) {
+          toast.success('Template updated');
+          setEditItem(null);
+          fetchTemplates();
+        } else { toast.error(res.error || 'Update failed'); }
+      } else {
+        const res = await api.post('/api/pm-templates', {
+          title: formTitle,
+          description: formDesc || null,
+          type: formType,
+          category: formCategory || null,
+          priority: formPriority,
+          estimatedDuration: parseInt(formDuration, 10) || 0,
+          requiredSkills: skillsArray.length > 0 ? skillsArray : undefined,
+          requiredTools: toolsArray.length > 0 ? toolsArray : undefined,
+        });
+        if (res.success) {
+          toast.success('Template created');
+          setCreateOpen(false);
+          resetForm();
+          fetchTemplates();
+        } else { toast.error(res.error || 'Create failed'); }
+      }
+    } catch { toast.error('Operation failed'); }
+    setSaving(false);
+  };
+
+  const handleToggleActive = async (item: PmTemplateItem) => {
+    try {
+      const res = await api.put(`/api/pm-templates/${item.id}`, { isActive: !item.isActive });
+      if (res.success) {
+        toast.success(item.isActive ? 'Template deactivated' : 'Template activated');
+        fetchTemplates();
+      } else { toast.error(res.error || 'Failed'); }
+    } catch { toast.error('Failed'); }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirmId) return;
+    try {
+      const res = await api.delete(`/api/pm-templates/${deleteConfirmId}`);
+      if (res.success) { toast.success('Template deactivated'); fetchTemplates(); }
+      else { toast.error(res.error || 'Failed'); }
+    } catch { toast.error('Failed'); }
+    setDeleteConfirmId(null);
+  };
+
+  const handleAddTask = async () => {
+    if (!editItem || !newTaskDesc.trim()) { toast.error('Task description is required'); return; }
+    setAddTaskLoading(true);
+    try {
+      const partsArray = newTaskParts ? newTaskParts.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const res = await api.post(`/api/pm-templates/${editItem.id}/tasks`, {
+        description: newTaskDesc.trim(),
+        taskType: newTaskType,
+        estimatedMinutes: newTaskMinutes ? parseInt(newTaskMinutes, 10) : undefined,
+        requiredParts: partsArray.length > 0 ? partsArray : undefined,
+      });
+      if (res.success) {
+        toast.success('Task added');
+        setNewTaskDesc(''); setNewTaskMinutes(''); setNewTaskParts('');
+        setNewTaskType('check');
+        fetchTasks(editItem.id);
+        fetchTemplates(); // refresh task count
+      } else { toast.error(res.error || 'Failed to add task'); }
+    } catch { toast.error('Failed to add task'); }
+    setAddTaskLoading(false);
+  };
+
+  const handleDeleteTask = async () => {
+    if (!editItem || !deleteTaskConfirmId) return;
+    try {
+      const res = await api.delete(`/api/pm-templates/${editItem.id}/tasks/${deleteTaskConfirmId}`);
+      if (res.success) {
+        toast.success('Task removed');
+        fetchTasks(editItem.id);
+        fetchTemplates();
+      } else { toast.error(res.error || 'Failed to delete task'); }
+    } catch { toast.error('Failed to delete task'); }
+    setDeleteTaskConfirmId(null);
+  };
+
+  const dialogOpen = createOpen || !!editItem;
+  const dialogTitle = editItem ? 'Edit PM Template' : 'New PM Template';
+  const dialogDesc = editItem ? 'Update maintenance template and manage task checklist' : 'Create a reusable maintenance task checklist template';
+
+  return (
+    <div className="page-content">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Preventive Maintenance</p>
+          <h1 className="text-2xl font-bold tracking-tight">PM Templates</h1>
+          <p className="text-sm text-muted-foreground mt-1">Define reusable maintenance task checklists for preventive work orders</p>
+        </div>
+        {hasPermission('work_orders.create') && (
+          <Button size="sm" onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Plus className="h-3.5 w-3.5 mr-1.5" /> New Template
+          </Button>
+        )}
+      </div>
+
+      {/* Stats Row */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {[
+          { label: 'Total Templates', value: stats.total, icon: ClipboardList, color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400' },
+          { label: 'Active', value: stats.active, icon: Activity, color: 'bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-400' },
+          { label: 'Avg Tasks/Tpl', value: stats.avgTasks, icon: ListChecks, color: 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400' },
+        ].map(s => (
+          <div key={s.label} className="flex items-center gap-3 p-3 rounded-xl border bg-card">
+            <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${s.color}`}>
+              <s.icon className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-lg font-bold">{s.value}</p>
+              <p className="text-[11px] text-muted-foreground">{s.label}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter Bar */}
+      <div className="filter-row flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search templates..."
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={filterType} onValueChange={setFilterType}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="preventive">Preventive</SelectItem>
+            <SelectItem value="predictive">Predictive</SelectItem>
+            <SelectItem value="inspection">Inspection</SelectItem>
+            <SelectItem value="calibration">Calibration</SelectItem>
+            <SelectItem value="lubrication">Lubrication</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border bg-card">
+          <span className="text-xs text-muted-foreground">Active</span>
+          <Switch
+            checked={filterActive}
+            onCheckedChange={setFilterActive}
+          />
+          <span className="text-xs text-muted-foreground">Show Inactive</span>
+        </div>
+      </div>
+
+      {/* Templates Table */}
+      <Card className="border-0 shadow-sm">
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-xs font-semibold">Template Name</TableHead>
+                <TableHead className="text-xs font-semibold">Type</TableHead>
+                <TableHead className="text-xs font-semibold hidden md:table-cell">Category</TableHead>
+                <TableHead className="text-xs font-semibold">Tasks</TableHead>
+                <TableHead className="text-xs font-semibold">Priority</TableHead>
+                <TableHead className="text-xs font-semibold hidden lg:table-cell">Duration</TableHead>
+                <TableHead className="text-xs font-semibold">Status</TableHead>
+                <TableHead className="text-xs font-semibold w-10"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell><Skeleton className="h-4 w-48" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-8" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                  <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-16" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                  <TableCell></TableCell>
+                </TableRow>
+              )) : filteredTemplates.length === 0 ? (
+                <TableRow><TableCell colSpan={8}>
+                  <EmptyState icon={ClipboardList} title="No templates found" description={searchText || filterType !== 'all' ? 'Try adjusting your filters' : 'Create your first PM template to get started'} />
+                </TableCell></TableRow>
+              ) : filteredTemplates.map(t => (
+                <TableRow key={t.id} className="group">
+                  <TableCell>
+                    <div>
+                      <p className="font-medium text-sm">{t.title}</p>
+                      {t.description && <p className="text-xs text-muted-foreground mt-0.5 max-w-[200px] truncate">{t.description}</p>}
+                    </div>
+                  </TableCell>
+                  <TableCell><TemplateTypeBadge type={t.type} /></TableCell>
+                  <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{t.category || '—'}</TableCell>
+                  <TableCell>
+                    <span className="text-sm font-medium">{t._count?.tasks ?? 0}</span>
+                    {t._count?.tasks === 0 && <span className="text-[10px] text-muted-foreground ml-1">tasks</span>}
+                  </TableCell>
+                  <TableCell><PriorityBadge priority={t.priority} /></TableCell>
+                  <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">
+                    <div className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {t.estimatedDuration} min
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={t.isActive ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/40' : 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-800/50 dark:text-slate-400 dark:border-slate-700'}>
+                      {t.isActive ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEdit(t)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleToggleActive(t)}>
+                          {t.isActive ? (<><XCircle className="h-3.5 w-3.5 mr-2" />Deactivate</>) : (<><CheckCircle2 className="h-3.5 w-3.5 mr-2" />Activate</>)}
+                        </DropdownMenuItem>
+                        {t.isActive && (
+                          <DropdownMenuItem onClick={() => setDeleteConfirmId(t.id)} className="text-red-600">
+                            <Trash2 className="h-3.5 w-3.5 mr-2" />Deactivate
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Delete Template Confirm Dialog */}
+      <ConfirmDialog
+        open={!!deleteConfirmId}
+        onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}
+        title="Deactivate Template"
+        description="Are you sure you want to deactivate this template? It will no longer be available for new PM schedules."
+        confirmLabel="Deactivate"
+        variant="destructive"
+        onConfirm={handleDeleteConfirm}
+      />
+
+      {/* Delete Task Confirm Dialog */}
+      <ConfirmDialog
+        open={!!deleteTaskConfirmId}
+        onOpenChange={(open) => { if (!open) setDeleteTaskConfirmId(null); }}
+        title="Remove Task"
+        description="Are you sure you want to remove this task from the template? This action cannot be undone."
+        confirmLabel="Remove Task"
+        variant="destructive"
+        onConfirm={handleDeleteTask}
+      />
+
+      {/* Create/Edit Dialog */}
+      <ResponsiveDialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          if (!open) { setCreateOpen(false); setEditItem(null); setTaskList([]); setTasksExpanded(false); }
+        }}
+        title={dialogTitle}
+        description={dialogDesc}
+        large
+        footer={(
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => { setCreateOpen(false); setEditItem(null); setTaskList([]); setTasksExpanded(false); }}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              {saving && <RefreshCw className="h-4 w-4 animate-spin mr-1.5" />}
+              {editItem ? 'Update Template' : 'Create Template'}
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">Title *</Label>
+            <Input value={formTitle} onChange={e => setFormTitle(e.target.value)} placeholder="e.g., Monthly Motor Inspection" />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">Description</Label>
+            <Textarea value={formDesc} onChange={e => setFormDesc(e.target.value)} placeholder="Describe the maintenance activities..." rows={2} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Type</Label>
+              <Select value={formType} onValueChange={setFormType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(TEMPLATE_TYPE_CONFIG).map(([key, cfg]) => (
+                    <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Category</Label>
+              <Input value={formCategory} onChange={e => setFormCategory(e.target.value)} placeholder="e.g., Mechanical, Electrical" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Priority</Label>
+              <Select value={formPriority} onValueChange={setFormPriority}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {['low', 'medium', 'high', 'critical'].map(p => (
+                    <SelectItem key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Est. Duration (min) *</Label>
+              <Input type="number" min="1" value={formDuration} onChange={e => setFormDuration(e.target.value)} placeholder="60" />
+            </div>
+          </div>
+          {!editItem && (
+            <>
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Required Skills</Label>
+                <Input value={formSkills} onChange={e => setFormSkills(e.target.value)} placeholder="Welding, Electrical, PLC (comma-separated)" />
+                <p className="text-[11px] text-muted-foreground">Comma-separated list of required skills</p>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Required Tools</Label>
+                <Input value={formTools} onChange={e => setFormTools(e.target.value)} placeholder="Multimeter, Torque Wrench (comma-separated)" />
+                <p className="text-[11px] text-muted-foreground">Comma-separated list of required tools</p>
+              </div>
+            </>
+          )}
+
+          {/* Task Checklist Builder — only visible when editing */}
+          {editItem && (
+            <div className="mt-4">
+              {/* Expandable header */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!tasksExpanded && taskList.length === 0) fetchTasks(editItem.id);
+                  setTasksExpanded(!tasksExpanded);
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <ListChecks className="h-4 w-4 text-emerald-600" />
+                  <span className="text-sm font-semibold">Task Checklist</span>
+                  <Badge variant="outline" className="text-[10px] font-medium bg-emerald-50 text-emerald-700 border-emerald-200">
+                    {taskList.length} {taskList.length === 1 ? 'task' : 'tasks'}
+                  </Badge>
+                </div>
+                {tasksExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+              </button>
+
+              {/* Expanded task list */}
+              {tasksExpanded && (
+                <div className="mt-3 space-y-3">
+                  {/* Task list */}
+                  <div className="max-h-64 overflow-y-auto space-y-1.5 custom-scrollbar">
+                    {tasksLoading ? (
+                      <div className="space-y-2 p-3">
+                        <Skeleton className="h-8 w-full" />
+                        <Skeleton className="h-8 w-full" />
+                        <Skeleton className="h-8 w-3/4" />
+                      </div>
+                    ) : taskList.length === 0 ? (
+                      <div className="text-center py-6 text-muted-foreground">
+                        <ClipboardList className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                        <p className="text-sm">No tasks yet. Add your first task below.</p>
+                      </div>
+                    ) : (
+                      taskList.map((task) => {
+                        let parsedParts: string[] = [];
+                        try { parsedParts = task.requiredParts ? JSON.parse(task.requiredParts) : []; } catch { /* ignore */ }
+                        return (
+                          <div
+                            key={task.id}
+                            className="flex items-center gap-2 p-2.5 rounded-lg border bg-card group/task hover:bg-muted/30 transition-colors"
+                          >
+                            {/* Drag handle */}
+                            <GripVertical className="h-4 w-4 text-muted-foreground/50 shrink-0 cursor-grab" />
+                            {/* Task number */}
+                            <span className="text-[10px] font-mono font-semibold text-muted-foreground bg-muted rounded px-1.5 py-0.5 shrink-0">
+                              {task.taskNumber}
+                            </span>
+                            {/* Description */}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{task.description}</p>
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                <TaskTypeBadge type={task.taskType} />
+                                {task.estimatedMinutes && (
+                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                                    <Clock className="h-2.5 w-2.5" />{task.estimatedMinutes}m
+                                  </span>
+                                )}
+                                {parsedParts.length > 0 && (
+                                  <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                                    <Wrench className="h-2.5 w-2.5" />{parsedParts.join(', ')}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {/* Delete task button */}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 opacity-0 group-hover/task:opacity-100 transition-opacity text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0"
+                              onClick={() => setDeleteTaskConfirmId(task.id)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Add Task form */}
+                  <div className="p-3 rounded-lg border-2 border-dashed border-emerald-200 bg-emerald-50/30 dark:border-emerald-900/40 dark:bg-emerald-950/10">
+                    <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 mb-2 flex items-center gap-1.5">
+                      <Plus className="h-3.5 w-3.5" />
+                      Add Task
+                    </p>
+                    <div className="space-y-2">
+                      <Input
+                        value={newTaskDesc}
+                        onChange={e => setNewTaskDesc(e.target.value)}
+                        placeholder="Task description *"
+                        className="text-sm"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <Select value={newTaskType} onValueChange={setNewTaskType}>
+                          <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(TASK_TYPE_CONFIG).map(([key, cfg]) => (
+                              <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={newTaskMinutes}
+                          onChange={e => setNewTaskMinutes(e.target.value)}
+                          placeholder="Est. minutes"
+                          className="text-sm"
+                        />
+                      </div>
+                      <Input
+                        value={newTaskParts}
+                        onChange={e => setNewTaskParts(e.target.value)}
+                        placeholder="Required parts (comma-separated, optional)"
+                        className="text-sm"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleAddTask}
+                        disabled={addTaskLoading || !newTaskDesc.trim()}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white w-full"
+                      >
+                        {addTaskLoading ? <RefreshCw className="h-4 w-4 animate-spin mr-1.5" /> : <Plus className="h-3.5 w-3.5 mr-1.5" />}
+                        Add Task to Checklist
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </ResponsiveDialog>
     </div>
   );
 }

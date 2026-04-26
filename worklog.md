@@ -1355,3 +1355,72 @@ Stage Summary:
 - Active state tracking across parent and detail pages
 - Already integrated into EAMApp layout
 - Commit e8f914d pushed to GitHub
+
+---
+Task ID: 3f
+Agent: Frontend UI Developer
+Task: Build PM Calendar view page component
+
+Work Log:
+
+### 1. Created PmCalendarPage Component (`src/components/modules/PmCalendarPage.tsx`)
+- **Default export** `PmCalendarPage` — a comprehensive PM calendar view component
+- **Header**: Title "PM Calendar" with `CalendarDays` icon and description text
+- **View Controls**: Month/Week toggle (pill-style segmented control), Previous/Next navigation buttons, "Today" button
+- **Calendar Grid**:
+  - **Month view** (default): Standard 7-column calendar grid (Mon–Sun start). Shows previous/next month trailing days in muted style. Each day cell displays up to 3 PM schedule items as colored pills (truncated title + priority dot + asset tag on lg). "+N more" expand/collapse for overflow. Today highlighted with emerald circle. Selected day gets ring border.
+  - **Week view**: Shows 7 days of the selected week with all schedule items visible
+  - Each PM pill colored by priority: critical=red, high=orange, medium=amber, low=emerald
+  - Overdue items get red indicator dot (pulsing animation) + ring border
+  - Due-soon items (within leadDays) get amber indicator dot
+- **Mobile-first responsive**:
+  - On mobile (< sm): Day cells are compact with colored dots for each schedule + count. Tapping a day expands a detail panel below the calendar showing full schedule cards with chevron navigation.
+  - On desktop (sm+): Full calendar grid with pills, asset tags, and expand/collapse
+- **Legend**: Color-coded priority indicators (Critical/High/Medium/Low) + Overdue/Due Soon/Today indicators
+- **Summary Stats**: 4-card grid — Active Schedules count, Overdue count, Due Soon count, Estimated Total Duration
+- **Quick Stats bar**: Overdue and Due Soon badges in the controls row (desktop only)
+- **Detail Dialog** (ResponsiveDialog): Opens on PM item click showing:
+  - Schedule title + due date in header
+  - Status badges: Priority, Overdue/Due Soon, Active, Auto-generates WO
+  - Asset: name, tag, status with MapPin icon
+  - Frequency with CalendarRange icon
+  - Next due date (red if overdue) with lead days info
+  - Last completed date
+  - Assigned to (badge list)
+  - Department (if available)
+  - Estimated duration
+  - "View Schedule" button → navigates to pm-schedules page via useNavigationStore
+  - "Close" button
+
+### 2. Helper Functions
+- `getDaysInMonth(year, month)` — returns number of days in a month
+- `getFirstDayOfMonth(year, month)` — returns 0-6 day of week (Monday = 0)
+- `isSameDay(date1, date2)` — compares year/month/day
+- `isOverdue(nextDueDate)` — checks if date is before today
+- `isDueSoon(nextDueDate, leadDays)` — checks if date is within leadDays from today
+- `formatCalendarDate(date)` — formatted string (e.g., "Mon, Jan 15, 2025")
+- `formatTimeAgo(dateStr)` — relative time ("Today", "Yesterday", "In 3 days", "12 days ago")
+- `formatFrequency(type, value)` — human-readable frequency ("Every 2 Weeks", "Every Month")
+- `formatDuration(minutes)` — converts minutes to "2h 30m" format
+- `getPriorityConfig(priority)` — returns color config object for each priority level
+
+### 3. Technical Details
+- Fetches active PM schedules from `/api/pm-schedules?isActive=true`
+- Filters schedules that have a nextDueDate for calendar display
+- Permission check: requires `pm_schedules.view` or admin role
+- All 6 helper functions implemented as specified
+- Uses `page-content` class on root element
+- Emerald primary color scheme (no blue/indigo)
+- ESLint passes with zero errors on new file
+- Uses existing shadcn/ui components: Button, Card, Badge, Skeleton, Separator, ResponsiveDialog
+- Uses `api` from `@/lib/api`, `useAuthStore`, `useNavigationStore`
+
+Stage Summary:
+- 1 new component file created (`src/components/modules/PmCalendarPage.tsx`)
+- Full month + week calendar view with PM schedule visualization
+- Mobile-first responsive design with compact dots on mobile and full pills on desktop
+- Priority color system: critical=red, high=orange, medium=amber, low=green
+- Overdue/due-soon indicator system
+- Detail dialog with complete schedule information
+- Summary statistics cards
+- ESLint clean, zero errors

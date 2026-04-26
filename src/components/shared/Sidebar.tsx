@@ -125,6 +125,9 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'maintenance-risk-assessment', label: 'Risk Assessment', icon: TriangleAlert },
         { page: 'maintenance-tools', label: 'Tools', icon: WrenchIcon },
         { page: 'pm-schedules', label: 'PM Schedules', icon: Clock },
+        { page: 'pm-templates', label: 'PM Templates', icon: ClipboardCheck },
+        { page: 'pm-triggers', label: 'PM Triggers', icon: Zap },
+        { page: 'pm-calendar', label: 'PM Calendar', icon: Calendar },
       ],
     },
     {

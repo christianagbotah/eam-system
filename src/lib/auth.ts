@@ -15,7 +15,7 @@ const globalForSessions = globalThis as unknown as {
 if (!globalForSessions.sessionCache) {
   globalForSessions.sessionCache = new Map();
 }
-const sessionCache = globalForSessions.sessionCache;
+export const sessionCache = globalForSessions.sessionCache;
 
 // Maximum cache entries before cleanup
 const MAX_CACHE_SIZE = 500;

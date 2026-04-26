@@ -104,8 +104,8 @@ const MORE_ITEMS: MoreItem[] = [
   { page: 'repairs-material-requests', label: 'Repairs & Tools', icon: ArrowRightLeft, perm: 'work_orders.view', activePages: ['repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics'] },
   // Inventory
   { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view', activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'] },
-  // PM Schedules
-  { page: 'pm-schedules', label: 'PM Schedules', icon: Clock, perm: 'work_orders.view' },
+  // PM Module
+  { page: 'pm-schedules', label: 'PM Schedules', icon: Clock, perm: 'work_orders.view', activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'] },
   // Reports
   { page: 'reports-maintenance', label: 'Reports', icon: FileBarChart, perm: 'reports.view', activePages: ['reports-asset', 'reports-maintenance', 'reports-inventory', 'reports-production', 'reports-quality', 'reports-safety', 'reports-financial', 'reports-custom'] },
   // Safety

@@ -1191,7 +1191,7 @@ async function seed() {
       { name: 'Transformer TR-501', assetTag: 'AST-010', category: 1, condition: 'new', status: 'operational', criticality: 'high', location: 'Substation', manufacturer: 'ABB', model: 'RESIBLOC', serialNumber: 'SN-TRANS-010', yearManufactured: 2023, purchaseCost: 120000, expectedLifeYears: 30 },
     ];
 
-    const createdAssets = [];
+    const createdAssets: any[] = [];
     for (const a of assetsData) {
       const asset = await db.asset.create({
         data: {

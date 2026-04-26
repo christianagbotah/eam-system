@@ -23,7 +23,7 @@ export async function GET(
         department: { select: { id: true, name: true, code: true } },
         parent: { select: { id: true, name: true, assetTag: true } },
         children: {
-          select: { id: true, name: true, assetTag: true, status, condition },
+          select: { id: true, name: true, assetTag: true, status: true, condition: true },
           orderBy: { name: 'asc' },
         },
         assignedTo: { select: { id: true, fullName: true, username: true } },
@@ -54,13 +54,13 @@ export async function GET(
     const [maintenanceRequests, workOrders] = await Promise.all([
       db.maintenanceRequest.findMany({
         where: { assetId: id },
-        select: { id: true, requestNumber: true, title: true, status, priority, createdAt },
+        select: { id: true, requestNumber: true, title: true, status: true, priority: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
         take: 10,
       }),
       db.workOrder.findMany({
         where: { assetId: id },
-        select: { id: true, woNumber: true, title: true, status, type, priority, createdAt },
+        select: { id: true, woNumber: true, title: true, status: true, type: true, priority: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
         take: 10,
       }),
