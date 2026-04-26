@@ -834,7 +834,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 onValueChange={setPlannerId}
                 fetchOptions={async () => {
                   const params = new URLSearchParams();
-                  params.set('role', 'planner');
+                  params.set('role', 'maintenance_planner');
                   const res = await api.get(`/api/users?${params.toString()}`);
                   if (res.success && res.data) {
                     const users = Array.isArray(res.data) ? res.data : [];
@@ -1243,36 +1243,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
         ) : stepKey === 'resources' ? (
           /* === MOBILE STEP 3: Resource Assignment === */
           <div className="space-y-4">
-            {/* Assign To toggle — segmented control style */}
-            <div className="space-y-2">
-              <Label className="text-xs font-medium">Assign To</Label>
-              <div className="grid grid-cols-2 gap-2 p-1 bg-muted rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => setConvertForm(f => ({ ...f, assignType: 'technician' }))}
-                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                    convertForm.assignType === 'technician'
-                      ? 'bg-background shadow-sm text-emerald-700'
-                      : 'text-muted-foreground'
-                  }`}
-                >
-                  <Wrench className="h-4 w-4" />Technicians
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConvertForm(f => ({ ...f, assignType: 'supervisor' }))}
-                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                    convertForm.assignType === 'supervisor'
-                      ? 'bg-background shadow-sm text-violet-700'
-                      : 'text-muted-foreground'
-                  }`}
-                >
-                  <Shield className="h-4 w-4" />Supervisors
-                </button>
-              </div>
-            </div>
-
-            {/* Worker Assignment Selector — mobile */}
+            {/* Worker Assignment Selector — mobile (includes its own Assign Type toggle) */}
             <WorkerAssignmentSelector
               selectedWorkerIds={convertForm.selectedWorkerIds}
               teamLeaderId={convertForm.teamLeaderId}
@@ -2312,7 +2283,7 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               </div>
               <div className="p-3 rounded-lg bg-muted/50 text-center">
                 <p className="text-xs text-muted-foreground">Total Cost</p>
-                <p className="text-lg font-bold">GHS {wo.totalCost.toFixed(2)}</p>
+                <p className="text-lg font-bold">GHS {(wo.totalCost || 0).toFixed(2)}</p>
               </div>
             </div>
             <div className="space-y-2">
@@ -2763,10 +2734,10 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
           <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Cost Summary</CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Material</span><span className="font-medium">GHS {wo.materialCost.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Labor</span><span className="font-medium">GHS {wo.laborCost.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Material</span><span className="font-medium">GHS {(wo.materialCost || 0).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Labor</span><span className="font-medium">GHS {(wo.laborCost || 0).toFixed(2)}</span></div>
               <Separator />
-              <div className="flex justify-between font-semibold"><span>Total</span><span>GHS {wo.totalCost.toFixed(2)}</span></div>
+              <div className="flex justify-between font-semibold"><span>Total</span><span>GHS {(wo.totalCost || 0).toFixed(2)}</span></div>
             </CardContent>
           </Card>
 

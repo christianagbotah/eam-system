@@ -929,6 +929,10 @@ async function seed() {
     { username: 'viewer1', email: 'viewer1@iassetspro.com', fullName: 'Grace Viewer', staffId: 'VWR-001', roleSlug: 'viewer', department: 'Utilities', plantId: temaFactory.id, primaryTrade: 'Utility Technician' },
     { username: 'toolshop1', email: 'toolshop1@iassetspro.com', fullName: 'Kofi Tools Shop', staffId: 'TLS-001', roleSlug: 'tools_shop_attendant', department: 'Maintenance', plantId: temaFactory.id, primaryTrade: 'Workshop Technician' },
     { username: 'store2', email: 'store2@iassetspro.com', fullName: 'Ama Store Attendant', staffId: 'STK-002', roleSlug: 'store_keeper', department: 'Warehouse & Logistics', plantId: kumasiPlant.id, primaryTrade: 'Storekeeping' },
+    // Additional technicians across departments for worker assignment testing
+    { username: 'tech_eng1', email: 'tech_eng1@iassetspro.com', fullName: 'Kwame Engineering Tech', staffId: 'TEC-003', roleSlug: 'maintenance_technician', department: 'Engineering', plantId: temaFactory.id, primaryTrade: 'Instrumentation Fitter' },
+    { username: 'tech_prod1', email: 'tech_prod1@iassetspro.com', fullName: 'Esi Production Tech', staffId: 'TEC-004', roleSlug: 'maintenance_technician', department: 'Production', plantId: temaFactory.id, primaryTrade: 'Mechanical Fitter' },
+    { username: 'tech_util1', email: 'tech_util1@iassetspro.com', fullName: 'Kojo Utilities Tech', staffId: 'TEC-005', roleSlug: 'maintenance_technician', department: 'Utilities', plantId: temaFactory.id, primaryTrade: 'Electrical Technician' },
   ];
 
   const demoPassword = await hash('password123', 10);
@@ -950,11 +954,11 @@ async function seed() {
     });
   }
 
-  // Set supervisor for department
+  // Set supervisor for their department (supervisor1 is in Production dept)
   const supervisorUser = await db.user.findUnique({ where: { username: 'supervisor1' } });
   if (supervisorUser) {
     await db.department.update({
-      where: { id: dept.id },
+      where: { id: deptProd.id },
       data: { supervisorId: supervisorUser.id },
     });
   }

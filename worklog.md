@@ -1245,3 +1245,58 @@ Stage Summary:
 - Multi-worker selection with checkboxes, team leader via radio buttons/crown icons
 - Department multi-select filters available worker pool
 - Full mobile-responsive design with card layout and touch-friendly targets
+
+---
+Task ID: 1
+Agent: Bug Fix Agent
+Task: Fix multiple bugs in the iAssetsPro EAM system
+
+Work Log:
+
+### Bug 1: Runtime TypeError - `wo.materialCost` is undefined (HIGH PRIORITY)
+**File:** `src/components/modules/MaintenancePages.tsx`
+**Fix:** Added safe fallbacks using `(wo.materialCost || 0).toFixed(2)` pattern for all cost fields:
+- Line 2315: `wo.totalCost.toFixed(2)` → `(wo.totalCost || 0).toFixed(2)`
+- Line 2766: `wo.materialCost.toFixed(2)` → `(wo.materialCost || 0).toFixed(2)`
+- Line 2767: `wo.laborCost.toFixed(2)` → `(wo.laborCost || 0).toFixed(2)`
+- Line 2769: `wo.totalCost.toFixed(2)` → `(wo.totalCost || 0).toFixed(2)`
+These fields may not exist on all work orders; the `|| 0` pattern is already used elsewhere in the file (lines 2603, 2628, 3374, 3444-3446).
+
+### Bug 2: Duplicate "Assign To" toggle in mobile Convert-to-WO form
+**File:** `src/components/modules/MaintenancePages.tsx`
+**Fix:** Removed the duplicate manual "Assign To" segmented control block (formerly lines 1246-1272). The `WorkerAssignmentSelector` component already includes its own built-in Assign Type toggle internally, so the external one was redundant and caused confusion.
+
+### Bug 3: Planner dropdown empty - wrong role slug
+**File:** `src/components/modules/MaintenancePages.tsx` line 837
+**Fix:** Changed `params.set('role', 'planner')` to `params.set('role', 'maintenance_planner')` to match the actual role slug stored in the database.
+
+### Bug 4: Department-based worker filtering returns empty results
+**Analysis:** The filtering logic in `/api/workers/route.ts` is correct — it resolves department IDs to names and filters users by matching `department` string field. The actual issue was a data gap: all existing technicians (tech1, tech2) were in the "Maintenance" department, so filtering by any other department returned zero results. This is addressed by Bug 6 (adding technicians to other departments).
+
+### Bug 5: MR visibility - supervisor should see their department's requests
+**File:** `prisma/seed.ts` line 957
+**Root Cause:** The seed code assigned supervisor1 (Ama Supervisor, whose department is "Production") as the supervisor of the `deptMaint` (Maintenance) department instead of `deptProd` (Production). This meant:
+- MRs created for the Production department had no supervisorId (Production dept had no supervisor)
+- The supervisor1 user would only see MRs for the Maintenance department, not their own Production department
+**Fix:** Changed `where: { id: dept.id }` (Maintenance) to `where: { id: deptProd.id }` (Production) so the supervisor is correctly assigned to their actual department.
+
+### Bug 6: Added more users with department assignments for testing
+**File:** `prisma/seed.ts`
+**Added 3 new technician-level users** with `maintenance_technician` role in non-Maintenance departments:
+- `tech_eng1` (TEC-003) — Kwame Engineering Tech, department: Engineering, trade: Instrumentation Fitter
+- `tech_prod1` (TEC-004) — Esi Production Tech, department: Production, trade: Mechanical Fitter
+- `tech_util1` (TEC-005) — Kojo Utilities Tech, department: Utilities, trade: Electrical Technician
+All on Tema Factory plant with `write` access level. Total users: 22 (was 19).
+
+### Seed & Verification
+- Ran `prisma db push --force-reset` and `prisma db seed` successfully
+- Dev server compiles and serves without errors (HTTP 200)
+- Lint shows only pre-existing errors (loto-records, IoTPages, QualityPages) — none introduced by this fix
+
+Stage Summary:
+- 6 bugs fixed across 2 files (MaintenancePages.tsx, seed.ts)
+- 4 runtime crashes prevented (toFixed on undefined cost fields)
+- 1 UI duplication removed (mobile Assign To toggle)
+- 1 data integrity fix (supervisor assigned to correct department)
+- 3 new test users seeded across Engineering, Production, and Utilities departments
+- Zero new lint errors introduced
