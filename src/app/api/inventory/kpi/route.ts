@@ -119,8 +119,8 @@ export async function GET(request: NextRequest) {
         },
         stockSummary: {
           totalQuantity: stockValue._sum.currentStock || 0,
-          totalMinLevels: stockValue._sum.minStockLevel || 0,
-          totalMaxCapacity: stockValue._sum.maxStockLevel || 0,
+          totalMinLevels: stockSummary._sum.minStockLevel || 0,
+          totalMaxCapacity: stockSummary._sum.maxStockLevel || 0,
         },
       },
     });

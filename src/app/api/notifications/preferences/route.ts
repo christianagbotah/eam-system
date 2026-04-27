@@ -29,9 +29,9 @@ const DEFAULT_PREFERENCES = {
   },
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const session = getSession();
+    const session = getSession(req);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
@@ -107,7 +107,7 @@ export async function PUT(request: NextRequest) {
 
     await db.user.update({
       where: { id: session.userId },
-      data: { notificationPreferences: preferences },
+      data: { notificationPreferences: preferences as any },
     });
 
     return NextResponse.json({ success: true, data: preferences });

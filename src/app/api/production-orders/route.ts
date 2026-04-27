@@ -61,7 +61,6 @@ export async function GET(request: NextRequest) {
         where: Object.keys(where).length > 0 ? where : undefined,
         include: {
           workCenter: { select: { id: true, code: true, name: true } },
-          createdBy: { select: { id: true, fullName: true, username: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
@@ -160,7 +159,6 @@ export async function POST(request: NextRequest) {
       },
       include: {
         workCenter: { select: { id: true, code: true, name: true } },
-        createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
 

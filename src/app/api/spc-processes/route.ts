@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
     });
 
     // KPI counts
-    const [totalCount, activeCount, outOfControlCount] = await Promise.all([
+    const [totalCount, activeCount] = await Promise.all([
       db.spcProcess.count(),
       db.spcProcess.count({ where: { status: 'active' } }),
     ]);

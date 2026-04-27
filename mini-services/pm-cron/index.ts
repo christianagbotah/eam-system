@@ -43,7 +43,13 @@ async function triggerCheckDue() {
 }
 
 // Bun HTTP server for manual trigger + health check
-// @ts-ignore — Bun global available at runtime
+declare const Bun: {
+  serve: (options: {
+    port: number;
+    fetch: (req: Request) => Response | Promise<Response>;
+  }) => { stop(): void };
+};
+
 const server = Bun.serve({
   port: SERVICE_PORT,
   fetch(req) {

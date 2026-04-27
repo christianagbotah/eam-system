@@ -198,9 +198,9 @@ export async function POST(request: NextRequest) {
     });
 
     // Send notification to the auto-detected supervisor
-    if (autoSupervisorId && autoSupervisorId !== session.userId) {
+    if (resolvedSupervisorId && resolvedSupervisorId !== session.userId) {
       await notifyUser(
-        autoSupervisorId,
+        resolvedSupervisorId,
         'mr_assigned',
         'New Maintenance Request Pending Review',
         `A new maintenance request ${mr.requestNumber} has been submitted for your review: ${mr.title}`,

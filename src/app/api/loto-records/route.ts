@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // Build where clause
     const where: any = {};
     if (status && status !== 'all') where.status = status;
     if (assetId) where.assetId = assetId;
@@ -47,18 +48,52 @@ export async function GET(req: NextRequest) {
       ];
     }
 
+    // Fetch records without relations (LotoRecord model has no Prisma relations)
     const records = await db.lotoRecord.findMany({
       where,
-      include: {
-        requestedBy: { select: { id: true, fullName: true } },
-        supervisor: { select: { id: true, fullName: true } },
-        safetyOfficer: { select: { id: true, fullName: true } },
-        asset: { select: { id: true, name: true, assetTag: true } },
-      },
       orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json({ success: true, data: records });
+    // Resolve related names in a single batch
+    const userIds = new Set<string>();
+    const assetIds = new Set<string>();
+    const deptIds = new Set<string>();
+
+    for (const r of records) {
+      if (r.requestedById) userIds.add(r.requestedById);
+      if (r.supervisorId) userIds.add(r.supervisorId);
+      if (r.safetyOfficerId) userIds.add(r.safetyOfficerId);
+      if (r.assetId) assetIds.add(r.assetId);
+      if (r.departmentId) deptIds.add(r.departmentId);
+    }
+
+    const [users, assets, departments] = await Promise.all([
+      userIds.size > 0
+        ? db.user.findMany({ where: { id: { in: [...userIds] } }, select: { id: true, fullName: true } })
+        : [],
+      assetIds.size > 0
+        ? db.asset.findMany({ where: { id: { in: [...assetIds] } }, select: { id: true, name: true, assetTag: true } })
+        : [],
+      deptIds.size > 0
+        ? db.department.findMany({ where: { id: { in: [...deptIds] } }, select: { id: true, name: true } })
+        : [],
+    ]);
+
+    const userMap = new Map<string, { id: string; fullName: string }>(users.map(u => [u.id, u] as [string, { id: string; fullName: string }]));
+    const assetMap = new Map<string, { id: string; name: string; assetTag: string | null }>(assets.map(a => [a.id, a] as [string, { id: string; name: string; assetTag: string | null }]));
+    const deptMap = new Map<string, { id: string; name: string }>(departments.map(d => [d.id, d] as [string, { id: string; name: string }]));
+
+    // Attach resolved relations to each record
+    const enriched = records.map(r => ({
+      ...r,
+      requestedBy: r.requestedById ? userMap.get(r.requestedById) || null : null,
+      supervisor: r.supervisorId ? userMap.get(r.supervisorId) || null : null,
+      safetyOfficer: r.safetyOfficerId ? userMap.get(r.safetyOfficerId) || null : null,
+      asset: r.assetId ? assetMap.get(r.assetId) || null : null,
+      department: r.departmentId ? deptMap.get(r.departmentId) || null : null,
+    }));
+
+    return NextResponse.json({ success: true, data: enriched });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch LOTO records';
     console.error('LOTO GET error:', error);
@@ -103,7 +138,9 @@ export async function POST(req: NextRequest) {
         requiredFromDate: requiredFromDate ? new Date(requiredFromDate) : null,
         requiredToDate: requiredToDate ? new Date(requiredToDate) : null,
         isolationPoints: JSON.stringify(isolationPoints || []),
-        affectedWorkers: JSON.stringify(affectedWorkers || []),
+        lockDevices: JSON.stringify(body.lockDevices || []),
+        tagNumbers: JSON.stringify(body.tagNumbers || []),
+        affectedWorkers: affectedWorkers ? JSON.stringify(affectedWorkers) : null,
         workerCount: workerCount || 0,
         notes: notes || null,
       },

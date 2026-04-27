@@ -42,7 +42,6 @@ export async function POST(
       data: { status: 'released' },
       include: {
         workCenter: { select: { id: true, code: true, name: true } },
-        createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
 

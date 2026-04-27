@@ -31,7 +31,7 @@ export async function GET(
     }
 
     // Fetch related entity data if possible
-    let relatedEntity = null;
+    let relatedEntity: Record<string, unknown> | null = null;
     if (notification.entityType && notification.entityId) {
       if (notification.entityType === 'work_order') {
         const wo = await db.workOrder.findUnique({

@@ -41,19 +41,15 @@ export async function POST(
     if (!isAdmin(session)) {
       const currentUser = await db.user.findUnique({
         where: { id: session.userId },
-        select: { id: true, department: true, roles: { select: { slug: true } } },
+        select: { id: true, department: true, userRoles: { select: { role: { select: { slug: true } } } } },
       });
-      const isSupervisor = currentUser?.roles.some((r: any) => r.slug === 'maintenance_supervisor' || r.slug === 'admin');
+      const isSupervisor = currentUser?.userRoles.some((r: any) => r.role?.slug === 'maintenance_supervisor' || r.role?.slug === 'admin');
       if (!isSupervisor) {
         return NextResponse.json({ success: false, error: 'Only admin or department supervisor can approve requests' }, { status: 403 });
       }
       const requesterDept = mr.requester?.department;
       const userDept = currentUser?.department;
-      const deptMatch = requesterDept && userDept &&
-        (userDept === requesterDept ||
-          (typeof requesterDept === 'object' && requesterDept?.name && typeof userDept === 'object' && userDept?.name && userDept.name === requesterDept.name) ||
-          (typeof requesterDept === 'object' && requesterDept?.name && typeof userDept === 'string' && userDept === requesterDept.name) ||
-          (typeof userDept === 'object' && userDept?.name && typeof requesterDept === 'string' && requesterDept === userDept.name));
+      const deptMatch = requesterDept && userDept && requesterDept === userDept;
       if (!deptMatch) {
         return NextResponse.json({ success: false, error: 'You can only approve requests from your own department' }, { status: 403 });
       }

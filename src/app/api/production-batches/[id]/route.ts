@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 
+async function enrichBatch(batch: any) {
+  const [order, createdBy] = await Promise.all([
+    batch.orderId
+      ? db.productionOrder.findUnique({ where: { id: batch.orderId }, select: { id: true, orderNumber: true, title: true } })
+      : Promise.resolve(null),
+    db.user.findUnique({ where: { id: batch.createdById }, select: { id: true, fullName: true, username: true } }),
+  ]);
+  return { ...batch, order, createdBy };
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -14,14 +24,7 @@ export async function GET(
 
     const { id } = await params;
 
-    const batch = await db.productionBatch.findUnique({
-      where: { id },
-      include: {
-        order: { select: { id: true, orderNumber: true, title: true } },
-        createdBy: { select: { id: true, fullName: true, username: true } },
-      },
-    });
-
+    const batch = await db.productionBatch.findUnique({ where: { id } });
     if (!batch) {
       return NextResponse.json(
         { success: false, error: 'Production batch not found' },
@@ -29,9 +32,8 @@ export async function GET(
       );
     }
 
-    // Note: ProductionBatch model has no plantId field — plant-scope IDOR check not applicable
-
-    return NextResponse.json({ success: true, data: batch });
+    const enriched = await enrichBatch(batch);
+    return NextResponse.json({ success: true, data: enriched });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load production batch';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -83,10 +85,6 @@ export async function PUT(
     const updated = await db.productionBatch.update({
       where: { id },
       data: updateData,
-      include: {
-        order: { select: { id: true, orderNumber: true, title: true } },
-        createdBy: { select: { id: true, fullName: true, username: true } },
-      },
     });
 
     // Create audit log
@@ -101,7 +99,8 @@ export async function PUT(
       },
     });
 
-    return NextResponse.json({ success: true, data: updated });
+    const enriched = await enrichBatch(updated);
+    return NextResponse.json({ success: true, data: enriched });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update production batch';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -136,10 +135,6 @@ export async function DELETE(
     const rejected = await db.productionBatch.update({
       where: { id },
       data: { status: 'rejected' },
-      include: {
-        order: { select: { id: true, orderNumber: true, title: true } },
-        createdBy: { select: { id: true, fullName: true, username: true } },
-      },
     });
 
     // Create audit log
@@ -154,7 +149,8 @@ export async function DELETE(
       },
     });
 
-    return NextResponse.json({ success: true, data: rejected });
+    const enriched = await enrichBatch(rejected);
+    return NextResponse.json({ success: true, data: enriched });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to delete production batch';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

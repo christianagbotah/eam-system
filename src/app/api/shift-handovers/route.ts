@@ -93,9 +93,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse structured fields as JSON
-    let parsedTasks: unknown = null;
-    let parsedIssues: unknown = null;
-    let parsedEquipment: unknown = null;
+    let parsedTasks: string | null = null;
+    let parsedIssues: string | null = null;
+    let parsedEquipment: string | null = null;
 
     if (tasksSummary) {
       if (typeof tasksSummary === 'string') {

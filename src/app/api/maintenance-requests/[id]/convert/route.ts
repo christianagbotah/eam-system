@@ -109,7 +109,6 @@ export async function POST(
         assignedSupervisorId: assignedSupervisorId || null,
         assignmentType: assignmentType || (assignedTo ? 'direct' : null),
         assignedBy: session.userId,
-        description: technicalDescription || mr.description,
         failureDescription: failureDescription || null,
         causeDescription: causeDescription || null,
         actionDescription: actionDescription || null,

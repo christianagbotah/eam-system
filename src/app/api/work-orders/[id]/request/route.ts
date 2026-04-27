@@ -37,7 +37,7 @@ export async function POST(
       id,
       'requested',
       session,
-      { notes },
+      { reason: notes },
     );
 
     if (!result.success) {

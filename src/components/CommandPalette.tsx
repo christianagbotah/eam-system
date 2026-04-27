@@ -241,19 +241,19 @@ export default function CommandPalette() {
 
   const actionItems: PaletteItem[] = useMemo(() => [
     ...(hasPermission('maintenance_requests.create') ? [
-      { id: 'action-create-mr', label: 'Create Maintenance Request', icon: Plus, group: 'actions' as const, page: 'create-mr', keywords: ['new', 'mr', 'request'] },
+      { id: 'action-create-mr', label: 'Create Maintenance Request', icon: Plus, group: 'actions' as const, page: 'create-mr' as PageName, keywords: ['new', 'mr', 'request'] },
     ] : []),
     ...(hasPermission('work_orders.create') ? [
-      { id: 'action-create-wo', label: 'Create Work Order', icon: Plus, group: 'actions' as const, page: 'maintenance-work-orders', keywords: ['new', 'wo', 'work order'] },
+      { id: 'action-create-wo', label: 'Create Work Order', icon: Plus, group: 'actions' as const, page: 'maintenance-work-orders' as PageName, keywords: ['new', 'wo', 'work order'] },
     ] : []),
     ...(hasPermission('safety.create') ? [
-      { id: 'action-create-incident', label: 'Report Safety Incident', icon: TriangleAlert, group: 'actions' as const, page: 'safety-incidents', keywords: ['new', 'safety', 'incident', 'report'] },
+      { id: 'action-create-incident', label: 'Report Safety Incident', icon: TriangleAlert, group: 'actions' as const, page: 'safety-incidents' as PageName, keywords: ['new', 'safety', 'incident', 'report'] },
     ] : []),
     ...(hasPermission('inventory.create') ? [
-      { id: 'action-create-inventory', label: 'Add Inventory Item', icon: Package, group: 'actions' as const, page: 'inventory-items', keywords: ['new', 'inventory', 'item', 'stock'] },
+      { id: 'action-create-inventory', label: 'Add Inventory Item', icon: Package, group: 'actions' as const, page: 'inventory-items' as PageName, keywords: ['new', 'inventory', 'item', 'stock'] },
     ] : []),
     ...(hasPermission('assets.create') ? [
-      { id: 'action-create-asset', label: 'Register New Asset', icon: Building2, group: 'actions' as const, page: 'assets-machines', keywords: ['new', 'asset', 'register', 'machine'] },
+      { id: 'action-create-asset', label: 'Register New Asset', icon: Building2, group: 'actions' as const, page: 'assets-machines' as PageName, keywords: ['new', 'asset', 'register', 'machine'] },
     ] : []),
   ], [hasPermission]);
 

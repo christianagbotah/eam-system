@@ -42,7 +42,7 @@ export async function POST(
       'approved',
       session,
       {
-        notes,
+        reason: notes,
         extraData: {
           plannerId: session.userId,
           estimatedHours: estimatedHours ?? wo.estimatedHours,

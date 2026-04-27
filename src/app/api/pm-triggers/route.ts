@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
         schedule: {
           include: {
             asset: {
-              select: { id: true, name: true, assetTag: true, status },
+              select: { id: true, name: true, assetTag: true, status: true },
             },
             assignedTo: { select: { id: true, fullName: true, username: true } },
             department: { select: { id: true, name: true, code: true } },
@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
       include: {
         schedule: {
           include: {
-            asset: { select: { id: true, name: true, assetTag: true, status } },
+            asset: { select: { id: true, name: true, assetTag: true, status: true } },
             assignedTo: { select: { id: true, fullName: true, username: true } },
             department: { select: { id: true, name: true, code: true } },
           },

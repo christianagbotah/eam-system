@@ -49,9 +49,6 @@ export async function GET(request: NextRequest) {
     const [workCenters, total] = await Promise.all([
       db.workCenter.findMany({
         where: Object.keys(where).length > 1 || where.OR ? where : undefined,
-        include: {
-          createdBy: { select: { id: true, fullName: true, username: true } },
-        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -133,9 +130,6 @@ export async function POST(request: NextRequest) {
         capacity: capacity ? parseInt(capacity, 10) : null,
         capacityUnit: capacityUnit || 'units/hour',
         createdById: session.userId,
-      },
-      include: {
-        createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
 

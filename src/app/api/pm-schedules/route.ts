@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       where: Object.keys(where).length > 0 ? where : undefined,
       include: {
         asset: {
-          select: { id: true, name: true, assetTag: true, status },
+          select: { id: true, name: true, assetTag: true, status: true },
         },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
         createdById: session.userId,
       },
       include: {
-        asset: { select: { id: true, name: true, assetTag: true, status } },
+        asset: { select: { id: true, name: true, assetTag: true, status: true } },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
         createdBy: { select: { id: true, fullName: true, username: true } },

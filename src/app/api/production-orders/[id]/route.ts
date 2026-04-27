@@ -19,7 +19,6 @@ export async function GET(
       where: { id },
       include: {
         workCenter: { select: { id: true, code: true, name: true } },
-        createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
 
@@ -94,7 +93,6 @@ export async function PUT(
       data: updateData,
       include: {
         workCenter: { select: { id: true, code: true, name: true } },
-        createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
 
@@ -147,7 +145,6 @@ export async function DELETE(
       data: { status: 'cancelled' },
       include: {
         workCenter: { select: { id: true, code: true, name: true } },
-        createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
 

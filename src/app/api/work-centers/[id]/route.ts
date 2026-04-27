@@ -16,9 +16,6 @@ export async function GET(
 
     const workCenter = await db.workCenter.findUnique({
       where: { id },
-      include: {
-        createdBy: { select: { id: true, fullName: true, username: true } },
-      },
     });
 
     if (!workCenter) {
@@ -76,9 +73,6 @@ export async function PUT(
     const updated = await db.workCenter.update({
       where: { id },
       data: updateData,
-      include: {
-        createdBy: { select: { id: true, fullName: true, username: true } },
-      },
     });
 
     // Create audit log

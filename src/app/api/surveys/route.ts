@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
         type,
         targetGroup: targetGroup || null,
         questions: JSON.stringify(parsedQuestions),
+        responses: JSON.stringify([]),
         createdById: session.userId,
       },
     });

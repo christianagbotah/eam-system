@@ -18,7 +18,7 @@ export async function GET(
       where: { id },
       include: {
         asset: {
-          select: { id: true, name: true, assetTag: true, status, criticality },
+          select: { id: true, name: true, assetTag: true, status: true, criticality: true },
         },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
@@ -87,7 +87,7 @@ export async function PUT(
       where: { id },
       data: updateData,
       include: {
-        asset: { select: { id: true, name: true, assetTag: true, status } },
+        asset: { select: { id: true, name: true, assetTag: true, status: true } },
         assignedTo: { select: { id: true, fullName: true, username: true } },
         department: { select: { id: true, name: true, code: true } },
         createdBy: { select: { id: true, fullName: true, username: true } },

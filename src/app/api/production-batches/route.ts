@@ -23,6 +23,33 @@ async function generateBatchNumber(): Promise<string> {
   return `${prefix}-${String(nextNum).padStart(4, '0')}`;
 }
 
+async function enrichBatches(batches: any[]) {
+  const orderIds = new Set<string>();
+  const userIds = new Set<string>();
+  for (const b of batches) {
+    if (b.orderId) orderIds.add(b.orderId);
+    if (b.createdById) userIds.add(b.createdById);
+  }
+
+  const [orders, users] = await Promise.all([
+    orderIds.size > 0
+      ? db.productionOrder.findMany({ where: { id: { in: [...orderIds] } }, select: { id: true, orderNumber: true, title: true } })
+      : [],
+    userIds.size > 0
+      ? db.user.findMany({ where: { id: { in: [...userIds] } }, select: { id: true, fullName: true, username: true } })
+      : [],
+  ]);
+
+  const orderMap = new Map(orders.map(o => [o.id, o] as [string, typeof o]));
+  const userMap = new Map(users.map(u => [u.id, u] as [string, typeof u]));
+
+  return batches.map(b => ({
+    ...b,
+    order: b.orderId ? orderMap.get(b.orderId) || null : null,
+    createdBy: b.createdById ? userMap.get(b.createdById) || null : null,
+  }));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
@@ -49,10 +76,6 @@ export async function GET(request: NextRequest) {
     const [batches, total] = await Promise.all([
       db.productionBatch.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,
-        include: {
-          order: { select: { id: true, orderNumber: true, title: true } },
-          createdBy: { select: { id: true, fullName: true, username: true } },
-        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -71,9 +94,11 @@ export async function GET(request: NextRequest) {
       db.productionBatch.count({ where: { status: 'quality_check' } }),
     ]);
 
+    const enriched = await enrichBatches(batches);
+
     return NextResponse.json({
       success: true,
-      data: batches,
+      data: enriched,
       pagination: {
         page,
         limit,
@@ -137,10 +162,6 @@ export async function POST(request: NextRequest) {
         notes: notes || null,
         createdById: session.userId,
       },
-      include: {
-        order: { select: { id: true, orderNumber: true, title: true } },
-        createdBy: { select: { id: true, fullName: true, username: true } },
-      },
     });
 
     // Create audit log
@@ -154,7 +175,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ success: true, data: batch }, { status: 201 });
+    const enriched = await enrichBatches([batch]);
+    return NextResponse.json({ success: true, data: enriched[0] }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create production batch';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
         materials: true,
         teamMembers: { include: { user: { select: { id: true, fullName: true } } } },
         timeLogs: true,
-        downtimes: true,
+        workOrderDowntimes: true,
         repairCompletion: true,
       },
       orderBy: { createdAt: 'desc' },
@@ -129,9 +129,9 @@ export async function GET(request: NextRequest) {
     // ========== TECHNICIAN PRODUCTIVITY ==========
     const techMap: Record<string, { userId: string; userName: string; assignedCount: number; completedCount: number; totalHours: number; woCount: number }> = {};
     workOrders.forEach(wo => {
-      if (wo.assignedTo) {
-        const uid = wo.assignedTo.id;
-        if (!techMap[uid]) techMap[uid] = { userId: uid, userName: wo.assignedTo.fullName, assignedCount: 0, completedCount: 0, totalHours: 0, woCount: 0 };
+      if (wo.assignee) {
+        const uid = wo.assignee.id;
+        if (!techMap[uid]) techMap[uid] = { userId: uid, userName: wo.assignee.fullName, assignedCount: 0, completedCount: 0, totalHours: 0, woCount: 0 };
         techMap[uid].assignedCount += 1;
         techMap[uid].woCount += 1;
         if (wo.status === 'completed' || wo.status === 'closed') techMap[uid].completedCount += 1;
@@ -151,7 +151,7 @@ export async function GET(request: NextRequest) {
         const key = mat.itemName;
         if (!matMap[key]) matMap[key] = { itemName: key, totalQuantity: 0, totalCost: 0, woCount: new Set() };
         matMap[key].totalQuantity += (mat.quantity || 0);
-        matMap[key].totalCost += (mat.totalCost || mat.unitCost && mat.quantity ? mat.unitCost * mat.quantity : 0);
+        matMap[key].totalCost += (mat.totalCost || (mat.unitCost != null && mat.quantity ? mat.unitCost * mat.quantity : 0));
         matMap[key].woCount.add(wo.id);
       });
     });
@@ -162,7 +162,7 @@ export async function GET(request: NextRequest) {
 
     // ========== DOWNTIME ANALYSIS ==========
     const allDowntimes = workOrders.flatMap(wo =>
-      (wo.downtimes || []).map(dt => ({
+      (wo.workOrderDowntimes || []).map(dt => ({
         ...dt,
         workOrderId: wo.id,
       }))
@@ -225,7 +225,7 @@ export async function GET(request: NextRequest) {
       if (!assetMap[name]) assetMap[name] = { assetName: name, woCount: 0, downtimeMinutes: 0, totalCost: 0 };
       assetMap[name].woCount += 1;
       assetMap[name].totalCost += (wo.totalCost || 0);
-      (wo.downtimes || []).forEach(dt => {
+      (wo.workOrderDowntimes || []).forEach(dt => {
         assetMap[name].downtimeMinutes += (dt.durationMinutes || 0);
       });
     });

@@ -549,6 +549,7 @@ export type PageName =
   | 'assets-health'
   // Maintenance (8 subpages)
   | 'maintenance-work-orders'
+  | 'wo-detail'
   | 'maintenance-requests'
   | 'mr-detail'
   | 'create-mr'
@@ -640,4 +641,12 @@ export type PageName =
   | 'settings-departments'
   | 'settings-security'
   | 'settings-health'
-  | 'settings-preferences';
+  | 'settings-preferences'
+  // Legacy fallbacks
+  | 'assets'
+  | 'asset-detail'
+  | 'inventory'
+  | 'analytics'
+  | 'safety'
+  | 'quality'
+  | 'production';

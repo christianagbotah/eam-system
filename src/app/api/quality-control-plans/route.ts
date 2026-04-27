@@ -28,9 +28,6 @@ export async function GET(request: NextRequest) {
     const [plans, total] = await Promise.all([
       db.qualityControlPlan.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,
-        include: {
-          createdBy: { select: { id: true, fullName: true, username: true } },
-        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -111,9 +108,6 @@ export async function POST(request: NextRequest) {
         sampleSize: sampleSize || null,
         isActive: true,
         createdById: session.userId,
-      },
-      include: {
-        createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
 

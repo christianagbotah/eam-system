@@ -16,9 +16,6 @@ export async function GET(
 
     const plan = await db.qualityControlPlan.findUnique({
       where: { id },
-      include: {
-        createdBy: { select: { id: true, fullName: true, username: true } },
-      },
     });
 
     if (!plan) {
@@ -80,9 +77,6 @@ export async function PUT(
     const updated = await db.qualityControlPlan.update({
       where: { id },
       data: updateData,
-      include: {
-        createdBy: { select: { id: true, fullName: true, username: true } },
-      },
     });
 
     await db.auditLog.create({

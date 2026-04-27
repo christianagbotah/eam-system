@@ -148,7 +148,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!matReq) return NextResponse.json({ success: false, error: 'Material request not found' }, { status: 404 });
 
     const now = new Date();
-    let updated: typeof matReq;
+    let updated: any;
 
     switch (action) {
       // ──────────────────────────────────────────────

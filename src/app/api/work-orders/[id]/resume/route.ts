@@ -36,7 +36,7 @@ export async function POST(
       id,
       'in_progress',
       session,
-      { notes },
+      { reason: notes },
     );
 
     if (!result.success) {
