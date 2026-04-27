@@ -1451,3 +1451,20 @@ Stage Summary:
 - All PM files lint-clean, server compiles successfully
 - 3 new pages: PM Templates, PM Triggers, PM Calendar
 - All backend APIs were pre-existing and working
+---
+Task ID: 1
+Agent: Main
+Task: Fix planner select field not loading for supervisors in assign-planner dialog
+
+Work Log:
+- Investigated the "Assign to Planner" dialog flow in MaintenancePages.tsx
+- Found the AsyncSearchableSelect calls GET /api/users?role=maintenance_planner
+- Found the /api/users GET handler requires isAdmin() on line 9, blocking supervisors
+- The 403 error was silently swallowed by the searchable-select component
+- Fixed by relaxing the auth check: any authenticated user can query by role, but unrestricted queries still require admin
+
+Stage Summary:
+- Root cause: Permission mismatch — supervisors could see the "Assign to Planner" button but couldn't load the planner dropdown
+- Fix: Modified /api/users GET to allow role-filtered queries for any authenticated user
+- Commit: aa09f4f pushed to main
+- File changed: src/app/api/users/route.ts
