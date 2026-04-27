@@ -7,6 +7,44 @@ import { api } from '@/lib/api';
 
 const CHART_COLORS = ['#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f97316'];
 
+// --- Type definitions for API responses ---
+interface DashboardStats {
+  totalWorkOrders?: number;
+  activeWorkOrders?: number;
+  completedWorkOrders?: number;
+  overdueWorkOrders?: number;
+  preventiveWO?: number;
+  [key: string]: any;
+}
+interface WorkOrder {
+  id: string;
+  woNumber: string;
+  title: string;
+  status: string;
+  type?: string;
+  priority?: string;
+  assetName?: string;
+  assetId?: string;
+  plannedStart?: string;
+  plannedEnd?: string;
+  actualStart?: string;
+  actualEnd?: string;
+  actualHours?: number;
+  totalCost?: number;
+  notes?: string;
+  completionNotes?: string;
+  createdAt: string;
+  [key: string]: any;
+}
+interface MaintenanceRequest {
+  id: string;
+  requestNumber: string;
+  title: string;
+  status: string;
+  createdAt: string;
+  [key: string]: any;
+}
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,7 +57,7 @@ import {
 } from '@/components/ui/table';
 import {
   Activity, AlertTriangle, ArrowUpDown, BarChart3, Building2, CheckCircle2,
-  ClipboardCheck, Clock, DollarSign, Factory, Filter, Gauge, RefreshCw,
+  ClipboardCheck, ClipboardList, Clock, DollarSign, Factory, Filter, Gauge, RefreshCw,
   Search, Target, TrendingDown, TrendingUp, Wrench, Zap,
 } from 'lucide-react';
 import {
@@ -672,8 +710,8 @@ export function AnalyticsDowntimePage() {
               <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
               <TableCell className="font-medium max-w-[200px] truncate">{wo.title}</TableCell>
               <TableCell className="text-sm hidden md:table-cell">{wo.assetName || '-'}</TableCell>
-              <TableCell><Badge variant="outline" className={wo.type === 'emergency' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}>{wo.type.toUpperCase()}</Badge></TableCell>
-              <TableCell><PriorityBadge priority={wo.priority} /></TableCell>
+              <TableCell><Badge variant="outline" className={wo.type === 'emergency' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}>{(wo.type || 'unknown').toUpperCase()}</Badge></TableCell>
+              <TableCell><PriorityBadge priority={wo.priority || ''} /></TableCell>
               <TableCell><StatusBadge status={wo.status} /></TableCell>
               <TableCell className="text-right text-muted-foreground hidden lg:table-cell">{wo.actualHours || '-'}</TableCell>
               <TableCell className="text-right font-medium hidden lg:table-cell">{formatCurrency(wo.totalCost || 0)}</TableCell>
