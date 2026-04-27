@@ -40,7 +40,7 @@ import {
   ArrowRightLeft, FileText, CheckSquare, Filter, ArrowUpDown, BookOpen, ShieldAlert,
   PieChart as PieChartIcon, Gauge, ListChecks, Shield, ShieldCheck, HardHat, MapPin,
   Crown, Timer, Hourglass, UserPlus, Workflow, ChevronRight, ExternalLink, Hammer,
-  PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
+  Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -236,28 +236,20 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
 
   // Auto-populate department from user's profile (read-only for non-admins)
   useEffect(() => {
-    if (user?.departmentId) {
-      setDepartmentId(user.departmentId);
-    }
-    if (user?.department) {
-      if (typeof user.department === 'object' && user.department?.name) {
-        setDepartmentLabel(user.department.name);
-      } else if (typeof user.department === 'string') {
-        setDepartmentLabel(user.department);
-      }
-    }
-    // If user has departmentId but no label yet, fetch departments to resolve it
-    if (user?.departmentId && !departmentLabel) {
+    if (!user) return;
+    if (user.department) {
+      setDepartmentLabel(user.department);
+      // Look up department by name to get the ID
       api.get('/api/departments').then(res => {
         if (res.success && Array.isArray(res.data)) {
-          const dept = res.data.find((d: any) => d.id === user.departmentId);
-          if (dept) setDepartmentLabel(dept.name);
+          const dept = res.data.find((d: any) => d.name === user.department);
+          if (dept) setDepartmentId(dept.id);
         }
       });
     }
-  }, [user?.departmentId, user?.department]);
+  }, [user?.department]);
 
-  const isDepartmentLocked = !isAdmin() && !!departmentId;
+  const isDepartmentLocked = !isAdmin() && !!user?.department;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1770,6 +1762,7 @@ export function WorkOrdersPage() {
 // ============================================================================
 
 export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
+  const { user, isAdmin } = useAuthStore();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState('corrective');
@@ -1779,6 +1772,24 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
   const [assignedToId, setAssignedToId] = useState('');
   const [estimatedHours, setEstimatedHours] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const [departmentLabel, setDepartmentLabel] = useState('');
+
+  // Auto-populate department from user's profile (read-only for non-admins)
+  useEffect(() => {
+    if (!user) return;
+    if (user.department) {
+      setDepartmentLabel(user.department);
+      api.get('/api/departments').then(res => {
+        if (res.success && Array.isArray(res.data)) {
+          const dept = res.data.find((d: any) => d.name === user.department);
+          if (dept) setDepartmentId(dept.id);
+        }
+      });
+    }
+  }, [user?.department]);
+
+  const isDepartmentLocked = !isAdmin() && !!user?.department;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1857,7 +1868,12 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
           />
         </div>
         <div className="space-y-2">
-          <Label>Department</Label>
+          <Label>Department {isDepartmentLocked && <span className="text-xs text-muted-foreground">(auto-filled)</span>}</Label>
+          {isDepartmentLocked ? (
+            <div className="flex h-[42px] w-full items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
+              {departmentLabel || departmentId}
+            </div>
+          ) : (
           <AsyncSearchableSelect
             value={departmentId}
             onValueChange={setDepartmentId}
@@ -1874,6 +1890,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
             placeholder="Select department..."
             searchPlaceholder="Search departments..."
           />
+          )}
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -1918,6 +1935,7 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const [woConfirmAction, setWoConfirmAction] = useState<{ action: string; label: string; variant?: 'default' | 'destructive'; description: string } | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
   const { hasPermission, user, isAdmin } = useAuthStore();
+  const { navigate } = useNavigationStore();
   // Edit WO
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
@@ -2643,6 +2661,34 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                   </div>
                 </>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Repairs Quick Access */}
+          <Card className="border-0 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2"><ClipboardList className="h-4 w-4 text-teal-600" />Repair Resources</CardTitle>
+              <CardDescription className="text-xs">Material requests, tool requests & transfers for this work order</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <button onClick={() => navigate('repairs-material-requests')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                  <div className="h-9 w-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center"><Package className="h-4 w-4" /></div>
+                  <span className="text-xs font-medium">Material Requests</span>
+                </button>
+                <button onClick={() => navigate('repairs-tool-requests')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                  <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
+                  <span className="text-xs font-medium">Tool Requests</span>
+                </button>
+                <button onClick={() => navigate('repairs-tool-transfers')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                  <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center"><ArrowRightLeft className="h-4 w-4" /></div>
+                  <span className="text-xs font-medium">Tool Transfers</span>
+                </button>
+                <button onClick={() => navigate('repairs-downtime')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                  <div className="h-9 w-9 rounded-lg bg-red-100 text-red-700 flex items-center justify-center"><Timer className="h-4 w-4" /></div>
+                  <span className="text-xs font-medium">Downtime</span>
+                </button>
+              </div>
             </CardContent>
           </Card>
 
