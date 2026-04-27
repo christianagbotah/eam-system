@@ -1900,7 +1900,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
             value={assignedToId}
             onValueChange={setAssignedToId}
             fetchOptions={async () => {
-              const res = await api.get('/api/users');
+              const res = await api.get('/api/workers?role=technician');
               if (res.success && res.data) {
                 return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
                   value: u.id,
@@ -2672,11 +2672,11 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <button onClick={() => navigate('repairs-material-requests')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                <button onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center"><Package className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Material Requests</span>
                 </button>
-                <button onClick={() => navigate('repairs-tool-requests')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                <button onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Tool Requests</span>
                 </button>

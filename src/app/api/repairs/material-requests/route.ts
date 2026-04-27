@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 
 // Urgency priority for sorting (higher number = more urgent)
 const URGENCY_ORDER: Record<string, number> = { critical: 4, high: 3, normal: 2, low: 1 };
@@ -215,32 +216,12 @@ export async function POST(request: NextRequest) {
 
     // Notify supervisor for approval
     if (wo.assignedSupervisorId) {
-      await db.notification.create({
-        data: {
-          userId: wo.assignedSupervisorId,
-          type: 'repair_material_request',
-          title: `${resolvedUrgency === 'critical' ? '🔴 ' : resolvedUrgency === 'high' ? '🟠 ' : ''}Material Request Pending Approval`,
-          message: `${matReq.requestedBy.fullName} requested ${quantityRequested} ${unit || 'each'} of ${itemName} [${resolvedUrgency.toUpperCase()}] for WO ${wo.woNumber}`,
-          entityType: 'repair_material_request',
-          entityId: matReq.id,
-          actionUrl: 'maintenance-work-orders',
-        },
-      });
+      await notifyUser(wo.assignedSupervisorId, 'repair_material_request', `${resolvedUrgency === 'critical' ? '🔴 ' : resolvedUrgency === 'high' ? '🟠 ' : ''}Material Request Pending Approval`, `${matReq.requestedBy.fullName} requested ${quantityRequested} ${unit || 'each'} of ${itemName} [${resolvedUrgency.toUpperCase()}] for WO ${wo.woNumber}`, 'repair_material_request', matReq.id, 'maintenance-work-orders');
     }
 
     // Notify planner if assigned on the work order
     if (wo.plannerId && wo.plannerId !== wo.assignedSupervisorId) {
-      await db.notification.create({
-        data: {
-          userId: wo.plannerId,
-          type: 'repair_material_request',
-          title: 'New Material Request Submitted',
-          message: `${matReq.requestedBy.fullName} requested ${quantityRequested} ${unit || 'each'} of ${itemName} [${resolvedUrgency.toUpperCase()}] for WO ${wo.woNumber}`,
-          entityType: 'repair_material_request',
-          entityId: matReq.id,
-          actionUrl: 'maintenance-work-orders',
-        },
-      });
+      await notifyUser(wo.plannerId, 'repair_material_request', 'New Material Request Submitted', `${matReq.requestedBy.fullName} requested ${quantityRequested} ${unit || 'each'} of ${itemName} [${resolvedUrgency.toUpperCase()}] for WO ${wo.woNumber}`, 'repair_material_request', matReq.id, 'maintenance-work-orders');
     }
 
     // Audit log

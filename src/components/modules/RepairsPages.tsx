@@ -5,6 +5,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useNavigationStore } from '@/stores/navigationStore';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -316,6 +317,7 @@ const TRANSFER_STAGES: PipelineStage[] = [
 
 export function RepairMaterialRequestsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
+  const { pageParams } = useNavigationStore();
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -331,7 +333,15 @@ export function RepairMaterialRequestsPage() {
   const [rejectTarget, setRejectTarget] = useState<{ id: string; action: string } | null>(null);
   const [qtyOpen, setQtyOpen] = useState(false);
   const [qtyTarget, setQtyTarget] = useState<{ id: string; action: string; max: number; field: string } | null>(null);
+  const [workOrderIdFilter, setWorkOrderIdFilter] = useState('');
+  const [pagination, setPagination] = useState<{ page: number; totalPages: number; total: number } | null>(null);
   const [createForm, setCreateForm] = useState({ workOrderId: '', itemName: '', itemId: '', quantityRequested: '', unit: 'each', unitCost: '', reason: '', notes: '', urgency: 'medium' });
+
+  useEffect(() => {
+    if (pageParams?.workOrderId) {
+      setWorkOrderIdFilter(pageParams.workOrderId);
+    }
+  }, []);
 
   const activeFilters = useMemo(() => {
     let c = 0;
@@ -341,13 +351,14 @@ export function RepairMaterialRequestsPage() {
     return c;
   }, [filterStatus, filterUrgency, searchText]);
 
-  const clearFilters = () => { setFilterStatus('all'); setFilterUrgency('all'); setSearchText(''); setPage(1); };
+  const clearFilters = () => { setFilterStatus('all'); setFilterUrgency('all'); setSearchText(''); setPage(1); setWorkOrderIdFilter(''); };
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
     if (filterStatus !== 'all') params.set('status', filterStatus);
     if (filterUrgency !== 'all') params.set('urgency', filterUrgency);
+    if (workOrderIdFilter) params.set('workOrderId', workOrderIdFilter);
     params.set('page', String(page));
     params.set('limit', '20');
     const [listRes, statsRes] = await Promise.all([
@@ -355,10 +366,11 @@ export function RepairMaterialRequestsPage() {
       api.get('/api/repairs/material-requests?stats=true'),
     ]);
     if (listRes.success) setRequests(listRes.data || []);
+    if (listRes.pagination) setPagination(listRes.pagination);
     else toast.error(listRes.error || 'Failed to load');
     if (statsRes.success) setStats(statsRes.data);
     setLoading(false);
-  }, [filterStatus, filterUrgency, page]);
+  }, [filterStatus, filterUrgency, page, workOrderIdFilter]);
 
   useEffect(() => { fetchRequests(); }, [fetchRequests]);
 
@@ -556,6 +568,17 @@ export function RepairMaterialRequestsPage() {
         </CardContent>
       </Card>
 
+      {pagination && pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">Showing page {pagination.page} of {pagination.totalPages} ({pagination.total} total)</p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
+            <span className="text-sm font-medium">{page} / {pagination.totalPages}</span>
+            <Button variant="outline" size="sm" disabled={page >= pagination.totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+          </div>
+        </div>
+      )}
+
       {/* Detail Sheet */}
       <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
         <SheetContent className="sm:max-w-lg w-full overflow-y-auto">
@@ -674,6 +697,7 @@ export function RepairMaterialRequestsPage() {
 
 export function RepairToolRequestsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
+  const { pageParams } = useNavigationStore();
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -688,27 +712,39 @@ export function RepairToolRequestsPage() {
   const [rejectTarget, setRejectTarget] = useState<{ id: string; action: string } | null>(null);
   const [conditionOpen, setConditionOpen] = useState(false);
   const [conditionTarget, setConditionTarget] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [workOrderIdFilter, setWorkOrderIdFilter] = useState('');
+  const [pagination, setPagination] = useState<any>(null);
   const [createForm, setCreateForm] = useState({ workOrderId: '', toolId: '', toolName: '', reason: '', notes: '', urgency: 'medium' });
 
+  useEffect(() => {
+    if (pageParams?.workOrderId) {
+      setWorkOrderIdFilter(pageParams.workOrderId);
+    }
+  }, []);
+
   const activeFilters = useMemo(() => {
-    let c = 0; if (filterStatus !== 'all') c++; if (filterUrgency !== 'all') c++; if (searchText) c++; return c;
-  }, [filterStatus, filterUrgency, searchText]);
-  const clearFilters = () => { setFilterStatus('all'); setFilterUrgency('all'); setSearchText(''); };
+    let c = 0; if (filterStatus !== 'all') c++; if (filterUrgency !== 'all') c++; if (searchText) c++; if (workOrderIdFilter) c++; return c;
+  }, [filterStatus, filterUrgency, searchText, workOrderIdFilter]);
+  const clearFilters = () => { setFilterStatus('all'); setFilterUrgency('all'); setSearchText(''); setWorkOrderIdFilter(''); setPage(1); };
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
     if (filterStatus !== 'all') params.set('status', filterStatus);
     if (filterUrgency !== 'all') params.set('urgency', filterUrgency);
+    if (workOrderIdFilter) params.set('workOrderId', workOrderIdFilter);
+    params.set('page', String(page));
     params.set('limit', '50');
     const [listRes, statsRes] = await Promise.all([
       api.get(`/api/repairs/tool-requests?${params}`),
       api.get('/api/repairs/tool-requests?stats=true'),
     ]);
     if (listRes.success) setRequests(listRes.data || []); else toast.error(listRes.error || 'Failed');
+    if (listRes.pagination) setPagination(listRes.pagination);
     if (statsRes.success) setStats(statsRes.data);
     setLoading(false);
-  }, [filterStatus, filterUrgency]);
+  }, [filterStatus, filterUrgency, page, workOrderIdFilter]);
 
   useEffect(() => { fetchRequests(); }, [fetchRequests]);
 
@@ -854,6 +890,17 @@ export function RepairToolRequestsPage() {
         </CardContent>
       </Card>
 
+      {pagination && pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">Showing page {pagination.page} of {pagination.totalPages} ({pagination.total} total)</p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
+            <span className="text-sm font-medium">{page} / {pagination.totalPages}</span>
+            <Button variant="outline" size="sm" disabled={page >= pagination.totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+          </div>
+        </div>
+      )}
+
       {/* Detail Sheet */}
       <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
         <SheetContent className="sm:max-w-lg w-full overflow-y-auto">
@@ -945,25 +992,29 @@ export function RepairToolTransfersPage() {
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);
   const [conditionOpen, setConditionOpen] = useState(false);
   const [conditionTarget, setConditionTarget] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<any>(null);
   const [createForm, setCreateForm] = useState({ toolId: '', fromUserId: '', toUserId: '', reason: '', notes: '' });
 
   const activeFilters = useMemo(() => { let c = 0; if (filterStatus !== 'all') c++; if (searchText) c++; return c; }, [filterStatus, searchText]);
-  const clearFilters = () => { setFilterStatus('all'); setSearchText(''); };
+  const clearFilters = () => { setFilterStatus('all'); setSearchText(''); setPage(1); };
 
   const fetchTransfers = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
     if (filterStatus !== 'all') params.set('status', filterStatus);
     if (searchText) params.set('search', searchText);
+    params.set('page', String(page));
     params.set('limit', '50');
     const [listRes, statsRes] = await Promise.all([
       api.get(`/api/repairs/tool-transfers?${params}`),
       api.get('/api/repairs/tool-transfers?stats=true'),
     ]);
     if (listRes.success) setTransfers(listRes.data || []); else toast.error(listRes.error || 'Failed');
+    if (listRes.pagination) setPagination(listRes.pagination);
     if (statsRes.success) setStats(statsRes.data);
     setLoading(false);
-  }, [filterStatus, searchText]);
+  }, [filterStatus, searchText, page]);
 
   useEffect(() => { fetchTransfers(); }, [fetchTransfers]);
 
@@ -1107,6 +1158,17 @@ export function RepairToolTransfersPage() {
           )}
         </CardContent>
       </Card>
+
+      {pagination && pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">Showing page {pagination.page} of {pagination.totalPages} ({pagination.total} total)</p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
+            <span className="text-sm font-medium">{page} / {pagination.totalPages}</span>
+            <Button variant="outline" size="sm" disabled={page >= pagination.totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+          </div>
+        </div>
+      )}
 
       {/* Detail Sheet */}
       <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
@@ -1439,7 +1501,24 @@ export function RepairCompletionPage() {
 
       <Card>
         <CardContent className="p-4 flex gap-3">
-          <Input placeholder="Enter Work Order ID..." value={woId} onChange={(e) => setWoId(e.target.value)} className="flex-1" />
+          <div className="flex-1">
+            <AsyncSearchableSelect
+              value={woId}
+              onValueChange={setWoId}
+              placeholder="Search work orders..."
+              searchPlaceholder="Search by WO number or title..."
+              fetchOptions={async () => {
+                const res = await api.get('/api/work-orders?limit=999');
+                if (res.success && res.data) {
+                  return res.data.map((w: any) => ({
+                    value: w.id,
+                    label: `${w.woNumber} — ${w.title}`,
+                  }));
+                }
+                return [];
+              }}
+            />
+          </div>
           <Button onClick={fetchCompletion} disabled={!woId || loading}>Load</Button>
         </CardContent>
       </Card>

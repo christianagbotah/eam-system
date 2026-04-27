@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 
-const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor'];
+const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
 
 // GET /api/repairs/tool-requests/[id]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -80,17 +81,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
         const storeKeepers = await db.user.findMany({ where: { userRoles: { some: { role: { slug: 'store_keeper' } } }, status: 'active' }, select: { id: true } });
         for (const sk of storeKeepers) {
-          await db.notification.create({
-            data: { userId: sk.id, type: 'repair_tool_request', title: 'Tool Request Awaiting Store Approval',
-              message: `"${toolReq.toolName}" approved by supervisor for WO ${toolReq.workOrder.woNumber}${toolReq.urgency !== 'normal' ? ` [${toolReq.urgency.toUpperCase()}]` : ''}`,
-              entityType: 'repair_tool_request', entityId: id },
-          });
+          await notifyUser(sk.id, 'repair_tool_request', 'Tool Request Awaiting Store Approval',
+              `"${toolReq.toolName}" approved by supervisor for WO ${toolReq.workOrder.woNumber}${toolReq.urgency !== 'normal' ? ` [${toolReq.urgency.toUpperCase()}]` : ''}`,
+              'repair_tool_request', id);
         }
-        await db.notification.create({
-          data: { userId: toolReq.requestedById, type: 'repair_tool_request', title: 'Tool Request Approved',
-            message: `Your request for "${toolReq.toolName}" was approved by supervisor`,
-            entityType: 'repair_tool_request', entityId: id },
-        });
+        await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Request Approved',
+            `Your request for "${toolReq.toolName}" was approved by supervisor`,
+            'repair_tool_request', id);
         break;
       }
 
@@ -101,11 +98,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           where: { id },
           data: { status: 'rejected', supervisorApprovedById: session.userId, supervisorApprovedAt: now, rejectionReason },
         });
-        await db.notification.create({
-          data: { userId: toolReq.requestedById, type: 'repair_tool_request', title: 'Tool Request Rejected',
-            message: `Your request for "${toolReq.toolName}" was rejected by supervisor${rejectionReason ? `: ${rejectionReason}` : ''}`,
-            entityType: 'repair_tool_request', entityId: id },
-        });
+        await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Request Rejected',
+            `Your request for "${toolReq.toolName}" was rejected by supervisor${rejectionReason ? `: ${rejectionReason}` : ''}`,
+            'repair_tool_request', id);
         break;
       }
 
@@ -129,11 +124,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         });
 
         // Notify requester
-        await db.notification.create({
-          data: { userId: toolReq.requestedById, type: 'repair_tool_request', title: 'Tool Ready for Pickup',
-            message: `"${toolReq.toolName}" is approved and ready for issuance`,
-            entityType: 'repair_tool_request', entityId: id },
-        });
+        await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Ready for Pickup',
+            `"${toolReq.toolName}" is approved and ready for issuance`,
+            'repair_tool_request', id);
         break;
       }
 
@@ -150,11 +143,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           where: { id },
           data: { status: 'rejected', storekeeperApprovedById: session.userId, storekeeperApprovedAt: now, rejectionReason },
         });
-        await db.notification.create({
-          data: { userId: toolReq.requestedById, type: 'repair_tool_request', title: 'Tool Request Rejected by Store',
-            message: `"${toolReq.toolName}" was rejected by store keeper${rejectionReason ? `: ${rejectionReason}` : ''}`,
-            entityType: 'repair_tool_request', entityId: id },
-        });
+        await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Request Rejected by Store',
+            `"${toolReq.toolName}" was rejected by store keeper${rejectionReason ? `: ${rejectionReason}` : ''}`,
+            'repair_tool_request', id);
         break;
       }
 
@@ -202,19 +193,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         });
 
         // Notify requester
-        await db.notification.create({
-          data: { userId: toolReq.requestedById, type: 'repair_tool_request', title: 'Tool Issued',
-            message: `"${toolReq.toolName}" has been issued to you for WO ${toolReq.workOrder.woNumber}`,
-            entityType: 'repair_tool_request', entityId: id },
-        });
+        await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Issued',
+            `"${toolReq.toolName}" has been issued to you for WO ${toolReq.workOrder.woNumber}`,
+            'repair_tool_request', id);
 
         // Notify WO planner on issue
         if (toolReq.workOrder.plannerId && toolReq.workOrder.plannerId !== toolReq.requestedById) {
-          await db.notification.create({
-            data: { userId: toolReq.workOrder.plannerId, type: 'repair_tool_request', title: 'Tool Issued for WO',
-              message: `"${toolReq.toolName}" issued to ${toolReq.requestedBy.fullName} for WO ${toolReq.workOrder.woNumber}`,
-              entityType: 'repair_tool_request', entityId: id, actionUrl: 'maintenance-work-orders' },
-          });
+          await notifyUser(toolReq.workOrder.plannerId, 'repair_tool_request', 'Tool Issued for WO',
+              `"${toolReq.toolName}" issued to ${toolReq.requestedBy.fullName} for WO ${toolReq.workOrder.woNumber}`,
+              'repair_tool_request', id, 'maintenance-work-orders');
         }
         break;
       }
@@ -225,10 +212,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const resolvedReturnCondition = VALID_CONDITIONS.includes(toolConditionAtReturn) ? toolConditionAtReturn : (toolReq.tool?.condition || 'good');
 
         if (toolReq.toolId) {
-          // Verify condition hasn't degraded — just store the current condition
+          // Determine target tool status based on return condition
           const previousCondition = toolReq.toolConditionAtIssue || toolReq.tool?.condition || 'good';
-          if (resolvedReturnCondition === 'poor' && previousCondition !== 'poor') {
-            warnings.push(`Tool condition has degraded from "${previousCondition}" to "poor". This tool may need maintenance.`);
+          if (resolvedReturnCondition === 'poor' || resolvedReturnCondition === 'damaged') {
+            warnings.push(`Tool condition is "${resolvedReturnCondition}". Tool has been automatically flagged for repair.`);
           } else if (
             (previousCondition === 'new' && resolvedReturnCondition === 'fair') ||
             (previousCondition === 'good' && resolvedReturnCondition === 'fair')
@@ -236,9 +223,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             warnings.push(`Tool condition has changed from "${previousCondition}" to "${resolvedReturnCondition}".`);
           }
 
+          const toolStatus = (resolvedReturnCondition === 'poor' || resolvedReturnCondition === 'damaged') ? 'in_repair' : 'available';
           await db.tool.update({
             where: { id: toolReq.toolId },
-            data: { status: 'available', assignedToId: null, checkedOutAt: null, condition: resolvedReturnCondition },
+            data: { status: toolStatus, assignedToId: null, checkedOutAt: null, condition: resolvedReturnCondition },
           });
           await db.toolTransaction.create({
             data: {
@@ -258,11 +246,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
         // Notify WO planner on return
         if (toolReq.workOrder.plannerId && toolReq.workOrder.plannerId !== toolReq.requestedById) {
-          await db.notification.create({
-            data: { userId: toolReq.workOrder.plannerId, type: 'repair_tool_request', title: 'Tool Returned from WO',
-              message: `"${toolReq.toolName}" returned by ${toolReq.requestedBy.fullName} from WO ${toolReq.workOrder.woNumber} (condition: ${resolvedReturnCondition})`,
-              entityType: 'repair_tool_request', entityId: id, actionUrl: 'maintenance-work-orders' },
-          });
+          await notifyUser(toolReq.workOrder.plannerId, 'repair_tool_request', 'Tool Returned from WO',
+              `"${toolReq.toolName}" returned by ${toolReq.requestedBy.fullName} from WO ${toolReq.workOrder.woNumber} (condition: ${resolvedReturnCondition})`,
+              'repair_tool_request', id, 'maintenance-work-orders');
         }
         break;
       }

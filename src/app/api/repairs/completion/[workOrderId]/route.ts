@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 
 // GET /api/repairs/completion/[workOrderId]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ workOrderId: string }> }) {
@@ -115,9 +116,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       // Notify supervisor
       if (wo.assignedSupervisorId) {
-        await db.notification.create({
-          data: { userId: wo.assignedSupervisorId, type: 'wo_completed', title: 'Work Order Completed - Review Required', message: `WO ${wo.woNumber} has been completed by technician. Your review is required.`, entityType: 'work_order', entityId: workOrderId, actionUrl: 'maintenance-work-orders' },
-        });
+        await notifyUser(wo.assignedSupervisorId, 'wo_completed', 'Work Order Completed - Review Required', `WO ${wo.woNumber} has been completed by technician. Your review is required.`, 'work_order', workOrderId, 'maintenance-work-orders');
       }
 
       await db.auditLog.create({
@@ -144,9 +143,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       // Notify planner
       if (wo.plannerId) {
-        await db.notification.create({
-          data: { userId: wo.plannerId, type: 'wo_completed', title: 'Work Order Ready for Closure', message: `WO ${wo.woNumber} has been supervisor-approved. Ready for final closure.`, entityType: 'work_order', entityId: workOrderId, actionUrl: 'maintenance-work-orders' },
-        });
+        await notifyUser(wo.plannerId, 'wo_completed', 'Work Order Ready for Closure', `WO ${wo.woNumber} has been supervisor-approved. Ready for final closure.`, 'work_order', workOrderId, 'maintenance-work-orders');
       }
 
       await db.auditLog.create({
@@ -175,9 +172,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       // Notify technician
       if (wo.assignedTo) {
-        await db.notification.create({
-          data: { userId: wo.assignedTo, type: 'wo_rework', title: 'Rework Requested', message: `WO ${wo.woNumber}: ${reworkReason}`, entityType: 'work_order', entityId: workOrderId, actionUrl: 'maintenance-work-orders' },
-        });
+        await notifyUser(wo.assignedTo, 'wo_rework', 'Rework Requested', `WO ${wo.woNumber}: ${reworkReason}`, 'work_order', workOrderId, 'maintenance-work-orders');
       }
 
       await db.auditLog.create({
@@ -208,9 +203,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       // Notify all parties
       const notifyUsers = [wo.assignedTo, wo.assignedSupervisorId].filter(Boolean) as string[];
       for (const uid of notifyUsers) {
-        await db.notification.create({
-          data: { userId: uid, type: 'wo_closed', title: 'Work Order Closed', message: `WO ${wo.woNumber} has been closed by planner.`, entityType: 'work_order', entityId: workOrderId },
-        });
+        await notifyUser(uid, 'wo_closed', 'Work Order Closed', `WO ${wo.woNumber} has been closed by planner.`, 'work_order', workOrderId);
       }
 
       await db.auditLog.create({

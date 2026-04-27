@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 
 // GET /api/repairs/tool-transfers
 export async function GET(request: NextRequest) {
@@ -128,14 +129,12 @@ export async function POST(request: NextRequest) {
     // Notify store keepers
     const storeKeepers = await db.user.findMany({ where: { userRoles: { some: { role: { slug: 'store_keeper' } } }, status: 'active' }, select: { id: true } });
     for (const sk of storeKeepers) {
-      await db.notification.create({
-        data: {
-          userId: sk.id, type: 'tool_transfer_request',
-          title: 'Tool Transfer Request',
-          message: `${transfer.requestedBy.fullName} requested transfer of "${tool.name}" from ${transfer.fromUser.fullName} to ${transfer.toUser.fullName}`,
-          entityType: 'tool_transfer_request', entityId: transfer.id, actionUrl: 'maintenance-tools',
-        },
-      });
+      await notifyUser(
+        sk.id, 'tool_transfer_request',
+        'Tool Transfer Request',
+        `${transfer.requestedBy.fullName} requested transfer of "${tool.name}" from ${transfer.fromUser.fullName} to ${transfer.toUser.fullName}`,
+        'tool_transfer_request', transfer.id, 'maintenance-tools',
+      );
     }
 
     await db.auditLog.create({

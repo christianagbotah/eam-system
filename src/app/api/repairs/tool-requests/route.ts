@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 
 const URGENCY_ORDER: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 };
 const VALID_URGENCIES = ['low', 'normal', 'high', 'critical'];
@@ -159,14 +160,12 @@ export async function POST(request: NextRequest) {
     });
 
     if (wo.assignedSupervisorId) {
-      await db.notification.create({
-        data: {
-          userId: wo.assignedSupervisorId, type: 'repair_tool_request',
-          title: 'Tool Request Pending Approval',
-          message: `${toolReq.requestedBy.fullName} requested tool "${toolName}" for WO ${wo.woNumber}${resolvedUrgency !== 'normal' ? ` [${resolvedUrgency.toUpperCase()}]` : ''}`,
-          entityType: 'repair_tool_request', entityId: toolReq.id, actionUrl: 'maintenance-work-orders',
-        },
-      });
+      await notifyUser(
+        wo.assignedSupervisorId, 'repair_tool_request',
+        'Tool Request Pending Approval',
+        `${toolReq.requestedBy.fullName} requested tool "${toolName}" for WO ${wo.woNumber}${resolvedUrgency !== 'normal' ? ` [${resolvedUrgency.toUpperCase()}]` : ''}`,
+        'repair_tool_request', toolReq.id, 'maintenance-work-orders',
+      );
     }
 
     await db.auditLog.create({

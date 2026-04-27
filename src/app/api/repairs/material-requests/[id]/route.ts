@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 
 // 24-hour threshold for overdue detection
 const OVERDUE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
@@ -193,32 +194,28 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           select: { id: true },
         });
         for (const sk of storeKeepers) {
-          await db.notification.create({
-            data: {
-              userId: sk.id,
-              type: 'repair_material_request',
-              title: 'Material Request Awaiting Store Approval',
-              message: `${qty} ${matReq.unit} of ${matReq.itemName} approved by supervisor for WO ${matReq.workOrder.woNumber}`,
-              entityType: 'repair_material_request',
-              entityId: id,
-              actionUrl: 'maintenance-work-orders',
-            },
-          });
+          await notifyUser(
+            sk.id,
+            'repair_material_request',
+            'Material Request Awaiting Store Approval',
+            `${qty} ${matReq.unit} of ${matReq.itemName} approved by supervisor for WO ${matReq.workOrder.woNumber}`,
+            'repair_material_request',
+            id,
+            'maintenance-work-orders',
+          );
         }
 
         // Notify requester
-        await db.notification.create({
-          data: {
-            userId: matReq.requestedById,
-            type: 'repair_material_request',
-            title: 'Material Request Supervisor Approved',
-            message: qty !== matReq.quantityRequested
-              ? `Your request for ${matReq.itemName} was approved (quantity adjusted from ${matReq.quantityRequested} to ${qty})`
-              : `Your request for ${matReq.itemName} was approved by supervisor`,
-            entityType: 'repair_material_request',
-            entityId: id,
-          },
-        });
+        await notifyUser(
+          matReq.requestedById,
+          'repair_material_request',
+          'Material Request Supervisor Approved',
+          qty !== matReq.quantityRequested
+            ? `Your request for ${matReq.itemName} was approved (quantity adjusted from ${matReq.quantityRequested} to ${qty})`
+            : `Your request for ${matReq.itemName} was approved by supervisor`,
+          'repair_material_request',
+          id,
+        );
         break;
       }
 
@@ -261,16 +258,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           },
         });
 
-        await db.notification.create({
-          data: {
-            userId: matReq.requestedById,
-            type: 'repair_material_request',
-            title: 'Material Request Rejected',
-            message: `Your request for ${matReq.itemName} was rejected by supervisor${notes ? `: ${notes}` : ''}`,
-            entityType: 'repair_material_request',
-            entityId: id,
-          },
-        });
+        await notifyUser(
+          matReq.requestedById,
+          'repair_material_request',
+          'Material Request Rejected',
+          `Your request for ${matReq.itemName} was rejected by supervisor${notes ? `: ${notes}` : ''}`,
+          'repair_material_request',
+          id,
+        );
         break;
       }
 
@@ -350,16 +345,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           },
         });
 
-        await db.notification.create({
-          data: {
-            userId: matReq.requestedById,
-            type: 'repair_material_request',
-            title: 'Material Request Ready for Issuance',
-            message: `${qty} ${matReq.unit} of ${matReq.itemName} approved by store keeper. Ready for pickup.`,
-            entityType: 'repair_material_request',
-            entityId: id,
-          },
-        });
+        await notifyUser(
+          matReq.requestedById,
+          'repair_material_request',
+          'Material Request Ready for Issuance',
+          `${qty} ${matReq.unit} of ${matReq.itemName} approved by store keeper. Ready for pickup.`,
+          'repair_material_request',
+          id,
+        );
         break;
       }
 
@@ -402,16 +395,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           },
         });
 
-        await db.notification.create({
-          data: {
-            userId: matReq.requestedById,
-            type: 'repair_material_request',
-            title: 'Material Request Rejected by Store',
-            message: `Your request for ${matReq.itemName} was rejected by store keeper${notes ? `: ${notes}` : ''}`,
-            entityType: 'repair_material_request',
-            entityId: id,
-          },
-        });
+        await notifyUser(
+          matReq.requestedById,
+          'repair_material_request',
+          'Material Request Rejected by Store',
+          `Your request for ${matReq.itemName} was rejected by store keeper${notes ? `: ${notes}` : ''}`,
+          'repair_material_request',
+          id,
+        );
         break;
       }
 
@@ -506,47 +497,41 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         });
 
         // Notify requester
-        await db.notification.create({
-          data: {
-            userId: matReq.requestedById,
-            type: 'repair_material_request',
-            title: 'Materials Issued',
-            message: `${qtyToIssue} ${matReq.unit} of ${matReq.itemName} issued for WO ${matReq.workOrder.woNumber}`,
-            entityType: 'repair_material_request',
-            entityId: id,
-          },
-        });
+        await notifyUser(
+          matReq.requestedById,
+          'repair_material_request',
+          'Materials Issued',
+          `${qtyToIssue} ${matReq.unit} of ${matReq.itemName} issued for WO ${matReq.workOrder.woNumber}`,
+          'repair_material_request',
+          id,
+        );
 
         // Notify work order's planner when material is issued
         if (matReq.workOrder.plannerId && matReq.workOrder.plannerId !== matReq.requestedById) {
-          await db.notification.create({
-            data: {
-              userId: matReq.workOrder.plannerId,
-              type: 'repair_material_request',
-              title: 'Material Issued for Planned Work Order',
-              message: `${qtyToIssue} ${matReq.unit} of ${matReq.itemName} issued for WO ${matReq.workOrder.woNumber}`,
-              entityType: 'repair_material_request',
-              entityId: id,
-              actionUrl: 'maintenance-work-orders',
-            },
-          });
+          await notifyUser(
+            matReq.workOrder.plannerId,
+            'repair_material_request',
+            'Material Issued for Planned Work Order',
+            `${qtyToIssue} ${matReq.unit} of ${matReq.itemName} issued for WO ${matReq.workOrder.woNumber}`,
+            'repair_material_request',
+            id,
+            'maintenance-work-orders',
+          );
         }
 
         // Notify assigned supervisor if different from planner
         if (matReq.workOrder.assignedSupervisorId
             && matReq.workOrder.assignedSupervisorId !== matReq.requestedById
             && matReq.workOrder.assignedSupervisorId !== matReq.workOrder.plannerId) {
-          await db.notification.create({
-            data: {
-              userId: matReq.workOrder.assignedSupervisorId,
-              type: 'repair_material_request',
-              title: 'Material Issued for WO Under Your Supervision',
-              message: `${qtyToIssue} ${matReq.unit} of ${matReq.itemName} issued for WO ${matReq.workOrder.woNumber}`,
-              entityType: 'repair_material_request',
-              entityId: id,
-              actionUrl: 'maintenance-work-orders',
-            },
-          });
+          await notifyUser(
+            matReq.workOrder.assignedSupervisorId,
+            'repair_material_request',
+            'Material Issued for WO Under Your Supervision',
+            `${qtyToIssue} ${matReq.unit} of ${matReq.itemName} issued for WO ${matReq.workOrder.woNumber}`,
+            'repair_material_request',
+            id,
+            'maintenance-work-orders',
+          );
         }
         break;
       }
@@ -630,20 +615,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         });
 
         // Notify requester about the return
-        await db.notification.create({
-          data: {
-            userId: matReq.requestedById,
-            type: 'repair_material_request',
-            title: newStatus === 'fully_returned'
-              ? 'All Materials Returned'
-              : 'Partial Material Return Recorded',
-            message: newStatus === 'fully_returned'
-              ? `All ${matReq.quantityIssued} ${matReq.unit} of ${matReq.itemName} returned for WO ${matReq.workOrder.woNumber}`
-              : `${qtyToReturn} ${matReq.unit} of ${matReq.itemName} returned for WO ${matReq.workOrder.woNumber}. Total returned: ${cumulativeReturn}/${matReq.quantityIssued}`,
-            entityType: 'repair_material_request',
-            entityId: id,
-          },
-        });
+        await notifyUser(
+          matReq.requestedById,
+          'repair_material_request',
+          newStatus === 'fully_returned'
+            ? 'All Materials Returned'
+            : 'Partial Material Return Recorded',
+          newStatus === 'fully_returned'
+            ? `All ${matReq.quantityIssued} ${matReq.unit} of ${matReq.itemName} returned for WO ${matReq.workOrder.woNumber}`
+            : `${qtyToReturn} ${matReq.unit} of ${matReq.itemName} returned for WO ${matReq.workOrder.woNumber}. Total returned: ${cumulativeReturn}/${matReq.quantityIssued}`,
+          'repair_material_request',
+          id,
+        );
         break;
       }
 

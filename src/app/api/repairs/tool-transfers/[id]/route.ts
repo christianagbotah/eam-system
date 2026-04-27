@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { notifyUser } from '@/lib/notifications';
 
 const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor'];
 
@@ -41,16 +42,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       });
 
       // Notify both parties of completion
-      await db.notification.create({
-        data: { userId: transfer.fromUserId, type: 'tool_transfer_request', title: 'Tool Transfer Completed',
-          message: `"${transfer.tool.name}" has been successfully transferred to ${transfer.toUser.fullName}`,
-          entityType: 'tool_transfer_request', entityId: id },
-      });
-      await db.notification.create({
-        data: { userId: transfer.toUserId, type: 'tool_transfer_request', title: 'Tool Transfer Completed',
-          message: `"${transfer.tool.name}" has been successfully transferred to you from ${transfer.fromUser.fullName}`,
-          entityType: 'tool_transfer_request', entityId: id },
-      });
+      await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Transfer Completed',
+        `"${transfer.tool.name}" has been successfully transferred to ${transfer.toUser.fullName}`,
+        'tool_transfer_request', id);
+      await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Completed',
+        `"${transfer.tool.name}" has been successfully transferred to you from ${transfer.fromUser.fullName}`,
+        'tool_transfer_request', id);
 
       return NextResponse.json({ success: true, data: { ...completed, autoCompleted: true } });
     }
@@ -109,16 +106,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         });
 
         // Notify both fromUser and toUser that handover needs to happen
-        await db.notification.create({
-          data: { userId: transfer.fromUserId, type: 'tool_transfer_request', title: 'Tool Transfer Approved — Confirm Handover',
-            message: `Transfer of "${transfer.tool.name}" to ${transfer.toUser.fullName} has been approved. Please confirm you are handing over the tool.`,
-            entityType: 'tool_transfer_request', entityId: id, actionUrl: 'maintenance-tools' },
-        });
-        await db.notification.create({
-          data: { userId: transfer.toUserId, type: 'tool_transfer_request', title: 'Tool Transfer Approved — Confirm Receipt',
-            message: `Transfer of "${transfer.tool.name}" from ${transfer.fromUser.fullName} has been approved. Please confirm you have received the tool.`,
-            entityType: 'tool_transfer_request', entityId: id, actionUrl: 'maintenance-tools' },
-        });
+        await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Transfer Approved — Confirm Handover',
+            `Transfer of "${transfer.tool.name}" to ${transfer.toUser.fullName} has been approved. Please confirm you are handing over the tool.`,
+            'tool_transfer_request', id, 'maintenance-tools');
+        await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Approved — Confirm Receipt',
+            `Transfer of "${transfer.tool.name}" from ${transfer.fromUser.fullName} has been approved. Please confirm you have received the tool.`,
+            'tool_transfer_request', id, 'maintenance-tools');
         break;
       }
 
@@ -129,22 +122,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           where: { id },
           data: { status: 'rejected', storekeeperApprovedById: session.userId, storekeeperApprovedAt: now, rejectionReason },
         });
-        await db.notification.create({
-          data: { userId: transfer.requestedById, type: 'tool_transfer_request', title: 'Tool Transfer Rejected',
-            message: `Transfer of "${transfer.tool.name}" was rejected by store keeper${rejectionReason ? `: ${rejectionReason}` : ''}`,
-            entityType: 'tool_transfer_request', entityId: id },
-        });
+        await notifyUser(transfer.requestedById, 'tool_transfer_request', 'Tool Transfer Rejected',
+            `Transfer of "${transfer.tool.name}" was rejected by store keeper${rejectionReason ? `: ${rejectionReason}` : ''}`,
+            'tool_transfer_request', id);
         // Also notify fromUser and toUser
-        await db.notification.create({
-          data: { userId: transfer.fromUserId, type: 'tool_transfer_request', title: 'Tool Transfer Rejected',
-            message: `Transfer of "${transfer.tool.name}" to ${transfer.toUser.fullName} was rejected`,
-            entityType: 'tool_transfer_request', entityId: id },
-        });
-        await db.notification.create({
-          data: { userId: transfer.toUserId, type: 'tool_transfer_request', title: 'Tool Transfer Rejected',
-            message: `Transfer of "${transfer.tool.name}" from ${transfer.fromUser.fullName} was rejected`,
-            entityType: 'tool_transfer_request', entityId: id },
-        });
+        await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Transfer Rejected',
+            `Transfer of "${transfer.tool.name}" to ${transfer.toUser.fullName} was rejected`,
+            'tool_transfer_request', id);
+        await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Rejected',
+            `Transfer of "${transfer.tool.name}" from ${transfer.fromUser.fullName} was rejected`,
+            'tool_transfer_request', id);
         break;
       }
 
@@ -160,11 +147,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         });
 
         // Notify toUser that fromUser has confirmed
-        await db.notification.create({
-          data: { userId: transfer.toUserId, type: 'tool_transfer_request', title: 'Tool Handover Confirmed by Sender',
-            message: `${transfer.fromUser.fullName} has confirmed handover of "${transfer.tool.name}". Waiting for your confirmation.`,
-            entityType: 'tool_transfer_request', entityId: id, actionUrl: 'maintenance-tools' },
-        });
+        await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Handover Confirmed by Sender',
+            `${transfer.fromUser.fullName} has confirmed handover of "${transfer.tool.name}". Waiting for your confirmation.`,
+            'tool_transfer_request', id, 'maintenance-tools');
 
         // Auto-complete check: if toUser already accepted
         if (transfer.toUserAcceptedAt) {
@@ -184,16 +169,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             where: { id },
             data: { status: 'transferred', transferredAt: now },
           });
-          await db.notification.create({
-            data: { userId: transfer.fromUserId, type: 'tool_transfer_request', title: 'Tool Transfer Completed',
-              message: `"${transfer.tool.name}" has been successfully transferred to ${transfer.toUser.fullName}`,
-              entityType: 'tool_transfer_request', entityId: id },
-          });
-          await db.notification.create({
-            data: { userId: transfer.toUserId, type: 'tool_transfer_request', title: 'Tool Transfer Completed',
-              message: `"${transfer.tool.name}" has been successfully transferred to you`,
-              entityType: 'tool_transfer_request', entityId: id },
-          });
+          await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Transfer Completed',
+              `"${transfer.tool.name}" has been successfully transferred to ${transfer.toUser.fullName}`,
+              'tool_transfer_request', id);
+          await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Completed',
+              `"${transfer.tool.name}" has been successfully transferred to you`,
+              'tool_transfer_request', id);
         }
         break;
       }
@@ -210,11 +191,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         });
 
         // Notify fromUser that toUser has confirmed
-        await db.notification.create({
-          data: { userId: transfer.fromUserId, type: 'tool_transfer_request', title: 'Tool Receipt Confirmed by Receiver',
-            message: `${transfer.toUser.fullName} has confirmed receipt of "${transfer.tool.name}". Waiting for your handover confirmation.`,
-            entityType: 'tool_transfer_request', entityId: id, actionUrl: 'maintenance-tools' },
-        });
+        await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Receipt Confirmed by Receiver',
+            `${transfer.toUser.fullName} has confirmed receipt of "${transfer.tool.name}". Waiting for your handover confirmation.`,
+            'tool_transfer_request', id, 'maintenance-tools');
 
         // Auto-complete check: if fromUser already accepted
         if (transfer.fromUserAcceptedAt) {
@@ -234,16 +213,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             where: { id },
             data: { status: 'transferred', transferredAt: now },
           });
-          await db.notification.create({
-            data: { userId: transfer.fromUserId, type: 'tool_transfer_request', title: 'Tool Transfer Completed',
-              message: `"${transfer.tool.name}" has been successfully transferred to ${transfer.toUser.fullName}`,
-              entityType: 'tool_transfer_request', entityId: id },
-          });
-          await db.notification.create({
-            data: { userId: transfer.toUserId, type: 'tool_transfer_request', title: 'Tool Transfer Completed',
-              message: `"${transfer.tool.name}" has been successfully transferred to you`,
-              entityType: 'tool_transfer_request', entityId: id },
-          });
+          await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Transfer Completed',
+              `"${transfer.tool.name}" has been successfully transferred to ${transfer.toUser.fullName}`,
+              'tool_transfer_request', id);
+          await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Completed',
+              `"${transfer.tool.name}" has been successfully transferred to you`,
+              'tool_transfer_request', id);
         }
         break;
       }
