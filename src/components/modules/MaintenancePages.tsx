@@ -220,17 +220,44 @@ export function MaintenanceRequestsPage() {
 // ============================================================================
 
 export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
+  const { user, isAdmin } = useAuthStore();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('medium');
   const [assetId, setAssetId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
+  const [departmentLabel, setDepartmentLabel] = useState('');
   const [category, setCategory] = useState('');
   const [machineDown, setMachineDown] = useState(false);
   const [itemType, setItemType] = useState<'machine' | 'manual'>('machine');
   const [manualAssetName, setManualAssetName] = useState('');
   const [location, setLocation] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Auto-populate department from user's profile (read-only for non-admins)
+  useEffect(() => {
+    if (user?.departmentId) {
+      setDepartmentId(user.departmentId);
+    }
+    if (user?.department) {
+      if (typeof user.department === 'object' && user.department?.name) {
+        setDepartmentLabel(user.department.name);
+      } else if (typeof user.department === 'string') {
+        setDepartmentLabel(user.department);
+      }
+    }
+    // If user has departmentId but no label yet, fetch departments to resolve it
+    if (user?.departmentId && !departmentLabel) {
+      api.get('/api/departments').then(res => {
+        if (res.success && Array.isArray(res.data)) {
+          const dept = res.data.find((d: any) => d.id === user.departmentId);
+          if (dept) setDepartmentLabel(dept.name);
+        }
+      });
+    }
+  }, [user?.departmentId, user?.department]);
+
+  const isDepartmentLocked = !isAdmin() && !!departmentId;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -338,23 +365,29 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-2">
-          <Label>Department</Label>
-          <AsyncSearchableSelect
-            value={departmentId}
-            onValueChange={setDepartmentId}
-            fetchOptions={async () => {
-              const res = await api.get('/api/departments');
-              if (res.success && res.data) {
-                return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
-                  value: d.id,
-                  label: d.name,
-                }));
-              }
-              return [];
-            }}
-            placeholder="Select department..."
-            searchPlaceholder="Search departments..."
-          />
+          <Label>Department {isDepartmentLocked && <span className="text-xs text-muted-foreground font-normal ml-1">(auto-filled)</span>}</Label>
+          {isDepartmentLocked ? (
+            <div className="flex h-9 w-full items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
+              {departmentLabel || departmentId}
+            </div>
+          ) : (
+            <AsyncSearchableSelect
+              value={departmentId}
+              onValueChange={setDepartmentId}
+              fetchOptions={async () => {
+                const res = await api.get('/api/departments');
+                if (res.success && res.data) {
+                  return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
+                    value: d.id,
+                    label: d.name,
+                  }));
+                }
+                return [];
+              }}
+              placeholder="Select department..."
+              searchPlaceholder="Search departments..."
+            />
+          )}
         </div>
         <div className="space-y-2">
           <Label>Category</Label>
