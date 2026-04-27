@@ -1,0 +1,3 @@
+{
+  "/api/maintenance-requests/[id]/assign-planner/route": "app/api/maintenance-requests/[id]/assign-planner/route.js"
+}

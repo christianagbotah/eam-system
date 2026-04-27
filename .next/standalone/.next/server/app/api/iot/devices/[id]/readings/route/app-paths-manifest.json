@@ -1,0 +1,3 @@
+{
+  "/api/iot/devices/[id]/readings/route": "app/api/iot/devices/[id]/readings/route.js"
+}

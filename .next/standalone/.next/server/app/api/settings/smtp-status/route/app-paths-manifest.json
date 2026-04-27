@@ -1,0 +1,3 @@
+{
+  "/api/settings/smtp-status/route": "app/api/settings/smtp-status/route.js"
+}

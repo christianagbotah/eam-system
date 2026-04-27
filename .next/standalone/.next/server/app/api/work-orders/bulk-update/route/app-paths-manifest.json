@@ -1,0 +1,3 @@
+{
+  "/api/work-orders/bulk-update/route": "app/api/work-orders/bulk-update/route.js"
+}

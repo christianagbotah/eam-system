@@ -1,0 +1,3 @@
+{
+  "/api/shift-handovers/[id]/route": "app/api/shift-handovers/[id]/route.js"
+}

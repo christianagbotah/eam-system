@@ -13,8 +13,9 @@ node_modules
 # testing
 /coverage
 
-# next.js
-/.next/
+# next.js (keep standalone build for cPanel deployment)
+/.next/cache/
+/.next/server/
 /out/
 
 # production
