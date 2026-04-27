@@ -1468,3 +1468,20 @@ Stage Summary:
 - Fix: Modified /api/users GET to allow role-filtered queries for any authenticated user
 - Commit: aa09f4f pushed to main
 - File changed: src/app/api/users/route.ts
+---
+Task ID: 2
+Agent: Main
+Task: Department auto-lock, WO repairs integration, tool transfer improvements
+
+Work Log:
+- Investigated department field in CreateMRForm — found user.departmentId reference was broken (User model has department as plain string, not a relation)
+- Fixed CreateMRForm: replaced user.departmentId with user.department string lookup via /api/departments
+- Fixed CreateWOForm: added departmentLabel state, useEffect for auto-populate, and isDepartmentLocked conditional rendering
+- Added "Repair Resources" quick-access card to WO Detail page with navigation buttons to Material Requests, Tool Requests, Tool Transfers, and Downtime pages
+- Fixed tool transfer form: changed From/To user selects from /api/users?limit=999 to /api/workers?role=technician
+- Committed and pushed: f139e2c
+
+Stage Summary:
+- Department auto-lock now works for both MR and WO creation forms for non-admin users
+- WO detail page now has navigation links to the repairs module
+- Tool transfer form only shows technicians, not all users
