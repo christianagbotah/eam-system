@@ -41,6 +41,7 @@ import {
   PieChart as PieChartIcon, Gauge, ListChecks, Shield, ShieldCheck, HardHat, MapPin,
   Crown, Timer, Hourglass, UserPlus, Workflow, ChevronRight, ExternalLink, Hammer,
   Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
+  ArrowUpRight, ArrowDownRight, CalendarClock, LayoutDashboard, Bell, DollarSign,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -2672,7 +2673,7 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               <CardDescription className="text-xs">Material requests, tool requests & transfers for this work order</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 <button onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center"><Package className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Material Requests</span>
@@ -2685,9 +2686,13 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                   <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center"><ArrowRightLeft className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Tool Transfers</span>
                 </button>
-                <button onClick={() => navigate('repairs-downtime')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                <button onClick={() => navigate('repairs-downtime', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-red-100 text-red-700 flex items-center justify-center"><Timer className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Downtime</span>
+                </button>
+                <button onClick={() => navigate('repairs-completion', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                  <div className="h-9 w-9 rounded-lg bg-green-100 text-green-700 flex items-center justify-center"><CheckCircle2 className="h-4 w-4" /></div>
+                  <span className="text-xs font-medium">Completion</span>
                 </button>
               </div>
             </CardContent>
@@ -3381,29 +3386,467 @@ export function MaintenanceWorkOrdersPage() {
 
 export function MaintenanceDashboardPage() {
   const [stats, setStats] = useState<any>(null);
+  const [woKpi, setWoKpi] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { navigate } = useNavigationStore();
+  const { hasPermission, user } = useAuthStore();
+
   useEffect(() => {
-    (async () => {
-      try { const res = await api.get('/api/dashboard/stats'); if (res.data) setStats(res.data); } catch { /* empty */ }
-      setLoading(false);
-    })();
+    let active = true;
+    Promise.all([
+      api.get('/api/dashboard/stats'),
+      api.get('/api/work-orders/kpi'),
+    ]).then(([statsRes, kpiRes]) => {
+      if (!active) return;
+      if (statsRes.success && statsRes.data) setStats(statsRes.data);
+      if (kpiRes.success && kpiRes.data) setWoKpi(kpiRes.data);
+    }).catch((err) => {
+      if (active) setError(err?.message || 'Failed to load dashboard data');
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
   }, []);
-  const kpis = [
-    { label: 'Active WOs', value: stats?.activeWorkOrders ?? '-', icon: Wrench, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Completed', value: stats?.completedWorkOrders ?? '-', icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Overdue', value: stats?.overdueWorkOrders ?? '-', icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
-    { label: 'Created Today', value: stats?.createdTodayWO ?? '-', icon: Plus, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+
+  // ===== Derived KPI values =====
+  const activeWOs = stats?.activeWorkOrders ?? woKpi?.byStatus?.in_progress ?? 0;
+  const completedThisWeek = stats?.myKPIs?.completedThisWeek ?? stats?.completedTodayWO ?? 0;
+  const overdueWOs = stats?.overdueWorkOrders ?? woKpi?.overdue ?? 0;
+  const pmCompliance = stats?.maintenanceKPIs?.plannedRatio ?? 0;
+  const avgMTTR = stats?.maintenanceKPIs?.mttr ?? woKpi?.completionMetrics?.avgHours ?? 0;
+  const pendingMRs = stats?.pendingRequests ?? 0;
+  const monthTrend = woKpi?.trend?.changePercent ?? 0;
+
+  // ===== Chart data preparation (before early return) =====
+  const statusChartData = useMemo(() => {
+    const byStatus = woKpi?.byStatus || {};
+    const labels: Record<string, string> = {
+      draft: 'Draft', requested: 'Requested', approved: 'Approved',
+      planned: 'Planned', assigned: 'Assigned', in_progress: 'In Progress',
+      completed: 'Completed', verified: 'Verified', closed: 'Closed',
+      waiting_parts: 'Waiting', on_hold: 'On Hold', cancelled: 'Cancelled',
+    };
+    return Object.entries(byStatus)
+      .filter(([, count]) => (count as number) > 0)
+      .map(([status, count]) => ({
+        status: labels[status] || status.replace(/_/g, ' '),
+        count: count as number,
+      }));
+  }, [woKpi?.byStatus]);
+
+  const priorityChartData = useMemo(() => {
+    const byPriority = woKpi?.byPriority || {};
+    const labels: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' };
+    return Object.entries(byPriority)
+      .filter(([, count]) => (count as number) > 0)
+      .map(([priority, count]) => ({
+        priority: labels[priority] || priority,
+        count: count as number,
+      }));
+  }, [woKpi?.byPriority]);
+
+  const monthlyTrendData = useMemo(() => {
+    if (!woKpi?.trend) return [];
+    return [
+      { label: 'Last Month', created: woKpi.trend.lastMonth || 0, completed: 0 },
+      { label: 'This Month', created: woKpi.trend.thisMonth || 0, completed: 0 },
+    ];
+  }, [woKpi?.trend]);
+
+  const backlogAgeData = useMemo(() => {
+    const ages = woKpi?.openByAge || {};
+    const total = Object.values(ages).reduce((s: number, v) => s + (v as number), 0);
+    return Object.entries(ages).map(([range, count]) => ({
+      range: range === '0-3' ? '0–3 days' : range === '4-7' ? '4–7 days' : range === '8-14' ? '8–14 days' : range === '15-30' ? '15–30 days' : '30+ days',
+      count: count as number,
+      pct: total > 0 ? Math.round(((count as number) / total) * 100) : 0,
+    }));
+  }, [woKpi?.openByAge]);
+
+  const CHART_COLORS = ['#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f97316', '#6366f1'];
+  const AGE_COLORS: Record<string, string> = {
+    '0–3 days': '#10b981', '4–7 days': '#f59e0b', '8–14 days': '#f97316', '15–30 days': '#ef4444', '30+ days': '#dc2626',
+  };
+
+  // ===== Quick Actions =====
+  const quickActions = [
+    { label: 'New Maintenance Request', icon: ClipboardList, page: 'create-mr' as PageName, permission: 'maintenance_requests.create', color: 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:hover:bg-amber-950/50 border-amber-200 hover:border-amber-300 dark:border-amber-900/40', iconColor: 'text-amber-600 dark:text-amber-400' },
+    { label: 'New Work Order', icon: Wrench, page: 'maintenance-work-orders' as PageName, permission: 'work_orders.create', color: 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50 border-emerald-200 hover:border-emerald-300 dark:border-emerald-900/40', iconColor: 'text-emerald-600 dark:text-emerald-400' },
+    { label: 'View PM Calendar', icon: CalendarClock, page: 'pm-calendar' as PageName, permission: 'pm_schedules.view', color: 'bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/30 dark:hover:bg-sky-950/50 border-sky-200 hover:border-sky-300 dark:border-sky-900/40', iconColor: 'text-sky-600 dark:text-sky-400' },
+    { label: 'Repair Analytics', icon: BarChart3, page: 'repairs-analytics' as PageName, permission: 'repairs.view', color: 'bg-violet-50 hover:bg-violet-100 dark:bg-violet-950/30 dark:hover:bg-violet-950/50 border-violet-200 hover:border-violet-300 dark:border-violet-900/40', iconColor: 'text-violet-600 dark:text-violet-400' },
   ];
+
+  const visibleActions = quickActions.filter(a => hasPermission(a.permission));
+
+  // ===== Recent work orders =====
+  const recentWOs = stats?.recentWorkOrders || [];
+
+  // ===== Status chart config =====
+  const woStatusChartConfig = useMemo(() => {
+    const config: Record<string, { label: string; color: string }> = {};
+    statusChartData.forEach((d, i) => { config[d.status] = { label: d.status, color: CHART_COLORS[i % CHART_COLORS.length] }; });
+    return config;
+  }, [statusChartData]);
+
+  const priorityChartConfig = useMemo(() => {
+    const config: Record<string, { label: string; color: string }> = {};
+    const pColors: Record<string, string> = { Low: '#10b981', Medium: '#f59e0b', High: '#ef4444', Urgent: '#dc2626' };
+    priorityChartData.forEach(d => { config[d.priority] = { label: d.priority, color: pColors[d.priority] || '#94a3b8' }; });
+    return config;
+  }, [priorityChartData]);
+
+  // ===== Loading / Error states =====
+  if (loading) return <LoadingSkeleton />;
+  if (error) {
+    return (
+      <div className="page-content">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Dashboard</h1><p className="text-muted-foreground mt-1">Maintenance operations overview and KPIs</p></div>
+        </div>
+        <Card className="border-red-200 bg-red-50 dark:bg-red-950/20"><CardContent className="p-6"><div className="flex items-center gap-3"><AlertTriangle className="h-5 w-5 text-red-500" /><div><p className="font-semibold text-red-700 dark:text-red-400">Failed to load dashboard</p><p className="text-sm text-red-600 dark:text-red-500">{error}</p></div></div></CardContent></Card>
+      </div>
+    );
+  }
+
   return (
     <div className="page-content">
-      <div><h1 className="text-2xl font-bold tracking-tight">Maintenance Dashboard</h1><p className="text-muted-foreground mt-1">Maintenance operations overview and KPIs</p></div>
-      {loading ? <LoadingSkeleton /> : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {kpis.map(k => { const I = k.icon; return (
-            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
-          ); })}
+      {/* ===== Header ===== */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Maintenance</span>
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight mt-0.5">Maintenance Dashboard</h1>
+          <p className="text-muted-foreground text-sm mt-1">Maintenance operations overview &middot; Key performance indicators</p>
+        </div>
+        <Badge variant="outline" className="text-[11px] font-mono gap-1.5 border-primary/20 bg-primary/5 text-primary self-start">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />Live
+        </Badge>
+      </div>
+
+      {/* ===== KPI Summary Cards ===== */}
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
+        {/* Active WOs */}
+        <Card className={`border ${overdueWOs > 0 ? 'border-emerald-100 dark:border-emerald-900/40 bg-emerald-50 dark:bg-emerald-950/30' : 'border-slate-100 dark:border-slate-800'} hover:shadow-lg transition-all duration-300 overflow-hidden relative`}>
+          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
+          <CardContent className="p-4 relative">
+            <div className="flex items-center justify-between mb-3">
+              <div className="h-9 w-9 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
+                <Wrench className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              </div>
+            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Active WOs</p>
+            <p className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">{activeWOs}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{stats?.createdTodayWO || 0} created today</p>
+          </CardContent>
+        </Card>
+
+        {/* Completed This Week */}
+        <Card className="border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
+          <CardContent className="p-4 relative">
+            <div className="flex items-center justify-between mb-3">
+              <div className="h-9 w-9 rounded-lg bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center">
+                <CheckCircle2 className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+              </div>
+            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Completed This Week</p>
+            <p className="text-2xl font-bold tracking-tight text-teal-600 dark:text-teal-400">{completedThisWeek}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">of {stats?.totalWorkOrders || 0} total</p>
+          </CardContent>
+        </Card>
+
+        {/* Overdue WOs */}
+        <Card className={`border ${overdueWOs > 0 ? 'border-red-100 dark:border-red-900/40 bg-red-50 dark:bg-red-950/30' : 'border-emerald-100 dark:border-emerald-900/40 bg-emerald-50 dark:bg-emerald-950/30'} hover:shadow-lg transition-all duration-300 overflow-hidden relative`}>
+          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
+          <CardContent className="p-4 relative">
+            <div className="flex items-center justify-between mb-3">
+              <div className={`h-9 w-9 rounded-lg ${overdueWOs > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50'} flex items-center justify-center`}>
+                <AlertTriangle className={`h-4 w-4 ${overdueWOs > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`} />
+              </div>
+            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Overdue</p>
+            <p className={`text-2xl font-bold tracking-tight ${overdueWOs > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{overdueWOs}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{overdueWOs > 0 ? 'Need attention' : 'All on track'}</p>
+          </CardContent>
+        </Card>
+
+        {/* PM Compliance */}
+        <Card className="border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
+          <CardContent className="p-4 relative">
+            <div className="flex items-center justify-between mb-3">
+              <div className="h-9 w-9 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
+                <Target className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+              </div>
+            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">PM Compliance</p>
+            <p className="text-2xl font-bold tracking-tight text-sky-600 dark:text-sky-400">{pmCompliance}%</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">planned vs reactive</p>
+          </CardContent>
+        </Card>
+
+        {/* Avg MTTR */}
+        <Card className="border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
+          <CardContent className="p-4 relative">
+            <div className="flex items-center justify-between mb-3">
+              <div className="h-9 w-9 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                <Timer className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              </div>
+            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Avg MTTR</p>
+            <p className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">{avgMTTR}h</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">mean time to repair</p>
+          </CardContent>
+        </Card>
+
+        {/* Pending MRs */}
+        <Card className="border border-violet-100 dark:border-violet-900/40 bg-violet-50 dark:bg-violet-950/30 hover:shadow-lg transition-all duration-300 overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 rounded-bl-full" />
+          <CardContent className="p-4 relative">
+            <div className="flex items-center justify-between mb-3">
+              <div className="h-9 w-9 rounded-lg bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center">
+                <ClipboardList className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+              </div>
+            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Pending Requests</p>
+            <p className="text-2xl font-bold tracking-tight text-violet-600 dark:text-violet-400">{pendingMRs}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">awaiting approval</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ===== Quick Actions ===== */}
+      {visibleActions.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Zap className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold text-foreground">Quick Actions</h3>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {visibleActions.map(a => {
+              const Icon = a.icon;
+              return (
+                <button
+                  key={a.label}
+                  onClick={() => navigate(a.page)}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all hover:shadow-sm ${a.color}`}
+                >
+                  <Icon className={`h-5 w-5 ${a.iconColor} shrink-0`} />
+                  <span className="text-sm font-medium truncate">{a.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
+
+      {/* ===== Charts Row 1: Status Distribution + Monthly Trend ===== */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* WO Status Distribution */}
+        <Card className="border lg:col-span-2">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
+                <BarChart3 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <CardTitle className="text-base font-semibold">WO Status Distribution</CardTitle>
+                <CardDescription className="text-xs mt-0.5">Work orders by current status</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {statusChartData.length === 0 ? (
+              <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">No work order data</div>
+            ) : (
+              <ChartContainer config={woStatusChartConfig} className="h-[280px] w-full">
+                <BarChart data={statusChartData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
+                  <XAxis dataKey="status" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+                  <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={48}>
+                    {statusChartData.map((_, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Priority Breakdown - Donut */}
+        <Card className="border">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center">
+                <PieChartIcon className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+              </div>
+              <div>
+                <CardTitle className="text-base font-semibold">Priority Breakdown</CardTitle>
+                <CardDescription className="text-xs mt-0.5">Work orders by priority</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {priorityChartData.length === 0 ? (
+              <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">No priority data</div>
+            ) : (
+              <ChartContainer config={priorityChartConfig} className="h-[280px] w-full">
+                <PieChart>
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Pie
+                    data={priorityChartData}
+                    cx="50%"
+                    cy="45%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={3}
+                    dataKey="count"
+                    nameKey="priority"
+                  >
+                    {priorityChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <ChartLegend content={<ChartLegendContent nameKey="priority" />} className="flex-wrap gap-x-4 gap-y-1" />
+                </PieChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ===== Charts Row 2: Monthly Trend + Backlog Overview ===== */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* WO Monthly Trend */}
+        <Card className="border">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                <TrendingUp className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div>
+                <CardTitle className="text-base font-semibold">Monthly WO Trend</CardTitle>
+                <CardDescription className="text-xs mt-0.5">Work orders created per month</CardDescription>
+              </div>
+              {monthTrend !== 0 && (
+                <Badge variant="outline" className={`ml-auto text-[10px] font-semibold ${monthTrend > 0 ? 'bg-red-50 text-red-600 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/40' : 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/40'}`}>
+                  {monthTrend > 0 ? <ArrowUpRight className="h-3 w-3 mr-0.5" /> : <ArrowDownRight className="h-3 w-3 mr-0.5" />}
+                  {Math.abs(monthTrend)}% vs last month
+                </Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {monthlyTrendData.length === 0 ? (
+              <div className="h-[240px] flex items-center justify-center text-muted-foreground text-sm">No trend data</div>
+            ) : (
+              <ChartContainer config={{ created: { label: 'Created', color: '#10b981' } }} className="h-[240px] w-full">
+                <BarChart data={monthlyTrendData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+                  <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <Bar dataKey="created" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={60} />
+                </BarChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Backlog Aging Overview */}
+        <Card className="border">
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-lg bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center">
+                <Clock className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+              </div>
+              <div>
+                <CardTitle className="text-base font-semibold">Backlog Aging</CardTitle>
+                <CardDescription className="text-xs mt-0.5">Open work orders by age bracket</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-4 py-2">
+              {backlogAgeData.map(item => {
+                const barColor = AGE_COLORS[item.range] || '#94a3b8';
+                return (
+                  <div key={item.range} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-foreground">{item.range}</span>
+                      <span className="font-semibold text-muted-foreground">{item.count} <span className="text-xs font-normal">({item.pct}%)</span></span>
+                    </div>
+                    <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${Math.max(item.pct, 2)}%`, backgroundColor: barColor }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              {backlogAgeData.length === 0 && (
+                <div className="h-[200px] flex items-center justify-center text-muted-foreground text-sm">No open work orders</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ===== Recent Activity ===== */}
+      <Card className="border">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-cyan-100 dark:bg-cyan-900/50 flex items-center justify-center">
+              <Activity className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+            </div>
+            <div>
+              <CardTitle className="text-base font-semibold">Recent Work Orders</CardTitle>
+              <CardDescription className="text-xs mt-0.5">Latest {recentWOs.length} work orders</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => navigate('maintenance-work-orders')}>
+              View All <ChevronRight className="h-3 w-3 ml-1" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {recentWOs.length === 0 ? (
+            <div className="h-[200px] flex items-center justify-center text-muted-foreground text-sm">No recent work orders</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>WO #</TableHead>
+                  <TableHead>Title</TableHead>
+                  <TableHead className="hidden md:table-cell">Priority</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="hidden lg:table-cell">Assigned To</TableHead>
+                  <TableHead className="hidden md:table-cell">Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recentWOs.map((wo: any) => (
+                  <TableRow key={wo.id} className="cursor-pointer hover:bg-muted/30" onClick={() => navigate('maintenance-work-orders')}>
+                    <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
+                    <TableCell className="font-medium max-w-[200px] truncate">{wo.title}</TableCell>
+                    <TableCell className="hidden md:table-cell"><PriorityBadge priority={wo.priority} /></TableCell>
+                    <TableCell><StatusBadge status={wo.status} /></TableCell>
+                    <TableCell className="text-sm hidden lg:table-cell">{wo.assignee?.fullName || wo.assigner?.fullName || '-'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{formatDate(wo.createdAt)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

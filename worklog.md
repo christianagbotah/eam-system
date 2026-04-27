@@ -1527,3 +1527,122 @@ Stage Summary:
 - All 6 critical bugs fixed across 4 files
 - No new dependencies or imports needed
 - Frontend and backend now consistent on field names and enum values
+
+---
+Task ID: 16
+Agent: Usability Fix
+Task: Enhance Downtime page + WO completion link
+
+Work Log:
+
+### 1. Enhanced Downtime API (`src/app/api/repairs/downtime/route.ts`)
+- Added `impactLevel` query param filter
+- Added `status` query param filter: "ongoing" (downtimeEnd is null) or "completed" (downtimeEnd is not null)
+- Added `search` query param: case-insensitive search across `assetName` and `workOrder.woNumber` using Prisma `contains` + `insensitive` mode
+- Imported `Prisma` from `@prisma/client` for `Prisma.QueryMode.insensitive`
+
+### 2. Enhanced RepairDowntimePage (`src/components/modules/RepairsPages.tsx`)
+- Added `useNavigationStore` for `pageParams` auto-filter from WO detail
+- Added search bar: filter by asset name or WO number
+- Added filter bar with 3 dropdowns: category (all/planned/unplanned/partial), impact level (all/low/medium/high/critical), status (all/ongoing/completed)
+- Added pagination: 20 items per page with Previous/Next controls and page info
+- Added `ClearFiltersButton` with active filter count
+- Added auto-filter from `pageParams?.workOrderId` (same pattern as Material/Tool Requests pages)
+- Replaced plain stat cards with `StatsCard` components (Ongoing, Completed, Unplanned, Total Downtime)
+- Enhanced header with icon badge and total count
+- Added striped rows and proper font-mono badges
+- Changed API call from `?limit=50` to paginated with all filter params
+- Added `pagination` state and display
+
+### 3. Added 5th Button in WO Detail Repair Resources Card (`src/components/modules/MaintenancePages.tsx`)
+- Added new "Completion" button with green CheckCircle2 icon in the Repair Resources grid
+- Changed grid from `sm:grid-cols-4` to `sm:grid-cols-5` to accommodate 5 buttons
+- Navigate call: `navigate('repairs-completion', { workOrderId: wo.id })`
+- Also fixed the Downtime button to pass `{ workOrderId: wo.id }` (was previously missing)
+
+### 4. Auto-load WO in RepairCompletionPage (`src/components/modules/RepairsPages.tsx`)
+- Added `useNavigationStore` for `pageParams` access
+- Added `useEffect` to read `pageParams?.workOrderId` and auto-set `woId` on mount
+- Converted `fetchCompletion` to `useCallback` with `woId` dependency
+- Added auto-fetch `useEffect` that triggers when `woId` changes (covers both pageParams auto-load and manual selection)
+- User can still manually change WO via the search select; it auto-fetches on change
+
+Stage Summary:
+- 3 files modified (downtime API route, RepairsPages.tsx, MaintenancePages.tsx)
+- Downtime page now has full search, filter, pagination, and WO detail auto-filter
+- WO detail Repair Resources card now has 5 buttons (added Completion)
+- Repair Completion page auto-loads WO data when navigated from WO detail
+- Downtime button in WO detail now passes workOrderId for auto-filtering
+- ESLint passes with zero errors
+- No new dependencies added
+
+---
+Task ID: 16
+Agent: General Purpose Agent
+Task: Enhanced Maintenance Dashboard Page
+
+Work Log:
+
+### 1. Enhanced MaintenanceDashboardPage (`src/components/modules/MaintenancePages.tsx`)
+- **Replaced bare stub** (4 KPI cards) with a comprehensive maintenance-specific dashboard
+- **Data sources**: Fetches from both `/api/dashboard/stats` and `/api/work-orders/kpi` in parallel via `Promise.all`
+- **Added 3 new icon imports**: `ArrowUpRight`, `ArrowDownRight`, `CalendarClock` to lucide-react import
+
+### 2. KPI Summary Cards (6 cards, top row)
+- **Active WOs**: Count from dashboard stats, with "created today" sublabel, emerald color theme
+- **Completed This Week**: From `myKPIs.completedThisWeek`, teal color theme
+- **Overdue WOs**: Red highlight when overdue > 0, green when zero, dynamic color switching
+- **PM Compliance**: Planned vs reactive ratio from `maintenanceKPIs.plannedRatio`, sky blue theme
+- **Average MTTR**: From `maintenanceKPIs.mttr` or fallback to WO KPI `completionMetrics.avgHours`, amber theme
+- **Pending MRs**: From `pendingRequests`, violet color theme
+- All cards feature gradient overlays, icon badges, uppercase labels, and hover shadow effects
+
+### 3. Quick Actions Section (4 permission-gated buttons)
+- "New Maintenance Request" → navigates to `create-mr`
+- "New Work Order" → navigates to `maintenance-work-orders`
+- "View PM Calendar" → navigates to `pm-calendar`
+- "Repair Analytics" → navigates to `repairs-analytics`
+- Each action gated by permission (`maintenance_requests.create`, `work_orders.create`, `pm_schedules.view`, `repairs.view`)
+- Color-coded buttons with icons matching the target page theme
+
+### 4. Charts Section (3 charts in 2 rows)
+- **WO Status Distribution** (BarChart, 2/3 width): Color-coded bars per WO status (draft, requested, approved, planned, assigned, in_progress, completed, etc.) using `byStatus` from WO KPI API. Uses `ChartContainer` with dynamic chart config.
+- **Priority Breakdown** (PieChart donut, 1/3 width): Priority distribution (Low/Medium/High/Urgent) using `byPriority` from WO KPI API. Inner radius donut with chart legend.
+- **Monthly WO Trend** (BarChart): Last month vs this month WO creation count from `trend` data. Includes trend badge showing % change with `ArrowUpRight`/`ArrowDownRight` icons.
+- All charts have empty state fallbacks when no data available
+
+### 5. Backlog Aging Overview
+- 5 age brackets: 0-3 days, 4-7 days, 8-14 days, 15-30 days, 30+ days
+- Uses `openByAge` from WO KPI API
+- Color-coded progress bars (green → yellow → orange → red → dark red)
+- Shows count and percentage per bracket
+- Empty state when no open WOs
+
+### 6. Recent Activity Table
+- Shows last 5 recent work orders from `recentWorkOrders` in dashboard stats
+- Columns: WO#, Title, Priority (badge), Status (badge), Assigned To, Created date
+- Responsive column visibility (Priority/Status hidden on mobile)
+- "View All" button navigates to `maintenance-work-orders`
+- Row click navigates to `maintenance-work-orders`
+- Empty state when no recent WOs
+
+### 7. Loading & Error States
+- `LoadingSkeleton` shown during data fetch
+- Error card with `AlertTriangle` icon shown on API failure
+- Proper cleanup via `active` flag in useEffect
+
+### 8. Quality
+- ESLint passes with zero errors
+- All `useMemo` hooks placed before conditional returns (React hooks rule)
+- All `navigate()` calls use valid `PageName` types
+- TypeScript compilation: no new errors introduced (21 pre-existing errors in other components unchanged)
+- Consistent styling with DashboardPages.tsx patterns
+
+Stage Summary:
+- 1 file modified (`src/components/modules/MaintenancePages.tsx`)
+- 3 new icon imports added (ArrowUpRight, ArrowDownRight, CalendarClock)
+- ~470 lines of new dashboard code replacing ~28 line stub
+- 6 KPI cards, 4 quick action buttons, 3 charts, 1 backlog visualization, 1 activity table
+- 2 API data sources consumed (`/api/dashboard/stats`, `/api/work-orders/kpi`)
+- Permission-gated quick actions
+- Proper loading/error handling

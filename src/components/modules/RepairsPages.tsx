@@ -1271,6 +1271,7 @@ export function RepairToolTransfersPage() {
 
 export function RepairDowntimePage() {
   const { hasPermission, isAdmin } = useAuthStore();
+  const { pageParams } = useNavigationStore();
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -1278,13 +1279,52 @@ export function RepairDowntimePage() {
   // End downtime dialog
   const [endDowntimeTarget, setEndDowntimeTarget] = useState<string | null>(null);
   const [endDowntimeTime, setEndDowntimeTime] = useState('');
+  // Filters
+  const [searchText, setSearchText] = useState('');
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [filterImpact, setFilterImpact] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [page, setPage] = useState(1);
+  const [workOrderIdFilter, setWorkOrderIdFilter] = useState('');
+  const [pagination, setPagination] = useState<{ page: number; totalPages: number; total: number } | null>(null);
+
+  // Auto-filter from WO detail
+  useEffect(() => {
+    if (pageParams?.workOrderId) {
+      setWorkOrderIdFilter(pageParams.workOrderId);
+    }
+  }, []);
+
+  const activeFilters = useMemo(() => {
+    let c = 0;
+    if (filterCategory !== 'all') c++;
+    if (filterImpact !== 'all') c++;
+    if (filterStatus !== 'all') c++;
+    if (searchText) c++;
+    return c;
+  }, [filterCategory, filterImpact, filterStatus, searchText]);
+
+  const clearFilters = () => { setFilterCategory('all'); setFilterImpact('all'); setFilterStatus('all'); setSearchText(''); setWorkOrderIdFilter(''); setPage(1); };
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
-    const res = await api.get('/api/repairs/downtime?limit=50');
-    if (res.success) setRecords(res.data || []);
+    const params = new URLSearchParams();
+    if (filterCategory !== 'all') params.set('category', filterCategory);
+    if (filterImpact !== 'all') params.set('impactLevel', filterImpact);
+    if (filterStatus !== 'all') params.set('status', filterStatus);
+    if (workOrderIdFilter) params.set('workOrderId', workOrderIdFilter);
+    if (searchText) params.set('search', searchText);
+    params.set('page', String(page));
+    params.set('limit', '20');
+    const res = await api.get(`/api/repairs/downtime?${params}`);
+    if (res.success) {
+      setRecords(res.data || []);
+      if (res.pagination) setPagination(res.pagination);
+    } else {
+      toast.error(res.error || 'Failed to load');
+    }
     setLoading(false);
-  }, []);
+  }, [filterCategory, filterImpact, filterStatus, page, workOrderIdFilter, searchText]);
 
   useEffect(() => { fetchRecords(); }, [fetchRecords]);
 
@@ -1322,56 +1362,129 @@ export function RepairDowntimePage() {
 
   return (
     <div className="page-content">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2"><Timer className="h-6 w-6 text-red-600" /> Downtime Tracking</h2>
-          <p className="text-muted-foreground">Track equipment downtime related to repair work orders</p>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-red-100 rounded-xl"><Timer className="h-6 w-6 text-red-600" /></div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-bold tracking-tight">Downtime Tracking</h2>
+              <Badge variant="secondary" className="font-mono">{pagination?.total ?? records.length}</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">Track equipment downtime related to repair work orders</p>
+          </div>
         </div>
-        {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" /> Log Downtime</Button>}
+        {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Total Events</p><p className="text-2xl font-bold">{records.length}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Total Downtime</p><p className="text-2xl font-bold">{(totalMinutes / 60).toFixed(1)}h</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Unplanned</p><p className="text-2xl font-bold text-red-600">{records.filter((r: any) => r.category === 'unplanned').length}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Avg per Event</p><p className="text-2xl font-bold">{records.length > 0 ? (totalMinutes / records.length).toFixed(0) : 0}m</p></CardContent></Card>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatsCard icon={Activity} count={records.filter((r: any) => !r.downtimeEnd).length} label="Ongoing" color="text-red-600" bgColor="bg-red-50" />
+        <StatsCard icon={CheckCircle2} count={records.filter((r: any) => !!r.downtimeEnd).length} label="Completed" color="text-emerald-600" bgColor="bg-emerald-50" />
+        <StatsCard icon={AlertTriangle} count={records.filter((r: any) => r.category === 'unplanned').length} label="Unplanned" color="text-orange-600" bgColor="bg-orange-50" />
+        <StatsCard icon={Clock} count={totalMinutes > 0 ? `${(totalMinutes / 60).toFixed(1)}h` : '0h'} label="Total Downtime" color="text-blue-600" bgColor="bg-blue-50" />
       </div>
 
-      <Card>
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Search asset name or WO#..." value={searchText} onChange={(e) => { setSearchText(e.target.value); setPage(1); }} className="pl-9" />
+        </div>
+        <Select value={filterCategory} onValueChange={(v) => { setFilterCategory(v); setPage(1); }}>
+          <SelectTrigger className="w-40"><SelectValue placeholder="Category" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Categories</SelectItem>
+            <SelectItem value="planned">Planned</SelectItem>
+            <SelectItem value="unplanned">Unplanned</SelectItem>
+            <SelectItem value="partial">Partial</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filterImpact} onValueChange={(v) => { setFilterImpact(v); setPage(1); }}>
+          <SelectTrigger className="w-36"><SelectValue placeholder="Impact" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Impact</SelectItem>
+            <SelectItem value="low">Low</SelectItem>
+            <SelectItem value="medium">Medium</SelectItem>
+            <SelectItem value="high">High</SelectItem>
+            <SelectItem value="critical">Critical</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); setPage(1); }}>
+          <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="ongoing">Ongoing</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+          </SelectContent>
+        </Select>
+        <ClearFiltersButton onClick={clearFilters} count={activeFilters} />
+      </div>
+
+      {/* Table */}
+      <Card className="overflow-hidden">
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : records.length === 0 ? (
-            <EmptyState icon={Timer} title="No downtime records" />
+            <EmptyState icon={Timer} title="No downtime records" description="Log downtime events for repair work orders">
+              {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
+            </EmptyState>
           ) : (
-            <Table>
-              <TableHeader><TableRow><TableHead>Asset</TableHead><TableHead>WO #</TableHead><TableHead>Category</TableHead><TableHead>Impact</TableHead><TableHead>Duration</TableHead><TableHead>Reason</TableHead><TableHead className="w-16"></TableHead></TableRow></TableHeader>
-              <TableBody>
-                {records.map((r: any) => (
-                  <TableRow key={r.id}>
-                    <TableCell className="font-medium">{r.assetName}</TableCell>
-                    <TableCell><Badge variant="outline">{r.workOrder?.woNumber}</Badge></TableCell>
-                    <TableCell><StatusBadge status={r.category} /></TableCell>
-                    <TableCell><PriorityBadge priority={r.impactLevel} /></TableCell>
-                    <TableCell>
-                      <div className="font-medium">{r.durationMinutes ? `${r.durationMinutes.toFixed(0)} min` : 'Ongoing'}</div>
-                      <div className="text-xs text-muted-foreground">{r.downtimeStart ? format(new Date(r.downtimeStart), 'MMM d HH:mm') : ''}</div>
-                    </TableCell>
-                    <TableCell className="text-sm max-w-48 truncate">{r.reason}</TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {!r.downtimeEnd && (<DropdownMenuItem onClick={() => handleEndDowntime(r.id)}><Timer className="h-4 w-4 mr-2" /> End Downtime</DropdownMenuItem>)}
-                          {(hasPermission('work_orders.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleDelete(r.id)} className="text-red-600"><Ban className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead>Asset</TableHead>
+                    <TableHead>WO #</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Impact</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead>Reason</TableHead>
+                    <TableHead className="w-16"></TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {records.map((r: any, idx: number) => (
+                    <TableRow key={r.id} className={`${idx % 2 === 0 ? '' : 'bg-muted/20'}`}>
+                      <TableCell>
+                        <div className="font-medium text-sm">{r.assetName}</div>
+                      </TableCell>
+                      <TableCell><Badge variant="outline" className="font-mono text-xs">{r.workOrder?.woNumber}</Badge></TableCell>
+                      <TableCell><StatusBadge status={r.category} /></TableCell>
+                      <TableCell><PriorityBadge priority={r.impactLevel} /></TableCell>
+                      <TableCell>
+                        <div className="font-medium text-sm">{r.durationMinutes ? `${r.durationMinutes.toFixed(0)} min` : <span className="text-red-600">Ongoing</span>}</div>
+                        <div className="text-xs text-muted-foreground">{r.downtimeStart ? format(new Date(r.downtimeStart), 'MMM d HH:mm') : ''}</div>
+                      </TableCell>
+                      <TableCell className="text-sm max-w-48 truncate">{r.reason}</TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {!r.downtimeEnd && (<DropdownMenuItem onClick={() => handleEndDowntime(r.id)}><Timer className="h-4 w-4 mr-2" /> End Downtime</DropdownMenuItem>)}
+                            {(hasPermission('work_orders.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleDelete(r.id)} className="text-red-600"><Ban className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Pagination */}
+      {pagination && pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">Showing page {pagination.page} of {pagination.totalPages} ({pagination.total} total)</p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Previous</Button>
+            <span className="text-sm font-medium">{page} / {pagination.totalPages}</span>
+            <Button variant="outline" size="sm" disabled={page >= pagination.totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+          </div>
+        </div>
+      )}
 
       <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
         
@@ -1450,6 +1563,7 @@ export function RepairDowntimePage() {
 
 export function RepairCompletionPage() {
   const { hasPermission, isAdmin } = useAuthStore();
+  const { pageParams } = useNavigationStore();
   const [woId, setWoId] = useState('');
   const [completion, setCompletion] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -1459,14 +1573,26 @@ export function RepairCompletionPage() {
   const [reworkDialogOpen, setReworkDialogOpen] = useState(false);
   const [reworkReasonValue, setReworkReasonValue] = useState('');
 
-  const fetchCompletion = async () => {
+  // Auto-load WO from pageParams (e.g. navigating from WO detail)
+  useEffect(() => {
+    if (pageParams?.workOrderId && !woId) {
+      setWoId(pageParams.workOrderId);
+    }
+  }, []);
+
+  const fetchCompletion = useCallback(async () => {
     if (!woId) return;
     setLoading(true);
     const res = await api.get(`/api/repairs/completion/${woId}`);
     if (res.success) setCompletion(res.data);
     else setCompletion(null);
     setLoading(false);
-  };
+  }, [woId]);
+
+  // Auto-fetch when woId changes (handles both manual selection and pageParams auto-load)
+  useEffect(() => {
+    if (woId) fetchCompletion();
+  }, [woId, fetchCompletion]);
 
   const handleSubmit = async (action: string) => {
     if (!woId) return;

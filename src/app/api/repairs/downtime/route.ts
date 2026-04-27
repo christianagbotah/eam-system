@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { Prisma } from '@prisma/client';
 
 // GET /api/repairs/downtime
 export async function GET(request: NextRequest) {
@@ -9,6 +10,9 @@ export async function GET(request: NextRequest) {
     const workOrderId = searchParams.get('workOrderId');
     const assetId = searchParams.get('assetId');
     const category = searchParams.get('category');
+    const impactLevel = searchParams.get('impactLevel');
+    const status = searchParams.get('status'); // 'ongoing' (no endTime) | 'completed'
+    const search = searchParams.get('search');
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
 
@@ -16,6 +20,16 @@ export async function GET(request: NextRequest) {
     if (workOrderId) where.workOrderId = workOrderId;
     if (assetId) where.assetId = assetId;
     if (category) where.category = category;
+    if (impactLevel) where.impactLevel = impactLevel;
+    if (status === 'ongoing') where.downtimeEnd = null;
+    if (status === 'completed') where.downtimeEnd = { not: null };
+
+    if (search) {
+      where.OR = [
+        { assetName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+        { workOrder: { woNumber: { contains: search, mode: Prisma.QueryMode.insensitive } } },
+      ];
+    }
 
     const [records, total] = await Promise.all([
       db.workOrderDowntime.findMany({
