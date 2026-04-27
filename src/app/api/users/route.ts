@@ -6,8 +6,8 @@ import { hash } from 'bcryptjs';
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
-    if (!session || !isAdmin(session)) {
-      return NextResponse.json({ success: false, error: 'Admin access required' }, { status: 403 });
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
@@ -17,6 +17,12 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
     const role = searchParams.get('role');
     const includeSkills = searchParams.get('includeSkills') === 'true';
+
+    // Admin-only for unrestricted queries (no role filter)
+    // Allow any authenticated user for role-filtered queries (e.g., supervisors fetching planners)
+    if (!role && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Admin access required' }, { status: 403 });
+    }
 
     const where: Record<string, unknown> = {};
     if (department) where.department = department;
