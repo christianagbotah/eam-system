@@ -32,6 +32,7 @@ export async function GET(
     let samples: number[] = [];
     try {
       samples = JSON.parse(process.samples);
+      if (!Array.isArray(samples)) samples = [];
     } catch {
       samples = [];
     }

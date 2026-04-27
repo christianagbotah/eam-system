@@ -47,13 +47,13 @@ export async function GET(request: NextRequest) {
           unreadCount,
           participants: convo.participants.map(cp => ({
             userId: cp.userId,
-            name: cp.user.fullName,
+            name: cp.user?.fullName ?? 'Unknown',
           })),
           lastMessage: lastMsg && lastMsg.messageType === 'text' ? {
             content: lastMsg.content,
             createdAt: lastMsg.createdAt.toISOString(),
             senderId: lastMsg.senderId,
-            senderName: lastMsg.sender.fullName,
+            senderName: lastMsg.sender?.fullName ?? 'Unknown',
           } : null,
         };
       })
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { participantIds, type = 'direct', name } = body;
 
-    if (!participantIds || participantIds.length === 0) {
+    if (!Array.isArray(participantIds) || participantIds.length === 0) {
       return NextResponse.json({ error: 'At least one participant is required' }, { status: 400 });
     }
 

@@ -40,8 +40,8 @@ export async function GET(
         createdAt: convo.createdAt.toISOString(),
         participants: convo.participants.map(p => ({
           userId: p.userId,
-          name: p.user.fullName,
-          username: p.user.username,
+          name: p.user?.fullName ?? 'Unknown',
+          username: p.user?.username ?? 'unknown',
         })),
       },
     });

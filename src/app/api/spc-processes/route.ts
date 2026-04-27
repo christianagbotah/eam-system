@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
       let samples: number[] = [];
       try {
         samples = JSON.parse(p.samples);
+        if (!Array.isArray(samples)) samples = [];
       } catch {
         samples = [];
       }
@@ -167,7 +168,11 @@ export async function POST(request: NextRequest) {
     } else if (typeof samples === 'string') {
       try {
         const parsed = JSON.parse(samples);
-        samplesStr = JSON.stringify(parsed.map(Number).filter((v: number) => !isNaN(v)));
+        if (Array.isArray(parsed)) {
+          samplesStr = JSON.stringify(parsed.map(Number).filter((v: number) => !isNaN(v)));
+        } else {
+          samplesStr = '[]';
+        }
       } catch {
         samplesStr = '[]';
       }
