@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 
-const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor'];
+const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
 
 // GET /api/repairs/tool-transfers/[id]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

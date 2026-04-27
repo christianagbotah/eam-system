@@ -2710,7 +2710,7 @@ export function SettingsGeneralPage() {
               {[
                 { label: 'Version', value: '2.0.0' },
                 { label: 'Environment', value: 'Production' },
-                { label: 'Database', value: 'SQLite' },
+                { label: 'Database', value: 'MySQL' },
               ].map(r => (
                 <div key={r.label} className="flex justify-between items-center py-2 border-b last:border-0"><span className="text-sm text-muted-foreground">{r.label}</span><span className="text-sm font-medium">{r.value}</span></div>
               ))}

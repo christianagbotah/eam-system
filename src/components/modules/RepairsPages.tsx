@@ -236,7 +236,7 @@ function ConditionSelectDialog({ open, onClose, onConfirm }: {
 }) {
   const [condition, setCondition] = useState('good');
   const options = [
-    { value: 'excellent', label: 'Excellent', color: 'bg-emerald-100 text-emerald-800' },
+    { value: 'new', label: 'New/Excellent', color: 'bg-emerald-100 text-emerald-800' },
     { value: 'good', label: 'Good', color: 'bg-teal-100 text-teal-800' },
     { value: 'fair', label: 'Fair', color: 'bg-amber-100 text-amber-800' },
     { value: 'poor', label: 'Poor', color: 'bg-orange-100 text-orange-800' },
@@ -1193,13 +1193,13 @@ export function RepairToolTransfersPage() {
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Handover Status</Label>
                   <div className="grid grid-cols-2 gap-2">
-                    <div className={`rounded-lg p-3 text-center ${detailItem.fromUserConfirmedAt ? 'bg-emerald-50 border border-emerald-200' : 'bg-muted/50'}`}>
+                    <div className={`rounded-lg p-3 text-center ${detailItem.fromUserAcceptedAt ? 'bg-emerald-50 border border-emerald-200' : 'bg-muted/50'}`}>
                       <p className="text-xs text-muted-foreground">From User</p>
-                      <p className={`text-sm font-medium ${detailItem.fromUserConfirmedAt ? 'text-emerald-600' : ''}`}>{detailItem.fromUserConfirmedAt ? 'Confirmed' : 'Pending'}</p>
+                      <p className={`text-sm font-medium ${detailItem.fromUserAcceptedAt ? 'text-emerald-600' : ''}`}>{detailItem.fromUserAcceptedAt ? 'Confirmed' : 'Pending'}</p>
                     </div>
-                    <div className={`rounded-lg p-3 text-center ${detailItem.toUserConfirmedAt ? 'bg-emerald-50 border border-emerald-200' : 'bg-muted/50'}`}>
+                    <div className={`rounded-lg p-3 text-center ${detailItem.toUserAcceptedAt ? 'bg-emerald-50 border border-emerald-200' : 'bg-muted/50'}`}>
                       <p className="text-xs text-muted-foreground">To User</p>
-                      <p className={`text-sm font-medium ${detailItem.toUserConfirmedAt ? 'text-emerald-600' : ''}`}>{detailItem.toUserConfirmedAt ? 'Confirmed' : 'Pending'}</p>
+                      <p className={`text-sm font-medium ${detailItem.toUserAcceptedAt ? 'text-emerald-600' : ''}`}>{detailItem.toUserAcceptedAt ? 'Confirmed' : 'Pending'}</p>
                     </div>
                   </div>
                 </div>
@@ -1227,8 +1227,8 @@ export function RepairToolTransfersPage() {
                 <DetailTimeline events={[
                   { label: 'Transfer Requested', date: detailItem.createdAt, user: detailItem.requestedBy?.fullName, status: 'active' },
                   { label: 'Storekeeper Approved', date: detailItem.storekeeperApprovedAt, user: detailItem.storekeeperApprovedBy?.fullName, status: detailItem.status },
-                  { label: 'From User Confirmed', date: detailItem.fromUserConfirmedAt, user: detailItem.fromUser?.fullName },
-                  { label: 'To User Confirmed', date: detailItem.toUserConfirmedAt, user: detailItem.toUser?.fullName },
+                  { label: 'From User Confirmed', date: detailItem.fromUserAcceptedAt, user: detailItem.fromUser?.fullName },
+                  { label: 'To User Confirmed', date: detailItem.toUserAcceptedAt, user: detailItem.toUser?.fullName },
                   { label: 'Transfer Complete', date: detailItem.transferredAt },
                 ].filter(e => e.date || e.status === 'active')} />
               </TabsContent>
@@ -1641,7 +1641,7 @@ export function RepairAnalyticsPage() {
                 <div className="text-center p-3 bg-green-50 rounded-lg"><p className="text-3xl font-bold text-green-700">{kpi.workOrders?.completionRate}%</p><p className="text-xs text-muted-foreground">Completion Rate</p></div>
                 <div className="text-center p-3 bg-orange-50 rounded-lg"><p className="text-3xl font-bold text-orange-700">{kpi.workOrders?.inProgress}</p><p className="text-xs text-muted-foreground">In Progress</p></div>
                 <div className="text-center p-3 bg-red-50 rounded-lg"><p className="text-3xl font-bold text-red-700">{kpi.workOrders?.overdue}</p><p className="text-xs text-muted-foreground">Overdue</p></div>
-                <div className="text-center p-3 bg-purple-50 rounded-lg"><p className="text-3xl font-bold text-purple-700">{kpi.workOrders?.avgEstimatedHours || 0}h</p><p className="text-xs text-muted-foreground">Avg Hours</p></div>
+                <div className="text-center p-3 bg-purple-50 rounded-lg"><p className="text-3xl font-bold text-purple-700">{kpi.workOrders?.avgLaborHours || 0}h</p><p className="text-xs text-muted-foreground">Avg Hours</p></div>
               </div>
             </CardContent>
           </Card>

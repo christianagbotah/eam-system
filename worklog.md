@@ -1485,3 +1485,45 @@ Stage Summary:
 - Department auto-lock now works for both MR and WO creation forms for non-admin users
 - WO detail page now has navigation links to the repairs module
 - Tool transfer form only shows technicians, not all users
+
+---
+Task ID: Bugfix Round 1
+Agent: Bug Fix Agent
+Task: Fix 6 critical bugs in EAM system
+
+Work Log:
+
+### Bug #1: setUsersMap not declared in MR Detail (CRITICAL - runtime crash)
+- **File**: `src/components/modules/MaintenancePages.tsx`, line 534
+- **Problem**: `setUsersMap(map)` called at line 670 but `usersMap` state was never declared with `useState`
+- **Fix**: Added `const [usersMap, setUsersMap] = useState<Record<string, string>>({});` alongside other useState declarations in `MRDetailPage`
+
+### Bug #2: Calibration technician field not sent to API
+- **File**: `src/components/modules/MaintenancePages.tsx`, line 3587
+- **Problem**: `MaintenanceCalibrationPage` `handleCreate` function didn't include `technician` in the POST payload
+- **Fix**: Added `technician: form.technician || undefined` to the calibration POST body
+
+### Bug #3: Condition mismatch - frontend sends "excellent", API expects "new"
+- **File**: `src/components/modules/RepairsPages.tsx`, line 239
+- **Problem**: `ConditionSelectDialog` had `{ value: 'excellent', label: 'Excellent' }` but API `VALID_CONDITIONS` uses `new`
+- **Fix**: Changed to `{ value: 'new', label: 'New/Excellent' }` in the ConditionSelectDialog options
+
+### Bug #4: Transfer detail field name mismatch
+- **File**: `src/components/modules/RepairsPages.tsx`, lines 1196, 1198, 1200, 1202, 1230, 1231
+- **Problem**: Tool transfer detail sheet used `detailItem.fromUserConfirmedAt` and `detailItem.toUserConfirmedAt` but API/Prisma schema uses `fromUserAcceptedAt` and `toUserAcceptedAt`
+- **Fix**: Replaced all occurrences of `fromUserConfirmedAt` with `fromUserAcceptedAt` and `toUserConfirmedAt` with `toUserAcceptedAt`
+
+### Bug #5: KPI uses estimatedHours instead of actual hours
+- **File**: `src/app/api/repairs/kpi/route.ts`, lines 38-40 and 87
+- **Problem**: KPI averaged `estimatedHours` on `workOrder` instead of using `totalLaborHours` from `RepairCompletion`
+- **Fix**: Changed query from `db.workOrder.aggregate({ _avg: { estimatedHours: true } })` to `db.repairCompletion.aggregate({ _avg: { totalLaborHours: true } })`. Updated response field from `avgEstimatedHours` to `avgLaborHours`. Also updated frontend consumption at `RepairsPages.tsx` line 1644.
+
+### Bug #6: Condition mismatch in tool-transfers API
+- **File**: `src/app/api/repairs/tool-transfers/[id]/route.ts`, line 6
+- **Problem**: `VALID_CONDITIONS` was missing 'damaged'
+- **Fix**: Added 'damaged' to the array: `['new', 'good', 'fair', 'poor', 'damaged']`
+
+Stage Summary:
+- All 6 critical bugs fixed across 4 files
+- No new dependencies or imports needed
+- Frontend and backend now consistent on field names and enum values

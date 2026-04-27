@@ -34,10 +34,9 @@ export async function GET() {
           status: { notIn: ['closed', 'cancelled'] },
         },
       }),
-      // Avg completion time (hours)
-      db.workOrder.aggregate({
-        _avg: { estimatedHours: true },
-        where: { status: { in: ['completed', 'verified', 'closed'] } },
+      // Avg completion time (hours) — actual labor hours from RepairCompletion
+      db.repairCompletion.aggregate({
+        _avg: { totalLaborHours: true },
       }),
       // Material requests by status
       db.repairMaterialRequest.groupBy({ by: ['status'], _count: true }),
@@ -84,7 +83,7 @@ export async function GET() {
           inProgress: inProgressWos,
           overdue: overdueWos,
           completionRate: totalWos > 0 ? ((completedWos / totalWos) * 100).toFixed(1) : '0',
-          avgEstimatedHours: avgCompletionHours._avg.estimatedHours?.toFixed(1) || '0',
+          avgLaborHours: avgCompletionHours._avg.totalLaborHours?.toFixed(1) || '0',
         },
         materialRequests: {
           total: Object.values(matReqByStatus).reduce((a, b) => a + b, 0),

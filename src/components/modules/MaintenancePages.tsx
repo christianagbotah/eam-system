@@ -531,6 +531,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const [mr, setMr] = useState<MaintenanceRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [usersMap, setUsersMap] = useState<Record<string, string>>({});
   const [comment, setComment] = useState('');
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectNotes, setRejectNotes] = useState('');
@@ -3583,6 +3584,7 @@ export function MaintenanceCalibrationPage() {
         calibrationDate: form.lastCalibration || undefined,
         nextDueDate: form.nextDue || undefined,
         standardUsed: form.certificates || undefined,
+        technician: form.technician || undefined,
       });
       if (res.success) {
         toast.success('Calibration record created successfully');
