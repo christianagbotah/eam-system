@@ -13,10 +13,8 @@ node_modules
 # testing
 /coverage
 
-# next.js (keep standalone build for cPanel deployment)
-/.next/cache/
-/.next/dev/
-/.next/server/
+# next.js
+.next/
 /out/
 
 # production
@@ -74,3 +72,4 @@ db/*.db-journal
 .stats
 .git-credentials
 node_modules/
+node_modules/.prisma/client/

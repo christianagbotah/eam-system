@@ -12,6 +12,9 @@ const nextConfig: NextConfig = {
     '127.0.0.1',
     'localhost',
   ],
+  outputFileTracingIncludes: process.env.NODE_ENV === 'production' ? {
+    '/*': ['.prisma/client/**/*'],
+  } : undefined,
 };
 
 export default nextConfig;
