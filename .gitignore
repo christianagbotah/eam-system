@@ -2,6 +2,11 @@
 
 # dependencies
 node_modules
+node_modules/.prisma/client/
+
+# Prisma prebuilt client (NEVER ignore this - it's deployed to cPanel)
+!prisma/prebuilt/
+
 /.pnp
 .pnp.*
 .yarn/*
@@ -71,5 +76,4 @@ db/*.db-journal
 .config
 .stats
 .git-credentials
-node_modules/
-node_modules/.prisma/client/
+
