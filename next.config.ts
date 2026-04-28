@@ -13,7 +13,11 @@ const nextConfig: NextConfig = {
     'localhost',
   ],
   outputFileTracingIncludes: process.env.NODE_ENV === 'production' ? {
-    '/*': ['.prisma/client/**/*'],
+    '/*': [
+      '.prisma/client/**/*',
+      '@prisma/adapter-mariadb/**/*',
+      'mariadb/**/*',
+    ],
   } : undefined,
 };
 

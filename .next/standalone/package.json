@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "build:local": "npx prisma generate && next build && cp -r node_modules/.prisma/client .next/standalone/node_modules/.prisma/client && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "build": "cp -r prisma/prebuilt/.prisma node_modules/.prisma && next build && cp -r node_modules/.prisma/client .next/standalone/node_modules/.prisma/client && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
+    "build:local": "npx prisma generate && next build && cp -r node_modules/.prisma/client .next/standalone/node_modules/.prisma/client && cp -r node_modules/@prisma/adapter-mariadb .next/standalone/node_modules/@prisma/adapter-mariadb && cp -r node_modules/mariadb .next/standalone/node_modules/mariadb && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
+    "build": "cp -r prisma/prebuilt/.prisma node_modules/.prisma && next build && cp -r node_modules/.prisma/client .next/standalone/node_modules/.prisma/client && cp -r node_modules/@prisma/adapter-mariadb .next/standalone/node_modules/@prisma/adapter-mariadb && cp -r node_modules/mariadb .next/standalone/node_modules/mariadb && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
     "postbuild:prebuilt": "cp -r node_modules/.prisma prisma/prebuilt/.prisma",
     "start": "NODE_ENV=production node .next/standalone/server.js",
     "lint": "eslint .",

@@ -75,6 +75,10 @@ export async function PUT(
       },
     });
 
+    if (!updatedRole) {
+      return NextResponse.json({ success: false, error: 'Role not found after permission update' }, { status: 500 });
+    }
+
     // Create audit log
     await db.auditLog.create({
       data: {
@@ -94,13 +98,13 @@ export async function PUT(
     return NextResponse.json({
       success: true,
       data: {
-        id: updatedRole!.id,
-        name: updatedRole!.name,
-        slug: updatedRole!.slug,
-        description: updatedRole!.description,
-        level: updatedRole!.level,
-        isSystem: updatedRole!.isSystem,
-        permissions: updatedRole!.rolePermissions.map((rp) => rp.permission),
+        id: updatedRole.id,
+        name: updatedRole.name,
+        slug: updatedRole.slug,
+        description: updatedRole.description,
+        level: updatedRole.level,
+        isSystem: updatedRole.isSystem,
+        permissions: (updatedRole.rolePermissions || []).map((rp) => rp.permission),
       },
     });
   } catch (error: unknown) {

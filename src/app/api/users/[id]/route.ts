@@ -140,6 +140,10 @@ export async function PUT(
       },
     });
 
+    if (!finalUser) {
+      return NextResponse.json({ success: false, error: 'User not found after update' }, { status: 404 });
+    }
+
     // Create audit log
     await db.auditLog.create({
       data: {
@@ -168,14 +172,14 @@ export async function PUT(
       },
     });
 
-    const { passwordHash: _, ...safeUser } = finalUser!;
+    const { passwordHash: _, ...safeUser } = finalUser;
 
     return NextResponse.json({
       success: true,
       data: {
         ...safeUser,
-        roles: safeUser.userRoles.map((ur) => ur.role),
-        plants: safeUser.plantAccess.map((up) => up.plant),
+        roles: (safeUser.userRoles || []).map((ur) => ur.role),
+        plants: (safeUser.plantAccess || []).map((up) => up.plant),
       },
     });
   } catch (error: unknown) {
