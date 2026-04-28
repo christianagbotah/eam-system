@@ -19,7 +19,8 @@ node_modules/.prisma/client/
 /coverage
 
 # next.js
-.next/
+.next/*
+!.next/standalone/
 /out/
 
 # production
