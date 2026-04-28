@@ -1,8 +1,7 @@
 var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/roles/[id]/route.js")
-R.c("server/chunks/[root-of-the-server]__3d1a4ea8._.js")
-R.c("server/chunks/[root-of-the-server]__0b38188a._.js")
-R.c("server/chunks/[root-of-the-server]__f408c708._.js")
-R.c("server/chunks/_64485ec9._.js")
-R.c("server/chunks/_next-internal_server_app_api_roles_[id]_route_actions_2e8daee3.js")
+R.c("server/chunks/[root-of-the-server]__0pdab2_._.js")
+R.c("server/chunks/_0kaphcf._.js")
+R.c("server/chunks/[root-of-the-server]__0j8-xkl._.js")
+R.c("server/chunks/_next-internal_server_app_api_roles_[id]_route_actions_07._knu.js")
 R.m(50115)
 module.exports=R.m(50115).exports
