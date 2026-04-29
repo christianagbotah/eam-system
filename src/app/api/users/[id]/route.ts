@@ -50,8 +50,8 @@ export async function GET(
       success: true,
       data: {
         ...safeUser,
-        roles: safeUser.userRoles.map((ur) => ur.role),
-        plants: safeUser.plantAccess.map((up) => up.plant),
+        roles: (safeUser.userRoles || []).map((ur) => ur.role),
+        plants: (safeUser.plantAccess || []).map((up) => up.plant),
       },
     });
   } catch (error: unknown) {

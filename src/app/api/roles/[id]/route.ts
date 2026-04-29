@@ -32,7 +32,7 @@ export async function GET(
     }
 
     // Admin role has no explicit RolePermission rows — it gets ALL permissions implicitly
-    let permissions = role.rolePermissions.map((rp) => rp.permission);
+    let permissions = (role.rolePermissions || []).map((rp) => rp.permission);
     if (role.isSystem && role.slug === 'admin' && permissions.length === 0) {
       const allPermissions = await db.permission.findMany({
         select: { id: true, slug: true, name: true, module: true, action: true },

@@ -98,7 +98,7 @@ export async function GET(request: NextRequest) {
 
     // Transform response
     const data = users.map(user => {
-      const roles = user.userRoles.map(ur => ({
+      const roles = (user.userRoles || []).map(ur => ({
         name: ur.role.name,
         slug: ur.role.slug,
       }));

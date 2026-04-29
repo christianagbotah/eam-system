@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { passwordHash: _, ...safeUser } = user;
-    const roles = user.userRoles.map((ur) => ({
+    const roles = (user.userRoles || []).map((ur) => ({
       id: ur.role.id,
       name: ur.role.name,
       slug: ur.role.slug,
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       description: ur.role.description,
     }));
 
-    const primaryPlant = user.plantAccess.find((up) => up.isPrimary);
+    const primaryPlant = (user.plantAccess || []).find((up) => up.isPrimary);
 
     return NextResponse.json({
       success: true,
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
           roles,
           permissions: session.permissions,
           plantId: primaryPlant?.plantId ?? null,
-          plantAccess: user.plantAccess.map((up) => ({
+          plantAccess: (user.plantAccess || []).map((up) => ({
             id: up.plant.id,
             code: up.plant.code,
             name: up.plant.name,

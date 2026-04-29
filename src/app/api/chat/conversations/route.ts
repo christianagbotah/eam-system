@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
           name: convo.name,
           type: convo.type,
           unreadCount,
-          participants: convo.participants.map(cp => ({
+          participants: (convo.participants || []).map(cp => ({
             userId: cp.userId,
             name: cp.user?.fullName ?? 'Unknown',
           })),

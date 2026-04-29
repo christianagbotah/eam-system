@@ -93,8 +93,8 @@ export async function GET(request: NextRequest) {
     const safeUsers = users.map(({ passwordHash: _, ...user }) => ({
       ...user,
       primaryTrade: user.primaryTrade,
-      roles: user.userRoles.map((ur) => ur.role),
-      plants: user.plantAccess.map((up) => up.plant),
+      roles: (user.userRoles || []).map((ur) => ur.role),
+      plants: (user.plantAccess || []).map((up) => up.plant),
       ...(includeSkills
         ? {
             skills:

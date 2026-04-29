@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
 
     const safeRoles = roles.map((r) => {
       // Admin role has no explicit RolePermission rows — it gets ALL permissions implicitly
-      let permissions = r.rolePermissions.map((rp) => ({
+      let permissions = (r.rolePermissions || []).map((rp) => ({
         id: rp.permission.id,
         slug: rp.permission.slug,
         name: rp.permission.name,
@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
           description: role.description,
           level: role.level,
           isSystem: role.isSystem,
-          permissions: role.rolePermissions.map((rp) => rp.permission),
+          permissions: (role.rolePermissions || []).map((rp) => rp.permission),
         },
       },
       { status: 201 }

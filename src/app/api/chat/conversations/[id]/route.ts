@@ -27,7 +27,7 @@ export async function GET(
     }
 
     // Verify participant
-    const isParticipant = convo.participants.some(p => p.userId === session.userId);
+    const isParticipant = (convo.participants || []).some(p => p.userId === session.userId);
     if (!isParticipant) {
       return NextResponse.json({ error: 'Not a participant' }, { status: 403 });
     }
@@ -38,7 +38,7 @@ export async function GET(
         name: convo.name,
         type: convo.type,
         createdAt: convo.createdAt.toISOString(),
-        participants: convo.participants.map(p => ({
+        participants: (convo.participants || []).map(p => ({
           userId: p.userId,
           name: p.user?.fullName ?? 'Unknown',
           username: p.user?.username ?? 'unknown',
