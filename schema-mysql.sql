@@ -1728,7 +1728,7 @@ CREATE TABLE `attachments` (
     `uploadedAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `description` VARCHAR(191) NULL,
 
-    INDEX `attachments_entityType_entityId_idx`(`entityType`, `entityId`),
+    INDEX `attachments_entityType_entityId_idx`(`entityType`(100), `entityId`(100)),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
