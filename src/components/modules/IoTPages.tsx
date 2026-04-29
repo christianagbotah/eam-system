@@ -706,7 +706,7 @@ export function IotRulesPage() {
             <div className="grid gap-4 py-2">
               <div className="space-y-2"><Label>Rule Name *</Label><Input placeholder="High Temperature Alert" value={newRule.name} onChange={e => setNewRule({ ...newRule, name: e.target.value })} /></div>
               <div className="space-y-2"><Label>Device *</Label>
-                <AsyncSearchableSelect value={newRule.deviceId} onValueChange={v => { const dev = devices.find((d: any) => d.id === v); setNewRule({ ...newRule, deviceId: v, parameter: dev?.parameter || newRule.parameter }); }} placeholder="Select device..." searchPlaceholder="Search devices..." fetchOptions={async () => { const res = await api.get('/api/iot/devices?limit=999'); if (res.success && res.data) return res.data.map((d: any) => ({ value: d.id, label: `${d.name} (${d.deviceCode})` })); return []; }} />
+                <AsyncSearchableSelect value={newRule.deviceId} onValueChange={v => { const dev = devices.find((d: any) => d.id === v); setNewRule({ ...newRule, deviceId: v, parameter: dev?.parameter || newRule.parameter }); }} placeholder="Select device..." searchPlaceholder="Search devices..." fetchOptions={async () => { const res = await api.get('/api/iot/devices?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((d: any) => ({ value: d.id, label: `${d.name} (${d.deviceCode})` })); return []; }} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2"><Label>Parameter</Label><Input placeholder="Temperature" value={newRule.parameter} onChange={e => setNewRule({ ...newRule, parameter: e.target.value })} /></div>

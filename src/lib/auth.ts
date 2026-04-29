@@ -63,15 +63,15 @@ export async function createSession(userId: string): Promise<{ token: string; se
   const roleSlugsSet = new Set<string>();
   const permissionSlugsSet = new Set<string>();
 
-  for (const ur of user.userRoles) {
+  for (const ur of (user.userRoles || [])) {
     roleSlugsSet.add(ur.role.slug);
-    for (const rp of ur.role.rolePermissions) {
+    for (const rp of (ur.role.rolePermissions || [])) {
       permissionSlugsSet.add(rp.permission.slug);
     }
   }
 
   // Apply direct permission overrides
-  for (const up of user.directPerms) {
+  for (const up of (user.directPerms || [])) {
     // Check expiry first
     if (up.expiresAt && new Date(up.expiresAt) < new Date()) {
       permissionSlugsSet.delete(up.permission.slug);

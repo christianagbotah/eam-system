@@ -4884,7 +4884,7 @@ export function SystemHealthPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.recentActivity.length === 0 ? (
+                {data.recentActivity?.length === 0 ? (
                   <TableRow><TableCell colSpan={5} className="h-32 text-center text-sm text-muted-foreground">No recent activity</TableCell></TableRow>
                 ) : data.recentActivity.map((entry) => (
                   <TableRow key={entry.id}>

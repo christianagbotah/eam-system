@@ -666,10 +666,10 @@ export function RepairMaterialRequestsPage() {
         
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Material Request</h2><p className="text-sm text-muted-foreground">Request materials/spare parts for a work order</p></div>
           <div className="space-y-4">
-            <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v }))} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && res.data) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
+            <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v }))} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Item Name *</Label><Input value={createForm.itemName} onChange={(e) => setCreateForm({ ...createForm, itemName: e.target.value })} placeholder="e.g. Bearing 6205" /></div>
-              <div><Label>Inventory Item</Label><AsyncSearchableSelect value={createForm.itemId} onValueChange={(v) => setCreateForm(f => ({ ...f, itemId: v }))} placeholder="Link to inventory..." searchPlaceholder="Search inventory..." fetchOptions={async () => { const res = await api.get('/api/inventory?limit=999'); if (res.success && res.data) return res.data.map((i: any) => ({ value: i.id, label: `${i.name} (${i.itemCode})` })); return []; }} /></div>
+              <div><Label>Inventory Item</Label><AsyncSearchableSelect value={createForm.itemId} onValueChange={(v) => setCreateForm(f => ({ ...f, itemId: v }))} placeholder="Link to inventory..." searchPlaceholder="Search inventory..." fetchOptions={async () => { const res = await api.get('/api/inventory?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((i: any) => ({ value: i.id, label: `${i.name} (${i.itemCode})` })); return []; }} /></div>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div><Label>Quantity *</Label><Input type="number" value={createForm.quantityRequested} onChange={(e) => setCreateForm({ ...createForm, quantityRequested: e.target.value })} /></div>
@@ -954,10 +954,10 @@ export function RepairToolRequestsPage() {
         
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Tool Request</h2><p className="text-sm text-muted-foreground">Request tools for a repair work order</p></div>
           <div className="space-y-4">
-            <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v }))} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && res.data) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
+            <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v }))} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Tool Name *</Label><Input value={createForm.toolName} onChange={(e) => setCreateForm({ ...createForm, toolName: e.target.value })} placeholder="e.g. Torque Wrench" /></div>
-              <div><Label>Tool ID</Label><AsyncSearchableSelect value={createForm.toolId} onValueChange={(v) => setCreateForm(f => ({ ...f, toolId: v }))} placeholder="Link to tool..." searchPlaceholder="Search tools..." fetchOptions={async () => { const res = await api.get('/api/tools?limit=999'); if (res.success && res.data) return res.data.map((t: any) => ({ value: t.id, label: `${t.name} (${t.toolCode})` })); return []; }} /></div>
+              <div><Label>Tool ID</Label><AsyncSearchableSelect value={createForm.toolId} onValueChange={(v) => setCreateForm(f => ({ ...f, toolId: v }))} placeholder="Link to tool..." searchPlaceholder="Search tools..." fetchOptions={async () => { const res = await api.get('/api/tools?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((t: any) => ({ value: t.id, label: `${t.name} (${t.toolCode})` })); return []; }} /></div>
             </div>
             <div><Label>Urgency</Label><div className="flex gap-2 mt-1">{Object.entries(URGENCY_CONFIG).map(([key, cfg]) => (<button key={key} onClick={() => setCreateForm(f => ({ ...f, urgency: key }))} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 text-xs font-medium transition-all ${createForm.urgency === key ? cfg.color + ' ring-2 ring-offset-1 ring-gray-300' : 'border-gray-200 text-muted-foreground hover:border-gray-300'}`}><span className={`h-2 w-2 rounded-full ${cfg.dotColor}`} />{cfg.label}</button>))}</div></div>
             <div><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} placeholder="Why is this tool needed?" rows={3} /></div>
@@ -1242,11 +1242,11 @@ export function RepairToolTransfersPage() {
         
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Tool Transfer Request</h2><p className="text-sm text-muted-foreground">Request transfer of a tool to another technician</p></div>
           <div className="space-y-4">
-            <div><Label>Tool *</Label><AsyncSearchableSelect value={createForm.toolId} onValueChange={(v) => setCreateForm(f => ({ ...f, toolId: v }))} placeholder="Select tool..." searchPlaceholder="Search tools..." fetchOptions={async () => { const res = await api.get('/api/tools?limit=999'); if (res.success && res.data) return res.data.map((t: any) => ({ value: t.id, label: `${t.name} (${t.toolCode})` })); return []; }} /></div>
+            <div><Label>Tool *</Label><AsyncSearchableSelect value={createForm.toolId} onValueChange={(v) => setCreateForm(f => ({ ...f, toolId: v }))} placeholder="Select tool..." searchPlaceholder="Search tools..." fetchOptions={async () => { const res = await api.get('/api/tools?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((t: any) => ({ value: t.id, label: `${t.name} (${t.toolCode})` })); return []; }} /></div>
             <div className="relative">
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>From User *</Label><AsyncSearchableSelect value={createForm.fromUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, fromUserId: v }))} placeholder="Current holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && res.data) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
-                <div><Label>To User *</Label><AsyncSearchableSelect value={createForm.toUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, toUserId: v }))} placeholder="New holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && res.data) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
+                <div><Label>From User *</Label><AsyncSearchableSelect value={createForm.fromUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, fromUserId: v }))} placeholder="Current holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
+                <div><Label>To User *</Label><AsyncSearchableSelect value={createForm.toUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, toUserId: v }))} placeholder="New holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
               </div>
               {createForm.fromUserId && createForm.toUserId && createForm.fromUserId === createForm.toUserId && (
                 <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> From and To users must be different</p>
@@ -1497,7 +1497,7 @@ export function RepairDowntimePage() {
                 searchPlaceholder="Search work orders..."
                 fetchOptions={async () => {
                   const res = await api.get('/api/work-orders?limit=999');
-                  if (res.success && res.data) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` }));
+                  if (res.success && Array.isArray(res.data)) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` }));
                   return [];
                 }}
               /></div>
@@ -1510,7 +1510,7 @@ export function RepairDowntimePage() {
                 searchPlaceholder="Search assets..."
                 fetchOptions={async () => {
                   const res = await api.get('/api/assets?limit=999');
-                  if (res.success && res.data) return res.data.map((a: any) => ({ value: a.id, label: `${a.name} (${a.assetTag})` }));
+                  if (res.success && Array.isArray(res.data)) return res.data.map((a: any) => ({ value: a.id, label: `${a.name} (${a.assetTag})` }));
                   return [];
                 }}
               /></div>
