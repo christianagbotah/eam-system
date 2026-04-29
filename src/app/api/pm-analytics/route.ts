@@ -85,13 +85,13 @@ export async function GET(request: NextRequest) {
       >(
         `
         SELECT
-          strftime('%Y-%m', w."createdAt") as month,
+          DATE_FORMAT(w.createdAt, '%Y-%m') as month,
           COUNT(*) as generated,
-          SUM(CASE WHEN w."actualEnd" IS NOT NULL THEN 1 ELSE 0 END) as completed
-        FROM "work_orders" w
-        WHERE w."pmScheduleId" IS NOT NULL
-          AND w."createdAt" >= datetime('now', '-12 months')
-        GROUP BY strftime('%Y-%m', w."createdAt")
+          SUM(CASE WHEN w.actualEnd IS NOT NULL THEN 1 ELSE 0 END) as completed
+        FROM work_orders w
+        WHERE w.pmScheduleId IS NOT NULL
+          AND w.createdAt >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+        GROUP BY DATE_FORMAT(w.createdAt, '%Y-%m')
         ORDER BY month ASC
         `,
       ),

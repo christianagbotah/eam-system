@@ -304,12 +304,12 @@ export async function GET(request: NextRequest) {
       // Inventory: pending requests
       db.inventoryRequest.count({ where: { ...plantFilter, status: { in: ['pending', 'partially_fulfilled'] } } }),
 
-      // Weekly trends: work orders created per day
-      db.$queryRaw(Prisma.sql`SELECT date(createdAt) as day, COUNT(*) as count FROM work_orders WHERE createdAt >= date('now', '-6 days') GROUP BY date(createdAt) ORDER BY day`),
-      // Weekly trends: maintenance requests created per day
-      db.$queryRaw(Prisma.sql`SELECT date(createdAt) as day, COUNT(*) as count FROM maintenance_requests WHERE createdAt >= date('now', '-6 days') GROUP BY date(createdAt) ORDER BY day`),
-      // Weekly trends: production orders created per day
-      db.$queryRaw(Prisma.sql`SELECT date(createdAt) as day, COUNT(*) as count FROM production_orders WHERE createdAt >= date('now', '-6 days') GROUP BY date(createdAt) ORDER BY day`),
+      // Weekly trends: work orders created per day (MySQL-compatible)
+      db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM work_orders WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) GROUP BY DATE(createdAt) ORDER BY day`),
+      // Weekly trends: maintenance requests created per day (MySQL-compatible)
+      db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM maintenance_requests WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) GROUP BY DATE(createdAt) ORDER BY day`),
+      // Weekly trends: production orders created per day (MySQL-compatible)
+      db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM production_orders WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) GROUP BY DATE(createdAt) ORDER BY day`),
 
       // ===== Enhanced KPIs =====
 
