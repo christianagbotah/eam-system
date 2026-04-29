@@ -1666,3 +1666,23 @@ Stage Summary:
 - Fixed 4 raw SQL queries across 2 API routes to use MySQL-compatible syntax
 - Added comprehensive error boundary so if the error persists, the full stack trace will be visible in the browser instead of "ignore-listed frames"
 - Push: commit 801f842 to main branch
+
+---
+Task ID: DB-CONN-CHECK
+Agent: Main Coordinator
+Task: Check database connection with new MySQL password
+
+Work Log:
+- User provided new DB password: @@Myjesus4me2016$$ (changed from @@Myjesus4me2018$$)
+- Updated .env file with URL-encoded password: %40%40Myjesus4me2016%24%24
+- Previous .env had SQLite URL (file:/home/z/my-project/db/custom.db) - still present before this fix
+- Discovered that @ and $ in password MUST be URL-encoded in DATABASE_URL:
+  - @@ → %40%40 (otherwise URL parser splits credentials at first @)
+  - $$ → %24%24 (otherwise shell expands to process ID)
+- Cannot test connection from local environment because MySQL is on cPanel server localhost:3306
+- Provided user with commands to test on cPanel server
+
+Stage Summary:
+- .env updated with URL-encoded DATABASE_URL for new password
+- User needs to: (1) update .env on cPanel server, (2) update .next/standalone/.env, (3) test connection, (4) git pull
+- If connection works, the .map() error should be resolved since all API queries will return proper data
