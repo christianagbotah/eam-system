@@ -1646,3 +1646,23 @@ Stage Summary:
 - 2 API data sources consumed (`/api/dashboard/stats`, `/api/work-orders/kpi`)
 - Permission-gated quick actions
 - Proper loading/error handling
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix TypeError: Cannot read properties of undefined (reading 'map') on cPanel deployment
+
+Work Log:
+- Analyzed entire codebase for .map() calls that could fail on undefined values
+- Found and fixed MySQL-incompatible SQL queries in dashboard/stats API (3 queries using SQLite date() syntax → MySQL DATE_SUB/CURDATE)
+- Found and fixed MySQL-incompatible SQL query in pm-analytics API (strftime/datetime → DATE_FORMAT/DATE_SUB)
+- Added GlobalErrorBoundary to page.tsx that catches render errors and displays full stack trace
+- Added global window error + unhandled promise rejection handlers for production debugging
+- Rebuilt Next.js standalone output with all fixes
+- Copied Prisma client, static files, and public directory to standalone output
+- Committed and pushed to GitHub
+
+Stage Summary:
+- The .map() error was likely caused by SQLite-only SQL syntax in $queryRaw calls crashing on MySQL, causing the dashboard stats API to return 500 errors, which cascaded through the app
+- Fixed 4 raw SQL queries across 2 API routes to use MySQL-compatible syntax
+- Added comprehensive error boundary so if the error persists, the full stack trace will be visible in the browser instead of "ignore-listed frames"
+- Push: commit 801f842 to main branch
