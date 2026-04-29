@@ -1,5 +1,37 @@
 const path = require('path')
 
+// __EAM_PATCHED__ — Error diagnostics injected by build script
+process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + ' --enable-source-maps';
+
+// Bypass V8 ignore-listed frames for full stack traces
+const _origPrepare = Error.prepareStackTrace;
+Error.prepareStackTrace = function(err, trace) {
+  return err.toString() + '\n' + trace.map(function(frame) {
+    var fn = frame.getFunctionName() || frame.getMethodName() || '<anonymous>';
+    var file = frame.getFileName() || '<unknown>';
+    var line = frame.getLineNumber() || 0;
+    var col = frame.getColumnNumber() || 0;
+    return '    at ' + fn + ' (' + file + ':' + line + ':' + col + ')';
+  }).join('\n');
+};
+
+process.on('unhandledRejection', function(reason) {
+  console.error('\n===== UNHANDLED REJECTION =====');
+  console.error(reason instanceof Error ? (reason.stack || reason.message) : String(reason));
+  console.error('===== END =====\n');
+});
+
+process.on('uncaughtException', function(err) {
+  console.error('\n===== UNCAUGHT EXCEPTION =====');
+  console.error(err.stack || err.message);
+  console.error('===== END =====\n');
+});
+
+console.log('[server.js] EAM error diagnostics ENABLED — full stack traces active');
+// __END_EAM_PATCH__
+
+
+
 const dir = path.join(__dirname)
 
 process.env.NODE_ENV = 'production'

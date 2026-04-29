@@ -532,68 +532,96 @@ function AppShell() {
 }
 
 // ============================================================================
-// CHUNK LOAD ERROR BOUNDARY — auto-retries on stale chunk errors
+// GLOBAL ERROR BOUNDARY — catches ALL errors including .map() crashes
 // ============================================================================
 
 interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
+  componentStack: string | null;
+  isChunkError: boolean;
 }
 
-class ChunkErrorBoundary extends React.Component<
+class GlobalErrorBoundary extends React.Component<
   { children: React.ReactNode },
   ErrorBoundaryState
 > {
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, componentStack: null, isChunkError: false };
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    // Check if it's a chunk loading error
     const msg = error?.message || '';
-    if (
+    const isChunkError =
       msg.includes('ChunkLoadError') ||
       msg.includes('Failed to load chunk') ||
       msg.includes('Loading chunk') ||
-      msg.includes('Loading CSS chunk')
-    ) {
-      return { hasError: true, error };
-    }
-    return { hasError: false, error: null };
+      msg.includes('Loading CSS chunk');
+    // Catch ALL errors, not just chunk errors
+    return { hasError: true, error, componentStack: null, isChunkError };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    // Log full error details to console and state
+    console.error('=== EAM GLOBAL ERROR BOUNDARY ===');
+    console.error('Error:', error.message);
+    console.error('Stack:', error.stack);
+    console.error('Component Stack:', info.componentStack);
+    console.error('=== END ERROR ===');
+    this.setState({ componentStack: info.componentStack });
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: null });
-    // Force a soft reload to fetch fresh chunks
-    window.location.reload();
+    this.setState({ hasError: false, error: null, componentStack: null, isChunkError: false });
+    if (this.state.isChunkError) {
+      window.location.reload();
+    }
+  };
+
+  handleHardRefresh = () => {
+    window.location.href = window.location.href.split('?')[0] + '?_t=' + Date.now();
   };
 
   render() {
-    if (this.state.hasError) {
+    if (this.state.hasError && this.state.error) {
+      const isChunk = this.state.isChunkError;
       return (
         <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center space-y-4 p-6">
-            <div className="h-12 w-12 mx-auto rounded-full bg-amber-100 dark:bg-amber-950/30 flex items-center justify-center">
-              <svg className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="text-center space-y-4 p-6 max-w-lg">
+            <div className={`h-12 w-12 mx-auto rounded-full flex items-center justify-center ${isChunk ? 'bg-amber-100 dark:bg-amber-950/30' : 'bg-red-100 dark:bg-red-950/30'}`}>
+              <svg className={`h-6 w-6 ${isChunk ? 'text-amber-600' : 'text-red-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-foreground">Module Loading Error</h3>
-              <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-                A required module failed to load. This can happen after updates. Click below to refresh.
+              <h3 className="text-sm font-semibold text-foreground">{isChunk ? 'Module Loading Error' : 'Runtime Error'}</h3>
+              <p className="text-xs text-red-600 font-mono mt-2 p-2 bg-red-50 dark:bg-red-950/20 rounded break-all text-left">
+                {this.state.error.message}
               </p>
+              {this.state.componentStack && (
+                <pre className="text-[10px] text-muted-foreground mt-2 p-2 bg-muted rounded overflow-auto max-h-32 text-left whitespace-pre-wrap">
+                  {this.state.componentStack}
+                </pre>
+              )}
             </div>
-            <button
-              onClick={this.handleRetry}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Refresh Page
-            </button>
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={this.handleRetry}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Retry
+              </button>
+              <button
+                onClick={this.handleHardRefresh}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                Hard Refresh
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -608,8 +636,8 @@ class ChunkErrorBoundary extends React.Component<
 
 export default function EAMApp() {
   return (
-    <ChunkErrorBoundary>
+    <GlobalErrorBoundary>
       <AppShell />
-    </ChunkErrorBoundary>
+    </GlobalErrorBoundary>
   );
 }
