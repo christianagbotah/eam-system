@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
+  // Standalone disabled — use custom server.js with require('next') to avoid WASM crash on cPanel
+  // output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
   reactStrictMode: true,
   productionBrowserSourceMaps: true,
   typescript: { ignoreBuildErrors: true },
@@ -13,13 +14,7 @@ const nextConfig: NextConfig = {
     '127.0.0.1',
     'localhost',
   ],
-  outputFileTracingIncludes: process.env.NODE_ENV === 'production' ? {
-    '/*': [
-      '.prisma/client/**/*',
-      '@prisma/adapter-mariadb/**/*',
-      'mariadb/**/*',
-    ],
-  } : undefined,
+  outputFileTracingIncludes: undefined,
 };
 
 export default nextConfig;
