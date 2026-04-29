@@ -14,7 +14,7 @@ deployment:
     - /bin/cp tsconfig.json $DEPLOYPATH/
     - /bin/cp postcss.config.mjs $DEPLOYPATH/
     - /bin/cp .htaccess $DEPLOYPATH/
-    - /bin/cp .env $DEPLOYPATH/
+    # .env NOT copied — must be set manually on server to protect credentials
     - /bin/cp server.js $DEPLOYPATH/
     - cd $DEPLOYPATH && npm install --production
     - cd $DEPLOYPATH && npx prisma generate
