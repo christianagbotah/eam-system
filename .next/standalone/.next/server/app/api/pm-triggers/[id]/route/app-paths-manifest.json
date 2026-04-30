@@ -1,0 +1,3 @@
+{
+  "/api/pm-triggers/[id]/route": "app/api/pm-triggers/[id]/route.js"
+}

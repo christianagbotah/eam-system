@@ -1,0 +1,3 @@
+{
+  "/api/corrective-actions/[id]/route": "app/api/corrective-actions/[id]/route.js"
+}

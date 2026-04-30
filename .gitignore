@@ -1,10 +1,10 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
+# dependencies (main node_modules — installed by DEPLOY.sh if needed)
 node_modules
 node_modules/.prisma/client/
 
-# Prisma prebuilt client (NEVER ignore this - it's deployed to cPanel)
+# Prisma prebuilt client (NEVER ignore — deployed to cPanel)
 !prisma/prebuilt/
 
 /.pnp
@@ -18,11 +18,12 @@ node_modules/.prisma/client/
 # testing
 /coverage
 
-# next.js — commit server & static build output (built in sandbox), ignore the rest
+# next.js — commit the full standalone output for cPanel (pre-built, no build needed)
 .next/*
 !.next/BUILD_ID
 !.next/server/
 !.next/static/
+!.next/standalone/
 /out/
 
 # production
@@ -38,12 +39,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files
 .env*
 
 # vercel
 .vercel
-
 
 # typescript
 *.tsbuildinfo
@@ -62,7 +62,7 @@ server.log
 # Skills directory
 /skills/
 
-# Database files (regenerated via prisma db push)
+# Database files
 db/*.db
 db/*.db-journal
 
@@ -71,7 +71,7 @@ db/*.db-journal
 /download/
 /public/uploads/
 
-# Source analysis (reference files from original project)
+# Source analysis
 /source-analysis/
 
 # System files
@@ -80,9 +80,7 @@ db/*.db-journal
 .stats
 .git-credentials
 
-
 # Environment variables (never commit)
 .env
 .env.local
 .env.production
-db/*.db

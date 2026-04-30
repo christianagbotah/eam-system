@@ -1,0 +1,3 @@
+{
+  "/api/escalation/check/route": "app/api/escalation/check/route.js"
+}

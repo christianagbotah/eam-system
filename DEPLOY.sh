@@ -2,107 +2,94 @@
 # =============================================================================
 # EAM System - cPanel Deployment Script
 # =============================================================================
-# This script deploys a PRE-BUILT EAM system on cPanel shared hosting.
-# It does NOT run any build — the build was done in the sandbox and
-# committed to GitHub (see .next/server/ and .next/static/).
-#
-# It also does NOT run Prisma CLI — the prebuilt client is in
-# prisma/prebuilt/.prisma/ and is restored after npm install.
+# Everything is PRE-BUILT. This script just restores the Prisma client
+# and verifies the setup. No build, no npm install, no Prisma CLI.
 #
 # PREREQUISITES:
 #   1. Node.js 20+ activated (nodevenv)
-#   2. .env file with database credentials
-#   3. Database tables created (import schema-mysql.sql via phpMyAdmin)
-#   4. Database seeded (import seed-data.sql via phpMyAdmin)
+#   2. .env file with database credentials (DB_HOST=localhost)
+#   3. Database already seeded (done remotely from sandbox)
 #
 # USAGE:
-#   chmod +x DEPLOY.sh
-#   ./DEPLOY.sh
+#   chmod +x DEPLOY.sh && ./DEPLOY.sh
 # =============================================================================
 
 set -e
 
 echo "========================================="
 echo "  EAM System - cPanel Deployment"
-echo "  (Pre-built — no build step needed)"
+echo "  (Pre-built — zero build steps)"
 echo "========================================="
 
 # ── Step 1: Check prerequisites ──
 echo ""
-echo "[1/4] Checking prerequisites..."
+echo "[1/3] Checking prerequisites..."
 
 if ! command -v node &> /dev/null; then
     echo "ERROR: Node.js not found. Activate your nodevenv first:"
     echo "  source /home/lightwor/nodevenv/eam-system/20/bin/activate"
     exit 1
 fi
-
 echo "  Node.js: $(node --version)"
 
 if [ ! -f .env ]; then
-    echo "ERROR: .env file not found. Create it with your database credentials."
+    echo "ERROR: .env file not found!"
+    echo "  Create .env with: DB_HOST=localhost, DB_USER, DB_PASSWORD, DB_NAME"
     exit 1
 fi
-
 echo "  .env: found"
 
-if [ ! -d ".next/server" ]; then
-    echo "ERROR: .next/server/ not found!"
-    echo "  The pre-built files are missing. Make sure you pulled from GitHub."
+if [ ! -f ".next/standalone/server.js" ]; then
+    echo "ERROR: .next/standalone/server.js not found!"
     echo "  Run: git pull origin main"
     exit 1
 fi
+echo "  Standalone server: found"
 
-echo "  Build output: found (.next/server/, .next/static/)"
-
-# ── Step 2: Install dependencies ──
+# ── Step 2: Restore Prisma client into standalone ──
 echo ""
-echo "[2/4] Installing dependencies..."
-npm install --omit=dev 2>&1 | tail -3
-echo "  Production dependencies installed"
+echo "[2/3] Restoring Prisma client..."
 
-# ── Step 3: Restore prebuilt Prisma client ──
-echo ""
-echo "[3/4] Restoring prebuilt Prisma client..."
-
-if [ -d "prisma/prebuilt/.prisma" ]; then
-    rm -rf node_modules/.prisma
-    cp -r prisma/prebuilt/.prisma node_modules/.prisma
-    echo "  Prebuilt Prisma client restored"
+if [ -d "prisma/prebuilt/.prisma/client" ]; then
+    rm -rf .next/standalone/node_modules/.prisma/client
+    cp -r prisma/prebuilt/.prisma/client .next/standalone/node_modules/.prisma/client
+    echo "  Prisma client restored to .next/standalone/node_modules/.prisma/client"
 else
-    echo "  WARNING: prisma/prebuilt/.prisma not found!"
-    echo "  The app may fail at runtime without the Prisma client."
+    echo "  WARNING: prisma/prebuilt/.prisma/client not found!"
     exit 1
 fi
 
-# ── Step 4: Verify and start ──
+# ── Step 3: Quick smoke test ──
 echo ""
-echo "[4/4] Verifying installation..."
+echo "[3/3] Verifying..."
 
-# Quick smoke test — require the server module to check for errors
 node -e "
+const path = require('path');
+const serverPath = path.resolve('.next/standalone/server.js');
 try {
-  require('./server.js');
+  // Just verify the file can be parsed (won't start listening)
+  require('vm').runInNewContext(
+    'var module={exports:{}}; var require=function(m){return {}}; var process={env:{PORT:3000},on:function(){},exit:function(){}};' +
+    require('fs').readFileSync(serverPath, 'utf8').replace(/listen\(/g, '_listen_(')
+  );
+  console.log('  server.js: OK (syntax valid)');
 } catch(e) {
-  // server.js starts listening, so it won't return — this is expected
-  // If we get here, the require worked
+  console.error('  server.js: PARSE ERROR - ' + e.message.substring(0, 100));
 }
-" 2>&1 | head -5 &
-SERVER_PID=$!
-sleep 2
-kill $SERVER_PID 2>/dev/null || true
+" 2>&1
 
 echo ""
 echo "========================================="
 echo "  Deployment complete!"
 echo "========================================="
 echo ""
-echo "To start the application:"
-echo "  NODE_ENV=production node server.js"
+echo "Configure cPanel Node.js app:"
+echo "  App Root:     eam-system"
+echo "  Startup File: .next/standalone/server.js"
+echo "  Run Command:  (leave empty — cPanel handles it)"
+echo "  App Mode:     Production"
 echo ""
-echo "Or configure cPanel Node.js app:"
-echo "  App Startup File: server.js"
-echo "  App Run Command: NODE_ENV=production node"
-echo ""
-echo "The application listens on the PORT assigned by cPanel Passenger."
+echo "Or test manually:"
+echo "  cd ~/eam-system"
+echo "  PORT=3000 NODE_ENV=production node .next/standalone/server.js"
 echo ""
