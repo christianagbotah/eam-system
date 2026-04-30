@@ -9,7 +9,7 @@
     "postbuild:prebuilt": "cp -r node_modules/.prisma prisma/prebuilt/.prisma",
     "start": "NODE_ENV=production node .next/standalone/server.js",
     "lint": "eslint .",
-    "db:push": "prisma db push",
+    "db:push": "npx prisma db push",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset"

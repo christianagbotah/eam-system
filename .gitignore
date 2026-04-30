@@ -78,3 +78,9 @@ db/*.db-journal
 .stats
 .git-credentials
 
+
+# Environment variables (never commit)
+.env
+.env.local
+.env.production
+db/*.db

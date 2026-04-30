@@ -5,7 +5,7 @@ generator client {
 }
 
 datasource db {
-  provider          = "sqlite"
+  provider          = "mysql"
   url               = env("DATABASE_URL")
 }
 
@@ -422,7 +422,7 @@ model WorkOrder {
   ppeRequired         String?                       // PPE requirements
   plantId             String?
   notes               String?
-  personalTools       String    @default("[]")  // JSON: [{toolName, toolCode, condition, notes}]
+  personalTools       String    @default("[]")@db.Text  // JSON: [{toolName, toolCode, condition, notes}]
   isLocked            Boolean   @default(false)
   lockedBy            String?                        // → User
   lockedAt            DateTime?
@@ -538,7 +538,7 @@ model StatusTransition {
   entityType       String                       // maintenance_request, work_order
   fromStatus       String?                      // null = initial state
   toStatus         String
-  allowedRoleSlugs String                // JSON string array, e.g. ["supervisor","admin"]
+  allowedRoleSlugs String@db.Text  // JSON string array .Text, e.g. ["supervisor","admin"]
   requiresApproval Boolean  @default(false)
   requiresReason   Boolean  @default(false)
   sortOrder        Int      @default(0)
@@ -557,8 +557,8 @@ model AuditLog {
   action     String                       // create, update, delete, view
   entityType String?
   entityId   String?
-  oldValues  String?               // JSON string of previous field values
-  newValues  String?               // JSON string of new field values
+  oldValues  String? @db.Text  // JSON string of previous field values
+  newValues  String? @db.Text  // JSON string of new field values
   ipAddress  String?
   createdAt  DateTime @default(now())
 
@@ -577,7 +577,7 @@ model EscalationLog {
   entityId    String                           // reference to the entity
   level       Int                              // 1=first escalation, 2=second escalation
   reason      String                           // description of why escalated
-  notifiedUsers String                // JSON array of user IDs who were notified
+  notifiedUsers String@db.Text  // JSON array of user IDs .Text who were notified
   createdAt   DateTime @default(now())
 
   @@map("escalation_logs")
@@ -685,7 +685,7 @@ model Asset {
   imageUrl          String?
   drawingsUrl       String?
   manualUrl         String?
-  specification     String                   // JSON text for flexible specs
+  specification     String@db.Text  // JSON text for flexible specs .Text
   parentId          String?
   isActive          Boolean   @default(true)
   createdById       String
@@ -735,8 +735,8 @@ model InventoryItem {
   locationId        String?                              // → InventoryLocation
   supplierId        String?                              // → Supplier
   isActive          Boolean  @default(true)
-  specification     String                   // JSON text
-  imageUrls         String                   // JSON text array
+       specification     String@db.Text  // JSON text .Text
+  imageUrls         String@db.Text  // JSON text array .Text
   createdById       String
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -826,8 +826,8 @@ model PmTemplate {
   category          String?                           // mechanical, electrical, hydraulic, etc.
   estimatedDuration Float                            // hours
   priority          String   @default("medium")     // low, medium, high, critical
-  requiredSkills    String?                  // JSON array of skill names
-  requiredTools     String?                  // JSON array of tool descriptions
+  requiredSkills    String?@db.Text  // JSON array of skill names .Text
+  requiredTools     String?@db.Text  // JSON array of tool descriptions .Text
   isActive          Boolean  @default(true)
   createdById       String
   createdAt         DateTime @default(now())
@@ -846,7 +846,7 @@ model PmTemplateTask {
   taskNumber       Int                             // sequential order within template
   description      String
   taskType         String   @default("check")     // check, measure, inspect, lubricate, replace, record
-  requiredParts    String?                 // JSON array of {partName, quantity, unit}
+  requiredParts    String?@db.Text  // JSON array of {partName, quantity, unit} .Text
   estimatedMinutes Int?
   sortOrder        Int      @default(0)
   isActive         Boolean  @default(true)
@@ -861,7 +861,7 @@ model PmTrigger {
   scheduleId    String   @unique                    // one trigger per schedule
   triggerType   String                              // time, meter, condition, production_count
   triggerValue  Float                               // e.g., hours=500, days=30, meters=10000
-  triggerConfig String?                    // JSON for advanced config (cron expressions, etc.)
+  triggerConfig String?@db.Text  // JSON for advanced config .Text (cron expressions, etc.)
   lastTriggeredAt DateTime?
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
@@ -1306,7 +1306,7 @@ model SafetyIncident {
   reportedById      String
   investigatedById  String?
   rootCause         String?
-  correctiveAction  String?
+  correctiveAction  String?  @db.Text
   daysLost          Int       @default(0)
   cost              Float?
   notes             String?
@@ -1333,7 +1333,7 @@ model SafetyInspection {
   location          String?
   departmentId      String?
   inspectorId       String?
-  findings          String                     // JSON text
+  findings          String@db.Text  // JSON text .Text
   score             Int?
   maxScore          Int?
   notes             String?
@@ -1354,7 +1354,7 @@ model SafetyTraining {
   scheduledDate     DateTime?
   completedDate     DateTime?
   location          String?
-  attendees         String                     // JSON text array of user IDs
+  attendees         String@db.Text  // JSON text array of user IDs .Text
   durationHours     Float?
   notes             String?
   createdById       String
@@ -1398,7 +1398,7 @@ model SafetyPermit {
   approvedById      String?
   approvedAt        DateTime?
   hazardAssessment  String?
-  precautions       String                     // JSON text
+  precautions       String@db.Text  // JSON text .Text
   notes             String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -1428,7 +1428,7 @@ model QualityInspection {
   scheduledDate     DateTime?
   completedDate     DateTime?
   result            String?                              // pass, fail, conditional
-  defects           String                     // JSON text array
+  defects           String@db.Text  // JSON text array .Text
   notes             String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -1452,7 +1452,7 @@ model NonConformanceReport {
   departmentId      String?
   raisedById        String
   rootCause         String?
-  correctiveAction  String?
+  correctiveAction  String?  @db.Text
   dueDate           DateTime?
   completedDate     DateTime?
   notes             String?
@@ -1476,7 +1476,7 @@ model QualityAudit {
   auditedById       String?
   departmentId      String?
   scope             String?
-  findings          String                     // JSON text
+  findings          String@db.Text  // JSON text .Text
   score             Int?
   maxScore          Int?
   recommendation    String?
@@ -1498,7 +1498,7 @@ model QualityControlPlan {
   assetId           String?
   type              String                               // incoming, in_process, final
   frequency         String                               // every_lot, every_batch, hourly, daily
-  characteristics   String                     // JSON text
+  characteristics   String@db.Text  // JSON text .Text
   sampleSize        Int?
   isActive          Boolean   @default(true)
   createdById       String
@@ -1519,11 +1519,11 @@ model CorrectiveAction {
   severity          String    @default("medium")
   status            String    @default("open")            // open, in_progress, implemented, verified, closed
   rootCause         String?
-  correctiveAction  String                     // JSON text
-  preventiveAction  String?                  // JSON text
+  correctiveAction  String@db.Text  // JSON text .Text
+  preventiveAction  String?@db.Text  // JSON text .Text
   responsibleId     String?
   dueDate           DateTime?
-  verifiedById      String?
+  verifiedById      String?  @db.Text
   verifiedAt        DateTime?
   effectiveness     String?
   notes             String?
@@ -1542,7 +1542,7 @@ model SpcProcess {
   specMax     Float?
   target      Float?
   status      String   @default("active")  // active, inactive
-  samples     String    // JSON array of sample values
+  samples     String@db.Text  // JSON array of sample values .Text
   createdById String
   createdBy   User     @relation("SpcProcessCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
@@ -1677,10 +1677,10 @@ model ShiftHandover {
   handedOverById    String
   receivedById      String?
   status            String    @default("pending")         // pending, confirmed
-  tasksSummary      String                     // JSON text
-  pendingIssues     String                     // JSON text
+  tasksSummary      String@db.Text  // JSON text .Text
+  pendingIssues     String@db.Text  // JSON text .Text
   safetyNotes       String?
-  equipmentStatus   String?                    // JSON text
+  equipmentStatus   String?@db.Text  // JSON text .Text
   notes             String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -1727,7 +1727,7 @@ model ChecklistResponse {
   checklistId       String
   completedById     String
   status            String    @default("pass")            // pass, fail, na
-  responses         String                     // JSON text { itemId: { status, notes } }
+  responses         String@db.Text  // JSON text { itemId: { status, notes } } .Text
   notes             String?
   completedAt       DateTime  @default(now())
 
@@ -1741,8 +1741,8 @@ model Survey {
   type              String                               // satisfaction, safety, quality, general
   status            String    @default("active")          // active, closed
   targetGroup       String?                              // all, department, specific
-  questions         String                     // JSON text array
-  responses         String                     // JSON text array (summary)
+  questions         String@db.Text  // JSON text array .Text
+  responses         String@db.Text  // JSON text array (summary) .Text
   totalResponses    Int       @default(0)
   createdById       String
   createdAt         DateTime  @default(now())
@@ -1768,8 +1768,8 @@ model CalibrationRecord {
   status            String    @default("calibrated")     // calibrated, out_of_calibration, due
   standardUsed      String?
   result            String?                              // pass, fail, adjusted
-  asFound           String?                    // JSON text
-  asLeft            String?                    // JSON text
+  asFound           String?@db.Text  // JSON text .Text
+  asLeft            String?@db.Text  // JSON text .Text
   uncertainty       Float?
   performedById     String?
   approvedById      String?
@@ -1793,8 +1793,8 @@ model RiskAssessment {
   likelihood        Int?                                  // 1-5
   consequence       Int?                                  // 1-5
   riskLevel         String?                              // low, medium, high, extreme
-  hazards           String                     // JSON text array
-  controls          String                     // JSON text array
+  hazards           String@db.Text  // JSON text array .Text
+  controls          String@db.Text  // JSON text array .Text
   residualRisk      String?
   assessorId        String?
   reviewerId        String?
@@ -1844,14 +1844,14 @@ model LotoRecord {
   cancelledReason    String?
 
   // LOTO details (JSON arrays)
-  isolationPoints  String                     // JSON array of isolation point descriptions
-  lockDevices       String                     // JSON array of lock device IDs/descriptions
-  tagNumbers        String                     // JSON array of tag numbers
-  verifiedBy        String?                    // JSON array of verifier names
+  isolationPoints  String@db.Text  // JSON array of isolation point descriptions .Text
+  lockDevices       String@db.Text  // JSON array of lock device IDs/descriptions .Text
+  tagNumbers        String@db.Text  // JSON array of tag numbers .Text
+  verifiedBy        String?@db.Text  // JSON array of verifier names .Text
   verificationDate   DateTime?
 
   // Workers affected
-  affectedWorkers   String?                    // JSON array of worker names/IDs
+  affectedWorkers   String?@db.Text  // JSON array of worker names/IDs .Text
   workerCount       Int?
 
   // Sign-off
@@ -1877,7 +1877,7 @@ model BillOfMaterial {
   partNumber        String?
   quantity          Float     @default(1)
   unit              String    @default("each")
-  specification     String?
+  specification     String?  @db.Text
   status            String    @default("active")          // active, pending, obsolete, under_review
   revision          String?
   notes             String?
@@ -1896,9 +1896,9 @@ model DigitalTwin {
   name              String
   description       String?
   type              String    @default("other")            // pump, motor, compressor, valve, heat_exchanger, other
-  parameters        String                     // JSON text of key parameters
-  connections       String                     // JSON text of connections
-  specification     String?                    // JSON text of specs
+  parameters        String@db.Text  // JSON text of key parameters .Text
+  connections       String@db.Text  // JSON text of connections .Text
+  specification     String?@db.Text  // JSON text of specs
   healthScore       Int       @default(0)                   // 0-100
   syncInterval      String    @default("5min")             // real_time, 1min, 5min, 15min
   lastSynced        DateTime?
@@ -1952,8 +1952,8 @@ model Session {
   id        String   @id @default(cuid())
   token     String   @unique
   userId    String
-  roles     String    // JSON array of role slugs
-  permissions String // JSON array of permission slugs
+  roles     String@db.Text  // JSON array of role slugs .Text
+  permissions String@db.Text  // JSON array of permission slugs .Text
   expiresAt DateTime
   createdAt DateTime @default(now())
   lastSeen  DateTime @default(now())
@@ -2129,11 +2129,11 @@ model RepairCompletion {
   id                     String    @id @default(cuid())
   workOrderId            String    @unique
   completionNotes        String?
-  findings               String?
+  findings               String?  @db.Text
   rootCause              String?
-  correctiveAction       String?
-  materialsUsedSummary   String    @default("[]")  // JSON: [{itemId, name, qty, cost}]
-  toolsUsedSummary       String    @default("[]")  // JSON: [{toolId, name}]
+  correctiveAction       String?  @db.Text
+  materialsUsedSummary   String    @default("[]")@db.Text  // JSON: [{itemId, name, qty, cost}]
+  toolsUsedSummary       String    @default("[]")@db.Text  // JSON: [{toolId, name}]
   totalLaborHours        Float     @default(0)
   totalMaterialCost      Float     @default(0)
   totalToolCost          Float     @default(0)
