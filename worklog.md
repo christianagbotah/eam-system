@@ -1706,3 +1706,38 @@ Stage Summary:
 - The `PrismaClientInitializationError` about URL protocol is resolved (was using adapter-less client)
 - On cPanel, MySQL is local so seed will run much faster than from sandbox
 - All code pushed to GitHub for user to pull
+
+---
+Task ID: 17
+Agent: Main Coordinator
+Task: Fix cPanel deployment - Prisma CLI OOM, prebuilt client, SQL dumps
+
+Work Log:
+- Diagnosed cPanel shared hosting OOM error: `WebAssembly.Instance(): Out of memory: Cannot allocate Wasm memory for new instance` when running any `npx prisma` command
+- Root cause: Prisma v6+ bundles schema engine as Wasm, which exceeds cPanel memory limits
+- Solution: Prebuild everything in sandbox, skip Prisma CLI entirely on cPanel
+
+Changes made:
+1. Generated Prisma client in sandbox and saved to `prisma/prebuilt/.prisma/`
+2. Created `schema-mysql.sql` - full CREATE TABLE dump for all 85 tables (import via phpMyAdmin)
+3. Created `seed-data.sql` - seed data SQL with 16 roles, 343 permissions, 5 users, 3 plants, 11 departments (import via phpMyAdmin)
+4. Created `DEPLOY.sh` - cPanel deployment script that bypasses Prisma CLI
+5. Seeded the remote MySQL database directly via mysql2 (not Prisma)
+
+Database seeding summary:
+- 5 users: admin (admin123), planner1, supervisor1, tech1, operator1 (all password123)
+- 16 roles with permission bundles
+- 343 permissions across all modules
+- 3 plants: Tema Factory, Kumasi Plant, Takoradi Facility
+- 11 departments across all plants
+- 12 system modules
+- 13 status transitions for MR and WO workflows
+- Company profile (LightWorld Technologies)
+
+Stage Summary:
+- cPanel NO LONGER needs to run `npx prisma db push` or `npx prisma generate`
+- Tables are created via `schema-mysql.sql` import in phpMyAdmin
+- Seed data is imported via `seed-data.sql` in phpMyAdmin
+- Prisma client is prebuilt and committed to the repo
+- Deployment is done via `./DEPLOY.sh` which only needs npm install + next build
+- All pushed to GitHub (commit ccf0310)
