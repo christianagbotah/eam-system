@@ -1,0 +1,3 @@
+{
+  "/api/meter-readings/route": "app/api/meter-readings/route.js"
+}

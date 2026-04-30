@@ -18,9 +18,11 @@ node_modules/.prisma/client/
 # testing
 /coverage
 
-# next.js
+# next.js — commit server & static build output (built in sandbox), ignore the rest
 .next/*
-!.next/standalone/
+!.next/BUILD_ID
+!.next/server/
+!.next/static/
 /out/
 
 # production

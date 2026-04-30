@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Standalone disabled — use custom server.js with require('next') to avoid WASM crash on cPanel
-  // output: process.env.NODE_ENV === 'production' ? 'standalone' : undefined,
+  output: 'standalone',
   reactStrictMode: true,
   productionBrowserSourceMaps: true,
   typescript: { ignoreBuildErrors: true },
