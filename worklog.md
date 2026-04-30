@@ -1741,3 +1741,25 @@ Stage Summary:
 - Prisma client is prebuilt and committed to the repo
 - Deployment is done via `./DEPLOY.sh` which only needs npm install + next build
 - All pushed to GitHub (commit ccf0310)
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Pre-build Next.js app so cPanel doesn't need to build (fixes OOM on shared hosting)
+
+Work Log:
+- Analyzed current project state: DEPLOY.sh was running `npx next build` on cPanel which OOMs
+- Identified two server approaches: custom server.js (require('next')) vs standalone
+- Chose custom server.js approach: only needs .next/server/ + .next/static/ (65MB total)
+- Built Next.js with `output: 'standalone'` in sandbox (succeeds, has enough memory)
+- Updated .gitignore: commit .next/BUILD_ID, .next/server/, .next/static/ (not standalone node_modules)
+- Rewrote DEPLOY.sh: 4 steps only — check prerequisites, npm install --omit=dev, restore Prisma, verify
+- Removed ALL build steps from DEPLOY.sh (no `next build`, no `prisma generate`, no `prisma db push`)
+- Committed 2674 files (65MB build output) and pushed to GitHub
+
+Stage Summary:
+- Commit: 3d74197 pushed to main
+- Build output: .next/server/ (49MB) + .next/static/ (16MB) committed to git
+- DEPLOY.sh no longer builds — just installs deps + restores prebuilt Prisma client
+- Database setup uses pre-existing schema-mysql.sql + seed-data.sql via phpMyAdmin
+- cPanel deployment is now: git pull → import SQL → ./DEPLOY.sh → configure startup
