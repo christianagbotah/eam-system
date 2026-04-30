@@ -1,7 +1,16 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { hash } from 'bcryptjs';
 
-const db = new PrismaClient();
+const adapter = new PrismaMariaDb({
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '3306'),
+  user: process.env.DB_USER || 'lightwor_nestjsApps',
+  password: process.env.DB_PASSWORD || '@@Myjesus4me2016$$',
+  database: process.env.DB_NAME || 'lightwor_iassetspro_db',
+});
+
+const db = new PrismaClient({ adapter });
 
 // ============================================================================
 // 1. PERMISSION DEFINITIONS — 11 modules with structured actions
