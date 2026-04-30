@@ -1686,3 +1686,23 @@ Stage Summary:
 - .env updated with URL-encoded DATABASE_URL for new password
 - User needs to: (1) update .env on cPanel server, (2) update .next/standalone/.env, (3) test connection, (4) git pull
 - If connection works, the .map() error should be resolved since all API queries will return proper data
+---
+Task ID: 16
+Agent: Main Coordinator
+Task: Fix seed execution for cPanel deployment - add tsx and MariaDB adapter to seed
+
+Work Log:
+- Added `tsx` as devDependency to package.json for running TypeScript seed files on cPanel
+- `seed` npm script and `prisma.seed` config already existed in package.json
+- Updated `prisma/seed.ts` to use `PrismaMariaDb` adapter instead of direct `PrismaClient()` constructor
+- Seed file now matches the connection pattern used in `src/lib/db.ts`
+- Verified remote MySQL connectivity works (430ms per query latency from sandbox)
+- Pushed schema to remote MySQL via `prisma db push` (tables created in 97s)
+- Committed and pushed changes to GitHub (commit 4dba756)
+
+Stage Summary:
+- User can now run seed on cPanel with: `npx tsx prisma/seed.ts` or `npm run seed`
+- The original error `ERR_UNKNOWN_FILE_EXTENSION for .ts` is resolved
+- The `PrismaClientInitializationError` about URL protocol is resolved (was using adapter-less client)
+- On cPanel, MySQL is local so seed will run much faster than from sandbox
+- All code pushed to GitHub for user to pull
