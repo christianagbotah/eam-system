@@ -1763,3 +1763,29 @@ Stage Summary:
 - DEPLOY.sh no longer builds — just installs deps + restores prebuilt Prisma client
 - Database setup uses pre-existing schema-mysql.sql + seed-data.sql via phpMyAdmin
 - cPanel deployment is now: git pull → import SQL → ./DEPLOY.sh → configure startup
+---
+Task ID: Cloud Run Deployment
+Agent: Main Coordinator
+Task: Set up Google Cloud Run deployment for EAM system (migrating from cPanel)
+
+Work Log:
+- Analyzed current project state: Next.js 16 with standalone output, Prisma + MariaDB adapter, remote MySQL
+- Created multi-stage Dockerfile (deps → builder → runner) with:
+  - node:20-slim base image
+  - Prisma generate in deps stage
+  - Next.js build with standalone output in builder stage
+  - Manual copy of mariadb adapter and driver into standalone (not auto-traced by Next.js)
+  - Non-root user (nextjs:nodejs) for security
+  - Health check on /api/route endpoint
+  - PORT=8080, HOSTNAME=0.0.0.0 for Cloud Run compatibility
+- Created .dockerignore to minimize build context
+- Created entrypoint.js wrapper to ensure Cloud Run env vars are set
+- Created deploy-cloud-run.sh interactive deployment script
+- Pushed all files to GitHub (commit 0b53f4f)
+
+Stage Summary:
+- 4 files created: Dockerfile, .dockerignore, entrypoint.js, deploy-cloud-run.sh
+- Docker image uses multi-stage build for minimal size
+- Database connection to existing MySQL at lightworldtech.com:3306 (no database migration needed)
+- User needs: Google Cloud project, gcloud CLI, Docker, and billing enabled
+- One-command deployment: ./deploy-cloud-run.sh PROJECT_ID
