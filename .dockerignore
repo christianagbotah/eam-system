@@ -1,0 +1,88 @@
+# Docker build context exclusions
+# Keep the image small by excluding unnecessary files
+
+# Dependencies (installed in Docker via npm install)
+node_modules
+
+# Build artifacts (regenerated during Docker build)
+.next
+.out
+build
+dist
+
+# Environment files (set via Cloud Run console/gcloud)
+.env
+.env.local
+.env.production
+.env.development
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile*
+.dockerignore
+
+# Database files
+db/*.db
+db/*.db-journal
+
+# Upload/download directories
+upload/
+download/
+public/uploads/
+
+# Development files
+*.log
+dev.log
+server.log
+dev.out.log
+local-*
+.claude
+.z-ai-config
+.claudeignore
+
+# Testing
+test/
+coverage/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Source analysis
+source-analysis/
+
+# Skills
+skills/
+
+# Agent context (development only)
+agent-ctx/
+
+# Mini-services (not needed in production container)
+mini-services/
+
+# Data files
+data/
+
+# Scripts (not needed in production)
+scripts/
+
+# SQL dumps
+*.sql
+
+# Misc
+.DS_Store
+*.pem
+.vercel
+.claude
+.z-ai-config
+.source-analysis
+cloudbuild.yaml
+deploy-cloud-run.sh
+DEPLOY.sh
+server.js
+start.js
+patch-server.js
+MIGRATION_GAP_ANALYSIS.md
