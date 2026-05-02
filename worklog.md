@@ -1789,3 +1789,37 @@ Stage Summary:
 - Database connection to existing MySQL at lightworldtech.com:3306 (no database migration needed)
 - User needs: Google Cloud project, gcloud CLI, Docker, and billing enabled
 - One-command deployment: ./deploy-cloud-run.sh PROJECT_ID
+---
+Task ID: 16
+Agent: Main Agent
+Task: Restrict MR/Repair permissions & improve request conversion UX
+
+Work Log:
+
+### Change 1: Maintenance Requests - Requester's Own Supervisor + Admin Only
+- MR list API (`/api/maintenance-requests/route.ts`): Supervisors now see MRs from departments they supervise by querying `Department.supervisorId === session.userId`, not just MRs explicitly assigned to them
+- MR approve API (`/api/maintenance-requests/[id]/approve/route.ts`): Permission check now uses `Department.supervisorId` lookup to verify the current user is the actual department supervisor of the MR's department (admin bypasses)
+- MR assign-planner API (`/api/maintenance-requests/[id]/assign-planner/route.ts`): Same supervisor check added - only the MR's department supervisor or admin can assign a planner
+- Frontend MR detail page (`MaintenancePages.tsx`): Updated `isDeptSupervisor` heuristic to match backend logic by checking `requestor.department.supervisorId === user.id`
+
+### Change 2: Tools/Material Requests - Role-Based Store Approval
+- Material request supervisor approve/reject (`/api/repairs/material-requests/[id]/route.ts`): Added role-based check requiring `maintenance_supervisor`, `maintenance_manager`, `plant_manager`, or `admin` role
+- Material request storekeeper approve/reject: Added role-based check requiring `store_keeper`, `store_manager`, or `admin` role
+- Tool request supervisor approve/reject (`/api/repairs/tool-requests/[id]/route.ts`): Same role-based checks applied
+- Frontend (`RepairsPages.tsx`): UI action buttons now show based on actual role membership instead of generic `work_orders.update` permission check
+- Reject/approve buttons are only visible to users with the correct role for that approval step
+
+### Change 3: Request Conversion Page - Technician Name Search
+- `WorkerAssignmentSelector` component: Added `hideDepartmentFilter` prop to optionally hide the department dropdown filter
+- Convert-to-WO dialog in MR detail page: Now passes `hideDepartmentFilter={true}` to use name-based search instead of department filter
+- Workers API (`/api/workers/route.ts`): Enhanced to include `userSkills` data (trade/skill information) in the response for richer technician profiles
+- Search results now display: Technician name, Trade/Skill, Department name, and Employee Code (staffId)
+- Mobile cards enhanced with monospace-styled staffId for better readability
+
+Stage Summary:
+- Commit c3597cb pushed to GitHub
+- 3 changes implemented across 6 files (4 API routes, 1 shared component, 1 page component)
+- Maintenance request approval restricted to own department supervisor + admin
+- Tool/material request approvals restricted by role (supervisor vs storekeeper roles)
+- Request conversion UX improved with name-based search showing skill/trade, department, employee code
+- All changes pass ESLint with zero errors
