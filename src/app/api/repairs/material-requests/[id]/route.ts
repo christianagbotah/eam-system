@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 
 // 24-hour threshold for overdue detection
@@ -147,6 +147,26 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     });
 
     if (!matReq) return NextResponse.json({ success: false, error: 'Material request not found' }, { status: 404 });
+
+    // ── Role-based access control for workflow actions ──
+    if (action === 'supervisor_approve' || action === 'supervisor_reject') {
+      // Only maintenance_supervisor, maintenance_manager, plant_manager, or admin can perform supervisor actions
+      if (!isAdmin(session) &&
+          !hasRole(session, 'maintenance_supervisor') &&
+          !hasRole(session, 'maintenance_manager') &&
+          !hasRole(session, 'plant_manager')) {
+        return NextResponse.json({ success: false, error: 'Only supervisors or admin can approve/reject at supervisor level' }, { status: 403 });
+      }
+    }
+
+    if (action === 'storekeeper_approve' || action === 'storekeeper_reject') {
+      // Only store_keeper, store_manager, or admin can perform store actions
+      if (!isAdmin(session) &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'store_manager')) {
+        return NextResponse.json({ success: false, error: 'Only store keeper, store manager, or admin can approve/reject at store level' }, { status: 403 });
+      }
+    }
 
     const now = new Date();
     let updated: any;

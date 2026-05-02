@@ -91,6 +91,18 @@ export async function GET(request: NextRequest) {
             },
           },
         },
+        userSkills: {
+          select: {
+            trade: {
+              select: {
+                name: true,
+                code: true,
+                category: true,
+              },
+            },
+            proficiencyLevel: true,
+          },
+        },
       },
       orderBy: { fullName: 'asc' },
       take: 100,
@@ -106,6 +118,14 @@ export async function GET(request: NextRequest) {
       const primaryRoleSlug = roles.length > 0 ? roles[0].slug : null;
       const isTechnician = roles.some(r => r.slug === 'maintenance_technician');
 
+      // Build skills/trades list from userSkills
+      const skills = (user.userSkills || []).map(us => ({
+        name: us.trade.name,
+        code: us.trade.code,
+        category: us.trade.category,
+        proficiency: us.proficiencyLevel,
+      }));
+
       return {
         id: user.id,
         fullName: user.fullName,
@@ -118,6 +138,7 @@ export async function GET(request: NextRequest) {
         primaryRoleSlug,
         isTechnician,
         roles,
+        skills,
       };
     });
 

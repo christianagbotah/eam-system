@@ -765,12 +765,14 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   if (loading) return <LoadingSkeleton />;
   if (!mr) return <div className="p-6">Request not found</div>;
 
-  // Only admin or the request sender's department supervisor can approve/assign
+  // Only admin or the request sender's own department supervisor can approve/assign
   const isAdminUser = useAuthStore.getState().isAdmin();
   const isDeptSupervisor = user?.roles?.some((r: any) => r.slug === 'maintenance_supervisor' || r.slug === 'admin')
-    && mr.requester?.department
-    && user?.department
-    && (user.department === mr.requester.department || (typeof mr.requester.department === 'object' && mr.requester.department?.name && user.department?.name && user.department.name === (mr.requester.department as any).name));
+    && (mr.departmentId
+      // The frontend can't easily query Department.supervisorId, so we rely on the API
+      // server-side check. Here we use the supervisorId field as a heuristic:
+      ? mr.supervisorId === user?.id
+      : false);
 
   const canApprove = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
   const canReject = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
@@ -1040,6 +1042,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                   assignType={convertForm.assignType}
                   onAssignTypeChange={(type) => setConvertForm(f => ({ ...f, assignType: type }))}
                   label="Resource Assignment"
+                  hideDepartmentFilter={true}
                 />
 
                 {/* Required Spare Parts */}

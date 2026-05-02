@@ -28,11 +28,11 @@ export async function POST(
       );
     }
 
-    // Fetch MR with requester department for access control
+    // Fetch MR with department for access control
     const mr = await db.maintenanceRequest.findUnique({
       where: { id },
       include: {
-        requester: { select: { id: true, fullName: true, username: true, department: true } },
+        requester: { select: { id: true, fullName: true, username: true } },
       },
     });
     if (!mr) {
@@ -42,21 +42,30 @@ export async function POST(
       );
     }
 
-    // Access control: only admin or the requester's department supervisor can assign planner
+    // Access control: only admin or the requester's own department supervisor can assign planner
     if (!isAdmin(session)) {
       const currentUser = await db.user.findUnique({
         where: { id: session.userId },
-        select: { id: true, department: true, userRoles: { select: { role: { select: { slug: true } } } } },
+        select: { id: true, userRoles: { select: { role: { select: { slug: true } } } } },
       });
       const isSupervisor = currentUser?.userRoles.some((r: any) => r.role?.slug === 'maintenance_supervisor' || r.role?.slug === 'admin');
       if (!isSupervisor) {
         return NextResponse.json({ success: false, error: 'Only admin or department supervisor can assign planners' }, { status: 403 });
       }
-      const requesterDept = mr.requester?.department;
-      const userDept = currentUser?.department;
-      const deptMatch = requesterDept && userDept && requesterDept === userDept;
-      if (!deptMatch) {
-        return NextResponse.json({ success: false, error: 'You can only assign planners for requests from your own department' }, { status: 403 });
+      // Verify the current user is the supervisor of the MR's department
+      if (mr.departmentId) {
+        const dept = await db.department.findUnique({
+          where: { id: mr.departmentId },
+          select: { supervisorId: true },
+        });
+        if (!dept || dept.supervisorId !== session.userId) {
+          return NextResponse.json({ success: false, error: 'You can only assign planners for requests from departments you supervise' }, { status: 403 });
+        }
+      } else {
+        // No department on MR — only allow if explicitly assigned as supervisor
+        if (mr.supervisorId !== session.userId) {
+          return NextResponse.json({ success: false, error: 'You can only assign planners for requests assigned to you' }, { status: 403 });
+        }
       }
     }
 

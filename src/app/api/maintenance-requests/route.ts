@@ -62,8 +62,22 @@ export async function GET(request: NextRequest) {
         // Operators see their own requests
         where.requestedBy = session.userId;
       } else if (session.roles.includes('maintenance_supervisor')) {
-        // Supervisors see their department's requests
-        where.supervisorId = session.userId;
+        // Supervisors see MRs from departments where they are the supervisor
+        // OR MRs explicitly assigned to them (backward compatibility)
+        const supervisedDepts = await db.department.findMany({
+          where: { supervisorId: session.userId },
+          select: { id: true },
+        });
+        const supervisedDeptIds = supervisedDepts.map(d => d.id);
+        if (supervisedDeptIds.length > 0) {
+          where.OR = [
+            { supervisorId: session.userId },
+            { departmentId: { in: supervisedDeptIds } },
+          ];
+        } else {
+          // No supervised departments — fall back to explicitly assigned only
+          where.supervisorId = session.userId;
+        }
       } else if (session.roles.includes('maintenance_technician')) {
         // Technicians see WOs linked to them via maintenance requests
         where.OR = [

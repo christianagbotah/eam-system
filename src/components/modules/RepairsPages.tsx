@@ -312,6 +312,22 @@ const TRANSFER_STAGES: PipelineStage[] = [
 ];
 
 // ============================================================================
+// SHARED ROLE HELPERS
+// ============================================================================
+
+function isSupervisorOrAdmin(user: any): boolean {
+  if (!user?.roles) return false;
+  const slugs = (user.roles || []).map((r: any) => r.slug);
+  return slugs.includes('admin') || slugs.includes('maintenance_supervisor') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager');
+}
+
+function isStoreOrAdmin(user: any): boolean {
+  if (!user?.roles) return false;
+  const slugs = (user.roles || []).map((r: any) => r.slug);
+  return slugs.includes('admin') || slugs.includes('store_keeper') || slugs.includes('store_manager');
+}
+
+// ============================================================================
 // PAGE 1: REPAIR MATERIAL REQUESTS
 // ============================================================================
 
@@ -526,20 +542,19 @@ export function RepairMaterialRequestsPage() {
                       <TableCell><OverduePulse isOverdue={r.isOverdue} date={r.createdAt} /></TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                          {(hasPermission('work_orders.update') || isAdmin()) && <>
-                          {r.status === 'pending' && (
+                          {r.status === 'pending' && isSupervisorOrAdmin(user) && (
                             <>
                               <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => handleAction(r.id, 'supervisor_approve')}><CheckCircle2 className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Approve</TooltipContent></Tooltip></TooltipProvider>
                               <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => { setRejectTarget({ id: r.id, action: 'supervisor_reject' }); setRejectOpen(true); }}><XCircle className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reject</TooltipContent></Tooltip></TooltipProvider>
                             </>
                           )}
-                          {r.status === 'supervisor_approved' && (
+                          {r.status === 'supervisor_approved' && isStoreOrAdmin(user) && (
                             <>
                               <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-teal-600 hover:text-teal-700 hover:bg-teal-50" onClick={() => handleAction(r.id, 'storekeeper_approve')}><Warehouse className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Store Approve</TooltipContent></Tooltip></TooltipProvider>
                               <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => { setRejectTarget({ id: r.id, action: 'storekeeper_reject' }); setRejectOpen(true); }}><XCircle className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reject</TooltipContent></Tooltip></TooltipProvider>
                             </>
                           )}
-                          {r.status === 'storekeeper_approved' && (
+                          {r.status === 'storekeeper_approved' && isStoreOrAdmin(user) && (
                             <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setQtyTarget({ id: r.id, action: 'issue', max: r.quantityApproved, field: 'quantityToIssue' }); setQtyOpen(true); }}>
                               <PackageCheck className="h-3.5 w-3.5" /> Issue
                             </Button>
@@ -549,7 +564,6 @@ export function RepairMaterialRequestsPage() {
                               <RotateCcw className="h-3.5 w-3.5" /> Return
                             </Button>
                           )}
-                          </>}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
@@ -620,7 +634,7 @@ export function RepairMaterialRequestsPage() {
                   </div>
                   <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                   {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
-                  {(detailItem.status === 'pending' || detailItem.status === 'supervisor_approved' || detailItem.status === 'storekeeper_approved' || detailItem.status === 'issued') && (hasPermission('work_orders.update') || isAdmin()) && (
+                  {((detailItem.status === 'pending' && isSupervisorOrAdmin(user)) || (detailItem.status === 'supervisor_approved' && isStoreOrAdmin(user)) || (detailItem.status === 'storekeeper_approved' && isStoreOrAdmin(user)) || detailItem.status === 'issued') && (
                     <>
                       <Separator />
                       <div className="flex flex-wrap gap-2">
@@ -857,22 +871,20 @@ export function RepairToolRequestsPage() {
                       <TableCell><OverduePulse isOverdue={r.isOverdue} date={r.createdAt} /></TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                          {(hasPermission('work_orders.update') || isAdmin()) && <>
-                          {r.status === 'pending' && (<>
+                          {r.status === 'pending' && isSupervisorOrAdmin(user) && (<>
                             <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => handleAction(r.id, 'supervisor_approve')}><CheckCircle2 className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Approve</TooltipContent></Tooltip></TooltipProvider>
                             <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => { setRejectTarget({ id: r.id, action: 'supervisor_reject' }); setRejectOpen(true); }}><XCircle className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reject</TooltipContent></Tooltip></TooltipProvider>
                           </>)}
-                          {r.status === 'supervisor_approved' && (<>
+                          {r.status === 'supervisor_approved' && isStoreOrAdmin(user) && (<>
                             <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-teal-600 hover:text-teal-700 hover:bg-teal-50" onClick={() => handleAction(r.id, 'storekeeper_approve')}><Warehouse className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Store Approve</TooltipContent></Tooltip></TooltipProvider>
                             <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => { setRejectTarget({ id: r.id, action: 'storekeeper_reject' }); setRejectOpen(true); }}><XCircle className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reject</TooltipContent></Tooltip></TooltipProvider>
                           </>)}
-                          {r.status === 'storekeeper_approved' && (
+                          {r.status === 'storekeeper_approved' && isStoreOrAdmin(user) && (
                             <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(r.id, 'issue')}><Wrench className="h-3.5 w-3.5" /> Issue</Button>
                           )}
                           {r.status === 'issued' && (
                             <Button size="sm" variant="outline" className="h-7 gap-1 border-amber-400 text-amber-700 hover:bg-amber-50" onClick={() => { setConditionTarget(r.id); setConditionOpen(true); }}><RotateCcw className="h-3.5 w-3.5" /> Return</Button>
                           )}
-                          </>}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
@@ -925,7 +937,7 @@ export function RepairToolRequestsPage() {
                 </div>
                 <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                 {detailItem.toolConditionAtReturn && <div><Label className="text-xs text-muted-foreground">Return Condition</Label><p className="text-sm mt-1"><StatusBadge status={detailItem.toolConditionAtReturn} /></p></div>}
-                {(detailItem.status === 'pending' || detailItem.status === 'supervisor_approved' || detailItem.status === 'storekeeper_approved' || detailItem.status === 'issued') && (hasPermission('work_orders.update') || isAdmin()) && (<>
+                {((detailItem.status === 'pending' && isSupervisorOrAdmin(user)) || (detailItem.status === 'supervisor_approved' && isStoreOrAdmin(user)) || (detailItem.status === 'storekeeper_approved' && isStoreOrAdmin(user)) || detailItem.status === 'issued') && (<>
                   <Separator />
                   <div className="flex flex-wrap gap-2">
                     {detailItem.status === 'pending' && (<><Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'supervisor_approve')} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button><Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'supervisor_reject' }); setRejectOpen(true); }} disabled={submitting}>Reject</Button></>)}

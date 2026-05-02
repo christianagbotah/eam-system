@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 
 const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
@@ -53,6 +53,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       },
     });
     if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
+
+    // ── Role-based access control for workflow actions ──
+    if (action === 'supervisor_approve' || action === 'supervisor_reject') {
+      if (!isAdmin(session) &&
+          !hasRole(session, 'maintenance_supervisor') &&
+          !hasRole(session, 'maintenance_manager') &&
+          !hasRole(session, 'plant_manager')) {
+        return NextResponse.json({ success: false, error: 'Only supervisors or admin can approve/reject at supervisor level' }, { status: 403 });
+      }
+    }
+
+    if (action === 'storekeeper_approve' || action === 'storekeeper_reject') {
+      if (!isAdmin(session) &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'store_manager')) {
+        return NextResponse.json({ success: false, error: 'Only store keeper, store manager, or admin can approve/reject at store level' }, { status: 403 });
+      }
+    }
 
     const now = new Date();
     let updated: any;
