@@ -1823,3 +1823,34 @@ Stage Summary:
 - Tool/material request approvals restricted by role (supervisor vs storekeeper roles)
 - Request conversion UX improved with name-based search showing skill/trade, department, employee code
 - All changes pass ESLint with zero errors
+---
+Task ID: 17
+Agent: Main Agent
+Task: Add auto-deploy CI/CD pipeline for Google Cloud Compute Engine VM
+
+Work Log:
+- Created .github/workflows/deploy.yml: GitHub Actions workflow that triggers on push to main
+  - SSH into VM via appleboy/ssh-action
+  - Pulls latest code, installs deps, generates Prisma, builds Next.js
+  - Copies static assets into standalone directory
+  - Restarts PM2 process (zero-downtime reload)
+  - Runs health check after deploy (6 retries with 5s intervals)
+  - Supports manual trigger via workflow_dispatch
+  - Concurrency group prevents overlapping deploys
+- Created scripts/vm-setup.sh: One-time VM setup script
+  - Installs Node.js 20, PM2 globally
+  - Clones repo, installs deps, builds app
+  - Configures PM2 auto-start on reboot
+  - Provides firewall configuration instructions
+  - Guides user through GitHub Secrets setup
+- Created scripts/vm-deploy.sh: Manual deploy shortcut
+  - Supports branch selection and --no-build flag
+  - Pull, install, build, restart in one command
+- Git remote updated to new PAT with workflow scope
+
+Stage Summary:
+- Commit 171b5fb: vm-setup.sh + vm-deploy.sh pushed
+- Commit fb15476: deploy.yml workflow pushed via new token with workflow scope
+- Auto-deploy activates on next push to main (after GitHub Secrets are configured)
+- User must add 4 GitHub Secrets: VM_HOST, VM_USER, VM_SSH_KEY, VM_PORT
+- User must run vm-setup.sh once on the VM
