@@ -1854,3 +1854,36 @@ Stage Summary:
 - Auto-deploy activates on next push to main (after GitHub Secrets are configured)
 - User must add 4 GitHub Secrets: VM_HOST, VM_USER, VM_SSH_KEY, VM_PORT
 - User must run vm-setup.sh once on the VM
+
+---
+Task ID: 16
+Agent: Main Coordinator
+Task: Switch deployment from Google Cloud Compute Engine to Webuzo VPS
+
+Work Log:
+- Diagnosed Google Cloud VM OOM crash: ~1GB RAM with no swap, runaway cron job spawning dozens of concurrent deploy/build processes
+- User decided to switch to Webuzo panel on VPS instead
+- Updated `.github/workflows/deploy.yml` for Webuzo VPS deployment:
+  - Changed secrets from VM_HOST/VM_USER/VM_SSH_KEY to VPS_HOST/VPS_USER/VPS_SSH_KEY
+  - Added VPS_APP_PATH secret for flexible project location
+  - Updated build steps to use prebuilt Prisma client (faster builds, less memory)
+  - Added patch-server.js step for reverse proxy compatibility
+  - Increased timeout to 20 minutes (small VPS builds slower)
+- Created `scripts/webuzo-setup.sh` - comprehensive one-time VPS setup script:
+  - Checks for Node.js 20+ (prerequisite)
+  - Creates 2GB swap space to prevent OOM crashes
+  - Installs PM2 process manager
+  - Clones repo and guides through MySQL database setup
+  - Creates .env file interactively
+  - Builds and starts the app
+  - Provides step-by-step Webuzo reverse proxy setup instructions (Apache, Nginx, or Webuzo Node.js Manager)
+  - Reminds user to update NEXTAUTH_URL after domain setup
+- Created `scripts/webuzo-deploy.sh` - quick manual deploy shortcut
+- Old scripts (vm-setup.sh, vm-deploy.sh) retained for reference
+
+Stage Summary:
+- 3 files updated/created: deploy.yml, webuzo-setup.sh, webuzo-deploy.sh
+- Deployment pipeline now targets Webuzo VPS instead of GCE VM
+- Swap space creation prevents OOM crashes that killed the GCE VM
+- Prebuilt Prisma client reduces build memory footprint
+- User needs to: (1) run webuzo-setup.sh on VPS, (2) configure reverse proxy in Webuzo, (3) add GitHub secrets, (4) update NEXTAUTH_URL
