@@ -85,7 +85,7 @@ import {
 function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const { currentPage, navigate, sidebarOpen, enabledModules } = useNavigationStore();
   const expanded = forceExpanded ?? sidebarOpen;
-  const { user, permissions, hasPermission, logout } = useAuthStore();
+  const { user, permissions, hasPermission, isAdmin, logout } = useAuthStore();
   const [openMenus, setOpenMenus] = useState<string[]>([]);
 
   // Menu group definition
@@ -308,17 +308,17 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     });
   }, [currentPage]);
 
-  // Filter visible groups
+  // Filter visible groups — admin users always see everything
   const visibleGroups = useMemo(() => menuGroups.filter(g => {
-    // Permission check
-    if (!hasPermission(g.perm)) return false;
-    // Module-aware check: hide groups whose module is not enabled (unless data not loaded yet)
-    if (enabledModules !== null) {
+    // Permission check (admin always passes)
+    if (!isAdmin() && !hasPermission(g.perm)) return false;
+    // Module-aware check: hide groups whose module is not enabled (unless admin or data not loaded yet)
+    if (!isAdmin() && enabledModules !== null) {
       const codes = g.moduleCodes || (g.moduleCode ? [g.moduleCode] : []);
       if (codes.length > 0 && !codes.some(c => enabledModules.has(c))) return false;
     }
     return true;
-  }), [menuGroups, hasPermission, enabledModules, permissions]);
+  }), [menuGroups, hasPermission, enabledModules, permissions, isAdmin]);
 
   // Get tooltip text for collapsed sidebar
   const getGroupTooltip = (group: NavGroup) => {

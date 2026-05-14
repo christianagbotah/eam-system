@@ -32,6 +32,12 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
         res.data.forEach((m: any) => {
           if (m.isEnabled || m.isCore) enabled.add(m.code);
         });
+        // Safety: if no modules are enabled, keep null so all sidebar items remain visible
+        // This prevents an empty Set from hiding every menu group
+        if (enabled.size === 0) {
+          // Don't update — stay null (show all)
+          return;
+        }
         set({ enabledModules: enabled });
       }
     } catch {
