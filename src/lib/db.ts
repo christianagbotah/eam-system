@@ -6,12 +6,16 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 function createPrismaClient() {
+  // Parse DATABASE_URL: mysql://user:password@host:port/database
+  const dbUrl = process.env.DATABASE_URL || ''
+  const match = dbUrl.match(/mysql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/)
+
   const adapter = new PrismaMariaDb({
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '3306'),
-    user: process.env.DB_USER || 'lightwor_nestjsApps',
-    password: process.env.DB_PASSWORD || '@@Myjesus4me2016$$',
-    database: process.env.DB_NAME || 'lightwor_iassetspro_db',
+    host: match ? match[3] : 'localhost',
+    port: match ? parseInt(match[4]) : 3306,
+    user: match ? match[1] : 'root',
+    password: match ? match[2] : '',
+    database: match ? match[5] : 'eam_system',
   })
 
   return new PrismaClient({ adapter })
