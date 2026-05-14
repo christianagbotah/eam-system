@@ -1887,3 +1887,22 @@ Stage Summary:
 - Swap space creation prevents OOM crashes that killed the GCE VM
 - Prebuilt Prisma client reduces build memory footprint
 - User needs to: (1) run webuzo-setup.sh on VPS, (2) configure reverse proxy in Webuzo, (3) add GitHub secrets, (4) update NEXTAUTH_URL
+
+---
+Task ID: 16
+Agent: Main Coordinator
+Task: Fix admin sidebar empty — no menu items showing after Prisma 7 deploy
+
+Work Log:
+- Diagnosed root cause: `enabledModules` Set becomes empty when system_modules table has no matching entries, causing ALL sidebar groups (which all have moduleCode/moduleCodes) to be filtered out
+- Two-layer sidebar filtering was too aggressive: (1) permission check + (2) module-aware check, with no admin bypass
+- Fix 1 (navigationStore.ts): If `enabledModules` would be an empty Set after fetching modules, keep it as `null` (show all items). This prevents an empty module configuration from hiding everything.
+- Fix 2 (Sidebar.tsx): Admin users now bypass BOTH permission checks AND module-aware checks. Admin always sees all sidebar menu items regardless of enabled modules state.
+- Confirmed db.ts already handles both `DATABASE_URL` and individual `DB_*` env vars (was fixed earlier)
+- Pushed commit 9ff7c57 to GitHub for auto-deploy to VPS
+
+Stage Summary:
+- 2 files modified (Sidebar.tsx, navigationStore.ts)
+- Admin users always see full sidebar regardless of module configuration
+- Empty module set no longer hides all items for non-admin users either
+- Lint clean on modified files
