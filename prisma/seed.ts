@@ -2,12 +2,33 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { hash } from 'bcryptjs';
 
+// Parse DATABASE_URL for adapter config
+let dbUrl = process.env.DATABASE_URL || '';
+
+// If DATABASE_URL points to SQLite (sandbox override), ignore it and build from individual vars
+if (dbUrl.startsWith('file:') || !dbUrl.includes('mysql://')) {
+  const host = process.env.DB_HOST;
+  const port = process.env.DB_PORT || '3306';
+  const user = process.env.DB_USER;
+  const password = process.env.DB_PASSWORD;
+  const database = process.env.DB_NAME;
+  if (host && user && password && database) {
+    dbUrl = `mysql://${user}:${password}@${host}:${port}/${database}`;
+  }
+}
+
+const urlMatch = dbUrl.match(/mysql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/);
+
+if (!urlMatch) {
+  throw new Error('Invalid DATABASE_URL. Must be mysql://user:password@host:port/database');
+}
+
 const adapter = new PrismaMariaDb({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '3306'),
-  user: process.env.DB_USER || 'lightwor_nestjsApps',
-  password: process.env.DB_PASSWORD || '@@Myjesus4me2016$$',
-  database: process.env.DB_NAME || 'lightwor_iassetspro_db',
+  host: urlMatch[3],
+  port: parseInt(urlMatch[4]),
+  user: urlMatch[1],
+  password: urlMatch[2],
+  database: urlMatch[5],
 });
 
 const db = new PrismaClient({ adapter });
@@ -657,7 +678,7 @@ async function seed() {
 
   // ── Clear existing data for clean re-seed (reverse dependency order) ──
   console.log('🗑️  Clearing existing data...');
-  await db.$transaction([
+  const tablesToClear = [
     db.rolePermission.deleteMany(),
     db.userPermission.deleteMany(),
     db.workOrderStatusHistory.deleteMany(),
@@ -688,7 +709,11 @@ async function seed() {
     db.department.deleteMany(),
     db.plant.deleteMany(),
     db.companyProfile.deleteMany(),
-  ]);
+  ];
+  // Run deletes sequentially to avoid batch transaction timeout with MariaDB adapter
+  for (const op of tablesToClear) {
+    await op;
+  }
   console.log('✅ Existing data cleared\n');
 
   // ══════════════════════════════════════════════════════════════════════════
