@@ -151,15 +151,14 @@ const UserPreferencesPage = lazy(() => import('./modules/SettingsPages').then(m 
 
 function AppShell() {
   const { currentPage, navigate, goBack, toggleSidebar, setMobileSidebarOpen, fetchModules } = useNavigationStore();
-  const { user, isAuthenticated, isLoading, fetchMe, logout, hasPermission, isAdmin } = useAuthStore();
+  const { user, isAuthenticated, isLoading, logout, hasPermission, isAdmin } = useAuthStore();
 
   // Track if user has navigated away from dashboard (to show back button)
   const canGoBack = typeof window !== 'undefined' && window.location.hash !== '#/dashboard' && window.location.hash !== '#' && window.location.hash !== '';
 
   React.useEffect(() => {
-    fetchMe();
     fetchModules();
-  }, [fetchMe, fetchModules]);
+  }, [fetchModules]);
 
   // Update document title on page change
   React.useEffect(() => {

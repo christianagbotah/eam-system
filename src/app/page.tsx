@@ -112,6 +112,14 @@ class GlobalErrorBoundary extends React.Component<
 export default function Home() {
   const [mounted, setMounted] = useState(false);
   const user = useAuthStore((s) => s.user);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isLoading = useAuthStore((s) => s.isLoading);
+  const fetchMe = useAuthStore((s) => s.fetchMe);
+
+  // Restore session on mount — MUST run before the auth gate
+  useEffect(() => {
+    fetchMe();
+  }, [fetchMe]);
 
   // Global error handler for unhandled promise rejections & runtime errors
   useEffect(() => {
@@ -143,12 +151,12 @@ export default function Home() {
     React.startTransition(() => setMounted(true));
   }, []);
 
-  if (!mounted) {
+  if (!mounted || isLoading) {
     return <LoadingScreen />;
   }
 
-  // Not logged in → show the lightweight LoginPage (no lazy loading needed)
-  if (!user) {
+  // Not logged in and not loading → show the login page
+  if (!isAuthenticated || !user) {
     return <LoginPage />;
   }
 
