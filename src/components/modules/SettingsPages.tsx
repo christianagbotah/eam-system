@@ -54,6 +54,7 @@ import { Sun, Moon, LayoutGrid, List, Volume2, MonitorSpeaker, CalendarDays, Glo
 
 // SettingsUsersPage
 export function SettingsUsersPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
@@ -331,6 +332,7 @@ export function SettingsUsersPage() {
 }
 // SettingsRolesPage
 export function SettingsRolesPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1533,6 +1535,7 @@ export function CompanyProfilePage() {
 
 // SettingsPlantsPage
 export function SettingsPlantsPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [plants, setPlants] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -1645,6 +1648,7 @@ export function SettingsPlantsPage() {
 // ============================================================================
 
 export function SettingsDepartmentsPage() {
+  const { hasPermission, isAdmin } = useAuthStore();
   const [departments, setDepartments] = useState<any[]>([]);
   const [plants, setPlants] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
