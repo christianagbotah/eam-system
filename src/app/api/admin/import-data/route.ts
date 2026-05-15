@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, isAdmin } from '@/lib/auth';
+import { getSessionAsync, isAdmin } from '@/lib/auth';
 import { db } from '@/lib/db';
 import bcrypt from 'bcryptjs';
+
+export const dynamic = 'force-dynamic';
 
 // Supported import modules with their validation schemas
 const SUPPORTED_IMPORT_MODULES = ['assets', 'inventory', 'users', 'plants', 'departments'] as const;
@@ -313,7 +315,12 @@ async function importDepartments(records: Record<string, unknown>[]): Promise<Im
 
 export async function POST(req: NextRequest) {
   try {
-    const session = getSession({ headers: req.headers } as Request);
+    const authHeader = req.headers.get('authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const session = await getSessionAsync(token);
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

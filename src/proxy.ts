@@ -38,7 +38,7 @@ function withSecurityHeaders(response: NextResponse): NextResponse {
   return response;
 }
 
-export async function proxy(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Only handle /api/* routes

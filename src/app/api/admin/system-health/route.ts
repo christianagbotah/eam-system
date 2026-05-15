@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, isAdmin } from '@/lib/auth';
+import { getSessionAsync, isAdmin } from '@/lib/auth';
 import { db } from '@/lib/db';
 import fs from 'fs';
 import path from 'path';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/admin/system-health
 export async function GET(req: NextRequest) {
   try {
-    const session = getSession({ headers: req.headers } as Request);
+    const authHeader = req.headers.get('authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const session = await getSessionAsync(token);
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

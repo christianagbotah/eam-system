@@ -4,11 +4,15 @@ import { config } from "dotenv";
 
 config();
 
-// Override DATABASE_URL if it points to local SQLite (sandbox injects this)
+// Determine database URL - support both MySQL (VPS) and SQLite (sandbox)
 let dbUrl = process.env.DATABASE_URL || '';
+let provider = 'mysql'; // default
 
-if (dbUrl.startsWith('file:') || !dbUrl.includes('mysql://')) {
-  // Build from individual env vars as fallback
+if (dbUrl.startsWith('file:') || dbUrl.includes('sqlite')) {
+  // Sandbox/local SQLite
+  provider = 'sqlite';
+} else if (!dbUrl.includes('mysql://')) {
+  // Try building from individual env vars
   const host = process.env.DB_HOST;
   const port = process.env.DB_PORT;
   const user = process.env.DB_USER;
@@ -19,17 +23,11 @@ if (dbUrl.startsWith('file:') || !dbUrl.includes('mysql://')) {
   }
 }
 
-if (!dbUrl.includes('mysql://')) {
-  throw new Error(
-    'DATABASE_URL must be a valid mysql:// connection string. ' +
-    'Current value starts with: ' + dbUrl.substring(0, 20)
-  );
-}
-
 export default defineConfig({
   earlyAccess: true,
   schema: path.join(__dirname, "prisma", "schema.prisma"),
   datasource: {
+    provider: provider as 'mysql' | 'sqlite',
     url: dbUrl,
   },
 });

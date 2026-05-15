@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSessionAsync } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = getSession(request);
+    // Use async session lookup to self-heal from cold cache (e.g. after server restart)
+    const authHeader = request.headers.get('authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token) {
+      return NextResponse.json(
+        { success: false, error: 'Not authenticated' },
+        { status: 401 }
+      );
+    }
+    const session = await getSessionAsync(token);
     if (!session) {
       return NextResponse.json(
         { success: false, error: 'Not authenticated' },

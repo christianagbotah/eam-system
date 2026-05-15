@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, isAdmin } from '@/lib/auth';
+import { getSessionAsync, isAdmin } from '@/lib/auth';
 import { db } from '@/lib/db';
+
+export const dynamic = 'force-dynamic';
 
 // Simple in-memory rate limiter: max 1 export per 5 minutes per user
 const rateLimitMap = new Map<string, number>();
@@ -126,7 +128,12 @@ function serializeRecord(record: Record<string, unknown>): Record<string, unknow
 
 export async function GET(req: NextRequest) {
   try {
-    const session = getSession({ headers: req.headers } as Request);
+    const authHeader = req.headers.get('authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const session = await getSessionAsync(token);
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

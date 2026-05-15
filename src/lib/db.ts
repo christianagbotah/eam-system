@@ -1,49 +1,58 @@
 import { PrismaClient } from '@prisma/client'
-import { PrismaMariaDb } from '@prisma/adapter-mariadb'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-function getDatabaseConfig() {
-  // Parse DATABASE_URL: mysql://user:password@host:port/database
-  let dbUrl = process.env.DATABASE_URL || ''
+function createPrismaClient(): PrismaClient {
+  const dbUrl = process.env.DATABASE_URL || ''
 
-  // If DATABASE_URL points to SQLite (sandbox override), ignore it and build from individual vars
-  if (dbUrl.startsWith('file:') || !dbUrl.includes('mysql://')) {
+  // Sandbox/local: use SQLite (no adapter needed)
+  if (dbUrl.startsWith('file:') || dbUrl.includes('sqlite')) {
+    return new PrismaClient()
+  }
+
+  // Production: use MariaDB adapter
+  // Dynamic import to avoid bundling the adapter in sandbox builds
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { PrismaMariaDb } = require('@prisma/adapter-mariadb')
+
     const host = process.env.DB_HOST
     const port = process.env.DB_PORT || '3306'
     const user = process.env.DB_USER
     const password = process.env.DB_PASSWORD
     const database = process.env.DB_NAME
+
     if (host && user && password && database) {
-      dbUrl = `mysql://${user}:${password}@${host}:${port}/${database}`
+      const adapter = new PrismaMariaDb({
+        host,
+        port: parseInt(port),
+        user,
+        password,
+        database,
+      })
+      return new PrismaClient({ adapter })
     }
+
+    // Fallback: parse from DATABASE_URL
+    const match = dbUrl.match(/mysql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/)
+    if (match) {
+      const adapter = new PrismaMariaDb({
+        host: match[3],
+        port: parseInt(match[4]),
+        user: match[1],
+        password: match[2],
+        database: match[5],
+      })
+      return new PrismaClient({ adapter })
+    }
+  } catch {
+    // MariaDB adapter not available (sandbox) — use plain PrismaClient
+    console.warn('[db] MariaDB adapter not available, falling back to default PrismaClient')
   }
 
-  const match = dbUrl.match(/mysql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/)
-  if (!match) {
-    throw new Error(
-      'Invalid DATABASE_URL: must be mysql://user:password@host:port/database. ' +
-      'Got: ' + dbUrl.substring(0, 30) + '...'
-    )
-  }
-
-  return {
-    host: match[3],
-    port: parseInt(match[4]),
-    user: match[1],
-    password: match[2],
-    database: match[5],
-  }
-}
-
-function createPrismaClient() {
-  const config = getDatabaseConfig()
-
-  const adapter = new PrismaMariaDb(config)
-
-  return new PrismaClient({ adapter })
+  return new PrismaClient()
 }
 
 export const db = globalForPrisma.prisma ?? createPrismaClient()
