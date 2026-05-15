@@ -20,11 +20,9 @@ interface NavigationState {
 // Browser history integration
 // ============================================================================
 
-const HISTORY_STATE_KEY = 'eam_nav';
-
 function pushNavState(page: PageName, params: Record<string, string>, replace = false) {
   const url = buildUrl(page, params);
-  const state = { page, params };
+  const state = { [HISTORY_STATE_KEY]: true, page, params };
 
   if (replace) {
     window.history.replaceState(state, '', url);
@@ -92,14 +90,9 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   },
 
   goBack: () => {
-    // If there's history to go back to, let the browser handle it.
-    // The popstate listener will catch it and update the store.
-    if (window.history.length > 1) {
-      window.history.back();
-    } else {
-      // No browser history — navigate to dashboard as fallback
-      get().navigate('dashboard', {}, true);
-    }
+    // Always use browser history.back() — the popstate guard will
+    // prevent closing the tab/webview by pushing forward to dashboard.
+    window.history.back();
   },
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -110,12 +103,32 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
 }));
 
 // ============================================================================
-// Global popstate listener — runs once, handles browser back/forward
+// Global popstate listener + history guard for mobile/webview
 // ============================================================================
+
+const HISTORY_STATE_KEY = 'eam_nav';
+
 if (typeof window !== 'undefined') {
+  // Flag to detect when we just recovered from a guard entry.
+  // This prevents the "back to previous page" loop after guard recovery.
+  let guardRecoveryPending = false;
+
   window.addEventListener('popstate', (event) => {
-    // Try the state we pushed first
-    if (event.state?.page) {
+    // If we just pushed forward after hitting the guard, the browser may
+    // fire popstate again as it reconciles. Ignore it and stay put.
+    if (guardRecoveryPending) {
+      guardRecoveryPending = false;
+      // Re-push to ensure we stay on dashboard
+      window.history.pushState(
+        { [HISTORY_STATE_KEY]: true, page: 'dashboard', params: {} },
+        '',
+        buildUrl('dashboard', {})
+      );
+      return;
+    }
+
+    // Normal app navigation — state has our marker and a page
+    if (event.state?.[HISTORY_STATE_KEY] && event.state?.page) {
       const { page, params } = event.state;
       useNavigationStore.setState({
         currentPage: page as PageName,
@@ -124,25 +137,37 @@ if (typeof window !== 'undefined') {
       return;
     }
 
-    // Fallback: parse the hash from URL
-    const parsed = parseHash();
-    if (parsed) {
-      useNavigationStore.setState({
-        currentPage: parsed.page,
-        pageParams: parsed.params,
-      });
-    }
+    // Guard entry or external navigation — we've hit the bottom of app history.
+    // Push forward to dashboard to prevent the tab/webview from closing.
+    // This is critical for mobile browsers and webviews where pressing back
+    // at the root would close the entire tab.
+    useNavigationStore.setState({
+      currentPage: 'dashboard',
+      pageParams: {},
+    });
+    window.history.pushState(
+      { [HISTORY_STATE_KEY]: true, page: 'dashboard', params: {} },
+      '',
+      buildUrl('dashboard', {})
+    );
+    guardRecoveryPending = true;
   });
 
   // On initial load, restore from URL hash if present
   const initial = parseHash();
-  if (initial) {
-    useNavigationStore.setState({
-      currentPage: initial.page,
-      pageParams: initial.params,
-    });
-  } else {
-    // Set initial history entry so back button works from the first navigation
-    pushNavState('dashboard', {}, true);
-  }
+  const initPage: PageName = initial?.page || 'dashboard';
+  const initParams = initial?.params || {};
+
+  useNavigationStore.setState({
+    currentPage: initPage,
+    pageParams: initParams,
+  });
+
+  // Replace current history entry with proper app state
+  pushNavState(initPage, initParams, true);
+
+  // Push a guard entry so there's always a "previous" entry to go back to.
+  // This prevents the browser/webview from closing when the user presses
+  // the back button while on the first app page (e.g., dashboard).
+  window.history.pushState(null, '', window.location.href);
 }

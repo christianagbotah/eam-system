@@ -559,11 +559,11 @@ export function SettingsRolesPage() {
           </div>
         </Card>
 
-        {/* ─── Right Column: Permissions (scrolls vertically) ─── */}
-        <div className="flex-1 min-w-0 overflow-y-auto space-y-3 md:space-y-4 pr-0 lg:pr-1">
+        {/* ─── Right Column: Permissions ─── */}
+        <div className="flex-1 min-w-0 flex flex-col">
           {/* Role info header — desktop only (mobile shows selector above) */}
           {selectedRoleData && (
-            <div className="hidden lg:flex items-center gap-3 mb-1">
+            <div className="hidden lg:flex items-center gap-3 mb-3 shrink-0">
               <div className="h-9 w-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: (selectedRoleData.color || '#10b981') + '18', color: selectedRoleData.color || '#10b981' }}>
                 <Shield className="h-4 w-4" />
               </div>
@@ -574,8 +574,8 @@ export function SettingsRolesPage() {
             </div>
           )}
 
-          {/* Permission search filter */}
-          <div className="relative">
+          {/* Permission search filter — sticky */}
+          <div className="relative shrink-0 mb-3">
             <Search className="absolute left-2.5 md:left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               placeholder="Filter permissions..."
@@ -596,6 +596,8 @@ export function SettingsRolesPage() {
             )}
           </div>
 
+          {/* Scrollable permission modules */}
+          <div className="flex-1 overflow-y-auto space-y-3 md:space-y-4 pr-0 lg:pr-1">
           {moduleNames.map(([module, perms]) => {
             const moduleEnabledCount = perms.filter(p => rolePerms.includes(p.id)).length;
             const allEnabled = moduleEnabledCount === perms.length;
@@ -661,6 +663,7 @@ export function SettingsRolesPage() {
               </Card>
             );
           })}
+          </div>
         </div>
       </div>
 
