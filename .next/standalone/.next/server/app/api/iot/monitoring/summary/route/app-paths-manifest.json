@@ -1,0 +1,3 @@
+{
+  "/api/iot/monitoring/summary/route": "app/api/iot/monitoring/summary/route.js"
+}

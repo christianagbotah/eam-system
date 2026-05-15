@@ -1,0 +1,3 @@
+{
+  "/api/pm-templates/[id]/tasks/[taskId]/route": "app/api/pm-templates/[id]/tasks/[taskId]/route.js"
+}

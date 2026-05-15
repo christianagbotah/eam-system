@@ -83,10 +83,12 @@ import {
 
 // Sidebar inner content extracted as a separate component with collapsible submenus
 function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
-  const { currentPage, navigate, sidebarOpen, enabledModules } = useNavigationStore();
+  const { currentPage, navigate, sidebarOpen } = useNavigationStore();
   const expanded = forceExpanded ?? sidebarOpen;
   const { user, permissions, hasPermission, isAdmin, logout } = useAuthStore();
   const [openMenus, setOpenMenus] = useState<string[]>([]);
+
+  console.log('[SidebarContent Render]', { user: user?.username, expanded, currentPage });
 
   // Menu group definition
   interface NavGroup {
@@ -308,17 +310,34 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     });
   }, [currentPage]);
 
-  // Filter visible groups — admin users always see everything
-  const visibleGroups = useMemo(() => menuGroups.filter(g => {
-    // Permission check (admin always passes)
-    if (!isAdmin() && !hasPermission(g.perm)) return false;
-    // Module-aware check: hide groups whose module is not enabled (unless admin or data not loaded yet)
-    if (!isAdmin() && enabledModules !== null) {
-      const codes = g.moduleCodes || (g.moduleCode ? [g.moduleCode] : []);
-      if (codes.length > 0 && !codes.some(c => enabledModules.has(c))) return false;
-    }
-    return true;
-  }), [menuGroups, hasPermission, enabledModules, permissions, isAdmin]);
+  // Filter visible groups
+  // TEMPORARY: Show all items unconditionally for all authenticated users.
+  // This is a diagnostic measure to rule out filtering as the cause of empty sidebar.
+  const visibleGroups = useMemo(() => {
+    // Debug logging (production too) — check browser console on VPS
+    console.log('[Sidebar Debug]', {
+      isAdmin: isAdmin(),
+      role: useAuthStore.getState().role,
+      permCount: permissions?.length ?? 0,
+      user: user?.username,
+      first3Perms: (permissions || []).slice(0, 3),
+      totalGroups: menuGroups.length,
+    });
+
+    // DIAGNOSTIC: Return ALL groups regardless of permissions
+    // Uncomment the filter below once sidebar is confirmed working
+    return menuGroups;
+
+    /* Original filtering logic — disabled for diagnostics
+    const isAdm = isAdmin();
+    const hasPerms = permissions && permissions.length > 0;
+    return menuGroups.filter(g => {
+      if (isAdm) return true;
+      if (!hasPerms) return true;
+      return hasPermission(g.perm);
+    });
+    */
+  }, [menuGroups, hasPermission, permissions, isAdmin, user?.username]);
 
   // Get tooltip text for collapsed sidebar
   const getGroupTooltip = (group: NavGroup) => {
