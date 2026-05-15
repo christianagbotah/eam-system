@@ -1929,3 +1929,30 @@ Stage Summary:
 - Sidebar diagnostic mode: shows all 15 menu groups unconditionally
 - Debug logging active in production for browser console inspection
 - VPS should pick up changes on next git pull + server restart
+---
+Task ID: 1
+Agent: Main Agent
+Task: Pull from GitHub, apply fixes, and push back
+
+Work Log:
+- Added GitHub remote (https://github.com/christianagbotah/eam-system.git)
+- Fetched origin/main — found diverged histories (sandbox vs GitHub had different commits)
+- Reset local to origin/main (5a9cd57) to sync with GitHub source of truth
+- Applied 4 critical fixes:
+  1. src/proxy.ts: Changed `export async function proxy()` → `export default async function proxy()` (Next.js 16 convention)
+  2. src/app/api/auth/me/route.ts: Changed `getSession()` → `getSessionAsync(token)` for cold-cache recovery after server restart
+  3. src/components/shared/Sidebar.tsx: Removed debug console.logs, restored permission-based filtering (was disabled for diagnostics)
+  4. Admin routes (data-export, import-data, system-health): Added `export const dynamic = "force-dynamic"` and switched to `getSessionAsync`
+- Fixed db.ts to support both SQLite (sandbox) and MariaDB (production VPS) adapters
+- Fixed prisma.config.ts to auto-detect SQLite vs MySQL from DATABASE_URL
+- Added `url = env("DATABASE_URL")` to schema.prisma datasource block
+- Installed missing socket.io-client dependency
+- Verified dev server starts successfully (GET / 200 in 4.5s)
+- Committed all changes locally
+- Push to GitHub FAILED: no SSH keys or GitHub token configured in sandbox
+
+Stage Summary:
+- All source code fixes committed locally (commit 4e3672a)
+- Cannot push to GitHub from sandbox (no auth credentials)
+- VPS deployment requires: git pull on VPS, npm install, npx next build, cp -r .next/static .next/standalone/.next/static, pm2 restart
+
