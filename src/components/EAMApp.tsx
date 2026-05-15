@@ -150,13 +150,22 @@ const UserPreferencesPage = lazy(() => import('./modules/SettingsPages').then(m 
 // ============================================================================
 
 function AppShell() {
-  const { currentPage, navigate, toggleSidebar, setMobileSidebarOpen, fetchModules } = useNavigationStore();
+  const { currentPage, navigate, goBack, toggleSidebar, setMobileSidebarOpen, fetchModules } = useNavigationStore();
   const { user, isAuthenticated, isLoading, fetchMe, logout, hasPermission, isAdmin } = useAuthStore();
+
+  // Track if user has navigated away from dashboard (to show back button)
+  const canGoBack = typeof window !== 'undefined' && window.location.hash !== '#/dashboard' && window.location.hash !== '#' && window.location.hash !== '';
 
   React.useEffect(() => {
     fetchMe();
     fetchModules();
   }, [fetchMe, fetchModules]);
+
+  // Update document title on page change
+  React.useEffect(() => {
+    const title = pageTitle[currentPage] || 'Dashboard';
+    document.title = `${title} — iAssetsPro`;
+  }, [currentPage]);
 
   if (isLoading) {
     return <LoadingScreen />;
@@ -411,6 +420,15 @@ function AppShell() {
           >
             <Menu className="h-5 w-5" />
           </button>
+          {/* Back button — visible on mobile when not on dashboard */}
+          {canGoBack && (
+            <button
+              className="lg:hidden p-2 -ml-1 rounded-lg hover:bg-muted text-muted-foreground transition-colors"
+              onClick={goBack}
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+          )}
           <button
             className="hidden lg:flex p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
             onClick={toggleSidebar}
