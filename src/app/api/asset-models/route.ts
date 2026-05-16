@@ -17,15 +17,16 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
     const assetId = searchParams.get('assetId');
     const format = searchParams.get('format');
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '20', 10);
+    let page = parseInt(searchParams.get('page') || '1', 10);
+    let limit = parseInt(searchParams.get('limit') || '20', 10);
+    page = Math.max(1, isNaN(page) ? 1 : page);
+    limit = Math.min(100, Math.max(1, isNaN(limit) ? 20 : limit));
 
     const where: Record<string, unknown> = {};
 
     if (search) {
       where.OR = [
         { name: { contains: search } },
-        { description: { contains: search } },
         { fileName: { contains: search } },
         { asset: { name: { contains: search } } },
         { asset: { assetTag: { contains: search } } },
@@ -90,6 +91,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Model name is required' }, { status: 400 });
     }
 
+    if (!fileName) {
+      return NextResponse.json({ success: false, error: 'File name is required' }, { status: 400 });
+    }
+
+    if (!filePath) {
+      return NextResponse.json({ success: false, error: 'File path is required' }, { status: 400 });
+    }
+
+    if (!fileType) {
+      return NextResponse.json({ success: false, error: 'File type is required' }, { status: 400 });
+    }
+
     // Verify asset exists
     const asset = await db.asset.findUnique({ where: { id: assetId } });
     if (!asset) {
@@ -100,10 +113,10 @@ export async function POST(request: NextRequest) {
       data: {
         assetId,
         name,
-        fileName: fileName || null,
-        fileSize: fileSize ? parseFloat(String(fileSize)) : null,
-        fileType: fileType || null,
-        filePath: filePath || null,
+        fileName,
+        fileSize: fileSize !== undefined ? parseInt(String(fileSize), 10) : 0,
+        fileType,
+        filePath,
         format: format || 'gltf',
         meshCount: meshCount ? parseInt(String(meshCount), 10) : null,
         vertexCount: vertexCount ? parseInt(String(vertexCount), 10) : null,

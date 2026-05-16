@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,10 +9,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    if (!hasPermission(session, 'digital_twin.view') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    let page = parseInt(searchParams.get('page') || '1', 10);
+    let limit = parseInt(searchParams.get('limit') || '50', 10);
+    page = Math.max(1, isNaN(page) ? 1 : page);
+    limit = Math.min(100, Math.max(1, isNaN(limit) ? 50 : limit));
 
     const where: Record<string, unknown> = {};
 
@@ -80,6 +86,10 @@ export async function POST(request: NextRequest) {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!hasPermission(session, 'digital_twin.create') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const body = await request.json();

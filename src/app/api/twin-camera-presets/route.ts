@@ -67,6 +67,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Camera position is required' }, { status: 400 });
     }
 
+    if (!target) {
+      return NextResponse.json({ success: false, error: 'Camera target is required' }, { status: 400 });
+    }
+
     // Verify scene exists
     const scene = await db.digitalTwinScene.findUnique({ where: { id: sceneId } });
     if (!scene) {
@@ -79,7 +83,7 @@ export async function POST(request: NextRequest) {
         name,
         description: description || null,
         position: JSON.stringify(position),
-        target: target ? JSON.stringify(target) : null,
+        target: JSON.stringify(target),
         fov: fov !== undefined ? parseFloat(String(fov)) : 50,
         transitionDuration: transitionDuration !== undefined ? parseFloat(String(transitionDuration)) : 1.0,
         sortOrder: sortOrder !== undefined ? parseInt(String(sortOrder), 10) : 0,

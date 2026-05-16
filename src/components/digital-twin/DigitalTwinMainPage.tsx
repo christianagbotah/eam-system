@@ -82,7 +82,7 @@ const SystemDiagramPageModule = dynamic(
 
 /** Wrapper to pass twin context to the SystemDiagramPage */
 function SystemDiagramPageWrapper({ twinId, twinName }: { twinId: string; twinName: string }) {
-  return <SystemDiagramPageModule />;
+  return <SystemDiagramPageModule twinId={twinId} twinName={twinName} />;
 }
 
 // ============================================================================
@@ -560,7 +560,7 @@ export function DigitalTwinMainPage() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [createOpen, setCreateOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [kpis, setKpis] = useState({ total: 0, activeSync: 0, simulationRuns: 0, alerts: 0 });
+  const [kpis, setKpis] = useState<{ total: number; activeSync: number; simulationRuns: number; alerts: number }>({ total: 0, activeSync: 0, simulationRuns: 0, alerts: 0 });
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -584,10 +584,10 @@ export function DigitalTwinMainPage() {
           createdAt: t.createdAt || '',
         }));
         setTwins(mapped);
-        if (res.kpis) setKpis(res.kpis as any);
+        if (res.kpis) setKpis(res.kpis as { total: number; activeSync: number; simulationRuns: number; alerts: number });
       }
     } catch {
-      // silent
+      toast.error('Failed to load digital twins');
     }
     setLoading(false);
   }, []);

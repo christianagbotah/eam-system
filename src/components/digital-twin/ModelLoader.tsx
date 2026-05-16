@@ -1,10 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
-import { useLoader } from '@react-three/fiber';
-import { useGLTF, Center, AdaptiveDpr, AdaptiveEvents } from '@react-three/drei';
+import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
-import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
 import { InteractiveMesh, type AssetMeshBinding } from './InteractiveMesh';
 
 // ============================================================================
@@ -139,9 +137,6 @@ function ProcessedModel({ scene, bindings, maxDimension, autoCenter, autoScale }
     }
   }, [scene, autoCenter, autoScale, maxDimension]);
 
-  // Clone the scene so we don't mutate the original
-  const clonedScene = useMemo(() => scene.clone(true), [scene]);
-
   return (
     <group ref={groupRef}>
       {/* Render interactive meshes with binding behavior */}
@@ -162,9 +157,6 @@ function ProcessedModel({ scene, bindings, maxDimension, autoCenter, autoScale }
           receiveShadow
         />
       ))}
-
-      {/* Also render any remaining objects that aren't meshes (e.g., groups, lights in the GLTF) */}
-      <primitive object={clonedScene} />
     </group>
   );
 }
@@ -194,15 +186,9 @@ export function ModelLoader({
 }: ModelLoaderProps) {
   const [localError, setLocalError] = useState<string | null>(null);
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const storeBindings = useDigitalTwinStore((s) => {
-    // We derive bindings from the scene if available
-    const scene = s.currentScene;
-    if (!scene) return [];
-    return [];
-  });
 
   // Use external bindings if provided, otherwise empty
-  const bindings = externalBindings ?? storeBindings;
+  const bindings = externalBindings ?? [];
 
   // Track loading state
   useEffect(() => {
@@ -212,6 +198,11 @@ export function ModelLoader({
       setLocalError(null);
     }
   }, [modelUrl, onLoadingStart]);
+
+  // Report error via callback (in effect to avoid side-effect during render)
+  useEffect(() => {
+    if (localError) onError?.(new Error(localError));
+  }, [localError, onError]);
 
   // ── Empty state when no model URL ─────────────────────────────────────────
 
@@ -235,7 +226,6 @@ export function ModelLoader({
   // ── Error state ───────────────────────────────────────────────────────────
 
   if (localError) {
-    onError?.(new Error(localError));
     return null;
   }
 
@@ -306,17 +296,13 @@ function GLTFModelLoaderInner({
   }
 
   return (
-    <>
-      <AdaptiveDpr pixelated />
-      <AdaptiveEvents />
-      <ProcessedModel
-        scene={clonedScene}
-        bindings={bindings}
-        maxDimension={maxDimension}
-        autoCenter={autoCenter}
-        autoScale={autoScale}
-      />
-    </>
+    <ProcessedModel
+      scene={clonedScene}
+      bindings={bindings}
+      maxDimension={maxDimension}
+      autoCenter={autoCenter}
+      autoScale={autoScale}
+    />
   );
 }
 

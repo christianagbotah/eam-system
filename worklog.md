@@ -2089,3 +2089,54 @@ Stage Summary:
 - Enterprise-grade UI (dark theme, glass-morphism)
 - File upload extended for 3D models
 
+---
+Task ID: DT-Backend-Fix
+Agent: Backend API Fixer
+Task: Fix 9 CRITICAL + 6 HIGH + MEDIUM issues in Digital Twin API routes
+
+Work Log:
+- Fixed twin-annotations POST: removed non-existent status/meshName fields, added required title validation
+- Fixed twin-annotations PUT: removed status/meshName from allowedFields
+- Fixed asset-models/upload: removed non-existent description field
+- Fixed digital-twin-scenes POST: validated required modelId
+- Fixed twin-camera-presets POST: validated required target
+- Fixed twin-hotspots POST: validated required position
+- Fixed asset-models POST: validated required fileName/filePath/fileType
+- Added permission checks to digital-twins GET/POST/PUT/DELETE
+- Combined system-diagrams PUT into single transaction
+- Fixed fileSize parseFloat→parseInt in asset-models routes
+- Added page/limit bounds validation across paginated endpoints
+- Changed annotation priority default from 'normal' to 'low'
+
+Stage Summary:
+- 9 CRITICAL schema mismatches fixed
+- 6 HIGH security/correctness issues fixed
+- MEDIUM validation improvements applied
+
+---
+Task ID: DT-Frontend-Fix
+Agent: Frontend Fixer
+Task: Fix 5 CRITICAL + 4 HIGH + MEDIUM issues in Digital Twin frontend components
+
+Work Log:
+- C-01: Removed duplicate `<primitive object={clonedScene}>` in ModelLoader.tsx ProcessedModel
+- C-02: Fixed loadScene API endpoint from `/api/digital-twins/` to `/api/digital-twin-scenes/`
+- C-03: Fixed selectMesh to save prevAssetId before set() and compare against it
+- C-04: Forwarded twinId/twinName props in SystemDiagramPageWrapper
+- C-05: Replaced broken `<Edges>` (sibling of primitive, can't find geometry) with state-backed THREE.LineSegments computed from EdgesGeometry in useEffect
+- H-01: Moved onError call from render path to useEffect (also moved before early return to satisfy rules-of-hooks)
+- H-02: Added proper Zustand selector subscription for iotOverlayEnabled in useDigitalTwinScene
+- H-03: Removed duplicate camera prop from Canvas (kept PerspectiveCamera child with makeDefault)
+- H-04: Removed unused showSettings state and its useState import from TwinToolbar
+- M-02: Cleaned up unused imports: ZoomIn (DigitalTwinViewer), useLoader/Center/AdaptiveDpr/AdaptiveEvents (ModelLoader), useRef/useState (TwinToolbar), Settings/Eye/EyeOff/Layers (TwinToolbar), io/Socket (useDigitalTwinScene), useDigitalTwinStore (ModelLoader)
+- M-03: Removed duplicate AdaptiveDpr/AdaptiveEvents from GLTFModelLoaderInner
+- M-05: Removed dead storeBindings selector that always returned []
+- M-06: Added toast.error('Failed to load digital twins') in fetchData catch block
+- M-07: Replaced `as any` cast for KPI data with proper typed cast
+
+Stage Summary:
+- All 5 CRITICAL visual/data bugs fixed
+- All 4 HIGH correctness/perf issues fixed
+- MEDIUM code quality improvements applied
+- ESLint passes cleanly on all changed digital twin files
+

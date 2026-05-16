@@ -71,19 +71,15 @@ export async function PUT(
       }
     }
 
-    const updated = await db.systemDiagram.update({
-      where: { id },
-      data: updateData,
-      include: {
-        createdByIdUser: { select: { id: true, fullName: true, username: true } },
-      },
-    });
-
-    // Increment version on update
-    await db.systemDiagram.update({
-      where: { id },
-      data: { version: { increment: 1 } },
-    });
+    const [updated] = await db.$transaction([
+      db.systemDiagram.update({
+        where: { id },
+        data: { ...updateData, version: { increment: 1 } },
+        include: {
+          createdByIdUser: { select: { id: true, fullName: true, username: true } },
+        },
+      }),
+    ]);
 
     await db.auditLog.create({
       data: {
@@ -96,7 +92,7 @@ export async function PUT(
       },
     });
 
-    return NextResponse.json({ success: true, data: { ...updated, version: (updated.version || 0) + 1 } });
+    return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update system diagram';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

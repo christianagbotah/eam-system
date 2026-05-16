@@ -16,7 +16,6 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const sceneId = searchParams.get('sceneId');
     const type = searchParams.get('type');
-    const status = searchParams.get('status');
 
     if (!sceneId) {
       return NextResponse.json({ success: false, error: 'sceneId query parameter is required' }, { status: 400 });
@@ -26,10 +25,6 @@ export async function GET(request: NextRequest) {
 
     if (type) {
       where.type = type;
-    }
-
-    if (status) {
-      where.status = status;
     }
 
     const annotations = await db.twinAnnotation.findMany({
@@ -61,16 +56,19 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       sceneId,
+      title,
       content,
-      meshName,
       position,
       type,
-      status,
       priority,
     } = body;
 
     if (!sceneId) {
       return NextResponse.json({ success: false, error: 'Scene ID is required' }, { status: 400 });
+    }
+
+    if (!title) {
+      return NextResponse.json({ success: false, error: 'Annotation title is required' }, { status: 400 });
     }
 
     if (!content) {
@@ -86,13 +84,12 @@ export async function POST(request: NextRequest) {
     const annotation = await db.twinAnnotation.create({
       data: {
         sceneId,
+        title,
         content,
-        meshName: meshName || null,
         position: position ? JSON.stringify(position) : null,
         authorId: session.userId,
         type: type || 'note',
-        status: status || 'active',
-        priority: priority || 'normal',
+        priority: priority || 'low',
       },
       include: {
         author: { select: { id: true, fullName: true, username: true, avatar: true } },
@@ -105,7 +102,7 @@ export async function POST(request: NextRequest) {
         action: 'create',
         entityType: 'twin_annotation',
         entityId: annotation.id,
-        newValues: JSON.stringify({ sceneId, type: type || 'note', priority: priority || 'normal' }),
+        newValues: JSON.stringify({ sceneId, title, type: type || 'note', priority: priority || 'low' }),
       },
     });
 

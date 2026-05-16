@@ -15,8 +15,10 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const twinId = searchParams.get('twinId');
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '20', 10);
+    let page = parseInt(searchParams.get('page') || '1', 10);
+    let limit = parseInt(searchParams.get('limit') || '20', 10);
+    page = Math.max(1, isNaN(page) ? 1 : page);
+    limit = Math.min(100, Math.max(1, isNaN(limit) ? 20 : limit));
 
     if (!twinId) {
       return NextResponse.json({ success: false, error: 'twinId query parameter is required' }, { status: 400 });
@@ -91,18 +93,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Scene name is required' }, { status: 400 });
     }
 
+    if (!modelId) {
+      return NextResponse.json({ success: false, error: 'Model ID is required' }, { status: 400 });
+    }
+
     // Verify twin exists
     const twin = await db.digitalTwin.findUnique({ where: { id: twinId } });
     if (!twin) {
       return NextResponse.json({ success: false, error: 'Digital twin not found' }, { status: 404 });
     }
 
-    // If a modelId is provided, verify it exists
-    if (modelId) {
-      const model = await db.assetModel.findUnique({ where: { id: modelId } });
-      if (!model) {
-        return NextResponse.json({ success: false, error: 'Asset model not found' }, { status: 404 });
-      }
+    // Verify model exists
+    const model = await db.assetModel.findUnique({ where: { id: modelId } });
+    if (!model) {
+      return NextResponse.json({ success: false, error: 'Asset model not found' }, { status: 404 });
     }
 
     const scene = await db.digitalTwinScene.create({
@@ -110,7 +114,7 @@ export async function POST(request: NextRequest) {
         twinId,
         name,
         description: description || null,
-        modelId: modelId || null,
+        modelId,
         sceneType: sceneType || '3d',
         environment: environment || 'warehouse',
         backgroundColor: backgroundColor || '#1a1a2e',

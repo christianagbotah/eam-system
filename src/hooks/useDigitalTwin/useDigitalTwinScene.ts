@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
 import { useDigitalTwinStore, type LiveReading, type MeshHealthEntry } from '@/stores/digitalTwinStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { api } from '@/lib/api';
@@ -68,6 +67,7 @@ export function useDigitalTwinScene(
   const updateHealthMap = useDigitalTwinStore((s) => s.updateHealthMap);
   const updateLiveReading = useDigitalTwinStore((s) => s.updateLiveReading);
   const loadScene = useDigitalTwinStore((s) => s.loadScene);
+  const iotOverlayEnabled = useDigitalTwinStore((s) => s.iotOverlayEnabled);
 
   // Local state
   const [isPolling, setIsPolling] = useState(false);
@@ -189,7 +189,6 @@ export function useDigitalTwinScene(
     if (iotPollInterval <= 0) return;
 
     // Only poll when the overlay is enabled and a scene is loaded
-    const iotOverlayEnabled = useDigitalTwinStore.getState().iotOverlayEnabled;
     if (!iotOverlayEnabled || !sceneId) return;
 
     // Initial fetch
@@ -209,7 +208,7 @@ export function useDigitalTwinScene(
       }
       setIsPolling(false);
     };
-  }, [sceneId, iotPollInterval, fetchIoTData, useDigitalTwinStore.getState().iotOverlayEnabled]);
+  }, [sceneId, iotPollInterval, fetchIoTData, iotOverlayEnabled]);
 
   // ──────────────────────────────────────────────────────────────────────
   // WebSocket real-time subscription

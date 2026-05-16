@@ -71,7 +71,7 @@ export async function PUT(
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
         if (field === 'fileSize') {
-          updateData[field] = body[field] !== null ? parseFloat(String(body[field])) : null;
+          updateData[field] = body[field] !== null ? parseInt(String(body[field]), 10) : null;
         } else if (field === 'meshCount' || field === 'vertexCount') {
           updateData[field] = body[field] !== null ? parseInt(String(body[field]), 10) : null;
         } else {

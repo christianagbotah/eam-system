@@ -1,8 +1,8 @@
 'use client';
 
-import { useRef, useState, useCallback, useMemo } from 'react';
+import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Html, Edges } from '@react-three/drei';
+import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
 
@@ -58,6 +58,30 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
   const iotOverlayEnabled = useDigitalTwinStore((s) => s.iotOverlayEnabled);
   const iotHealthMap = useDigitalTwinStore((s) => s.iotHealthMap);
   const liveReadings = useDigitalTwinStore((s) => s.liveReadings);
+
+  // Edges geometry for selection/hover outline
+  const [lineSegmentsObj, setLineSegmentsObj] = useState<THREE.LineSegments | null>(null);
+
+  useEffect(() => {
+    if (meshRef.current?.geometry) {
+      const geo = new THREE.EdgesGeometry(meshRef.current.geometry, 15);
+      const mat = new THREE.LineBasicMaterial({
+        color: '#10b981',
+        transparent: true,
+        opacity: 0.8,
+      });
+      setLineSegmentsObj(new THREE.LineSegments(geo, mat));
+    }
+    return () => {
+      setLineSegmentsObj((prev) => {
+        if (prev) {
+          prev.geometry.dispose();
+          (prev.material as THREE.Material).dispose();
+        }
+        return null;
+      });
+    };
+  }, [mesh]);
 
   const isSelected = selectedMeshName === binding.meshName;
   const isHovered = hoveredMeshName === binding.meshName;
@@ -188,12 +212,8 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
       />
 
       {/* Selection / hover outline */}
-      {(isSelected || isHovered) && (
-        <Edges
-          threshold={15}
-          color={isSelected ? '#22d3ee' : '#94a3b8'}
-          lineWidth={isSelected ? 2 : 1}
-        />
+      {(isSelected || isHovered) && lineSegmentsObj && (
+        <primitive object={lineSegmentsObj} />
       )}
 
       {/* Live telemetry label when IoT overlay is active */}

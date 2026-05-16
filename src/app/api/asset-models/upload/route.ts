@@ -27,8 +27,6 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File | null;
     const assetId = formData.get('assetId') as string | null;
     const name = formData.get('name') as string | null;
-    const description = formData.get('description') as string | null;
-
     // ── Validation ──────────────────────────────────────────────────────────
     if (!file) {
       return NextResponse.json({ success: false, error: 'File is required' }, { status: 400 });
@@ -93,7 +91,6 @@ export async function POST(request: NextRequest) {
       data: {
         assetId,
         name,
-        description: description || null,
         fileName: originalFilename,
         filePath: filePathRelative,
         fileType,

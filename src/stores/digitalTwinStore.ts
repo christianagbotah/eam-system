@@ -268,7 +268,7 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
         set({ isLoadingScene: true, sceneError: null }, false, 'digitalTwin/loadScene:start');
 
         try {
-          const res = await api.get<DigitalTwinScene>(`/api/digital-twins/${sceneId}`);
+          const res = await api.get<DigitalTwinScene>(`/api/digital-twin-scenes/${sceneId}`);
 
           if (!res.success || !res.data) {
             const errorMsg = res.error || `Scene ${sceneId} not found`;
@@ -320,7 +320,8 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
       // ────────────────────────────────────────────────────────────────────────
 
       selectMesh: (meshName: string | null, assetId?: string | null) => {
-        const effectiveAssetId = assetId ?? (meshName ? get().selectedAssetId : null);
+        const prevAssetId = get().selectedAssetId;
+        const effectiveAssetId = assetId ?? (meshName ? prevAssetId : null);
 
         set(
           {
@@ -334,7 +335,7 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
         );
 
         // Load asset data when a new asset is selected
-        if (meshName && effectiveAssetId && effectiveAssetId !== get().selectedAssetId) {
+        if (meshName && effectiveAssetId && effectiveAssetId !== prevAssetId) {
           get().loadAssetData(effectiveAssetId);
         }
       },

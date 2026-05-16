@@ -78,6 +78,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Hotspot label is required' }, { status: 400 });
     }
 
+    if (!position) {
+      return NextResponse.json({ success: false, error: 'Hotspot position is required' }, { status: 400 });
+    }
+
     // Verify scene exists
     const scene = await db.digitalTwinScene.findUnique({ where: { id: sceneId } });
     if (!scene) {
@@ -98,7 +102,7 @@ export async function POST(request: NextRequest) {
         label,
         description: description || null,
         bindingId: bindingId || null,
-        position: position ? JSON.stringify(position) : null,
+        position: JSON.stringify(position),
         icon: icon || 'info',
         color: color || '#3b82f6',
         assetId: assetId || null,

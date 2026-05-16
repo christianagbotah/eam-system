@@ -42,7 +42,6 @@ import {
   AlertTriangle,
   Loader2,
   Monitor,
-  ZoomIn,
   Eye,
   Layers,
   Plus,
@@ -513,7 +512,6 @@ export function DigitalTwinViewer({
       <Canvas
         shadows
         dpr={[1, 2]}
-        camera={{ fov: 50, position: [10, 8, 10], near: 0.1, far: 1000 }}
         gl={{
           antialias: true,
           alpha: false,

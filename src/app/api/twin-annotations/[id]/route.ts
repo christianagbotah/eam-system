@@ -61,7 +61,7 @@ export async function PUT(
     }
 
     const updateData: Record<string, unknown> = {};
-    const allowedFields = ['content', 'meshName', 'position', 'type', 'status', 'priority'];
+    const allowedFields = ['content', 'position', 'type', 'priority'];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -87,7 +87,7 @@ export async function PUT(
         action: 'update',
         entityType: 'twin_annotation',
         entityId: id,
-        oldValues: JSON.stringify({ content: existing.content, type: existing.type, status: existing.status }),
+        oldValues: JSON.stringify({ content: existing.content, type: existing.type }),
         newValues: JSON.stringify(updateData),
       },
     });

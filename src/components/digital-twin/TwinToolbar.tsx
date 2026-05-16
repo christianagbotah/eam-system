@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useRef } from 'react';
+import { useCallback } from 'react';
 import {
   Box,
   Scissors,
@@ -11,10 +11,6 @@ import {
   Maximize2,
   Minimize2,
   Camera,
-  Settings,
-  Eye,
-  EyeOff,
-  Layers,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -119,8 +115,6 @@ export function TwinToolbar({
   const toggleIoTOverlay = useDigitalTwinStore((s) => s.toggleIoTOverlay);
   const toggleHotspots = useDigitalTwinStore((s) => s.toggleHotspots);
   const toggleAnnotations = useDigitalTwinStore((s) => s.toggleAnnotations);
-
-  const [showSettings, setShowSettings] = useState(false);
 
   // ── Screenshot handler ──────────────────────────────────────────────────
 
