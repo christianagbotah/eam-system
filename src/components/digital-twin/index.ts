@@ -30,6 +30,7 @@ export { ComponentInfoPanel, type ComponentInfoPanelProps } from './ComponentInf
 // Enterprise integration panels
 export { default as FailureAnalysisPanel, type FailureAnalysisPanelProps } from './FailureAnalysisPanel';
 export { default as PredictiveMaintenancePanel, type PredictiveMaintenancePanelProps } from './PredictiveMaintenancePanel';
+export { default as WorkInstructionPanel } from './WorkInstructionPanel';
 
 // Diagram components
 export { diagramTemplates, diagramTypeMeta, type DiagramTemplate } from './DiagramTemplates';

@@ -751,3 +751,138 @@ export interface PredictiveModelData {
   dataPoints: number;
   isActive: boolean;
 }
+
+// ============================================================================
+// DIGITAL WORK INSTRUCTIONS
+// ============================================================================
+
+export interface WorkInstruction {
+  id: string;
+  title: string;
+  description: string;
+  componentId: string;
+  assetId: string;
+  maintenanceType: string;
+  estimatedDuration: number;
+  difficulty: string;
+  safetyLevel: string;
+  requiresLockout: boolean;
+  requiresPermit: boolean;
+  prerequisites: string[];
+  steps: WorkInstructionStep[];
+  requiredTools: WorkInstructionTool[];
+  requiredParts: WorkInstructionPart[];
+  safetyCheckpoints: SafetyCheckpoint[];
+  version: number;
+  isActive: boolean;
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: { id: string; name: string };
+  component?: { id: string; name: string; componentCode: string };
+}
+
+export interface WorkInstructionStep {
+  id: string;
+  stepNumber: number;
+  title: string;
+  instruction: string;
+  type: string;
+  mediaUrls: string[];
+  tips: string[];
+  warnings: string[];
+  estimatedMinutes: number;
+  verificationRequired: boolean;
+  verificationType: string;
+  verificationSpec: string | null;
+  acknowledgmentRequired: boolean;
+  isCheckpoint: boolean;
+}
+
+export interface WorkInstructionTool {
+  id: string;
+  toolName: string;
+  toolCode: string;
+  quantity: number;
+  specification?: string;
+  verified: boolean;
+}
+
+export interface WorkInstructionPart {
+  id: string;
+  partName: string;
+  partCode: string;
+  quantity: number;
+  source: string;
+  verified: boolean;
+}
+
+export interface SafetyCheckpoint {
+  id: string;
+  stepNumber: number;
+  title: string;
+  description: string;
+  type: string;
+  ppeRequired: string[];
+  acknowledgmentRequired: boolean;
+  isPassed: boolean;
+  acknowledgedById?: string;
+  acknowledgedAt?: string;
+}
+
+export interface WorkInstructionExecution {
+  id: string;
+  workInstructionId: string;
+  workOrderId: string;
+  technicianId: string;
+  status: string;
+  currentStep: number;
+  startedAt: string;
+  completedAt: string | null;
+  pausedAt: string | null;
+  totalDuration: number | null;
+  stepResults: StepResult[];
+  safetyResults: SafetyResult[];
+  toolVerifications: ToolVerification[];
+  partVerifications: PartVerification[];
+  notes: string;
+  completionEvidence: string[];
+}
+
+export interface StepResult {
+  stepNumber: number;
+  status: string;
+  completedAt: string | null;
+  verificationResult: string | null;
+  verificationValue: string | null;
+  notes: string | null;
+  mediaUrls: string[];
+  duration: number | null;
+}
+
+export interface SafetyResult {
+  stepNumber: number;
+  isPassed: boolean;
+  acknowledgedById: string;
+  acknowledgedAt: string;
+  notes: string | null;
+}
+
+export interface ToolVerification {
+  toolId: string;
+  toolName: string;
+  isVerified: boolean;
+  verifiedAt: string | null;
+  verifiedById: string | null;
+  notes: string | null;
+}
+
+export interface PartVerification {
+  partId: string;
+  partName: string;
+  isVerified: boolean;
+  verifiedAt: string | null;
+  verifiedById: string | null;
+  quantityVerified: number | null;
+  notes: string | null;
+}

@@ -653,6 +653,35 @@ Stage Summary:
 - ESLint clean, app loads successfully
 
 ---
+Task ID: ARCH-Phase1
+Agent: Enterprise Architect
+Task: Phase 1 — Enterprise Architecture Refactor
+
+Work Log:
+- Created src/lib/errors.ts — enterprise error classes (AppError, NotFound, Validation, Unauthorized, Forbidden, Conflict, RateLimit) with handleApiError global handler
+- Created src/lib/logger.ts — structured logging with levels (debug/info/warn/error/fatal), context, and performance timer
+- Created src/lib/middleware.ts — centralized API middleware: requireAuth, requirePermission, rateLimit (in-memory per-user), parsePagination, parseSearch, paginatedResponse
+- Created src/lib/validation.ts — requireFields, validateEnum, validateRange, sanitizeString, parseJsonSafe
+- Created src/repositories/BaseRepository.ts — generic repository pattern with CRUD, pagination (findManyPaginated), exists, count, transaction support
+- Created src/services/digitalTwin.service.ts — business logic extracted from API routes: listTwins, getTwinById, createTwin, deleteTwin, createScene, getSceneById, getComponentTree, computeHealthScore with recommendation engine
+- Created src/services/reliability.service.ts — Weibull analysis (median rank regression with Lanczos gamma approx), asset risk matrix (weighted health/criticality/activity scoring), MTBF/MTTR computation
+- Created src/services/telemetry.service.ts — in-memory ingestion buffer with auto-flush (5s interval), MQTT/OPC-UA configuration placeholders, recent readings query, time-bucket aggregation
+- Created src/app/api/v1/digital-twins/route.ts — example v1 route using new architecture (requirePermission, handleApiError, requireFields, digitalTwinService)
+
+Stage Summary:
+- 9 new infrastructure files created
+- Service layer pattern established (separates business logic from API routes)
+- Repository pattern for type-safe DB access
+- Centralized error handling with structured JSON responses
+- Structured logging with performance timing
+- API v1 versioning foundation
+- Reliability engineering services (Weibull analysis, risk matrix, MTBF/MTTR)
+- Telemetry ingestion buffer with auto-flush to database
+- MQTT/OPC-UA configuration placeholders for future IoT integration
+- All new files pass TypeScript type checking with zero errors
+- All new files pass ESLint with zero errors
+
+---
 Task ID: 15
 Agent: Main Coordinator
 Task: Phase 3C - Enhanced Dashboard with Role-Based KPIs
@@ -2333,3 +2362,79 @@ Stage Summary:
 - Scene tree: search, expand/collapse all, health dots, component count badges, tooltips
 - All components use shadcn/ui and Lucide icons
 - ESLint passes with zero errors on all 3 files
+
+---
+Task ID: ARCH-Phase2
+Agent: Data Model Architect
+Task: Phase 2 — Component Maintenance Intelligence Models
+
+Work Log:
+- Added ComponentRuntimeCounter (operating hours, starts, cycles)
+- Added ComponentConditionReading (vibration, temperature, pressure, etc.)
+- Added ComponentMaintenanceHistory (corrective, preventive, predictive)
+- Added ComponentInspectionPoint (visual, measurement, functional)
+- Added ComponentInspectionRecord (pass/fail/conditional results)
+- Added ComponentLubricationSchedule (grease, oil, frequency-based)
+- Added ComponentLubricationRecord (lubrication execution tracking)
+- Added ComponentReplacementHistory (part replacement tracking)
+- Added SpatialNode (plant/building/floor/area/line hierarchy)
+- Added relations to ComponentRegistry, User, WorkOrder, Asset
+- Added sortOrder field to ComponentRegistry model
+- Fixed missing back-references on ComponentInspectionPoint and ComponentLubricationSchedule
+
+Stage Summary:
+- 9 new Prisma models added
+- 4 existing models enhanced with new relations
+- Complete component lifecycle tracking
+- Spatial hierarchy foundation
+- Schema validates successfully
+
+---
+Task ID: ARCH-Phase6-7
+Agent: Reliability Engineer
+Task: Phase 6-7 — Spatial Intelligence + Reliability Engineering APIs
+
+Work Log:
+- Created spatial-nodes CRUD (GET/POST/PUT/DELETE) + tree endpoint
+- Created component runtime counter API
+- Created component condition readings API (record + query with alarms)
+- Created component maintenance history API
+- Created component inspection points + records API
+- Created component lubrication schedules + records API
+- Created component replacement history API
+- Created Weibull analysis API endpoint
+- Created asset risk matrix API endpoint
+- Created reliability metrics API (MTBF/MTTR/availability)
+- Created component criticality ranking API
+
+Stage Summary:
+- 16 new API route files created
+- Full spatial hierarchy CRUD + tree navigation
+- Complete component lifecycle APIs (runtime, condition, maintenance, inspection, lubrication, replacement)
+- 4 reliability engineering endpoints (Weibull, risk matrix, metrics, criticality ranking)
+- All routes include auth, permissions, validation
+---
+Task ID: ARCH-Phase8
+Agent: Work Instructions Architect
+Task: Phase 8 — Digital Work Instructions System
+
+Work Log:
+- Added 10 TypeScript interfaces for work instructions, steps, safety, execution
+- Created WorkInstructionPanel component with full technician UI
+- Created work-instructions CRUD API (GET/POST)
+- Created work-instructions [id] API (GET/PUT/DELETE)
+- Created work-instructions [id]/execute API (start/pause/resume/complete/abandon)
+- Added Prisma schema models: WorkInstruction, WorkInstructionExecution
+- Updated barrel exports in digital-twin/index.ts
+- Safety-first workflow with mandatory acknowledgment
+- Step-by-step progression with verification
+- Tool and part verification checklists
+- Generated Prisma client
+
+Stage Summary:
+- 4 new API route files
+- 1 new enterprise component (~500 lines)
+- 2 new Prisma schema models
+- 10 new TypeScript interfaces
+- Complete digital work instruction workflow
+- Technician guidance with safety enforcement

@@ -210,6 +210,16 @@ model User {
   predictiveModels    PredictiveModel[]  @relation("PredictiveCreatedBy")
   predictionAcknowledged PredictionAlert[] @relation("PredictionAcknowledged")
 
+  // Component Maintenance Intelligence relations
+  conditionRecordings      ComponentConditionReading[]  @relation("ConditionRecorded")
+  maintenancePerformed     ComponentMaintenanceHistory[] @relation("MaintenancePerformed")
+  inspectionRecords        ComponentInspectionRecord[]   @relation("InspectionRecorded")
+  lubricationPerformed     ComponentLubricationRecord[]  @relation("LubricationPerformed")
+  replacementPerformed     ComponentReplacementHistory[] @relation("ReplacementPerformed")
+
+  // Work Instruction relations
+  workInstructionsCreated  WorkInstruction[]       @relation("WICreatedBy")
+
   @@map("users")
 }
 
@@ -475,6 +485,9 @@ model WorkOrder {
   repairCompletion       RepairCompletion?
   failureRecords         FailureRecord[] @relation("FailureWorkOrder")
 
+  // Component Maintenance Intelligence relations
+  componentMaintenanceHistory ComponentMaintenanceHistory[] @relation("ComponentWorkOrder")
+
   @@map("work_orders")
 }
 
@@ -728,6 +741,9 @@ model Asset {
   failureRecords     FailureRecord[]     @relation("FailureAsset")
   predictiveModels   PredictiveModel[]   @relation("PredictiveAsset")
   predictionAlerts   PredictionAlert[]   @relation("PredictionAsset")
+
+  // Component Maintenance Intelligence relations
+  spatialNodes SpatialNode[] @relation("SpatialAsset")
 
   @@map("assets")
 }
@@ -2419,6 +2435,7 @@ model ComponentRegistry {
   lastInspection    DateTime?
   nextInspectionDue DateTime?
   healthScore       Int      @default(100) // 0-100 computed or manual
+  sortOrder         Int      @default(0)
   notes             String?  @db.Text
 
   parent        ComponentRegistry?  @relation("ComponentHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
@@ -2430,6 +2447,16 @@ model ComponentRegistry {
   toolRequirements ComponentToolRequirement[]
   predictiveModels PredictiveModel[]
   predictionAlerts PredictionAlert[]
+
+  // Component Maintenance Intelligence relations
+  runtimeCounters          ComponentRuntimeCounter[]
+  conditionReadings        ComponentConditionReading[]
+  maintenanceHistory       ComponentMaintenanceHistory[]
+  inspectionPoints         ComponentInspectionPoint[]
+  inspectionRecords        ComponentInspectionRecord[]
+  lubricationSchedules     ComponentLubricationSchedule[]
+  lubricationRecords       ComponentLubricationRecord[]
+  replacementHistory       ComponentReplacementHistory[]
 
   @@unique([componentCode])
   @@index([parentId])
@@ -2615,4 +2642,281 @@ model PredictionAlert {
   @@index([isAcknowledged])
   @@index([createdAt])
   @@map("prediction_alerts")
+}
+
+// ============================================================================
+// COMPONENT MAINTENANCE INTELLIGENCE
+// ============================================================================
+
+model ComponentRuntimeCounter {
+  id              String   @id @default(cuid())
+  componentId     String
+  counterType     String   // operating_hours, starts, stops, cycles, runtime_minutes
+  value           Float    @default(0)
+  unit            String   @default("hours") // hours, cycles, starts, minutes
+  lastResetAt     DateTime?
+  isRunning       Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
+
+  component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+
+  @@unique([componentId, counterType])
+  @@index([componentId])
+  @@index([counterType])
+  @@map("component_runtime_counters")
+}
+
+model ComponentConditionReading {
+  id              String   @id @default(cuid())
+  componentId     String
+  parameterKey    String   // vibration, temperature, pressure, current, voltage, flow_rate, noise_level
+  value           Float
+  unit            String   // mm/s, °C, bar, A, V, m³/h, dB
+  quality         Int      @default(100) // 0-100 data quality indicator
+  minThreshold    Float?   // alarm low
+  maxThreshold    Float?   // alarm high
+  isAlarm         Boolean  @default(false)
+  source          String   @default("manual") // iot, manual, calculated
+  recordedAt      DateTime @default(now())
+  recordedById    String?
+
+  component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  recordedBy User?           @relation("ConditionRecorded", fields: [recordedById], references: [id])
+
+  @@index([componentId, parameterKey])
+  @@index([componentId, recordedAt])
+  @@index([parameterKey])
+  @@index([isAlarm])
+  @@map("component_condition_readings")
+}
+
+model ComponentMaintenanceHistory {
+  id              String   @id @default(cuid())
+  componentId     String
+  workOrderId     String?  // linked WorkOrder
+  maintenanceType String   // corrective, preventive, predictive, condition_based, emergency
+  description     String   @db.Text
+  performedById   String
+  startedAt       DateTime?
+  completedAt     DateTime?
+  durationMinutes Int?
+  findings        String?  @db.Text // JSON: what was found during maintenance
+  actionsTaken    String?  @db.Text // JSON: what was done
+  partsUsed       String?  @db.Text // JSON: [{partName, partCode, quantity}]
+  cost            Float?
+  nextDueDate     DateTime?
+  notes           String?  @db.Text
+
+  component  ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  workOrder  WorkOrder?        @relation("ComponentWorkOrder", fields: [workOrderId], references: [id])
+  performedBy User             @relation("MaintenancePerformed", fields: [performedById], references: [id])
+
+  @@index([componentId])
+  @@index([workOrderId])
+  @@index([maintenanceType])
+  @@index([performedById])
+  @@index([completedAt])
+  @@map("component_maintenance_history")
+}
+
+model ComponentInspectionPoint {
+  id              String   @id @default(cuid())
+  componentId     String
+  name            String
+  description     String?  @db.Text
+  inspectionType  String   @default("visual") // visual, measurement, functional, dimensional, ndt
+  parameterKey    String?  // link to condition reading parameter
+  normalRange     String?  @db.Text // JSON: {min, max, unit}
+  frequency       String   @default("monthly") // hourly, daily, weekly, monthly, quarterly, annually, per_start
+  lastInspected   DateTime?
+  nextInspection  DateTime?
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+
+  component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  records   ComponentInspectionRecord[]
+
+  @@index([componentId])
+  @@index([isActive])
+  @@map("component_inspection_points")
+}
+
+model ComponentInspectionRecord {
+  id                String   @id @default(cuid())
+  inspectionPointId String
+  componentId       String
+  value             String?  @db.Text // measurement value
+  result            String   @default("pass") // pass, fail, conditional, needs_attention
+  findings          String?  @db.Text
+  recommendation    String?  @db.Text
+  inspectorId       String
+  inspectedAt       DateTime @default(now())
+
+  inspectionPoint ComponentInspectionPoint @relation(fields: [inspectionPointId], references: [id], onDelete: Cascade)
+  component       ComponentRegistry          @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  inspector       User                       @relation("InspectionRecorded", fields: [inspectorId], references: [id])
+
+  @@index([inspectionPointId])
+  @@index([componentId])
+  @@index([inspectorId])
+  @@index([inspectedAt])
+  @@map("component_inspection_records")
+}
+
+model ComponentLubricationSchedule {
+  id              String   @id @default(cuid())
+  componentId     String
+  lubricantType   String   // grease, oil, solid
+  lubricantName   String
+  specification   String?  // e.g. "ISO VG 68"
+  quantity        Float
+  unit            String   @default("grams") // grams, ml, oz
+  frequency       String   @default("monthly") // weekly, monthly, quarterly, biannually, annually, per_hours
+  frequencyHours  Float?   // alternate: every N operating hours
+  lastLubricated  DateTime?
+  nextDueDate     DateTime?
+  isActive        Boolean  @default(true)
+  notes           String?  @db.Text
+
+  component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  records   ComponentLubricationRecord[]
+
+  @@index([componentId])
+  @@index([nextDueDate])
+  @@map("component_lubrication_schedules")
+}
+
+model ComponentLubricationRecord {
+  id                  String   @id @default(cuid())
+  scheduleId          String
+  componentId         String
+  lubricantName       String
+  quantityUsed        Float
+  unit                String
+  operatingHoursAt    Float?
+  performedById       String
+  performedAt         DateTime @default(now())
+  notes               String?  @db.Text
+
+  schedule  ComponentLubricationSchedule @relation(fields: [scheduleId], references: [id])
+  component ComponentRegistry            @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  performedBy User                       @relation("LubricationPerformed", fields: [performedById], references: [id])
+
+  @@index([scheduleId])
+  @@index([componentId])
+  @@index([performedAt])
+  @@map("component_lubrication_records")
+}
+
+model ComponentReplacementHistory {
+  id              String   @id @default(cuid())
+  componentId     String
+  partName        String
+  partCode        String?
+  serialNumberOld String?
+  serialNumberNew String?
+  reason          String   // wear, failure, upgrade, preventive, recall
+  cost            Float?
+  vendor          String?
+  performedById   String
+  replacedAt      DateTime @default(now())
+  expectedNextReplacement DateTime?
+  notes           String?  @db.Text
+
+  component  ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  performedBy User             @relation("ReplacementPerformed", fields: [performedById], references: [id])
+
+  @@index([componentId])
+  @@index([replacedAt])
+  @@map("component_replacement_history")
+}
+
+model SpatialNode {
+  id              String   @id @default(cuid())
+  parentId        String?
+  nodeType        String   // plant, building, floor, area, production_line, machine, component
+  name            String
+  code            String?  // unique spatial code
+  level           Int      @default(0) // hierarchy depth
+  sortOrder       Int      @default(0)
+  coordinates     String?  @db.Text // JSON: {x, y, z} or {lat, lng} for geo
+  floorMapUrl     String?  // URL to floor plan image
+  capacity        String?  @db.Text // JSON: {maxUnits, currentUnits}
+  metadata        String?  @db.Text // JSON: any additional spatial data
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  parent    SpatialNode?       @relation("SpatialHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children  SpatialNode[]      @relation("SpatialHierarchy")
+  assets    Asset[]            @relation("SpatialAsset")
+
+  @@unique([code])
+  @@index([parentId])
+  @@index([nodeType])
+  @@index([level])
+  @@map("spatial_nodes")
+}
+
+// ============================================================================
+// DIGITAL WORK INSTRUCTIONS
+// ============================================================================
+
+model WorkInstruction {
+  id                String   @id @default(cuid())
+  title             String
+  description       String   @default("")
+  componentId       String
+  assetId           String
+  maintenanceType   String   @default("corrective") // corrective, preventive, predictive, inspection, installation, overhaul
+  estimatedDuration Int      @default(0) // minutes
+  difficulty        String   @default("intermediate") // basic, intermediate, advanced, expert
+  safetyLevel       String   @default("medium") // low, medium, high, critical
+  requiresLockout   Boolean  @default(false)
+  requiresPermit    Boolean  @default(false)
+  prerequisites     String   @default("[]") @db.Text // JSON array of prerequisite step IDs
+  steps             String   @default("[]") @db.Text // JSON: WorkInstructionStep[]
+  requiredTools     String   @default("[]") @db.Text // JSON: WorkInstructionTool[]
+  requiredParts     String   @default("[]") @db.Text // JSON: WorkInstructionPart[]
+  safetyCheckpoints String   @default("[]") @db.Text // JSON: SafetyCheckpoint[]
+  version           Int      @default(1)
+  isActive          Boolean  @default(true)
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  creator      User                         @relation("WICreatedBy", fields: [createdById], references: [id])
+  executions   WorkInstructionExecution[]
+
+  @@index([componentId])
+  @@index([assetId])
+  @@index([maintenanceType])
+  @@index([isActive])
+  @@map("work_instructions")
+}
+
+model WorkInstructionExecution {
+  id                   String    @id @default(cuid())
+  workInstructionId    String
+  workOrderId          String    @default("")
+  technicianId         String
+  status               String    @default("not_started") // not_started, in_progress, paused, completed, abandoned
+  currentStep          Int       @default(1)
+  startedAt            DateTime  @default(now())
+  completedAt          DateTime?
+  pausedAt             DateTime?
+  totalDuration        Int? // minutes
+  stepResults          String    @default("[]") @db.Text // JSON: StepResult[]
+  safetyResults        String    @default("[]") @db.Text // JSON: SafetyResult[]
+  toolVerifications    String    @default("[]") @db.Text // JSON: ToolVerification[]
+  partVerifications    String    @default("[]") @db.Text // JSON: PartVerification[]
+  notes                String    @default("")
+  completionEvidence   String    @default("[]") @db.Text // JSON: photo URLs, signatures
+
+  workInstruction WorkInstruction @relation(fields: [workInstructionId], references: [id], onDelete: Cascade)
+
+  @@index([workInstructionId])
+  @@index([technicianId])
+  @@index([status])
+  @@map("work_instruction_executions")
 }
