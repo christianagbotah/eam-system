@@ -18,13 +18,16 @@ const statusColors: Record<string, string> = {
   normal: '#10b981',
   active: '#10b981',
   online: '#10b981',
+  running: '#10b981',
   standby: '#f59e0b',
   warning: '#f59e0b',
+  stopped: '#6b7280',
   offline: '#6b7280',
   inactive: '#6b7280',
   critical: '#ef4444',
   alarm: '#ef4444',
   error: '#ef4444',
+  fault: '#ef4444',
 };
 
 const criticalityColors: Record<string, string> = {
@@ -238,7 +241,6 @@ function SensorNodeComponent({ data, selected }: NodeProps) {
             height: '100%', width: `${percentage}%`, background: statusColor, borderRadius: 2,
             transition: 'width 0.5s',
           }} />
-          {/* Min/Max markers */}
           <div style={{ position: 'absolute', top: -2, left: 0, width: 1, height: 8, background: '#475569', borderRadius: 0.5 }} />
           <div style={{ position: 'absolute', top: -2, right: 0, width: 1, height: 8, background: '#475569', borderRadius: 0.5 }} />
         </div>
@@ -300,7 +302,6 @@ function ValveNodeComponent({ data, selected }: NodeProps) {
           margin: '0 auto 6px', position: 'relative',
         }}>
           <Icon size={20} style={{ color }} />
-          {/* Valve bowtie indicator */}
           <div style={{
             position: 'absolute', top: -4, left: '50%', transform: 'translateX(-50%)',
             width: 8, height: 8, borderRadius: '50%',
@@ -370,6 +371,469 @@ function JunctionNodeComponent({ data, selected }: NodeProps) {
 export const JunctionNode = memo(JunctionNodeComponent);
 
 // ============================================================================
+// PUMP NODE — Industrial pump symbol
+// ============================================================================
+
+export interface PumpNodeData {
+  label: string;
+  pumpType?: 'centrifugal' | 'reciprocating' | 'gear' | 'diaphragm' | 'submersible';
+  status?: 'running' | 'stopped' | 'fault';
+  health?: number;
+  flowRate?: number;
+  head?: number;
+  [key: string]: unknown;
+}
+
+function PumpNodeComponent({ data, selected }: NodeProps) {
+  const nodeData = data as unknown as PumpNodeData;
+  const statusColor = statusColors[nodeData.status || 'stopped'] || '#6b7280';
+  const isRunning = nodeData.status === 'running';
+  const isFault = nodeData.status === 'fault';
+
+  return (
+    <div style={{
+      ...nodeBaseStyle,
+      minWidth: '160px',
+      borderColor: isFault ? '#ef4444' : selected ? '#10b981' : `rgba(148,163,184,0.15)`,
+      boxShadow: isFault
+        ? '0 0 16px rgba(239,68,68,0.25)'
+        : selected
+          ? '0 0 20px rgba(16,185,129,0.2)'
+          : '0 4px 12px rgba(0,0,0,0.3)',
+    }}>
+      <Handle type="target" position={Position.Left} style={{ background: statusColor, border: '2px solid #1e293b', width: 10, height: 10 }} />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px 6px' }}>
+        {/* Pump symbol — circle with rotating animation */}
+        <div style={{
+          width: 36, height: 36, borderRadius: '50%',
+          background: `${statusColor}15`, border: `2px solid ${statusColor}50`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          position: 'relative', flexShrink: 0,
+        }}>
+          <div style={{
+            animation: isRunning ? 'pumpSpin 2s linear infinite' : 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {/* Pump impeller blades */}
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="3" fill={statusColor} opacity={0.6} />
+              <path d="M12 2C12 2 14 8 12 9C10 10 4 8 4 8" stroke={statusColor} strokeWidth="2" strokeLinecap="round" />
+              <path d="M12 2C12 2 14 8 12 9C10 10 4 8 4 8" stroke={statusColor} strokeWidth="2" strokeLinecap="round" transform="rotate(120 12 12)" />
+              <path d="M12 2C12 2 14 8 12 9C10 10 4 8 4 8" stroke={statusColor} strokeWidth="2" strokeLinecap="round" transform="rotate(240 12 12)" />
+            </svg>
+          </div>
+          {/* Status dot */}
+          <div style={{
+            position: 'absolute', top: -2, right: -2,
+            width: 10, height: 10, borderRadius: '50%',
+            background: statusColor,
+            boxShadow: isRunning ? `0 0 6px ${statusColor}` : 'none',
+            animation: isRunning ? 'pulse 2s infinite' : 'none',
+          }} />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {nodeData.label}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+            <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', color: statusColor }}>
+              {nodeData.status || 'stopped'}
+            </span>
+            <span style={{ fontSize: 8, color: '#64748b', textTransform: 'capitalize' }}>
+              {nodeData.pumpType || 'centrifugal'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Parameters */}
+      <div style={{
+        padding: '6px 12px 8px', borderTop: '1px solid rgba(148,163,184,0.08)',
+        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 8px',
+      }}>
+        {nodeData.flowRate !== undefined && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 9, color: '#64748b' }}>Flow</span>
+            <span style={{ fontSize: 9, color: '#cbd5e1', fontWeight: 600, fontFamily: 'monospace' }}>{nodeData.flowRate} m³/h</span>
+          </div>
+        )}
+        {nodeData.head !== undefined && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 9, color: '#64748b' }}>Head</span>
+            <span style={{ fontSize: 9, color: '#cbd5e1', fontWeight: 600, fontFamily: 'monospace' }}>{nodeData.head} m</span>
+          </div>
+        )}
+      </div>
+
+      {/* Health */}
+      {nodeData.health !== undefined && (
+        <div style={{ padding: '0 12px 8px' }}>
+          <HealthBar health={nodeData.health} />
+        </div>
+      )}
+
+      <Handle type="source" position={Position.Right} style={{ background: statusColor, border: '2px solid #1e293b', width: 10, height: 10 }} />
+
+      <style>{`
+        @keyframes pumpSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+export const PumpNode = memo(PumpNodeComponent);
+
+// ============================================================================
+// TANK NODE — Storage tank with fill level
+// ============================================================================
+
+export interface TankNodeData {
+  label: string;
+  fillLevel?: number; // 0-100
+  capacity?: number;
+  temperature?: number;
+  levelStatus?: 'high' | 'normal' | 'low';
+  medium?: string;
+  [key: string]: unknown;
+}
+
+function TankNodeComponent({ data, selected }: NodeProps) {
+  const nodeData = data as unknown as TankNodeData;
+  const fillLevel = nodeData.fillLevel ?? 0;
+  const levelStatus = nodeData.levelStatus || 'normal';
+
+  const levelColorMap: Record<string, string> = { high: '#f59e0b', normal: '#10b981', low: '#ef4444' };
+  const levelColor = levelColorMap[levelStatus] || '#10b981';
+  const tempColor = (nodeData.temperature ?? 0) > 60 ? '#ef4444' : (nodeData.temperature ?? 0) > 40 ? '#f59e0b' : '#10b981';
+
+  return (
+    <div style={{
+      ...nodeBaseStyle,
+      minWidth: '140px',
+      borderColor: selected ? '#10b981' : levelStatus === 'low' ? '#ef444480' : 'rgba(148,163,184,0.15)',
+      boxShadow: selected ? '0 0 20px rgba(16,185,129,0.2)' : levelStatus === 'low' ? '0 0 12px rgba(239,68,68,0.15)' : '0 4px 12px rgba(0,0,0,0.3)',
+    }}>
+      <Handle type="target" position={Position.Left} style={{ background: levelColor, border: '2px solid #1e293b', width: 8, height: 8 }} />
+
+      <div style={{ padding: '10px 12px 6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <Warehouse size={14} style={{ color: levelColor }} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#f1f5f9', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {nodeData.label}
+          </span>
+          {nodeData.medium && (
+            <span style={{ fontSize: 8, color: '#64748b', background: 'rgba(148,163,184,0.1)', padding: '1px 6px', borderRadius: 4 }}>
+              {nodeData.medium}
+            </span>
+          )}
+        </div>
+
+        {/* Tank visual */}
+        <div style={{
+          width: '100%', height: 60, borderRadius: 8,
+          border: '2px solid rgba(148,163,184,0.2)',
+          background: 'rgba(15,23,42,0.6)',
+          position: 'relative', overflow: 'hidden',
+          marginBottom: 6,
+        }}>
+          {/* Fill level bar */}
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            height: `${fillLevel}%`,
+            background: `linear-gradient(to top, ${levelColor}60, ${levelColor}30)`,
+            borderTop: `2px solid ${levelColor}80`,
+            transition: 'height 0.5s',
+          }} />
+          {/* Level markers */}
+          {[25, 50, 75].map((mark) => (
+            <div key={mark} style={{
+              position: 'absolute', left: 4, right: 4,
+              bottom: `${mark}%`, height: 1,
+              background: 'rgba(148,163,184,0.1)',
+            }} />
+          ))}
+          {/* Fill percentage */}
+          <div style={{
+            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            fontSize: 16, fontWeight: 800, fontFamily: 'monospace', color: levelColor,
+            textShadow: '0 1px 4px rgba(0,0,0,0.5)',
+          }}>
+            {fillLevel}%
+          </div>
+        </div>
+
+        {/* Metrics row */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          {/* Level status badge */}
+          <div style={{
+            fontSize: 8, fontWeight: 700, textTransform: 'uppercase',
+            color: levelColor, background: `${levelColor}15`,
+            padding: '2px 8px', borderRadius: 4,
+            border: `1px solid ${levelColor}30`,
+          }}>
+            {levelStatus}
+          </div>
+          {nodeData.capacity !== undefined && (
+            <span style={{ fontSize: 9, color: '#94a3b8' }}>
+              {nodeData.capacity} L
+            </span>
+          )}
+          {nodeData.temperature !== undefined && (
+            <span style={{ fontSize: 9, color: tempColor, fontWeight: 600, fontFamily: 'monospace' }}>
+              <Thermometer size={8} style={{ verticalAlign: -1, marginRight: 2 }} />
+              {nodeData.temperature}°C
+            </span>
+          )}
+        </div>
+      </div>
+
+      <Handle type="source" position={Position.Right} style={{ background: levelColor, border: '2px solid #1e293b', width: 8, height: 8 }} />
+    </div>
+  );
+}
+
+export const TankNode = memo(TankNodeComponent);
+
+// ============================================================================
+// MOTOR NODE — Electric motor
+// ============================================================================
+
+export interface MotorNodeData {
+  label: string;
+  rpm?: number;
+  powerRating?: number;
+  status?: 'running' | 'stopped' | 'fault';
+  vibration?: number;
+  temperature?: number;
+  current?: number;
+  [key: string]: unknown;
+}
+
+function MotorNodeComponent({ data, selected }: NodeProps) {
+  const nodeData = data as unknown as MotorNodeData;
+  const statusColor = statusColors[nodeData.status || 'stopped'] || '#6b7280';
+  const isRunning = nodeData.status === 'running';
+  const isFault = nodeData.status === 'fault';
+
+  const vibColor = (nodeData.vibration ?? 0) > 7 ? '#ef4444' : (nodeData.vibration ?? 0) > 4 ? '#f59e0b' : '#10b981';
+  const tempColor = (nodeData.temperature ?? 0) > 80 ? '#ef4444' : (nodeData.temperature ?? 0) > 65 ? '#f59e0b' : '#10b981';
+
+  return (
+    <div style={{
+      ...nodeBaseStyle,
+      minWidth: '160px',
+      borderColor: isFault ? '#ef4444' : selected ? '#10b981' : 'rgba(148,163,184,0.15)',
+      boxShadow: isFault
+        ? '0 0 16px rgba(239,68,68,0.25)'
+        : selected
+          ? '0 0 20px rgba(16,185,129,0.2)'
+          : '0 4px 12px rgba(0,0,0,0.3)',
+    }}>
+      <Handle type="target" position={Position.Left} style={{ background: statusColor, border: '2px solid #1e293b', width: 10, height: 10 }} />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px 6px' }}>
+        {/* Motor symbol — gear/cog */}
+        <div style={{
+          width: 36, height: 36, borderRadius: 8,
+          background: `${statusColor}15`, border: `2px solid ${statusColor}40`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          position: 'relative', flexShrink: 0,
+        }}>
+          <Cog size={20} style={{ color: statusColor, animation: isRunning ? 'motorSpin 1.5s linear infinite' : 'none' }} />
+          {/* Status dot */}
+          <div style={{
+            position: 'absolute', top: -2, right: -2,
+            width: 10, height: 10, borderRadius: '50%',
+            background: statusColor,
+            boxShadow: isRunning ? `0 0 6px ${statusColor}` : 'none',
+          }} />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {nodeData.label}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+            <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', color: statusColor }}>
+              {nodeData.status || 'stopped'}
+            </span>
+            <div style={{ width: 1, height: 8, background: 'rgba(148,163,184,0.2)' }} />
+            <Zap size={8} style={{ color: '#94a3b8' }} />
+            <span style={{ fontSize: 9, color: '#94a3b8', fontFamily: 'monospace' }}>
+              {nodeData.powerRating ?? 0} kW
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* RPM + Vibration */}
+      <div style={{
+        padding: '6px 12px 8px', borderTop: '1px solid rgba(148,163,184,0.08)',
+        display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2px 8px',
+      }}>
+        {nodeData.rpm !== undefined && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 9, color: '#64748b' }}>RPM</span>
+            <span style={{ fontSize: 9, color: '#cbd5e1', fontWeight: 600, fontFamily: 'monospace' }}>{nodeData.rpm}</span>
+          </div>
+        )}
+        {nodeData.current !== undefined && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 9, color: '#64748b' }}>I</span>
+            <span style={{ fontSize: 9, color: '#cbd5e1', fontWeight: 600, fontFamily: 'monospace' }}>{nodeData.current}A</span>
+          </div>
+        )}
+        {nodeData.vibration !== undefined && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 9, color: '#64748b' }}>Vib</span>
+            <span style={{ fontSize: 9, color: vibColor, fontWeight: 600, fontFamily: 'monospace' }}>{nodeData.vibration}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Vibration bar */}
+      {nodeData.vibration !== undefined && (
+        <div style={{ padding: '0 12px 8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ flex: 1, height: 3, background: 'rgba(148,163,184,0.12)', borderRadius: 2 }}>
+              <div style={{
+                height: '100%',
+                width: `${Math.min(100, (nodeData.vibration / 10) * 100)}%`,
+                background: vibColor, borderRadius: 2,
+              }} />
+            </div>
+            <span style={{ fontSize: 8, color: vibColor, fontWeight: 600 }}>mm/s</span>
+          </div>
+        </div>
+      )}
+
+      <Handle type="source" position={Position.Right} style={{ background: statusColor, border: '2px solid #1e293b', width: 10, height: 10 }} />
+
+      <style>{`
+        @keyframes motorSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+export const MotorNode = memo(MotorNodeComponent);
+
+// ============================================================================
+// PIPE NODE — Pipe segment with animated flow
+// ============================================================================
+
+export interface PipeNodeData {
+  label: string;
+  diameter?: string;
+  material?: string;
+  flowRate?: number;
+  pressure?: number;
+  flowDirection?: 'forward' | 'reverse';
+  [key: string]: unknown;
+}
+
+function PipeNodeComponent({ data, selected }: NodeProps) {
+  const nodeData = data as unknown as PipeNodeData;
+  const pressureColor = (nodeData.pressure ?? 0) > 10 ? '#ef4444' : (nodeData.pressure ?? 0) > 6 ? '#f59e0b' : '#06b6d4';
+
+  return (
+    <div style={{
+      ...nodeBaseStyle,
+      minWidth: '180px',
+      borderColor: selected ? '#06b6d4' : 'rgba(148,163,184,0.15)',
+      boxShadow: selected ? '0 0 20px rgba(6,182,212,0.2)' : '0 4px 12px rgba(0,0,0,0.3)',
+    }}>
+      <Handle type="target" position={Position.Left} style={{ background: '#06b6d4', border: '2px solid #1e293b', width: 10, height: 10 }} />
+
+      <div style={{ padding: '8px 12px 6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <Droplets size={12} style={{ color: '#06b6d4' }} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: '#f1f5f9', flex: 1 }}>{nodeData.label}</span>
+          {nodeData.diameter && (
+            <span style={{ fontSize: 8, color: '#94a3b8', background: 'rgba(6,182,212,0.1)', padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>
+              DN{nodeData.diameter}
+            </span>
+          )}
+        </div>
+
+        {/* Animated pipe */}
+        <div style={{
+          width: '100%', height: 12, borderRadius: 6,
+          background: 'rgba(6,182,212,0.08)',
+          border: '1px solid rgba(6,182,212,0.2)',
+          position: 'relative', overflow: 'hidden',
+          marginBottom: 6,
+        }}>
+          {/* Flow animation */}
+          <div style={{
+            position: 'absolute', inset: 2, borderRadius: 4,
+            background: 'linear-gradient(90deg, transparent, rgba(6,182,212,0.4), transparent)',
+            backgroundSize: '20px 100%',
+            animation: nodeData.flowRate ? 'pipeFlow 1s linear infinite' : 'none',
+          }} />
+          {/* Direction arrow */}
+          <div style={{
+            position: 'absolute', top: '50%', left: nodeData.flowDirection === 'reverse' ? '15%' : '75%', transform: 'translateY(-50%)',
+            color: '#06b6d4', fontSize: 8,
+            opacity: nodeData.flowRate ? 1 : 0.3,
+          }}>
+            {nodeData.flowDirection === 'reverse' ? '◀' : '▶'}
+          </div>
+        </div>
+
+        {/* Specs row */}
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2px 8px',
+          borderTop: '1px solid rgba(148,163,184,0.08)', paddingTop: 6,
+        }}>
+          {nodeData.flowRate !== undefined && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 8, color: '#64748b' }}>Flow</span>
+              <span style={{ fontSize: 9, color: '#cbd5e1', fontWeight: 600, fontFamily: 'monospace' }}>{nodeData.flowRate} m³/h</span>
+            </div>
+          )}
+          {nodeData.pressure !== undefined && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 8, color: '#64748b' }}>P</span>
+              <span style={{ fontSize: 9, color: pressureColor, fontWeight: 600, fontFamily: 'monospace' }}>{nodeData.pressure} bar</span>
+            </div>
+          )}
+          {nodeData.material && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 8, color: '#64748b' }}>Mat</span>
+              <span style={{ fontSize: 8, color: '#94a3b8', textTransform: 'capitalize' }}>{nodeData.material}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <Handle type="source" position={Position.Right} style={{ background: '#06b6d4', border: '2px solid #1e293b', width: 10, height: 10 }} />
+
+      <style>{`
+        @keyframes pipeFlow {
+          0% { background-position: -20px 0; }
+          100% { background-position: 20px 0; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+export const PipeNode = memo(PipeNodeComponent);
+
+// ============================================================================
 // CUSTOM EDGE TYPES
 // ============================================================================
 
@@ -411,7 +875,6 @@ function ProcessFlowEdge({
 
   return (
     <>
-      {/* Glow layer */}
       {isActive && (
         <path
           d={edgePath}
@@ -422,7 +885,6 @@ function ProcessFlowEdge({
           style={{ filter: 'blur(3px)' }}
         />
       )}
-      {/* Base line */}
       <path
         d={edgePath}
         fill="none"
@@ -431,7 +893,6 @@ function ProcessFlowEdge({
         strokeOpacity={isActive ? 0.7 : 0.3}
         strokeDasharray={isActive ? undefined : '6 4'}
       />
-      {/* Animated flow dot */}
       {isActive && (
         <circle r="4" fill={edgeColor} filter={`drop-shadow(0 0 3px ${edgeColor})`}>
           <animateMotion
@@ -441,7 +902,6 @@ function ProcessFlowEdge({
           />
         </circle>
       )}
-      {/* Selection highlight */}
       {selected && (
         <path
           d={edgePath}
@@ -451,7 +911,6 @@ function ProcessFlowEdge({
           strokeOpacity={0.15}
         />
       )}
-      {/* Label */}
       {edgeData?.label && (
         <text
           x={(sourceX + targetX) / 2}
@@ -536,7 +995,6 @@ function PipeEdge({
           <stop offset="100%" stopColor="#06b6d4" stopOpacity={0.4} />
         </linearGradient>
       </defs>
-      {/* Outer pipe */}
       <path
         d={edgePath}
         fill="none"
@@ -544,7 +1002,6 @@ function PipeEdge({
         strokeWidth={8}
         strokeLinecap="round"
       />
-      {/* Inner pipe */}
       <path
         d={edgePath}
         fill="none"
@@ -574,6 +1031,10 @@ export const nodeTypes = {
   sensorNode: SensorNode,
   valveNode: ValveNode,
   junctionNode: JunctionNode,
+  pumpNode: PumpNode,
+  tankNode: TankNode,
+  motorNode: MotorNode,
+  pipeNode: PipeNode,
 };
 
 export const edgeTypes = {

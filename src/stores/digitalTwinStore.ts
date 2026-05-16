@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { api } from '@/lib/api';
+import type {
+  ComponentRegistryItem,
+  FailureAnalysisData,
+  FailureRecord,
+  PredictionAlertData,
+  PredictiveModelData,
+} from '@/types';
 
 // ============================================================================
 // Types
@@ -126,6 +133,21 @@ interface DigitalTwinStateData {
   assetBomChildren: Record<string, unknown>[];
   assetAttachments: Record<string, unknown>[];
   isLoadingAssetData: boolean;
+
+  // Component registry
+  componentRegistry: ComponentRegistryItem | null;
+  componentTree: ComponentRegistryItem[];
+  isLoadingRegistry: boolean;
+
+  // Failure analysis
+  failureAnalysis: FailureAnalysisData | null;
+  failureRecords: FailureRecord[];
+  isLoadingFailureAnalysis: boolean;
+
+  // Predictive maintenance
+  predictionAlerts: PredictionAlertData[];
+  predictiveModels: PredictiveModelData[];
+  isLoadingPredictionData: boolean;
 }
 
 const INITIAL_STATE: DigitalTwinStateData = {
@@ -184,6 +206,21 @@ const INITIAL_STATE: DigitalTwinStateData = {
   assetBomChildren: [],
   assetAttachments: [],
   isLoadingAssetData: false,
+
+  // Component registry
+  componentRegistry: null,
+  componentTree: [],
+  isLoadingRegistry: false,
+
+  // Failure analysis
+  failureAnalysis: null,
+  failureRecords: [],
+  isLoadingFailureAnalysis: false,
+
+  // Predictive maintenance
+  predictionAlerts: [],
+  predictiveModels: [],
+  isLoadingPredictionData: false,
 };
 
 // ============================================================================
@@ -232,6 +269,17 @@ export interface DigitalTwinState extends DigitalTwinStateData {
 
   // Actions — Asset data loading
   loadAssetData: (assetId: string) => Promise<void>;
+
+  // Actions — Component registry
+  loadComponentRegistry: (assetId: string) => Promise<void>;
+
+  // Actions — Failure analysis
+  loadFailureAnalysis: (params: { assetId?: string; componentId?: string }) => Promise<void>;
+
+  // Actions — Predictive maintenance
+  loadPredictionAlerts: (filters?: Record<string, string>) => Promise<void>;
+  loadPredictiveModels: () => Promise<void>;
+  acknowledgePredictionAlert: (alertId: string) => Promise<void>;
 
   // Actions — Reset
   reset: () => void;
@@ -553,6 +601,124 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
           // Graceful degradation — don't block the viewer
           console.warn('[DigitalTwin] Failed to load asset data:', err);
           set({ isLoadingAssetData: false }, false, 'digitalTwin/loadAssetData:error');
+        }
+      },
+
+      // ────────────────────────────────────────────────────────────────────────
+      // Component Registry
+      // ────────────────────────────────────────────────────────────────────────
+
+      loadComponentRegistry: async (assetId: string) => {
+        set({ isLoadingRegistry: true }, false, 'digitalTwin/loadComponentRegistry:start');
+        try {
+          const res = await api.get<ComponentRegistryItem>(`/api/component-registry?assetId=${assetId}`);
+          if (res.success && res.data) {
+            const tree = Array.isArray(res.data) ? res.data : res.data.children ? [res.data] : [res.data];
+            set(
+              {
+                componentRegistry: Array.isArray(res.data) ? null : res.data,
+                componentTree: tree,
+                isLoadingRegistry: false,
+              },
+              false,
+              'digitalTwin/loadComponentRegistry:success',
+            );
+          } else {
+            set({ isLoadingRegistry: false }, false, 'digitalTwin/loadComponentRegistry:error');
+          }
+        } catch {
+          set({ isLoadingRegistry: false }, false, 'digitalTwin/loadComponentRegistry:error');
+        }
+      },
+
+      // ────────────────────────────────────────────────────────────────────────
+      // Failure Analysis
+      // ────────────────────────────────────────────────────────────────────────
+
+      loadFailureAnalysis: async (params: { assetId?: string; componentId?: string }) => {
+        set({ isLoadingFailureAnalysis: true }, false, 'digitalTwin/loadFailureAnalysis:start');
+        try {
+          const qs = new URLSearchParams();
+          if (params.assetId) qs.set('assetId', params.assetId);
+          if (params.componentId) qs.set('componentId', params.componentId);
+
+          const [analysisRes, recordsRes] = await Promise.all([
+            api.get<FailureAnalysisData>(`/api/failure-analysis?${qs.toString()}`).catch(() => ({
+              success: false,
+              data: null,
+            })),
+            api
+              .get<FailureRecord[]>(`/api/failure-records?${qs.toString()}&limit=20`)
+              .catch(() => ({ success: false, data: [] })),
+          ]);
+
+          set(
+            {
+              failureAnalysis: analysisRes.success ? (analysisRes.data ?? null) : null,
+              failureRecords: recordsRes.success ? (recordsRes.data ?? []) : [],
+              isLoadingFailureAnalysis: false,
+            },
+            false,
+            'digitalTwin/loadFailureAnalysis:success',
+          );
+        } catch {
+          set({ isLoadingFailureAnalysis: false }, false, 'digitalTwin/loadFailureAnalysis:error');
+        }
+      },
+
+      // ────────────────────────────────────────────────────────────────────────
+      // Predictive Maintenance
+      // ────────────────────────────────────────────────────────────────────────
+
+      loadPredictionAlerts: async (filters?: Record<string, string>) => {
+        set({ isLoadingPredictionData: true }, false, 'digitalTwin/loadPredictionAlerts:start');
+        try {
+          const qs = new URLSearchParams(filters);
+          const res = await api.get<PredictionAlertData[]>(`/api/prediction-alerts?${qs.toString()}`);
+          set(
+            {
+              predictionAlerts: res.success ? (res.data ?? []) : [],
+              isLoadingPredictionData: false,
+            },
+            false,
+            'digitalTwin/loadPredictionAlerts:success',
+          );
+        } catch {
+          set({ isLoadingPredictionData: false }, false, 'digitalTwin/loadPredictionAlerts:error');
+        }
+      },
+
+      loadPredictiveModels: async () => {
+        set({ isLoadingPredictionData: true }, false, 'digitalTwin/loadPredictiveModels:start');
+        try {
+          const res = await api.get<PredictiveModelData[]>('/api/predictive-models');
+          set(
+            {
+              predictiveModels: res.success ? (res.data ?? []) : [],
+              isLoadingPredictionData: false,
+            },
+            false,
+            'digitalTwin/loadPredictiveModels:success',
+          );
+        } catch {
+          set({ isLoadingPredictionData: false }, false, 'digitalTwin/loadPredictiveModels:error');
+        }
+      },
+
+      acknowledgePredictionAlert: async (alertId: string) => {
+        try {
+          await api.patch(`/api/prediction-alerts/${alertId}/acknowledge`);
+          set(
+            (state) => ({
+              predictionAlerts: state.predictionAlerts.map((a) =>
+                a.id === alertId ? { ...a, isAcknowledged: true, acknowledgedAt: new Date().toISOString() } : a,
+              ),
+            }),
+            false,
+            'digitalTwin/acknowledgePredictionAlert',
+          );
+        } catch {
+          // Silent failure
         }
       },
 

@@ -27,6 +27,15 @@ export { TwinToolbar, type TwinToolbarProps } from './TwinToolbar';
 export { SceneTreePanel, type SceneTreePanelProps } from './SceneTreePanel';
 export { ComponentInfoPanel, type ComponentInfoPanelProps } from './ComponentInfoPanel';
 
+// Enterprise integration panels
+export { default as FailureAnalysisPanel, type FailureAnalysisPanelProps } from './FailureAnalysisPanel';
+export { default as PredictiveMaintenancePanel, type PredictiveMaintenancePanelProps } from './PredictiveMaintenancePanel';
+
 // Diagram components
-export { DiagramTemplates } from './DiagramTemplates';
-export { nodeTypes, edgeTypes } from './DiagramNodeTypes';
+export { diagramTemplates, diagramTypeMeta, type DiagramTemplate } from './DiagramTemplates';
+export {
+  nodeTypes, edgeTypes,
+  type AssetNodeData, type SensorNodeData, type ValveNodeData, type JunctionNodeData,
+  type PumpNodeData, type TankNodeData, type MotorNodeData, type PipeNodeData,
+  type CustomNodeTypes, type CustomEdgeTypes,
+} from './DiagramNodeTypes';

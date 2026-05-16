@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useCallback, useState, useMemo } from 'react';
+import { useRef, useCallback, useState, useMemo, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -23,7 +23,10 @@ export interface SectionPlaneProps {
 // Constants
 // ============================================================================
 
-const PLANE_DEFAULTS: Record<SectionAxis, { normal: THREE.Vector3; rotation: THREE.Euler }> = {
+const PLANE_DEFAULTS: Record<
+  SectionAxis,
+  { normal: THREE.Vector3; rotation: THREE.Euler }
+> = {
   x: {
     normal: new THREE.Vector3(-1, 0, 0),
     rotation: new THREE.Euler(0, Math.PI / 2, 0),
@@ -37,6 +40,89 @@ const PLANE_DEFAULTS: Record<SectionAxis, { normal: THREE.Vector3; rotation: THR
     rotation: new THREE.Euler(0, 0, 0),
   },
 };
+
+// ============================================================================
+// Animated section plane visual — semi-transparent with glowing edges
+// ============================================================================
+
+function SectionPlaneVisual({
+  position,
+  rotation,
+  planeSize,
+  planeColor,
+  isTransitioning,
+}: {
+  position: [number, number, number];
+  rotation: THREE.Euler;
+  planeSize: number;
+  planeColor: string;
+  isTransitioning: boolean;
+}) {
+  const planeRef = useRef<THREE.Mesh>(null);
+  const edgesRef = useRef<THREE.LineSegments>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
+  const opacityRef = useRef(0);
+  const glowOpacityRef = useRef(0);
+
+  useFrame(() => {
+    const targetOpacity = isTransitioning ? 0.1 : 0.08;
+    const targetGlow = isTransitioning ? 0.2 : 0.05;
+
+    opacityRef.current += (targetOpacity - opacityRef.current) * 0.1;
+    glowOpacityRef.current += (targetGlow - glowOpacityRef.current) * 0.08;
+
+    if (planeRef.current) {
+      (planeRef.current.material as THREE.MeshStandardMaterial).opacity =
+        opacityRef.current;
+    }
+    if (glowRef.current) {
+      (glowRef.current.material as THREE.MeshStandardMaterial).opacity =
+        glowOpacityRef.current;
+    }
+  });
+
+  return (
+    <group position={position} rotation={rotation}>
+      {/* Main clipping plane surface */}
+      <mesh ref={planeRef}>
+        <planeGeometry args={[planeSize, planeSize]} />
+        <meshStandardMaterial
+          color={planeColor}
+          transparent
+          opacity={0}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Glowing edge highlight */}
+      <lineSegments ref={edgesRef}>
+        <edgesGeometry
+          args={[new THREE.PlaneGeometry(planeSize, planeSize)]}
+        />
+        <lineBasicMaterial
+          color={planeColor}
+          transparent
+          opacity={0.4}
+        />
+      </lineSegments>
+
+      {/* Outer glow plane */}
+      <mesh ref={glowRef}>
+        <planeGeometry args={[planeSize * 1.02, planeSize * 1.02]} />
+        <meshStandardMaterial
+          color={planeColor}
+          transparent
+          opacity={0}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+          emissive={new THREE.Color(planeColor)}
+          emissiveIntensity={0.3}
+        />
+      </mesh>
+    </group>
+  );
+}
 
 // ============================================================================
 // Component
@@ -54,42 +140,70 @@ export function SectionPlane({
   const setSectionAxis = useDigitalTwinStore((s) => s.setSectionAxis);
 
   const { scene } = useThree();
-  const planeRef = useRef<THREE.Mesh>(null);
-  const clippingPlaneRef = useRef<THREE.Plane>(null);
 
-  // Create the Three.js clipping plane
-  const clippingPlane = useMemo(() => {
-    const axisConfig = PLANE_DEFAULTS[sectionAxis];
-    const plane = new THREE.Plane();
-    plane.normal.copy(axisConfig.normal);
-    plane.constant = sectionPosition * (planeSize / 2);
-    return plane;
-  }, [sectionAxis, sectionPosition, planeSize]);
+  // Track whether we're transitioning (for animation)
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const prevSectionMode = useRef(sectionMode);
+  const clippedRef = useRef<Set<string>>(new Set());
+
+  // Detect section mode toggle for animation
+  useEffect(() => {
+    if (prevSectionMode.current !== sectionMode) {
+      setIsTransitioning(true);
+      const timer = setTimeout(() => setIsTransitioning(false), 600);
+      prevSectionMode.current = sectionMode;
+      return () => clearTimeout(timer);
+    }
+  }, [sectionMode]);
 
   // Update clipping planes on all materials in the scene
   useFrame(() => {
-    if (!sectionMode) return;
+    if (!sectionMode) {
+      // Clear clipping planes when section mode is off
+      if (clippedRef.current.size > 0) {
+        scene.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            const key = mesh.uuid;
+            if (clippedRef.current.has(key)) {
+              const materials = Array.isArray(mesh.material)
+                ? mesh.material
+                : [mesh.material];
+              for (const mat of materials) {
+                if (mat instanceof THREE.Material) {
+                  mat.clippingPlanes = [];
+                  mat.clipShadows = false;
+                  mat.needsUpdate = true;
+                }
+              }
+              clippedRef.current.delete(key);
+            }
+          }
+        });
+      }
+      return;
+    }
 
     const axisConfig = PLANE_DEFAULTS[sectionAxis];
-    // Re-derive a fresh plane each frame instead of mutating useMemo result
     const freshPlane = new THREE.Plane();
     freshPlane.normal.copy(axisConfig.normal);
     freshPlane.constant = sectionPosition * (planeSize / 2);
 
-    // Apply clipping to all materials in the scene
     scene.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        const materials = Array.isArray(mesh.material)
-          ? mesh.material
-          : [mesh.material];
+      if (!(child as THREE.Mesh).isMesh) return;
+      const mesh = child as THREE.Mesh;
+      const materials = Array.isArray(mesh.material)
+        ? mesh.material
+        : [mesh.material];
 
-        for (const mat of materials) {
-          if (mat instanceof THREE.Material) {
-            mat.clippingPlanes = [freshPlane];
-            mat.clipShadows = true;
-            mat.needsUpdate = true;
+      for (const mat of materials) {
+        if (mat instanceof THREE.Material) {
+          if (!mat.clippingPlanes || mat.clippingPlanes.length === 0) {
+            clippedRef.current.add(mesh.uuid);
           }
+          mat.clippingPlanes = [freshPlane];
+          mat.clipShadows = true;
+          mat.needsUpdate = true;
         }
       }
     });
@@ -104,39 +218,23 @@ export function SectionPlane({
   );
 
   // Handle position change from drag
+  const planeRef = useRef<THREE.Mesh>(null);
   const handleDrag = useCallback(() => {
     if (planeRef.current) {
       const worldPos = new THREE.Vector3();
       planeRef.current.getWorldPosition(worldPos);
-      // Map world position to normalized -1..1 range
       const normalizedPos = worldPos[sectionAxis] / (planeSize / 2);
       setSectionPosition(normalizedPos);
     }
   }, [sectionAxis, planeSize, setSectionPosition]);
 
   if (!sectionMode) {
-    // Clear clipping planes when section mode is off
-    scene.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        const materials = Array.isArray(mesh.material)
-          ? mesh.material
-          : [mesh.material];
-        for (const mat of materials) {
-          if (mat instanceof THREE.Material) {
-            mat.clippingPlanes = [];
-            mat.needsUpdate = true;
-          }
-        }
-      }
-    });
     return null;
   }
 
   const axisConfig = PLANE_DEFAULTS[sectionAxis];
   const planePosition = sectionPosition * (planeSize / 2);
 
-  // Compute the plane position vector based on axis
   const position: [number, number, number] =
     sectionAxis === 'x'
       ? [planePosition, 0, 0]
@@ -146,30 +244,35 @@ export function SectionPlane({
 
   return (
     <group>
-      {/* Visible clipping plane helper */}
+      {/* Visible clipping plane with animated edges */}
+      <SectionPlaneVisual
+        position={position}
+        rotation={axisConfig.rotation}
+        planeSize={planeSize}
+        planeColor={planeColor}
+        isTransitioning={isTransitioning}
+      />
+
+      {/* Invisible hit target for drag interaction */}
       <mesh
         ref={planeRef}
         position={position}
         rotation={axisConfig.rotation}
         onAfterRender={handleDrag}
+        visible={false}
       >
         <planeGeometry args={[planeSize, planeSize]} />
-        <meshStandardMaterial
-          color={planeColor}
-          transparent
-          opacity={0.08}
-          side={THREE.DoubleSide}
-          depthWrite={false}
-        />
+        <meshBasicMaterial side={THREE.DoubleSide} />
       </mesh>
 
       {/* Axis control UI overlay */}
       <Html position={[0, planeSize / 2 + 0.5, 0]} center>
-        <div className="flex flex-col items-center gap-2 px-3 py-2 rounded-lg shadow-xl"
+        <div
+          className="flex flex-col items-center gap-2 px-3 py-2 rounded-lg shadow-xl"
           style={{
-            background: 'rgba(15,15,25,0.85)',
+            background: 'rgba(15,15,25,0.9)',
             border: '1px solid rgba(34,211,238,0.3)',
-            backdropFilter: 'blur(8px)',
+            backdropFilter: 'blur(12px)',
           }}
         >
           <span className="text-[10px] text-cyan-300 font-medium tracking-wider uppercase">
@@ -183,10 +286,10 @@ export function SectionPlane({
                   e.stopPropagation();
                   handleAxisChange(axis);
                 }}
-                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-colors ${
+                className={`px-2.5 py-0.5 rounded text-[10px] font-bold uppercase transition-all duration-200 ${
                   sectionAxis === axis
-                    ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-400'
-                    : 'bg-white/5 text-slate-400 border border-white/10 hover:border-white/20'
+                    ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.3)]'
+                    : 'bg-white/5 text-slate-400 border border-white/10 hover:border-white/20 hover:bg-white/10'
                 }`}
               >
                 {axis}

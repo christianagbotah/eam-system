@@ -203,6 +203,13 @@ model User {
   // Attachment relations
   attachments Attachment[]
 
+  // Digital Twin Phase 1 relations
+  twinAuditLogs       TwinAuditLog[]     @relation("TwinAuditUser")
+  modelVersionUploads ModelVersion[]     @relation("ModelVersionUploaded")
+  failureReports      FailureRecord[]    @relation("FailureReported")
+  predictiveModels    PredictiveModel[]  @relation("PredictiveCreatedBy")
+  predictionAcknowledged PredictionAlert[] @relation("PredictionAcknowledged")
+
   @@map("users")
 }
 
@@ -466,6 +473,7 @@ model WorkOrder {
   repairToolRequests     RepairToolRequest[]
   workOrderDowntimes     WorkOrderDowntime[]
   repairCompletion       RepairCompletion?
+  failureRecords         FailureRecord[] @relation("FailureWorkOrder")
 
   @@map("work_orders")
 }
@@ -715,6 +723,12 @@ model Asset {
   assetModels         AssetModel[]
   maintenanceRequests MaintenanceRequest[] @relation("MRAsset")
 
+  // Component Registry / Predictive Maintenance relations
+  registryComponents ComponentRegistry[] @relation("RegistryAsset")
+  failureRecords     FailureRecord[]     @relation("FailureAsset")
+  predictiveModels   PredictiveModel[]   @relation("PredictiveAsset")
+  predictionAlerts   PredictionAlert[]   @relation("PredictionAsset")
+
   @@map("assets")
 }
 
@@ -763,6 +777,7 @@ model InventoryItem {
 
   // Repair module relations
   repairMaterialRequests RepairMaterialRequest[]
+  sparePartLinks         ComponentSparePart[] @relation("SparePartInventory")
 
   @@map("inventory_items")
 }
@@ -1081,6 +1096,7 @@ model Tool {
   // Repair module relations
   repairToolRequests  RepairToolRequest[]
   repairToolTransfers ToolTransferRequest[]
+  componentRequirements ComponentToolRequirement[] @relation("ToolComponentReq")
 
   @@map("tools")
 }
@@ -1915,6 +1931,7 @@ model DigitalTwin {
   asset     Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
   createdBy User               @relation("DigitalTwinCreatedBy", fields: [createdById], references: [id])
   scenes    DigitalTwinScene[]
+  componentRegistry ComponentRegistry[] @relation("RegistryTwin")
 
   @@index([assetId])
   @@index([createdById])
@@ -1948,6 +1965,7 @@ model AssetModel {
   uploadedBy User               @relation("AssetModelUploadedBy", fields: [uploadedById], references: [id])
   bindings   AssetMeshBinding[]
   scenes     DigitalTwinScene[]
+  versions   ModelVersion[]     @relation("ModelVersions")
 
   @@index([assetId])
   @@index([uploadedById])
@@ -2375,4 +2393,226 @@ model Attachment {
   uploadedBy User @relation(fields: [uploadedById], references: [id])
 
   @@map("attachments")
+}
+
+
+
+model ComponentRegistry {
+  id                String   @id @default(cuid())
+  parentId          String?
+  assetId           String?
+  twinId            String?
+  componentCode     String
+  name              String
+  description       String?  @db.Text
+  componentType     String   @default("component") // component, assembly, subassembly, auxiliary, instrument
+  manufacturer      String?
+  modelNumber       String?
+  serialNumber      String?  @unique
+  specification     String?  @db.Text // JSON: full specs (power, speed, capacity, etc.)
+  operatingParams   String?  @db.Text // JSON: normal operating parameters
+  criticality       String   @default("medium") // low, medium, high, critical
+  lifecycleStatus   String   @default("operational") // operational, degraded, failed, under_maintenance, decommissioned
+  installedDate     DateTime?
+  expectedLifeHours Float?
+  operatingHours    Float    @default(0)
+  lastInspection    DateTime?
+  nextInspectionDue DateTime?
+  healthScore       Int      @default(100) // 0-100 computed or manual
+  notes             String?  @db.Text
+
+  parent        ComponentRegistry?  @relation("ComponentHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children      ComponentRegistry[] @relation("ComponentHierarchy")
+  asset         Asset?               @relation("RegistryAsset", fields: [assetId], references: [id])
+  twin          DigitalTwin?         @relation("RegistryTwin", fields: [twinId], references: [id])
+  failureRecords FailureRecord[]
+  sparePartLinks ComponentSparePart[]
+  toolRequirements ComponentToolRequirement[]
+  predictiveModels PredictiveModel[]
+  predictionAlerts PredictionAlert[]
+
+  @@unique([componentCode])
+  @@index([parentId])
+  @@index([assetId])
+  @@index([twinId])
+  @@index([componentType])
+  @@index([criticality])
+  @@index([lifecycleStatus])
+  @@map("component_registry")
+}
+
+model ComponentSparePart {
+  id                String   @id @default(cuid())
+  componentId       String
+  inventoryItemId   String?
+  sparePartName     String
+  sparePartCode     String
+  quantityRequired  Int      @default(1)
+  unitCost          Float?
+  leadTimeDays      Int?
+  criticality       String   @default("medium") // low, medium, high, critical
+  notes             String?  @db.Text
+
+  component     ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem?    @relation("SparePartInventory", fields: [inventoryItemId], references: [id])
+
+  @@index([componentId])
+  @@index([inventoryItemId])
+  @@map("component_spare_parts")
+}
+
+model ComponentToolRequirement {
+  id                String   @id @default(cuid())
+  componentId       String
+  toolId            String?
+  toolName          String
+  toolCode          String
+  quantityRequired  Int      @default(1)
+  taskType          String   @default("general") // inspection, repair, overhaul, calibration, installation
+  notes             String?  @db.Text
+
+  component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  tool       Tool?              @relation("ToolComponentReq", fields: [toolId], references: [id])
+
+  @@index([componentId])
+  @@index([toolId])
+  @@map("component_tool_requirements")
+}
+
+model FailureRecord {
+  id              String   @id @default(cuid())
+  componentId     String
+  assetId         String?
+  workOrderId     String?
+
+  failureCode     String?  // standardized failure code
+  failureMode     String   // mechanical, electrical, hydraulic, pneumatic, software, corrosion, fatigue, wear, other
+  failureCause    String?  @db.Text
+  failureSeverity String   @default("medium") // low, medium, high, critical
+  symptoms        String?  @db.Text // JSON array of observed symptoms
+
+  detectedAt      DateTime @default(now())
+  resolvedAt      DateTime?
+  downtimeMinutes Int      @default(0)
+  repairCost      Float?
+
+  rootCause       String?  @db.Text
+  correctiveAction String? @db.Text
+  preventiveAction String? @db.Text
+
+  reportedById    String?
+
+  component   ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  asset       Asset?            @relation("FailureAsset", fields: [assetId], references: [id])
+  workOrder   WorkOrder?        @relation("FailureWorkOrder", fields: [workOrderId], references: [id])
+  reportedBy  User?             @relation("FailureReported", fields: [reportedById], references: [id])
+
+  @@index([componentId])
+  @@index([assetId])
+  @@index([failureMode])
+  @@index([failureSeverity])
+  @@index([detectedAt])
+  @@map("failure_records")
+}
+
+model ModelVersion {
+  id           String   @id @default(cuid())
+  assetModelId String
+  version      Int      @default(1)
+  fileName     String
+  filePath     String
+  fileSize     Int
+  changelog    String?  @db.Text
+  uploadedById String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  assetModel  AssetModel @relation("ModelVersions", fields: [assetModelId], references: [id], onDelete: Cascade)
+  uploadedBy  User       @relation("ModelVersionUploaded", fields: [uploadedById], references: [id])
+
+  @@unique([assetModelId, version])
+  @@index([assetModelId])
+  @@map("model_versions")
+}
+
+model TwinAuditLog {
+  id            String   @id @default(cuid())
+  entityType    String   // twin, scene, hotspot, annotation, camera_preset, mesh_binding, asset_model, diagram
+  entityId      String
+  action        String   // create, update, delete, view, export, share
+  changes       String?  @db.Text // JSON: { field: { old: val, new: val } }
+  userId        String
+  ipAddress     String?
+  userAgent     String?  @db.Text
+  createdAt     DateTime @default(now())
+
+  user User @relation("TwinAuditUser", fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("twin_audit_logs")
+}
+
+model PredictiveModel {
+  id                String   @id @default(cuid())
+  componentId       String?
+  assetId           String?
+  modelName         String
+  modelType         String   // anomaly_detection, regression, classification, survival
+  algorithm         String?  // e.g. "isolation_forest", "lstm", "xgboost"
+  description       String?  @db.Text
+  parameters        String?  @db.Text // JSON: model parameters
+  trainingStatus    String   @default("pending") // pending, training, trained, deploying, deployed, failed
+  accuracy          Float?   // model accuracy metric
+  lastTrainedAt     DateTime?
+  dataPoints        Int      @default(0)
+  alertThreshold    Float?   // threshold for generating predictions
+  isActive          Boolean  @default(true)
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  component  ComponentRegistry? @relation(fields: [componentId], references: [id])
+  asset      Asset?              @relation("PredictiveAsset", fields: [assetId], references: [id])
+  createdBy  User                @relation("PredictiveCreatedBy", fields: [createdById], references: [id])
+  alerts     PredictionAlert[]
+
+  @@index([componentId])
+  @@index([assetId])
+  @@index([trainingStatus])
+  @@index([createdById])
+  @@map("predictive_models")
+}
+
+model PredictionAlert {
+  id                String   @id @default(cuid())
+  predictiveModelId String
+  componentId       String?
+  assetId           String?
+  alertType         String   // anomaly, degradation, failure_predicted, threshold_breach
+  severity          String   @default("medium") // low, medium, high, critical
+  confidence        Float?   // 0.0 to 1.0
+  predictedFailureAt DateTime?
+  message           String   @db.Text
+  recommendations   String?  @db.Text
+  isAcknowledged    Boolean  @default(false)
+  acknowledgedById  String?
+  acknowledgedAt    DateTime?
+  resolvedAt        DateTime?
+  createdAt         DateTime @default(now())
+
+  predictiveModel PredictiveModel   @relation(fields: [predictiveModelId], references: [id], onDelete: Cascade)
+  component       ComponentRegistry? @relation(fields: [componentId], references: [id])
+  asset           Asset?               @relation("PredictionAsset", fields: [assetId], references: [id])
+  acknowledgedBy  User?                @relation("PredictionAcknowledged", fields: [acknowledgedById], references: [id])
+
+  @@index([predictiveModelId])
+  @@index([componentId])
+  @@index([assetId])
+  @@index([severity])
+  @@index([isAcknowledged])
+  @@index([createdAt])
+  @@map("prediction_alerts")
 }

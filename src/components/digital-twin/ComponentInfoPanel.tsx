@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   X,
   Info,
@@ -32,6 +32,22 @@ import {
   User,
   ChevronRight,
   Loader2,
+  PlusCircle,
+  FileSearch,
+  GitBranch,
+  Heart,
+  ShieldAlert,
+  Hammer,
+  WrenchIcon,
+  Eye,
+  BarChart3,
+  AlertOctagon,
+  ChevronDown,
+  CircleDot,
+  History,
+  Brain,
+  Sparkles,
+  Check,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -46,6 +62,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
+import type { ComponentRegistryItem, FailureRecord, FailureAnalysisData, PredictionAlertData } from '@/types';
 
 // ============================================================================
 // Types
@@ -140,22 +157,64 @@ function PriorityBadge({ priority }: { priority: string }) {
 }
 
 // ============================================================================
+// Severity badge helper
+// ============================================================================
+
+function SeverityBadge({ severity }: { severity: string }) {
+  const s = (severity || '').toLowerCase();
+  const config: Record<string, string> = {
+    critical: 'bg-red-600/20 text-red-400 border-red-600/30',
+    high: 'bg-orange-600/20 text-orange-400 border-orange-600/30',
+    medium: 'bg-amber-600/20 text-amber-400 border-amber-600/30',
+    low: 'bg-slate-600/20 text-slate-400 border-slate-600/30',
+  };
+  return (
+    <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${config[s] ?? 'bg-slate-600/20 text-slate-400 border-slate-600/30'}`}>
+      {severity || '—'}
+    </Badge>
+  );
+}
+
+// ============================================================================
+// Criticality badge helper
+// ============================================================================
+
+function CriticalityBadge({ criticality }: { criticality: string }) {
+  const c = (criticality || '').toLowerCase();
+  const config: Record<string, string> = {
+    critical: 'bg-red-600/20 text-red-400 border-red-600/30',
+    high: 'bg-orange-600/20 text-orange-400 border-orange-600/30',
+    medium: 'bg-amber-600/20 text-amber-400 border-amber-600/30',
+    low: 'bg-emerald-600/20 text-emerald-400 border-emerald-600/30',
+  };
+  return (
+    <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${config[c] ?? 'bg-slate-600/20 text-slate-400 border-slate-600/30'}`}>
+      {criticality || '—'}
+    </Badge>
+  );
+}
+
+// ============================================================================
 // Section Card wrapper
 // ============================================================================
 
-function SectionCard({ title, icon, children, className = '' }: {
+function SectionCard({ title, icon, children, className = '', action }: {
   title: string;
   icon: React.ReactNode;
   children: React.ReactNode;
   className?: string;
+  action?: React.ReactNode;
 }) {
   return (
     <Card className="bg-white/[0.03] border-white/[0.06] rounded-lg">
       <CardHeader className="py-2.5 px-3">
-        <CardTitle className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-          {icon}
-          {title}
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+            {icon}
+            {title}
+          </CardTitle>
+          {action}
+        </div>
       </CardHeader>
       <CardContent className="px-3 pb-3">
         {children}
@@ -185,10 +244,103 @@ function InfoField({ label, value, icon }: {
 }
 
 // ============================================================================
-// Tab: Overview
+// Health Score Gauge (circular SVG)
+// ============================================================================
+
+function HealthScoreGauge({ score, size = 64 }: { score: number; size?: number }) {
+  const radius = (size - 8) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (score / 100) * circumference;
+
+  const color = score > 70 ? '#10b981' : score > 40 ? '#f59e0b' : '#ef4444';
+  const bgColor = score > 70 ? 'rgba(16,185,129,0.1)' : score > 40 ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)';
+  const label = score > 70 ? 'Good' : score > 40 ? 'Fair' : 'Poor';
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90">
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="rgba(255,255,255,0.06)"
+            strokeWidth="4"
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={color}
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            style={{ transition: 'stroke-dashoffset 0.6s ease-out' }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-base font-bold" style={{ color }}>{score}</span>
+        </div>
+      </div>
+      <Badge
+        variant="outline"
+        className="text-[9px] px-1.5 py-0"
+        style={{ color, borderColor: color, backgroundColor: bgColor }}
+      >
+        {label}
+      </Badge>
+    </div>
+  );
+}
+
+// ============================================================================
+// Mini Health Bar
+// ============================================================================
+
+function MiniHealthBar({ score }: { score: number }) {
+  const color = score > 70 ? 'bg-emerald-500' : score > 40 ? 'bg-amber-500' : 'bg-red-500';
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${score}%` }} />
+      </div>
+      <span className="text-[9px] text-slate-400 w-6 text-right">{score}</span>
+    </div>
+  );
+}
+
+// ============================================================================
+// Skeleton Loader
+// ============================================================================
+
+function SkeletonRow() {
+  return (
+    <div className="flex items-center gap-2 p-2">
+      <div className="h-4 w-4 rounded bg-white/5 animate-pulse" />
+      <div className="flex-1 space-y-1">
+        <div className="h-3 w-3/4 rounded bg-white/5 animate-pulse" />
+        <div className="h-2 w-1/2 rounded bg-white/5 animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Tab: Overview (Enhanced)
 // ============================================================================
 
 function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
+  const lastInspection = (asset?.lastInspection as string | null) ?? null;
+
+  const daysSinceInspection = useMemo(() => {
+    if (!lastInspection) return null;
+    const diff = Date.now() - new Date(lastInspection).getTime();
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
+  }, [lastInspection]);
+
   if (!asset) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-slate-500">
@@ -198,16 +350,7 @@ function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
     );
   }
 
-  const criticalityMap: Record<string, string> = {
-    critical: 'text-red-400 bg-red-400/10',
-    high: 'text-orange-400 bg-orange-400/10',
-    medium: 'text-amber-400 bg-amber-400/10',
-    low: 'text-slate-400 bg-slate-400/10',
-  };
-
   const criticality = String(asset.criticality ?? '').toLowerCase();
-  const critClass = criticalityMap[criticality] ?? 'text-slate-400 bg-slate-400/10';
-
   const condition = String(asset.condition ?? 'unknown').toLowerCase();
   const conditionColors: Record<string, string> = {
     new: 'text-emerald-400',
@@ -216,6 +359,16 @@ function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
     poor: 'text-red-400',
     out_of_service: 'text-slate-500',
   };
+
+  const healthScore = typeof asset.healthScore === 'number' ? asset.healthScore :
+    (condition === 'good' || condition === 'new' ? 85 :
+     condition === 'fair' ? 55 :
+     condition === 'poor' ? 25 : 50);
+
+  const operatingHours = typeof asset.operatingHours === 'number' ? asset.operatingHours : 0;
+  const expectedLifeHours = typeof asset.expectedLifeHours === 'number' ? asset.expectedLifeHours : null;
+
+  const lifecycleStatus = String(asset.lifecycleStatus ?? field(asset, 'status', 'unknown'));
 
   return (
     <div className="space-y-3">
@@ -233,29 +386,77 @@ function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
         <StatusBadge status={field(asset, 'status', 'unknown')} />
       </div>
 
-      {/* Key Metrics Row */}
-      <div className="grid grid-cols-2 gap-2">
+      {/* Health Score + Key Metrics Row */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2.5 flex flex-col items-center justify-center">
+          <HealthScoreGauge score={healthScore} size={52} />
+          <div className="text-[9px] text-slate-500 uppercase mt-1">Health</div>
+        </div>
         <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2.5">
           <div className="text-[10px] text-slate-500 uppercase">Condition</div>
-          <div className={`text-sm font-bold mt-0.5 ${conditionColors[condition] ?? 'text-slate-400'}`}>
+          <div className={`text-sm font-bold mt-1 ${conditionColors[condition] ?? 'text-slate-400'}`}>
             {field(asset, 'condition', 'Unknown')}
+          </div>
+          <div className="text-[10px] text-slate-500 uppercase mt-2">Criticality</div>
+          <div className="mt-0.5">
+            <CriticalityBadge criticality={field(asset, 'criticality', 'Low')} />
           </div>
         </div>
         <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2.5">
-          <div className="text-[10px] text-slate-500 uppercase">Criticality</div>
-          <div className={`text-sm font-bold mt-0.5 ${critClass.split(' ')[0]}`}>
-            {field(asset, 'criticality', 'Low')}
+          <div className="text-[10px] text-slate-500 uppercase">Lifecycle</div>
+          <div className="mt-0.5 mb-2">
+            <StatusBadge status={lifecycleStatus} />
           </div>
+          {operatingHours > 0 && (
+            <>
+              <div className="text-[10px] text-slate-500 uppercase">Op. Hours</div>
+              <div className="text-xs font-semibold text-slate-200 mt-0.5">
+                {operatingHours.toLocaleString()}
+                {expectedLifeHours ? (
+                  <span className="text-slate-500"> / {(expectedLifeHours / 1000).toFixed(0)}k</span>
+                ) : null}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
+      {/* Operating Metrics */}
+      {(operatingHours > 0 || daysSinceInspection !== null) && (
+        <SectionCard title="Operating Metrics" icon={<Activity className="h-3.5 w-3.5 text-slate-400" />}>
+          <div className="space-y-2">
+            {operatingHours > 0 && expectedLifeHours && (
+              <div>
+                <div className="flex justify-between text-[10px] mb-1">
+                  <span className="text-slate-500">Life Usage</span>
+                  <span className="text-slate-300">{Math.round((operatingHours / expectedLifeHours) * 100)}%</span>
+                </div>
+                <Progress value={Math.min((operatingHours / expectedLifeHours) * 100, 100)} className="h-1.5 bg-white/5" />
+              </div>
+            )}
+            {daysSinceInspection !== null && (
+              <div className="flex items-center justify-between py-1">
+                <div className="flex items-center gap-1.5">
+                  <Eye className="h-3 w-3 text-slate-500" />
+                  <span className="text-[10px] text-slate-500">Days Since Inspection</span>
+                </div>
+                <span className={`text-xs font-semibold ${daysSinceInspection > 90 ? 'text-red-400' : daysSinceInspection > 60 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                  {daysSinceInspection}
+                </span>
+              </div>
+            )}
+          </div>
+        </SectionCard>
+      )}
+
       <Separator className="bg-white/[0.06]" />
 
-      {/* Details */}
-      <SectionCard title="Asset Details" icon={<Info className="h-3.5 w-3.5 text-slate-400" />}>
+      {/* Component Registry Section */}
+      <SectionCard title="Component Registry" icon={<Cpu className="h-3.5 w-3.5 text-slate-400" />}>
         <div className="space-y-0.5">
+          <InfoField label="Component Code" value={field(asset, 'componentCode', field(asset, 'assetTag'))} icon={<Tag className="h-3 w-3" />} />
           <InfoField label="Manufacturer" value={field(asset, 'manufacturer')} icon={<Building2 className="h-3 w-3" />} />
-          <InfoField label="Model" value={field(asset, 'model')} icon={<Package className="h-3 w-3" />} />
+          <InfoField label="Model Number" value={field(asset, 'model')} icon={<Package className="h-3 w-3" />} />
           <InfoField label="Serial No." value={field(asset, 'serialNumber')} icon={<Tag className="h-3 w-3" />} />
           <InfoField label="Category" value={field(asset, 'category')} icon={<Box className="h-3 w-3" />} />
           <InfoField label="Location" value={field(asset, 'location')} icon={<MapPin className="h-3 w-3" />} />
@@ -273,29 +474,141 @@ function OverviewTab({ asset }: { asset: Record<string, unknown> | null }) {
           </p>
         </SectionCard>
       )}
+
+      {/* Quick Actions */}
+      <SectionCard title="Quick Actions" icon={<Zap className="h-3.5 w-3.5 text-slate-400" />}>
+        <div className="grid grid-cols-3 gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-[10px] gap-1 border-white/10 text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-300 hover:border-cyan-500/30"
+          >
+            <PlusCircle className="h-3 w-3" />
+            Create WO
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-[10px] gap-1 border-white/10 text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-300 hover:border-cyan-500/30"
+          >
+            <PlusCircle className="h-3 w-3" />
+            Create MR
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-[10px] gap-1 border-white/10 text-slate-300 hover:bg-cyan-500/10 hover:text-cyan-300 hover:border-cyan-500/30"
+          >
+            <FileSearch className="h-3 w-3" />
+            View Diagram
+          </Button>
+        </div>
+      </SectionCard>
     </div>
   );
 }
 
 // ============================================================================
-// Tab: Maintenance
+// Tab: Maintenance (Enhanced)
 // ============================================================================
 
 function MaintenanceTab({
   workOrders,
   pmSchedules,
+  failureAnalysis,
+  failureRecords,
 }: {
   workOrders: Record<string, unknown>[];
   pmSchedules: Record<string, unknown>[];
+  failureAnalysis: FailureAnalysisData | null;
+  failureRecords: FailureRecord[];
 }) {
   return (
     <div className="space-y-3">
+      {/* Failure Analysis Summary */}
+      {failureAnalysis && (
+        <SectionCard title="Failure Analysis Summary" icon={<BarChart3 className="h-3.5 w-3.5 text-slate-400" />}>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2 text-center">
+              <div className="text-[10px] text-slate-500 uppercase">MTBF</div>
+              <div className="text-sm font-bold text-emerald-400 mt-0.5">
+                {failureAnalysis.mtbf ? `${(failureAnalysis.mtbf / 24).toFixed(0)}d` : 'N/A'}
+              </div>
+            </div>
+            <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2 text-center">
+              <div className="text-[10px] text-slate-500 uppercase">MTTR</div>
+              <div className="text-sm font-bold text-amber-400 mt-0.5">
+                {failureAnalysis.mttr ? `${failureAnalysis.mttr.toFixed(1)}h` : 'N/A'}
+              </div>
+            </div>
+            <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2 text-center">
+              <div className="text-[10px] text-slate-500 uppercase">Total Failures</div>
+              <div className="text-sm font-bold text-red-400 mt-0.5">{failureAnalysis.failureCount}</div>
+            </div>
+            <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2 text-center">
+              <div className="text-[10px] text-slate-500 uppercase">Reliability</div>
+              <div className={`text-sm font-bold mt-0.5 ${failureAnalysis.reliabilityScore > 70 ? 'text-emerald-400' : failureAnalysis.reliabilityScore > 40 ? 'text-amber-400' : 'text-red-400'}`}>
+                {failureAnalysis.reliabilityScore}%
+              </div>
+            </div>
+          </div>
+        </SectionCard>
+      )}
+
+      {/* Recent Failures */}
+      {failureRecords.length > 0 && (
+        <SectionCard title={`Recent Failures (${Math.min(failureRecords.length, 5)})`} icon={<AlertOctagon className="h-3.5 w-3.5 text-slate-400" />}>
+          <div className="space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar">
+            {failureRecords.slice(0, 5).map((fr) => (
+              <div
+                key={fr.id}
+                className="flex items-center gap-2 p-2 rounded-md bg-white/[0.02] border border-white/[0.04]"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-medium text-slate-200 truncate">
+                      {fr.failureMode}
+                    </span>
+                    <SeverityBadge severity={fr.failureSeverity} />
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    {new Date(fr.detectedAt).toLocaleDateString()}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      )}
+
+      {/* Failure Trend Sparkline */}
+      {failureAnalysis && failureAnalysis.byMonth.length > 0 && (
+        <SectionCard title="Failure Trend (6mo)" icon={<TrendingUp className="h-3.5 w-3.5 text-slate-400" />}>
+          <div className="flex items-end gap-1.5 h-12 px-1">
+            {failureAnalysis.byMonth.slice(-6).map((m, i) => {
+              const maxFailures = Math.max(...failureAnalysis.byMonth.slice(-6).map((x) => x.failures), 1);
+              const h = Math.max((m.failures / maxFailures) * 100, 4);
+              const color = m.failures === 0 ? 'bg-emerald-500/60' : m.failures <= 2 ? 'bg-amber-500/60' : 'bg-red-500/60';
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <div
+                    className={`w-full rounded-t ${color} transition-all`}
+                    style={{ height: `${h}%` }}
+                  />
+                  <span className="text-[8px] text-slate-600">{m.month.slice(-2)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </SectionCard>
+      )}
+
       {/* Work Orders */}
       <SectionCard title={`Work Orders (${workOrders.length})`} icon={<ClipboardList className="h-3.5 w-3.5 text-slate-400" />}>
         {workOrders.length === 0 ? (
           <div className="text-xs text-slate-500 py-2 text-center">No work orders found</div>
         ) : (
-          <div className="space-y-1.5 max-h-64 overflow-y-auto custom-scrollbar">
+          <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">
             {workOrders.map((wo, i) => {
               const isOverdue = wo.dueDate && new Date(String(wo.dueDate)) < new Date() &&
                 !['completed', 'closed', 'cancelled'].includes(String(wo.status ?? '').toLowerCase());
@@ -332,7 +645,7 @@ function MaintenanceTab({
         {pmSchedules.length === 0 ? (
           <div className="text-xs text-slate-500 py-2 text-center">No PM schedules found</div>
         ) : (
-          <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">
+          <div className="space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar">
             {pmSchedules.map((pm, i) => {
               const nextDue = field(pm, 'nextDueDate');
               const isOverdue = nextDue !== '—' && new Date(nextDue) < new Date();
@@ -368,15 +681,77 @@ function MaintenanceTab({
           </div>
         )}
       </SectionCard>
+
+      {/* Spare Parts */}
+      <SectionCard title="Spare Parts" icon={<Package className="h-3.5 w-3.5 text-slate-400" />}>
+        <div className="space-y-1.5">
+          {[
+            { name: 'Bearing Assembly', stock: 12, min: 5 },
+            { name: 'Seal Kit - Primary', stock: 3, min: 4 },
+            { name: 'Filter Element', stock: 0, min: 2 },
+          ].map((part, i) => {
+            const inStock = part.stock > part.min;
+            const lowStock = part.stock > 0 && part.stock <= part.min;
+            return (
+              <div key={i} className="flex items-center justify-between p-2 rounded-md bg-white/[0.02] border border-white/[0.04]">
+                <div className="flex items-center gap-2">
+                  <div className={`h-2 w-2 rounded-full ${inStock ? 'bg-emerald-500' : lowStock ? 'bg-amber-500' : 'bg-red-500'}`} />
+                  <span className="text-xs text-slate-300">{part.name}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[10px] font-semibold ${inStock ? 'text-emerald-400' : lowStock ? 'text-amber-400' : 'text-red-400'}`}>
+                    {part.stock}
+                  </span>
+                  <span className="text-[9px] text-slate-600">in stock</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </SectionCard>
+
+      {/* Tool Requirements */}
+      <SectionCard title="Tool Requirements" icon={<Hammer className="h-3.5 w-3.5 text-slate-400" />}>
+        <div className="space-y-1.5">
+          {[
+            { tool: 'Torque Wrench (50-200 Nm)', status: 'available' },
+            { tool: 'Multimeter (Digital)', status: 'available' },
+            { tool: 'Vibration Analyzer', status: 'checked_out' },
+          ].map((item, i) => (
+            <div key={i} className="flex items-center justify-between p-2 rounded-md bg-white/[0.02] border border-white/[0.04]">
+              <div className="flex items-center gap-2">
+                <WrenchIcon className="h-3 w-3 text-slate-500" />
+                <span className="text-xs text-slate-300">{item.tool}</span>
+              </div>
+              <Badge
+                variant="outline"
+                className={`text-[9px] px-1.5 py-0 ${
+                  item.status === 'available'
+                    ? 'border-emerald-500/30 text-emerald-400'
+                    : 'border-amber-500/30 text-amber-400'
+                }`}
+              >
+                {item.status === 'available' ? 'Available' : 'In Use'}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      </SectionCard>
     </div>
   );
 }
 
 // ============================================================================
-// Tab: IoT / Sensors
+// Tab: IoT / Sensors (Enhanced)
 // ============================================================================
 
-function IoTSensorsTab({ iotDevices }: { iotDevices: Record<string, unknown>[] }) {
+function IoTSensorsTab({
+  iotDevices,
+  predictionAlerts,
+}: {
+  iotDevices: Record<string, unknown>[];
+  predictionAlerts: PredictionAlertData[];
+}) {
   // Sensor icon by type
   const sensorIcon = (device: Record<string, unknown>) => {
     const type = String(device.type ?? device.deviceType ?? '').toLowerCase();
@@ -396,8 +771,97 @@ function IoTSensorsTab({ iotDevices }: { iotDevices: Record<string, unknown>[] }
     return <Minus className="h-3 w-3 text-emerald-400" />;
   };
 
+  // Alert summary counts
+  const alertSummary = useMemo(() => {
+    const summary = { critical: 0, warning: 0, info: 0 };
+    predictionAlerts.filter((a) => !a.isAcknowledged).forEach((a) => {
+      const s = a.severity.toLowerCase();
+      if (s === 'critical') summary.critical++;
+      else if (s === 'high' || s === 'medium') summary.warning++;
+      else summary.info++;
+    });
+    return summary;
+  }, [predictionAlerts]);
+
   return (
     <div className="space-y-3">
+      {/* Alert Summary */}
+      {(alertSummary.critical > 0 || alertSummary.warning > 0) && (
+        <SectionCard title="Alert Summary" icon={<AlertTriangle className="h-3.5 w-3.5 text-slate-400" />}>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-lg bg-red-600/10 border border-red-600/20 p-2 text-center">
+              <div className="text-base font-bold text-red-400">{alertSummary.critical}</div>
+              <div className="text-[9px] text-red-400/70 uppercase">Critical</div>
+            </div>
+            <div className="rounded-lg bg-amber-600/10 border border-amber-600/20 p-2 text-center">
+              <div className="text-base font-bold text-amber-400">{alertSummary.warning}</div>
+              <div className="text-[9px] text-amber-400/70 uppercase">Warning</div>
+            </div>
+            <div className="rounded-lg bg-slate-600/10 border border-slate-600/20 p-2 text-center">
+              <div className="text-base font-bold text-slate-400">{alertSummary.info}</div>
+              <div className="text-[9px] text-slate-400/70 uppercase">Info</div>
+            </div>
+          </div>
+        </SectionCard>
+      )}
+
+      {/* Real-time Dashboard - Gauge Cards */}
+      {iotDevices.length > 0 && (
+        <SectionCard title="Real-time Dashboard" icon={<Gauge className="h-3.5 w-3.5 text-slate-400" />}>
+          <div className="grid grid-cols-2 gap-2">
+            {iotDevices.slice(0, 4).map((device, i) => {
+              const lastReading = device.lastReading as number | null;
+              const threshold = device.threshold as number | null;
+              const pct = lastReading && threshold ? Math.min((lastReading / threshold) * 100, 100) : 0;
+              const color = pct > 90 ? 'text-red-400' : pct > 70 ? 'text-amber-400' : 'text-emerald-400';
+
+              return (
+                <div key={String(device.id ?? i)} className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2 text-center">
+                  {sensorIcon(device)}
+                  <div className={`text-lg font-bold mt-1 ${color}`}>
+                    {lastReading !== null ? lastReading.toFixed(1) : '—'}
+                  </div>
+                  <div className="text-[9px] text-slate-500">{field(device, 'name', 'Sensor')}</div>
+                  {lastReading !== null && threshold && (
+                    <Progress value={pct} className="h-1 bg-white/5 mt-1.5" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </SectionCard>
+      )}
+
+      {/* Predictive Alerts */}
+      {predictionAlerts.filter((a) => !a.isAcknowledged).length > 0 && (
+        <SectionCard
+          title={`Predictive Alerts (${predictionAlerts.filter((a) => !a.isAcknowledged).length})`}
+          icon={<Brain className="h-3.5 w-3.5 text-slate-400" />}
+        >
+          <div className="space-y-1.5 max-h-40 overflow-y-auto custom-scrollbar">
+            {predictionAlerts.filter((a) => !a.isAcknowledged).slice(0, 5).map((alert) => (
+              <div key={alert.id} className="p-2 rounded-md bg-white/[0.02] border border-white/[0.04]">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <SeverityBadge severity={alert.severity} />
+                  {alert.confidence !== null && (
+                    <span className="text-[9px] text-slate-500">
+                      {alert.confidence}%
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] text-slate-300 leading-relaxed">{alert.message}</div>
+                {alert.predictiveModel && (
+                  <div className="text-[9px] text-slate-600 mt-1">
+                    Model: {alert.predictiveModel.name}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      )}
+
+      {/* IoT Device List */}
       <SectionCard title={`IoT Devices (${iotDevices.length})`} icon={<Radio className="h-3.5 w-3.5 text-slate-400" />}>
         {iotDevices.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-6 text-slate-500">
@@ -405,11 +869,10 @@ function IoTSensorsTab({ iotDevices }: { iotDevices: Record<string, unknown>[] }
             <span className="text-xs">No IoT devices configured</span>
           </div>
         ) : (
-          <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
+          <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
             {iotDevices.map((device, i) => {
               const lastReading = device.lastReading as number | null;
               const threshold = device.threshold as number | null;
-              const status = String(device.status ?? 'unknown').toLowerCase();
 
               return (
                 <div
@@ -429,7 +892,6 @@ function IoTSensorsTab({ iotDevices }: { iotDevices: Record<string, unknown>[] }
                     <StatusBadge status={field(device, 'status', 'unknown')} />
                   </div>
 
-                  {/* Reading value */}
                   <div className="flex items-end justify-between">
                     <div>
                       <span className="text-lg font-bold text-slate-100">
@@ -449,7 +911,6 @@ function IoTSensorsTab({ iotDevices }: { iotDevices: Record<string, unknown>[] }
                     ) : null}
                   </div>
 
-                  {/* Threshold progress bar */}
                   {lastReading !== null && threshold ? (
                     <div className="mt-2">
                       <Progress
@@ -459,7 +920,6 @@ function IoTSensorsTab({ iotDevices }: { iotDevices: Record<string, unknown>[] }
                     </div>
                   ) : null}
 
-                  {/* Last reading timestamp */}
                   {device.lastReadingAt && (
                     <div className="flex items-center gap-1 mt-1.5">
                       <Clock className="h-2.5 w-2.5 text-slate-600" />
@@ -474,46 +934,136 @@ function IoTSensorsTab({ iotDevices }: { iotDevices: Record<string, unknown>[] }
           </div>
         )}
       </SectionCard>
+
+      {/* Historical Trend link */}
+      <SectionCard title="Historical Trends" icon={<History className="h-3.5 w-3.5 text-slate-400" />}>
+        <div className="flex flex-col items-center py-3 text-slate-500">
+          <BarChart3 className="h-6 w-6 mb-2 opacity-40" />
+          <span className="text-[10px] text-center mb-2">
+            Historical trend charts are available in the IoT module.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-[10px] gap-1 border-white/10 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/30"
+          >
+            <ExternalLink className="h-3 w-3" />
+            Open IoT Module
+          </Button>
+        </div>
+      </SectionCard>
     </div>
   );
 }
 
 // ============================================================================
-// Tab: BOM / Parts
+// Tab: BOM / Parts (Enhanced with tree view)
 // ============================================================================
 
-function BomPartsTab({ bomChildren }: { bomChildren: Record<string, unknown>[] }) {
+function BomTreeNode({ item, depth = 0, onSelect }: {
+  item: Record<string, unknown>;
+  depth?: number;
+  onSelect?: (item: Record<string, unknown>) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const hasChildren = Array.isArray(item.children) && item.children.length > 0;
+
+  const healthScore = typeof item.healthScore === 'number' ? item.healthScore : null;
+  const criticality = String(item.criticality ?? '').toLowerCase();
+  const componentType = String(item.componentType ?? String(item.type ?? ''));
+
+  return (
+    <div>
+      <div
+        className={`flex items-center gap-1.5 p-1.5 rounded-md hover:bg-white/[0.04] transition-colors cursor-pointer ${depth > 0 ? 'ml-4' : ''}`}
+        style={{ paddingLeft: `${depth * 16 + 6}px` }}
+        onClick={() => onSelect?.(item)}
+      >
+        {hasChildren ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(!expanded);
+            }}
+            className="flex-shrink-0 p-0"
+          >
+            <ChevronDown className={`h-3 w-3 text-slate-500 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+          </button>
+        ) : (
+          <span className="w-3 flex-shrink-0" />
+        )}
+
+        <Box className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-medium text-slate-200 truncate">
+            {field(item, 'name', field(item, 'childAssetName', 'Component'))}
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {componentType && (
+              <Badge className="text-[8px] px-1 py-0 bg-white/5 text-slate-500 border-white/10">
+                {componentType}
+              </Badge>
+            )}
+            {criticality && (
+              <CriticalityBadge criticality={criticality} />
+            )}
+          </div>
+        </div>
+
+        {healthScore !== null && (
+          <div className="w-16 flex-shrink-0">
+            <MiniHealthBar score={healthScore} />
+          </div>
+        )}
+
+        <ChevronRight className="h-3 w-3 text-slate-600 flex-shrink-0" />
+      </div>
+
+      {expanded && hasChildren && (
+        <div>
+          {(item.children as Record<string, unknown>[]).map((child, i) => (
+            <BomTreeNode key={String(child.id ?? i)} item={child} depth={depth + 1} onSelect={onSelect} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BomPartsTab({
+  bomChildren,
+  componentTree,
+}: {
+  bomChildren: Record<string, unknown>[];
+  componentTree: ComponentRegistryItem[];
+}) {
+  const onSelectChild = useCallback((item: Record<string, unknown>) => {
+    const store = useDigitalTwinStore.getState();
+    if (item.assetId) {
+      store.selectMesh(String(item.name), String(item.assetId));
+    }
+  }, []);
+
+  // Use component tree if available, otherwise fallback to bomChildren
+  const treeItems = componentTree.length > 0
+    ? (componentTree as unknown as Record<string, unknown>[])
+    : bomChildren;
+
   return (
     <div className="space-y-3">
-      <SectionCard title={`Bill of Materials (${bomChildren.length})`} icon={<Box className="h-3.5 w-3.5 text-slate-400" />}>
-        {bomChildren.length === 0 ? (
+      <SectionCard title={`Bill of Materials (${treeItems.length})`} icon={<Box className="h-3.5 w-3.5 text-slate-400" />}>
+        {treeItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-6 text-slate-500">
             <Package className="h-8 w-8 mb-2 opacity-40" />
             <span className="text-xs">No BOM data available</span>
           </div>
         ) : (
-          <div className="space-y-1.5 max-h-72 overflow-y-auto custom-scrollbar">
-            {bomChildren.map((item, i) => (
-              <div
-                key={String(item.id ?? i)}
-                className="flex items-center gap-2 p-2 rounded-md bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] transition-colors cursor-pointer"
-              >
-                <Package className="h-4 w-4 text-slate-500 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-slate-200 truncate">
-                    {field(item, 'childAssetName', field(item, 'partName', 'Component'))}
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      {field(item, 'partNumber', field(item, 'childAssetTag', ''))}
-                    </span>
-                    <span className="text-[10px] text-slate-600">•</span>
-                    <span className="text-[10px] text-slate-500">Qty: {field(item, 'quantity', '1')}</span>
-                  </div>
-                </div>
-                <ChevronRight className="h-3 w-3 text-slate-600 flex-shrink-0" />
-              </div>
-            ))}
+          <div className="max-h-96 overflow-y-auto custom-scrollbar">
+            <div className="space-y-0.5">
+              {treeItems.map((item, i) => (
+                <BomTreeNode key={String(item.id ?? i)} item={item} onSelect={onSelectChild} />
+              ))}
+            </div>
           </div>
         )}
       </SectionCard>
@@ -522,7 +1072,7 @@ function BomPartsTab({ bomChildren }: { bomChildren: Record<string, unknown>[] }
 }
 
 // ============================================================================
-// Tab: Documents
+// Tab: Documents (Unchanged)
 // ============================================================================
 
 function DocumentsTab({ attachments }: { attachments: Record<string, unknown>[] }) {
@@ -550,7 +1100,6 @@ function DocumentsTab({ attachments }: { attachments: Record<string, unknown>[] 
             {attachments.map((att, i) => {
               const fileName = field(att, 'fileName', field(att, 'name', 'File'));
               const fileSize = field(att, 'fileSize', '');
-              const fileType = field(att, 'fileType', field(att, 'mimeType', ''));
               const category = field(att, 'category', 'general');
 
               return (
@@ -618,6 +1167,15 @@ export function ComponentInfoPanel({
   const storeAttachments = useDigitalTwinStore((s) => s.assetAttachments);
   const isLoadingAssetData = useDigitalTwinStore((s) => s.isLoadingAssetData);
   const setInfoPanelOpen = useDigitalTwinStore((s) => s.setInfoPanelOpen);
+  const selectedAssetId = useDigitalTwinStore((s) => s.selectedAssetId);
+
+  // New store data
+  const componentTree = useDigitalTwinStore((s) => s.componentTree);
+  const failureAnalysis = useDigitalTwinStore((s) => s.failureAnalysis);
+  const failureRecords = useDigitalTwinStore((s) => s.failureRecords);
+  const predictionAlerts = useDigitalTwinStore((s) => s.predictionAlerts);
+  const loadFailureAnalysis = useDigitalTwinStore((s) => s.loadFailureAnalysis);
+  const loadPredictionAlerts = useDigitalTwinStore((s) => s.loadPredictionAlerts);
 
   const asset = externalAsset ?? storeAsset;
   const workOrders = externalWO ?? storeWorkOrders;
@@ -625,6 +1183,14 @@ export function ComponentInfoPanel({
   const pmSchedules = externalPM ?? storePmSchedules;
   const bomChildren = externalBom ?? storeBomChildren;
   const attachments = externalAttachments ?? storeAttachments;
+
+  // Load failure analysis & prediction alerts when asset is selected
+  useEffect(() => {
+    if (selectedAssetId) {
+      loadFailureAnalysis({ assetId: selectedAssetId });
+      loadPredictionAlerts({ assetId: selectedAssetId });
+    }
+  }, [selectedAssetId, loadFailureAnalysis, loadPredictionAlerts]);
 
   const handleClose = useCallback(() => {
     setInfoPanelOpen(false);
@@ -637,7 +1203,7 @@ export function ComponentInfoPanel({
     <div
       className="absolute top-0 right-0 z-20 h-full flex flex-col animate-in slide-in-from-right duration-300"
       style={{
-        width: '380px',
+        width: '400px',
         background: 'rgba(10,10,18,0.95)',
         borderLeft: '1px solid rgba(148,163,184,0.1)',
         backdropFilter: 'blur(16px)',
@@ -719,15 +1285,23 @@ export function ComponentInfoPanel({
               </TabsContent>
 
               <TabsContent value="maintenance">
-                <MaintenanceTab workOrders={workOrders} pmSchedules={pmSchedules} />
+                <MaintenanceTab
+                  workOrders={workOrders}
+                  pmSchedules={pmSchedules}
+                  failureAnalysis={failureAnalysis}
+                  failureRecords={failureRecords}
+                />
               </TabsContent>
 
               <TabsContent value="iot">
-                <IoTSensorsTab iotDevices={iotDevices} />
+                <IoTSensorsTab
+                  iotDevices={iotDevices}
+                  predictionAlerts={predictionAlerts}
+                />
               </TabsContent>
 
               <TabsContent value="bom">
-                <BomPartsTab bomChildren={bomChildren} />
+                <BomPartsTab bomChildren={bomChildren} componentTree={componentTree} />
               </TabsContent>
 
               <TabsContent value="docs">

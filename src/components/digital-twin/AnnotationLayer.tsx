@@ -1,7 +1,13 @@
 'use client';
 
-import { Html } from '@react-three/drei';
-import { useDigitalTwinStore, type DigitalTwinAnnotation } from '@/stores/digitalTwinStore';
+import { useRef, useState, useMemo, useCallback } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
+import { Html, Line } from '@react-three/drei';
+import * as THREE from 'three';
+import {
+  useDigitalTwinStore,
+  type DigitalTwinAnnotation,
+} from '@/stores/digitalTwinStore';
 
 // ============================================================================
 // Types
@@ -13,92 +19,199 @@ export interface AnnotationLayerProps {
 }
 
 // ============================================================================
-// Single Annotation Component
+// Single Annotation Component — 3D pin with connecting line
 // ============================================================================
 
 interface AnnotationPinProps {
   annotation: DigitalTwinAnnotation;
+  index: number;
 }
 
-function AnnotationPin({ annotation }: AnnotationPinProps) {
-  // CSS-driven float animation via className
-  const floatClass = 'animate-bounce';
+function AnnotationPin({ annotation, index }: AnnotationPinProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const pinRef = useRef<HTMLDivElement>(null);
+  const floatOffset = useRef(Math.random() * Math.PI * 2); // Random phase for float animation
+
+  // 3D line from annotation position to the label position (offset upward)
+  const targetPosition: [number, number, number] = [
+    annotation.position[0],
+    annotation.position[1] + 1.2,
+    annotation.position[2],
+  ];
+
+  // Animate float effect
+  const currentYOffset = useRef(0);
+
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    const floatAmount = Math.sin(t * 0.8 + floatOffset.current) * 0.08;
+    currentYOffset.current = floatAmount;
+  });
+
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsExpanded((prev) => !prev);
+  }, []);
+
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Double-click could open a detail view (placeholder)
+    console.log(
+      `[DigitalTwin] Annotation detail: "${annotation.text}" by ${annotation.author ?? 'unknown'}`,
+    );
+  }, [annotation.text, annotation.author]);
+
+  // Determine the line endpoint including float offset
+  const labelY = annotation.position[1] + 0.3 + currentYOffset.current;
 
   return (
-    <Html
-      position={[
-        annotation.position[0],
-        annotation.position[1] + 0.3,
-        annotation.position[2],
-      ]}
-      center
-      distanceFactor={15}
-      zIndexRange={[15, 0]}
-      style={{ pointerEvents: 'auto' }}
-    >
-      <div className="flex flex-col items-center group">
-        {/* Annotation pin marker */}
-        <div
-          className="relative cursor-pointer"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Pin icon */}
-          <div className="h-7 w-7 rounded-full bg-slate-800/90 border border-slate-500/50 flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-200 group-hover:scale-110"
-            style={{ backdropFilter: 'blur(8px)' }}
+    <group>
+      {/* 3D connecting line from target point to annotation label */}
+      <Line
+        points={[
+          new THREE.Vector3(...annotation.position),
+          new THREE.Vector3(annotation.position[0], labelY + 0.35, annotation.position[2]),
+        ]}
+        color="#64748b"
+        lineWidth={1}
+        transparent
+        opacity={0.5}
+        dashed
+        dashSize={0.1}
+        gapSize={0.05}
+      />
+
+      {/* Small sphere at the annotation target point */}
+      <mesh position={annotation.position}>
+        <sphereGeometry args={[0.05, 12, 12]} />
+        <meshStandardMaterial
+          color="#94a3b8"
+          emissive="#64748b"
+          emissiveIntensity={0.3}
+          transparent
+          opacity={0.8}
+        />
+      </mesh>
+
+      {/* Annotation label via Html overlay */}
+      <Html
+        position={[
+          annotation.position[0],
+          labelY,
+          annotation.position[2],
+        ]}
+        center
+        distanceFactor={15}
+        zIndexRange={[15, 0]}
+        style={{ pointerEvents: 'auto' }}
+      >
+        <div className="flex flex-col items-center group">
+          {/* Annotation pin marker */}
+          <div
+            className="relative cursor-pointer"
+            onClick={handleClick}
+            onDoubleClick={handleDoubleClick}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              <line x1="9" y1="9" x2="15" y2="9" />
-              <line x1="12" y1="6" x2="12" y2="12" />
-            </svg>
+            {/* Pin icon */}
+            <div
+              className="h-7 w-7 rounded-full bg-slate-800/90 border flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-110"
+              style={{
+                borderColor: isExpanded
+                  ? 'rgba(148,163,184,0.6)'
+                  : 'rgba(148,163,184,0.3)',
+                backdropFilter: 'blur(12px)',
+              }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#94a3b8"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                <line x1="9" y1="9" x2="15" y2="9" />
+                <line x1="12" y1="6" x2="12" y2="12" />
+              </svg>
+            </div>
+
+            {/* Connecting stem from pin to card */}
+            <div
+              className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-px"
+              style={{
+                height: '12px',
+                background:
+                  'linear-gradient(to bottom, #94a3b8, transparent)',
+              }}
+            />
           </div>
 
-          {/* Connecting stem */}
+          {/* Annotation card — always slightly visible, full on hover/click */}
           <div
-            className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-px"
-            style={{
-              height: '12px',
-              background: 'linear-gradient(to bottom, #94a3b8, transparent)',
-            }}
-          />
-        </div>
-
-        {/* Annotation card (visible on hover) */}
-        <div
-          className="mt-5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
-        >
-          <div
-            className="px-3 py-2 rounded-lg shadow-2xl max-w-[180px]"
-            style={{
-              background: 'rgba(10,10,20,0.92)',
-              border: '1px solid rgba(148,163,184,0.2)',
-              backdropFilter: 'blur(12px)',
-            }}
+            className={`mt-5 transition-all duration-300 ${
+              isExpanded
+                ? 'opacity-100'
+                : 'opacity-0 group-hover:opacity-100'
+            }`}
           >
-            {/* Author + timestamp */}
-            {(annotation.author || annotation.createdAt) && (
-              <div className="flex items-center justify-between mb-1">
-                {annotation.author && (
-                  <span className="text-[9px] text-slate-400 font-medium">
-                    {annotation.author}
-                  </span>
-                )}
-                {annotation.createdAt && (
-                  <span className="text-[8px] text-slate-500">
-                    {new Date(annotation.createdAt).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
-            )}
+            <div
+              className="px-3 py-2.5 rounded-lg shadow-2xl max-w-[200px] border"
+              style={{
+                background: 'rgba(10,10,20,0.95)',
+                borderColor: isExpanded
+                  ? 'rgba(148,163,184,0.3)'
+                  : 'rgba(148,163,184,0.15)',
+                backdropFilter: 'blur(16px)',
+              }}
+            >
+              {/* Author + timestamp header */}
+              {(annotation.author || annotation.createdAt) && (
+                <div className="flex items-center justify-between mb-1.5 pb-1.5 border-b border-white/5">
+                  {annotation.author && (
+                    <div className="flex items-center gap-1.5">
+                      <div
+                        className="h-4 w-4 rounded-full flex items-center justify-center text-[8px] font-bold"
+                        style={{
+                          background: 'rgba(148,163,184,0.2)',
+                          color: '#94a3b8',
+                        }}
+                      >
+                        {annotation.author.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="text-[9px] text-slate-400 font-medium">
+                        {annotation.author}
+                      </span>
+                    </div>
+                  )}
+                  {annotation.createdAt && (
+                    <span className="text-[8px] text-slate-500">
+                      {new Date(annotation.createdAt).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+              )}
 
-            {/* Annotation text */}
-            <p className="text-[11px] text-slate-200 leading-relaxed">
-              {annotation.text}
-            </p>
+              {/* Annotation text */}
+              <p className="text-[11px] text-slate-200 leading-relaxed">
+                {annotation.text}
+              </p>
+
+              {/* Mesh reference */}
+              {annotation.meshName && (
+                <div className="mt-1.5 pt-1.5 border-t border-white/5">
+                  <span className="text-[8px] text-slate-500 font-mono">
+                    📍 {annotation.meshName}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    </Html>
+      </Html>
+    </group>
   );
 }
 
@@ -106,9 +219,13 @@ function AnnotationPin({ annotation }: AnnotationPinProps) {
 // Main AnnotationLayer Component
 // ============================================================================
 
-export function AnnotationLayer({ annotations: externalAnnotations }: AnnotationLayerProps) {
+export function AnnotationLayer({
+  annotations: externalAnnotations,
+}: AnnotationLayerProps) {
   const annotationsVisible = useDigitalTwinStore((s) => s.annotationsVisible);
-  const storeAnnotations = useDigitalTwinStore((s) => s.currentScene?.annotations ?? []);
+  const storeAnnotations = useDigitalTwinStore(
+    (s) => s.currentScene?.annotations ?? [],
+  );
 
   const annotations = externalAnnotations ?? storeAnnotations;
 
@@ -116,10 +233,11 @@ export function AnnotationLayer({ annotations: externalAnnotations }: Annotation
 
   return (
     <group>
-      {annotations.map((annotation) => (
+      {annotations.map((annotation, index) => (
         <AnnotationPin
           key={annotation.id}
           annotation={annotation}
+          index={index}
         />
       ))}
     </group>

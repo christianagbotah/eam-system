@@ -1,10 +1,13 @@
 'use client';
 
+import { useRef, useMemo } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { Grid, ContactShadows } from '@react-three/drei';
+import * as THREE from 'three';
 import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
 
 // ============================================================================
-// GroundPlane — Grid + Contact Shadows
+// Types
 // ============================================================================
 
 export interface GroundPlaneProps {
@@ -12,7 +15,7 @@ export interface GroundPlaneProps {
   gridSize?: number;
   /** Grid cell size (default: 1) */
   cellSize?: number;
-  /** Grid section count (default: 20) */
+  /** Grid cell thickness (default: 0.6) */
   cellThickness?: number;
   /** Grid color (default: '#333340') */
   gridColor?: string;
@@ -30,9 +33,56 @@ export interface GroundPlaneProps {
   contactShadowOpacity?: number;
   /** Contact shadow blur (default: 2) */
   contactShadowBlur?: number;
+  /** Contact shadow spread (default: 20) */
+  contactShadowSpread?: number;
   /** Y position of the ground (default: 0) */
   groundY?: number;
+  /** Ground reflection enabled (default: false) */
+  enableReflection?: boolean;
+  /** Ground plane color (default: '#0a0a12') */
+  groundColor?: string;
+  /** Ground plane opacity for reflection (default: 0.4) */
+  groundOpacity?: number;
 }
+
+// ============================================================================
+// Reflective ground plane (optional)
+// ============================================================================
+
+function ReflectiveGroundPlane({
+  gridSize,
+  groundColor,
+  groundOpacity,
+}: {
+  gridSize: number;
+  groundColor: string;
+  groundOpacity: number;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  return (
+    <mesh
+      ref={meshRef}
+      rotation={[-Math.PI / 2, 0, 0]}
+      position={[0, -0.01, 0]}
+      receiveShadow
+    >
+      <planeGeometry args={[gridSize, gridSize]} />
+      <meshStandardMaterial
+        color={groundColor}
+        transparent
+        opacity={groundOpacity}
+        roughness={0.8}
+        metalness={0.2}
+        envMapIntensity={0.5}
+      />
+    </mesh>
+  );
+}
+
+// ============================================================================
+// Component
+// ============================================================================
 
 export function GroundPlane({
   gridSize = 20,
@@ -46,7 +96,11 @@ export function GroundPlane({
   contactShadows = true,
   contactShadowOpacity = 0.4,
   contactShadowBlur = 2,
+  contactShadowSpread = 20,
   groundY = 0,
+  enableReflection = false,
+  groundColor = '#0a0a12',
+  groundOpacity = 0.4,
 }: GroundPlaneProps) {
   const gridEnabled = useDigitalTwinStore((s) => s.currentScene !== null);
 
@@ -54,7 +108,7 @@ export function GroundPlane({
 
   return (
     <group position={[0, groundY, 0]}>
-      {/* Infinite ground grid */}
+      {/* ── Infinite ground grid with edge fading ────────────────────────── */}
       <Grid
         args={[gridSize, gridSize]}
         cellSize={cellSize}
@@ -69,16 +123,38 @@ export function GroundPlane({
         followCamera={false}
       />
 
-      {/* Soft contact shadows beneath the model */}
+      {/* ── Soft contact shadows beneath the model ───────────────────────── */}
       {contactShadows && (
         <ContactShadows
           position={[0, -0.01, 0]}
           opacity={contactShadowOpacity}
-          scale={20}
+          scale={contactShadowSpread}
           blur={contactShadowBlur}
           far={8}
           color="#000000"
         />
+      )}
+
+      {/* ── Optional reflective ground plane ─────────────────────────────── */}
+      {enableReflection && (
+        <ReflectiveGroundPlane
+          gridSize={gridSize}
+          groundColor={groundColor}
+          groundOpacity={groundOpacity}
+        />
+      )}
+
+      {/* ── Shadow-receiving ground plane ────────────────────────────────── */}
+      {!enableReflection && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, -0.02, 0]}
+          receiveShadow
+          visible={false}
+        >
+          <planeGeometry args={[gridSize * 2, gridSize * 2]} />
+          <shadowMaterial transparent opacity={0.15} />
+        </mesh>
       )}
     </group>
   );

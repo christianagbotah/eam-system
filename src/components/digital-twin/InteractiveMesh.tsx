@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
@@ -32,15 +32,37 @@ export interface InteractiveMeshProps {
 }
 
 // ============================================================================
-// Color palette for selection / hover
+// Color palette for selection / hover / IoT
 // ============================================================================
 
 const SELECTION_COLOR = new THREE.Color('#22d3ee'); // cyan-400
+const SELECTION_EMISSIVE = new THREE.Color('#22d3ee');
 const HOVER_COLOR = new THREE.Color('#94a3b8'); // slate-400
+const HOVER_EMISSIVE = new THREE.Color('#64748b'); // slate-500
 const IOT_CRITICAL_COLOR = new THREE.Color('#ef4444');
+const IOT_CRITICAL_EMISSIVE = new THREE.Color('#dc2626');
 const IOT_WARNING_COLOR = new THREE.Color('#f59e0b');
+const IOT_WARNING_EMISSIVE = new THREE.Color('#d97706');
 const IOT_GOOD_COLOR = new THREE.Color('#22c55e');
+const IOT_GOOD_EMISSIVE = new THREE.Color('#16a34a');
 const IOT_EXCELLENT_COLOR = new THREE.Color('#10b981');
+const IOT_EXCELLENT_EMISSIVE = new THREE.Color('#059669');
+
+// ============================================================================
+// Spring interpolation helper — mimics spring physics for smooth transitions
+// ============================================================================
+
+function springLerp(
+  current: number,
+  target: number,
+  velocity: React.MutableRefObject<number>,
+  stiffness: number = 0.08,
+  damping: number = 0.75,
+): number {
+  const force = (target - current) * stiffness;
+  velocity.current = (velocity.current + force) * damping;
+  return current + velocity.current;
+}
 
 // ============================================================================
 // Component
@@ -49,6 +71,12 @@ const IOT_EXCELLENT_COLOR = new THREE.Color('#10b981');
 export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
   const meshRef = useRef<THREE.Mesh>(mesh);
   const [hovered, setHovered] = useState(false);
+  const [isTooltipVisible, setIsTooltipVisible] = useState(false);
+
+  // Spring velocities for smooth animated transitions
+  const emissiveVelocity = useRef(0);
+  const emissiveIntensityVelocity = useRef(0);
+  const outlineOpacityVelocity = useRef(0);
 
   // Store bindings
   const selectedMeshName = useDigitalTwinStore((s) => s.selectedMeshName);
@@ -58,18 +86,25 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
   const iotOverlayEnabled = useDigitalTwinStore((s) => s.iotOverlayEnabled);
   const iotHealthMap = useDigitalTwinStore((s) => s.iotHealthMap);
   const liveReadings = useDigitalTwinStore((s) => s.liveReadings);
+  const isolateAsset = useDigitalTwinStore((s) => s.isolateAsset);
 
-  // Edges geometry for selection/hover outline
-  const [lineSegmentsObj, setLineSegmentsObj] = useState<THREE.LineSegments | null>(null);
+  // Outline geometry for selection / hover
+  const [lineSegmentsObj, setLineSegmentsObj] = useState<
+    THREE.LineSegments | null
+  >(null);
+  const outlineMaterialRef = useRef<THREE.LineBasicMaterial | null>(null);
 
   useEffect(() => {
     if (meshRef.current?.geometry) {
       const geo = new THREE.EdgesGeometry(meshRef.current.geometry, 15);
       const mat = new THREE.LineBasicMaterial({
-        color: '#10b981',
+        color: SELECTION_COLOR,
         transparent: true,
-        opacity: 0.8,
+        opacity: 0,
+        depthTest: true,
+        linewidth: 1,
       });
+      outlineMaterialRef.current = mat;
       setLineSegmentsObj(new THREE.LineSegments(geo, mat));
     }
     return () => {
@@ -80,6 +115,7 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
         }
         return null;
       });
+      outlineMaterialRef.current = null;
     };
   }, [mesh]);
 
@@ -88,6 +124,8 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
 
   // Original material color backup
   const originalColorRef = useRef<THREE.Color | null>(null);
+  // Track current animated values for the outline
+  const currentOutlineOpacity = useRef(0);
 
   // Memoize whether this mesh is interactive
   const isClickable = binding.isClickable !== false;
@@ -104,38 +142,96 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
     [liveReadings, binding.meshName],
   );
 
+  // ── Touch support: long-press timer ─────────────────────────────────────
+
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPressRef = useRef(false);
+
+  const clearLongPress = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }, []);
+
   // ── Event handlers ────────────────────────────────────────────────────────
 
   const handleClick = useCallback(
     (e: THREE.Event) => {
       e.stopPropagation();
+      // Ignore clicks that were actually long-press starts
+      if (isLongPressRef.current) {
+        isLongPressRef.current = false;
+        return;
+      }
       if (!isClickable) return;
       selectMesh(binding.meshName, binding.assetId);
     },
     [isClickable, selectMesh, binding.meshName, binding.assetId],
   );
 
+  const handleDoubleClick = useCallback(
+    (e: THREE.Event) => {
+      e.stopPropagation();
+      if (!isClickable) return;
+      // Double-click isolates this component
+      const currentIsolation = useDigitalTwinStore.getState().isolationAssetId;
+      if (currentIsolation === binding.assetId) {
+        // Already isolated — clear isolation
+        isolateAsset(null);
+      } else {
+        // Isolate this component
+        isolateAsset(binding.assetId);
+      }
+    },
+    [isClickable, binding.assetId, isolateAsset],
+  );
+
   const handlePointerOver = useCallback(
     (e: THREE.Event) => {
       e.stopPropagation();
       setHovered(true);
+      setIsTooltipVisible(true);
       hoverMesh(binding.meshName);
       document.body.style.cursor = isClickable ? 'pointer' : 'default';
+
+      // Start long-press timer for touch devices
+      clearLongPress();
+      longPressTimerRef.current = setTimeout(() => {
+        isLongPressRef.current = true;
+        // Long-press = right-click context placeholder
+        console.log(
+          `[DigitalTwin] Context menu placeholder for: ${binding.meshName} (${binding.assetName})`,
+        );
+      }, 500);
     },
-    [isClickable, hoverMesh, binding.meshName],
+    [isClickable, hoverMesh, binding.meshName, binding.assetName, clearLongPress],
   );
 
   const handlePointerOut = useCallback(
     (e: THREE.Event) => {
       e.stopPropagation();
       setHovered(false);
+      setIsTooltipVisible(false);
       hoverMesh(null);
       document.body.style.cursor = 'default';
+      clearLongPress();
     },
-    [hoverMesh],
+    [hoverMesh, clearLongPress],
   );
 
-  // ── Per-frame material updates ────────────────────────────────────────────
+  const handleContextMenu = useCallback(
+    (e: THREE.Event) => {
+      e.stopPropagation();
+      // Right-click context menu placeholder
+      console.log(
+        `[DigitalTwin] Context menu placeholder for: ${binding.meshName} (${binding.assetName})`,
+      );
+    },
+    [binding.meshName, binding.assetName],
+  );
+
+  // ── Per-frame material updates with spring-based transitions ──────────────
 
   useFrame(() => {
     const obj = meshRef.current;
@@ -148,71 +244,135 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
       originalColorRef.current = material.color.clone();
     }
 
-    // Determine target color
+    // ── Determine target material state ────────────────────────────────────
     let targetColor: THREE.Color | null = null;
+    let targetEmissive = new THREE.Color('#000000');
+    let targetEmissiveIntensity = 0;
 
     if (isSelected) {
       targetColor = SELECTION_COLOR;
+      targetEmissive = SELECTION_EMISSIVE;
+      targetEmissiveIntensity = 0.35;
     } else if (isHovered) {
-      targetColor = HOVER_COLOR;
+      targetColor = null; // Keep original color on hover
+      targetEmissive = HOVER_EMISSIVE;
+      targetEmissiveIntensity = 0.15;
     } else if (iotOverlayEnabled && healthEntry) {
       if (healthEntry.score <= 30) {
         targetColor = IOT_CRITICAL_COLOR;
+        targetEmissive = IOT_CRITICAL_EMISSIVE;
+        targetEmissiveIntensity = 0.3;
       } else if (healthEntry.score <= 60) {
         targetColor = IOT_WARNING_COLOR;
+        targetEmissive = IOT_WARNING_EMISSIVE;
+        targetEmissiveIntensity = 0.15;
       } else if (healthEntry.score <= 80) {
         targetColor = IOT_GOOD_COLOR;
+        targetEmissive = IOT_GOOD_EMISSIVE;
+        targetEmissiveIntensity = 0.08;
       } else {
         targetColor = IOT_EXCELLENT_COLOR;
+        targetEmissive = IOT_EXCELLENT_EMISSIVE;
+        targetEmissiveIntensity = 0.06;
       }
     } else if (binding.colorOverride) {
       targetColor = new THREE.Color(binding.colorOverride);
     }
 
+    // ── Apply color with smooth transition ──────────────────────────────────
     if (targetColor) {
-      material.color.lerp(targetColor, 0.15);
-      material.emissive.lerp(
-        isSelected ? SELECTION_COLOR : new THREE.Color('#000000'),
-        isSelected ? 0.2 : 1.0,
-      );
-      material.emissiveIntensity = isSelected ? 0.3 : 0;
+      material.color.lerp(targetColor, 0.12);
     } else {
-      material.color.lerp(originalColorRef.current, 0.1);
-      material.emissiveIntensity = 0;
+      material.color.lerp(originalColorRef.current, 0.08);
     }
 
-    // Visibility
-    obj.visible = isVisible;
+    // ── Apply emissive with spring physics ──────────────────────────────────
+    material.emissive.lerp(targetEmissive, 0.1);
+    const currentEmissive = material.emissiveIntensity;
+    const newEmissiveIntensity = springLerp(
+      currentEmissive,
+      targetEmissiveIntensity,
+      emissiveIntensityVelocity,
+      0.12,
+      0.7,
+    );
+    material.emissiveIntensity = newEmissiveIntensity;
 
-    // Pulse effect for critical health
+    // ── Pulsing effect for critical/warning health ──────────────────────────
     if (iotOverlayEnabled && healthEntry && healthEntry.score <= 30) {
       const t = performance.now() * 0.003;
-      material.emissiveIntensity = 0.2 + Math.sin(t) * 0.15;
-      material.emissive.lerp(IOT_CRITICAL_COLOR, 0.3);
+      const pulse = 0.2 + Math.sin(t) * 0.15;
+      material.emissiveIntensity = Math.max(material.emissiveIntensity, pulse);
+      material.emissive.lerp(IOT_CRITICAL_EMISSIVE, 0.3);
     } else if (iotOverlayEnabled && healthEntry && healthEntry.score <= 60) {
       const t = performance.now() * 0.002;
-      material.emissiveIntensity = 0.1 + Math.sin(t) * 0.08;
-      material.emissive.lerp(IOT_WARNING_COLOR, 0.2);
+      const pulse = 0.1 + Math.sin(t) * 0.08;
+      material.emissiveIntensity = Math.max(material.emissiveIntensity, pulse);
+      material.emissive.lerp(IOT_WARNING_EMISSIVE, 0.2);
     }
+
+    // ── Visibility ──────────────────────────────────────────────────────────
+    obj.visible = isVisible;
+
+    // ── Outline opacity animation ───────────────────────────────────────────
+    const targetOutlineOpacity =
+      isSelected ? 0.9 : isHovered ? 0.5 : 0;
+    currentOutlineOpacity.current = springLerp(
+      currentOutlineOpacity.current,
+      targetOutlineOpacity,
+      outlineOpacityVelocity,
+      0.15,
+      0.7,
+    );
+
+    if (outlineMaterialRef.current) {
+      outlineMaterialRef.current.opacity = currentOutlineOpacity.current;
+
+      // Update outline color based on state
+      if (isSelected) {
+        outlineMaterialRef.current.color.copy(SELECTION_COLOR);
+      } else if (isHovered) {
+        outlineMaterialRef.current.color.copy(HOVER_COLOR);
+      }
+    }
+
+    // ── Dispose long-press timer if component unmounted ─────────────────────
   });
+
+  // Cleanup long-press timer on unmount
+  useEffect(() => {
+    return () => {
+      clearLongPress();
+    };
+  }, [clearLongPress]);
+
+  // ── Determine tooltip color based on health ───────────────────────────────
+
+  const tooltipColor = useMemo(() => {
+    if (!healthEntry) return { color: '#e2e8f0', border: '#475569' };
+    if (healthEntry.score <= 30) return { color: '#fca5a5', border: '#ef4444' };
+    if (healthEntry.score <= 60) return { color: '#fde68a', border: '#f59e0b' };
+    return { color: '#86efac', border: '#22c55e' };
+  }, [healthEntry]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  // We attach events and visual props to the original mesh via primitive
   return (
     <group>
       <primitive
         ref={meshRef}
         object={mesh}
         onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
         onPointerOver={handlePointerOver}
         onPointerOut={handlePointerOut}
+        onContextMenu={handleContextMenu}
         castShadow
         receiveShadow
       />
 
-      {/* Selection / hover outline */}
-      {(isSelected || isHovered) && lineSegmentsObj && (
+      {/* Selection / hover outline — always rendered, visibility controlled by opacity */}
+      {lineSegmentsObj && (
         <primitive object={lineSegmentsObj} />
       )}
 
@@ -229,17 +389,60 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
           style={{ pointerEvents: 'none' }}
         >
           <div
-            className="px-2 py-1 rounded text-xs font-mono whitespace-nowrap shadow-lg"
+            className="px-2 py-1 rounded text-xs font-mono whitespace-nowrap shadow-lg transition-opacity duration-200"
             style={{
-              background: 'rgba(0,0,0,0.75)',
-              color: healthEntry && healthEntry.score <= 30 ? '#fca5a5' :
-                     healthEntry && healthEntry.score <= 60 ? '#fde68a' : '#86efac',
-              border: `1px solid ${healthEntry && healthEntry.score <= 30 ? '#ef4444' :
-                             healthEntry && healthEntry.score <= 60 ? '#f59e0b' : '#22c55e'}`,
-              backdropFilter: 'blur(4px)',
+              background: 'rgba(0,0,0,0.8)',
+              color: tooltipColor.color,
+              border: `1px solid ${tooltipColor.border}`,
+              backdropFilter: 'blur(8px)',
+              opacity: isTooltipVisible || isSelected ? 1 : 0.7,
             }}
           >
-            {liveReading.value.toFixed(1)} {liveReading.unit}
+            <div className="flex items-center gap-1.5">
+              {healthEntry && healthEntry.score <= 30 && (
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+              )}
+              {healthEntry && healthEntry.score > 30 && healthEntry.score <= 60 && (
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500" />
+              )}
+              <span>
+                {liveReading.value.toFixed(1)} {liveReading.unit}
+              </span>
+            </div>
+          </div>
+        </Html>
+      )}
+
+      {/* Health tooltip on hover (shows health details) */}
+      {isTooltipVisible && !isSelected && iotOverlayEnabled && healthEntry && (
+        <Html
+          position={[
+            (mesh.position?.x ?? 0),
+            (mesh.position?.y ?? 0) + 1.8,
+            (mesh.position?.z ?? 0),
+          ]}
+          center
+          distanceFactor={12}
+          style={{ pointerEvents: 'none' }}
+        >
+          <div
+            className="px-2 py-1 rounded text-[10px] shadow-lg whitespace-nowrap"
+            style={{
+              background: 'rgba(0,0,0,0.85)',
+              border: `1px solid ${tooltipColor.border}44`,
+              backdropFilter: 'blur(8px)',
+              color: tooltipColor.color,
+            }}
+          >
+            <div className="font-medium">{binding.assetName}</div>
+            <div className="opacity-70">
+              Health: {healthEntry.score}/100
+            </div>
+            {liveReading && (
+              <div className="font-mono opacity-80">
+                {liveReading.value.toFixed(1)} {liveReading.unit}
+              </div>
+            )}
           </div>
         </Html>
       )}

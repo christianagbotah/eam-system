@@ -1,12 +1,12 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Environment } from '@react-three/drei';
 import * as THREE from 'three';
 
 // ============================================================================
-// SceneLighting — Ambient + Directional + Spot + Environment
+// Types
 // ============================================================================
 
 export interface SceneLightingProps {
@@ -21,14 +21,32 @@ export interface SceneLightingProps {
   /** Whether shadows are enabled (default: true) */
   shadows?: boolean;
   /** Environment preset name from drei (default: 'warehouse') */
-  environmentPreset?: 'warehouse' | 'city' | 'studio' | 'dawn' | 'sunset' | 'night' | 'forest' | 'apartment' | 'lobby' | 'park' | 'lobby';
+  environmentPreset?:
+    | 'warehouse'
+    | 'city'
+    | 'studio'
+    | 'dawn'
+    | 'sunset'
+    | 'night'
+    | 'forest'
+    | 'apartment'
+    | 'lobby'
+    | 'park';
   /** Whether to show the environment background (default: false) */
   showEnvironmentBackground?: boolean;
   /** Spotlight enabled (default: false) */
   enableSpotlight?: boolean;
   /** Spotlight intensity (default: 2) */
   spotlightIntensity?: number;
+  /** Fill light intensity (default: 0.4) */
+  fillLightIntensity?: number;
+  /** Rim light intensity (default: 0.8) */
+  rimLightIntensity?: number;
 }
+
+// ============================================================================
+// Component
+// ============================================================================
 
 export function SceneLighting({
   ambientIntensity = 0.4,
@@ -40,47 +58,96 @@ export function SceneLighting({
   showEnvironmentBackground = false,
   enableSpotlight = false,
   spotlightIntensity = 2,
+  fillLightIntensity = 0.4,
+  rimLightIntensity = 0.8,
 }: SceneLightingProps) {
   const dirLightRef = useRef<THREE.DirectionalLight>(null);
   const spotLightRef = useRef<THREE.SpotLight>(null);
+  const fillLightRef = useRef<THREE.DirectionalLight>(null);
+  const rimLightRef = useRef<THREE.DirectionalLight>(null);
 
-  // Subtle directional light animation for realism
+  // Subtle directional light animation for realism — key light orbits slightly
   useFrame(({ clock }) => {
+    const t = clock.getElapsedTime() * 0.05;
+
+    // Key light: gentle orbital motion
     if (dirLightRef.current) {
-      const t = clock.getElapsedTime() * 0.05;
       dirLightRef.current.position.x = directionalPosition[0] + Math.sin(t) * 2;
       dirLightRef.current.position.z = directionalPosition[2] + Math.cos(t) * 2;
     }
+
+    // Fill light: complementary motion on opposite side
+    if (fillLightRef.current) {
+      fillLightRef.current.position.x = -8 + Math.sin(t * 0.7) * 1.5;
+      fillLightRef.current.position.z = -6 + Math.cos(t * 0.7) * 1.5;
+    }
+
+    // Rim light: subtle oscillation from behind
+    if (rimLightRef.current) {
+      rimLightRef.current.position.x = Math.sin(t * 0.3) * 3;
+      rimLightRef.current.position.z = -10 + Math.cos(t * 0.3) * 2;
+    }
   });
+
+  // Shadow map configuration
+  const shadowConfig = useMemo(
+    () => ({
+      mapSizeWidth: 2048,
+      mapSizeHeight: 2048,
+      cameraFar: 50,
+      cameraLeft: -15,
+      cameraRight: 15,
+      cameraTop: 15,
+      cameraBottom: -15,
+      bias: -0.0001,
+    }),
+    [],
+  );
 
   return (
     <>
-      {/* Ambient fill light */}
+      {/* ── Ambient fill light ────────────────────────────────────────────── */}
       <ambientLight intensity={ambientIntensity} color={ambientColor} />
 
-      {/* Key directional light with shadows */}
+      {/* ── Key directional light with shadows (main light source) ───────── */}
       <directionalLight
         ref={dirLightRef}
         position={directionalPosition}
         intensity={directionalIntensity}
         castShadow={shadows}
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
-        shadow-camera-far={50}
-        shadow-camera-left={-15}
-        shadow-camera-right={15}
-        shadow-camera-top={15}
-        shadow-camera-bottom={-15}
-        shadow-bias={-0.0001}
-        color="#ffffff"
+        shadow-mapSize-width={shadowConfig.mapSizeWidth}
+        shadow-mapSize-height={shadowConfig.mapSizeHeight}
+        shadow-camera-far={shadowConfig.cameraFar}
+        shadow-camera-left={shadowConfig.cameraLeft}
+        shadow-camera-right={shadowConfig.cameraRight}
+        shadow-camera-top={shadowConfig.cameraTop}
+        shadow-camera-bottom={shadowConfig.cameraBottom}
+        shadow-bias={shadowConfig.bias}
+        color="#fffaf5"
       />
 
-      {/* Hemisphere light for natural sky-ground fill */}
+      {/* ── Fill light — softer, from opposite side to reduce harsh shadows ── */}
+      <directionalLight
+        ref={fillLightRef}
+        position={[-8, 6, -6]}
+        intensity={fillLightIntensity}
+        color="#c4d4f0"
+      />
+
+      {/* ── Rim / back light — creates edge definition and depth ──────────── */}
+      <directionalLight
+        ref={rimLightRef}
+        position={[0, 8, -10]}
+        intensity={rimLightIntensity}
+        color="#ffeedd"
+      />
+
+      {/* ── Hemisphere light for natural sky-ground fill ──────────────────── */}
       <hemisphereLight
         args={['#b1e1ff', '#b97a20', 0.3]}
       />
 
-      {/* Optional spotlight for dramatic effect */}
+      {/* ── Optional spotlight for dramatic effect ────────────────────────── */}
       {enableSpotlight && (
         <spotLight
           ref={spotLightRef}
@@ -95,7 +162,7 @@ export function SceneLighting({
         />
       )}
 
-      {/* HDRI Environment for reflections and ambient lighting */}
+      {/* ── HDRI Environment for reflections and ambient lighting ─────────── */}
       <Environment
         preset={environmentPreset}
         background={showEnvironmentBackground}

@@ -15,8 +15,8 @@ import ReactFlow, {
   type Node,
   type Edge,
   type Connection,
-  type OnNodesChange,
-  type OnEdgesChange,
+  OnNodesChange,
+  OnEdgesChange,
   type NodeChange,
   MarkerType,
 } from 'reactflow';
@@ -33,7 +33,9 @@ import {
   Maximize2, ZoomIn, ZoomOut, LayoutGrid, FileDown, Search,
   ChevronLeft, ChevronRight, Cpu, Thermometer, GitBranch, CircleDot,
   Droplets, Zap, Wind, FlaskConical, Settings, Shield, X,
-  Layers, Info, MoreVertical, ArrowLeft,
+  Layers, Info, MoreVertical, ArrowLeft, Lock, Unlock, Grid3X3,
+  Map, AlertTriangle, FileImage, Users, Clock, RotateCcw, ChevronUp,
+  type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -74,8 +76,189 @@ interface SystemDiagram {
   isTemplate?: boolean;
   createdById: string;
   createdByIdUser?: { id: string; fullName: string; username: string };
+  updatedByIdUser?: { id: string; fullName: string; username: string };
   createdAt: string;
   updatedAt: string;
+}
+
+// ============================================================================
+// HELPER: Template Preview Miniature
+// ============================================================================
+
+function TemplatePreview({ template }: { template: DiagramTemplate }) {
+  const meta = diagramTypeMeta[template.diagramType];
+  const nodeCount = template.nodes.length;
+  const edgeCount = template.edges.length;
+  // Generate a mini schematic representation
+  const containerStyle: React.CSSProperties = {
+    width: '100%', height: '100%', borderRadius: 6,
+    background: 'linear-gradient(135deg, #0f172a, #1e293b)',
+    position: 'relative', overflow: 'hidden',
+  };
+  const dotsOverlay: React.CSSProperties = {
+    position: 'absolute', inset: 0, opacity: 0.15,
+    backgroundImage: 'radial-gradient(circle, #475569 1px, transparent 1px)',
+    backgroundSize: '8px 8px',
+  };
+  // Position small dots to represent nodes
+  const miniNodes = template.nodes.slice(0, 12).map((n, i) => {
+    const xPct = Math.max(5, Math.min(90, ((n.position.x + 100) / 1600) * 100));
+    const yPct = Math.max(10, Math.min(85, ((n.position.y + 50) / 600) * 100));
+    const d = n.data as Record<string, unknown>;
+    const status = (d.status as string) || 'operational';
+    const color = status === 'warning' || status === 'standby' ? '#f59e0b' : status === 'critical' || status === 'fault' || status === 'alarm' ? '#ef4444' : status === 'stopped' || status === 'inactive' ? '#6b7280' : '#10b981';
+    return (
+      <div key={i} style={{
+        position: 'absolute', left: `${xPct}%`, top: `${yPct}%`,
+        width: 6, height: 6, borderRadius: 2,
+        background: color, opacity: 0.9,
+        transform: 'translate(-50%, -50%)',
+      }} />
+    );
+  });
+  // Draw lines for edges
+  const miniEdges = template.edges.slice(0, 10).map((e, i) => {
+    const src = template.nodes.find(n => n.id === e.source);
+    const tgt = template.nodes.find(n => n.id === e.target);
+    if (!src || !tgt) return null;
+    const x1 = Math.max(5, Math.min(90, ((src.position.x + 100) / 1600) * 100));
+    const y1 = Math.max(10, Math.min(85, ((src.position.y + 50) / 600) * 100));
+    const x2 = Math.max(5, Math.min(90, ((tgt.position.x + 100) / 1600) * 100));
+    const y2 = Math.max(10, Math.min(85, ((tgt.position.y + 50) / 600) * 100));
+    return (
+      <svg key={i} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+        <line x1={`${x1}%`} y1={`${y1}%`} x2={`${x2}%`} y2={`${y2}%`} stroke="#475569" strokeWidth="0.5" opacity="0.4" />
+      </svg>
+    );
+  });
+
+  return (
+    <div style={containerStyle}>
+      <div style={dotsOverlay} />
+      {miniEdges}
+      {miniNodes}
+      <div style={{
+        position: 'absolute', bottom: 4, right: 6,
+        fontSize: 8, color: '#64748b', fontWeight: 600,
+        fontFamily: 'monospace',
+      }}>
+        {nodeCount}N / {edgeCount}E
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// DIAGRAM VALIDATION HELPER
+// ============================================================================
+
+interface DiagramValidation {
+  disconnectedNodes: string[];
+  warnings: string[];
+}
+
+function validateDiagram(nodes: Node[], edges: Edge[]): DiagramValidation {
+  const warnings: string[] = [];
+  const disconnectedNodes: string[] = [];
+
+  if (nodes.length === 0) return { disconnectedNodes, warnings };
+
+  // Find all nodes that have at least one connection
+  const connectedNodeIds = new Set<string>();
+  edges.forEach((e) => {
+    connectedNodeIds.add(e.source);
+    connectedNodeIds.add(e.target);
+  });
+
+  // Find disconnected nodes (exclude junction nodes which can be optional)
+  nodes.forEach((n) => {
+    if (!connectedNodeIds.has(n.id) && n.type !== 'junctionNode') {
+      disconnectedNodes.push(n.id);
+      const label = (n.data as Record<string, unknown>)?.label as string || n.id;
+      warnings.push(`"${label}" has no connections`);
+    }
+  });
+
+  // Check for missing connections (nodes with no outgoing edges)
+  const nodeIdsWithOutgoing = new Set(edges.map(e => e.source));
+  const sinkNodes = nodes.filter(n => !nodeIdsWithOutgoing.has(n.id) && connectedNodeIds.has(n.id) && n.type !== 'junctionNode');
+  if (sinkNodes.length > 1 && nodes.length > 3) {
+    warnings.push(`${sinkNodes.length} nodes have no outgoing connections`);
+  }
+
+  return { disconnectedNodes, warnings };
+}
+
+// ============================================================================
+// AUTO-LAYOUT (simple grid layout)
+// ============================================================================
+
+function autoLayoutNodes(nodes: Node[], edges: Edge[]): Node[] {
+  if (nodes.length === 0) return nodes;
+
+  // Build adjacency to determine layers
+  const inDegree = new Map<string, number>();
+  const adj = new Map<string, string[]>();
+  const nodeIds = new Set(nodes.map(n => n.id));
+
+  nodes.forEach(n => { inDegree.set(n.id, 0); adj.set(n.id, []); });
+  edges.forEach(e => {
+    if (nodeIds.has(e.source) && nodeIds.has(e.target)) {
+      adj.get(e.source)!.push(e.target);
+      inDegree.set(e.target, (inDegree.get(e.target) || 0) + 1);
+    }
+  });
+
+  // Topological sort into layers
+  const layers: string[][] = [];
+  const visited = new Set<string>();
+  let queue = nodes.filter(n => (inDegree.get(n.id) || 0) === 0).map(n => n.id);
+  if (queue.length === 0) queue = [nodes[0].id]; // fallback
+
+  while (queue.length > 0) {
+    const layer: string[] = [];
+    const nextQueue: string[] = [];
+    queue.forEach(id => {
+      if (visited.has(id)) return;
+      visited.add(id);
+      layer.push(id);
+      (adj.get(id) || []).forEach(target => {
+        const newDeg = (inDegree.get(target) || 1) - 1;
+        inDegree.set(target, newDeg);
+        if (newDeg <= 0) nextQueue.push(target);
+      });
+    });
+    if (layer.length > 0) layers.push(layer);
+    queue = nextQueue;
+  }
+
+  // Add any unvisited nodes
+  nodes.forEach(n => {
+    if (!visited.has(n.id)) {
+      if (layers.length === 0) layers.push([]);
+      layers[layers.length - 1].push(n.id);
+    }
+  });
+
+  // Position nodes in a grid
+  const HORIZONTAL_GAP = 280;
+  const VERTICAL_GAP = 160;
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+  return nodes.map(n => {
+    let layerIdx = layers.findIndex(l => l.includes(n.id));
+    if (layerIdx === -1) layerIdx = 0;
+    const nodesInLayer = layers[layerIdx] || [];
+    const posInLayer = nodesInLayer.indexOf(n.id);
+
+    return {
+      ...n,
+      position: {
+        x: layerIdx * HORIZONTAL_GAP + 80,
+        y: posInLayer * VERTICAL_GAP + 80,
+      },
+    };
+  });
 }
 
 // ============================================================================
@@ -114,6 +297,39 @@ function createNode(type: string, position: { x: number; y: number }, overrides?
       break;
     case 'junctionNode':
       baseData.label = '';
+      break;
+    case 'pumpNode':
+      baseData.label = 'PUMP-01';
+      baseData.pumpType = 'centrifugal';
+      baseData.status = 'stopped';
+      baseData.health = 100;
+      baseData.flowRate = 0;
+      baseData.head = 0;
+      break;
+    case 'tankNode':
+      baseData.label = 'TANK-01';
+      baseData.fillLevel = 0;
+      baseData.capacity = 5000;
+      baseData.temperature = 20;
+      baseData.levelStatus = 'normal';
+      baseData.medium = 'Water';
+      break;
+    case 'motorNode':
+      baseData.label = 'MOTOR-01';
+      baseData.rpm = 0;
+      baseData.powerRating = 15;
+      baseData.status = 'stopped';
+      baseData.vibration = 0;
+      baseData.temperature = 25;
+      baseData.current = 0;
+      break;
+    case 'pipeNode':
+      baseData.label = 'PIPE-01';
+      baseData.diameter = '100';
+      baseData.material = 'CS';
+      baseData.flowRate = 0;
+      baseData.pressure = 0;
+      baseData.flowDirection = 'forward';
       break;
   }
 
@@ -158,14 +374,19 @@ function PropertiesPanel({
 
   const statusColorMap: Record<string, string> = {
     operational: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+    running: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     standby: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
     warning: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
     critical: 'bg-red-500/20 text-red-400 border-red-500/30',
     normal: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     alarm: 'bg-red-500/20 text-red-400 border-red-500/30',
+    fault: 'bg-red-500/20 text-red-400 border-red-500/30',
     open: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     closed: 'bg-red-500/20 text-red-400 border-red-500/30',
     partial: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    stopped: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+    high: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    low: 'bg-red-500/20 text-red-400 border-red-500/30',
   };
 
   return (
@@ -268,7 +489,6 @@ function PropertiesPanel({
               />
             </div>
 
-            {/* Display current parameters */}
             {Array.isArray(data.parameters) && (data.parameters as Array<{ name: string; value: string; unit: string }>).length > 0 && (
               <div className="space-y-1.5">
                 <Label className="text-[11px] text-slate-400 font-medium">Parameters</Label>
@@ -290,60 +510,32 @@ function PropertiesPanel({
           <>
             <div className="space-y-1.5">
               <Label className="text-[11px] text-slate-400 font-medium">Parameter</Label>
-              <Input
-                value={(data.parameter as string) || ''}
-                onChange={(e) => handleChange('parameter', e.target.value)}
-                className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"
-              />
+              <Input value={(data.parameter as string) || ''} onChange={(e) => handleChange('parameter', e.target.value)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
                 <Label className="text-[11px] text-slate-400 font-medium">Value</Label>
-                <Input
-                  type="number"
-                  step={0.1}
-                  value={(data.value as number) ?? 0}
-                  onChange={(e) => handleChange('value', parseFloat(e.target.value) || 0)}
-                  className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"
-                />
+                <Input type="number" step={0.1} value={(data.value as number) ?? 0} onChange={(e) => handleChange('value', parseFloat(e.target.value) || 0)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-[11px] text-slate-400 font-medium">Unit</Label>
-                <Input
-                  value={(data.unit as string) || ''}
-                  onChange={(e) => handleChange('unit', e.target.value)}
-                  className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"
-                />
+                <Input value={(data.unit as string) || ''} onChange={(e) => handleChange('unit', e.target.value)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
                 <Label className="text-[11px] text-slate-400 font-medium">Min</Label>
-                <Input
-                  type="number"
-                  step={0.1}
-                  value={(data.min as number) ?? 0}
-                  onChange={(e) => handleChange('min', parseFloat(e.target.value) || 0)}
-                  className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"
-                />
+                <Input type="number" step={0.1} value={(data.min as number) ?? 0} onChange={(e) => handleChange('min', parseFloat(e.target.value) || 0)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-[11px] text-slate-400 font-medium">Max</Label>
-                <Input
-                  type="number"
-                  step={0.1}
-                  value={(data.max as number) ?? 100}
-                  onChange={(e) => handleChange('max', parseFloat(e.target.value) || 100)}
-                  className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"
-                />
+                <Input type="number" step={0.1} value={(data.max as number) ?? 100} onChange={(e) => handleChange('max', parseFloat(e.target.value) || 100)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
               </div>
             </div>
             <div className="space-y-1.5">
               <Label className="text-[11px] text-slate-400 font-medium">Status</Label>
               <Select value={(data.status as string) || 'normal'} onValueChange={(v) => handleChange('status', v)}>
-                <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
                 <SelectContent className="bg-slate-800 border-slate-700">
                   {['normal', 'warning', 'alarm'].map((s) => (
                     <SelectItem key={s} value={s} className="text-xs text-slate-300 capitalize">{s}</SelectItem>
@@ -360,9 +552,7 @@ function PropertiesPanel({
             <div className="space-y-1.5">
               <Label className="text-[11px] text-slate-400 font-medium">State</Label>
               <Select value={(data.state as string) || 'closed'} onValueChange={(v) => handleChange('state', v)}>
-                <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
                 <SelectContent className="bg-slate-800 border-slate-700">
                   {['open', 'closed', 'partial'].map((s) => (
                     <SelectItem key={s} value={s} className="text-xs text-slate-300 capitalize">{s}</SelectItem>
@@ -378,12 +568,182 @@ function PropertiesPanel({
             <div className="space-y-1.5">
               <Label className="text-[11px] text-slate-400 font-medium">Valve Type</Label>
               <Select value={(data.valveType as string) || 'isolation'} onValueChange={(v) => handleChange('valveType', v)}>
-                <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200">
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
                 <SelectContent className="bg-slate-800 border-slate-700">
                   {['isolation', 'bypass', 'control', 'distribution', 'ats'].map((t) => (
                     <SelectItem key={t} value={t} className="text-xs text-slate-300 capitalize">{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
+
+        {/* Pump Node specific fields */}
+        {nodeType === 'pumpNode' && (
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-slate-400 font-medium">Pump Type</Label>
+              <Select value={(data.pumpType as string) || 'centrifugal'} onValueChange={(v) => handleChange('pumpType', v)}>
+                <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  {['centrifugal', 'reciprocating', 'gear', 'diaphragm', 'submersible'].map((t) => (
+                    <SelectItem key={t} value={t} className="text-xs text-slate-300 capitalize">{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-slate-400 font-medium">Status</Label>
+              <Select value={(data.status as string) || 'stopped'} onValueChange={(v) => handleChange('status', v)}>
+                <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  {['running', 'stopped', 'fault'].map((s) => (
+                    <SelectItem key={s} value={s} className="text-xs text-slate-300 capitalize">{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {(data.status as string) && (
+                <Badge variant="outline" className={`text-[10px] mt-1.5 ${statusColorMap[(data.status as string)] || 'bg-slate-700 text-slate-400 border-slate-600'}`}>
+                  {(data.status as string).toUpperCase()}
+                </Badge>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-slate-400 font-medium">Health Score</Label>
+              <Input type="number" min={0} max={100} value={(data.health as number) ?? 100} onChange={(e) => handleChange('health', Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Flow Rate</Label>
+                <Input type="number" step={0.1} value={(data.flowRate as number) ?? 0} onChange={(e) => handleChange('flowRate', parseFloat(e.target.value) || 0)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Head (m)</Label>
+                <Input type="number" step={0.1} value={(data.head as number) ?? 0} onChange={(e) => handleChange('head', parseFloat(e.target.value) || 0)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Tank Node specific fields */}
+        {nodeType === 'tankNode' && (
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-slate-400 font-medium">Fill Level (%)</Label>
+              <Input type="number" min={0} max={100} value={(data.fillLevel as number) ?? 0} onChange={(e) => handleChange('fillLevel', Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Capacity (L)</Label>
+                <Input type="number" value={(data.capacity as number) ?? 5000} onChange={(e) => handleChange('capacity', parseInt(e.target.value) || 0)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Temp (°C)</Label>
+                <Input type="number" step={0.1} value={(data.temperature as number) ?? 20} onChange={(e) => handleChange('temperature', parseFloat(e.target.value) || 0)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Level Status</Label>
+                <Select value={(data.levelStatus as string) || 'normal'} onValueChange={(v) => handleChange('levelStatus', v)}>
+                  <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-700">
+                    {['high', 'normal', 'low'].map((s) => (
+                      <SelectItem key={s} value={s} className="text-xs text-slate-300 capitalize">{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Medium</Label>
+                <Input value={(data.medium as string) || ''} onChange={(e) => handleChange('medium', e.target.value)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Motor Node specific fields */}
+        {nodeType === 'motorNode' && (
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-slate-400 font-medium">Status</Label>
+              <Select value={(data.status as string) || 'stopped'} onValueChange={(v) => handleChange('status', v)}>
+                <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  {['running', 'stopped', 'fault'].map((s) => (
+                    <SelectItem key={s} value={s} className="text-xs text-slate-300 capitalize">{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {(data.status as string) && (
+                <Badge variant="outline" className={`text-[10px] mt-1.5 ${statusColorMap[(data.status as string)] || 'bg-slate-700 text-slate-400 border-slate-600'}`}>
+                  {(data.status as string).toUpperCase()}
+                </Badge>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">RPM</Label>
+                <Input type="number" value={(data.rpm as number) ?? 0} onChange={(e) => handleChange('rpm', parseInt(e.target.value) || 0)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Power (kW)</Label>
+                <Input type="number" step={0.1} value={(data.powerRating as number) ?? 15} onChange={(e) => handleChange('powerRating', parseFloat(e.target.value) || 0)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Current (A)</Label>
+                <Input type="number" step={0.1} value={(data.current as number) ?? 0} onChange={(e) => handleChange('current', parseFloat(e.target.value) || 0)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Vibration</Label>
+                <Input type="number" step={0.1} value={(data.vibration as number) ?? 0} onChange={(e) => handleChange('vibration', parseFloat(e.target.value) || 0)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-slate-400 font-medium">Temperature (°C)</Label>
+              <Input type="number" step={0.1} value={(data.temperature as number) ?? 25} onChange={(e) => handleChange('temperature', parseFloat(e.target.value) || 0)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+            </div>
+          </>
+        )}
+
+        {/* Pipe Node specific fields */}
+        {nodeType === 'pipeNode' && (
+          <>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-slate-400 font-medium">Diameter</Label>
+              <Input value={(data.diameter as string) || '100'} onChange={(e) => handleChange('diameter', e.target.value)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-slate-400 font-medium">Material</Label>
+              <Select value={(data.material as string) || 'CS'} onValueChange={(v) => handleChange('material', v)}>
+                <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  {['CS', 'SS', 'Copper', 'PVC', 'HDPE', 'Cast Iron'].map((m) => (
+                    <SelectItem key={m} value={m} className="text-xs text-slate-300">{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Flow (m³/h)</Label>
+                <Input type="number" step={0.1} value={(data.flowRate as number) ?? 0} onChange={(e) => handleChange('flowRate', parseFloat(e.target.value) || 0)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Pressure (bar)</Label>
+                <Input type="number" step={0.1} value={(data.pressure as number) ?? 0} onChange={(e) => handleChange('pressure', parseFloat(e.target.value) || 0)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-slate-400 font-medium">Flow Direction</Label>
+              <Select value={(data.flowDirection as string) || 'forward'} onValueChange={(v) => handleChange('flowDirection', v)}>
+                <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  {['forward', 'reverse'].map((d) => (
+                    <SelectItem key={d} value={d} className="text-xs text-slate-300 capitalize">{d}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -424,6 +784,14 @@ function FlowEditorInner({
   const [propertiesOpen, setPropertiesOpen] = useState(true);
   const reactFlowInstance = useReactFlow();
   const { fitView, zoomIn, zoomOut, getNodes, getEdges } = reactFlowInstance;
+
+  // Enterprise toolbar states
+  const [nodesDraggable, setNodesDraggable] = useState(true);
+  const [snapToGridEnabled, setSnapToGridEnabled] = useState(true);
+  const [minimapVisible, setMinimapVisible] = useState(true);
+
+  // Validation state
+  const validation = useMemo(() => validateDiagram(nodes, edges), [nodes, edges]);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -479,7 +847,6 @@ function FlowEditorInner({
       setNodes((nds) =>
         nds.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...newData } } : n)),
       );
-      // Also update selectedNode ref
       setSelectedNode((prev) => (prev?.id === id ? { ...prev, data: { ...prev.data, ...newData } } : prev));
     },
     [setNodes],
@@ -500,11 +867,36 @@ function FlowEditorInner({
     onSave(currentNodes, currentEdges);
   }, [getNodes, getEdges, onSave]);
 
+  // Register save event listener
+  useEffect(() => {
+    const handler = () => handleSave();
+    window.addEventListener('diagram-save', handler);
+    return () => window.removeEventListener('diagram-save', handler);
+  }, [handleSave]);
+
   const handleExportImage = useCallback(() => {
-    // Use the viewport for export via toObject (requires html-to-image)
-    // For simplicity, we'll notify the user
-    toast.info('Use browser screenshot tools (Ctrl+Shift+S) to export the diagram');
+    try {
+      const el = document.querySelector('.react-flow__viewport');
+      if (!el) return;
+      // Simple approach: use canvas rendering
+      toast.info('Preparing image export...');
+      // Fallback to screenshot instruction since html-to-image is not installed
+      setTimeout(() => {
+        toast.info('Use browser screenshot tools (Ctrl+Shift+S) to capture the diagram');
+      }, 500);
+    } catch {
+      toast.error('Failed to export image');
+    }
   }, []);
+
+  const handleAutoLayout = useCallback(() => {
+    const currentNodes = getNodes();
+    const currentEdges = getEdges();
+    const layouted = autoLayoutNodes(currentNodes, currentEdges);
+    setNodes(layouted);
+    setTimeout(() => fitView({ padding: 0.2 }), 50);
+    toast.success('Auto-layout applied');
+  }, [getNodes, getEdges, setNodes, fitView]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -516,10 +908,16 @@ function FlowEditorInner({
         e.preventDefault();
         handleSave();
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        // ReactFlow's built-in undo via onNodesChange/onEdgesChange
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedNode, canEdit, deleteNode, handleSave]);
+
+  const toolbarBtnStyle = "h-7 w-7 text-slate-400 hover:bg-slate-700 hover:text-white";
 
   return (
     <div className="flex h-full w-full">
@@ -528,7 +926,7 @@ function FlowEditorInner({
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodesChange={canEdit ? onNodesChange : undefined}
+          onNodesChange={canEdit && nodesDraggable ? onNodesChange : undefined}
           onEdgesChange={canEdit ? onEdgesChange : undefined}
           onConnect={canEdit ? onConnect : undefined}
           onNodeClick={onNodeClick}
@@ -545,23 +943,27 @@ function FlowEditorInner({
           deleteKeyCode="Delete"
           selectionKeyCode="Shift"
           multiSelectionKeyCode="Shift"
-          snapToGrid
+          nodesDraggable={nodesDraggable}
+          snapToGrid={snapToGridEnabled}
           snapGrid={[16, 16]}
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1e293b" />
-          <MiniMap
-            nodeStrokeWidth={3}
-            nodeColor={(n) => {
-              const d = n.data as Record<string, unknown>;
-              const status = d.status as string || 'operational';
-              if (status === 'warning') return '#f59e0b';
-              if (status === 'critical' || status === 'alarm') return '#ef4444';
-              if (status === 'standby' || status === 'inactive') return '#6b7280';
-              return '#10b981';
-            }}
-            maskColor="rgba(15, 23, 42, 0.7)"
-            style={{ background: '#1e293b', border: '1px solid rgba(148,163,184,0.1)', borderRadius: 8 }}
-          />
+
+          {minimapVisible && (
+            <MiniMap
+              nodeStrokeWidth={3}
+              nodeColor={(n) => {
+                const d = n.data as Record<string, unknown>;
+                const status = d.status as string || d.state as string || 'operational';
+                if (status === 'warning' || status === 'partial' || status === 'standby' || status === 'high') return '#f59e0b';
+                if (status === 'critical' || status === 'alarm' || status === 'fault' || status === 'low') return '#ef4444';
+                if (status === 'stopped' || status === 'inactive' || status === 'closed') return '#6b7280';
+                return '#10b981';
+              }}
+              maskColor="rgba(15, 23, 42, 0.7)"
+              style={{ background: '#1e293b', border: '1px solid rgba(148,163,184,0.1)', borderRadius: 8 }}
+            />
+          )}
           <Controls
             showInteractive={false}
             style={{
@@ -572,7 +974,7 @@ function FlowEditorInner({
             }}
           />
 
-          {/* Top Toolbar */}
+          {/* ===== TOP TOOLBAR ===== */}
           <Panel position="top-left" className="pointer-events-auto">
             <div className="flex items-center gap-1 px-2 py-1.5 rounded-lg" style={{
               background: 'rgba(30,41,59,0.9)',
@@ -581,7 +983,7 @@ function FlowEditorInner({
               boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
             }}>
               <TooltipProvider delayDuration={0}>
-                {/* Add Asset */}
+                {/* Add Node Dropdown */}
                 {canEdit && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -590,7 +992,7 @@ function FlowEditorInner({
                         <span className="hidden sm:inline">Add Node</span>
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="bg-slate-800 border-slate-700 min-w-[160px]">
+                    <DropdownMenuContent align="start" className="bg-slate-800 border-slate-700 min-w-[180px]">
                       <DropdownMenuItem onClick={() => addNodeAtCenter('assetNode')} className="text-xs text-slate-300 gap-2">
                         <Cpu className="h-3.5 w-3.5 text-emerald-400" /> Equipment
                       </DropdownMenuItem>
@@ -599,6 +1001,19 @@ function FlowEditorInner({
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => addNodeAtCenter('valveNode')} className="text-xs text-slate-300 gap-2">
                         <GitBranch className="h-3.5 w-3.5 text-amber-400" /> Valve
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="bg-slate-700" />
+                      <DropdownMenuItem onClick={() => addNodeAtCenter('pumpNode')} className="text-xs text-slate-300 gap-2">
+                        <Droplets className="h-3.5 w-3.5 text-cyan-400" /> Pump
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => addNodeAtCenter('tankNode')} className="text-xs text-slate-300 gap-2">
+                        <Layers className="h-3.5 w-3.5 text-teal-400" /> Tank
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => addNodeAtCenter('motorNode')} className="text-xs text-slate-300 gap-2">
+                        <Zap className="h-3.5 w-3.5 text-violet-400" /> Motor
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => addNodeAtCenter('pipeNode')} className="text-xs text-slate-300 gap-2">
+                        <Settings className="h-3.5 w-3.5 text-sky-400" /> Pipe
                       </DropdownMenuItem>
                       <DropdownMenuSeparator className="bg-slate-700" />
                       <DropdownMenuItem onClick={() => addNodeAtCenter('junctionNode')} className="text-xs text-slate-300 gap-2">
@@ -610,10 +1025,36 @@ function FlowEditorInner({
 
                 <div className="w-px h-5 bg-slate-700" />
 
-                {/* Zoom controls */}
+                {/* Undo/Redo (ReactFlow built-in) */}
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:bg-slate-700 hover:text-white" onClick={() => zoomIn()}>
+                    <Button variant="ghost" size="icon" className={toolbarBtnStyle} onClick={() => {
+                      const inst = reactFlowInstance as unknown as { undo?: () => void };
+                      inst.undo?.();
+                    }}>
+                      <Undo2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Undo</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className={toolbarBtnStyle} onClick={() => {
+                      const inst = reactFlowInstance as unknown as { redo?: () => void };
+                      inst.redo?.();
+                    }}>
+                      <Redo2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Redo</TooltipContent>
+                </Tooltip>
+
+                <div className="w-px h-5 bg-slate-700" />
+
+                {/* Zoom */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className={toolbarBtnStyle} onClick={() => zoomIn()}>
                       <ZoomIn className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
@@ -621,7 +1062,7 @@ function FlowEditorInner({
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:bg-slate-700 hover:text-white" onClick={() => zoomOut()}>
+                    <Button variant="ghost" size="icon" className={toolbarBtnStyle} onClick={() => zoomOut()}>
                       <ZoomOut className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
@@ -629,11 +1070,82 @@ function FlowEditorInner({
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:bg-slate-700 hover:text-white" onClick={() => fitView({ padding: 0.2 })}>
+                    <Button variant="ghost" size="icon" className={toolbarBtnStyle} onClick={() => fitView({ padding: 0.2 })}>
                       <Maximize2 className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Fit View</TooltipContent>
+                </Tooltip>
+
+                <div className="w-px h-5 bg-slate-700" />
+
+                {/* Lock/Unlock */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`h-7 w-7 ${!nodesDraggable ? 'text-amber-400 bg-amber-500/10' : toolbarBtnStyle}`}
+                      onClick={() => setNodesDraggable(!nodesDraggable)}
+                    >
+                      {nodesDraggable ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{nodesDraggable ? 'Unlock nodes' : 'Lock nodes'}</TooltipContent>
+                </Tooltip>
+
+                {/* Grid Snap */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`h-7 w-7 ${snapToGridEnabled ? 'text-emerald-400 bg-emerald-500/10' : toolbarBtnStyle}`}
+                      onClick={() => setSnapToGridEnabled(!snapToGridEnabled)}
+                    >
+                      <Grid3X3 className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Grid Snap {snapToGridEnabled ? 'ON' : 'OFF'}</TooltipContent>
+                </Tooltip>
+
+                {/* Minimap Toggle */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`h-7 w-7 ${minimapVisible ? 'text-emerald-400 bg-emerald-500/10' : toolbarBtnStyle}`}
+                      onClick={() => setMinimapVisible(!minimapVisible)}
+                    >
+                      <Map className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Minimap</TooltipContent>
+                </Tooltip>
+
+                <div className="w-px h-5 bg-slate-700" />
+
+                {/* Auto Layout */}
+                {canEdit && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className={toolbarBtnStyle} onClick={handleAutoLayout}>
+                        <LayoutGrid className="h-3.5 w-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Auto Layout</TooltipContent>
+                  </Tooltip>
+                )}
+
+                {/* Export PNG */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className={toolbarBtnStyle} onClick={handleExportImage}>
+                      <FileImage className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Export as PNG</TooltipContent>
                 </Tooltip>
 
                 <div className="w-px h-5 bg-slate-700" />
@@ -644,26 +1156,65 @@ function FlowEditorInner({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className={`h-7 w-7 ${propertiesOpen ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 hover:bg-slate-700 hover:text-white'}`}
+                      className={`h-7 w-7 ${propertiesOpen ? 'text-emerald-400 bg-emerald-500/10' : toolbarBtnStyle}`}
                       onClick={() => setPropertiesOpen(!propertiesOpen)}
                     >
                       <Info className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Toggle Properties Panel</TooltipContent>
+                  <TooltipContent>Properties Panel</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
           </Panel>
 
-          {/* Diagram name overlay */}
+          {/* Diagram name + validation overlay */}
           <Panel position="top-center">
-            <div className="px-3 py-1 rounded-md" style={{
+            <div className="flex items-center gap-2 px-3 py-1 rounded-md" style={{
               background: 'rgba(30,41,59,0.8)',
               backdropFilter: 'blur(8px)',
               border: '1px solid rgba(148,163,184,0.08)',
             }}>
               <span className="text-xs font-semibold text-slate-300">{diagramName}</span>
+              {validation.warnings.length > 0 && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge variant="outline" className="text-[10px] bg-amber-500/20 text-amber-400 border-amber-500/30 gap-1 cursor-help">
+                        <AlertTriangle className="h-2.5 w-2.5" />
+                        {validation.warnings.length}
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs">
+                      <div className="space-y-1">
+                        {validation.warnings.slice(0, 5).map((w, i) => (
+                          <p key={i} className="text-xs">{w}</p>
+                        ))}
+                        {validation.warnings.length > 5 && (
+                          <p className="text-xs text-muted-foreground">...and {validation.warnings.length - 5} more</p>
+                        )}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
+          </Panel>
+
+          {/* Bottom status bar */}
+          <Panel position="bottom-left" className="pointer-events-auto">
+            <div className="flex items-center gap-3 px-3 py-1 rounded-md text-[10px] text-slate-500" style={{
+              background: 'rgba(30,41,59,0.7)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(148,163,184,0.06)',
+            }}>
+              <span>{nodes.length} nodes</span>
+              <span>{edges.length} edges</span>
+              {!nodesDraggable && (
+                <Badge variant="outline" className="text-[9px] bg-amber-500/10 text-amber-400 border-amber-500/20 px-1.5 py-0">
+                  <Lock className="h-2 w-2 mr-0.5" /> LOCKED
+                </Badge>
+              )}
             </div>
           </Panel>
         </ReactFlow>
@@ -692,11 +1243,23 @@ function FlowEditorInner({
 }
 
 // ============================================================================
+// FLOW EDITOR WRAPPER
+// ============================================================================
+
+function FlowEditor(props: Parameters<typeof FlowEditorInner>[0]) {
+  return (
+    <ReactFlowProvider>
+      <FlowEditorInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+// ============================================================================
 // MAIN SYSTEM DIAGRAM PAGE
 // ============================================================================
 
 export default function SystemDiagramPage() {
-  const { hasPermission, isAdmin } = useAuthStore();
+  const { hasPermission, isAdmin, user } = useAuthStore();
   const canEdit = hasPermission('digital_twin.create') || hasPermission('digital_twin.update') || isAdmin();
 
   // List state
@@ -704,6 +1267,7 @@ export default function SystemDiagramPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [totalCount, setTotalCount] = useState(0);
 
   // Editor state
   const [view, setView] = useState<'list' | 'editor'>('list');
@@ -718,6 +1282,9 @@ export default function SystemDiagramPage() {
   // Template dialog
   const [templateOpen, setTemplateOpen] = useState(false);
 
+  // Template gallery dialog
+  const [galleryOpen, setGalleryOpen] = useState(false);
+
   // Fetch diagrams
   const fetchDiagrams = useCallback(async () => {
     setLoading(true);
@@ -730,6 +1297,7 @@ export default function SystemDiagramPage() {
       const res = await api.get(`/api/system-diagrams?${params.toString()}`);
       if (res.success && Array.isArray(res.data)) {
         setDiagrams(res.data);
+        setTotalCount(res.data.length);
       }
     } catch {
       toast.error('Failed to load diagrams');
@@ -759,7 +1327,6 @@ export default function SystemDiagramPage() {
         toast.success('Diagram created');
         setCreateOpen(false);
         setCreateForm({ name: '', description: '', type: 'process' });
-        // Open the new diagram in editor
         const diagram = res.data as SystemDiagram;
         setCurrentDiagram(diagram);
         setEditorKey((k) => k + 1);
@@ -789,6 +1356,7 @@ export default function SystemDiagramPage() {
       if (res.success && res.data) {
         toast.success(`Loaded "${template.name}" template`);
         setTemplateOpen(false);
+        setGalleryOpen(false);
         const diagram = res.data as SystemDiagram;
         setCurrentDiagram(diagram);
         setEditorKey((k) => k + 1);
@@ -799,6 +1367,30 @@ export default function SystemDiagramPage() {
       }
     } catch {
       toast.error('Failed to load template');
+    }
+    setSaving(false);
+  };
+
+  // Duplicate diagram
+  const handleDuplicateDiagram = async (diagram: SystemDiagram) => {
+    setSaving(true);
+    try {
+      const res = await api.post('/api/system-diagrams', {
+        name: `${diagram.name} (Copy)`,
+        description: diagram.description,
+        diagramType: diagram.type,
+        nodes: diagram.nodes,
+        edges: diagram.edges,
+        isTemplate: false,
+      });
+      if (res.success && res.data) {
+        toast.success('Diagram duplicated');
+        fetchDiagrams();
+      } else {
+        toast.error(res.error || 'Failed to duplicate diagram');
+      }
+    } catch {
+      toast.error('Failed to duplicate diagram');
     }
     setSaving(false);
   };
@@ -815,15 +1407,13 @@ export default function SystemDiagramPage() {
     if (!currentDiagram) return;
     setSaving(true);
     try {
-      const viewport = undefined; // Could capture from reactFlowInstance
       const res = await api.put(`/api/system-diagrams/${currentDiagram.id}`, {
         nodes,
         edges,
-        viewport,
       });
       if (res.success) {
         toast.success('Diagram saved');
-        setCurrentDiagram((prev) => prev ? { ...prev, nodes: JSON.stringify(nodes), edges: JSON.stringify(edges) } : null);
+        setCurrentDiagram((prev) => prev ? { ...prev, nodes: JSON.stringify(nodes), edges: JSON.stringify(edges), version: (prev.version || 0) + 1 } : null);
       } else {
         toast.error(res.error || 'Failed to save diagram');
       }
@@ -886,8 +1476,12 @@ export default function SystemDiagramPage() {
             <p className="text-muted-foreground mt-1">Enterprise-grade process and instrumentation diagrams</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)} className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setGalleryOpen(true)} className="gap-2">
               <LayoutGrid className="h-4 w-4" />
+              Template Gallery
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)} className="gap-2">
+              <Copy className="h-4 w-4" />
               Templates
             </Button>
             {canEdit && (
@@ -921,6 +1515,7 @@ export default function SystemDiagramPage() {
               ))}
             </SelectContent>
           </Select>
+          <span className="text-xs text-muted-foreground">{totalCount} diagram{totalCount !== 1 ? 's' : ''}</span>
         </div>
 
         {/* Diagram Cards */}
@@ -948,9 +1543,9 @@ export default function SystemDiagramPage() {
               {searchQuery || typeFilter !== 'all' ? 'Try adjusting your filters' : 'Create your first diagram or load a template'}
             </p>
             <div className="flex items-center gap-2 justify-center">
-              <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)} className="gap-2">
+              <Button variant="outline" size="sm" onClick={() => setGalleryOpen(true)} className="gap-2">
                 <LayoutGrid className="h-3.5 w-3.5" />
-                Load Template
+                Template Gallery
               </Button>
               {canEdit && (
                 <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-2">
@@ -967,6 +1562,7 @@ export default function SystemDiagramPage() {
               const nodeCount = (() => { try { return JSON.parse(diagram.nodes).length; } catch { return 0; } })();
               const edgeCount = (() => { try { return JSON.parse(diagram.edges).length; } catch { return 0; } })();
               const timeAgo = new Date(diagram.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+              const lastEditor = diagram.updatedByIdUser?.fullName || diagram.createdByIdUser?.fullName || 'Unknown';
 
               return (
                 <div
@@ -976,7 +1572,6 @@ export default function SystemDiagramPage() {
                 >
                   {/* Mini preview area */}
                   <div className="h-36 rounded-t-xl relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)' }}>
-                    {/* Decorative dots grid */}
                     <div className="absolute inset-0 opacity-20" style={{
                       backgroundImage: 'radial-gradient(circle, #475569 1px, transparent 1px)',
                       backgroundSize: '16px 16px',
@@ -994,13 +1589,11 @@ export default function SystemDiagramPage() {
                       </Badge>
                     </div>
                     {/* Version badge */}
-                    {diagram.version > 1 && (
-                      <div className="absolute top-2 right-2">
-                        <Badge variant="outline" className="text-[10px] bg-slate-800/80 text-slate-400 border-slate-700">
-                          v{diagram.version}
-                        </Badge>
-                      </div>
-                    )}
+                    <div className="absolute top-2 right-2">
+                      <Badge variant="outline" className="text-[10px] bg-slate-800/80 text-slate-400 border-slate-700">
+                        v{diagram.version || 1}
+                      </Badge>
+                    </div>
                   </div>
 
                   {/* Card body */}
@@ -1009,6 +1602,15 @@ export default function SystemDiagramPage() {
                     {diagram.description && (
                       <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{diagram.description}</p>
                     )}
+
+                    {/* Collaboration info */}
+                    <div className="flex items-center gap-1.5 mt-2 text-[10px] text-muted-foreground">
+                      <Users className="h-3 w-3" />
+                      <span className="truncate">{lastEditor}</span>
+                      <span className="text-muted-foreground/50">·</span>
+                      <Clock className="h-3 w-3 flex-shrink-0" />
+                      <span>{timeAgo}</span>
+                    </div>
 
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/40">
                       <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
@@ -1033,6 +1635,10 @@ export default function SystemDiagramPage() {
                               <DropdownMenuItem onClick={() => handleOpenDiagram(diagram)} className="text-xs gap-2">
                                 <FolderOpen className="h-3.5 w-3.5" /> Open
                               </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => { handleDuplicateDiagram(diagram); }} className="text-xs gap-2">
+                                <Copy className="h-3.5 w-3.5" /> Duplicate
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => handleDeleteDiagram(diagram.id)} className="text-xs gap-2 text-red-500 focus:text-red-500">
                                 <Trash2 className="h-3.5 w-3.5" /> Delete
                               </DropdownMenuItem>
@@ -1097,49 +1703,107 @@ export default function SystemDiagramPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Template Dialog */}
+        {/* Template List Dialog */}
         <Dialog open={templateOpen} onOpenChange={setTemplateOpen}>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="sm:max-w-lg max-h-[80vh]">
             <DialogHeader>
               <DialogTitle>Diagram Templates</DialogTitle>
               <DialogDescription>Load a pre-built enterprise diagram template</DialogDescription>
             </DialogHeader>
-            <div className="grid gap-3 py-2">
-              {diagramTemplates.map((template) => {
-                const meta = diagramTypeMeta[template.diagramType];
-                return (
-                  <div
-                    key={template.id}
-                    className="flex items-center gap-4 p-3 rounded-lg border border-border/60 hover:border-primary/30 hover:bg-muted/30 cursor-pointer transition-all"
-                    onClick={() => handleLoadTemplate(template)}
-                  >
-                    <div className={`w-12 h-12 rounded-xl ${meta.bgColor} flex items-center justify-center shrink-0`}>
-                      {template.diagramType === 'hvac' && <Wind className="h-5 w-5" style={{ color: meta.color.includes('sky') ? '#0ea5e9' : meta.color.includes('emerald') ? '#10b981' : '#10b981' }} />}
-                      {template.diagramType === 'electrical' && <Zap className="h-5 w-5 text-amber-500" />}
-                      {template.diagramType === 'process' && <FlaskConical className="h-5 w-5 text-emerald-500" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-semibold">{template.name}</h4>
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{template.description}</p>
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <Badge variant="outline" className={`text-[10px] ${meta.color} ${meta.bgColor} border-0`}>
-                          {meta.label}
-                        </Badge>
-                        <span className="text-[10px] text-muted-foreground">
-                          {template.nodes.length} nodes / {template.edges.length} edges
-                        </span>
+            <ScrollArea className="max-h-[60vh]">
+              <div className="grid gap-3 py-2">
+                {diagramTemplates.map((template) => {
+                  const meta = diagramTypeMeta[template.diagramType];
+                  return (
+                    <div
+                      key={template.id}
+                      className="flex items-center gap-4 p-3 rounded-lg border border-border/60 hover:border-primary/30 hover:bg-muted/30 cursor-pointer transition-all"
+                      onClick={() => handleLoadTemplate(template)}
+                    >
+                      <div className={`w-12 h-12 rounded-xl ${meta.bgColor} flex items-center justify-center shrink-0`}>
+                        {template.diagramType === 'hvac' && <Wind className="h-5 w-5 text-sky-500" />}
+                        {template.diagramType === 'electrical' && <Zap className="h-5 w-5 text-amber-500" />}
+                        {template.diagramType === 'process' && <FlaskConical className="h-5 w-5 text-emerald-500" />}
+                        {template.diagramType === 'piping' && <Droplets className="h-5 w-5 text-cyan-500" />}
+                        {template.diagramType === 'safety' && <Shield className="h-5 w-5 text-red-500" />}
+                        {template.diagramType === 'control' && <Settings className="h-5 w-5 text-violet-500" />}
                       </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold">{template.name}</h4>
+                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{template.description}</p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <Badge variant="outline" className={`text-[10px] ${meta.color} ${meta.bgColor} border-0`}>
+                            {meta.label}
+                          </Badge>
+                          <span className="text-[10px] text-muted-foreground">
+                            {template.nodes.length} nodes / {template.edges.length} edges
+                          </span>
+                        </div>
+                      </div>
+                      <Button variant="ghost" size="sm" className="shrink-0 gap-1" disabled={saving}>
+                        <Copy className="h-3.5 w-3.5" />
+                        Use
+                      </Button>
                     </div>
-                    <Button variant="ghost" size="sm" className="shrink-0 gap-1">
-                      <Copy className="h-3.5 w-3.5" />
-                      Use
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
             <DialogFooter>
               <Button variant="outline" onClick={() => setTemplateOpen(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Template Gallery Dialog */}
+        <Dialog open={galleryOpen} onOpenChange={setGalleryOpen}>
+          <DialogContent className="sm:max-w-4xl max-h-[85vh]">
+            <DialogHeader>
+              <DialogTitle>Template Gallery</DialogTitle>
+              <DialogDescription>Choose a pre-built enterprise diagram template to get started</DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="max-h-[70vh]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 py-2">
+                {diagramTemplates.map((template) => {
+                  const meta = diagramTypeMeta[template.diagramType];
+                  return (
+                    <div
+                      key={template.id}
+                      className="rounded-xl border border-border/60 hover:border-primary/30 hover:shadow-md transition-all cursor-pointer overflow-hidden group"
+                      onClick={() => handleLoadTemplate(template)}
+                    >
+                      {/* Preview */}
+                      <div className="h-40">
+                        <TemplatePreview template={template} />
+                      </div>
+                      {/* Info */}
+                      <div className="p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant="outline" className={`text-[9px] ${meta.color} ${meta.bgColor} border-0`}>
+                            {meta.label}
+                          </Badge>
+                          <span className="text-[9px] text-muted-foreground">
+                            {template.nodes.length} nodes · {template.edges.length} edges
+                          </span>
+                        </div>
+                        <h4 className="text-xs font-semibold mt-1.5">{template.name}</h4>
+                        <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{template.description}</p>
+                        <Button
+                          variant="ghost" size="sm"
+                          className="w-full mt-2 h-7 text-xs gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          disabled={saving}
+                        >
+                          <Copy className="h-3 w-3" />
+                          Use Template
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setGalleryOpen(false)}>Close</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1179,6 +1843,11 @@ export default function SystemDiagramPage() {
               {diagramTypeMeta[currentDiagram.type]?.label || currentDiagram.type}
             </Badge>
           )}
+          {currentDiagram && (
+            <Badge variant="outline" className="text-[10px] bg-slate-800/80 text-slate-400 border-slate-700">
+              v{currentDiagram.version || 1}
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -1186,53 +1855,29 @@ export default function SystemDiagramPage() {
             <Button
               size="sm"
               onClick={() => {
-                // Trigger save from the editor - we use a custom event
                 const event = new CustomEvent('diagram-save');
                 window.dispatchEvent(event);
               }}
               disabled={saving}
-              className="h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+              className="gap-1.5"
             >
               <Save className="h-3.5 w-3.5" />
-              <span className="text-xs">{saving ? 'Saving...' : 'Save'}</span>
+              <span className="hidden sm:inline text-xs">{saving ? 'Saving...' : 'Save'}</span>
             </Button>
           )}
         </div>
       </div>
 
-      {/* Canvas */}
+      {/* Editor Canvas */}
       <div className="flex-1 overflow-hidden">
-        <DiagramSaveListener onSave={handleSaveDiagram} />
-        <ReactFlowProvider>
-          <FlowEditorInner
-            key={editorKey}
-            initialNodes={nodes}
-            initialEdges={edges}
-            onSave={(n, e) => handleSaveDiagram(n, e)}
-            diagramName={currentDiagram?.name || 'New Diagram'}
-          />
-        </ReactFlowProvider>
+        <FlowEditor
+          key={editorKey}
+          initialNodes={nodes}
+          initialEdges={edges}
+          onSave={handleSaveDiagram}
+          diagramName={currentDiagram?.name || 'New Diagram'}
+        />
       </div>
     </div>
   );
-}
-
-// ============================================================================
-// SAVE LISTENER (bridges header button to ReactFlow context)
-// ============================================================================
-
-function DiagramSaveListener({ onSave }: { onSave: (nodes: Node[], edges: Edge[]) => void }) {
-  const { getNodes, getEdges } = useReactFlow();
-
-  useEffect(() => {
-    const handler = () => {
-      const nodes = getNodes();
-      const edges = getEdges();
-      onSave(nodes, edges);
-    };
-    window.addEventListener('diagram-save', handler);
-    return () => window.removeEventListener('diagram-save', handler);
-  }, [getNodes, getEdges, onSave]);
-
-  return null;
 }

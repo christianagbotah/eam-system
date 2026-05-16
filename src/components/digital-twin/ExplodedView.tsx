@@ -1,9 +1,10 @@
 'use client';
 
-import { useRef, useMemo, useCallback } from 'react';
+import { useRef, useMemo, useCallback, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { useDigitalTwinStore, type SectionAxis } from '@/stores/digitalTwinStore';
+import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
 import type { AssetMeshBinding } from './InteractiveMesh';
 
 // ============================================================================
@@ -15,17 +16,37 @@ export interface ExplodedViewProps {
   bindings: AssetMeshBinding[];
   /** Animation speed factor (default: 0.05) */
   animationSpeed?: number;
-  /** Easing function (default: ease-out cubic) */
-  easing?: (t: number) => number;
+  /** Show component labels during exploded view (default: true) */
+  showLabels?: boolean;
 }
 
 // ============================================================================
-// Easing functions
+// Spring physics for smooth animation
 // ============================================================================
 
-const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
-const easeInOutQuad = (t: number): number =>
-  t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+interface SpringState {
+  current: number;
+  velocity: number;
+}
+
+function springStep(
+  state: SpringState,
+  target: number,
+  stiffness: number = 0.06,
+  damping: number = 0.72,
+): SpringState {
+  const force = (target - state.current) * stiffness;
+  state.velocity = (state.velocity + force) * damping;
+  state.current += state.velocity;
+
+  // Snap when close enough
+  if (Math.abs(state.current - target) < 0.0001 && Math.abs(state.velocity) < 0.0001) {
+    state.current = target;
+    state.velocity = 0;
+  }
+
+  return state;
+}
 
 // ============================================================================
 // Component
@@ -34,15 +55,18 @@ const easeInOutQuad = (t: number): number =>
 export function ExplodedView({
   bindings,
   animationSpeed = 0.05,
-  easing = easeOutCubic,
+  showLabels = true,
 }: ExplodedViewProps) {
   const explodeMode = useDigitalTwinStore((s) => s.explodeMode);
   const explodeProgress = useDigitalTwinStore((s) => s.explodeProgress);
   const explodeAssemblyId = useDigitalTwinStore((s) => s.explodeAssemblyId);
   const setExplodeProgress = useDigitalTwinStore((s) => s.setExplodeProgress);
 
-  // Refs to track animated positions per mesh
-  const meshPositionsRef = useRef<Map<string, { current: THREE.Vector3; target: THREE.Vector3 }>>(new Map());
+  // Spring state for the overall explode progress
+  const springRef = useRef<SpringState>({ current: 0, velocity: 0 });
+
+  // Per-mesh spring states for smooth individual transitions
+  const meshSpringsRef = useRef<Map<string, SpringState>>(new Map());
 
   // Build lookup of binding offsets
   const bindingOffsets = useMemo(() => {
@@ -63,56 +87,102 @@ export function ExplodedView({
     return bindings;
   }, [bindings, explodeAssemblyId]);
 
-  // Animate explosion progress
+  // Track active label data for rendering via state
+  const [activeLabels, setActiveLabels] = useState<
+    Array<{
+      meshName: string;
+      assetName: string;
+      position: [number, number, number];
+      progress: number;
+    }>
+  >([]);
+  const frameCounterRef = useRef(0);
+
+  // Animate explosion progress — drive the spring
   useFrame(() => {
-    if (!explodeMode) return;
+    const storeProgress = useDigitalTwinStore.getState().explodeProgress;
 
-    const currentProgress = useDigitalTwinStore.getState().explodeProgress;
-
-    if (currentProgress < 1) {
-      setExplodeProgress(Math.min(currentProgress + animationSpeed, 1));
+    if (explodeMode && storeProgress < 1) {
+      setExplodeProgress(Math.min(storeProgress + animationSpeed, 1));
     }
+
+    // Spring towards target
+    const target = explodeMode ? 1 : 0;
+    springRef.current = springStep(springRef.current, target);
   });
 
-  // Apply offsets to mesh objects in the scene
+  // Apply spring-based offsets to mesh objects in the scene
   useFrame(({ scene }) => {
-    const currentProgress = useDigitalTwinStore.getState().explodeProgress;
-    const easedProgress = easing(currentProgress);
+    const springValue = springRef.current.current;
+    const labels: Array<{
+      meshName: string;
+      assetName: string;
+      position: [number, number, number];
+      progress: number;
+    }> = [];
 
     scene.traverse((child) => {
       if (!(child as THREE.Mesh).isMesh) return;
       const mesh = child as THREE.Mesh;
 
-      // Only animate meshes that have binding offsets
       const offset = bindingOffsets.get(mesh.name);
       if (!offset) return;
 
-      // Check if this mesh is in the target set
       const isTarget = targetMeshes.some((b) => b.meshName === mesh.name);
       if (!isTarget) return;
 
-      // Store original position if not already stored
+      // Store original position
       if (!mesh.userData.__originalPosition) {
         mesh.userData.__originalPosition = mesh.position.clone();
       }
 
       const original = mesh.userData.__originalPosition as THREE.Vector3;
 
-      // Calculate target position with eased offset
-      const targetX = original.x + offset[0] * easedProgress;
-      const targetY = original.y + offset[1] * easedProgress;
-      const targetZ = original.z + offset[2] * easedProgress;
+      // Initialize per-mesh spring if needed
+      if (!meshSpringsRef.current.has(mesh.name)) {
+        meshSpringsRef.current.set(mesh.name, { current: 0, velocity: 0 });
+      }
 
-      // Smooth lerp to target position
-      mesh.position.x += (targetX - mesh.position.x) * 0.1;
-      mesh.position.y += (targetY - mesh.position.y) * 0.1;
-      mesh.position.z += (targetZ - mesh.position.z) * 0.1;
+      // Step per-mesh spring towards global spring value
+      const meshSpring = meshSpringsRef.current.get(mesh.name)!;
+      const targetValue = springValue;
+      const stepped = springStep(meshSpring, targetValue, 0.08, 0.75);
+
+      // Calculate target position with spring-animated offset
+      const targetX = original.x + offset[0] * stepped.current;
+      const targetY = original.y + offset[1] * stepped.current;
+      const targetZ = original.z + offset[2] * stepped.current;
+
+      // Smooth position update
+      mesh.position.x += (targetX - mesh.position.x) * 0.15;
+      mesh.position.y += (targetY - mesh.position.y) * 0.15;
+      mesh.position.z += (targetZ - mesh.position.z) * 0.15;
+
+      // Track for labels when significantly exploded
+      if (showLabels && stepped.current > 0.3) {
+        const binding = targetMeshes.find((b) => b.meshName === mesh.name);
+        if (binding) {
+          labels.push({
+            meshName: mesh.name,
+            assetName: binding.assetName,
+            position: [mesh.position.x, mesh.position.y, mesh.position.z],
+            progress: stepped.current,
+          });
+        }
+      }
     });
+
+    // Update React state every 5 frames to avoid excessive re-renders
+    frameCounterRef.current++;
+    if (frameCounterRef.current % 5 === 0) {
+      setActiveLabels(labels);
+    }
   });
 
-  // Reset positions when explode mode is off
+  // Reset positions and springs when explode mode is off
   useFrame(({ scene }) => {
     if (explodeMode) return;
+    if (springRef.current.current > 0.001) return; // Wait for spring to settle
 
     scene.traverse((child) => {
       if (!(child as THREE.Mesh).isMesh) return;
@@ -120,19 +190,56 @@ export function ExplodedView({
 
       if (mesh.userData.__originalPosition) {
         const original = mesh.userData.__originalPosition as THREE.Vector3;
-        mesh.position.lerp(original, 0.1);
+        mesh.position.lerp(original, 0.15);
 
-        // Clean up when close enough
         if (mesh.position.distanceTo(original) < 0.001) {
           mesh.position.copy(original);
           delete mesh.userData.__originalPosition;
         }
       }
     });
+
+    // Clear per-mesh springs
+    meshSpringsRef.current.clear();
+    frameCounterRef.current++;
+    if (frameCounterRef.current % 5 === 0) {
+      setActiveLabels([]);
+    }
   });
 
-  // This is a "headless" component — it only modifies mesh positions per frame
-  return null;
+  // Label renderer — renders HTML labels for exploded components
+  const isVisible = explodeMode && showLabels;
+
+  return (
+    <group>
+      {isVisible && activeLabels.map((label) => (
+        <Html
+          key={label.meshName}
+          position={[
+            label.position[0],
+            label.position[1] + 0.6,
+            label.position[2],
+          ]}
+          center
+          distanceFactor={15}
+          style={{ pointerEvents: 'none' }}
+        >
+          <div
+            className="px-2 py-1 rounded text-[10px] font-medium whitespace-nowrap shadow-lg border transition-opacity duration-300"
+            style={{
+              background: 'rgba(15,15,25,0.85)',
+              color: '#94a3b8',
+              borderColor: 'rgba(148,163,184,0.2)',
+              backdropFilter: 'blur(8px)',
+              opacity: Math.min(label.progress * 1.5, 1),
+            }}
+          >
+            {label.assetName}
+          </div>
+        </Html>
+      ))}
+    </group>
+  );
 }
 
 export default ExplodedView;

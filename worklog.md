@@ -2140,3 +2140,196 @@ Stage Summary:
 - MEDIUM code quality improvements applied
 - ESLint passes cleanly on all changed digital twin files
 
+---
+Task ID: DT-Phase1-Schema
+Agent: Schema Architect
+Task: Enhanced Prisma schema with 8 new models and relations
+
+Work Log:
+- Added ComponentRegistry model (hierarchical component registry with full engineering metadata)
+- Added ComponentSparePart model (spare parts linkage to inventory)
+- Added ComponentToolRequirement model (tool requirements for maintenance tasks)
+- Added FailureRecord model (failure tracking for predictive maintenance foundation)
+- Added ModelVersion model (GLTF model versioning with changelog)
+- Added TwinAuditLog model (digital twin audit trail for all entity types)
+- Added PredictiveModel model (ML model foundation for predictive maintenance)
+- Added PredictionAlert model (predictive alert generation with acknowledgment workflow)
+- Added relations to existing models: DigitalTwin (componentRegistry), Asset (registryComponents, failureRecords, predictiveModels, predictionAlerts), User (twinAuditLogs, modelVersionUploads, failureReports, predictiveModels, predictionAcknowledged), WorkOrder (failureRecords), AssetModel (versions), InventoryItem (sparePartLinks), Tool (componentRequirements)
+- Fixed ModelVersion ↔ AssetModel relation name consistency ("ModelVersions")
+
+Stage Summary:
+- 8 new Prisma models added to schema (ComponentRegistry, ComponentSparePart, ComponentToolRequirement, FailureRecord, ModelVersion, TwinAuditLog, PredictiveModel, PredictionAlert)
+- 6 existing models enhanced with new relations (DigitalTwin, Asset, User, WorkOrder, AssetModel, InventoryItem, Tool)
+- Schema validates successfully (npx prisma validate passes)
+- Foundation for enterprise-grade digital twin module with predictive maintenance
+
+---
+Task ID: DT-Phase2-API
+Agent: API Builder
+Task: Enterprise API routes for component registry, failure analysis, predictive maintenance, model versioning
+
+Work Log:
+- Created `src/lib/audit.ts` — reusable `createAuditLog()` helper wrapping AuditLog.create with fire-and-forget error handling
+- Created Component Registry CRUD (`/api/component-registry` + `/api/component-registry/[id]`)
+  - GET list with filters: twinId, assetId, parentId, componentType, criticality, lifecycleStatus, search + pagination
+  - GET detail with recursive children tree, failureRecords (latest 20), sparePartLinks, toolRequirements, predictiveModels, predictionAlerts
+  - POST with validation (unique componentCode, parentId/twinId existence, serialNumber uniqueness)
+  - PUT with allowedFields whitelist, parentId cycle detection, serialNumber uniqueness check
+  - DELETE with recursive cascade (collects all descendant IDs before deleteMany)
+- Created Failure Records CRUD (`/api/failure-records` + `/api/failure-records/[id]`)
+  - GET list with filters: componentId, assetId, failureMode, failureSeverity, startDate/endDate range, pagination
+  - POST with componentId + failureMode validation, auto-link to assetId from component
+  - PUT with allowedFields whitelist for resolution data (resolvedAt, downtimeMinutes, repairCost, rootCause, etc.)
+  - DELETE with audit log
+- Created Failure Analysis aggregation API (`/api/failure-analysis`)
+  - Aggregates: failureCount, MTBF (hours), MTTR (hours), totalDowntimeMinutes, totalRepairCost
+  - Breakdowns: byMode (with percentage), bySeverity, byMonth (last 12 months)
+  - Top 5 failing components (when filtering by assetId)
+  - Reliability score (0-100) computed from failure frequency, MTBF, MTTR, severity, and recent trend
+- Created Predictive Models CRUD (`/api/predictive-models` + `/api/predictive-models/[id]`)
+  - GET list with filters: componentId, assetId, trainingStatus
+  - POST with modelName, modelType, createdById validation
+  - PUT with allowedFields for training metrics (accuracy, lastTrainedAt, dataPoints, etc.)
+  - DELETE cascades to PredictionAlerts via schema onDelete: Cascade
+- Created Prediction Alerts CRUD (`/api/prediction-alerts` + `/api/prediction-alerts/[id]`)
+  - GET list with filters: predictiveModelId, componentId, assetId, severity, isAcknowledged + pagination
+  - GET detail with full predictiveModel, component, asset, acknowledgedBy relations
+  - PUT with `acknowledge` and `resolve` action handling (sets isAcknowledged, acknowledgedById, acknowledgedAt, resolvedAt)
+- Created Model Versioning API (`/api/asset-models/[id]/versions` + `/api/asset-models/[id]/versions/latest`)
+  - GET list ordered by version desc
+  - POST auto-increments version number (queries max existing version + 1)
+  - GET latest returns base AssetModel if no versions exist (with isBaseModel flag)
+- Created Spare Parts linkage API (`/api/component-registry/[id]/spare-parts`)
+  - GET lists ComponentSparePart with InventoryItem info
+  - POST validates componentId + optional inventoryItemId, creates ComponentSparePart
+- Created Tool Requirements linkage API (`/api/component-registry/[id]/tools`)
+  - GET lists ComponentToolRequirement with Tool info
+  - POST validates componentId + optional toolId, creates ComponentToolRequirement
+- Created Component Health Score API (`/api/component-registry/[id]/health`)
+  - Computes weighted composite score: failure (30%), lifecycle (25%), inspection (20%), IoT (25%)
+  - Failure score: penalizes recent failures (90 days) and critical severity
+  - Lifecycle score: based on operatingHours vs expectedLifeHours percentage
+  - Inspection score: based on days since last inspection
+  - IoT score: based on active warning/critical alerts on linked asset
+  - Returns factors breakdown and actionable recommendations
+
+Stage Summary:
+- 15 new API route files created (14 endpoints + 1 audit helper)
+- Full CRUD for 4 new resources (ComponentRegistry, FailureRecord, PredictiveModel, PredictionAlert)
+- 4 specialized endpoints (failure-analysis aggregation, model versioning, spare-parts, tools, health score)
+- Enterprise-grade patterns: auth + permission checks on every route, audit logging on all write operations, try/catch error handling, proper HTTP status codes, input validation
+- TypeScript compiles cleanly for all new files
+- Leverages existing Prisma schema models (ComponentRegistry, FailureRecord, PredictiveModel, PredictionAlert, ModelVersion, ComponentSparePart, ComponentToolRequirement)
+
+
+---
+Task ID: DT-Phase5-6-IoT-Maintenance
+Agent: Integration Architect
+Task: IoT integration, failure analysis, predictive maintenance panels
+
+Work Log:
+- Enhanced ComponentInfoPanel with component registry, health gauge, failure analysis, spare parts
+- Created FailureAnalysisPanel with KPIs, mode distribution, severity breakdown, trend chart
+- Created PredictiveMaintenancePanel with model status, active alerts, alert history
+- Enhanced digitalTwinStore with new state fields and actions
+- Added comprehensive TypeScript types for all new entities
+- Updated barrel exports
+
+Stage Summary:
+- 2 new enterprise dashboard panels created
+- 1 existing panel enhanced (5 tab improvements)
+- Store enhanced with 4 new actions
+- 6 new TypeScript interfaces added
+- Full integration with failure analysis and predictive maintenance APIs
+
+---
+Task ID: DT-Phase3-Viewer
+Agent: 3D Viewer Architect
+Task: Enterprise-grade 3D viewer rebuild
+
+Work Log:
+- Rebuilt ModelLoader.tsx with LOD optimization (camera-distance-based mesh visibility), progressive loading with GLTFLoader progress callbacks, module-level cache with ref-counted disposal, error fallback component, and FPS performance monitoring
+- Enhanced InteractiveMesh.tsx with spring-physics-based smooth hover transitions (springLerp utility), animated selection outline opacity, double-click component isolation via store's isolateAsset, right-click context placeholder (console.log), touch support with long-press detection (500ms timer), and health-colored tooltips on hover
+- Upgraded SceneLighting.tsx with 3-point studio lighting (key light, fill light, rim light), animated orbital light motion for realism, hemisphere sky-ground fill, optional spotlight, and HDRI environment mapping via drei's Environment component
+- Enhanced GroundPlane.tsx with fade grid (fadeDistance/fadeStrength), ContactShadows shadow receiving, optional reflective ground plane component, and shadowMaterial plane for proper shadow collection
+- Improved SectionPlane.tsx with smooth opacity animation on toggle transition (isTransitioning state), glowing edge highlights on cutting plane, visual plane indicator with edge glow, invisible hit target for drag, and optimized clipping plane management (tracked via Set to avoid redundant traversals)
+- Enhanced ExplodedView.tsx with spring-based physics animation (springStep with stiffness/damping), per-mesh individual spring states, React state-driven label rendering (updated every 5 frames), and component labels during exploded view with progress-based opacity
+- Upgraded IoTOverlayLayer.tsx with dedicated HealthIndicator sub-component, critical pulsing ring effect (3D mesh), hover tooltips showing detailed telemetry (value, unit, timestamp), status dot with glow effect, and enhanced visual design with backdrop blur
+- Enhanced HotspotLayer.tsx with proximity-based visibility fade (camera distance calculation with smooth interpolation), React state-driven opacity updates (every 6 frames), expanded details panel on click, enhanced pin design with glow rings, and ping animation for critical types
+- Enhanced AnnotationLayer.tsx with 3D connecting line (drei Line component with dashed style), small sphere marker at annotation target point, float animation (per-annotation random phase), click-to-expand annotation cards, author avatar initials, and mesh reference display
+
+Stage Summary:
+- 9 component files rebuilt to enterprise-grade
+- LOD optimization for large models (camera-distance-based visibility)
+- Progressive loading with progress feedback via GLTFLoader callbacks
+- Professional 3D lighting with 3-point studio setup + HDRI environment mapping
+- Spring-physics-based animations throughout (hover, selection, explode)
+- Mobile touch support with long-press detection
+- Memory management with module-level cache and proper Three.js disposal
+- All lint checks passing (0 errors, 0 warnings across all 9 files)
+---
+Task ID: DT-Phase4-Diagrams
+Agent: Diagram Architect
+Task: Enterprise-grade system diagrams
+
+Work Log:
+- Enhanced SystemDiagramPage with template gallery, collaboration features
+- Added undo/redo, fit view, zoom, lock, export PNG, minimap toolbar
+- Added auto-layout (topological sort + grid positioning) and validation warnings
+- Added 4 new node types: PumpNode, TankNode, MotorNode, PipeNode
+- Added 3 new templates: Steam Distribution, Fire Protection, Process Flow
+- Updated DiagramTemplates with enterprise P&ID-style diagrams using new node types
+- Updated index.ts exports with all new types and templates
+- Fixed missing closing brace in DiagramTemplates.ts steam template
+- Verified no lint errors in all modified files
+
+Stage Summary:
+- SystemDiagramPage enhanced with professional toolbar (10+ actions)
+- Template gallery with miniature previews (node/edge dot visualization)
+- Collaboration features: last editor, timestamp, version on cards, duplicate button
+- Validation: disconnected nodes detection, warning badges
+- Auto-layout: topological sort into layers, grid positioning
+- 8 total node types (was 4): assetNode, sensorNode, valveNode, junctionNode, pumpNode, tankNode, motorNode, pipeNode
+- 6 total templates (was 3): Chilled Water, Electrical Distribution, Compressed Air, Steam Distribution, Fire Protection, Process Flow
+- Enterprise P&ID/schematic capabilities with industrial animations
+
+---
+Task ID: DT-Phase7-8-MainPage
+Agent: UI Architect
+Task: Enterprise-grade main page, toolbar, scene tree rebuild
+
+Work Log:
+- Rebuilt DigitalTwinMainPage with enterprise dashboard layout
+- Added 4 KPI cards with trend indicators (Active Twins, Total Scenes, IoT Alerts, Avg Health Score)
+- Added Grid View with twin cards showing 3D gradient preview, circular health indicator, stats, sync status, actions
+- Added List View with sortable table (name, type, health bar, status, last synced, alerts, actions)
+- Added Analytics View with 4 tabbed dashboards (Asset Health, IoT Summary, Maintenance, Models)
+- Added view toggle (grid/list/analytics) with LayoutGrid, List, BarChart3 icons
+- Enhanced Create Twin dialog with description field, JSON parameters editor, more sync intervals, more twin types
+- Added type filter dropdown (pump, motor, compressor, valve, heat_exchanger, conveyor, boiler, other)
+- Added circular health score SVG indicator component
+- Added 3D preview placeholder with type-specific gradient colors
+- Added delete twin functionality with confirmation via dropdown menu
+- Rebuilt TwinToolbar with 4 grouped action sections (View Controls, Analysis Tools, Display Options, Settings)
+- View Controls: Reset Camera, Fit View, Camera Presets dropdown, Fullscreen toggle
+- Analysis Tools: Exploded View with progress slider popup, Section Plane with axis selector popup, Isolation Mode, IoT Overlay
+- Display Options: Wireframe, Hotspots, Annotations, Ground Plane, Grid toggles
+- Settings: Scene Settings dropdown (Environment, Background, Export), Screenshot button
+- All toolbar toggles properly bound to Zustand store with active state highlighting
+- Enhanced SceneTreePanel with controlled expansion state via parent Set
+- Added Expand All / Collapse All buttons with tooltips
+- Added component count badges per tree node (shown when collapsed)
+- Added health indicator dots with fill-current styling
+- Added selection highlight with cyan-300 color and shadow
+- Added tooltips on tree nodes showing mesh name, health status, component count
+- Added footer status bar showing node count and selected mesh name
+- Improved expand/collapse animation with slide-in-from-top
+- Improved empty states (search no results, no scene loaded)
+- Added collapsed panel tooltip showing node count
+
+Stage Summary:
+- Main page: 3 view modes (grid/list/analytics) with enterprise-grade UI
+- Toolbar: 14+ actions in 4 groups with dropdowns and sliders
+- Scene tree: search, expand/collapse all, health dots, component count badges, tooltips
+- All components use shadcn/ui and Lucide icons
+- ESLint passes with zero errors on all 3 files

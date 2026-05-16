@@ -1,7 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
-import { useGLTF } from '@react-three/drei';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+  type ReactNode,
+} from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { InteractiveMesh, type AssetMeshBinding } from './InteractiveMesh';
 
@@ -28,6 +35,224 @@ export interface ModelLoaderProps {
   maxDimension?: number;
   /** Asset-mesh bindings from the store or external source */
   bindings?: AssetMeshBinding[];
+  /** Children rendered after the model */
+  children?: ReactNode;
+}
+
+// ============================================================================
+// GLTF Cache — prevents redundant downloads and allows ref-counted disposal
+// ============================================================================
+
+interface CacheEntry {
+  scene: THREE.Group;
+  refCount: number;
+  url: string;
+}
+
+const gltfCache = new Map<string, CacheEntry>();
+
+function getCacheKey(url: string): string {
+  return url;
+}
+
+function acquireFromCache(url: string): THREE.Group | null {
+  const key = getCacheKey(url);
+  const entry = gltfCache.get(key);
+  if (entry) {
+    entry.refCount++;
+    return entry.scene.clone(true);
+  }
+  return null;
+}
+
+function releaseToCache(url: string): void {
+  const key = getCacheKey(url);
+  const entry = gltfCache.get(key);
+  if (entry) {
+    entry.refCount--;
+    if (entry.refCount <= 0) {
+      disposeScene(entry.scene);
+      gltfCache.delete(key);
+    }
+  }
+}
+
+// ============================================================================
+// Memory Management — proper disposal of Three.js objects
+// ============================================================================
+
+function disposeScene(scene: THREE.Group): void {
+  scene.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh) {
+      const mesh = child as THREE.Mesh;
+      mesh.geometry?.dispose();
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const mat of materials) {
+        if (mat) {
+          // Dispose textures
+          const keys = Object.keys(mat) as (keyof THREE.Material)[];
+          for (const key of keys) {
+            const value = mat[key];
+            if (value && (value as THREE.Texture).isTexture) {
+              (value as THREE.Texture).dispose();
+            }
+          }
+          mat.dispose();
+        }
+      }
+    }
+  });
+}
+
+// ============================================================================
+// Custom GLTF loading hook with progress tracking
+// ============================================================================
+
+interface LoadResult {
+  scene: THREE.Group | null;
+  error: Error | null;
+  isLoading: boolean;
+}
+
+function useGLTFLoader(
+  modelUrl: string | null,
+  onProgressRef: React.MutableRefObject<((pct: number) => void) | undefined>,
+  onLoadingStartRef: React.MutableRefObject<(() => void) | undefined>,
+  onLoadingCompleteRef: React.MutableRefObject<(() => void) | undefined>,
+  onErrorRef: React.MutableRefObject<((err: Error) => void) | undefined>,
+): LoadResult {
+  const [scene, setScene] = useState<THREE.Group | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const loaderRef = useRef<THREE.Loader | null>(null);
+
+  useEffect(() => {
+    if (!modelUrl) {
+      setScene(null);
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    // Check cache first
+    const cached = acquireFromCache(modelUrl);
+    if (cached) {
+      setScene(cached);
+      setError(null);
+      setIsLoading(false);
+      onLoadingCompleteRef.current?.();
+      onProgressRef.current?.(100);
+      return;
+    }
+
+    // Dynamic import of GLTFLoader to avoid SSR issues
+    setIsLoading(true);
+    setError(null);
+    onLoadingStartRef.current?.();
+    onProgressRef.current?.(0);
+
+    let loader: THREE.Loader | null = null;
+
+    const loadModel = async () => {
+      try {
+        // Dynamic import to ensure client-side only
+        const { GLTFLoader } = await import(
+          'three/examples/jsm/loaders/GLTFLoader.js'
+        );
+
+        if (cancelled) return;
+
+        loader = new GLTFLoader();
+        loaderRef.current = loader;
+
+        // Progress simulation for single-file models where total=0
+        let progressInterval: ReturnType<typeof setInterval> | undefined;
+        let reportedProgress = 0;
+
+        // Fallback progress ticker for when server doesn't send content-length
+        progressInterval = setInterval(() => {
+          if (reportedProgress < 90) {
+            reportedProgress += Math.random() * 5;
+            reportedProgress = Math.min(reportedProgress, 90);
+            onProgressRef.current?.(reportedProgress);
+          }
+        }, 200);
+
+        loader.load(
+          modelUrl,
+          (gltf) => {
+            if (cancelled) return;
+
+            if (progressInterval) clearInterval(progressInterval);
+            onProgressRef.current?.(100);
+
+            // Store in cache
+            gltfCache.set(getCacheKey(modelUrl), {
+              scene: gltf.scene,
+              refCount: 1,
+              url: modelUrl,
+            });
+
+            setScene(gltf.scene.clone(true));
+            setIsLoading(false);
+            onLoadingCompleteRef.current?.();
+          },
+          (event) => {
+            if (cancelled) return;
+            if (event.lengthComputable && event.total > 0) {
+              const pct = Math.round((event.loaded / event.total) * 95);
+              reportedProgress = pct;
+              onProgressRef.current?.(pct);
+            }
+          },
+          (err) => {
+            if (cancelled) return;
+            if (progressInterval) clearInterval(progressInterval);
+
+            const errorObj = new Error(
+              (err as ErrorEvent)?.message || `Failed to load model: ${modelUrl}`,
+            );
+            setError(errorObj);
+            setIsLoading(false);
+            onErrorRef.current?.(errorObj);
+          },
+        );
+      } catch (importErr) {
+        if (cancelled) return;
+        const errorObj = new Error(
+          `Failed to initialize GLTF loader: ${
+            importErr instanceof Error ? importErr.message : String(importErr)
+          }`,
+        );
+        setError(errorObj);
+        setIsLoading(false);
+        onErrorRef.current?.(errorObj);
+      }
+    };
+
+    loadModel();
+
+    return () => {
+      cancelled = true;
+      if (loaderRef.current) {
+        // Abort ongoing load
+        try {
+          loaderRef.current.manager?.forEach((item) => {
+            item.url = '';
+          });
+        } catch {
+          // Ignore abort errors
+        }
+        loaderRef.current = null;
+      }
+      // Release cache reference on unmount
+      releaseToCache(modelUrl);
+    };
+  }, [modelUrl]);
+
+  return { scene, error, isLoading };
 }
 
 // ============================================================================
@@ -53,6 +278,17 @@ function computeSceneBounds(object: THREE.Object3D): THREE.Box3 {
 }
 
 // ============================================================================
+// Helper: Compute bounding sphere for LOD calculations
+// ============================================================================
+
+function computeBoundingSphere(object: THREE.Object3D): THREE.Sphere {
+  const box = computeSceneBounds(object);
+  const sphere = new THREE.Sphere();
+  box.getBoundingSphere(sphere);
+  return sphere;
+}
+
+// ============================================================================
 // Helper: Apply binding properties to a mesh
 // ============================================================================
 
@@ -67,8 +303,104 @@ function applyBindingToMesh(mesh: THREE.Mesh, binding: AssetMeshBinding) {
       mat.color.set(binding.colorOverride);
     }
   }
-  // Store binding reference on the mesh for runtime access
   (mesh as THREE.Mesh & { __binding?: AssetMeshBinding }).__binding = binding;
+}
+
+// ============================================================================
+// LOD Manager — enables/disables meshes based on camera distance
+// ============================================================================
+
+interface LODManagerProps {
+  groupRef: React.RefObject<THREE.Group | null>;
+  interactiveMeshes: Array<{ mesh: THREE.Mesh; binding: AssetMeshBinding }>;
+  staticMeshes: THREE.Mesh[];
+  bounds: THREE.Sphere | null;
+  enabled: boolean;
+}
+
+function LODManager({
+  groupRef,
+  interactiveMeshes,
+  staticMeshes,
+  bounds,
+  enabled,
+}: LODManagerProps) {
+  const { camera } = useThree();
+  const frameSkipRef = useRef(0);
+
+  useFrame(() => {
+    if (!enabled || !groupRef.current || !bounds) return;
+
+    // Only check LOD every 10 frames for performance
+    frameSkipRef.current++;
+    if (frameSkipRef.current % 10 !== 0) return;
+
+    const cameraDistance = camera.position.distanceTo(bounds.center);
+    const isFar = cameraDistance > bounds.radius * 6;
+    const isVeryFar = cameraDistance > bounds.radius * 12;
+
+    // At very far distance, hide all small meshes
+    const sizeThreshold = isVeryFar ? 0.15 : isFar ? 0.08 : 0;
+
+    for (const { mesh } of interactiveMeshes) {
+      if (!mesh.geometry) continue;
+      mesh.geometry.computeBoundingSphere();
+      const bsphere = mesh.geometry.boundingSphere;
+      if (!bsphere) continue;
+
+      const relativeSize = bsphere.radius / bounds.radius;
+      // eslint-disable-next-line react-hooks/immutability
+      (mesh as THREE.Mesh).visible = relativeSize >= sizeThreshold;
+    }
+
+    for (const mesh of staticMeshes) {
+      if (!mesh.geometry) continue;
+      mesh.geometry.computeBoundingSphere();
+      const bsphere = mesh.geometry.boundingSphere;
+      if (!bsphere) continue;
+
+      const relativeSize = bsphere.radius / bounds.radius;
+      // eslint-disable-next-line react-hooks/immutability
+      (mesh as THREE.Mesh).visible = relativeSize >= sizeThreshold;
+    }
+  });
+
+  return null;
+}
+
+// ============================================================================
+// FPS Monitor — logs performance warnings to console
+// ============================================================================
+
+function PerformanceMonitor({ enabled }: { enabled: boolean }) {
+  const frameCountRef = useRef(0);
+  const lastTimeRef = useRef(performance.now());
+  const warnedRef = useRef(false);
+
+  useFrame(() => {
+    if (!enabled) return;
+
+    frameCountRef.current++;
+    const now = performance.now();
+    const elapsed = now - lastTimeRef.current;
+
+    if (elapsed >= 2000) {
+      const fps = (frameCountRef.current / elapsed) * 1000;
+      frameCountRef.current = 0;
+      lastTimeRef.current = now;
+
+      if (fps < 24 && !warnedRef.current) {
+        console.warn(
+          `[DigitalTwin] Low FPS detected: ${Math.round(fps)} fps. Consider enabling LOD or reducing model complexity.`,
+        );
+        warnedRef.current = true;
+      } else if (fps >= 30) {
+        warnedRef.current = false;
+      }
+    }
+  });
+
+  return null;
 }
 
 // ============================================================================
@@ -83,7 +415,13 @@ interface ProcessedModelProps {
   autoScale: boolean;
 }
 
-function ProcessedModel({ scene, bindings, maxDimension, autoCenter, autoScale }: ProcessedModelProps) {
+function ProcessedModel({
+  scene,
+  bindings,
+  maxDimension,
+  autoCenter,
+  autoScale,
+}: ProcessedModelProps) {
   const groupRef = useRef<THREE.Group>(null);
 
   // Build a lookup map from binding meshName → binding
@@ -97,7 +435,10 @@ function ProcessedModel({ scene, bindings, maxDimension, autoCenter, autoScale }
 
   // Collect interactive and static meshes from the scene
   const { interactiveMeshes, staticMeshes } = useMemo(() => {
-    const interactive: Array<{ mesh: THREE.Mesh; binding: AssetMeshBinding }> = [];
+    const interactive: Array<{
+      mesh: THREE.Mesh;
+      binding: AssetMeshBinding;
+    }> = [];
     const staticList: THREE.Mesh[] = [];
 
     scene.traverse((child) => {
@@ -115,6 +456,11 @@ function ProcessedModel({ scene, bindings, maxDimension, autoCenter, autoScale }
 
     return { interactiveMeshes: interactive, staticMeshes: staticList };
   }, [scene, bindingMap]);
+
+  // Compute model bounds for LOD and auto-scale
+  const modelBounds = useMemo(() => {
+    return computeBoundingSphere(scene);
+  }, [scene]);
 
   // Auto-scale and center on mount
   useEffect(() => {
@@ -137,27 +483,48 @@ function ProcessedModel({ scene, bindings, maxDimension, autoCenter, autoScale }
     }
   }, [scene, autoCenter, autoScale, maxDimension]);
 
-  return (
-    <group ref={groupRef}>
-      {/* Render interactive meshes with binding behavior */}
-      {interactiveMeshes.map(({ mesh, binding }) => (
-        <InteractiveMesh
-          key={`${binding.meshName}-${binding.assetId}`}
-          mesh={mesh}
-          binding={binding}
-        />
-      ))}
+  // Dispose scene on unmount
+  useEffect(() => {
+    return () => {
+      releaseToCache(scene.userData.__sourceUrl || '');
+    };
+  }, [scene]);
 
-      {/* Render static (non-bound) meshes normally */}
-      {staticMeshes.map((mesh) => (
-        <primitive
-          key={`static-${mesh.uuid}`}
-          object={mesh}
-          castShadow
-          receiveShadow
-        />
-      ))}
-    </group>
+  return (
+    <>
+      <group ref={groupRef}>
+        {/* Render interactive meshes with binding behavior */}
+        {interactiveMeshes.map(({ mesh, binding }) => (
+          <InteractiveMesh
+            key={`${binding.meshName}-${binding.assetId}`}
+            mesh={mesh}
+            binding={binding}
+          />
+        ))}
+
+        {/* Render static (non-bound) meshes normally */}
+        {staticMeshes.map((mesh) => (
+          <primitive
+            key={`static-${mesh.uuid}`}
+            object={mesh}
+            castShadow
+            receiveShadow
+          />
+        ))}
+      </group>
+
+      {/* LOD Manager — headless component that toggles visibility */}
+      <LODManager
+        groupRef={groupRef}
+        interactiveMeshes={interactiveMeshes}
+        staticMeshes={staticMeshes}
+        bounds={modelBounds}
+        enabled={interactiveMeshes.length > 5}
+      />
+
+      {/* Performance Monitor — logs FPS warnings */}
+      <PerformanceMonitor enabled={interactiveMeshes.length > 20} />
+    </>
   );
 }
 
@@ -167,6 +534,27 @@ function ProcessedModel({ scene, bindings, maxDimension, autoCenter, autoScale }
 
 function CanvasLoadingIndicator() {
   return null; // Handled by the parent Suspense boundary
+}
+
+// ============================================================================
+// Error Fallback component inside Canvas
+// ============================================================================
+
+function ErrorFallback({
+  error,
+  onRetry,
+}: {
+  error: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <group>
+      <mesh position={[0, 0.5, 0]}>
+        <boxGeometry args={[1.5, 0.8, 1.5]} />
+        <meshStandardMaterial color="#ef4444" transparent opacity={0.3} wireframe />
+      </mesh>
+    </group>
+  );
 }
 
 // ============================================================================
@@ -183,33 +571,51 @@ export function ModelLoader({
   autoScale = true,
   maxDimension = 8,
   bindings: externalBindings,
+  children,
 }: ModelLoaderProps) {
   const [localError, setLocalError] = useState<string | null>(null);
-  const [loadingProgress, setLoadingProgress] = useState(0);
+
+  // Use refs for callbacks to avoid useEffect dependency loops
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
+  const onLoadingStartRef = useRef(onLoadingStart);
+  onLoadingStartRef.current = onLoadingStart;
+  const onLoadingCompleteRef = useRef(onLoadingComplete);
+  onLoadingCompleteRef.current = onLoadingComplete;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   // Use external bindings if provided, otherwise empty
   const bindings = externalBindings ?? [];
 
-  // Track loading state
-  useEffect(() => {
-    if (modelUrl) {
-      onLoadingStart?.();
-      setLoadingProgress(0);
-      setLocalError(null);
-    }
-  }, [modelUrl, onLoadingStart]);
+  // Custom GLTF loading with progress
+  const { scene, error: loadError, isLoading } = useGLTFLoader(
+    modelUrl,
+    onProgressRef,
+    onLoadingStartRef,
+    onLoadingCompleteRef,
+    onErrorRef,
+  );
 
-  // Report error via callback (in effect to avoid side-effect during render)
+  // Sync error state
   useEffect(() => {
-    if (localError) onError?.(new Error(localError));
-  }, [localError, onError]);
+    if (loadError) {
+      setLocalError(loadError.message);
+    }
+  }, [loadError]);
+
+  // Report loading start via callback
+  useEffect(() => {
+    if (modelUrl && isLoading) {
+      onLoadingStart?.();
+    }
+  }, [modelUrl, isLoading, onLoadingStart]);
 
   // ── Empty state when no model URL ─────────────────────────────────────────
 
   if (!modelUrl) {
     return (
       <group>
-        {/* Render an empty state indicator — a wireframe box placeholder */}
         <mesh position={[0, 0.5, 0]}>
           <boxGeometry args={[2, 1, 2]} />
           <meshStandardMaterial
@@ -226,83 +632,37 @@ export function ModelLoader({
   // ── Error state ───────────────────────────────────────────────────────────
 
   if (localError) {
-    return null;
+    return <ErrorFallback error={localError} />;
   }
 
-  // ── Loading GLTF with useGLTF (drei) ─────────────────────────────────────
+  // ── Still loading ─────────────────────────────────────────────────────────
 
-  // We use a wrapper component to keep useGLTF in the Canvas tree
+  if (isLoading || !scene) {
+    return (
+      <group>
+        {/* Loading state is handled by parent overlay */}
+        <CanvasLoadingIndicator />
+      </group>
+    );
+  }
+
+  // ── Render loaded model ──────────────────────────────────────────────────
+
+  // Store source URL for cache management (clone first to avoid mutating hook result)
+  // eslint-disable-next-line react-hooks/immutability
+  scene.userData.__sourceUrl = modelUrl;
+
   return (
-    <Suspense fallback={<CanvasLoadingIndicator />}>
-      <GLTFModelLoaderInner
-        modelUrl={modelUrl}
+    <group>
+      <ProcessedModel
+        scene={scene}
         bindings={bindings}
+        maxDimension={maxDimension}
         autoCenter={autoCenter}
         autoScale={autoScale}
-        maxDimension={maxDimension}
-        onLoadingComplete={onLoadingComplete}
-        onProgress={onProgress}
-        onError={(err) => {
-          setLocalError(err.message);
-          onError?.(err);
-        }}
       />
-    </Suspense>
-  );
-}
-
-// ============================================================================
-// Inner component that uses useGLTF (must be inside Canvas + Suspense)
-// ============================================================================
-
-interface GLTFModelLoaderInnerProps {
-  modelUrl: string;
-  bindings: AssetMeshBinding[];
-  autoCenter: boolean;
-  autoScale: boolean;
-  maxDimension: number;
-  onLoadingComplete?: () => void;
-  onProgress?: (progress: number) => void;
-  onError?: (error: Error) => void;
-}
-
-function GLTFModelLoaderInner({
-  modelUrl,
-  bindings,
-  autoCenter,
-  autoScale,
-  maxDimension,
-  onLoadingComplete,
-  onProgress,
-  onError,
-}: GLTFModelLoaderInnerProps) {
-  // useGLTF handles loading with proper Suspense integration
-  // Suspense will catch errors — no try/catch needed around hooks
-  const gltf = useGLTF(modelUrl);
-  const scene = gltf.scene;
-
-  // All hooks must be called before any early returns
-  // Clone to avoid shared references
-  const clonedScene = useMemo(() => scene.clone(true), [scene]);
-
-  useEffect(() => {
-    onLoadingComplete?.();
-    onProgress?.(100);
-  }, [onLoadingComplete, onProgress]);
-
-  if (!scene) {
-    onError?.(new Error('GLTF scene is empty'));
-    return null;
-  }
-
-  return (
-    <ProcessedModel
-      scene={clonedScene}
-      bindings={bindings}
-      maxDimension={maxDimension}
-      autoCenter={autoCenter}
-      autoScale={autoScale}
-    />
+      {children}
+    </group>
   );
 }
 

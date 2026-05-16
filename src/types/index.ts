@@ -652,3 +652,102 @@ export type PageName =
   | 'safety'
   | 'quality'
   | 'production';
+
+// ============================================================================
+// Digital Twin Component Registry
+// ============================================================================
+
+export interface ComponentRegistryItem {
+  id: string;
+  parentId: string | null;
+  assetId: string | null;
+  twinId: string | null;
+  componentCode: string;
+  name: string;
+  description: string | null;
+  componentType: string;
+  manufacturer: string | null;
+  modelNumber: string | null;
+  serialNumber: string | null;
+  specification: string | null;
+  operatingParams: string | null;
+  criticality: string;
+  lifecycleStatus: string;
+  installedDate: string | null;
+  expectedLifeHours: number | null;
+  operatingHours: number;
+  lastInspection: string | null;
+  nextInspectionDue: string | null;
+  healthScore: number;
+  notes: string | null;
+  children?: ComponentRegistryItem[];
+  _count?: { children: number; failureRecords: number; sparePartLinks: number };
+}
+
+export interface FailureRecord {
+  id: string;
+  componentId: string;
+  assetId: string | null;
+  workOrderId: string | null;
+  failureCode: string | null;
+  failureMode: string;
+  failureCause: string | null;
+  failureSeverity: string;
+  symptoms: string | null;
+  detectedAt: string;
+  resolvedAt: string | null;
+  downtimeMinutes: number;
+  repairCost: number | null;
+  rootCause: string | null;
+  correctiveAction: string | null;
+  preventiveAction: string | null;
+  component?: { name: string; componentCode: string };
+}
+
+export interface FailureAnalysisData {
+  failureCount: number;
+  mtbf: number | null;
+  mttr: number | null;
+  totalDowntimeMinutes: number;
+  totalRepairCost: number;
+  byMode: { mode: string; count: number; percentage: number }[];
+  bySeverity: { severity: string; count: number }[];
+  byMonth: { month: string; failures: number; downtimeMinutes: number; cost: number }[];
+  topFailingComponents: { id: string; name: string; code: string; failureCount: number }[];
+  reliabilityScore: number;
+}
+
+export interface PredictionAlertData {
+  id: string;
+  predictiveModelId: string;
+  componentId: string | null;
+  assetId: string | null;
+  alertType: string;
+  severity: string;
+  confidence: number | null;
+  predictedFailureAt: string | null;
+  message: string;
+  recommendations: string | null;
+  isAcknowledged: boolean;
+  acknowledgedById: string | null;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  predictiveModel?: { name: string; modelType: string };
+  component?: { name: string; componentCode: string };
+}
+
+export interface PredictiveModelData {
+  id: string;
+  componentId: string | null;
+  assetId: string | null;
+  modelName: string;
+  modelType: string;
+  algorithm: string | null;
+  description: string | null;
+  trainingStatus: string;
+  accuracy: number | null;
+  lastTrainedAt: string | null;
+  dataPoints: number;
+  isActive: boolean;
+}
