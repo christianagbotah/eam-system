@@ -43,7 +43,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer,
 } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
-import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
+import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 
 export function AssetsPage() {
   const [assets, setAssets] = useState<any[]>([]);
@@ -496,9 +496,9 @@ export function AssetDetailPage({ id, onBack }: { id: string; onBack: () => void
           <Card className="border-0 shadow-sm dark:bg-card">
             <CardHeader><CardTitle className="text-base">Financial</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Purchase Cost</span><span className="font-medium">${asset.purchaseCost?.toLocaleString() || '-'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Purchase Cost</span><span className="font-medium">{asset.purchaseCost ? formatCurrency(asset.purchaseCost) : '-'}</span></div>
               <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Current Value</span><span className="font-medium">${asset.currentValue?.toLocaleString() || '-'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Current Value</span><span className="font-medium">{asset.currentValue ? formatCurrency(asset.currentValue) : '-'}</span></div>
               <Separator />
               <div className="flex justify-between"><span className="text-muted-foreground">Purchase Date</span><span className="font-medium">{formatDate(asset.purchaseDate)}</span></div>
               <Separator />

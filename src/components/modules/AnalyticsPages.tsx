@@ -750,7 +750,7 @@ export function AnalyticsEnergyPage() {
 
   const summaryCards = [
     { label: 'Total Consumption', value: totalConsumption > 0 ? `${(totalConsumption / 1000).toFixed(1)} MWh` : '0 MWh', icon: Zap, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Total Cost', value: totalCost > 0 ? `₵${(totalCost / 1000).toFixed(1)}k` : '₵0', icon: TrendingUp, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Total Cost', value: totalCost > 0 ? `${formatCurrency(totalCost / 1000)}k` : '₵0', icon: TrendingUp, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
     { label: 'Avg Daily', value: `${avgDailyConsumption} kWh`, icon: BarChart3, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
     { label: 'Efficiency Score', value: `${efficiencyScore}%`, icon: Target, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];

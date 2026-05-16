@@ -1479,18 +1479,7 @@ export function CompanyProfilePage() {
               </div>
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Currency</Label>
-                <Select value={form.currency || 'GHS'} onValueChange={v => handleChange('currency', v)}>
-                  <SelectTrigger className="h-10">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="GHS">GHS - Ghana Cedi</SelectItem>
-                    <SelectItem value="USD">USD - US Dollar</SelectItem>
-                    <SelectItem value="EUR">EUR - Euro</SelectItem>
-                    <SelectItem value="GBP">GBP - British Pound</SelectItem>
-                    <SelectItem value="NGN">NGN - Nigerian Naira</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="h-10 border border-input bg-muted px-3 flex items-center text-sm text-muted-foreground rounded-md">₵ — Ghana Cedis</div>
               </div>
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Timezone</Label>
@@ -2748,16 +2737,7 @@ export function SettingsGeneralPage() {
               </div>
               <div className="space-y-2">
                 <Label>Currency</Label>
-                <Select value={profile.currency || 'GHS'} onValueChange={v => handleChange('currency', v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="GHS">GHS (₵)</SelectItem>
-                    <SelectItem value="USD">USD ($)</SelectItem>
-                    <SelectItem value="EUR">EUR (€)</SelectItem>
-                    <SelectItem value="GBP">GBP (£)</SelectItem>
-                    <SelectItem value="NGN">NGN (₦)</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="h-10 border border-input bg-muted px-3 flex items-center text-sm text-muted-foreground rounded-md">₵ — Ghana Cedis</div>
               </div>
               <div className="space-y-2">
                 <Label>Date Format</Label>

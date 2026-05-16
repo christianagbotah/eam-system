@@ -2438,3 +2438,24 @@ Stage Summary:
 - 10 new TypeScript interfaces
 - Complete digital work instruction workflow
 - Technician guidance with safety enforcement
+Task ID: currency-fix
+Agent: main
+Task: Replace all currency symbols with single Ghana Cedis symbol ₵
+
+Work Log:
+- Simplified helpers.tsx formatCurrency() to always output ₵ (removed multi-currency CURRENCY_MAP, getCompanyCurrency, Intl.NumberFormat)
+- Fixed DashboardPages.tsx: 6 hardcoded $ → formatCurrency()
+- Fixed MaintenancePages.tsx: 11 hardcoded $ and GHS → formatCurrency()
+- Fixed ReportPages.tsx: 25+ hardcoded $ and ₵ → formatCurrency()
+- Fixed AssetPages.tsx: 2 hardcoded $ → formatCurrency()
+- Fixed InventoryPages.tsx: 3 hardcoded $/₵ → formatCurrency()
+- Fixed ProductionPages.tsx: 2 hardcoded ₵ → formatCurrency()
+- Fixed AnalyticsPages.tsx: 1 hardcoded ₵ → formatCurrency()
+- Fixed RepairsPages.tsx: 3 labels already using ₵ (no change needed)
+- Fixed SettingsPages.tsx: replaced both multi-currency selectors with static ₵ display
+- Fixed DigitalTwinMainPage.tsx: removed duplicate Box import, replaced Cube → Box
+
+Stage Summary:
+- All currencies across the entire codebase now use the single ₵ symbol
+- formatCurrency() simplified to always output ₵{amount}
+- No USD, EUR, GBP, NGN, $, or GHS prefixes remain in any UI

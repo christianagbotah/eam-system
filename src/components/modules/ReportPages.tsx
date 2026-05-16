@@ -906,7 +906,7 @@ export function ReportsProductionPage() {
                 <TableCell className="text-right font-medium">{d.total}</TableCell>
                 <TableCell className="text-right text-emerald-600">{d.completed}</TableCell>
                 <TableCell className={`text-right font-medium hidden sm:table-cell ${d.completionRate >= 90 ? 'text-emerald-600' : d.completionRate >= 70 ? 'text-amber-600' : 'text-red-600'}`}>{d.completionRate}%</TableCell>
-                <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.value > 0 ? `$${d.value.toLocaleString()}` : '—'}</TableCell>
+                <TableCell className="text-right text-muted-foreground hidden md:table-cell">{d.value > 0 ? formatCurrency(d.value) : '—'}</TableCell>
               </TableRow>
             ))}
           </TableBody></Table></div>
@@ -1457,10 +1457,10 @@ export function ReportsFinancialPage() {
   const typeColors: Record<string, string> = { preventive: 'bg-emerald-500', corrective: 'bg-amber-500', emergency: 'bg-red-500', inspection: 'bg-sky-500', predictive: 'bg-violet-500', project: 'bg-teal-500' };
 
   const summaryCards = [
-    { label: 'Maintenance Cost', value: `$${totalCost.toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Inventory Value', value: `$${Math.round(totalInventoryValue).toLocaleString()}`, icon: Boxes, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Production Value', value: `$${productionValue.toLocaleString()}`, icon: Factory, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Avg WO Cost', value: `$${avgCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    { label: 'Maintenance Cost', value: formatCurrency(totalCost), icon: DollarSign, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Inventory Value', value: formatCurrency(Math.round(totalInventoryValue)), icon: Boxes, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Production Value', value: formatCurrency(productionValue), icon: Factory, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Avg WO Cost', value: formatCurrency(avgCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
   if (loading) return <div className="page-content"><LoadingSkeleton /></div>;
@@ -1478,7 +1478,7 @@ export function ReportsFinancialPage() {
           subtitle: `Date Range: ${startDate} to ${endDate}`,
           filename: 'financial-work-orders',
           headers: ['WO Number', 'Title', 'Type', 'Priority', 'Cost', 'Status'],
-          rows: workOrders.map(wo => [wo.woNumber || '', wo.title || '', wo.type || '', wo.priority || '', `$${(wo.totalCost || 0).toLocaleString()}`, wo.status || '']),
+          rows: workOrders.map(wo => [wo.woNumber || '', wo.title || '', wo.type || '', wo.priority || '', formatCurrency(wo.totalCost), wo.status || '']),
           summary: summaryCards.map(k => ({ label: k.label, value: String(k.value) })),
         })}>
           <FileDown className="h-4 w-4 mr-1.5" />Export PDF
@@ -1496,7 +1496,7 @@ export function ReportsFinancialPage() {
             <div className="flex items-end gap-3 h-48">
               {monthlyCostData.map(d => (
                 <div key={d.monthKey} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-xs font-medium">${d.totalCost.toLocaleString()}</span>
+                  <span className="text-xs font-medium">{formatCurrency(d.totalCost)}</span>
                   <div className="w-full bg-emerald-100 rounded-t-md" style={{ height: `${(d.totalCost / maxMonthlyCost) * 140}px` }}>
                     <div className="w-full h-full bg-emerald-500 rounded-t-md opacity-80" />
                   </div>
@@ -1516,7 +1516,7 @@ export function ReportsFinancialPage() {
                 <div key={type} className="flex items-center gap-3">
                   <span className="text-sm font-medium w-28 capitalize">{type.replace('_', ' ')}</span>
                   <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden"><div className={`h-full ${typeColors[type] || 'bg-slate-400'} rounded-full transition-all`} style={{ width: `${pct}%` }} /></div>
-                  <span className="text-sm font-semibold w-28 text-right">${data.cost.toLocaleString()} ({pct}%)</span>
+                  <span className="text-sm font-semibold w-28 text-right">{formatCurrency(data.cost)} ({pct}%)</span>
                 </div>
               );
             })}
@@ -1531,25 +1531,25 @@ export function ReportsFinancialPage() {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Asset Purchase Cost</span>
-              <span className="text-sm font-semibold">${totalAssetPurchaseCost.toLocaleString()}</span>
+              <span className="text-sm font-semibold">{formatCurrency(totalAssetPurchaseCost)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Asset Current Value</span>
-              <span className="text-sm font-semibold">${totalAssetCurrentValue.toLocaleString()}</span>
+              <span className="text-sm font-semibold">{formatCurrency(totalAssetCurrentValue)}</span>
             </div>
             <Separator />
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Inventory Value</span>
-              <span className="text-sm font-semibold">${Math.round(totalInventoryValue).toLocaleString()}</span>
+              <span className="text-sm font-semibold">{formatCurrency(Math.round(totalInventoryValue))}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Production Value (completed)</span>
-              <span className="text-sm font-semibold">${productionValue.toLocaleString()}</span>
+              <span className="text-sm font-semibold">{formatCurrency(productionValue)}</span>
             </div>
             <Separator />
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Total Portfolio Value</span>
-              <span className="text-lg font-bold">${(totalAssetCurrentValue + Math.round(totalInventoryValue) + productionValue).toLocaleString()}</span>
+              <span className="text-lg font-bold">{formatCurrency(totalAssetCurrentValue + Math.round(totalInventoryValue) + productionValue)}</span>
             </div>
           </div>
         </CardContent></Card>
@@ -1566,9 +1566,9 @@ export function ReportsFinancialPage() {
                 <TableCell className="text-xs capitalize hidden sm:table-cell">{(wo.type || '').replace('_', ' ')}</TableCell>
                 <TableCell className="hidden md:table-cell"><PriorityBadge priority={wo.priority} /></TableCell>
                 <TableCell><StatusBadge status={wo.status} /></TableCell>
-                <TableCell className="text-right text-muted-foreground">${(wo.materialCost || 0).toLocaleString()}</TableCell>
-                <TableCell className="text-right text-muted-foreground">${(wo.laborCost || 0).toLocaleString()}</TableCell>
-                <TableCell className="text-right font-semibold">${(wo.totalCost || 0).toLocaleString()}</TableCell>
+                <TableCell className="text-right text-muted-foreground">{formatCurrency(wo.materialCost)}</TableCell>
+                <TableCell className="text-right text-muted-foreground">{formatCurrency(wo.laborCost)}</TableCell>
+                <TableCell className="text-right font-semibold">{formatCurrency(wo.totalCost)}</TableCell>
               </TableRow>
             ))}
           </TableBody></Table>
@@ -1619,10 +1619,10 @@ export function ReportsCustomPage() {
           Object.entries(statusMap).sort((a, b) => b[1] - a[1]).forEach(([s, c]) => rows.push({ key: s, label: s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), value: c }));
         } else if (metric === 'cost') {
           const totalCost = wos.reduce((s, wo) => s + (wo.totalCost || 0), 0);
-          rows.push({ key: 'total', label: 'Total Cost', value: `$${totalCost.toLocaleString()}` });
-          rows.push({ key: 'labor', label: 'Total Labor Cost', value: `$${wos.reduce((s, wo) => s + (wo.laborCost || 0), 0).toLocaleString()}` });
-          rows.push({ key: 'material', label: 'Total Material Cost', value: `$${wos.reduce((s, wo) => s + (wo.materialCost || 0), 0).toLocaleString()}` });
-          rows.push({ key: 'avg', label: 'Avg Cost per WO', value: wos.length > 0 ? `₵${Math.round(totalCost / wos.length).toLocaleString()}` : '₵0' });
+          rows.push({ key: 'total', label: 'Total Cost', value: formatCurrency(totalCost) });
+          rows.push({ key: 'labor', label: 'Total Labor Cost', value: formatCurrency(wos.reduce((s, wo) => s + (wo.laborCost || 0), 0)) });
+          rows.push({ key: 'material', label: 'Total Material Cost', value: formatCurrency(wos.reduce((s, wo) => s + (wo.materialCost || 0), 0)) });
+          rows.push({ key: 'avg', label: 'Avg Cost per WO', value: wos.length > 0 ? formatCurrency(Math.round(totalCost / wos.length)) : '₵0' });
         } else if (metric === 'hours') {
           const totalActual = wos.reduce((s, wo) => s + (wo.actualHours || 0), 0);
           const totalEst = wos.reduce((s, wo) => s + (wo.estimatedHours || 0), 0);
@@ -1643,9 +1643,9 @@ export function ReportsCustomPage() {
         } else if (metric === 'cost') {
           const totalPurchase = items.reduce((s, a) => s + (a.purchaseCost || 0), 0);
           const totalCurrent = items.reduce((s, a) => s + (a.currentValue || 0), 0);
-          rows.push({ key: 'purchase', label: 'Total Purchase Cost', value: `$${totalPurchase.toLocaleString()}` });
-          rows.push({ key: 'current', label: 'Total Current Value', value: `$${totalCurrent.toLocaleString()}` });
-          rows.push({ key: 'avg', label: 'Avg per Asset', value: items.length > 0 ? `₵${Math.round(totalCurrent / items.length).toLocaleString()}` : '₵0' });
+          rows.push({ key: 'purchase', label: 'Total Purchase Cost', value: formatCurrency(totalPurchase) });
+          rows.push({ key: 'current', label: 'Total Current Value', value: formatCurrency(totalCurrent) });
+          rows.push({ key: 'avg', label: 'Avg per Asset', value: items.length > 0 ? formatCurrency(Math.round(totalCurrent / items.length)) : '₵0' });
         } else if (metric === 'priority') {
           const condMap: Record<string, number> = {};
           items.forEach(a => { const c = a.condition || 'unknown'; condMap[c] = (condMap[c] || 0) + 1; });
@@ -1662,9 +1662,9 @@ export function ReportsCustomPage() {
         } else if (metric === 'cost') {
           const totalValue = items.reduce((s, i) => s + ((i.currentStock || 0) * (i.unitCost || 0)), 0);
           const lowStock = items.filter(i => i.currentStock <= i.minStockLevel).length;
-          rows.push({ key: 'totalValue', label: 'Total Inventory Value', value: `$${totalValue.toLocaleString()}` });
+          rows.push({ key: 'totalValue', label: 'Total Inventory Value', value: formatCurrency(totalValue) });
           rows.push({ key: 'lowStock', label: 'Low Stock Items', value: lowStock });
-          rows.push({ key: 'avg', label: 'Avg Value per Item', value: items.length > 0 ? `₵${Math.round(totalValue / items.length).toLocaleString()}` : '₵0' });
+          rows.push({ key: 'avg', label: 'Avg Value per Item', value: items.length > 0 ? formatCurrency(Math.round(totalValue / items.length)) : '₵0' });
         } else {
           rows.push({ key: 'total', label: 'Total Items', value: items.length });
           rows.push({ key: 'totalStock', label: 'Total Stock Units', value: items.reduce((s, i) => s + (i.currentStock || 0), 0) });

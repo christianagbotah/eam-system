@@ -5,7 +5,7 @@ import { format, subDays } from 'date-fns';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { api } from '@/lib/api';
-import { timeAgo } from '@/components/shared/helpers';
+import { timeAgo, formatCurrency } from '@/components/shared/helpers';
 import type { DashboardStats, PageName } from '@/types';
 
 import { Button } from '@/components/ui/button';
@@ -523,8 +523,8 @@ export function DashboardPage() {
           {/* Monthly Cost */}
           <KPICard
             label="Maintenance Cost"
-            value={`$${costAnalysis.thisMonthTotal.toLocaleString()}`}
-            sublabel={costAnalysis.lastMonthTotal > 0 ? `vs $${costAnalysis.lastMonthTotal.toLocaleString()} last month` : 'This month'}
+            value={formatCurrency(costAnalysis.thisMonthTotal)}
+            sublabel={costAnalysis.lastMonthTotal > 0 ? `vs ${formatCurrency(costAnalysis.lastMonthTotal)} last month` : 'This month'}
             color={costTrend > 0 ? '#ef4444' : '#10b981'}
             bgColor={costTrend > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}
             borderColor={costTrend > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40'}
@@ -852,15 +852,15 @@ export function DashboardPage() {
               <div className="grid grid-cols-3 gap-3">
                 <div className="px-3 py-3 rounded-xl border border-sky-100 dark:border-sky-900/40 bg-sky-50 dark:bg-sky-950/30 text-center">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Labor</p>
-                  <p className="text-lg font-bold text-sky-600 dark:text-sky-400">${costAnalysis.thisMonthLabor.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-sky-600 dark:text-sky-400">{formatCurrency(costAnalysis.thisMonthLabor)}</p>
                 </div>
                 <div className="px-3 py-3 rounded-xl border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 text-center">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Parts</p>
-                  <p className="text-lg font-bold text-amber-600 dark:text-amber-400">${costAnalysis.thisMonthParts.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-amber-600 dark:text-amber-400">{formatCurrency(costAnalysis.thisMonthParts)}</p>
                 </div>
                 <div className="px-3 py-3 rounded-xl border border-violet-100 dark:border-violet-900/40 bg-violet-50 dark:bg-violet-950/30 text-center">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Contractor</p>
-                  <p className="text-lg font-bold text-violet-600 dark:text-violet-400">${costAnalysis.thisMonthContractor.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-violet-600 dark:text-violet-400">{formatCurrency(costAnalysis.thisMonthContractor)}</p>
                 </div>
               </div>
               {/* Cost by type stacked bar */}
@@ -875,7 +875,7 @@ export function DashboardPage() {
                       <div key={type} className="space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-medium capitalize">{type.replace(/_/g, ' ')}</span>
-                          <span className="text-xs font-bold text-muted-foreground">${Math.round(costs.totalCost).toLocaleString()}</span>
+                          <span className="text-xs font-bold text-muted-foreground">{formatCurrency(Math.round(costs.totalCost))}</span>
                         </div>
                         <div className="h-2 bg-muted rounded-full overflow-hidden">
                           <div

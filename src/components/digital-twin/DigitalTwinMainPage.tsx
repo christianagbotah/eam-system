@@ -48,6 +48,7 @@ import {
   Activity,
   Clock,
   Wifi,
+  ChevronRight,
   Filter,
   Upload,
   LayoutGrid,
@@ -314,6 +315,70 @@ function KpiCardSkeleton() {
             <Skeleton className="h-7 w-16" />
             <Skeleton className="h-3 w-24" />
           </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Twin Card
+// ============================================================================
+
+function TwinCard({ twin, onOpenViewer, onOpenDiagram }: any) {
+  return (
+    <Card className="border-border/60 hover:border-emerald-200 dark:hover:border-emerald-800/40 transition-all duration-200 cursor-pointer group">
+      <CardContent className="p-5 space-y-3">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm truncate">{twin.name}</p>
+            <p className="text-xs text-muted-foreground truncate">{twin.assetName}</p>
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
+                <MoreVertical className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel className="text-xs">Actions</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onOpenViewer}><Eye className="h-3.5 w-3.5 mr-1.5" />Open 3D Viewer</DropdownMenuItem>
+              <DropdownMenuItem onClick={onOpenDiagram}><GitBranch className="h-3.5 w-3.5 mr-1.5" />System Diagram</DropdownMenuItem>
+              <DropdownMenuItem><Edit className="h-3.5 w-3.5 mr-1.5" />Edit</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-destructive"><Trash2 className="h-3.5 w-3.5 mr-1.5" />Delete</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Type badge */}
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary" className="text-[10px] capitalize">
+            <Box className="h-3 w-3 mr-1" />
+            {twin.type.replace(/_/g, ' ')}
+          </Badge>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex gap-2 pt-1">
+          <Button
+            size="sm"
+            className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs h-8"
+            onClick={onOpenViewer}
+          >
+            <Eye className="h-3.5 w-3.5 mr-1.5" />
+            Open 3D Viewer
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1 text-xs h-8"
+            onClick={onOpenDiagram}
+          >
+            <GitBranch className="h-3.5 w-3.5 mr-1.5" />
+            System Diagram
+          </Button>
         </div>
       </CardContent>
     </Card>

@@ -17,46 +17,17 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 
 // ============================================================================
-// CURRENCY & NUMBER FORMATTING (Ghana GHS by default)
+// CURRENCY & NUMBER FORMATTING (Ghana Cedis)
 // ============================================================================
 
-const CURRENCY_MAP: Record<string, { code: string; symbol: string; locale: string }> = {
-  GHS: { code: 'GHS', symbol: '₵', locale: 'en-GH' },
-  USD: { code: 'USD', symbol: '$', locale: 'en-US' },
-  EUR: { code: 'EUR', symbol: '€', locale: 'de-DE' },
-  GBP: { code: 'GBP', symbol: '£', locale: 'en-GB' },
-  NGN: { code: 'NGN', symbol: '₦', locale: 'en-NG' },
-};
-
-/** Get company currency from localStorage (set during login) */
-function getCompanyCurrency(): string {
-  if (typeof window !== 'undefined') {
-    return localStorage.getItem('company_currency') || 'GHS';
-  }
-  return 'GHS';
-}
-
-/** Format a number as currency (default GHS) */
-export function formatCurrency(amount: number | undefined | null, currencyCode?: string): string {
+/** Format a number as Ghana Cedis (₵) */
+export function formatCurrency(amount: number | undefined | null): string {
   if (amount == null || isNaN(amount)) return '-';
-  const code = currencyCode || getCompanyCurrency();
-  const curr = CURRENCY_MAP[code] || CURRENCY_MAP.GHS;
-
-  try {
-    return new Intl.NumberFormat(curr.locale, {
-      style: 'currency',
-      currency: curr.code,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  } catch {
-    // Fallback: manual formatting
-    const formatted = Math.abs(amount).toLocaleString(undefined, {
-      minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
-      maximumFractionDigits: 2,
-    });
-    return `${amount < 0 ? '-' : ''}${curr.symbol}${formatted}`;
-  }
+  const formatted = Math.abs(amount).toLocaleString(undefined, {
+    minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+  return `${amount < 0 ? '-' : ''}₵${formatted}`;
 }
 
 /** Format a number with commas (e.g. 1,234,567) */

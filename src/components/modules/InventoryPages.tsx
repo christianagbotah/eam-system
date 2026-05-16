@@ -36,7 +36,7 @@ import {
   CheckCircle2, Check, ClipboardCheck, ClipboardList, Clock, Filter, DollarSign, Box, Star,
   XCircle, Loader2,
 } from 'lucide-react';
-import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
+import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { AsyncSearchableSelect, SearchableSelect } from '@/components/ui/searchable-select';
 
 export function InventoryPage() {
@@ -178,10 +178,10 @@ export function InventoryPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              ${(kpi?.totalValue ?? stats.totalValue).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              {formatCurrency(kpi?.totalValue ?? stats.totalValue)}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {kpi?.avgUnitCost != null ? `Avg ₵${kpi.avgUnitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/unit` : 'total inventory value'}
+              {kpi?.avgUnitCost != null ? `Avg ${formatCurrency(kpi.avgUnitCost)}/unit` : 'total inventory value'}
             </p>
           </CardContent>
         </Card>
@@ -287,7 +287,7 @@ export function InventoryPage() {
                         <p className="text-[10px] text-muted-foreground mt-0.5">Min: {i.minStockLevel}</p>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm hidden md:table-cell">{i.unitCost ? `₵${i.unitCost.toLocaleString()}` : '-'}</TableCell>
+                    <TableCell className="text-sm hidden md:table-cell">{i.unitCost ? formatCurrency(i.unitCost) : '-'}</TableCell>
                     <TableCell className="text-sm hidden lg:table-cell">{i.location || '-'}</TableCell>
                     <TableCell>
                       <DropdownMenu>
@@ -1526,7 +1526,7 @@ export function InventoryPurchaseOrdersPage() {
                 <TableCell className="font-mono text-sm font-medium">{po.poNumber}</TableCell>
                 <TableCell className="font-medium">{po.supplier?.name || '-'}</TableCell>
                 <TableCell className="hidden sm:table-cell">{po.items?.length || 0}</TableCell>
-                <TableCell className="hidden sm:table-cell font-medium">${(po.totalAmount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</TableCell>
+                <TableCell className="hidden sm:table-cell font-medium">{formatCurrency(po.totalAmount)}</TableCell>
                 <TableCell className="hidden md:table-cell"><PriorityBadge priority={po.priority} /></TableCell>
                 <TableCell><Badge variant="outline" className={poStatusColors[po.status]}>{po.status?.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
                 <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(po.createdAt)}</TableCell>

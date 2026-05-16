@@ -49,7 +49,7 @@ import {
 } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
-import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
+import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
@@ -2348,7 +2348,7 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               </div>
               <div className="p-3 rounded-lg bg-muted/50 text-center">
                 <p className="text-xs text-muted-foreground">Total Cost</p>
-                <p className="text-lg font-bold">GHS {(wo.totalCost || 0).toFixed(2)}</p>
+                <p className="text-lg font-bold">{formatCurrency(wo.totalCost)}</p>
               </div>
             </div>
             <div className="space-y-2">
@@ -2635,8 +2635,8 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                           <TableRow key={m.id}>
                             <TableCell className="font-medium text-sm">{m.itemName || '-'}</TableCell>
                             <TableCell className="text-right text-sm">{m.quantity || 0} {m.unit || ''}</TableCell>
-                            <TableCell className="text-right text-sm hidden sm:table-cell">${(m.unitCost || 0).toFixed(2)}</TableCell>
-                            <TableCell className="text-right text-sm hidden sm:table-cell font-medium">${(m.totalCost || (m.quantity || 0) * (m.unitCost || 0)).toFixed(2)}</TableCell>
+                            <TableCell className="text-right text-sm hidden sm:table-cell">{formatCurrency(m.unitCost)}</TableCell>
+                            <TableCell className="text-right text-sm hidden sm:table-cell font-medium">{formatCurrency(m.totalCost || (m.quantity || 0) * (m.unitCost || 0))}</TableCell>
                             <TableCell><Badge variant="outline" className={`text-[10px] capitalize ${m.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : m.status === 'issued' ? 'bg-sky-50 text-sky-700 border-sky-200' : m.status === 'returned' ? 'bg-slate-50 text-slate-500 border-slate-200' : ''}`}>{m.status || 'requested'}</Badge></TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1">
@@ -2661,7 +2661,7 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                   </div>
                   <div className="flex justify-end mt-3 pt-3 border-t">
                     <div className="text-sm font-semibold">
-                      Total: ${wo.materials.reduce((sum, m) => sum + (m.totalCost || (m.quantity || 0) * (m.unitCost || 0)), 0).toFixed(2)}
+                      Total: {formatCurrency(wo.materials.reduce((sum, m) => sum + (m.totalCost || (m.quantity || 0) * (m.unitCost || 0)), 0))}
                     </div>
                   </div>
                 </>
@@ -2831,10 +2831,10 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
           <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Cost Summary</CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Material</span><span className="font-medium">GHS {(wo.materialCost || 0).toFixed(2)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Labor</span><span className="font-medium">GHS {(wo.laborCost || 0).toFixed(2)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Material</span><span className="font-medium">{formatCurrency(wo.materialCost)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Labor</span><span className="font-medium">{formatCurrency(wo.laborCost)}</span></div>
               <Separator />
-              <div className="flex justify-between font-semibold"><span>Total</span><span>GHS {(wo.totalCost || 0).toFixed(2)}</span></div>
+              <div className="flex justify-between font-semibold"><span>Total</span><span>{formatCurrency(wo.totalCost)}</span></div>
             </CardContent>
           </Card>
 
@@ -3898,7 +3898,7 @@ export function MaintenanceAnalyticsPage() {
     { label: 'MTTR (Hours)', value: mttr, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'MTBF (Hours)', value: mtbf, icon: Activity, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
     { label: 'PM Compliance', value: `${pmCompliance}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Total Maintenance Cost', value: `$${totalCost.toLocaleString()}`, icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    { label: 'Total Maintenance Cost', value: formatCurrency(totalCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
   return (
@@ -3947,9 +3947,9 @@ export function MaintenanceAnalyticsPage() {
                 <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
                 <TableCell className="font-medium max-w-[200px] truncate">{wo.title}</TableCell>
                 <TableCell className="text-xs capitalize">{wo.type.replace('_', ' ')}</TableCell>
-                <TableCell className="text-right font-semibold">${(wo.totalCost || 0).toLocaleString()}</TableCell>
-                <TableCell className="text-right text-muted-foreground">${(wo.materialCost || 0).toLocaleString()}</TableCell>
-                <TableCell className="text-right text-muted-foreground">${(wo.laborCost || 0).toLocaleString()}</TableCell>
+                <TableCell className="text-right font-semibold">{formatCurrency(wo.totalCost)}</TableCell>
+                <TableCell className="text-right text-muted-foreground">{formatCurrency(wo.materialCost)}</TableCell>
+                <TableCell className="text-right text-muted-foreground">{formatCurrency(wo.laborCost)}</TableCell>
                 <TableCell className="hidden md:table-cell text-muted-foreground">{wo.actualHours || '-'}</TableCell>
               </TableRow>
             ))}
