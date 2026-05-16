@@ -79,6 +79,7 @@ db/*.db-journal
 .config
 .stats
 .git-credentials
+.zscripts/
 
 # Environment variables (never commit)
 .env
