@@ -1,3 +1,0 @@
-{
-  "/api/maintenance-requests/[id]/reject/route": "app/api/maintenance-requests/[id]/reject/route.js"
-}

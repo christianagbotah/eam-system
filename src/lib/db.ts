@@ -1,22 +1,14 @@
 import { PrismaClient } from '@prisma/client'
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
-}
+let _db: PrismaClient | null = null
 
-function createPrismaClient(): PrismaClient {
-  const dbUrl = process.env.DATABASE_URL || ''
+function getDb(): PrismaClient {
+  if (_db) return _db
 
-  // Sandbox/local: use SQLite (no adapter needed)
-  if (dbUrl.startsWith('file:') || dbUrl.includes('sqlite')) {
-    return new PrismaClient()
-  }
-
-  // Production: use MariaDB adapter
-  // Dynamic import to avoid bundling the adapter in sandbox builds
   try {
+    // Use relative path to avoid @/ alias resolution issues with require()
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { PrismaMariaDb } = require('@prisma/adapter-mariadb')
+    const { createAdapter } = require('./create-mariadb-adapter')
 
     const host = process.env.DB_HOST
     const port = process.env.DB_PORT || '3306'
@@ -25,36 +17,26 @@ function createPrismaClient(): PrismaClient {
     const database = process.env.DB_NAME
 
     if (host && user && password && database) {
-      const adapter = new PrismaMariaDb({
-        host,
-        port: parseInt(port),
-        user,
-        password,
-        database,
-      })
-      return new PrismaClient({ adapter })
+      const adapter = createAdapter({ host, port: parseInt(port), user, password, database })
+      _db = new PrismaClient({ adapter })
+      console.log('[db] Connected to MariaDB:', host, '/', database)
+      return _db
     }
-
-    // Fallback: parse from DATABASE_URL
-    const match = dbUrl.match(/mysql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/)
-    if (match) {
-      const adapter = new PrismaMariaDb({
-        host: match[3],
-        port: parseInt(match[4]),
-        user: match[1],
-        password: match[2],
-        database: match[5],
-      })
-      return new PrismaClient({ adapter })
-    }
-  } catch {
-    // MariaDB adapter not available (sandbox) — use plain PrismaClient
-    console.warn('[db] MariaDB adapter not available, falling back to default PrismaClient')
+  } catch (e) {
+    console.warn('[db] MariaDB adapter not available, falling back to default:', (e as Error).message)
   }
 
-  return new PrismaClient()
+  _db = new PrismaClient()
+  return _db
 }
 
-export const db = globalForPrisma.prisma ?? createPrismaClient()
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
+export const db = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    const client = getDb()
+    const value = (client as any)[prop]
+    if (typeof value === 'function') {
+      return value.bind(client)
+    }
+    return value
+  },
+})
