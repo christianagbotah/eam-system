@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { assetId, name, description, fileName, fileSize, fileType, fileUrl, format, meshCount, vertices } = body;
+    const { assetId, name, fileName, fileSize, fileType, filePath, format, meshCount, vertexCount } = body;
 
     if (!assetId) {
       return NextResponse.json({ success: false, error: 'Asset ID is required' }, { status: 400 });
@@ -100,14 +100,13 @@ export async function POST(request: NextRequest) {
       data: {
         assetId,
         name,
-        description: description || null,
         fileName: fileName || null,
         fileSize: fileSize ? parseFloat(String(fileSize)) : null,
         fileType: fileType || null,
-        fileUrl: fileUrl || null,
+        filePath: filePath || null,
         format: format || 'gltf',
         meshCount: meshCount ? parseInt(String(meshCount), 10) : null,
-        vertices: vertices ? parseInt(String(vertices), 10) : null,
+        vertexCount: vertexCount ? parseInt(String(vertexCount), 10) : null,
         uploadedById: session.userId,
       },
       include: {

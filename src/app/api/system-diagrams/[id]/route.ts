@@ -21,7 +21,7 @@ export async function GET(
     const diagram = await db.systemDiagram.findUnique({
       where: { id },
       include: {
-        createdBy: { select: { id: true, fullName: true, username: true } },
+        createdByIdUser: { select: { id: true, fullName: true, username: true } },
       },
     });
 
@@ -59,7 +59,7 @@ export async function PUT(
     }
 
     const updateData: Record<string, unknown> = {};
-    const allowedFields = ['name', 'description', 'diagramType', 'nodes', 'edges', 'viewport', 'isTemplate'];
+    const allowedFields = ['name', 'description', 'type', 'nodes', 'edges', 'viewport', 'plantId'];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -75,7 +75,7 @@ export async function PUT(
       where: { id },
       data: updateData,
       include: {
-        createdBy: { select: { id: true, fullName: true, username: true } },
+        createdByIdUser: { select: { id: true, fullName: true, username: true } },
       },
     });
 
@@ -91,7 +91,7 @@ export async function PUT(
         action: 'update',
         entityType: 'system_diagram',
         entityId: id,
-        oldValues: JSON.stringify({ name: existing.name, diagramType: existing.diagramType, version: existing.version }),
+        oldValues: JSON.stringify({ name: existing.name, type: existing.type, version: existing.version }),
         newValues: JSON.stringify(updateData),
       },
     });
@@ -132,7 +132,7 @@ export async function DELETE(
         action: 'delete',
         entityType: 'system_diagram',
         entityId: id,
-        oldValues: JSON.stringify({ name: existing.name, diagramType: existing.diagramType }),
+        oldValues: JSON.stringify({ name: existing.name, type: existing.type }),
         newValues: JSON.stringify({ deleted: true }),
       },
     });

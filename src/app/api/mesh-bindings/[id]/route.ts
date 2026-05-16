@@ -83,14 +83,14 @@ export async function PUT(
     }
 
     const updateData: Record<string, unknown> = {};
-    const allowedFields = ['meshName', 'meshIndex', 'assetId', 'color', 'opacity', 'isInteractive'];
+    const allowedFields = ['meshName', 'meshPath', 'meshType', 'assetId', 'colorOverride', 'opacity', 'isClickable', 'isVisible', 'explodeOffset', 'metadata'];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
-        if (field === 'meshIndex') {
-          updateData[field] = body[field] !== null ? parseInt(String(body[field]), 10) : null;
-        } else if (field === 'opacity') {
+        if (field === 'opacity') {
           updateData[field] = body[field] !== null ? parseFloat(String(body[field])) : null;
+        } else if (field === 'explodeOffset' || field === 'metadata') {
+          updateData[field] = body[field] !== null ? JSON.stringify(body[field]) : null;
         } else {
           updateData[field] = body[field];
         }

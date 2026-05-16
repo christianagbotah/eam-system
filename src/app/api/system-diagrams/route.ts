@@ -15,8 +15,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
-    const diagramType = searchParams.get('diagramType');
-    const isTemplate = searchParams.get('isTemplate');
+    const type = searchParams.get('type');
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
 
@@ -29,19 +28,15 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    if (diagramType) {
-      where.diagramType = diagramType;
-    }
-
-    if (isTemplate !== null && isTemplate !== undefined) {
-      where.isTemplate = isTemplate === 'true';
+    if (type) {
+      where.type = type;
     }
 
     const [diagrams, total] = await Promise.all([
       db.systemDiagram.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,
         include: {
-          createdBy: { select: { id: true, fullName: true, username: true } },
+          createdByIdUser: { select: { id: true, fullName: true, username: true } },
         },
         orderBy: { updatedAt: 'desc' },
         skip: (page - 1) * limit,
@@ -78,18 +73,18 @@ export async function POST(request: NextRequest) {
     const {
       name,
       description,
-      diagramType,
+      type,
       nodes,
       edges,
       viewport,
-      isTemplate,
+      plantId,
     } = body;
 
     if (!name) {
       return NextResponse.json({ success: false, error: 'Diagram name is required' }, { status: 400 });
     }
 
-    if (!diagramType) {
+    if (!type) {
       return NextResponse.json({ success: false, error: 'Diagram type is required' }, { status: 400 });
     }
 
@@ -105,15 +100,15 @@ export async function POST(request: NextRequest) {
       data: {
         name,
         description: description || null,
-        diagramType,
+        type,
         nodes: JSON.stringify(nodes),
         edges: JSON.stringify(edges),
         viewport: viewport ? JSON.stringify(viewport) : null,
+        plantId: plantId || null,
         createdById: session.userId,
-        isTemplate: isTemplate || false,
       },
       include: {
-        createdBy: { select: { id: true, fullName: true, username: true } },
+        createdByIdUser: { select: { id: true, fullName: true, username: true } },
       },
     });
 
@@ -123,7 +118,7 @@ export async function POST(request: NextRequest) {
         action: 'create',
         entityType: 'system_diagram',
         entityId: diagram.id,
-        newValues: JSON.stringify({ name, diagramType, nodeCount: nodes.length, edgeCount: edges.length, isTemplate: isTemplate || false }),
+        newValues: JSON.stringify({ name, type, nodeCount: nodes.length, edgeCount: edges.length }),
       },
     });
 

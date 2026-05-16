@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { modelId, meshName, meshIndex, assetId, color, opacity, isInteractive } = body;
+    const { modelId, meshName, meshPath, meshType, assetId, colorOverride, opacity, isClickable, isVisible, explodeOffset, metadata } = body;
 
     if (!modelId) {
       return NextResponse.json({ success: false, error: 'Model ID is required' }, { status: 400 });
@@ -93,11 +93,15 @@ export async function POST(request: NextRequest) {
       data: {
         modelId,
         meshName,
-        meshIndex: meshIndex !== undefined ? parseInt(String(meshIndex), 10) : null,
+        meshPath: meshPath || null,
+        meshType: meshType || 'component',
         assetId,
-        color: color || null,
+        colorOverride: colorOverride || null,
         opacity: opacity !== undefined ? parseFloat(String(opacity)) : null,
-        isInteractive: isInteractive !== undefined ? isInteractive : true,
+        isClickable: isClickable !== undefined ? isClickable : true,
+        isVisible: isVisible !== undefined ? isVisible : true,
+        explodeOffset: explodeOffset ? JSON.stringify(explodeOffset) : null,
+        metadata: metadata ? JSON.stringify(metadata) : null,
       },
       include: {
         model: { select: { id: true, name: true, format: true } },

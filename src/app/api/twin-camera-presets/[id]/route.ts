@@ -2,6 +2,40 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!hasPermission(session, 'digital_twin.view') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
+    const { id } = await params;
+
+    const preset = await db.twinCameraPreset.findUnique({
+      where: { id },
+      include: {
+        scene: true,
+      },
+    });
+
+    if (!preset) {
+      return NextResponse.json({ success: false, error: 'Camera preset not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, data: preset });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to load twin camera preset';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -27,14 +61,14 @@ export async function PUT(
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
       'name', 'description', 'position', 'target',
-      'fov', 'near', 'far', 'isDefault', 'sortOrder',
+      'fov', 'transitionDuration', 'sortOrder',
     ];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
         if (field === 'position' || field === 'target') {
           updateData[field] = body[field] !== null ? JSON.stringify(body[field]) : null;
-        } else if (field === 'fov' || field === 'near' || field === 'far') {
+        } else if (field === 'fov' || field === 'transitionDuration') {
           updateData[field] = body[field] !== null ? parseFloat(String(body[field])) : null;
         } else if (field === 'sortOrder') {
           updateData[field] = body[field] !== null ? parseInt(String(body[field]), 10) : 0;
@@ -42,14 +76,6 @@ export async function PUT(
           updateData[field] = body[field];
         }
       }
-    }
-
-    // If setting as default, unset other defaults for this scene
-    if (updateData.isDefault === true) {
-      await db.twinCameraPreset.updateMany({
-        where: { sceneId: existing.sceneId, isDefault: true, id: { not: id } },
-        data: { isDefault: false },
-      });
     }
 
     const updated = await db.twinCameraPreset.update({
@@ -63,7 +89,7 @@ export async function PUT(
         action: 'update',
         entityType: 'twin_camera_preset',
         entityId: id,
-        oldValues: JSON.stringify({ name: existing.name, isDefault: existing.isDefault }),
+        oldValues: JSON.stringify({ name: existing.name, fov: existing.fov }),
         newValues: JSON.stringify(updateData),
       },
     });

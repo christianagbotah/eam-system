@@ -1916,6 +1916,9 @@ model DigitalTwin {
   createdBy User               @relation("DigitalTwinCreatedBy", fields: [createdById], references: [id])
   scenes    DigitalTwinScene[]
 
+  @@index([assetId])
+  @@index([createdById])
+  @@index([isActive])
   @@map("digital_twins")
 }
 
@@ -1946,6 +1949,8 @@ model AssetModel {
   bindings   AssetMeshBinding[]
   scenes     DigitalTwinScene[]
 
+  @@index([assetId])
+  @@index([uploadedById])
   @@map("asset_models")
 }
 
@@ -1971,6 +1976,8 @@ model AssetMeshBinding {
   hotspots TwinHotspot[]
 
   @@unique([modelId, meshName])
+  @@index([modelId])
+  @@index([assetId])
   @@map("asset_mesh_bindings")
 }
 
@@ -2001,6 +2008,9 @@ model DigitalTwinScene {
   annotations   TwinAnnotation[]
   cameraPresets TwinCameraPreset[]
 
+  @@index([twinId])
+  @@index([modelId])
+  @@index([createdById])
   @@map("digital_twin_scenes")
 }
 
@@ -2026,6 +2036,9 @@ model TwinHotspot {
   binding AssetMeshBinding? @relation(fields: [bindingId], references: [id], onDelete: Cascade)
   asset   Asset?            @relation("HotspotAsset", fields: [assetId], references: [id])
 
+  @@index([sceneId])
+  @@index([assetId])
+  @@index([bindingId])
   @@map("twin_hotspots")
 }
 
@@ -2043,6 +2056,7 @@ model TwinCameraPreset {
 
   scene DigitalTwinScene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
 
+  @@index([sceneId])
   @@map("twin_camera_presets")
 }
 
@@ -2064,6 +2078,9 @@ model TwinAnnotation {
   scene  DigitalTwinScene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
   author User             @relation(fields: [authorId], references: [id])
 
+  @@index([sceneId])
+  @@index([authorId])
+  @@index([assetId])
   @@map("twin_annotations")
 }
 
@@ -2085,6 +2102,9 @@ model SystemDiagram {
 
   createdByIdUser User @relation("SystemDiagramCreatedBy", fields: [createdById], references: [id])
 
+  @@index([plantId])
+  @@index([createdById])
+  @@index([type])
   @@map("system_diagrams")
 }
 

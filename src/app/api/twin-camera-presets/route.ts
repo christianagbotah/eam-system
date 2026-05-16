@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 
     const presets = await db.twinCameraPreset.findMany({
       where: { sceneId },
-      orderBy: [{ isDefault: 'desc' }, { sortOrder: 'asc' }],
+      orderBy: { sortOrder: 'asc' },
     });
 
     return NextResponse.json({ success: true, data: presets });
@@ -51,9 +51,7 @@ export async function POST(request: NextRequest) {
       position,
       target,
       fov,
-      near,
-      far,
-      isDefault,
+      transitionDuration,
       sortOrder,
     } = body;
 
@@ -75,14 +73,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Scene not found' }, { status: 404 });
     }
 
-    // If setting as default, unset other defaults for this scene
-    if (isDefault) {
-      await db.twinCameraPreset.updateMany({
-        where: { sceneId, isDefault: true },
-        data: { isDefault: false },
-      });
-    }
-
     const preset = await db.twinCameraPreset.create({
       data: {
         sceneId,
@@ -90,10 +80,8 @@ export async function POST(request: NextRequest) {
         description: description || null,
         position: JSON.stringify(position),
         target: target ? JSON.stringify(target) : null,
-        fov: fov !== undefined ? parseFloat(String(fov)) : 75,
-        near: near !== undefined ? parseFloat(String(near)) : 0.1,
-        far: far !== undefined ? parseFloat(String(far)) : 1000,
-        isDefault: isDefault || false,
+        fov: fov !== undefined ? parseFloat(String(fov)) : 50,
+        transitionDuration: transitionDuration !== undefined ? parseFloat(String(transitionDuration)) : 1.0,
         sortOrder: sortOrder !== undefined ? parseInt(String(sortOrder), 10) : 0,
       },
     });
@@ -104,7 +92,7 @@ export async function POST(request: NextRequest) {
         action: 'create',
         entityType: 'twin_camera_preset',
         entityId: preset.id,
-        newValues: JSON.stringify({ name, sceneId, isDefault: isDefault || false }),
+        newValues: JSON.stringify({ name, sceneId }),
       },
     });
 

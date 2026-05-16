@@ -28,7 +28,7 @@ export async function GET(
           },
         },
         model: {
-          select: { id: true, name: true, format: true, fileUrl: true, fileName: true },
+          select: { id: true, name: true, format: true, filePath: true, fileName: true },
           include: {
             meshBindings: {
               include: {
@@ -52,7 +52,7 @@ export async function GET(
           orderBy: { createdAt: 'desc' },
         },
         cameraPresets: {
-          orderBy: [{ isDefault: 'desc' }, { sortOrder: 'asc' }],
+          orderBy: { sortOrder: 'asc' },
         },
       },
     });
@@ -92,29 +92,19 @@ export async function PUT(
 
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
-      'name', 'description', 'modelId', 'backgroundImage',
-      'lightingConfig', 'environment', 'skybox',
-      'fogEnabled', 'fogColor', 'fogDensity', 'gridEnabled', 'isDefault',
+      'name', 'description', 'modelId', 'sceneType',
+      'environment', 'backgroundColor', 'groundPlane',
+      'gridEnabled', 'ambientLight', 'directionalLight',
     ];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
-        if (field === 'lightingConfig') {
-          updateData[field] = typeof body[field] === 'string' ? body[field] : JSON.stringify(body[field]);
-        } else if (field === 'fogDensity') {
+        if (field === 'ambientLight' || field === 'directionalLight') {
           updateData[field] = body[field] !== null ? parseFloat(String(body[field])) : null;
         } else {
           updateData[field] = body[field];
         }
       }
-    }
-
-    // If setting as default, unset other defaults for this twin
-    if (updateData.isDefault === true) {
-      await db.digitalTwinScene.updateMany({
-        where: { twinId: existing.twinId, isDefault: true, id: { not: id } },
-        data: { isDefault: false },
-      });
     }
 
     const updated = await db.digitalTwinScene.update({
@@ -134,7 +124,7 @@ export async function PUT(
         action: 'update',
         entityType: 'digital_twin_scene',
         entityId: id,
-        oldValues: JSON.stringify({ name: existing.name, isDefault: existing.isDefault, modelId: existing.modelId }),
+        oldValues: JSON.stringify({ name: existing.name, sceneType: existing.sceneType, modelId: existing.modelId }),
         newValues: JSON.stringify(updateData),
       },
     });

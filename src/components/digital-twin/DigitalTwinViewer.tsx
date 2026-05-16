@@ -20,6 +20,7 @@ import {
 import * as THREE from 'three';
 import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
 import { useDigitalTwinScene, useMeshInteraction, useCameraControls } from '@/hooks/useDigitalTwin';
+import { api } from '@/lib/api';
 
 import { SceneLighting } from './SceneLighting';
 import { GroundPlane } from './GroundPlane';
@@ -43,6 +44,8 @@ import {
   Monitor,
   ZoomIn,
   Eye,
+  Layers,
+  Plus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -57,6 +60,12 @@ export interface DigitalTwinViewerProps {
   modelUrl?: string | null;
   /** External asset-mesh bindings (optional) */
   bindings?: AssetMeshBinding[];
+  /** Asset ID — used to resolve scenes when sceneId is not provided */
+  assetId?: string | null;
+  /** Digital Twin ID — used to fetch the default scene when sceneId is not provided */
+  twinId?: string | null;
+  /** Digital Twin display name */
+  twinName?: string | null;
   /** Height of the viewer container (CSS value) */
   height?: string;
   /** IoT polling interval in ms (0 to disable) */
@@ -71,6 +80,55 @@ export interface DigitalTwinViewerProps {
   loadingComponent?: React.ReactNode;
   /** Custom error component */
   errorComponent?: (error: string, retry: () => void) => React.ReactNode;
+}
+
+// ============================================================================
+// No Scene State (twin has no scenes yet)
+// ============================================================================
+
+function NoSceneOverlay({
+  twinName,
+  onCreateScene,
+}: {
+  twinName?: string | null;
+  onCreateScene?: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+      <div className="flex flex-col items-center gap-4 text-slate-400 pointer-events-auto">
+        <div
+          className="h-20 w-20 rounded-2xl flex items-center justify-center"
+          style={{
+            background: 'rgba(16,185,129,0.08)',
+            border: '2px dashed rgba(16,185,129,0.2)',
+          }}
+        >
+          <Layers className="h-10 w-10 text-emerald-500/50" />
+        </div>
+        <div className="text-center">
+          <h3 className="text-sm font-semibold text-slate-300 mb-1">
+            No Scenes Available
+          </h3>
+          <p className="text-xs text-slate-500 max-w-[280px]">
+            {twinName
+              ? `The digital twin "${twinName}" has no 3D scenes yet. Create a scene to start viewing.`
+              : 'This digital twin has no 3D scenes yet. Create a scene to start viewing.'}
+          </p>
+        </div>
+        {onCreateScene && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onCreateScene}
+            className="mt-2 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Create Scene
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ============================================================================
@@ -240,6 +298,9 @@ export function DigitalTwinViewer({
   sceneId = null,
   modelUrl: propModelUrl,
   bindings: propBindings = [],
+  assetId = null,
+  twinId = null,
+  twinName = null,
   height = 'calc(100vh - 120px)',
   iotPollInterval = 15000,
   showSceneTree = true,
@@ -273,11 +334,95 @@ export function DigitalTwinViewer({
   const [modelError, setModelError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
 
+  // Scene resolution state (when twinId is used without sceneId)
+  const [isResolvingScene, setIsResolvingScene] = useState(false);
+  const [resolvedModelUrl, setResolvedModelUrl] = useState<string | null>(null);
+  const [hasNoScenes, setHasNoScenes] = useState(false);
+
   // Canvas ref for screenshots
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // ── Resolve scene from twinId when sceneId is not provided ─────────────
+  useEffect(() => {
+    // Only attempt resolution when sceneId is not given but twinId is
+    if (sceneId || !twinId || propModelUrl) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const resolveScene = async () => {
+      setIsResolvingScene(true);
+      setHasNoScenes(false);
+      setResolvedModelUrl(null);
+
+      try {
+        // Fetch scenes for this twin
+        const scenesRes = await api.get<Array<{
+          id: string;
+          name: string;
+          modelId: string;
+          model?: { id: string; name: string; format: string; filePath: string } | null;
+        }>>(`/api/digital-twin-scenes?twinId=${twinId}`);
+
+        if (cancelled) return;
+
+        if (!scenesRes.success || !scenesRes.data || scenesRes.data.length === 0) {
+          // Twin has no scenes
+          setHasNoScenes(true);
+          setIsResolvingScene(false);
+          return;
+        }
+
+        // Take the first scene
+        const firstScene = scenesRes.data[0];
+
+        if (!firstScene.modelId) {
+          // Scene exists but has no model linked
+          setHasNoScenes(true);
+          setIsResolvingScene(false);
+          return;
+        }
+
+        // If the scene already has filePath from the list endpoint, use it directly
+        if (firstScene.model?.filePath) {
+          setResolvedModelUrl(firstScene.model.filePath);
+          useDigitalTwinStore.getState().setModelUrl(firstScene.model.filePath);
+          setIsResolvingScene(false);
+          return;
+        }
+
+        // Otherwise, fetch the model details
+        const modelRes = await api.get<{ filePath: string }>(`/api/asset-models/${firstScene.modelId}`);
+
+        if (cancelled) return;
+
+        if (modelRes.success && modelRes.data?.filePath) {
+          setResolvedModelUrl(modelRes.data.filePath);
+          useDigitalTwinStore.getState().setModelUrl(modelRes.data.filePath);
+        } else {
+          // Model not found or no filePath
+          setHasNoScenes(true);
+        }
+      } catch {
+        // Silently fail — the empty state will show
+        setHasNoScenes(true);
+      } finally {
+        if (!cancelled) {
+          setIsResolvingScene(false);
+        }
+      }
+    };
+
+    resolveScene();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sceneId, twinId, propModelUrl]);
+
   // ── Effective model URL ─────────────────────────────────────────────────
-  const effectiveModelUrl = propModelUrl ?? modelUrl;
+  const effectiveModelUrl = propModelUrl ?? resolvedModelUrl ?? modelUrl;
 
   // ── Error handling ──────────────────────────────────────────────────────
   const effectiveError = sceneError || hookError || modelError;
@@ -435,7 +580,7 @@ export function DigitalTwinViewer({
       </Canvas>
 
       {/* ── Loading overlay ──────────────────────────────────────────────── */}
-      {(isLoadingScene || (isModelLoading && loadingProgress < 100)) && (
+      {(isLoadingScene || isResolvingScene || (isModelLoading && loadingProgress < 100)) && (
         <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/30 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3">
             <div className="relative">
@@ -447,7 +592,7 @@ export function DigitalTwinViewer({
             </div>
             <div className="text-center">
               <p className="text-xs text-slate-300 font-medium">
-                {isLoadingScene ? 'Loading scene...' : 'Loading model...'}
+                {isResolvingScene ? 'Resolving scene...' : isLoadingScene ? 'Loading scene...' : 'Loading model...'}
               </p>
               {loadingProgress > 0 && loadingProgress < 100 && (
                 <div className="mt-2 w-32">
@@ -471,8 +616,13 @@ export function DigitalTwinViewer({
       {effectiveError && !isLoadingScene && errorContent}
 
       {/* ── Empty state overlay (no model) ───────────────────────────────── */}
-      {!effectiveModelUrl && !isLoadingScene && !effectiveError && (
+      {!effectiveModelUrl && !isLoadingScene && !isResolvingScene && !effectiveError && !hasNoScenes && !twinId && (
         <EmptyStateOverlay />
+      )}
+
+      {/* ── No scene state (twin has no scenes) ──────────────────────────── */}
+      {!effectiveModelUrl && !isLoadingScene && !isResolvingScene && !effectiveError && hasNoScenes && (
+        <NoSceneOverlay twinName={twinName} />
       )}
 
       {/* ── Status bar (bottom) ──────────────────────────────────────────── */}

@@ -29,6 +29,7 @@ import {
   Wifi,
   ChevronRight,
   Filter,
+  Upload,
 } from 'lucide-react';
 
 // ============================================================================
@@ -341,6 +342,211 @@ function CreateTwinDialog({ open, onOpenChange, onCreated }: {
 }
 
 // ============================================================================
+// Upload 3D Model Dialog
+// ============================================================================
+
+const ACCEPTED_EXTENSIONS = ['.glb', '.gltf', '.fbx', '.obj', '.step', '.stp'];
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+
+function UploadModelDialog({ open, onOpenChange, onUploaded }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onUploaded: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [form, setForm] = useState({ asset: '', name: '' });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+    if (!ACCEPTED_EXTENSIONS.includes(ext)) {
+      toast.error(`Invalid file type. Accepted: ${ACCEPTED_EXTENSIONS.join(', ')}`);
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error('File too large. Maximum size is 100MB.');
+      return;
+    }
+
+    setSelectedFile(file);
+    if (!form.name) {
+      setForm((f) => ({ ...f, name: file.name.replace(/\.[^.]+$/, '') }));
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile || !form.asset || !form.name) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+    setSaving(true);
+    setUploadProgress(0);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('assetId', form.asset);
+      formData.append('name', form.name);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/asset-models/upload');
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          setUploadProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      });
+
+      const response = await new Promise<{ success: boolean; data?: any; error?: string }>((resolve, reject) => {
+        xhr.onload = () => {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch {
+            reject(new Error('Invalid response'));
+          }
+        };
+        xhr.onerror = () => reject(new Error('Upload failed'));
+        xhr.send(formData);
+      });
+
+      if (response.success) {
+        toast.success('3D model uploaded successfully');
+        setSelectedFile(null);
+        setForm({ asset: '', name: '' });
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        onOpenChange(false);
+        onUploaded();
+      } else {
+        toast.error(response.error || 'Upload failed');
+      }
+    } catch {
+      toast.error('Upload failed. Please try again.');
+    }
+
+    setSaving(false);
+    setUploadProgress(0);
+  };
+
+  return (
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <div className="space-y-1.5 mb-4">
+        <h2 className="text-lg font-semibold leading-none tracking-tight">Upload 3D Model</h2>
+        <p className="text-sm text-muted-foreground">Upload a 3D model file (.glb, .gltf, .fbx, .obj, .step)</p>
+      </div>
+      <div className="space-y-4">
+        {/* Asset Selector */}
+        <div>
+          <Label>Asset *</Label>
+          <AsyncSearchableSelect
+            value={form.asset}
+            onValueChange={(v) => setForm((f) => ({ ...f, asset: v }))}
+            fetchOptions={async () => {
+              const res = await api.get('/api/assets?limit=999');
+              if (res.success && res.data) {
+                return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                  value: a.id,
+                  label: `${a.name} (${a.assetTag || 'N/A'})`,
+                }));
+              }
+              return [];
+            }}
+            placeholder="Select asset..."
+            searchPlaceholder="Search assets..."
+          />
+        </div>
+
+        {/* Model Name */}
+        <div>
+          <Label>Model Name *</Label>
+          <Input
+            placeholder="e.g. Pump P-101 Assembly"
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
+        </div>
+
+        {/* File Picker */}
+        <div>
+          <Label>3D Model File *</Label>
+          <div
+            className={`relative border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+              selectedFile
+                ? 'border-emerald-500/50 bg-emerald-50 dark:bg-emerald-950/20'
+                : 'border-muted-foreground/25 hover:border-muted-foreground/50'
+            }`}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPTED_EXTENSIONS.join(',')}
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            {selectedFile ? (
+              <div className="space-y-2">
+                <Box className="h-8 w-8 text-emerald-600 mx-auto" />
+                <p className="text-sm font-medium">{selectedFile.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Upload className="h-8 w-8 text-muted-foreground/50 mx-auto" />
+                <p className="text-sm text-muted-foreground">
+                  Click to select a 3D model file
+                </p>
+                <p className="text-xs text-muted-foreground/60">
+                  Supports: .glb, .gltf, .fbx, .obj, .step (max 100MB)
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Upload Progress */}
+        {saving && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Uploading...</span>
+              <span className="font-medium">{uploadProgress}%</span>
+            </div>
+            <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
+        <Button onClick={handleUpload} disabled={saving || !selectedFile || !form.asset || !form.name}>
+          {saving ? (
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Uploading... {uploadProgress}%
+            </span>
+          ) : (
+            <span className="flex items-center gap-2">
+              <Upload className="h-4 w-4" />
+              Upload Model
+            </span>
+          )}
+        </Button>
+      </div>
+    </ResponsiveDialog>
+  );
+}
+
+// ============================================================================
 // Main Page Component
 // ============================================================================
 
@@ -353,6 +559,7 @@ export function DigitalTwinMainPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [createOpen, setCreateOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [kpis, setKpis] = useState({ total: 0, activeSync: 0, simulationRuns: 0, alerts: 0 });
 
   const fetchData = useCallback(async () => {
@@ -502,6 +709,10 @@ export function DigitalTwinMainPage() {
                   Create Twin
                 </Button>
               )}
+              <Button variant="outline" size="sm" onClick={() => setUploadOpen(true)}>
+                <Upload className="h-4 w-4 mr-2" />
+                Upload 3D Model
+              </Button>
             </div>
           </div>
 
@@ -588,6 +799,13 @@ export function DigitalTwinMainPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={fetchData}
+      />
+
+      {/* Upload Model Dialog */}
+      <UploadModelDialog
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        onUploaded={fetchData}
       />
     </div>
   );

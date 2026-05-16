@@ -66,13 +66,13 @@ export async function PUT(
     }
 
     const updateData: Record<string, unknown> = {};
-    const allowedFields = ['name', 'description', 'fileName', 'fileSize', 'fileType', 'fileUrl', 'format', 'meshCount', 'vertices'];
+    const allowedFields = ['name', 'fileName', 'fileSize', 'fileType', 'filePath', 'format', 'meshCount', 'vertexCount'];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
         if (field === 'fileSize') {
           updateData[field] = body[field] !== null ? parseFloat(String(body[field])) : null;
-        } else if (field === 'meshCount' || field === 'vertices') {
+        } else if (field === 'meshCount' || field === 'vertexCount') {
           updateData[field] = body[field] !== null ? parseInt(String(body[field]), 10) : null;
         } else {
           updateData[field] = body[field];
@@ -139,7 +139,7 @@ export async function DELETE(
         action: 'delete',
         entityType: 'asset_model',
         entityId: id,
-        oldValues: JSON.stringify({ name: existing.name, assetId: existing.assetId, fileUrl: existing.fileUrl }),
+        oldValues: JSON.stringify({ name: existing.name, assetId: existing.assetId, filePath: existing.filePath }),
         newValues: JSON.stringify({ deleted: true }),
       },
     });

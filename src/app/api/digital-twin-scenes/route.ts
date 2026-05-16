@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
         where,
         include: {
           twin: { select: { id: true, name: true, type: true, assetId: true } },
-          model: { select: { id: true, name: true, format: true, fileUrl: true } },
+          model: { select: { id: true, name: true, format: true, filePath: true } },
           createdBy: { select: { id: true, fullName: true, username: true } },
           _count: {
             select: {
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
             },
           },
         },
-        orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+        orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -74,15 +74,13 @@ export async function POST(request: NextRequest) {
       name,
       description,
       modelId,
-      backgroundImage,
-      lightingConfig,
+      sceneType,
       environment,
-      skybox,
-      fogEnabled,
-      fogColor,
-      fogDensity,
+      backgroundColor,
+      groundPlane,
       gridEnabled,
-      isDefault,
+      ambientLight,
+      directionalLight,
     } = body;
 
     if (!twinId) {
@@ -107,29 +105,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // If setting as default, unset other defaults for this twin
-    if (isDefault) {
-      await db.digitalTwinScene.updateMany({
-        where: { twinId, isDefault: true },
-        data: { isDefault: false },
-      });
-    }
-
     const scene = await db.digitalTwinScene.create({
       data: {
         twinId,
         name,
         description: description || null,
         modelId: modelId || null,
-        backgroundImage: backgroundImage || null,
-        lightingConfig: lightingConfig ? JSON.stringify(lightingConfig) : null,
-        environment: environment || null,
-        skybox: skybox || null,
-        fogEnabled: fogEnabled !== undefined ? fogEnabled : false,
-        fogColor: fogColor || null,
-        fogDensity: fogDensity !== undefined ? parseFloat(String(fogDensity)) : null,
+        sceneType: sceneType || '3d',
+        environment: environment || 'warehouse',
+        backgroundColor: backgroundColor || '#1a1a2e',
+        groundPlane: groundPlane !== undefined ? groundPlane : true,
         gridEnabled: gridEnabled !== undefined ? gridEnabled : true,
-        isDefault: isDefault || false,
+        ambientLight: ambientLight !== undefined ? parseFloat(String(ambientLight)) : 0.6,
+        directionalLight: directionalLight !== undefined ? parseFloat(String(directionalLight)) : 0.8,
         createdById: session.userId,
       },
       include: {
@@ -146,7 +134,7 @@ export async function POST(request: NextRequest) {
         action: 'create',
         entityType: 'digital_twin_scene',
         entityId: scene.id,
-        newValues: JSON.stringify({ name, twinId, modelId, isDefault: isDefault || false }),
+        newValues: JSON.stringify({ name, twinId, modelId, sceneType: sceneType || '3d' }),
       },
     });
 

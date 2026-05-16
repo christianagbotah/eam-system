@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = { sceneId };
 
     if (type) {
-      where.type = type;
+      where.icon = type;
     }
 
     const hotspots = await db.twinHotspot.findMany({
@@ -58,16 +58,15 @@ export async function POST(request: NextRequest) {
       sceneId,
       label,
       description,
-      type,
-      meshName,
+      bindingId,
       position,
-      lookAtPosition,
       icon,
       color,
       assetId,
-      linkedEntityType,
-      linkedEntityId,
-      visible,
+      isAlwaysVisible,
+      isPulsing,
+      dataPoint,
+      isActive,
       sortOrder,
     } = body;
 
@@ -98,16 +97,15 @@ export async function POST(request: NextRequest) {
         sceneId,
         label,
         description: description || null,
-        type: type || 'info',
-        meshName: meshName || null,
+        bindingId: bindingId || null,
         position: position ? JSON.stringify(position) : null,
-        lookAtPosition: lookAtPosition ? JSON.stringify(lookAtPosition) : null,
-        icon: icon || null,
-        color: color || null,
+        icon: icon || 'info',
+        color: color || '#3b82f6',
         assetId: assetId || null,
-        linkedEntityType: linkedEntityType || null,
-        linkedEntityId: linkedEntityId || null,
-        visible: visible !== undefined ? visible : true,
+        isAlwaysVisible: isAlwaysVisible !== undefined ? isAlwaysVisible : false,
+        isPulsing: isPulsing !== undefined ? isPulsing : false,
+        dataPoint: dataPoint || null,
+        isActive: isActive !== undefined ? isActive : true,
         sortOrder: sortOrder !== undefined ? parseInt(String(sortOrder), 10) : 0,
       },
       include: {
@@ -121,7 +119,7 @@ export async function POST(request: NextRequest) {
         action: 'create',
         entityType: 'twin_hotspot',
         entityId: hotspot.id,
-        newValues: JSON.stringify({ label, sceneId, type: type || 'info', assetId }),
+        newValues: JSON.stringify({ label, sceneId, icon: icon || 'info', assetId }),
       },
     });
 
