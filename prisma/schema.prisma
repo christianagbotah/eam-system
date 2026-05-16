@@ -1,12 +1,11 @@
 generator client {
-  provider        = "prisma-client-js"
-  engineType      = "library"
-  binaryTargets   = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
+  provider      = "prisma-client-js"
+  engineType    = "library"
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
 }
 
 // ============================================================================
@@ -18,8 +17,8 @@ model Role {
   name        String
   slug        String   @unique
   description String?
-  level       Int      @default(0)       // hierarchy level (higher = more privileges)
-  isSystem    Boolean  @default(false)   // cannot be deleted
+  level       Int      @default(0) // hierarchy level (higher = more privileges)
+  isSystem    Boolean  @default(false) // cannot be deleted
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -31,10 +30,10 @@ model Role {
 
 model Permission {
   id          String   @id @default(cuid())
-  slug        String   @unique          // e.g. "work_orders.view"
-  name        String                     // e.g. "View Work Orders"
-  module      String                     // e.g. "work_orders"
-  action      String                     // view, create, update, delete, approve, assign, execute, export
+  slug        String   @unique // e.g. "work_orders.view"
+  name        String // e.g. "View Work Orders"
+  module      String // e.g. "work_orders"
+  action      String // view, create, update, delete, approve, assign, execute, export
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -59,82 +58,82 @@ model RolePermission {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  username     String    @unique
-  email        String    @unique
-  passwordHash String
-  fullName     String
-  staffId      String?   @unique
-  phone        String?
-  avatar       String?
-  department   String?
-  status       String    @default("active")  // active, inactive
-  isVendorAdmin Boolean  @default(false)
-  resetToken       String?
-  resetTokenExpires DateTime?
-  notificationPreferences Json?    // notification preferences (channels, types, quiet hours)
-  preferences         Json?    // user display/notification/datetime preferences
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                      String    @id @default(cuid())
+  username                String    @unique
+  email                   String    @unique
+  passwordHash            String
+  fullName                String
+  staffId                 String?   @unique
+  phone                   String?
+  avatar                  String?
+  department              String?
+  status                  String    @default("active") // active, inactive
+  isVendorAdmin           Boolean   @default(false)
+  resetToken              String?
+  resetTokenExpires       DateTime?
+  notificationPreferences Json? // notification preferences (channels, types, quiet hours)
+  preferences             Json? // user display/notification/datetime preferences
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   // RBAC relations
-  userRoles       UserRole[]
-  directPerms     UserPermission[]
-  plantAccess     UserPlant[]
+  userRoles   UserRole[]
+  directPerms UserPermission[]
+  plantAccess UserPlant[]
 
   // Department supervision
-  deptSupervised  Department[]  @relation("DeptSupervisor")
+  deptSupervised Department[] @relation("DeptSupervisor")
 
   // Maintenance Request relations
-  mrRequested     MaintenanceRequest[] @relation("MRRequester")
-  mrSupervised    MaintenanceRequest[] @relation("MRSupervisor")
-  mrApproved      MaintenanceRequest[] @relation("MRApprover")
-  mrPlanned       MaintenanceRequest[] @relation("MRPlanner")
+  mrRequested  MaintenanceRequest[] @relation("MRRequester")
+  mrSupervised MaintenanceRequest[] @relation("MRSupervisor")
+  mrApproved   MaintenanceRequest[] @relation("MRApprover")
+  mrPlanned    MaintenanceRequest[] @relation("MRPlanner")
 
   // Work Order relations
-  woAssigned      WorkOrder[]          @relation("WOAssignedTo")
-  woTeamLeader    WorkOrder[]          @relation("WOTeamLeader")
-  woSupervised    WorkOrder[]          @relation("WOSupervisor")
-  woAssignedBy    WorkOrder[]          @relation("WOAssignedBy")
-  woPlanned       WorkOrder[]          @relation("WOPlanner")
-  woLocked        WorkOrder[]          @relation("WOLocker")
+  woAssigned   WorkOrder[] @relation("WOAssignedTo")
+  woTeamLeader WorkOrder[] @relation("WOTeamLeader")
+  woSupervised WorkOrder[] @relation("WOSupervisor")
+  woAssignedBy WorkOrder[] @relation("WOAssignedBy")
+  woPlanned    WorkOrder[] @relation("WOPlanner")
+  woLocked     WorkOrder[] @relation("WOLocker")
 
   // Work Order sub-table relations
-  woTeamMembers   WorkOrderTeamMember[]
-  woTimeLogs      WorkOrderTimeLog[]
-  woComments      WorkOrderComment[]
-  woMaterialsRequested WorkOrderMaterial[] @relation("WOMatRequested")
-  woMaterialsApproved  WorkOrderMaterial[] @relation("WOMatApproved")
-  woMaterialsIssued    WorkOrderMaterial[] @relation("WOMatIssued")
+  woTeamMembers        WorkOrderTeamMember[]
+  woTimeLogs           WorkOrderTimeLog[]
+  woComments           WorkOrderComment[]
+  woMaterialsRequested WorkOrderMaterial[]   @relation("WOMatRequested")
+  woMaterialsApproved  WorkOrderMaterial[]   @relation("WOMatApproved")
+  woMaterialsIssued    WorkOrderMaterial[]   @relation("WOMatIssued")
 
   // Audit
-  auditLogs       AuditLog[]
-  notifications   Notification[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
 
   // Asset Management relations
-  assetsCreated        Asset[]                   @relation("AssetCreatedBy")
-  assetsAssigned       Asset[]                   @relation("AssetAssignedTo")
-  inventoryItemsCreated InventoryItem[]          @relation("InventoryItemCreatedBy")
-  stockMovements       StockMovement[]
-  pmSchedulesAssigned  PmSchedule[]              @relation("PmScheduleAssignedTo")
-  pmSchedulesCreated   PmSchedule[]              @relation("PmScheduleCreatedBy")
-  pmTemplatesCreated   PmTemplate[]              @relation("PmTemplateCreatedBy")
-  woStatusHistory      WorkOrderStatusHistory[]
-  mrComments           MaintenanceRequestComment[]
+  assetsCreated         Asset[]                     @relation("AssetCreatedBy")
+  assetsAssigned        Asset[]                     @relation("AssetAssignedTo")
+  inventoryItemsCreated InventoryItem[]             @relation("InventoryItemCreatedBy")
+  stockMovements        StockMovement[]
+  pmSchedulesAssigned   PmSchedule[]                @relation("PmScheduleAssignedTo")
+  pmSchedulesCreated    PmSchedule[]                @relation("PmScheduleCreatedBy")
+  pmTemplatesCreated    PmTemplate[]                @relation("PmTemplateCreatedBy")
+  woStatusHistory       WorkOrderStatusHistory[]
+  mrComments            MaintenanceRequestComment[]
 
   // Tool Management relations
-  toolsAssigned        Tool[]                   @relation("ToolAssignedTo")
-  toolsCreated         Tool[]                   @relation("ToolCreatedBy")
-  toolTransactions     ToolTransaction[]        @relation("ToolTxnPerformedBy")
-  toolTxnsFrom         ToolTransaction[]        @relation("ToolTxnFromUser")
-  toolTxnsTo           ToolTransaction[]        @relation("ToolTxnToUser")
+  toolsAssigned    Tool[]            @relation("ToolAssignedTo")
+  toolsCreated     Tool[]            @relation("ToolCreatedBy")
+  toolTransactions ToolTransaction[] @relation("ToolTxnPerformedBy")
+  toolTxnsFrom     ToolTransaction[] @relation("ToolTxnFromUser")
+  toolTxnsTo       ToolTransaction[] @relation("ToolTxnToUser")
 
   // IoT Management relations
-  iotDevicesCreated   IotDevice[]               @relation("IotDeviceCreatedBy")
-  iotRulesCreated     IotAlertRule[]            @relation("IotRuleCreatedBy")
+  iotDevicesCreated IotDevice[]    @relation("IotDeviceCreatedBy")
+  iotRulesCreated   IotAlertRule[] @relation("IotRuleCreatedBy")
 
   // Inventory Sub-module relations
-  invLocationsCreated    InventoryLocation[]    @relation("InvLocationCreatedBy")
+  invLocationsCreated    InventoryLocation[]   @relation("InvLocationCreatedBy")
   invAdjustmentsApproved InventoryAdjustment[] @relation("InvAdjApprovedBy")
   invAdjustmentsCreated  InventoryAdjustment[] @relation("InvAdjCreatedBy")
   invRequestsRequested   InventoryRequest[]    @relation("InvReqRequestedBy")
@@ -147,64 +146,70 @@ model User {
   receivingReceived      ReceivingRecord[]     @relation("ReceivingReceivedBy")
 
   // Safety Module relations
-  safetyIncidentsReported SafetyIncident[]      @relation("SafetyIncidentReportedBy")
-  safetyIncidentsInvestigated SafetyIncident[]  @relation("SafetyIncidentInvestigatedBy")
-  safetyPermitsRequested SafetyPermit[]         @relation("SafetyPermitRequestedBy")
-  safetyPermitsApproved  SafetyPermit[]         @relation("SafetyPermitApprovedBy")
+  safetyIncidentsReported     SafetyIncident[] @relation("SafetyIncidentReportedBy")
+  safetyIncidentsInvestigated SafetyIncident[] @relation("SafetyIncidentInvestigatedBy")
+  safetyPermitsRequested      SafetyPermit[]   @relation("SafetyPermitRequestedBy")
+  safetyPermitsApproved       SafetyPermit[]   @relation("SafetyPermitApprovedBy")
 
   // Quality Module relations
-  qualityInspections     QualityInspection[]   @relation("QIInspectedBy")
-  ncrs                   NonConformanceReport[] @relation("NCRRaisedBy")
-  qualityAudits          QualityAudit[]        @relation("QAuditedBy")
-  spcProcessesCreated    SpcProcess[]          @relation("SpcProcessCreatedBy")
+  qualityInspections  QualityInspection[]    @relation("QIInspectedBy")
+  ncrs                NonConformanceReport[] @relation("NCRRaisedBy")
+  qualityAudits       QualityAudit[]         @relation("QAuditedBy")
+  spcProcessesCreated SpcProcess[]           @relation("SpcProcessCreatedBy")
 
   // Digital Twin relation
-  digitalTwinsCreated    DigitalTwin[]      @relation("DigitalTwinCreatedBy")
+  digitalTwinsCreated   DigitalTwin[]      @relation("DigitalTwinCreatedBy")
+  assetModelsCreated    AssetModel[]       @relation("AssetModelUploadedBy")
+  scenesCreated         DigitalTwinScene[] @relation("SceneCreatedBy")
+  systemDiagramsCreated SystemDiagram[]    @relation("SystemDiagramCreatedBy")
+
+  // Twin Annotation relation
+  twinAnnotations TwinAnnotation[]
 
   // Operations Module relations
-  meterReadings          MeterReading[]     @relation("MeterReadingReadBy")
-  shiftHandoversFrom     ShiftHandover[]    @relation("ShiftHandoverFrom")
-  shiftHandoversTo       ShiftHandover[]    @relation("ShiftHandoverTo")
+  meterReadings      MeterReading[]  @relation("MeterReadingReadBy")
+  shiftHandoversFrom ShiftHandover[] @relation("ShiftHandoverFrom")
+  shiftHandoversTo   ShiftHandover[] @relation("ShiftHandoverTo")
 
   // Chat relations
-  chatMessages          ChatMessage[]
+  chatMessages             ChatMessage[]
   conversationParticipants ConversationParticipant[]
 
   // Session Management
-  sessions              Session[]
+  sessions Session[]
 
   // Trade / Skill relations
-  primaryTrade   String?
-  userSkills     UserSkill[]
+  primaryTrade String?
+  userSkills   UserSkill[]
 
   // Repair module relations
-  repairMatReqRequested       RepairMaterialRequest[] @relation("RepairMatReqRequested")
-  repairMatReqSupApproved     RepairMaterialRequest[] @relation("RepairMatReqSupApproved")
-  repairMatReqStoreApproved   RepairMaterialRequest[] @relation("RepairMatReqStoreApproved")
-  repairMatReqIssued          RepairMaterialRequest[] @relation("RepairMatReqIssued")
-  repairMatReqReturned        RepairMaterialRequest[] @relation("RepairMatReqReturned")
-  repairToolReqRequested      RepairToolRequest[]     @relation("RepairToolReqRequested")
-  repairToolReqSupApproved    RepairToolRequest[]     @relation("RepairToolReqSupApproved")
-  repairToolReqStoreApproved  RepairToolRequest[]     @relation("RepairToolReqStoreApproved")
-  repairToolReqIssued         RepairToolRequest[]     @relation("RepairToolReqIssued")
-  repairToolReqReturned       RepairToolRequest[]     @relation("RepairToolReqReturned")
-  toolTransferFrom             ToolTransferRequest[]  @relation("ToolTransferFrom")
-  toolTransferTo               ToolTransferRequest[]  @relation("ToolTransferTo")
-  toolTransferRequested        ToolTransferRequest[]  @relation("ToolTransferRequested")
-  toolTransferStoreApproved   ToolTransferRequest[]  @relation("ToolTransferStoreApproved")
-  repairCompSupApproved        RepairCompletion[]    @relation("RepairCompSupApproved")
-  repairCompPlannerClosed      RepairCompletion[]    @relation("RepairCompPlannerClosed")
+  repairMatReqRequested      RepairMaterialRequest[] @relation("RepairMatReqRequested")
+  repairMatReqSupApproved    RepairMaterialRequest[] @relation("RepairMatReqSupApproved")
+  repairMatReqStoreApproved  RepairMaterialRequest[] @relation("RepairMatReqStoreApproved")
+  repairMatReqIssued         RepairMaterialRequest[] @relation("RepairMatReqIssued")
+  repairMatReqReturned       RepairMaterialRequest[] @relation("RepairMatReqReturned")
+  repairToolReqRequested     RepairToolRequest[]     @relation("RepairToolReqRequested")
+  repairToolReqSupApproved   RepairToolRequest[]     @relation("RepairToolReqSupApproved")
+  repairToolReqStoreApproved RepairToolRequest[]     @relation("RepairToolReqStoreApproved")
+  repairToolReqIssued        RepairToolRequest[]     @relation("RepairToolReqIssued")
+  repairToolReqReturned      RepairToolRequest[]     @relation("RepairToolReqReturned")
+  toolTransferFrom           ToolTransferRequest[]   @relation("ToolTransferFrom")
+  toolTransferTo             ToolTransferRequest[]   @relation("ToolTransferTo")
+  toolTransferRequested      ToolTransferRequest[]   @relation("ToolTransferRequested")
+  toolTransferStoreApproved  ToolTransferRequest[]   @relation("ToolTransferStoreApproved")
+  repairCompSupApproved      RepairCompletion[]      @relation("RepairCompSupApproved")
+  repairCompPlannerClosed    RepairCompletion[]      @relation("RepairCompPlannerClosed")
 
   // Attachment relations
-  attachments                  Attachment[]
+  attachments Attachment[]
 
   @@map("users")
 }
 
 model UserRole {
-  id     String   @id @default(cuid())
-  userId String
-  roleId String
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -220,7 +225,7 @@ model UserPermission {
   permissionId String
   isGranted    Boolean   @default(true)
   expiresAt    DateTime?
-  grantedBy    String?   // userId of the granter
+  grantedBy    String? // userId of the granter
   createdAt    DateTime  @default(now())
 
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -235,18 +240,18 @@ model UserPermission {
 // ============================================================================
 
 model SystemModule {
-  id              String    @id @default(cuid())
-  code            String    @unique
-  name            String
-  description     String?
-  version         String    @default("1.0.0")
-  isCore          Boolean   @default(false)
-  isSystemLicensed Boolean  @default(false) // vendor-level license flag
-  licenseKey      String?
-  validFrom       DateTime?
-  validUntil      DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  code             String    @unique
+  name             String
+  description      String?
+  version          String    @default("1.0.0")
+  isCore           Boolean   @default(false)
+  isSystemLicensed Boolean   @default(false) // vendor-level license flag
+  licenseKey       String?
+  validFrom        DateTime?
+  validUntil       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   companyModules CompanyModule[]
 
@@ -254,18 +259,18 @@ model SystemModule {
 }
 
 model CompanyModule {
-  id              String    @id @default(cuid())
-  systemModuleId  String
-  companyId       String?   // tenant/company reference (optional for single-company setup)
-  isActive        Boolean   @default(false)  // licensed by vendor
-  isEnabled       Boolean   @default(false)  // activated by company
-  licensedAt      DateTime?
-  licensedBy      String?
-  activatedAt     DateTime?
-  activatedBy     String?
-  activationLocked Boolean  @default(false)  // prevent deactivation once locked
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  systemModuleId   String
+  companyId        String? // tenant/company reference (optional for single-company setup)
+  isActive         Boolean   @default(false) // licensed by vendor
+  isEnabled        Boolean   @default(false) // activated by company
+  licensedAt       DateTime?
+  licensedBy       String?
+  activatedAt      DateTime?
+  activatedBy      String?
+  activationLocked Boolean   @default(false) // prevent deactivation once locked
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   systemModule SystemModule @relation(fields: [systemModuleId], references: [id], onDelete: Cascade)
 
@@ -288,30 +293,30 @@ model Plant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  departments   Department[]
-  plantAccess   UserPlant[]
-  assets        Asset[]
+  departments    Department[]
+  plantAccess    UserPlant[]
+  assets         Asset[]
   inventoryItems InventoryItem[]
 
   @@map("plants")
 }
 
 model Department {
-  id          String   @id @default(cuid())
-  name        String
-  code        String
-  plantId     String
-  parentId    String?              // self-reference for sub-departments
-  supervisorId String?             // → User
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  name         String
+  code         String
+  plantId      String
+  parentId     String? // self-reference for sub-departments
+  supervisorId String? // → User
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  plant      Plant       @relation(fields: [plantId], references: [id], onDelete: Cascade)
-  parent     Department? @relation("DeptHierarchy", fields: [parentId], references: [id])
-  children   Department[] @relation("DeptHierarchy")
-  supervisor User?       @relation("DeptSupervisor", fields: [supervisorId], references: [id])
-  assets       Asset[]
-  pmSchedules  PmSchedule[]
+  plant       Plant        @relation(fields: [plantId], references: [id], onDelete: Cascade)
+  parent      Department?  @relation("DeptHierarchy", fields: [parentId], references: [id])
+  children    Department[] @relation("DeptHierarchy")
+  supervisor  User?        @relation("DeptSupervisor", fields: [supervisorId], references: [id])
+  assets      Asset[]
+  pmSchedules PmSchedule[]
 
   @@map("departments")
 }
@@ -320,7 +325,7 @@ model UserPlant {
   id          String   @id @default(cuid())
   userId      String
   plantId     String
-  accessLevel String   @default("read")  // read, write, admin
+  accessLevel String   @default("read") // read, write, admin
   isPrimary   Boolean  @default(false)
   createdAt   DateTime @default(now())
 
@@ -337,46 +342,46 @@ model UserPlant {
 
 model MaintenanceRequest {
   id                String    @id @default(cuid())
-  requestNumber     String    @unique           // format MR-YYYYMM-NNNN
+  requestNumber     String    @unique // format MR-YYYYMM-NNNN
   title             String
   description       String?
   priority          String    @default("medium") // low, medium, high, urgent
-  category          String?                      // mechanical, electrical, hydraulic, etc.
+  category          String? // mechanical, electrical, hydraulic, etc.
   status            String    @default("pending") // pending, in_progress, approved, rejected, converted
   workflowStatus    String    @default("pending") // pending, supervisor_review, approved, rejected, assigned_to_planner, work_order_created, technician_completed, planner_confirmed, satisfactory, supervisor_rejected, closed
   machineDownStatus Boolean?  @default(false)
   assetId           String?
   departmentId      String?
-  requestedBy       String                      // → User
-  supervisorId      String?                     // → User
-  approvedBy        String?                     // → User
-  assignedPlannerId String?                     // → User
-  workOrderId       String?   @unique           // → WorkOrder
+  requestedBy       String // → User
+  supervisorId      String? // → User
+  approvedBy        String? // → User
+  assignedPlannerId String? // → User
+  workOrderId       String?   @unique // → WorkOrder
   plantId           String?
   plannedStart      DateTime?
   plannedEnd        DateTime?
   estimatedHours    Float?
   slaHours          Float?
-  escalationLevel   Int       @default(0)         // 0=none, 1=supervisor, 2=manager
+  escalationLevel   Int       @default(0) // 0=none, 1=supervisor, 2=manager
   lastEscalatedAt   DateTime?
   notes             String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   // Asset relation
-  asset         Asset?      @relation("MRAsset", fields: [assetId], references: [id])
+  asset Asset? @relation("MRAsset", fields: [assetId], references: [id])
 
   // User relations
-  requester     User?       @relation("MRRequester", fields: [requestedBy], references: [id])
-  supervisor    User?       @relation("MRSupervisor", fields: [supervisorId], references: [id])
-  approver      User?       @relation("MRApprover", fields: [approvedBy], references: [id])
-  assignedPlanner User?     @relation("MRPlanner", fields: [assignedPlannerId], references: [id])
+  requester       User? @relation("MRRequester", fields: [requestedBy], references: [id])
+  supervisor      User? @relation("MRSupervisor", fields: [supervisorId], references: [id])
+  approver        User? @relation("MRApprover", fields: [approvedBy], references: [id])
+  assignedPlanner User? @relation("MRPlanner", fields: [assignedPlannerId], references: [id])
 
   // Work Order relation
-  workOrder     WorkOrder?
+  workOrder WorkOrder?
 
   // Comments
-  comments      MaintenanceRequestComment[]
+  comments MaintenanceRequestComment[]
 
   @@map("maintenance_requests")
 }
@@ -386,92 +391,92 @@ model MaintenanceRequest {
 // ============================================================================
 
 model WorkOrder {
-  id                  String    @id @default(cuid())
-  woNumber            String    @unique           // format WO-YYYYMM-NNNN
-  title               String
-  description         String?
-  type                String    @default("corrective") // preventive, corrective, predictive, inspection, project, emergency
-  priority            String    @default("medium")     // low, medium, high, critical
-  status              String    @default("draft")       // draft, requested, approved, planned, assigned, in_progress, waiting_parts, on_hold, completed, closed, cancelled
-  maintenanceRequestId String?  @unique
-  pmScheduleId        String?                       // → PmSchedule (auto-generated WOs link back)
-  assetId             String?
-  assetName           String?
-  departmentId        String?
-  assignedTo          String?                       // → User
-  teamLeaderId        String?                       // → User
-  assignedSupervisorId String?                      // → User
-  assignedBy          String?                       // → User
-  assignmentType      String?                       // direct, via_supervisor
-  plannerId           String?                       // → User
-  estimatedHours      Float?
-  actualHours         Float?
-  plannedStart        DateTime?
-  plannedEnd          DateTime?
-  actualStart         DateTime?
-  actualEnd           DateTime?
-  totalCost           Float     @default(0)
-  laborCost           Float     @default(0)
-  partsCost           Float     @default(0)
-  contractorCost      Float     @default(0)
-  failureDescription  String?
-  causeDescription    String?
-  actionDescription   String?
-  tradeActivity       String?                       // mechanical, electrical, civil, facility, workshop, other
-  safetyNotes         String?                       // Safety precautions / LOTO requirements
-  ppeRequired         String?                       // PPE requirements
-  plantId             String?
-  notes               String?
-  personalTools       String    @default("[]")@db.Text  // JSON: [{toolName, toolCode, condition, notes}]
-  isLocked            Boolean   @default(false)
-  lockedBy            String?                        // → User
-  lockedAt            DateTime?
-  lockReason          String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  id                   String    @id @default(cuid())
+  woNumber             String    @unique // format WO-YYYYMM-NNNN
+  title                String
+  description          String?
+  type                 String    @default("corrective") // preventive, corrective, predictive, inspection, project, emergency
+  priority             String    @default("medium") // low, medium, high, critical
+  status               String    @default("draft") // draft, requested, approved, planned, assigned, in_progress, waiting_parts, on_hold, completed, closed, cancelled
+  maintenanceRequestId String?   @unique
+  pmScheduleId         String? // → PmSchedule (auto-generated WOs link back)
+  assetId              String?
+  assetName            String?
+  departmentId         String?
+  assignedTo           String? // → User
+  teamLeaderId         String? // → User
+  assignedSupervisorId String? // → User
+  assignedBy           String? // → User
+  assignmentType       String? // direct, via_supervisor
+  plannerId            String? // → User
+  estimatedHours       Float?
+  actualHours          Float?
+  plannedStart         DateTime?
+  plannedEnd           DateTime?
+  actualStart          DateTime?
+  actualEnd            DateTime?
+  totalCost            Float     @default(0)
+  laborCost            Float     @default(0)
+  partsCost            Float     @default(0)
+  contractorCost       Float     @default(0)
+  failureDescription   String?
+  causeDescription     String?
+  actionDescription    String?
+  tradeActivity        String? // mechanical, electrical, civil, facility, workshop, other
+  safetyNotes          String? // Safety precautions / LOTO requirements
+  ppeRequired          String? // PPE requirements
+  plantId              String?
+  notes                String?
+  personalTools        String    @default("[]") @db.Text // JSON: [{toolName, toolCode, condition, notes}]
+  isLocked             Boolean   @default(false)
+  lockedBy             String? // → User
+  lockedAt             DateTime?
+  lockReason           String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   // Maintenance Request relation
   maintenanceRequest MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id])
 
   // PM Schedule relation
-  pmSchedule         PmSchedule? @relation(fields: [pmScheduleId], references: [id])
+  pmSchedule PmSchedule? @relation(fields: [pmScheduleId], references: [id])
 
   // User relations
-  assignee           User?  @relation("WOAssignedTo", fields: [assignedTo], references: [id])
-  teamLeader         User?  @relation("WOTeamLeader", fields: [teamLeaderId], references: [id])
-  assignedSupervisor User?  @relation("WOSupervisor", fields: [assignedSupervisorId], references: [id])
-  assigner           User?  @relation("WOAssignedBy", fields: [assignedBy], references: [id])
-  planner            User?  @relation("WOPlanner", fields: [plannerId], references: [id])
-  locker             User?  @relation("WOLocker", fields: [lockedBy], references: [id])
+  assignee           User? @relation("WOAssignedTo", fields: [assignedTo], references: [id])
+  teamLeader         User? @relation("WOTeamLeader", fields: [teamLeaderId], references: [id])
+  assignedSupervisor User? @relation("WOSupervisor", fields: [assignedSupervisorId], references: [id])
+  assigner           User? @relation("WOAssignedBy", fields: [assignedBy], references: [id])
+  planner            User? @relation("WOPlanner", fields: [plannerId], references: [id])
+  locker             User? @relation("WOLocker", fields: [lockedBy], references: [id])
 
   // Sub-table relations
-  teamMembers        WorkOrderTeamMember[]
-  timeLogs           WorkOrderTimeLog[]
-  materials          WorkOrderMaterial[]
-  comments           WorkOrderComment[]
+  teamMembers WorkOrderTeamMember[]
+  timeLogs    WorkOrderTimeLog[]
+  materials   WorkOrderMaterial[]
+  comments    WorkOrderComment[]
 
   // Status History relations
-  statusHistory      WorkOrderStatusHistory[]
+  statusHistory WorkOrderStatusHistory[]
 
-  escalationLevel          Int       @default(0)         // 0=none, 1=supervisor, 2=manager
-  lastEscalatedAt         DateTime?
+  escalationLevel Int       @default(0) // 0=none, 1=supervisor, 2=manager
+  lastEscalatedAt DateTime?
 
   // Repair module relations
-  repairMaterialRequests  RepairMaterialRequest[]
-  repairToolRequests      RepairToolRequest[]
-  workOrderDowntimes      WorkOrderDowntime[]
-  repairCompletion        RepairCompletion?
+  repairMaterialRequests RepairMaterialRequest[]
+  repairToolRequests     RepairToolRequest[]
+  workOrderDowntimes     WorkOrderDowntime[]
+  repairCompletion       RepairCompletion?
 
   @@map("work_orders")
 }
 
 model WorkOrderTeamMember {
-  id           String   @id @default(cuid())
-  workOrderId  String
-  userId       String
-  role         String   @default("assistant")  // team_leader, assistant, specialist
-  accessLevel  String   @default("full")      // full (team leader), read_only (other members)
-  assignedAt   DateTime @default(now())
+  id          String   @id @default(cuid())
+  workOrderId String
+  userId      String
+  role        String   @default("assistant") // team_leader, assistant, specialist
+  accessLevel String   @default("full") // full (team leader), read_only (other members)
+  assignedAt  DateTime @default(now())
 
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -483,8 +488,8 @@ model WorkOrderTimeLog {
   id          String   @id @default(cuid())
   workOrderId String
   userId      String
-  action      String                         // start, pause, resume, complete
-  duration    Float?                          // hours for this log entry (pause/complete)
+  action      String // start, pause, resume, complete
+  duration    Float? // hours for this log entry (pause/complete)
   notes       String?
   timestamp   DateTime @default(now())
 
@@ -502,16 +507,16 @@ model WorkOrderMaterial {
   quantity    Float?
   unitCost    Float?
   totalCost   Float?
-  status      String   @default("requested")  // requested, approved, issued, returned
-  requestedBy String?                         // → User
-  approvedBy  String?                         // → User
-  issuedBy    String?                         // → User
+  status      String   @default("requested") // requested, approved, issued, returned
+  requestedBy String? // → User
+  approvedBy  String? // → User
+  issuedBy    String? // → User
   createdAt   DateTime @default(now())
 
-  workOrder          WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-  requester          User?     @relation("WOMatRequested", fields: [requestedBy], references: [id])
-  approver           User?     @relation("WOMatApproved", fields: [approvedBy], references: [id])
-  issuer             User?     @relation("WOMatIssued", fields: [issuedBy], references: [id])
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  requester User?     @relation("WOMatRequested", fields: [requestedBy], references: [id])
+  approver  User?     @relation("WOMatApproved", fields: [approvedBy], references: [id])
+  issuer    User?     @relation("WOMatIssued", fields: [issuedBy], references: [id])
 
   @@map("wo_materials")
 }
@@ -535,10 +540,10 @@ model WorkOrderComment {
 
 model StatusTransition {
   id               String   @id @default(cuid())
-  entityType       String                       // maintenance_request, work_order
-  fromStatus       String?                      // null = initial state
+  entityType       String // maintenance_request, work_order
+  fromStatus       String? // null = initial state
   toStatus         String
-  allowedRoleSlugs String@db.Text  // JSON string array .Text, e.g. ["supervisor","admin"]
+  allowedRoleSlugs String   @db.Text // JSON string array .Text, e.g. ["supervisor","admin"]
   requiresApproval Boolean  @default(false)
   requiresReason   Boolean  @default(false)
   sortOrder        Int      @default(0)
@@ -554,11 +559,11 @@ model StatusTransition {
 model AuditLog {
   id         String   @id @default(cuid())
   userId     String
-  action     String                       // create, update, delete, view
+  action     String // create, update, delete, view
   entityType String?
   entityId   String?
-  oldValues  String? @db.Text  // JSON string of previous field values
-  newValues  String? @db.Text  // JSON string of new field values
+  oldValues  String?  @db.Text // JSON string of previous field values
+  newValues  String?  @db.Text // JSON string of new field values
   ipAddress  String?
   createdAt  DateTime @default(now())
 
@@ -572,13 +577,13 @@ model AuditLog {
 // ============================================================================
 
 model EscalationLog {
-  id          String   @id @default(cuid())
-  entityType  String                           // maintenance_request, work_order, safety_incident
-  entityId    String                           // reference to the entity
-  level       Int                              // 1=first escalation, 2=second escalation
-  reason      String                           // description of why escalated
-  notifiedUsers String@db.Text  // JSON array of user IDs .Text who were notified
-  createdAt   DateTime @default(now())
+  id            String   @id @default(cuid())
+  entityType    String // maintenance_request, work_order, safety_incident
+  entityId      String // reference to the entity
+  level         Int // 1=first escalation, 2=second escalation
+  reason        String // description of why escalated
+  notifiedUsers String   @db.Text // JSON array of user IDs .Text who were notified
+  createdAt     DateTime @default(now())
 
   @@map("escalation_logs")
 }
@@ -588,28 +593,28 @@ model EscalationLog {
 // ============================================================================
 
 model CompanyProfile {
-  id          String   @id @default(cuid())
-  companyName String                           // legal name of the company
-  tradingName String?                          // display/brand name
-  logo        String?                          // URL or path to company logo
-  address     String?
-  city        String?
-  region      String?
-  country     String?
-  postalCode  String?
-  phone       String?
-  email       String?
-  website     String?
-  industry    String?                          // manufacturing, mining, food, etc.
-  employeeCount String?                        // e.g. "100-500"
-  fiscalYearStart String?                      // e.g. "January"
-  timezone    String   @default("UTC")
-  currency    String   @default("GHS")         // default currency code
-  dateFormat  String   @default("DD/MM/YYYY")
-  isSetupComplete Boolean @default(false)      // has completed initial setup wizard
+  id               String    @id @default(cuid())
+  companyName      String // legal name of the company
+  tradingName      String? // display/brand name
+  logo             String? // URL or path to company logo
+  address          String?
+  city             String?
+  region           String?
+  country          String?
+  postalCode       String?
+  phone            String?
+  email            String?
+  website          String?
+  industry         String? // manufacturing, mining, food, etc.
+  employeeCount    String? // e.g. "100-500"
+  fiscalYearStart  String? // e.g. "January"
+  timezone         String    @default("UTC")
+  currency         String    @default("GHS") // default currency code
+  dateFormat       String    @default("DD/MM/YYYY")
+  isSetupComplete  Boolean   @default(false) // has completed initial setup wizard
   setupCompletedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@map("company_profile")
 }
@@ -619,16 +624,16 @@ model CompanyProfile {
 // ============================================================================
 
 model Notification {
-  id          String   @id @default(cuid())
-  userId      String                       // recipient
-  type        String                       // mr_assigned, mr_approved, mr_rejected, wo_assigned, wo_started, wo_completed, wo_closed, system, info
-  title       String
-  message     String
-  entityType  String?                      // maintenance_request, work_order
-  entityId    String?                      // reference to the entity
-  actionUrl   String?                      // SPA page to navigate to, e.g. "mr-detail"
-  isRead      Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String // recipient
+  type       String // mr_assigned, mr_approved, mr_rejected, wo_assigned, wo_started, wo_completed, wo_closed, system, info
+  title      String
+  message    String
+  entityType String? // maintenance_request, work_order
+  entityId   String? // reference to the entity
+  actionUrl  String? // SPA page to navigate to, e.g. "mr-detail"
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -666,9 +671,9 @@ model Asset {
   manufacturer      String?
   model             String?
   yearManufactured  Int?
-  condition         String    @default("new")           // new, good, fair, poor, out_of_service
-  status            String    @default("operational")   // operational, standby, under_maintenance, decommissioned, disposed
-  criticality       String    @default("medium")        // low, medium, high, critical
+  condition         String    @default("new") // new, good, fair, poor, out_of_service
+  status            String    @default("operational") // operational, standby, under_maintenance, decommissioned, disposed
+  criticality       String    @default("medium") // low, medium, high, critical
   location          String?
   building          String?
   floor             String?
@@ -685,7 +690,7 @@ model Asset {
   imageUrl          String?
   drawingsUrl       String?
   manualUrl         String?
-  specification     String@db.Text  // JSON text for flexible specs .Text
+  specification     String    @db.Text // JSON text for flexible specs .Text
   parentId          String?
   isActive          Boolean   @default(true)
   createdById       String
@@ -693,18 +698,21 @@ model Asset {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  category           AssetCategory       @relation(fields: [categoryId], references: [id])
-  parent             Asset?              @relation("AssetHierarchy", fields: [parentId], references: [id])
-  children           Asset[]             @relation("AssetHierarchy")
-  plant              Plant               @relation(fields: [plantId], references: [id])
-  department         Department?         @relation(fields: [departmentId], references: [id])
-  createdBy          User                @relation("AssetCreatedBy", fields: [createdById], references: [id])
-  assignedTo         User?               @relation("AssetAssignedTo", fields: [assignedToId], references: [id])
-  pmSchedules        PmSchedule[]
+  category            AssetCategory        @relation(fields: [categoryId], references: [id])
+  parent              Asset?               @relation("AssetHierarchy", fields: [parentId], references: [id])
+  children            Asset[]              @relation("AssetHierarchy")
+  plant               Plant                @relation(fields: [plantId], references: [id])
+  department          Department?          @relation(fields: [departmentId], references: [id])
+  createdBy           User                 @relation("AssetCreatedBy", fields: [createdById], references: [id])
+  assignedTo          User?                @relation("AssetAssignedTo", fields: [assignedToId], references: [id])
+  pmSchedules         PmSchedule[]
   iotDevices          IotDevice[]
-  bomAsParent         BillOfMaterial[]    @relation("BomParent")
-  bomAsChild          BillOfMaterial[]    @relation("BomChild")
+  bomAsParent         BillOfMaterial[]     @relation("BomParent")
+  bomAsChild          BillOfMaterial[]     @relation("BomChild")
   digitalTwin         DigitalTwin?
+  meshBindings        AssetMeshBinding[]   @relation("MeshBoundAsset")
+  hotspotRefs         TwinHotspot[]        @relation("HotspotAsset")
+  assetModels         AssetModel[]
   maintenanceRequests MaintenanceRequest[] @relation("MRAsset")
 
   @@map("assets")
@@ -715,42 +723,42 @@ model Asset {
 // ============================================================================
 
 model InventoryItem {
-  id                String   @id @default(cuid())
-  itemCode          String   @unique
-  name              String
-  description       String?
-  category          String   @default("other")       // spare_part, consumable, tool, material, other
-  unitOfMeasure     String   @default("each")        // each, kg, liter, meter, set, box, roll
-  currentStock      Float    @default(0)
-  minStockLevel     Float    @default(0)
-  maxStockLevel     Float?
-  reorderQuantity   Float?
-  unitCost          Float?
-  supplier          String?
+  id                 String   @id @default(cuid())
+  itemCode           String   @unique
+  name               String
+  description        String?
+  category           String   @default("other") // spare_part, consumable, tool, material, other
+  unitOfMeasure      String   @default("each") // each, kg, liter, meter, set, box, roll
+  currentStock       Float    @default(0)
+  minStockLevel      Float    @default(0)
+  maxStockLevel      Float?
+  reorderQuantity    Float?
+  unitCost           Float?
+  supplier           String?
   supplierPartNumber String?
-  location          String?
-  binLocation       String?
-  shelfLocation     String?
-  plantId           String
-  locationId        String?                              // → InventoryLocation
-  supplierId        String?                              // → Supplier
-  isActive          Boolean  @default(true)
-       specification     String@db.Text  // JSON text .Text
-  imageUrls         String@db.Text  // JSON text array .Text
-  createdById       String
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  location           String?
+  binLocation        String?
+  shelfLocation      String?
+  plantId            String
+  locationId         String? // → InventoryLocation
+  supplierId         String? // → Supplier
+  isActive           Boolean  @default(true)
+  specification      String   @db.Text // JSON text .Text
+  imageUrls          String   @db.Text // JSON text array .Text
+  createdById        String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  plant           Plant               @relation(fields: [plantId], references: [id])
-  createdBy       User                @relation("InventoryItemCreatedBy", fields: [createdById], references: [id])
-  stockMovements  StockMovement[]
-  invLocation     InventoryLocation?  @relation(fields: [locationId], references: [id])
-  supplierRef     Supplier?           @relation("ItemSupplier", fields: [supplierId], references: [id])
+  plant          Plant              @relation(fields: [plantId], references: [id])
+  createdBy      User               @relation("InventoryItemCreatedBy", fields: [createdById], references: [id])
+  stockMovements StockMovement[]
+  invLocation    InventoryLocation? @relation(fields: [locationId], references: [id])
+  supplierRef    Supplier?          @relation("ItemSupplier", fields: [supplierId], references: [id])
 
-  adjustments     InventoryAdjustment[]
-  requestItems    InventoryRequestItem[]
-  transfers       InventoryTransfer[]
-  poItems         PurchaseOrderItem[]
+  adjustments      InventoryAdjustment[]
+  requestItems     InventoryRequestItem[]
+  transfers        InventoryTransfer[]
+  poItems          PurchaseOrderItem[]
   receivingRecords ReceivingRecord[]
 
   // Repair module relations
@@ -762,19 +770,19 @@ model InventoryItem {
 model StockMovement {
   id            String   @id @default(cuid())
   itemId        String
-  type          String                                // in, out, adjustment, transfer
+  type          String // in, out, adjustment, transfer
   quantity      Float
   previousStock Float
   newStock      Float
   reason        String?
-  referenceType String?                               // work_order, requisition, return, audit
+  referenceType String? // work_order, requisition, return, audit
   referenceId   String?
   performedById String
   notes         String?
   createdAt     DateTime @default(now())
 
-  item         InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  performedBy  User          @relation(fields: [performedById], references: [id])
+  item        InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  performedBy User          @relation(fields: [performedById], references: [id])
 
   @@map("stock_movements")
 }
@@ -788,12 +796,12 @@ model PmSchedule {
   title             String
   description       String?
   assetId           String
-  frequencyType     String                           // daily, weekly, biweekly, monthly, quarterly, semiannual, annual, custom_hours, custom_days, meter_based
+  frequencyType     String // daily, weekly, biweekly, monthly, quarterly, semiannual, annual, custom_hours, custom_days, meter_based
   frequencyValue    Int
   lastCompletedDate DateTime?
   nextDueDate       DateTime?
-  estimatedDuration Float                            // hours
-  priority          String    @default("medium")     // low, medium, high, critical
+  estimatedDuration Float // hours
+  priority          String    @default("medium") // low, medium, high, critical
   assignedToId      String?
   departmentId      String?
   isActive          Boolean   @default(true)
@@ -804,16 +812,16 @@ model PmSchedule {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  asset       Asset       @relation(fields: [assetId], references: [id])
-  assignedTo  User?       @relation("PmScheduleAssignedTo", fields: [assignedToId], references: [id])
-  department  Department? @relation(fields: [departmentId], references: [id])
-  createdBy   User        @relation("PmScheduleCreatedBy", fields: [createdById], references: [id])
+  asset      Asset       @relation(fields: [assetId], references: [id])
+  assignedTo User?       @relation("PmScheduleAssignedTo", fields: [assignedToId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+  createdBy  User        @relation("PmScheduleCreatedBy", fields: [createdById], references: [id])
 
-  templateId  String?
-  template    PmTemplate?  @relation(fields: [templateId], references: [id])
+  templateId String?
+  template   PmTemplate? @relation(fields: [templateId], references: [id])
 
-  workOrders  WorkOrder[]
-  trigger     PmTrigger?
+  workOrders WorkOrder[]
+  trigger    PmTrigger?
 
   @@map("pm_schedules")
 }
@@ -822,52 +830,52 @@ model PmTemplate {
   id                String   @id @default(cuid())
   title             String
   description       String?
-  type              String   @default("preventive")  // preventive, predictive, inspection, calibration, lubrication
-  category          String?                           // mechanical, electrical, hydraulic, etc.
-  estimatedDuration Float                            // hours
-  priority          String   @default("medium")     // low, medium, high, critical
-  requiredSkills    String?@db.Text  // JSON array of skill names .Text
-  requiredTools     String?@db.Text  // JSON array of tool descriptions .Text
+  type              String   @default("preventive") // preventive, predictive, inspection, calibration, lubrication
+  category          String? // mechanical, electrical, hydraulic, etc.
+  estimatedDuration Float // hours
+  priority          String   @default("medium") // low, medium, high, critical
+  requiredSkills    String?  @db.Text // JSON array of skill names .Text
+  requiredTools     String?  @db.Text // JSON array of tool descriptions .Text
   isActive          Boolean  @default(true)
   createdById       String
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  schedules         PmSchedule[]
-  createdBy         User     @relation("PmTemplateCreatedBy", fields: [createdById], references: [id])
-  tasks             PmTemplateTask[]
+  schedules PmSchedule[]
+  createdBy User             @relation("PmTemplateCreatedBy", fields: [createdById], references: [id])
+  tasks     PmTemplateTask[]
 
   @@map("pm_templates")
 }
 
 model PmTemplateTask {
-  id               String   @id @default(cuid())
+  id               String  @id @default(cuid())
   templateId       String
-  taskNumber       Int                             // sequential order within template
+  taskNumber       Int // sequential order within template
   description      String
-  taskType         String   @default("check")     // check, measure, inspect, lubricate, replace, record
-  requiredParts    String?@db.Text  // JSON array of {partName, quantity, unit} .Text
+  taskType         String  @default("check") // check, measure, inspect, lubricate, replace, record
+  requiredParts    String? @db.Text // JSON array of {partName, quantity, unit} .Text
   estimatedMinutes Int?
-  sortOrder        Int      @default(0)
-  isActive         Boolean  @default(true)
+  sortOrder        Int     @default(0)
+  isActive         Boolean @default(true)
 
-  template         PmTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  template PmTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
   @@map("pm_template_tasks")
 }
 
 model PmTrigger {
-  id            String   @id @default(cuid())
-  scheduleId    String   @unique                    // one trigger per schedule
-  triggerType   String                              // time, meter, condition, production_count
-  triggerValue  Float                               // e.g., hours=500, days=30, meters=10000
-  triggerConfig String?@db.Text  // JSON for advanced config .Text (cron expressions, etc.)
+  id              String    @id @default(cuid())
+  scheduleId      String    @unique // one trigger per schedule
+  triggerType     String // time, meter, condition, production_count
+  triggerValue    Float // e.g., hours=500, days=30, meters=10000
+  triggerConfig   String?   @db.Text // JSON for advanced config .Text (cron expressions, etc.)
   lastTriggeredAt DateTime?
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  schedule      PmSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  schedule PmSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
 
   @@map("pm_triggers")
 }
@@ -885,8 +893,8 @@ model WorkOrderStatusHistory {
   notes         String?
   createdAt     DateTime @default(now())
 
-  workOrder    WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-  performedBy  User      @relation(fields: [performedById], references: [id])
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  performedBy User      @relation(fields: [performedById], references: [id])
 
   @@map("wo_status_history")
 }
@@ -896,18 +904,17 @@ model WorkOrderStatusHistory {
 // ============================================================================
 
 model MaintenanceRequestComment {
-  id                    String   @id @default(cuid())
-  maintenanceRequestId  String
-  userId                String
-  content               String
-  createdAt             DateTime @default(now())
+  id                   String   @id @default(cuid())
+  maintenanceRequestId String
+  userId               String
+  content              String
+  createdAt            DateTime @default(now())
 
   maintenanceRequest MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade)
-  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("mr_comments")
 }
-
 
 // ============================================================================
 // 15.5 TRADE / SKILL MANAGEMENT
@@ -917,14 +924,14 @@ model Trade {
   id          String   @id @default(cuid())
   name        String   @unique
   code        String   @unique
-  category    String?                      // mechanical, electrical, civil, instrumentation, hvac, plumbing, welding
+  category    String? // mechanical, electrical, civil, instrumentation, hvac, plumbing, welding
   description String?
-  color       String   @default("#6b7280")  // badge color hex
+  color       String   @default("#6b7280") // badge color hex
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  userSkills  UserSkill[]
+  userSkills UserSkill[]
 
   @@map("trades")
 }
@@ -933,7 +940,7 @@ model UserSkill {
   id               String   @id @default(cuid())
   userId           String
   tradeId          String
-  proficiencyLevel String   @default("intermediate")  // beginner, intermediate, advanced, expert
+  proficiencyLevel String   @default("intermediate") // beginner, intermediate, advanced, expert
   yearsExperience  Int?
   certified        Boolean  @default(false)
   createdAt        DateTime @default(now())
@@ -952,16 +959,16 @@ model UserSkill {
 model IotDevice {
   id              String    @id @default(cuid())
   name            String
-  deviceCode      String    @unique                    // e.g. IOT-0001
-  type            String                               // sensor, gateway, controller, actuator
-  protocol        String                               // mqtt, http, modbus, opcua
-  status          String    @default("online")          // online, offline, warning, error, maintenance
+  deviceCode      String    @unique // e.g. IOT-0001
+  type            String // sensor, gateway, controller, actuator
+  protocol        String // mqtt, http, modbus, opcua
+  status          String    @default("online") // online, offline, warning, error, maintenance
   location        String?
   plantId         String?
   assetId         String?
   groupId         String?
-  parameter       String                               // e.g. "Temperature", "Vibration"
-  unit            String                               // e.g. "°C", "mm/s", "kPa"
+  parameter       String // e.g. "Temperature", "Vibration"
+  unit            String // e.g. "°C", "mm/s", "kPa"
   thresholdMin    Float?
   thresholdMax    Float?
   lastReading     Float?
@@ -969,130 +976,129 @@ model IotDevice {
   batteryLevel    Int?
   signalStrength  Int?
   firmwareVersion String?
-  pollingInterval Int?                                 // seconds between readings
+  pollingInterval Int? // seconds between readings
   description     String?
   isActive        Boolean   @default(true)
   createdById     String
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  asset           Asset?    @relation(fields: [assetId], references: [id])
-  readings        IotReading[]
-  alerts          IotAlert[]
-  rules           IotAlertRule[]
-  createdBy       User      @relation("IotDeviceCreatedBy", fields: [createdById], references: [id])
+  asset     Asset?         @relation(fields: [assetId], references: [id])
+  readings  IotReading[]
+  alerts    IotAlert[]
+  rules     IotAlertRule[]
+  createdBy User           @relation("IotDeviceCreatedBy", fields: [createdById], references: [id])
 
   @@map("iot_devices")
 }
 
 model IotReading {
-  id          String    @id @default(cuid())
-  deviceId    String
-  value       Float
-  unit        String
-  timestamp   DateTime  @default(now())
-  isAnomaly   Boolean   @default(false)
+  id        String   @id @default(cuid())
+  deviceId  String
+  value     Float
+  unit      String
+  timestamp DateTime @default(now())
+  isAnomaly Boolean  @default(false)
 
-  device      IotDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  device IotDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@map("iot_readings")
 }
 
 model IotAlert {
-  id              String    @id @default(cuid())
-  deviceId        String
-  ruleId          String?
-  severity        String                               // info, warning, critical
-  message         String
-  value           Float?
-  threshold       Float?
-  status          String    @default("active")         // active, acknowledged, resolved
-  acknowledgedBy  String?
-  acknowledgedAt  DateTime?
-  resolvedAt      DateTime?
-  createdAt       DateTime  @default(now())
+  id             String    @id @default(cuid())
+  deviceId       String
+  ruleId         String?
+  severity       String // info, warning, critical
+  message        String
+  value          Float?
+  threshold      Float?
+  status         String    @default("active") // active, acknowledged, resolved
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+  createdAt      DateTime  @default(now())
 
-  device          IotDevice   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  rule            IotAlertRule? @relation(fields: [ruleId], references: [id])
+  device IotDevice     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  rule   IotAlertRule? @relation(fields: [ruleId], references: [id])
 
   @@map("iot_alerts")
 }
 
 model IotAlertRule {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   name            String
   deviceId        String
-  parameter       String                               // e.g. "Temperature"
-  operator        String                               // gt, lt, gte, lte, eq
+  parameter       String // e.g. "Temperature"
+  operator        String // gt, lt, gte, lte, eq
   threshold       Float
-  severity        String    @default("warning")         // info, warning, critical
-  cooldownMinutes Int       @default(5)
-  isActive        Boolean   @default(true)
+  severity        String   @default("warning") // info, warning, critical
+  cooldownMinutes Int      @default(5)
+  isActive        Boolean  @default(true)
   createdById     String
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  device          IotDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  alerts          IotAlert[]
-  createdBy       User      @relation("IotRuleCreatedBy", fields: [createdById], references: [id])
+  device    IotDevice  @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  alerts    IotAlert[]
+  createdBy User       @relation("IotRuleCreatedBy", fields: [createdById], references: [id])
 
   @@map("iot_alert_rules")
 }
-
 
 // ============================================================================
 // 16. TOOL MANAGEMENT
 // ============================================================================
 
 model Tool {
-  id              String    @id @default(cuid())
-  toolCode        String    @unique                    // e.g. TL-0001
-  name            String
-  description     String?
-  category        String                               // e.g. "Hand Tool", "Power Tool", "Measurement", "Safety"
-  serialNumber    String?   @unique
-  status          String    @default("available")      // available, checked_out, in_repair, retired, transferred
-  condition       String    @default("good")            // new, good, fair, poor
-  location        String?
-  plantId         String?
-  purchaseDate    DateTime?
-  purchaseCost    Float?
-  currentValue    Float?
-  manufacturer    String?
-  model           String?
-  assignedToId    String?
-  checkedOutAt    DateTime?
-  expectedReturn  DateTime?
-  isActive        Boolean   @default(true)
-  createdById     String
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  toolCode       String    @unique // e.g. TL-0001
+  name           String
+  description    String?
+  category       String // e.g. "Hand Tool", "Power Tool", "Measurement", "Safety"
+  serialNumber   String?   @unique
+  status         String    @default("available") // available, checked_out, in_repair, retired, transferred
+  condition      String    @default("good") // new, good, fair, poor
+  location       String?
+  plantId        String?
+  purchaseDate   DateTime?
+  purchaseCost   Float?
+  currentValue   Float?
+  manufacturer   String?
+  model          String?
+  assignedToId   String?
+  checkedOutAt   DateTime?
+  expectedReturn DateTime?
+  isActive       Boolean   @default(true)
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  assignedTo      User?     @relation("ToolAssignedTo", fields: [assignedToId], references: [id])
-  createdBy       User      @relation("ToolCreatedBy", fields: [createdById], references: [id])
-  transactions    ToolTransaction[]
+  assignedTo   User?             @relation("ToolAssignedTo", fields: [assignedToId], references: [id])
+  createdBy    User              @relation("ToolCreatedBy", fields: [createdById], references: [id])
+  transactions ToolTransaction[]
 
   // Repair module relations
-  repairToolRequests     RepairToolRequest[]
-  repairToolTransfers    ToolTransferRequest[]
+  repairToolRequests  RepairToolRequest[]
+  repairToolTransfers ToolTransferRequest[]
 
   @@map("tools")
 }
 
 model ToolTransaction {
-  id              String    @id @default(cuid())
-  toolId          String
-  type            String                               // checkout, return, transfer, repair_start, repair_complete, retire
-  fromUserId      String?                              // who had it before (for transfer)
-  toUserId        String?                              // who gets it now (for checkout/transfer)
-  notes           String?
-  performedById   String                               // who did the action
-  createdAt       DateTime  @default(now())
+  id            String   @id @default(cuid())
+  toolId        String
+  type          String // checkout, return, transfer, repair_start, repair_complete, retire
+  fromUserId    String? // who had it before (for transfer)
+  toUserId      String? // who gets it now (for checkout/transfer)
+  notes         String?
+  performedById String // who did the action
+  createdAt     DateTime @default(now())
 
-  tool            Tool      @relation(fields: [toolId], references: [id], onDelete: Cascade)
-  performedBy     User      @relation("ToolTxnPerformedBy", fields: [performedById], references: [id])
-  fromUser        User?     @relation("ToolTxnFromUser", fields: [fromUserId], references: [id])
-  toUser          User?     @relation("ToolTxnToUser", fields: [toUserId], references: [id])
+  tool        Tool  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  performedBy User  @relation("ToolTxnPerformedBy", fields: [performedById], references: [id])
+  fromUser    User? @relation("ToolTxnFromUser", fields: [fromUserId], references: [id])
+  toUser      User? @relation("ToolTxnToUser", fields: [toUserId], references: [id])
 
   @@map("tool_transactions")
 }
@@ -1102,32 +1108,32 @@ model ToolTransaction {
 // ============================================================================
 
 model InventoryLocation {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
-  code        String    @unique
-  type        String    @default("warehouse")   // warehouse, storeroom, tool_crib, site, staging, production, picking, receiving
+  code        String   @unique
+  type        String   @default("warehouse") // warehouse, storeroom, tool_crib, site, staging, production, picking, receiving
   address     String?
-  isActive    Boolean   @default(true)
+  isActive    Boolean  @default(true)
   createdById String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  createdBy   User            @relation("InvLocationCreatedBy", fields: [createdById], references: [id])
-  items       InventoryItem[]
-  transfersFrom  InventoryTransfer[] @relation("InvTransferFrom")
-  transfersTo    InventoryTransfer[] @relation("InvTransferTo")
+  createdBy     User                @relation("InvLocationCreatedBy", fields: [createdById], references: [id])
+  items         InventoryItem[]
+  transfersFrom InventoryTransfer[] @relation("InvTransferFrom")
+  transfersTo   InventoryTransfer[] @relation("InvTransferTo")
 
   @@map("inventory_locations")
 }
 
 model InventoryAdjustment {
   id               String    @id @default(cuid())
-  adjustmentNumber String    @unique                    // ADJ-YYYYMM-NNNN
+  adjustmentNumber String    @unique // ADJ-YYYYMM-NNNN
   itemId           String
-  type             String                                // gain, loss, correction
+  type             String // gain, loss, correction
   quantity         Float
   reason           String
-  status           String    @default("pending")        // pending, approved, rejected
+  status           String    @default("pending") // pending, approved, rejected
   approvedById     String?
   approvedAt       DateTime?
   notes            String?
@@ -1135,80 +1141,80 @@ model InventoryAdjustment {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  item        InventoryItem @relation(fields: [itemId], references: [id])
-  approvedBy  User?         @relation("InvAdjApprovedBy", fields: [approvedById], references: [id])
-  createdBy   User          @relation("InvAdjCreatedBy", fields: [createdById], references: [id])
+  item       InventoryItem @relation(fields: [itemId], references: [id])
+  approvedBy User?         @relation("InvAdjApprovedBy", fields: [approvedById], references: [id])
+  createdBy  User          @relation("InvAdjCreatedBy", fields: [createdById], references: [id])
 
   @@map("inventory_adjustments")
 }
 
 model InventoryRequest {
-  id                String    @id @default(cuid())
-  requestNumber     String    @unique                    // IR-YYYYMM-NNNN
-  title             String
-  description       String?
-  status            String    @default("pending")        // pending, approved, partially_fulfilled, fulfilled, rejected, closed
-  priority          String    @default("medium")         // low, medium, high, urgent
-  requestedById     String
-  departmentId      String?
-  plantId           String?
-  approvedById      String?
-  approvedAt        DateTime?
-  notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  requestNumber String    @unique // IR-YYYYMM-NNNN
+  title         String
+  description   String?
+  status        String    @default("pending") // pending, approved, partially_fulfilled, fulfilled, rejected, closed
+  priority      String    @default("medium") // low, medium, high, urgent
+  requestedById String
+  departmentId  String?
+  plantId       String?
+  approvedById  String?
+  approvedAt    DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  items         InventoryRequestItem[]
-  requestedBy   User      @relation("InvReqRequestedBy", fields: [requestedById], references: [id])
-  approvedBy    User?     @relation("InvReqApprovedBy", fields: [approvedById], references: [id])
+  items       InventoryRequestItem[]
+  requestedBy User                   @relation("InvReqRequestedBy", fields: [requestedById], references: [id])
+  approvedBy  User?                  @relation("InvReqApprovedBy", fields: [approvedById], references: [id])
 
   @@map("inventory_requests")
 }
 
 model InventoryRequestItem {
-  id                String    @id @default(cuid())
+  id                String  @id @default(cuid())
   requestId         String
   itemId            String
   quantityRequested Float
-  quantityFulfilled Float     @default(0)
+  quantityFulfilled Float   @default(0)
   unitCost          Float?
   notes             String?
 
-  request   InventoryRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  item      InventoryItem    @relation(fields: [itemId], references: [id])
+  request InventoryRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  item    InventoryItem    @relation(fields: [itemId], references: [id])
 
   @@map("inventory_request_items")
 }
 
 model InventoryTransfer {
-  id                String    @id @default(cuid())
-  transferNumber    String    @unique                    // IT-YYYYMM-NNNN
-  itemId            String
-  fromLocationId    String?
-  toLocationId      String?
-  quantity          Float
-  status            String    @default("pending")        // pending, in_transit, completed, cancelled
-  requestedById     String
-  approvedById      String?
-  approvedAt        DateTime?
-  completedAt       DateTime?
-  notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  transferNumber String    @unique // IT-YYYYMM-NNNN
+  itemId         String
+  fromLocationId String?
+  toLocationId   String?
+  quantity       Float
+  status         String    @default("pending") // pending, in_transit, completed, cancelled
+  requestedById  String
+  approvedById   String?
+  approvedAt     DateTime?
+  completedAt    DateTime?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  item          InventoryItem      @relation(fields: [itemId], references: [id])
-  fromLocation  InventoryLocation? @relation("InvTransferFrom", fields: [fromLocationId], references: [id])
-  toLocation    InventoryLocation? @relation("InvTransferTo", fields: [toLocationId], references: [id])
-  requestedBy   User                @relation("InvTransferRequestedBy", fields: [requestedById], references: [id])
-  approvedBy    User?               @relation("InvTransferApprovedBy", fields: [approvedById], references: [id])
+  item         InventoryItem      @relation(fields: [itemId], references: [id])
+  fromLocation InventoryLocation? @relation("InvTransferFrom", fields: [fromLocationId], references: [id])
+  toLocation   InventoryLocation? @relation("InvTransferTo", fields: [toLocationId], references: [id])
+  requestedBy  User               @relation("InvTransferRequestedBy", fields: [requestedById], references: [id])
+  approvedBy   User?              @relation("InvTransferApprovedBy", fields: [approvedById], references: [id])
 
   @@map("inventory_transfers")
 }
 
 model Supplier {
-  id            String    @id @default(cuid())
+  id            String   @id @default(cuid())
   name          String
-  code          String    @unique
+  code          String   @unique
   contactPerson String?
   email         String?
   phone         String?
@@ -1216,11 +1222,11 @@ model Supplier {
   city          String?
   country       String?
   website       String?
-  rating        Int?                                    // 1-5
-  isActive      Boolean   @default(true)
+  rating        Int? // 1-5
+  isActive      Boolean  @default(true)
   createdById   String
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   createdBy      User            @relation("SupplierCreatedBy", fields: [createdById], references: [id])
   purchaseOrders PurchaseOrder[]
@@ -1230,37 +1236,37 @@ model Supplier {
 }
 
 model PurchaseOrder {
-  id                String    @id @default(cuid())
-  poNumber          String    @unique                    // PO-YYYYMM-NNNN
-  supplierId        String
-  status            String    @default("draft")          // draft, submitted, approved, partially_received, received, cancelled
-  priority          String    @default("medium")
-  expectedDelivery  DateTime?
-  notes             String?
-  totalAmount       Float     @default(0)
-  createdById       String
-  approvedById      String?
-  approvedAt        DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  poNumber         String    @unique // PO-YYYYMM-NNNN
+  supplierId       String
+  status           String    @default("draft") // draft, submitted, approved, partially_received, received, cancelled
+  priority         String    @default("medium")
+  expectedDelivery DateTime?
+  notes            String?
+  totalAmount      Float     @default(0)
+  createdById      String
+  approvedById     String?
+  approvedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  supplier  Supplier              @relation(fields: [supplierId], references: [id])
-  items     PurchaseOrderItem[]
+  supplier         Supplier            @relation(fields: [supplierId], references: [id])
+  items            PurchaseOrderItem[]
   receivingRecords ReceivingRecord[]
-  createdBy User                  @relation("POCreatedBy", fields: [createdById], references: [id])
-  approvedBy User?                @relation("POApprovedBy", fields: [approvedById], references: [id])
+  createdBy        User                @relation("POCreatedBy", fields: [createdById], references: [id])
+  approvedBy       User?               @relation("POApprovedBy", fields: [approvedById], references: [id])
 
   @@map("purchase_orders")
 }
 
 model PurchaseOrderItem {
-  id               String    @id @default(cuid())
+  id               String  @id @default(cuid())
   poId             String
   itemId           String
   quantity         Float
   unitCost         Float
   totalCost        Float
-  quantityReceived Float     @default(0)
+  quantityReceived Float   @default(0)
   description      String?
 
   po   PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
@@ -1270,18 +1276,18 @@ model PurchaseOrderItem {
 }
 
 model ReceivingRecord {
-  id                String    @id @default(cuid())
-  poId              String
-  itemId            String
-  quantityReceived  Float
-  condition         String    @default("good")          // good, damaged, defective
-  receivedById      String
-  notes             String?
-  createdAt         DateTime  @default(now())
+  id               String   @id @default(cuid())
+  poId             String
+  itemId           String
+  quantityReceived Float
+  condition        String   @default("good") // good, damaged, defective
+  receivedById     String
+  notes            String?
+  createdAt        DateTime @default(now())
 
-  po          PurchaseOrder @relation(fields: [poId], references: [id])
-  item        InventoryItem @relation(fields: [itemId], references: [id])
-  receivedBy  User          @relation("ReceivingReceivedBy", fields: [receivedById], references: [id])
+  po         PurchaseOrder @relation(fields: [poId], references: [id])
+  item       InventoryItem @relation(fields: [itemId], references: [id])
+  receivedBy User          @relation("ReceivingReceivedBy", fields: [receivedById], references: [id])
 
   @@map("receiving_records")
 }
@@ -1291,120 +1297,120 @@ model ReceivingRecord {
 // ============================================================================
 
 model SafetyIncident {
-  id                String    @id @default(cuid())
-  incidentNumber    String    @unique                    // SI-YYYYMM-NNNN
-  title             String
-  description       String
-  type              String                               // injury, near_miss, property_damage, environmental, fire, chemical_spill
-  severity          String    @default("medium")          // low, medium, high, critical
-  status            String    @default("open")            // open, investigating, closed
-  incidentDate      DateTime
-  location          String?
-  assetId           String?
-  departmentId      String?
-  plantId           String?
-  reportedById      String
-  investigatedById  String?
-  rootCause         String?
-  correctiveAction  String?  @db.Text
-  daysLost          Int       @default(0)
-  cost              Float?
-  notes             String?
-  escalationLevel   Int       @default(0)         // 0=none, 1=officer, 2=manager
-  lastEscalatedAt   DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  incidentNumber   String    @unique // SI-YYYYMM-NNNN
+  title            String
+  description      String
+  type             String // injury, near_miss, property_damage, environmental, fire, chemical_spill
+  severity         String    @default("medium") // low, medium, high, critical
+  status           String    @default("open") // open, investigating, closed
+  incidentDate     DateTime
+  location         String?
+  assetId          String?
+  departmentId     String?
+  plantId          String?
+  reportedById     String
+  investigatedById String?
+  rootCause        String?
+  correctiveAction String?   @db.Text
+  daysLost         Int       @default(0)
+  cost             Float?
+  notes            String?
+  escalationLevel  Int       @default(0) // 0=none, 1=officer, 2=manager
+  lastEscalatedAt  DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  reportedBy        User      @relation("SafetyIncidentReportedBy", fields: [reportedById], references: [id])
-  investigatedBy    User?     @relation("SafetyIncidentInvestigatedBy", fields: [investigatedById], references: [id])
+  reportedBy     User  @relation("SafetyIncidentReportedBy", fields: [reportedById], references: [id])
+  investigatedBy User? @relation("SafetyIncidentInvestigatedBy", fields: [investigatedById], references: [id])
 
   @@map("safety_incidents")
 }
 
 model SafetyInspection {
-  id                String    @id @default(cuid())
-  inspectionNumber  String    @unique
-  title             String
-  description       String?
-  type              String                               // routine, follow_up, special
-  status            String    @default("scheduled")      // scheduled, in_progress, completed, failed
-  scheduledDate     DateTime
-  completedDate     DateTime?
-  location          String?
-  departmentId      String?
-  inspectorId       String?
-  findings          String@db.Text  // JSON text .Text
-  score             Int?
-  maxScore          Int?
-  notes             String?
-  createdById       String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  inspectionNumber String    @unique
+  title            String
+  description      String?
+  type             String // routine, follow_up, special
+  status           String    @default("scheduled") // scheduled, in_progress, completed, failed
+  scheduledDate    DateTime
+  completedDate    DateTime?
+  location         String?
+  departmentId     String?
+  inspectorId      String?
+  findings         String    @db.Text // JSON text .Text
+  score            Int?
+  maxScore         Int?
+  notes            String?
+  createdById      String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@map("safety_inspections")
 }
 
 model SafetyTraining {
-  id                String    @id @default(cuid())
-  title             String
-  description       String?
-  type              String                               // induction, refresher, specialized
-  status            String    @default("planned")         // planned, in_progress, completed, cancelled
-  trainer           String?
-  scheduledDate     DateTime?
-  completedDate     DateTime?
-  location          String?
-  attendees         String@db.Text  // JSON text array of user IDs .Text
-  durationHours     Float?
-  notes             String?
-  createdById       String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  title         String
+  description   String?
+  type          String // induction, refresher, specialized
+  status        String    @default("planned") // planned, in_progress, completed, cancelled
+  trainer       String?
+  scheduledDate DateTime?
+  completedDate DateTime?
+  location      String?
+  attendees     String    @db.Text // JSON text array of user IDs .Text
+  durationHours Float?
+  notes         String?
+  createdById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@map("safety_training")
 }
 
 model SafetyEquipment {
-  id                String    @id @default(cuid())
-  name              String
-  code              String    @unique
-  type              String                               // ppe, fire_extinguisher, first_aid, gas_detector, spill_kit
-  status            String    @default("available")      // available, in_use, expired, disposed
-  location          String?
-  quantity          Int       @default(1)
-  expiryDate        DateTime?
-  lastInspected     DateTime?
-  nextInspection    DateTime?
-  condition         String    @default("good")           // new, good, fair, poor
-  notes             String?
-  createdById       String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  name           String
+  code           String    @unique
+  type           String // ppe, fire_extinguisher, first_aid, gas_detector, spill_kit
+  status         String    @default("available") // available, in_use, expired, disposed
+  location       String?
+  quantity       Int       @default(1)
+  expiryDate     DateTime?
+  lastInspected  DateTime?
+  nextInspection DateTime?
+  condition      String    @default("good") // new, good, fair, poor
+  notes          String?
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@map("safety_equipment")
 }
 
 model SafetyPermit {
-  id                String    @id @default(cuid())
-  permitNumber      String    @unique
-  title             String
-  type              String                               // hot_work, confined_space, excavation, elevated_work, electrical
-  status            String    @default("pending")         // pending, approved, active, completed, expired, cancelled
-  description       String?
-  location          String?
-  startDate         DateTime
-  endDate           DateTime
-  requestedById     String
-  approvedById      String?
-  approvedAt        DateTime?
-  hazardAssessment  String?
-  precautions       String@db.Text  // JSON text .Text
-  notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  permitNumber     String    @unique
+  title            String
+  type             String // hot_work, confined_space, excavation, elevated_work, electrical
+  status           String    @default("pending") // pending, approved, active, completed, expired, cancelled
+  description      String?
+  location         String?
+  startDate        DateTime
+  endDate          DateTime
+  requestedById    String
+  approvedById     String?
+  approvedAt       DateTime?
+  hazardAssessment String?
+  precautions      String    @db.Text // JSON text .Text
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  requestedBy       User      @relation("SafetyPermitRequestedBy", fields: [requestedById], references: [id])
-  approvedBy        User?     @relation("SafetyPermitApprovedBy", fields: [approvedById], references: [id])
+  requestedBy User  @relation("SafetyPermitRequestedBy", fields: [requestedById], references: [id])
+  approvedBy  User? @relation("SafetyPermitApprovedBy", fields: [approvedById], references: [id])
 
   @@map("safety_permits")
 }
@@ -1414,121 +1420,121 @@ model SafetyPermit {
 // ============================================================================
 
 model QualityInspection {
-  id                String    @id @default(cuid())
-  inspectionNumber  String    @unique
-  title             String
-  description       String?
-  type              String                               // incoming, in_process, final, source
-  status            String    @default("pending")         // pending, in_progress, passed, failed, conditional
-  orderId           String?
-  assetId           String?
-  itemId            String?
-  plantId           String?
-  inspectedById     String
-  scheduledDate     DateTime?
-  completedDate     DateTime?
-  result            String?                              // pass, fail, conditional
-  defects           String@db.Text  // JSON text array .Text
-  notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  inspectionNumber String    @unique
+  title            String
+  description      String?
+  type             String // incoming, in_process, final, source
+  status           String    @default("pending") // pending, in_progress, passed, failed, conditional
+  orderId          String?
+  assetId          String?
+  itemId           String?
+  plantId          String?
+  inspectedById    String
+  scheduledDate    DateTime?
+  completedDate    DateTime?
+  result           String? // pass, fail, conditional
+  defects          String    @db.Text // JSON text array .Text
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  inspectedBy       User      @relation("QIInspectedBy", fields: [inspectedById], references: [id])
+  inspectedBy User @relation("QIInspectedBy", fields: [inspectedById], references: [id])
 
   @@map("quality_inspections")
 }
 
 model NonConformanceReport {
-  id                String    @id @default(cuid())
-  ncrNumber         String    @unique                    // NCR-YYYYMM-NNNN
-  title             String
-  description       String
-  severity          String    @default("minor")           // minor, major, critical
-  status            String    @default("open")            // open, investigating, root_cause_found, corrective_action, closed
-  type              String                               // product, process, documentation
+  id                 String    @id @default(cuid())
+  ncrNumber          String    @unique // NCR-YYYYMM-NNNN
+  title              String
+  description        String
+  severity           String    @default("minor") // minor, major, critical
+  status             String    @default("open") // open, investigating, root_cause_found, corrective_action, closed
+  type               String // product, process, documentation
   sourceInspectionId String?
-  assetId           String?
-  itemId            String?
-  departmentId      String?
-  raisedById        String
-  rootCause         String?
-  correctiveAction  String?  @db.Text
-  dueDate           DateTime?
-  completedDate     DateTime?
-  notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  assetId            String?
+  itemId             String?
+  departmentId       String?
+  raisedById         String
+  rootCause          String?
+  correctiveAction   String?   @db.Text
+  dueDate            DateTime?
+  completedDate      DateTime?
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  raisedBy          User      @relation("NCRRaisedBy", fields: [raisedById], references: [id])
+  raisedBy User @relation("NCRRaisedBy", fields: [raisedById], references: [id])
 
   @@map("non_conformance_reports")
 }
 
 model QualityAudit {
-  id                String    @id @default(cuid())
-  auditNumber       String    @unique
-  title             String
-  description       String?
-  type              String                               // internal, external, supplier, system
-  status            String    @default("planned")         // planned, in_progress, completed, closed
-  scheduledDate     DateTime
-  completedDate     DateTime?
-  auditedById       String?
-  departmentId      String?
-  scope             String?
-  findings          String@db.Text  // JSON text .Text
-  score             Int?
-  maxScore          Int?
-  recommendation    String?
-  notes             String?
-  createdById       String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  auditNumber    String    @unique
+  title          String
+  description    String?
+  type           String // internal, external, supplier, system
+  status         String    @default("planned") // planned, in_progress, completed, closed
+  scheduledDate  DateTime
+  completedDate  DateTime?
+  auditedById    String?
+  departmentId   String?
+  scope          String?
+  findings       String    @db.Text // JSON text .Text
+  score          Int?
+  maxScore       Int?
+  recommendation String?
+  notes          String?
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  auditedBy         User?     @relation("QAuditedBy", fields: [auditedById], references: [id])
+  auditedBy User? @relation("QAuditedBy", fields: [auditedById], references: [id])
 
   @@map("quality_audits")
 }
 
 model QualityControlPlan {
-  id                String    @id @default(cuid())
-  name              String
-  description       String?
-  itemId            String?
-  assetId           String?
-  type              String                               // incoming, in_process, final
-  frequency         String                               // every_lot, every_batch, hourly, daily
-  characteristics   String@db.Text  // JSON text .Text
-  sampleSize        Int?
-  isActive          Boolean   @default(true)
-  createdById       String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  itemId          String?
+  assetId         String?
+  type            String // incoming, in_process, final
+  frequency       String // every_lot, every_batch, hourly, daily
+  characteristics String   @db.Text // JSON text .Text
+  sampleSize      Int?
+  isActive        Boolean  @default(true)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@map("quality_control_plans")
 }
 
 model CorrectiveAction {
-  id                String    @id @default(cuid())
-  capaNumber        String    @unique
-  title             String
-  description       String
-  type              String                               // corrective, preventive
-  source            String                               // ncr, audit, inspection, customer_complaint
-  sourceId          String?
-  severity          String    @default("medium")
-  status            String    @default("open")            // open, in_progress, implemented, verified, closed
-  rootCause         String?
-  correctiveAction  String@db.Text  // JSON text .Text
-  preventiveAction  String?@db.Text  // JSON text .Text
-  responsibleId     String?
-  dueDate           DateTime?
-  verifiedById      String?  @db.Text
-  verifiedAt        DateTime?
-  effectiveness     String?
-  notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  capaNumber       String    @unique
+  title            String
+  description      String
+  type             String // corrective, preventive
+  source           String // ncr, audit, inspection, customer_complaint
+  sourceId         String?
+  severity         String    @default("medium")
+  status           String    @default("open") // open, in_progress, implemented, verified, closed
+  rootCause        String?
+  correctiveAction String    @db.Text // JSON text .Text
+  preventiveAction String?   @db.Text // JSON text .Text
+  responsibleId    String?
+  dueDate          DateTime?
+  verifiedById     String?   @db.Text
+  verifiedAt       DateTime?
+  effectiveness    String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@map("corrective_actions")
 }
@@ -1541,13 +1547,12 @@ model SpcProcess {
   specMin     Float?
   specMax     Float?
   target      Float?
-  status      String   @default("active")  // active, inactive
-  samples     String@db.Text  // JSON array of sample values .Text
+  status      String   @default("active") // active, inactive
+  samples     String   @db.Text // JSON array of sample values .Text
   createdById String
   createdBy   User     @relation("SpcProcessCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
 }
 
 // ============================================================================
@@ -1555,69 +1560,69 @@ model SpcProcess {
 // ============================================================================
 
 model WorkCenter {
-  id                String    @id @default(cuid())
-  code              String    @unique
-  name              String
-  description       String?
-  type              String                               // production, assembly, packaging, testing
-  status            String    @default("active")          // active, inactive, maintenance
-  location          String?
-  capacity          Int?
-  capacityUnit      String    @default("units/hour")
-  isActive          Boolean   @default(true)
-  createdById       String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  description  String?
+  type         String // production, assembly, packaging, testing
+  status       String   @default("active") // active, inactive, maintenance
+  location     String?
+  capacity     Int?
+  capacityUnit String   @default("units/hour")
+  isActive     Boolean  @default(true)
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  productionOrders  ProductionOrder[]
+  productionOrders ProductionOrder[]
 
   @@map("work_centers")
 }
 
 model ProductionOrder {
-  id                String    @id @default(cuid())
-  orderNumber       String    @unique                    // PO-PROD-YYYYMM-NNNN
-  title             String
-  description       String?
-  status            String    @default("planned")         // planned, released, in_progress, completed, cancelled
-  priority          String    @default("medium")
-  productId         String?
-  productName       String?
-  quantity          Float
-  completedQty      Float     @default(0)
-  unitCost          Float?
-  workCenterId      String?
+  id           String  @id @default(cuid())
+  orderNumber  String  @unique // PO-PROD-YYYYMM-NNNN
+  title        String
+  description  String?
+  status       String  @default("planned") // planned, released, in_progress, completed, cancelled
+  priority     String  @default("medium")
+  productId    String?
+  productName  String?
+  quantity     Float
+  completedQty Float   @default(0)
+  unitCost     Float?
+  workCenterId String?
 
-  workCenter        WorkCenter?  @relation(fields: [workCenterId], references: [id])
-  plantId           String?
-  scheduledStart    DateTime?
-  scheduledEnd      DateTime?
-  actualStart       DateTime?
-  actualEnd         DateTime?
-  notes             String?
-  createdById       String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  workCenter     WorkCenter? @relation(fields: [workCenterId], references: [id])
+  plantId        String?
+  scheduledStart DateTime?
+  scheduledEnd   DateTime?
+  actualStart    DateTime?
+  actualEnd      DateTime?
+  notes          String?
+  createdById    String
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   @@map("production_orders")
 }
 
 model ProductionBatch {
-  id                String    @id @default(cuid())
-  batchNumber       String    @unique
-  orderId           String?
-  productId         String?
-  productName       String?
-  quantity          Float
-  completedQty      Float     @default(0)
-  status            String    @default("planned")         // planned, in_progress, quality_check, completed, rejected
-  startDate         DateTime?
-  endDate           DateTime?
-  yield_            Float?                               // percentage
-  notes             String?
-  createdById       String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  batchNumber  String    @unique
+  orderId      String?
+  productId    String?
+  productName  String?
+  quantity     Float
+  completedQty Float     @default(0)
+  status       String    @default("planned") // planned, in_progress, quality_check, completed, rejected
+  startDate    DateTime?
+  endDate      DateTime?
+  yield_       Float? // percentage
+  notes        String?
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@map("production_batches")
 }
@@ -1627,126 +1632,126 @@ model ProductionBatch {
 // ============================================================================
 
 model MeterReading {
-  id                String    @id @default(cuid())
-  readingNumber     String    @unique                    // MR-OPS-YYYYMM-NNNN
-  assetId           String?
-  plantId           String?
-  meterName         String
-  value             Float
-  unit              String
-  readingDate       DateTime
-  previousValue     Float?
-  consumption       Float?
-  notes             String?
-  readById          String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id            String   @id @default(cuid())
+  readingNumber String   @unique // MR-OPS-YYYYMM-NNNN
+  assetId       String?
+  plantId       String?
+  meterName     String
+  value         Float
+  unit          String
+  readingDate   DateTime
+  previousValue Float?
+  consumption   Float?
+  notes         String?
+  readById      String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  readBy            User      @relation("MeterReadingReadBy", fields: [readById], references: [id], onDelete: Cascade)
+  readBy User @relation("MeterReadingReadBy", fields: [readById], references: [id], onDelete: Cascade)
 
   @@map("meter_readings")
 }
 
 model TrainingCourse {
-  id                String    @id @default(cuid())
-  title             String
-  description       String?
-  category          String                               // safety, technical, compliance, soft_skills
-  type              String                               // classroom, online, on_the_job
-  durationHours     Float
-  status            String    @default("active")          // active, inactive, archived
-  instructor        String?
-  maxParticipants   Int?
-  certification     Boolean   @default(false)
-  validForMonths    Int?
-  notes             String?
-  createdById       String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  category        String // safety, technical, compliance, soft_skills
+  type            String // classroom, online, on_the_job
+  durationHours   Float
+  status          String   @default("active") // active, inactive, archived
+  instructor      String?
+  maxParticipants Int?
+  certification   Boolean  @default(false)
+  validForMonths  Int?
+  notes           String?
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@map("training_courses")
 }
 
 model ShiftHandover {
-  id                String    @id @default(cuid())
-  shiftDate         DateTime
-  shiftType         String                               // morning, afternoon, night
-  fromShift         String?
-  toShift           String?
-  departmentId      String?
-  handedOverById    String
-  receivedById      String?
-  status            String    @default("pending")         // pending, confirmed
-  tasksSummary      String@db.Text  // JSON text .Text
-  pendingIssues     String@db.Text  // JSON text .Text
-  safetyNotes       String?
-  equipmentStatus   String?@db.Text  // JSON text .Text
-  notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id              String   @id @default(cuid())
+  shiftDate       DateTime
+  shiftType       String // morning, afternoon, night
+  fromShift       String?
+  toShift         String?
+  departmentId    String?
+  handedOverById  String
+  receivedById    String?
+  status          String   @default("pending") // pending, confirmed
+  tasksSummary    String   @db.Text // JSON text .Text
+  pendingIssues   String   @db.Text // JSON text .Text
+  safetyNotes     String?
+  equipmentStatus String?  @db.Text // JSON text .Text
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  handedOverBy      User      @relation("ShiftHandoverFrom", fields: [handedOverById], references: [id])
-  receivedBy        User?     @relation("ShiftHandoverTo", fields: [receivedById], references: [id])
+  handedOverBy User  @relation("ShiftHandoverFrom", fields: [handedOverById], references: [id])
+  receivedBy   User? @relation("ShiftHandoverTo", fields: [receivedById], references: [id])
 
   @@map("shift_handovers")
 }
 
 model Checklist {
-  id                String    @id @default(cuid())
-  title             String
-  description       String?
-  type              String                               // safety, quality, maintenance, operational
-  frequency         String                               // daily, weekly, monthly, per_shift, per_job
-  departmentId      String?
-  assetId           String?
-  isActive          Boolean   @default(true)
-  createdById       String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  type         String // safety, quality, maintenance, operational
+  frequency    String // daily, weekly, monthly, per_shift, per_job
+  departmentId String?
+  assetId      String?
+  isActive     Boolean  @default(true)
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  items             ChecklistItem[]
+  items ChecklistItem[]
 
   @@map("checklists")
 }
 
 model ChecklistItem {
-  id                String    @id @default(cuid())
-  checklistId       String
-  item              String
-  description       String?
-  sortOrder         Int       @default(0)
-  isRequired        Boolean   @default(true)
+  id          String  @id @default(cuid())
+  checklistId String
+  item        String
+  description String?
+  sortOrder   Int     @default(0)
+  isRequired  Boolean @default(true)
 
-  checklist         Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  checklist Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
 
   @@map("checklist_items")
 }
 
 model ChecklistResponse {
-  id                String    @id @default(cuid())
-  checklistId       String
-  completedById     String
-  status            String    @default("pass")            // pass, fail, na
-  responses         String@db.Text  // JSON text { itemId: { status, notes } } .Text
-  notes             String?
-  completedAt       DateTime  @default(now())
+  id            String   @id @default(cuid())
+  checklistId   String
+  completedById String
+  status        String   @default("pass") // pass, fail, na
+  responses     String   @db.Text // JSON text { itemId: { status, notes } } .Text
+  notes         String?
+  completedAt   DateTime @default(now())
 
   @@map("checklist_responses")
 }
 
 model Survey {
-  id                String    @id @default(cuid())
-  title             String
-  description       String?
-  type              String                               // satisfaction, safety, quality, general
-  status            String    @default("active")          // active, closed
-  targetGroup       String?                              // all, department, specific
-  questions         String@db.Text  // JSON text array .Text
-  responses         String@db.Text  // JSON text array (summary) .Text
-  totalResponses    Int       @default(0)
-  createdById       String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id             String   @id @default(cuid())
+  title          String
+  description    String?
+  type           String // satisfaction, safety, quality, general
+  status         String   @default("active") // active, closed
+  targetGroup    String? // all, department, specific
+  questions      String   @db.Text // JSON text array .Text
+  responses      String   @db.Text // JSON text array (summary) .Text
+  totalResponses Int      @default(0)
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@map("surveys")
 }
@@ -1757,7 +1762,7 @@ model Survey {
 
 model CalibrationRecord {
   id                String    @id @default(cuid())
-  calibrationNumber String    @unique                    // CAL-YYYYMM-NNNN
+  calibrationNumber String    @unique // CAL-YYYYMM-NNNN
   title             String
   description       String?
   assetId           String?
@@ -1765,11 +1770,11 @@ model CalibrationRecord {
   serialNumber      String?
   calibrationDate   DateTime
   nextDueDate       DateTime?
-  status            String    @default("calibrated")     // calibrated, out_of_calibration, due
+  status            String    @default("calibrated") // calibrated, out_of_calibration, due
   standardUsed      String?
-  result            String?                              // pass, fail, adjusted
-  asFound           String?@db.Text  // JSON text .Text
-  asLeft            String?@db.Text  // JSON text .Text
+  result            String? // pass, fail, adjusted
+  asFound           String?   @db.Text // JSON text .Text
+  asLeft            String?   @db.Text // JSON text .Text
   uncertainty       Float?
   performedById     String?
   approvedById      String?
@@ -1781,26 +1786,26 @@ model CalibrationRecord {
 }
 
 model RiskAssessment {
-  id                String    @id @default(cuid())
-  assessmentNumber  String    @unique                    // RA-YYYYMM-NNNN
-  title             String
-  description       String?
-  assetId           String?
-  departmentId      String?
-  assessmentDate    DateTime
-  nextReview        DateTime?
-  status            String    @default("open")            // open, in_progress, completed, reviewed
-  likelihood        Int?                                  // 1-5
-  consequence       Int?                                  // 1-5
-  riskLevel         String?                              // low, medium, high, extreme
-  hazards           String@db.Text  // JSON text array .Text
-  controls          String@db.Text  // JSON text array .Text
-  residualRisk      String?
-  assessorId        String?
-  reviewerId        String?
-  notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  assessmentNumber String    @unique // RA-YYYYMM-NNNN
+  title            String
+  description      String?
+  assetId          String?
+  departmentId     String?
+  assessmentDate   DateTime
+  nextReview       DateTime?
+  status           String    @default("open") // open, in_progress, completed, reviewed
+  likelihood       Int? // 1-5
+  consequence      Int? // 1-5
+  riskLevel        String? // low, medium, high, extreme
+  hazards          String    @db.Text // JSON text array .Text
+  controls         String    @db.Text // JSON text array .Text
+  residualRisk     String?
+  assessorId       String?
+  reviewerId       String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@map("risk_assessments")
 }
@@ -1809,59 +1814,59 @@ model RiskAssessment {
 // LOTO (Lock-Out/Tag-Out) Records
 // ============================================================================
 model LotoRecord {
-  id                String    @id @default(cuid())
-  lotoNumber        String    @unique                    // LOTO-YYYYMM-NNNN
-  title             String
-  description       String?
-  assetId           String?
-  departmentId      String?
-  plantId           String?
-  workOrderId       String?                                // linked WO if applicable
+  id           String  @id @default(cuid())
+  lotoNumber   String  @unique // LOTO-YYYYMM-NNNN
+  title        String
+  description  String?
+  assetId      String?
+  departmentId String?
+  plantId      String?
+  workOrderId  String? // linked WO if applicable
 
   // LOTO type and scope
-  lotoType          String    @default("routine")           // routine, emergency, planned_maintenance, shutdown
-  energySource      String                               // electrical, mechanical, hydraulic, pneumatic, thermal, chemical, other
-  energySourceDesc   String?                              // specific description of the energy source
+  lotoType         String  @default("routine") // routine, emergency, planned_maintenance, shutdown
+  energySource     String // electrical, mechanical, hydraulic, pneumatic, thermal, chemical, other
+  energySourceDesc String? // specific description of the energy source
 
   // Requester info
-  requestedById     String?
-  requestDate       DateTime  @default(now())
-  scheduledDate     DateTime?
-  requiredFromDate   DateTime?
-  requiredToDate     DateTime?
+  requestedById    String?
+  requestDate      DateTime  @default(now())
+  scheduledDate    DateTime?
+  requiredFromDate DateTime?
+  requiredToDate   DateTime?
 
   // Approval workflow
-  supervisorId      String?
-  supervisorApprovedAt DateTime?
-  safetyOfficerId   String?
+  supervisorId            String?
+  supervisorApprovedAt    DateTime?
+  safetyOfficerId         String?
   safetyOfficerApprovedAt DateTime?
 
   // Execution
-  status            String    @default("pending")          // pending, approved, in_progress, completed, cancelled, expired
-  startedAt         DateTime?
-  completedAt       DateTime?
-  cancelledAt       DateTime?
-  cancelledReason    String?
+  status          String    @default("pending") // pending, approved, in_progress, completed, cancelled, expired
+  startedAt       DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  cancelledReason String?
 
   // LOTO details (JSON arrays)
-  isolationPoints  String@db.Text  // JSON array of isolation point descriptions .Text
-  lockDevices       String@db.Text  // JSON array of lock device IDs/descriptions .Text
-  tagNumbers        String@db.Text  // JSON array of tag numbers .Text
-  verifiedBy        String?@db.Text  // JSON array of verifier names .Text
-  verificationDate   DateTime?
+  isolationPoints  String    @db.Text // JSON array of isolation point descriptions .Text
+  lockDevices      String    @db.Text // JSON array of lock device IDs/descriptions .Text
+  tagNumbers       String    @db.Text // JSON array of tag numbers .Text
+  verifiedBy       String?   @db.Text // JSON array of verifier names .Text
+  verificationDate DateTime?
 
   // Workers affected
-  affectedWorkers   String?@db.Text  // JSON array of worker names/IDs .Text
-  workerCount       Int?
+  affectedWorkers String? @db.Text // JSON array of worker names/IDs .Text
+  workerCount     Int?
 
   // Sign-off
-  appliedBy         String?                              // who applied the lock
-  removedBy         String?                              // who removed the lock
-  removedAt         DateTime?
+  appliedBy String? // who applied the lock
+  removedBy String? // who removed the lock
+  removedAt DateTime?
 
-  notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("loto_records")
 }
@@ -1871,46 +1876,216 @@ model LotoRecord {
 // ============================================================================
 
 model BillOfMaterial {
-  id                String    @id @default(cuid())
-  parentId          String                               // → Asset (parent assembly)
-  childAssetId      String                               // → Asset (component)
-  partNumber        String?
-  quantity          Float     @default(1)
-  unit              String    @default("each")
-  specification     String?  @db.Text
-  status            String    @default("active")          // active, pending, obsolete, under_review
-  revision          String?
-  notes             String?
-  createdAt         DateTime  @default(now())
+  id            String   @id @default(cuid())
+  parentId      String // → Asset (parent assembly)
+  childAssetId  String // → Asset (component)
+  partNumber    String?
+  quantity      Float    @default(1)
+  unit          String   @default("each")
+  specification String?  @db.Text
+  status        String   @default("active") // active, pending, obsolete, under_review
+  revision      String?
+  notes         String?
+  createdAt     DateTime @default(now())
 
-  parent             Asset                @relation("BomParent", fields: [parentId], references: [id], onDelete: Cascade)
-  childAsset         Asset                @relation("BomChild", fields: [childAssetId], references: [id], onDelete: Cascade)
+  parent     Asset @relation("BomParent", fields: [parentId], references: [id], onDelete: Cascade)
+  childAsset Asset @relation("BomChild", fields: [childAssetId], references: [id], onDelete: Cascade)
 
   @@unique([parentId, childAssetId])
   @@map("bill_of_materials")
 }
 
 model DigitalTwin {
-  id                String    @id @default(cuid())
-  assetId           String    @unique
-  name              String
-  description       String?
-  type              String    @default("other")            // pump, motor, compressor, valve, heat_exchanger, other
-  parameters        String@db.Text  // JSON text of key parameters .Text
-  connections       String@db.Text  // JSON text of connections .Text
-  specification     String?@db.Text  // JSON text of specs
-  healthScore       Int       @default(0)                   // 0-100
-  syncInterval      String    @default("5min")             // real_time, 1min, 5min, 15min
-  lastSynced        DateTime?
-  isActive          Boolean   @default(true)
-  createdById       String
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id            String    @id @default(cuid())
+  assetId       String    @unique
+  name          String
+  description   String?
+  type          String    @default("other") // pump, motor, compressor, valve, heat_exchanger, other
+  parameters    String    @db.Text // JSON text of key parameters .Text
+  connections   String    @db.Text // JSON text of connections .Text
+  specification String?   @db.Text // JSON text of specs
+  healthScore   Int       @default(0) // 0-100
+  syncInterval  String    @default("5min") // real_time, 1min, 5min, 15min
+  lastSynced    DateTime?
+  isActive      Boolean   @default(true)
+  createdById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  asset              Asset                @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  createdBy          User                @relation("DigitalTwinCreatedBy", fields: [createdById], references: [id])
+  asset     Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  createdBy User               @relation("DigitalTwinCreatedBy", fields: [createdById], references: [id])
+  scenes    DigitalTwinScene[]
 
   @@map("digital_twins")
+}
+
+// ============================================================================
+// 25.5 DIGITAL TWIN SPATIAL & VISUALIZATION
+// ============================================================================
+
+model AssetModel {
+  id           String   @id @default(cuid())
+  assetId      String // → Asset
+  name         String // model display name
+  fileName     String // file name on disk
+  filePath     String // relative path
+  fileType     String // glb, gltf, fbx, obj, step
+  fileSize     Int // bytes
+  format       String   @default("glb") // glb, gltf
+  boundingBox  String?  @db.Text // JSON: {minX, minY, minZ, maxX, maxY, maxZ}
+  meshCount    Int      @default(0)
+  vertexCount  Int      @default(0)
+  thumbnailUrl String? // preview image
+  uploadedById String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  asset      Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  uploadedBy User               @relation("AssetModelUploadedBy", fields: [uploadedById], references: [id])
+  bindings   AssetMeshBinding[]
+  scenes     DigitalTwinScene[]
+
+  @@map("asset_models")
+}
+
+model AssetMeshBinding {
+  id            String   @id @default(cuid())
+  modelId       String // → AssetModel
+  assetId       String // → Asset (component asset)
+  meshName      String // name of the mesh in the 3D model
+  meshPath      String? // path in scene graph (e.g. "Pump/Motor/Rotor")
+  meshType      String   @default("component") // component, assembly, subassembly, auxiliary
+  isClickable   Boolean  @default(true)
+  isVisible     Boolean  @default(true)
+  colorOverride String? // hex color to override mesh material
+  opacity       Float? // 0.0 to 1.0
+  explodeOffset String?  @db.Text // JSON: {x, y, z} for exploded view offset
+  metadata      String?  @db.Text // JSON for extra properties
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  model    AssetModel    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  asset    Asset         @relation("MeshBoundAsset", fields: [assetId], references: [id])
+  hotspots TwinHotspot[]
+
+  @@unique([modelId, meshName])
+  @@map("asset_mesh_bindings")
+}
+
+model DigitalTwinScene {
+  id                    String   @id @default(cuid())
+  twinId                String // → DigitalTwin
+  modelId               String // → AssetModel
+  name                  String
+  description           String?
+  sceneType             String   @default("3d") // 3d, floor_plan, schematic
+  environment           String   @default("warehouse") // warehouse, outdoor, clean_room, industrial
+  backgroundColor       String   @default("#1a1a2e")
+  groundPlane           Boolean  @default(true)
+  gridEnabled           Boolean  @default(true)
+  ambientLight          Float    @default(0.6)
+  directionalLight      Float    @default(0.8)
+  defaultCameraPosition String?  @db.Text // JSON: {x, y, z}
+  defaultCameraTarget   String?  @db.Text // JSON: {x, y, z}
+  isActive              Boolean  @default(true)
+  createdById           String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  twin          DigitalTwin        @relation(fields: [twinId], references: [id], onDelete: Cascade)
+  model         AssetModel         @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  createdBy     User               @relation("SceneCreatedBy", fields: [createdById], references: [id])
+  hotspots      TwinHotspot[]
+  annotations   TwinAnnotation[]
+  cameraPresets TwinCameraPreset[]
+
+  @@map("digital_twin_scenes")
+}
+
+model TwinHotspot {
+  id              String   @id @default(cuid())
+  sceneId         String // → DigitalTwinScene
+  bindingId       String? // → AssetMeshBinding (optional)
+  assetId         String? // → Asset (linked asset for data)
+  label           String
+  description     String?
+  position        String   @db.Text // JSON: {x, y, z}
+  icon            String   @default("info") // info, warning, danger, maintenance, sensor
+  color           String   @default("#3b82f6")
+  isAlwaysVisible Boolean  @default(false)
+  isPulsing       Boolean  @default(false)
+  dataPoint       String? // iot device code, kpi metric, etc.
+  sortOrder       Int      @default(0)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  scene   DigitalTwinScene  @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  binding AssetMeshBinding? @relation(fields: [bindingId], references: [id], onDelete: Cascade)
+  asset   Asset?            @relation("HotspotAsset", fields: [assetId], references: [id])
+
+  @@map("twin_hotspots")
+}
+
+model TwinCameraPreset {
+  id                 String   @id @default(cuid())
+  sceneId            String // → DigitalTwinScene
+  name               String
+  description        String?
+  position           String   @db.Text // JSON: {x, y, z}
+  target             String   @db.Text // JSON: {x, y, z}
+  fov                Float    @default(50)
+  transitionDuration Float    @default(1.0) // seconds for camera animation
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+
+  scene DigitalTwinScene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+
+  @@map("twin_camera_presets")
+}
+
+model TwinAnnotation {
+  id        String   @id @default(cuid())
+  sceneId   String // → DigitalTwinScene
+  assetId   String? // → Asset
+  title     String
+  content   String   @db.Text
+  authorId  String
+  type      String   @default("note") // note, warning, maintenance_log, inspection
+  priority  String   @default("low") // low, medium, high, critical
+  color     String   @default("#fbbf24")
+  position  String   @db.Text // JSON: {x, y, z}
+  isPinned  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scene  DigitalTwinScene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  author User             @relation(fields: [authorId], references: [id])
+
+  @@map("twin_annotations")
+}
+
+model SystemDiagram {
+  id           String   @id @default(cuid())
+  plantId      String?
+  name         String
+  description  String?
+  type         String   @default("process") // piping, electrical, process, hvac, control, safety
+  nodes        String   @db.Text // JSON array of nodes
+  edges        String   @db.Text // JSON array of edges
+  viewport     String?  @db.Text // JSON: {x, y, zoom}
+  thumbnailUrl String?
+  version      Int      @default(1)
+  isActive     Boolean  @default(true)
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  createdByIdUser User @relation("SystemDiagramCreatedBy", fields: [createdById], references: [id])
+
+  @@map("system_diagrams")
 }
 
 // ============================================================================
@@ -1918,11 +2093,11 @@ model DigitalTwin {
 // ============================================================================
 
 model Conversation {
-  id        String    @id @default(cuid())
+  id        String   @id @default(cuid())
   name      String
-  type      String    @default("direct")  // direct, group
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  type      String   @default("direct") // direct, group
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   participants ConversationParticipant[]
   messages     ChatMessage[]
@@ -1937,8 +2112,8 @@ model ConversationParticipant {
   joinedAt   DateTime  @default(now())
   lastReadAt DateTime?
 
-  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  convo   Conversation  @relation(fields: [convoId], references: [id], onDelete: Cascade)
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  convo Conversation @relation(fields: [convoId], references: [id], onDelete: Cascade)
 
   @@unique([userId, convoId])
   @@map("conversation_participants")
@@ -1949,14 +2124,14 @@ model ConversationParticipant {
 // ============================================================================
 
 model Session {
-  id        String   @id @default(cuid())
-  token     String   @unique
-  userId    String
-  roles     String@db.Text  // JSON array of role slugs .Text
-  permissions String@db.Text  // JSON array of permission slugs .Text
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  lastSeen  DateTime @default(now())
+  id          String   @id @default(cuid())
+  token       String   @unique
+  userId      String
+  roles       String   @db.Text // JSON array of role slugs .Text
+  permissions String   @db.Text // JSON array of permission slugs .Text
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  lastSeen    DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1964,15 +2139,15 @@ model Session {
 }
 
 model ChatMessage {
-  id         String   @id @default(cuid())
-  convoId    String   @map("conversationId")
-  senderId   String
-  content    String
-  messageType String   @default("text")  // text, system
-  createdAt  DateTime @default(now())
+  id          String   @id @default(cuid())
+  convoId     String   @map("conversationId")
+  senderId    String
+  content     String
+  messageType String   @default("text") // text, system
+  createdAt   DateTime @default(now())
 
-  convo   Conversation  @relation(fields: [convoId], references: [id], onDelete: Cascade)
-  sender  User          @relation(fields: [senderId], references: [id])
+  convo  Conversation @relation(fields: [convoId], references: [id], onDelete: Cascade)
+  sender User         @relation(fields: [senderId], references: [id])
 
   @@map("chat_messages")
 }
@@ -1982,89 +2157,89 @@ model ChatMessage {
 // ============================================================================
 
 model RepairMaterialRequest {
-  id                    String    @id @default(cuid())
-  workOrderId           String
-  itemId                String?                              // → InventoryItem
-  itemName              String
-  quantityRequested     Float
-  quantityApproved      Float     @default(0)
-  quantityIssued        Float     @default(0)
-  quantityReturned      Float     @default(0)
-  unit                  String    @default("each")
-  unitCost              Float?
-  estimatedCost         Float     @default(0)
-  urgency               String    @default("normal")          // low, normal, high, critical
-  reason                String
-  notes                 String?
-  status                String    @default("pending")         // pending, supervisor_approved, storekeeper_approved, issued, partially_returned, fully_returned, rejected
-  supervisorApprovedQuantity Float?                         // qty approved by supervisor (may differ from requested)
-  storekeeperApprovedQuantity Float?                         // qty approved by storekeeper (may differ from supervisor qty)
-  stockReserved         Boolean   @default(false)            // whether stock was reserved at storekeeper approval
-  requestedById         String                               // → User
-  supervisorApprovedById String?
-  supervisorApprovedAt  DateTime?
-  storekeeperApprovedById String?
-  storekeeperApprovedAt DateTime?
-  issuedById            String?                              // → User
-  issuedAt              DateTime?
-  returnedById          String?                              // → User
-  returnedAt            DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id                          String    @id @default(cuid())
+  workOrderId                 String
+  itemId                      String? // → InventoryItem
+  itemName                    String
+  quantityRequested           Float
+  quantityApproved            Float     @default(0)
+  quantityIssued              Float     @default(0)
+  quantityReturned            Float     @default(0)
+  unit                        String    @default("each")
+  unitCost                    Float?
+  estimatedCost               Float     @default(0)
+  urgency                     String    @default("normal") // low, normal, high, critical
+  reason                      String
+  notes                       String?
+  status                      String    @default("pending") // pending, supervisor_approved, storekeeper_approved, issued, partially_returned, fully_returned, rejected
+  supervisorApprovedQuantity  Float? // qty approved by supervisor (may differ from requested)
+  storekeeperApprovedQuantity Float? // qty approved by storekeeper (may differ from supervisor qty)
+  stockReserved               Boolean   @default(false) // whether stock was reserved at storekeeper approval
+  requestedById               String // → User
+  supervisorApprovedById      String?
+  supervisorApprovedAt        DateTime?
+  storekeeperApprovedById     String?
+  storekeeperApprovedAt       DateTime?
+  issuedById                  String? // → User
+  issuedAt                    DateTime?
+  returnedById                String? // → User
+  returnedAt                  DateTime?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
 
   // WorkOrder relation
-  workOrder             WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
 
   // InventoryItem relation
-  item                  InventoryItem? @relation(fields: [itemId], references: [id])
+  item InventoryItem? @relation(fields: [itemId], references: [id])
 
   // User relations
-  requestedBy           User       @relation("RepairMatReqRequested", fields: [requestedById], references: [id])
-  supervisorApprovedBy  User?      @relation("RepairMatReqSupApproved", fields: [supervisorApprovedById], references: [id])
-  storekeeperApprovedBy User?      @relation("RepairMatReqStoreApproved", fields: [storekeeperApprovedById], references: [id])
-  issuedByUser          User?      @relation("RepairMatReqIssued", fields: [issuedById], references: [id])
-  returnedByUser        User?      @relation("RepairMatReqReturned", fields: [returnedById], references: [id])
+  requestedBy           User  @relation("RepairMatReqRequested", fields: [requestedById], references: [id])
+  supervisorApprovedBy  User? @relation("RepairMatReqSupApproved", fields: [supervisorApprovedById], references: [id])
+  storekeeperApprovedBy User? @relation("RepairMatReqStoreApproved", fields: [storekeeperApprovedById], references: [id])
+  issuedByUser          User? @relation("RepairMatReqIssued", fields: [issuedById], references: [id])
+  returnedByUser        User? @relation("RepairMatReqReturned", fields: [returnedById], references: [id])
 
   @@map("repair_material_requests")
 }
 
 // 2. RepairToolRequest — Tool requests from technicians
 model RepairToolRequest {
-  id                    String    @id @default(cuid())
-  workOrderId           String
-  toolId                String?                              // → Tool
-  toolName              String
-  reason                String
-  notes                 String?
-  status                String    @default("pending")         // pending, supervisor_approved, storekeeper_approved, issued, returned, rejected
-  urgency               String    @default("normal")          // low, normal, high, critical
-  rejectionReason       String?
-  toolConditionAtIssue  String?                              // new, good, fair, poor — captured at issue time
-  toolConditionAtReturn String?                              // new, good, fair, poor — captured at return time
-  requestedById         String                               // → User
-  supervisorApprovedById String?
-  supervisorApprovedAt  DateTime?
+  id                      String    @id @default(cuid())
+  workOrderId             String
+  toolId                  String? // → Tool
+  toolName                String
+  reason                  String
+  notes                   String?
+  status                  String    @default("pending") // pending, supervisor_approved, storekeeper_approved, issued, returned, rejected
+  urgency                 String    @default("normal") // low, normal, high, critical
+  rejectionReason         String?
+  toolConditionAtIssue    String? // new, good, fair, poor — captured at issue time
+  toolConditionAtReturn   String? // new, good, fair, poor — captured at return time
+  requestedById           String // → User
+  supervisorApprovedById  String?
+  supervisorApprovedAt    DateTime?
   storekeeperApprovedById String?
-  storekeeperApprovedAt DateTime?
-  issuedById            String?                              // → User
-  issuedAt              DateTime?
-  returnedById          String?                              // → User
-  returnedAt            DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  storekeeperApprovedAt   DateTime?
+  issuedById              String? // → User
+  issuedAt                DateTime?
+  returnedById            String? // → User
+  returnedAt              DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   // WorkOrder relation
-  workOrder             WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
 
   // Tool relation
-  tool                  Tool?     @relation(fields: [toolId], references: [id])
+  tool Tool? @relation(fields: [toolId], references: [id])
 
   // User relations
-  requestedBy           User       @relation("RepairToolReqRequested", fields: [requestedById], references: [id])
-  supervisorApprovedBy  User?      @relation("RepairToolReqSupApproved", fields: [supervisorApprovedById], references: [id])
-  storekeeperApprovedBy User?      @relation("RepairToolReqStoreApproved", fields: [storekeeperApprovedById], references: [id])
-  issuedByUser          User?      @relation("RepairToolReqIssued", fields: [issuedById], references: [id])
-  returnedByUser        User?      @relation("RepairToolReqReturned", fields: [returnedById], references: [id])
+  requestedBy           User  @relation("RepairToolReqRequested", fields: [requestedById], references: [id])
+  supervisorApprovedBy  User? @relation("RepairToolReqSupApproved", fields: [supervisorApprovedById], references: [id])
+  storekeeperApprovedBy User? @relation("RepairToolReqStoreApproved", fields: [storekeeperApprovedById], references: [id])
+  issuedByUser          User? @relation("RepairToolReqIssued", fields: [issuedById], references: [id])
+  returnedByUser        User? @relation("RepairToolReqReturned", fields: [returnedById], references: [id])
 
   @@map("repair_tool_requests")
 }
@@ -2072,54 +2247,54 @@ model RepairToolRequest {
 // 3. ToolTransferRequest — Tool transfer between technicians
 model ToolTransferRequest {
   id                      String    @id @default(cuid())
-  toolId                  String                               // → Tool
-  fromUserId              String                               // → User
-  toUserId                String                               // → User
+  toolId                  String // → Tool
+  fromUserId              String // → User
+  toUserId                String // → User
   reason                  String
   notes                   String?
-  status                  String    @default("pending")         // pending, storekeeper_approved, awaiting_handover, transferred, rejected
+  status                  String    @default("pending") // pending, storekeeper_approved, awaiting_handover, transferred, rejected
   rejectionReason         String?
-  toolConditionAtTransfer String?                               // new, good, fair, poor — captured at approval
+  toolConditionAtTransfer String? // new, good, fair, poor — captured at approval
   fromUserAcceptedAt      DateTime?
   toUserAcceptedAt        DateTime?
-  requestedById           String                               // → User
-  storekeeperApprovedById  String?
+  requestedById           String // → User
+  storekeeperApprovedById String?
   storekeeperApprovedAt   DateTime?
   transferredAt           DateTime?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
   // Tool relation
-  tool                    Tool      @relation(fields: [toolId], references: [id])
+  tool Tool @relation(fields: [toolId], references: [id])
 
   // User relations
-  fromUser                User      @relation("ToolTransferFrom", fields: [fromUserId], references: [id])
-  toUser                  User      @relation("ToolTransferTo", fields: [toUserId], references: [id])
-  requestedBy             User      @relation("ToolTransferRequested", fields: [requestedById], references: [id])
-  storekeeperApprovedBy   User?     @relation("ToolTransferStoreApproved", fields: [storekeeperApprovedById], references: [id])
+  fromUser              User  @relation("ToolTransferFrom", fields: [fromUserId], references: [id])
+  toUser                User  @relation("ToolTransferTo", fields: [toUserId], references: [id])
+  requestedBy           User  @relation("ToolTransferRequested", fields: [requestedById], references: [id])
+  storekeeperApprovedBy User? @relation("ToolTransferStoreApproved", fields: [storekeeperApprovedById], references: [id])
 
   @@map("tool_transfer_requests")
 }
 
 // 4. WorkOrderDowntime — Equipment downtime related to WOs
 model WorkOrderDowntime {
-  id                String    @id @default(cuid())
-  workOrderId       String
-  assetId           String?                              // → Asset
-  assetName         String
-  downtimeStart     DateTime
-  downtimeEnd       DateTime?
-  durationMinutes   Float     @default(0)
-  reason            String
-  category          String    @default("unplanned")       // planned, unplanned, partial
-  impactLevel       String    @default("medium")         // low, medium, high, critical
-  productionLoss    Float?
-  notes             String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  workOrderId     String
+  assetId         String? // → Asset
+  assetName       String
+  downtimeStart   DateTime
+  downtimeEnd     DateTime?
+  durationMinutes Float     @default(0)
+  reason          String
+  category        String    @default("unplanned") // planned, unplanned, partial
+  impactLevel     String    @default("medium") // low, medium, high, critical
+  productionLoss  Float?
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   // WorkOrder relation
-  workOrder         WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
 
   @@map("wo_downtimes")
 }
@@ -2129,22 +2304,22 @@ model RepairCompletion {
   id                     String    @id @default(cuid())
   workOrderId            String    @unique
   completionNotes        String?
-  findings               String?  @db.Text
+  findings               String?   @db.Text
   rootCause              String?
-  correctiveAction       String?  @db.Text
-  materialsUsedSummary   String    @default("[]")@db.Text  // JSON: [{itemId, name, qty, cost}]
-  toolsUsedSummary       String    @default("[]")@db.Text  // JSON: [{toolId, name}]
+  correctiveAction       String?   @db.Text
+  materialsUsedSummary   String    @default("[]") @db.Text // JSON: [{itemId, name, qty, cost}]
+  toolsUsedSummary       String    @default("[]") @db.Text // JSON: [{toolId, name}]
   totalLaborHours        Float     @default(0)
   totalMaterialCost      Float     @default(0)
   totalToolCost          Float     @default(0)
   totalDowntimeMinutes   Float     @default(0)
   supervisorReviewNotes  String?
-  supervisorApprovedById String?                              // → User
+  supervisorApprovedById String? // → User
   supervisorApprovedAt   DateTime?
   supervisorStatus       String    @default("pending_review") // pending_review, approved, rework_requested
   reworkReason           String?
   reworkCount            Int       @default(0)
-  plannerClosedById      String?                              // → User
+  plannerClosedById      String? // → User
   plannerClosedAt        DateTime?
   plannerStatus          String    @default("pending_closure") // pending_closure, closed
   closureNotes           String?
@@ -2152,11 +2327,11 @@ model RepairCompletion {
   updatedAt              DateTime  @updatedAt
 
   // WorkOrder relation
-  workOrder              WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
 
   // User relations
-  supervisorApprovedBy   User?     @relation("RepairCompSupApproved", fields: [supervisorApprovedById], references: [id])
-  plannerClosedBy        User?     @relation("RepairCompPlannerClosed", fields: [plannerClosedById], references: [id])
+  supervisorApprovedBy User? @relation("RepairCompSupApproved", fields: [supervisorApprovedById], references: [id])
+  plannerClosedBy      User? @relation("RepairCompPlannerClosed", fields: [plannerClosedById], references: [id])
 
   @@map("repair_completions")
 }
@@ -2166,16 +2341,16 @@ model RepairCompletion {
 // ============================================================================
 
 model Attachment {
-  id          String   @id @default(cuid())
-  fileName    String
-  fileType    String   // MIME type
-  fileSize    Int      // bytes
-  filePath    String   // relative path on disk
-  entityType  String   // e.g. 'work_order', 'maintenance_request', 'asset', 'safety_incident'
-  entityId    String
+  id           String   @id @default(cuid())
+  fileName     String
+  fileType     String // MIME type
+  fileSize     Int // bytes
+  filePath     String // relative path on disk
+  entityType   String // e.g. 'work_order', 'maintenance_request', 'asset', 'safety_incident'
+  entityId     String
   uploadedById String
-  uploadedAt  DateTime @default(now())
-  description String?
+  uploadedAt   DateTime @default(now())
+  description  String?
 
   uploadedBy User @relation(fields: [uploadedById], references: [id])
 

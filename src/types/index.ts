@@ -546,6 +546,8 @@ export type PageName =
   | 'assets-bom'
   | 'assets-condition-monitoring'
   | 'assets-digital-twin'
+  | 'digital-twin-viewer'
+  | 'system-diagrams'
   | 'assets-health'
   // Maintenance (8 subpages)
   | 'maintenance-work-orders'

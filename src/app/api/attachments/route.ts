@@ -25,9 +25,17 @@ const ALLOWED_TYPES = new Set([
   // Archives
   'application/zip', 'application/x-zip-compressed', 'application/x-rar-compressed', 'application/gzip',
   'application/x-7z-compressed',
+  // 3D Model formats
+  'model/gltf-binary',
+  'model/gltf+json',
+  'application/step',
 ]);
 
+// 3D model extensions that use generic MIME type (application/octet-stream)
+const MODEL_3D_EXTENSIONS = new Set(['.glb', '.gltf', '.step', '.stp', '.fbx', '.obj']);
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_3D_FILE_SIZE = 100 * 1024 * 1024; // 100MB for 3D model files
 
 export async function POST(request: NextRequest) {
   try {
@@ -57,7 +65,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate allowed entity types
-    const allowedEntityTypes = ['work_order', 'maintenance_request', 'asset', 'safety_incident'];
+    const allowedEntityTypes = ['work_order', 'maintenance_request', 'asset', 'safety_incident', 'asset_model'];
     if (!allowedEntityTypes.includes(entityType)) {
       return NextResponse.json(
         { success: false, error: `Invalid entityType. Allowed: ${allowedEntityTypes.join(', ')}` },
@@ -69,15 +77,21 @@ export async function POST(request: NextRequest) {
     const errors: string[] = [];
 
     for (const file of files) {
-      // Validate file type
-      if (!ALLOWED_TYPES.has(file.type)) {
+      // Detect 3D model files by extension
+      const fileExt = '.' + (file.name.split('.').pop() || '').toLowerCase();
+      const is3DModel = MODEL_3D_EXTENSIONS.has(fileExt);
+
+      // Validate file type — 3D models may have application/octet-stream
+      if (!ALLOWED_TYPES.has(file.type) && !is3DModel) {
         errors.push(`"${file.name}" has unsupported type: ${file.type}`);
         continue;
       }
 
-      // Validate file size
-      if (file.size > MAX_FILE_SIZE) {
-        errors.push(`"${file.name}" exceeds maximum size of 10MB`);
+      // Validate file size — 3D models get higher limit
+      const maxSize = is3DModel ? MAX_3D_FILE_SIZE : MAX_FILE_SIZE;
+      if (file.size > maxSize) {
+        const maxLabel = is3DModel ? '100MB' : '10MB';
+        errors.push(`"${file.name}" exceeds maximum size of ${maxLabel}`);
         continue;
       }
 

@@ -35,7 +35,8 @@ const AssetsMachinesPage = lazy(() => import('./modules/AssetPages').then(m => (
 const AssetsHierarchyPage = lazy(() => import('./modules/AssetPages').then(m => ({ default: m.AssetsHierarchyPage })));
 const AssetsBomPage = lazy(() => import('./modules/AssetPages').then(m => ({ default: m.AssetsBomPage })));
 const AssetsConditionMonitoringPage = lazy(() => import('./modules/AssetPages').then(m => ({ default: m.AssetsConditionMonitoringPage })));
-const AssetsDigitalTwinPage = lazy(() => import('./modules/AssetPages').then(m => ({ default: m.AssetsDigitalTwinPage })));
+const DigitalTwinMainPage = lazy(() => import('./digital-twin/DigitalTwinMainPage').then(m => ({ default: m.DigitalTwinMainPage })));
+const SystemDiagramPage = lazy(() => import('./digital-twin/SystemDiagramPage'));
 const AssetHealthPage = lazy(() => import('./modules/AssetPages').then(m => ({ default: m.AssetHealthPage })));
 
 // Maintenance
@@ -185,7 +186,9 @@ function AppShell() {
       case 'assets-hierarchy': return <AssetsHierarchyPage />;
       case 'assets-bom': return <AssetsBomPage />;
       case 'assets-condition-monitoring': return <AssetsConditionMonitoringPage />;
-      case 'assets-digital-twin': return <AssetsDigitalTwinPage />;
+      case 'assets-digital-twin':
+      case 'digital-twin-viewer': return <DigitalTwinMainPage />;
+      case 'system-diagrams': return <SystemDiagramPage />;
       case 'assets-health': return <AssetHealthPage />;
       // Maintenance
       case 'maintenance-work-orders':
@@ -302,6 +305,8 @@ function AppShell() {
     'assets-bom': 'Bill of Materials',
     'assets-condition-monitoring': 'Condition Monitoring',
     'assets-digital-twin': 'Digital Twin',
+    'digital-twin-viewer': 'Digital Twin Viewer',
+    'system-diagrams': 'System Diagrams',
     'assets-health': 'Asset Health',
     // Maintenance
     'maintenance-work-orders': 'Work Orders',

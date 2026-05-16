@@ -17,6 +17,7 @@ import {
   X,
   Loader2,
   Paperclip,
+  Box,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -54,7 +55,14 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function getFileIcon(fileType: string) {
+// 3D model file extensions
+const MODEL_3D_EXTENSIONS = new Set(['.glb', '.gltf', '.step', '.stp', '.fbx', '.obj']);
+
+function getFileIcon(fileType: string, fileName?: string) {
+  // Check 3D model by extension first (since MIME may be application/octet-stream)
+  const ext = fileName ? '.' + (fileName.split('.').pop() || '').toLowerCase() : '';
+  if (MODEL_3D_EXTENSIONS.has(ext)) return <Box className="h-4 w-4 text-violet-500" />;
+  if (fileType === 'model/gltf-binary' || fileType === 'model/gltf+json' || fileType === 'application/step') return <Box className="h-4 w-4 text-violet-500" />;
   if (fileType.startsWith('image/')) return <ImageIcon className="h-4 w-4 text-emerald-600" />;
   if (fileType === 'application/pdf') return <FileText className="h-4 w-4 text-red-500" />;
   if (
@@ -92,6 +100,12 @@ function getFileExtensionColor(fileName: string): string {
     case 'rar':
     case '7z':
     case 'gz': return 'bg-amber-100 text-amber-700';
+    case 'glb':
+    case 'gltf':
+    case 'step':
+    case 'stp':
+    case 'fbx':
+    case 'obj': return 'bg-violet-100 text-violet-700';
     default: return 'bg-slate-100 text-slate-700';
   }
 }
@@ -135,12 +149,14 @@ export function FileUpload({ entityType, entityId, canDelete: canDeleteProp }: F
   // Handle file selection
   const handleFileSelect = (files: FileList | null) => {
     if (!files) return;
-    const maxSize = 10 * 1024 * 1024; // 10MB
     const validFiles: File[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      const fileExt = '.' + (file.name.split('.').pop() || '').toLowerCase();
+      const is3DModel = MODEL_3D_EXTENSIONS.has(fileExt);
+      const maxSize = is3DModel ? 100 * 1024 * 1024 : 10 * 1024 * 1024; // 100MB for 3D, 10MB for others
       if (file.size > maxSize) {
-        toast.error(`"${file.name}" exceeds 10MB limit`);
+        toast.error(`"${file.name}" exceeds ${is3DModel ? '100MB' : '10MB'} limit`);
         continue;
       }
       validFiles.push(file);
@@ -301,7 +317,7 @@ export function FileUpload({ entityType, entityId, canDelete: canDeleteProp }: F
             type="file"
             multiple
             className="hidden"
-            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,.rar,.7z,.gz"
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,.rar,.7z,.gz,.glb,.gltf,.step,.stp,.fbx,.obj"
             onChange={(e) => handleFileSelect(e.target.files)}
           />
           <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
@@ -309,7 +325,7 @@ export function FileUpload({ entityType, entityId, canDelete: canDeleteProp }: F
             Drop files here or <span className="text-emerald-600 font-medium">browse</span>
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            Images, PDFs, docs, spreadsheets, ZIP — max 10MB each
+            Images, PDFs, docs, 3D models — up to 100MB for 3D, 10MB for others
           </p>
         </div>
 
@@ -336,7 +352,7 @@ export function FileUpload({ entityType, entityId, canDelete: canDeleteProp }: F
             <div className="space-y-1.5 max-h-32 overflow-y-auto">
               {selectedFiles.map((file, idx) => (
                 <div key={`${file.name}-${idx}`} className="flex items-center gap-2 text-sm bg-muted/50 rounded-md px-3 py-1.5">
-                  {getFileIcon(file.type)}
+                  {getFileIcon(file.type, file.name)}
                   <span className="flex-1 truncate">{file.name}</span>
                   <span className="text-muted-foreground text-xs shrink-0">{formatFileSize(file.size)}</span>
                   <button
@@ -368,7 +384,7 @@ export function FileUpload({ entityType, entityId, canDelete: canDeleteProp }: F
               >
                 {/* File icon */}
                 <div className="h-8 w-8 rounded-lg bg-background border flex items-center justify-center shrink-0">
-                  {getFileIcon(att.fileType)}
+                  {getFileIcon(att.fileType, att.fileName)}
                 </div>
 
                 {/* File info */}

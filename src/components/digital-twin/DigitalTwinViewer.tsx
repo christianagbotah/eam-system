@@ -1,0 +1,537 @@
+'use client';
+
+import React, {
+  Suspense,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  useEffect,
+} from 'react';
+import { Canvas } from '@react-three/fiber';
+import {
+  OrbitControls,
+  PerspectiveCamera,
+  AdaptiveDpr,
+  AdaptiveEvents,
+  Preload,
+  Stats,
+} from '@react-three/drei';
+import * as THREE from 'three';
+import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
+import { useDigitalTwinScene, useMeshInteraction, useCameraControls } from '@/hooks/useDigitalTwin';
+
+import { SceneLighting } from './SceneLighting';
+import { GroundPlane } from './GroundPlane';
+import { ModelLoader } from './ModelLoader';
+import { InteractiveMesh, type AssetMeshBinding } from './InteractiveMesh';
+import { IoTOverlayLayer } from './IoTOverlayLayer';
+import { SectionPlane } from './SectionPlane';
+import { ExplodedView } from './ExplodedView';
+import { HotspotLayer } from './HotspotLayer';
+import { AnnotationLayer } from './AnnotationLayer';
+import { TwinToolbar } from './TwinToolbar';
+import { SceneTreePanel } from './SceneTreePanel';
+import { ComponentInfoPanel } from './ComponentInfoPanel';
+
+import {
+  Box,
+  Upload,
+  RefreshCw,
+  AlertTriangle,
+  Loader2,
+  Monitor,
+  ZoomIn,
+  Eye,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface DigitalTwinViewerProps {
+  /** Scene ID to load (null for empty state) */
+  sceneId?: string | null;
+  /** Override model URL (optional) */
+  modelUrl?: string | null;
+  /** External asset-mesh bindings (optional) */
+  bindings?: AssetMeshBinding[];
+  /** Height of the viewer container (CSS value) */
+  height?: string;
+  /** IoT polling interval in ms (0 to disable) */
+  iotPollInterval?: number;
+  /** Whether to show the scene tree panel */
+  showSceneTree?: boolean;
+  /** Whether to show the component info panel */
+  showInfoPanel?: boolean;
+  /** Whether to show the toolbar */
+  showToolbar?: boolean;
+  /** Custom loading component */
+  loadingComponent?: React.ReactNode;
+  /** Custom error component */
+  errorComponent?: (error: string, retry: () => void) => React.ReactNode;
+}
+
+// ============================================================================
+// Loading State (shown inside Canvas)
+// ============================================================================
+
+function ViewerLoadingState() {
+  return (
+    <mesh position={[0, 0, 0]}>
+      <torusGeometry args={[1.5, 0.08, 16, 64]} />
+      <meshStandardMaterial color="#22d3ee" transparent opacity={0.3} />
+    </mesh>
+  );
+}
+
+// ============================================================================
+// Empty State (no model loaded)
+// ============================================================================
+
+function EmptyStateOverlay({ onUpload }: { onUpload?: () => void }) {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+      <div className="flex flex-col items-center gap-4 text-slate-400 pointer-events-auto">
+        <div
+          className="h-20 w-20 rounded-2xl flex items-center justify-center"
+          style={{
+            background: 'rgba(34,211,238,0.08)',
+            border: '2px dashed rgba(34,211,238,0.2)',
+          }}
+        >
+          <Box className="h-10 w-10 text-cyan-500/50" />
+        </div>
+        <div className="text-center">
+          <h3 className="text-sm font-semibold text-slate-300 mb-1">
+            No Model Loaded
+          </h3>
+          <p className="text-xs text-slate-500 max-w-[250px]">
+            Upload a 3D model (GLTF/GLB) to start the Digital Twin viewer, or select an asset with an associated twin.
+          </p>
+        </div>
+        {onUpload && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onUpload}
+            className="mt-2 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-300"
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Upload Model
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Error State
+// ============================================================================
+
+function ErrorStateOverlay({
+  error,
+  onRetry,
+}: {
+  error: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/20">
+      <div
+        className="flex flex-col items-center gap-4 p-6 rounded-xl max-w-[320px] text-center"
+        style={{
+          background: 'rgba(10,10,18,0.95)',
+          border: '1px solid rgba(239,68,68,0.2)',
+          backdropFilter: 'blur(16px)',
+        }}
+      >
+        <div className="h-12 w-12 rounded-full bg-red-500/10 flex items-center justify-center">
+          <AlertTriangle className="h-6 w-6 text-red-400" />
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-slate-200 mb-1">
+            Failed to Load Scene
+          </h3>
+          <p className="text-xs text-slate-400 leading-relaxed">{error}</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRetry}
+          className="border-slate-600 text-slate-300 hover:bg-white/5"
+        >
+          <RefreshCw className="h-3.5 w-3.5 mr-2" />
+          Retry
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Camera Controller (R3F component inside Canvas)
+// ============================================================================
+
+function CameraController() {
+  const { resetCamera, cameraPosition, cameraTarget, isTransitioning } = useCameraControls();
+  const controlsRef = useRef<any>(null);
+
+  // Animate camera during transitions
+  useEffect(() => {
+    if (!controlsRef.current) return;
+    if (isTransitioning) {
+      controlsRef.current.target.set(cameraTarget[0], cameraTarget[1], cameraTarget[2]);
+      controlsRef.current.object.position.set(
+        cameraPosition[0],
+        cameraPosition[1],
+        cameraPosition[2],
+      );
+      controlsRef.current.update();
+    }
+  }, [cameraPosition, cameraTarget, isTransitioning]);
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      makeDefault
+      enableDamping
+      dampingFactor={0.08}
+      minDistance={1}
+      maxDistance={100}
+      maxPolarAngle={Math.PI * 0.85}
+      enablePan
+      enableZoom
+      enableRotate
+    />
+  );
+}
+
+// ============================================================================
+// Click handler for deselecting
+// ============================================================================
+
+function BackgroundClickHandler() {
+  const selectMesh = useDigitalTwinStore((s) => s.selectMesh);
+  const setInfoPanelOpen = useDigitalTwinStore((s) => s.setInfoPanelOpen);
+
+  return (
+    <mesh
+      visible={false}
+      position={[0, 0, 0]}
+      onClick={() => {
+        selectMesh(null, null);
+        setInfoPanelOpen(false);
+      }}
+    >
+      <sphereGeometry args={[200, 16, 16]} />
+      <meshBasicMaterial side={THREE.BackSide} />
+    </mesh>
+  );
+}
+
+// ============================================================================
+// Main DigitalTwinViewer Component
+// ============================================================================
+
+export function DigitalTwinViewer({
+  sceneId = null,
+  modelUrl: propModelUrl,
+  bindings: propBindings = [],
+  height = 'calc(100vh - 120px)',
+  iotPollInterval = 15000,
+  showSceneTree = true,
+  showInfoPanel = true,
+  showToolbar = true,
+  loadingComponent,
+  errorComponent,
+}: DigitalTwinViewerProps) {
+  // ── Store state ──────────────────────────────────────────────────────────
+  const currentScene = useDigitalTwinStore((s) => s.currentScene);
+  const modelUrl = useDigitalTwinStore((s) => s.modelUrl);
+  const sceneError = useDigitalTwinStore((s) => s.sceneError);
+  const isLoadingScene = useDigitalTwinStore((s) => s.isLoadingScene);
+  const isInfoPanelOpen = useDigitalTwinStore((s) => s.isInfoPanelOpen);
+  const selectedMeshName = useDigitalTwinStore((s) => s.selectedMeshName);
+  const selectedAssetId = useDigitalTwinStore((s) => s.selectedAssetId);
+  const loadScene = useDigitalTwinStore((s) => s.loadScene);
+  const reset = useDigitalTwinStore((s) => s.reset);
+
+  // ── Hooks ────────────────────────────────────────────────────────────────
+  const { resetCamera } = useCameraControls();
+  const { error: hookError, refresh } = useDigitalTwinScene(sceneId, {
+    iotPollInterval,
+  });
+
+  // ── Local UI state ──────────────────────────────────────────────────────
+  const [isTreeOpen, setIsTreeOpen] = useState(showSceneTree);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [isModelLoading, setIsModelLoading] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+
+  // Canvas ref for screenshots
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // ── Effective model URL ─────────────────────────────────────────────────
+  const effectiveModelUrl = propModelUrl ?? modelUrl;
+
+  // ── Error handling ──────────────────────────────────────────────────────
+  const effectiveError = sceneError || hookError || modelError;
+
+  // ── Retry handler ───────────────────────────────────────────────────────
+  const handleRetry = useCallback(() => {
+    setModelError(null);
+    setRetryCount((c) => c + 1);
+    if (sceneId) {
+      loadScene(sceneId);
+    }
+    refresh();
+  }, [sceneId, loadScene, refresh]);
+
+  // ── Screenshot handler ──────────────────────────────────────────────────
+  const handleScreenshot = useCallback(() => {
+    // Get the canvas from the DOM
+    const canvas = document.querySelector('canvas');
+    if (!canvas) return;
+
+    const link = document.createElement('a');
+    link.download = `digital-twin-${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }, []);
+
+  // ── Fullscreen toggle ──────────────────────────────────────────────────
+  const handleToggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen().catch(() => {});
+      setIsFullscreen(false);
+    }
+  }, []);
+
+  // ── Model loading callbacks ────────────────────────────────────────────
+  const handleModelLoadingStart = useCallback(() => {
+    setIsModelLoading(true);
+    setLoadingProgress(0);
+    setModelError(null);
+  }, []);
+
+  const handleModelLoadingComplete = useCallback(() => {
+    setIsModelLoading(false);
+    setLoadingProgress(100);
+  }, []);
+
+  const handleModelError = useCallback((err: Error) => {
+    setModelError(err.message);
+    setIsModelLoading(false);
+  }, []);
+
+  // ── Scene tree toggle ───────────────────────────────────────────────────
+  const handleToggleTree = useCallback(() => {
+    setIsTreeOpen((prev) => !prev);
+  }, []);
+
+  // ── Mesh select from scene tree ────────────────────────────────────────
+  const handleMeshSelectFromTree = useCallback(
+    (meshName: string, assetId?: string) => {
+      useDigitalTwinStore.getState().selectMesh(meshName, assetId);
+      useDigitalTwinStore.getState().setInfoPanelOpen(true);
+    },
+    [],
+  );
+
+  // ── Custom error component ─────────────────────────────────────────────
+  const errorContent = errorComponent ? (
+    errorComponent(effectiveError ?? 'Unknown error', handleRetry)
+  ) : (
+    <ErrorStateOverlay error={effectiveError ?? 'Unknown error'} onRetry={handleRetry} />
+  );
+
+  // ── Bindings for exploded view ─────────────────────────────────────────
+  const effectiveBindings = propBindings.length > 0 ? propBindings : [];
+
+  return (
+    <div
+      className="relative w-full overflow-hidden"
+      style={{
+        height,
+        background: 'linear-gradient(135deg, #0a0a12 0%, #0d0d1a 50%, #0a0f14 100%)',
+      }}
+    >
+      {/* ── 3D Canvas ──────────────────────────────────────────────────────── */}
+      <Canvas
+        shadows
+        dpr={[1, 2]}
+        camera={{ fov: 50, position: [10, 8, 10], near: 0.1, far: 1000 }}
+        gl={{
+          antialias: true,
+          alpha: false,
+          powerPreference: 'high-performance',
+          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMappingExposure: 1.0,
+          outputColorSpace: THREE.SRGBColorSpace,
+        }}
+        style={{ background: '#0a0a12' }}
+        onCreated={({ gl }) => {
+          canvasRef.current = gl.domElement;
+          gl.setClearColor('#0a0a12');
+          gl.localClippingEnabled = true;
+        }}
+      >
+        <Suspense fallback={<ViewerLoadingState />}>
+          {/* Camera */}
+          <PerspectiveCamera makeDefault fov={50} position={[10, 8, 10]} near={0.1} far={1000} />
+
+          {/* Camera controls */}
+          <CameraController />
+
+          {/* Lighting */}
+          <SceneLighting />
+
+          {/* Ground plane */}
+          <GroundPlane />
+
+          {/* Model */}
+          {effectiveModelUrl && (
+            <ModelLoader
+              modelUrl={effectiveModelUrl}
+              bindings={effectiveBindings}
+              onLoadingStart={handleModelLoadingStart}
+              onLoadingComplete={handleModelLoadingComplete}
+              onError={handleModelError}
+              onProgress={setLoadingProgress}
+            />
+          )}
+
+          {/* Exploded view */}
+          <ExplodedView bindings={effectiveBindings} />
+
+          {/* Section plane */}
+          <SectionPlane />
+
+          {/* IoT overlay */}
+          <IoTOverlayLayer />
+
+          {/* Hotspots */}
+          <HotspotLayer />
+
+          {/* Annotations */}
+          <AnnotationLayer />
+
+          {/* Background click handler (deselect) */}
+          <BackgroundClickHandler />
+
+          <Preload all />
+        </Suspense>
+
+        <AdaptiveDpr pixelated />
+        <AdaptiveEvents />
+      </Canvas>
+
+      {/* ── Loading overlay ──────────────────────────────────────────────── */}
+      {(isLoadingScene || (isModelLoading && loadingProgress < 100)) && (
+        <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/30 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3">
+            <div className="relative">
+              <Loader2 className="h-8 w-8 text-cyan-400 animate-spin" />
+              <div
+                className="absolute inset-0 rounded-full animate-ping"
+                style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.15), transparent)' }}
+              />
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-slate-300 font-medium">
+                {isLoadingScene ? 'Loading scene...' : 'Loading model...'}
+              </p>
+              {loadingProgress > 0 && loadingProgress < 100 && (
+                <div className="mt-2 w-32">
+                  <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-cyan-500 rounded-full transition-all duration-300"
+                      style={{ width: `${loadingProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {Math.round(loadingProgress)}%
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Error overlay ────────────────────────────────────────────────── */}
+      {effectiveError && !isLoadingScene && errorContent}
+
+      {/* ── Empty state overlay (no model) ───────────────────────────────── */}
+      {!effectiveModelUrl && !isLoadingScene && !effectiveError && (
+        <EmptyStateOverlay />
+      )}
+
+      {/* ── Status bar (bottom) ──────────────────────────────────────────── */}
+      <div
+        className="absolute bottom-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-1.5"
+        style={{
+          background: 'rgba(10,10,18,0.7)',
+          borderTop: '1px solid rgba(148,163,184,0.06)',
+          backdropFilter: 'blur(8px)',
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <Monitor className="h-3 w-3 text-cyan-400" />
+            <span className="text-[10px] text-slate-400">Digital Twin Viewer</span>
+          </div>
+          {currentScene && (
+            <>
+              <span className="text-slate-700">•</span>
+              <span className="text-[10px] text-slate-400">{currentScene.name}</span>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          {selectedMeshName && (
+            <span className="text-[10px] text-cyan-400 font-mono">
+              Selected: {selectedMeshName}
+            </span>
+          )}
+          <div className="flex items-center gap-1">
+            <Eye className="h-3 w-3 text-emerald-400" />
+            <span className="text-[10px] text-slate-500">Ready</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Floating Toolbar (top center) ────────────────────────────────── */}
+      {showToolbar && (
+        <TwinToolbar
+          onResetCamera={resetCamera}
+          onScreenshot={handleScreenshot}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={handleToggleFullscreen}
+        />
+      )}
+
+      {/* ── Scene Tree Panel (left) ──────────────────────────────────────── */}
+      <SceneTreePanel
+        isOpen={isTreeOpen}
+        onToggle={handleToggleTree}
+        onMeshSelect={handleMeshSelectFromTree}
+      />
+
+      {/* ── Component Info Panel (right) ─────────────────────────────────── */}
+      {showInfoPanel && isInfoPanelOpen && selectedAssetId && (
+        <ComponentInfoPanel isOpen={isInfoPanelOpen} />
+      )}
+    </div>
+  );
+}
+
+export default DigitalTwinViewer;

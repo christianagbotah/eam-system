@@ -1986,3 +1986,106 @@ Stage Summary:
 - Login credentials unchanged: admin/admin123, others use password123
 - Changes are on VPS database — immediately active for all users
 - Script saved at activate-role-permissions.js for future reference
+---
+Task ID: 10
+Agent: Backend API - Digital Twin Visualization Routes
+Task: Create all API routes for Digital Twin Visualization system
+
+Work Log:
+
+### 1. Asset Models API (`/api/asset-models`)
+- **GET** (list): Paginated listing with search by name/description/fileName/asset name, filter by assetId and format. Includes asset info, uploadedBy user, mesh binding count. Permission: `digital_twin.view`
+- **POST** (create): Validates assetId + name, verifies asset exists, creates AssetModel record. Permission: `digital_twin.create` or admin
+- **GET** (detail): Returns model with asset info and all mesh bindings (with their asset info). Permission: `digital_twin.view`
+- **PUT** (update): Updates metadata fields (name, description, format, etc.). Permission: `digital_twin.update` or admin
+- **DELETE**: Cascades to mesh bindings first, then deletes model. Permission: `digital_twin.delete` or admin
+
+### 2. Mesh Bindings API (`/api/mesh-bindings`)
+- **GET** (list): Lists bindings for a model (required modelId param). Optional assetId filter. Includes model and asset info. Permission: `digital_twin.view`
+- **POST** (create): Validates modelId + meshName + assetId, checks for duplicate meshName on same model, verifies model and asset exist. Permission: `digital_twin.create` or admin
+- **GET** (detail): Returns binding with model, asset, and IoT device readings for the bound asset. Permission: `digital_twin.view`
+- **PUT** (update): Updates binding fields, checks for duplicate meshName on rename, verifies new assetId. Permission: `digital_twin.update` or admin
+- **DELETE**: Removes binding. Permission: `digital_twin.delete` or admin
+
+### 3. Digital Twin Scenes API (`/api/digital-twin-scenes`)
+- **GET** (list): Lists scenes for a twin (required twinId). Includes model, createdBy, and counts (hotspots, annotations, cameraPresets). Ordered by isDefault desc. Permission: `digital_twin.view`
+- **POST** (create): Validates twinId + name, verifies twin exists, optionally verifies modelId. Auto-unsets other defaults if isDefault=true. Permission: `digital_twin.create` or admin
+- **GET** (detail): Full scene with twin (including asset), model (with mesh bindings and their assets), hotspots, annotations (with authors), camera presets. Permission: `digital_twin.view`
+- **PUT** (update): Updates scene fields, handles default toggle (unsets others). Permission: `digital_twin.update` or admin
+- **DELETE**: Cascades to hotspots, annotations, cameraPresets in parallel, then deletes scene. Permission: `digital_twin.delete` or admin
+
+### 4. Twin Hotspots API (`/api/twin-hotspots`)
+- **GET** (list): Lists hotspots for a scene. Optional type filter. Includes asset info. Ordered by sortOrder. Permission: `digital_twin.view`
+- **POST** (create): Validates sceneId + label, verifies scene, optionally verifies assetId. Stores position/lookAtPosition as JSON. Permission: `digital_twin.create` or admin
+- **PUT** (update): Updates hotspot fields including position/lookAtPosition JSON serialization. Permission: `digital_twin.update` or admin
+- **DELETE**: Removes hotspot. Permission: `digital_twin.delete` or admin
+
+### 5. Twin Camera Presets API (`/api/twin-camera-presets`)
+- **GET** (list): Lists presets for a scene. Ordered by isDefault desc, sortOrder asc. Permission: `digital_twin.view`
+- **POST** (create): Validates sceneId + name + position, verifies scene exists. Stores position/target as JSON. Auto-unsets other defaults if isDefault=true. Permission: `digital_twin.create` or admin
+- **PUT** (update): Updates preset fields, handles JSON serialization, default toggle. Permission: `digital_twin.update` or admin
+- **DELETE**: Removes preset. Permission: `digital_twin.delete` or admin
+
+### 6. Twin Annotations API (`/api/twin-annotations`)
+- **GET** (list): Lists annotations for a scene. Optional type/status filters. Includes author info. Ordered by createdAt desc. Permission: `digital_twin.view`
+- **POST** (create): Validates sceneId + content, verifies scene exists. Author automatically set to session user. Permission: `digital_twin.create` or admin
+- **PUT** (update): Updates annotation content, type, status, priority. Permission: `digital_twin.update` or admin
+- **DELETE**: Removes annotation. Permission: `digital_twin.delete` or admin
+
+### 7. System Diagrams API (`/api/system-diagrams`)
+- **GET** (list): Paginated listing with search, diagramType filter, isTemplate filter. Includes createdBy. Permission: `digital_twin.view`
+- **POST** (create): Validates name + diagramType + nodes (array) + edges (array). Stores nodes/edges/viewport as JSON. Permission: `digital_twin.create` or admin
+- **GET** (detail): Returns full diagram with createdBy. Permission: `digital_twin.view`
+- **PUT** (update): Updates diagram fields, JSON serialization, auto-increments version. Permission: `digital_twin.update` or admin
+- **DELETE**: Removes diagram. Permission: `digital_twin.delete` or admin
+
+### Cross-cutting Concerns
+- All routes follow project patterns: `NextResponse.json({ success: true/false, ... })`
+- Auth via `getSession(request)` with 401 for unauthenticated
+- Permission checks via `hasPermission(session, 'digital_twin.*') || isAdmin(session)` with 403
+- All write operations create `AuditLog` entries with userId, action, entityType, entityId, oldValues/newValues
+- Dynamic route params use Next.js 16 pattern: `{ params }: { params: Promise<{ id: string }> }` with `await params`
+- Proper error handling with try/catch and typed error messages
+- Input validation with 400 status for missing required fields
+- Referential integrity checks (404 for missing parent entities)
+- Duplicate detection (409 for mesh bindings)
+- ESLint passes with zero errors on all 14 new files
+
+Stage Summary:
+- 14 route files created across 7 API groups
+- 33 total HTTP handlers (13 GET, 13 POST, 12 PUT, 11 DELETE, with some endpoints not having all methods per spec)
+- Full CRUD coverage for all 7 models
+- Consistent auth/permission/audit patterns across all endpoints
+- Zero lint errors on new files
+- Dev server running successfully
+---
+Task ID: 1-14
+Agent: Main Coordinator
+Task: Build Enterprise Digital Twin Visualization Layer
+
+Work Log:
+- Installed three.js, @react-three/fiber, @react-three/drei, @react-three/postprocessing, reactflow, zustand
+- Extended Prisma schema with 7 new models: AssetModel, AssetMeshBinding, DigitalTwinScene, TwinHotspot, TwinCameraPreset, TwinAnnotation, SystemDiagram
+- Added new relations to User, Asset, DigitalTwin models
+- Pushed schema to VPS MariaDB database
+- Built Zustand digitalTwinStore with 30+ state fields and 26 actions
+- Built 3 custom hooks: useDigitalTwinScene, useMeshInteraction, useCameraControls
+- Created 14 API route files across 7 endpoint groups (CRUD for all new entities)
+- Built 14 React components in src/components/digital-twin/
+- Built ReactFlow system diagram editor with 3 pre-built templates
+- Extended file upload for 3D formats (.glb, .gltf, .step, .fbx, .obj) with 100MB limit
+- Wired everything into EAMApp routing and Sidebar navigation
+- Zero lint errors in all 42 new files
+
+Stage Summary:
+- 42 new files created across 7 directories
+- 7 new database tables on VPS
+- 14 new API endpoints
+- 14 new React components
+- 3 new Zustand hooks
+- 1 new Zustand store
+- Full 3D viewer with R3F/Drei
+- ReactFlow system diagram editor with templates
+- Enterprise-grade UI (dark theme, glass-morphism)
+- File upload extended for 3D models
+
