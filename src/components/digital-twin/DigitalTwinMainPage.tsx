@@ -27,7 +27,6 @@ import {
   Activity,
   Clock,
   Wifi,
-  Cube,
   ChevronRight,
   Filter,
 } from 'lucide-react';
@@ -195,7 +194,7 @@ function TwinCard({ twin, onOpenViewer, onOpenDiagram }: {
         {/* Type badge */}
         <div className="flex items-center gap-2">
           <Badge variant="secondary" className="text-[10px] capitalize">
-            <Cube className="h-3 w-3 mr-1" />
+            <Box className="h-3 w-3 mr-1" />
             {twin.type.replace(/_/g, ' ')}
           </Badge>
         </div>
@@ -370,7 +369,7 @@ export function DigitalTwinMainPage() {
           isActive: t.isActive ?? true,
           healthScore: t.healthScore ?? 0,
           lastSynced: t.lastSynced || null,
-          alertCount: Math.floor(Math.random() * 5), // Placeholder until real alert data is wired
+          alertCount: 0, // TODO: wire to real IoT alert aggregation
           asset: t.asset || null,
           parameters: t.parameters || null,
           specification: t.specification || null,

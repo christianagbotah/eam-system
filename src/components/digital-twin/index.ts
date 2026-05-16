@@ -6,7 +6,7 @@
 
 // Main pages
 export { DigitalTwinMainPage, default } from './DigitalTwinMainPage';
-export { SystemDiagramPage } from './SystemDiagramPage';
+export { default as SystemDiagramPage } from './SystemDiagramPage';
 
 // Main viewer (orchestrator)
 export { DigitalTwinViewer, type DigitalTwinViewerProps } from './DigitalTwinViewer';

@@ -35,7 +35,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
 export function QualityInspectionsPage() {

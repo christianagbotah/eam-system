@@ -202,7 +202,8 @@ export function useCameraControls(): UseCameraControlsReturn {
       const distance = Math.max(radius * FOCUS_OFFSET_MULTIPLIER, MIN_FOCUS_DISTANCE);
 
       // Compute a camera position that looks at the mesh from an elevated angle
-      const direction = normalizeVec3(subVec3(positionRef.current, meshPosition));
+      const currentCamPosition = useDigitalTwinStore.getState().cameraPosition;
+      const direction = normalizeVec3(subVec3(currentCamPosition, meshPosition));
       const newPosition = addVec3(meshPosition, scaleVec3(direction, distance));
       // Offset upward slightly for a better viewing angle
       newPosition[1] += distance * 0.3;
