@@ -1956,3 +1956,33 @@ Stage Summary:
 - Cannot push to GitHub from sandbox (no auth credentials)
 - VPS deployment requires: git pull on VPS, npm install, npx next build, cp -r .next/static .next/standalone/.next/static, pm2 restart
 
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Activate default and standard privileges for all roles
+
+Work Log:
+- Queried VPS database: 10 roles, 176 permissions, 330 existing role-permission mappings
+- Found 6 roles with ZERO permissions: plant_manager, inventory_manager, maintenance_supervisor, tools_shop_attendant, store_keeper, viewer
+- Found 3 roles severely under-provisioned: maintenance_planner (7), maintenance_technician (10), production_operator (5)
+- Designed EAM-standard permission matrix based on industry best practices for each role:
+  - admin: 176 perms (full access, unchanged)
+  - plant_manager: 104 perms (operations oversight, all modules, user/role management)
+  - inventory_manager: 39 perms (inventory, tools, BOM, procurement)
+  - maintenance_planner: 69 perms (WO planning, PM scheduling, RCA, failure codes)
+  - maintenance_supervisor: 55 perms (WO supervision, technician assignment, verification)
+  - maintenance_technician: 38 perms (execute WOs, log time, request parts/tools)
+  - tools_shop_attendant: 18 perms (tool CRUD, checkout/return/transfer)
+  - store_keeper: 19 perms (inventory view, documents, warehouse operations)
+  - production_operator: 22 perms (create MRs, meters, production view)
+  - viewer: 36 perms (read-only across all modules)
+- Bulk-inserted 246 new role-permission records into VPS database
+- Verified all 10 users can log in with correct permissions via API
+
+Stage Summary:
+- All 10 roles now have appropriate standard EAM privileges
+- Total role-permission mappings: 576 (was 330)
+- Login credentials unchanged: admin/admin123, others use password123
+- Changes are on VPS database — immediately active for all users
+- Script saved at activate-role-permissions.js for future reference
