@@ -119,6 +119,9 @@ const SafetyTrainingPage = lazy(() => import('./modules/SafetyPages').then(m => 
 const SafetyEquipmentPage = lazy(() => import('./modules/SafetyPages').then(m => ({ default: m.SafetyEquipmentPage })));
 const SafetyPermitsPage = lazy(() => import('./modules/SafetyPages').then(m => ({ default: m.SafetyPermitsPage })));
 
+// Reliability Engineering (Phase D)
+const ReliabilityEngineeringPage = lazy(() => import('./modules/ReliabilityEngineeringPage'));
+
 // Reports
 const ReportsAssetPage = lazy(() => import('./modules/ReportPages').then(m => ({ default: m.ReportsAssetPage })));
 const ReportsMaintenancePage = lazy(() => import('./modules/ReportPages').then(m => ({ default: m.ReportsMaintenancePage })));
@@ -250,6 +253,8 @@ function AppShell() {
       case 'safety-training': return <SafetyTrainingPage />;
       case 'safety-equipment': return <SafetyEquipmentPage />;
       case 'safety-permits': return <SafetyPermitsPage />;
+      // Reliability Engineering
+      case 'reliability-engineering': return <ReliabilityEngineeringPage />;
       // Inventory
       case 'inventory-items': return <InventoryItemsPage />;
       case 'inventory-categories': return <InventoryCategoriesPage />;
@@ -368,6 +373,8 @@ function AppShell() {
     'safety-training': 'Safety Training',
     'safety-equipment': 'Safety Equipment',
     'safety-permits': 'Permits',
+    // Reliability Engineering
+    'reliability-engineering': 'Reliability Engineering',
     // Inventory
     'inventory-items': 'Inventory Items',
     'inventory-categories': 'Categories',

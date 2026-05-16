@@ -151,6 +151,12 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
+      label: 'Reliability', icon: ShieldAlert, perm: 'digital_twin.view', moduleCodes: ['digital_twin'],
+      children: [
+        { page: 'reliability-engineering', label: 'Engineering', icon: ShieldAlert },
+      ],
+    },
+    {
       label: 'Analytics', icon: BarChart3, perm: 'analytics.view', moduleCodes: ['analytics', 'kpi_dashboard', 'oee', 'downtime', 'energy'],
       children: [
         { page: 'analytics-kpi', label: 'KPI Dashboard', icon: Target },

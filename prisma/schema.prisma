@@ -132,6 +132,11 @@ model User {
   iotDevicesCreated IotDevice[]    @relation("IotDeviceCreatedBy")
   iotRulesCreated   IotAlertRule[] @relation("IotRuleCreatedBy")
 
+  // Real-Time Industrial Telemetry relations (Phase C)
+  telemetrySources     TelemetryDataSource[] @relation("TelemetrySourceCreatedBy")
+  alarmRules           AlarmRule[]           @relation("AlarmRuleCreatedBy")
+  alarmsAcknowledged   AlarmEvent[]          @relation("AlarmAcknowledgedBy")
+
   // Inventory Sub-module relations
   invLocationsCreated    InventoryLocation[]   @relation("InvLocationCreatedBy")
   invAdjustmentsApproved InventoryAdjustment[] @relation("InvAdjApprovedBy")
@@ -237,6 +242,12 @@ model User {
   ecrReviewed          EngineeringChangeRequest[] @relation("EcrReviewedBy")
   ecrApproved          EngineeringChangeRequest[] @relation("EcrApprovedBy")
   ecrCreated           EngineeringChangeRequest[] @relation("EcrCreatedBy")
+  failureModesCreated FailureMode[]           @relation("FailureModeCreatedBy")
+  rcmAnalysesApproved  RcmAnalysis[]            @relation("RcmApprovedBy")
+  rcmAnalysesCreated   RcmAnalysis[]            @relation("RcmCreatedBy")
+  weibullAnalyses       WeibullAnalysis[]        @relation("WeibullAnalyzedBy")
+  downtimeAnalyses      DowntimeAnalysis[]       @relation("DowntimeCreatedBy")
+  rulAnalyses           RemainingUsefulLife[]     @relation("RulAnalyzedBy")
 
   @@map("users")
 }
@@ -336,6 +347,9 @@ model Plant {
 
   // Engineering BOM & Assembly Intelligence relations (Phase B)
   changeRequests EngineeringChangeRequest[] @relation("EcrPlant")
+
+  // Real-Time Industrial Telemetry relations (Phase C)
+  telemetrySources TelemetryDataSource[] @relation("TelemetryPlant")
 
   @@map("plants")
 }
@@ -773,6 +787,10 @@ model Asset {
   // Engineering BOM & Assembly Intelligence relations (Phase B)
   changeRequests EngineeringChangeRequest[] @relation("EcrAsset")
 
+  // Reliability Engineering relations (Phase D)
+  rcmAnalyses     RcmAnalysis[]
+  downtimeAnalyses DowntimeAnalysis[]
+
   @@map("assets")
 }
 
@@ -1050,6 +1068,9 @@ model IotDevice {
   alerts    IotAlert[]
   rules     IotAlertRule[]
   createdBy User           @relation("IotDeviceCreatedBy", fields: [createdById], references: [id])
+
+  // Real-Time Industrial Telemetry relations (Phase C)
+  telemetryMappings TelemetryMapping[]
 
   @@map("iot_devices")
 }
@@ -2502,6 +2523,8 @@ model ComponentRegistry {
   altPrimaryParts       AlternatePart[]      @relation("AltPrimaryPart")
   altAlternateParts     AlternatePart[]      @relation("AltAlternatePart")
   spareAnalysis         CriticalSpareAnalysis?
+  weibullAnalyses        WeibullAnalysis[]
+  rulEstimate            RemainingUsefulLife?
 
   @@unique([componentCode])
   @@index([parentId])
@@ -2559,6 +2582,7 @@ model FailureRecord {
 
   failureCode     String?  // standardized failure code
   failureMode     String   // mechanical, electrical, hydraulic, pneumatic, software, corrosion, fatigue, wear, other
+  failureModeId   String?
   failureCause    String?  @db.Text
   failureSeverity String   @default("medium") // low, medium, high, critical
   symptoms        String?  @db.Text // JSON array of observed symptoms
@@ -2578,10 +2602,12 @@ model FailureRecord {
   asset       Asset?            @relation("FailureAsset", fields: [assetId], references: [id])
   workOrder   WorkOrder?        @relation("FailureWorkOrder", fields: [workOrderId], references: [id])
   reportedBy  User?             @relation("FailureReported", fields: [reportedById], references: [id])
+  failureModeFk FailureMode?       @relation("FailureRecordMode", fields: [failureModeId], references: [id])
 
   @@index([componentId])
   @@index([assetId])
   @@index([failureMode])
+  @@index([failureModeId])
   @@index([failureSeverity])
   @@index([detectedAt])
   @@map("failure_records")
@@ -3264,4 +3290,279 @@ model CriticalSpareAnalysis {
   @@index([criticalityScore])
   @@index([leadTimeRisk])
   @@map("critical_spare_analysis")
+}
+
+// ============================================================================
+// REAL-TIME INDUSTRIAL TELEMETRY (Phase C)
+// ============================================================================
+
+model TelemetryDataSource {
+  id                String   @id @default(cuid())
+  name              String
+  sourceType        String   // mqtt, opcua, modbus_tcp, rest_api, siemens_s7, bacnet
+  connectionConfig  String   @db.Text // JSON: host, port, path, credentials, topic patterns
+  status            String   @default("disconnected") // connected, disconnected, error
+  plantId           String?
+  lastConnectionAt  DateTime?
+  lastError         String?  @db.Text
+  metadata          String?  @db.Text // JSON: any additional config
+  createdById       String
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  plant      Plant?       @relation("TelemetryPlant", fields: [plantId], references: [id])
+  createdBy  User         @relation("TelemetrySourceCreatedBy", fields: [createdById], references: [id])
+  mappings   TelemetryMapping[]
+  streams    TelemetryStream[]
+
+  @@index([sourceType])
+  @@index([status])
+  @@index([plantId])
+  @@map("telemetry_data_sources")
+}
+
+model TelemetryMapping {
+  id              String   @id @default(cuid())
+  sourceId        String
+  deviceId        String?  // link to IotDevice
+  externalId      String   // external tag/point ID from the source system
+  parameterName   String   // e.g., "Temperature", "Pressure", "Vibration"
+  parameterUnit   String?  // e.g., "°C", "bar", "mm/s"
+  dataType        String   @default("float") // float, int, boolean, string
+  scaleFactor     Float    @default(1)
+  offset          Float    @default(0)
+  deadband        Float?   // minimum change threshold to record
+  qualityRule     String?  @db.Text // JSON: range limits, rate of change limits
+  isActve         Boolean  @default(true)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  source  TelemetryDataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  device  IotDevice?          @relation(fields: [deviceId], references: [id])
+
+  streams       TelemetryStream[]
+  aggregations  TelemetryAggregation[]
+  alarmRules    AlarmRule[]
+  alarmEvents   AlarmEvent[]
+
+  @@unique([sourceId, externalId])
+  @@index([sourceId])
+  @@index([deviceId])
+  @@index([parameterName])
+  @@map("telemetry_mappings")
+}
+
+model TelemetryStream {
+  id              String   @id @default(cuid())
+  mappingId       String
+  sourceId        String
+  value           Float
+  quality         Int      @default(100) // 0-100 quality score
+  timestamp       DateTime @default(now())
+  isAnomaly       Boolean  @default(false)
+  anomalyScore    Float?
+  metadata        String?  @db.Text // JSON: any additional data
+
+  mapping TelemetryMapping    @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+  source  TelemetryDataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([mappingId])
+  @@index([sourceId])
+  @@index([timestamp])
+  @@index([isAnomaly])
+  @@map("telemetry_streams")
+}
+
+model TelemetryAggregation {
+  id              String   @id @default(cuid())
+  mappingId       String
+  periodType      String   // minute, hour, day, week, month
+  periodStart     DateTime
+  periodEnd       DateTime
+  avgValue        Float?
+  minValue        Float?
+  maxValue        Float?
+  sumValue        Float?
+  count           Int
+  stdDev          Float?
+
+  mapping TelemetryMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+
+  @@unique([mappingId, periodType, periodStart])
+  @@index([mappingId])
+  @@index([periodType])
+  @@index([periodStart])
+  @@map("telemetry_aggregations")
+}
+
+model AlarmRule {
+  id              String   @id @default(cuid())
+  name            String
+  mappingId       String
+  condition       String   @db.Text // JSON: {operator, threshold, duration, severity}
+  severity        String   @default("warning") // info, warning, critical
+  isActive        Boolean  @default(true)
+  cooldownMinutes Int      @default(5)
+  escalationPath  String?  @db.Text // JSON: escalation steps
+  notification    String?  @db.Text // JSON: who to notify
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  mapping   TelemetryMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+  createdBy User              @relation("AlarmRuleCreatedBy", fields: [createdById], references: [id])
+
+  events  AlarmEvent[]
+
+  @@index([mappingId])
+  @@index([severity])
+  @@index([isActive])
+  @@map("alarm_rules")
+}
+
+model AlarmEvent {
+  id                String   @id @default(cuid())
+  ruleId            String
+  mappingId         String
+  value             Float
+  threshold         Float
+  severity          String
+  status            String   @default("active") // active, acknowledged, resolved, suppressed
+  acknowledgedById  String?
+  acknowledgedAt    DateTime?
+  resolvedAt        DateTime?
+  resolutionNote    String?  @db.Text
+  createdAt         DateTime @default(now())
+
+  rule           AlarmRule        @relation(fields: [ruleId], references: [id])
+  mapping        TelemetryMapping @relation(fields: [mappingId], references: [id])
+  acknowledgedBy User?            @relation("AlarmAcknowledgedBy", fields: [acknowledgedById], references: [id])
+
+  @@index([ruleId])
+  @@index([mappingId])
+  @@index([status])
+  @@index([severity])
+  @@index([createdAt])
+  @@map("alarm_events")
+}
+
+// ============================================================================
+// PHASE D — RELIABILITY ENGINEERING PLATFORM
+// ============================================================================
+
+model FailureMode {
+  id              String   @id @default(cuid())
+  name            String
+  code            String?  @unique
+  description     String?  @db.Text
+  category        String
+  severity        String   @default("medium")
+  detectionMethod String?
+  iso14224Code    String?
+  isActive        Boolean  @default(true)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  createdBy User   @relation("FailureModeCreatedBy", fields: [createdById], references: [id])
+  records   FailureRecord[] @relation("FailureRecordMode")
+
+  @@index([category])
+  @@index([severity])
+  @@map("failure_modes")
+}
+
+model RcmAnalysis {
+  id              String   @id @default(cuid())
+  assetId         String
+  name            String
+  description     String?  @db.Text
+  methodology     String   @default("full")
+  status          String   @default("draft")
+  analysisDate    DateTime?
+  nextReviewDate  DateTime?
+  resultSummary   String?  @db.Text
+  riskMatrix      String?  @db.Text
+  approvedById    String?
+  approvedAt      DateTime?
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  asset       Asset  @relation(fields: [assetId], references: [id])
+  approvedBy  User?  @relation("RcmApprovedBy", fields: [approvedById], references: [id])
+  createdBy  User   @relation("RcmCreatedBy", fields: [createdById], references: [id])
+
+  @@index([assetId])
+  @@index([status])
+  @@map("rcm_analyses")
+}
+
+model WeibullAnalysis {
+  id              String   @id @default(cuid())
+  componentId     String
+  name            String
+  description     String?  @db.Text
+  shape           Float?
+  scale           Float?
+  location        Float?
+  confidence      Float?
+  sampleSize      Int      @default(0)
+  failureCount    Int      @default(0)
+  timeRange       String?  @db.Text
+  resultSummary   String?  @db.Text
+  dataPoints      String?  @db.Text
+  analyzedAt      DateTime @default(now())
+  analyzedById    String
+
+  component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  analyzedBy User              @relation("WeibullAnalyzedBy", fields: [analyzedById], references: [id])
+
+  @@index([componentId])
+  @@map("weibull_analyses")
+}
+
+model DowntimeAnalysis {
+  id                String   @id @default(cuid())
+  assetId           String
+  periodStart       DateTime
+  periodEnd         DateTime
+  totalDowntime     Float
+  plannedDowntime   Float
+  unplannedDowntime Float
+  downtimeCost      Float?
+  mtbf              Float?
+  mttr              Float?
+  availability      Float?
+  reliability       Float?
+  notes             String?  @db.Text
+  createdById       String
+  createdAt         DateTime @default(now())
+
+  asset     Asset  @relation(fields: [assetId], references: [id])
+  createdBy User   @relation("DowntimeCreatedBy", fields: [createdById], references: [id])
+
+  @@index([assetId])
+  @@index([periodStart])
+  @@map("downtime_analyses")
+}
+
+model RemainingUsefulLife {
+  id              String   @id @default(cuid())
+  componentId     String
+  currentHealth   Float
+  degradationRate Float
+  estimatedRul    Float?
+  confidenceScore Float
+  lastUpdated     DateTime @default(now())
+  analyzedById    String
+
+  component ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  analyzedBy User              @relation("RulAnalyzedBy", fields: [analyzedById], references: [id])
+
+  @@unique([componentId])
+  @@index([estimatedRul])
+  @@map("remaining_useful_life")
 }
