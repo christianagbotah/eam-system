@@ -104,26 +104,24 @@ export function ResponsiveDialog({
           <div className="mx-auto mt-3 h-1.5 w-10 shrink-0 rounded-full bg-muted-foreground/30" />
 
           {/* Header with optional close button */}
-          {title && (
-            <div className="flex items-center gap-3 px-4 pt-2 pb-1">
-              <div className="flex-1 min-w-0">
-                <SheetTitle className="text-base leading-tight">{title}</SheetTitle>
-                {description && (
-                  <SheetDescription className="text-sm mt-1">{description}</SheetDescription>
-                )}
-              </div>
-              {showCloseButton && (
-                <SheetClose asChild>
-                  <button
-                    className="flex items-center justify-center h-8 w-8 rounded-full bg-muted hover:bg-muted-foreground/10 transition-colors shrink-0"
-                    aria-label="Close"
-                  >
-                    <X className="h-4 w-4 text-muted-foreground" />
-                  </button>
-                </SheetClose>
+          <div className={cn("flex items-center gap-3 px-4 pt-2 pb-1", !title && !description && !showCloseButton && "sr-only")}>
+            <div className="flex-1 min-w-0">
+              <SheetTitle className={cn("text-base leading-tight", !title && "sr-only")}>{title || "Dialog"}</SheetTitle>
+              {description && (
+                <SheetDescription className="text-sm mt-1">{description}</SheetDescription>
               )}
             </div>
-          )}
+            {showCloseButton && title && (
+              <SheetClose asChild>
+                <button
+                  className="flex items-center justify-center h-8 w-8 rounded-full bg-muted hover:bg-muted-foreground/10 transition-colors shrink-0"
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </SheetClose>
+            )}
+          </div>
 
           {/* Scrollable content area */}
           <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
@@ -151,12 +149,10 @@ export function ResponsiveDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={cn(resolvedMaxWidth, "max-h-[85vh] overflow-y-auto", className)}>
-        {(title || description) && (
-          <DialogHeader>
-            {title && <DialogTitle>{title}</DialogTitle>}
-            {description && <DialogDescription>{description}</DialogDescription>}
-          </DialogHeader>
-        )}
+        <DialogHeader className={!(title || description) && "sr-only"}>
+          <DialogTitle className={!title ? "sr-only" : undefined}>{title || "Dialog"}</DialogTitle>
+          {description && <DialogDescription>{description}</DialogDescription>}
+        </DialogHeader>
 
         <div className={cn(!footer && "pb-2")}>
           {children}
