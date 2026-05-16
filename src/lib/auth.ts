@@ -280,6 +280,33 @@ export async function getUserPlantId(userId: string): Promise<string | null> {
   return userPlant?.plantId ?? null;
 }
 
+// ============================================================================
+// CONVENIENCE — getCurrentUser for route handlers
+// ============================================================================
+
+export interface CurrentUser {
+  id: string;
+  username: string;
+  roles: string[];
+  permissions: string[];
+}
+
+/**
+ * Get the current authenticated user from the request.
+ * Wraps getSession() and returns a normalized user object with `id` field.
+ * Returns null if not authenticated.
+ */
+export async function getCurrentUser(request: Request): Promise<CurrentUser | null> {
+  const session = getSession(request);
+  if (!session) return null;
+  return {
+    id: session.userId,
+    username: session.username,
+    roles: session.roles,
+    permissions: session.permissions,
+  };
+}
+
 // Populate session cache on server startup (warm cache from DB)
 export async function warmSessionCache(): Promise<void> {
   try {

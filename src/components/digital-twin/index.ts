@@ -32,6 +32,11 @@ export { default as FailureAnalysisPanel, type FailureAnalysisPanelProps } from 
 export { default as PredictiveMaintenancePanel, type PredictiveMaintenancePanelProps } from './PredictiveMaintenancePanel';
 export { default as WorkInstructionPanel } from './WorkInstructionPanel';
 
+// Phase A — Enterprise 3D Components
+export { ModelManagerPanel, type ModelManagerPanelProps } from './ModelManagerPanel';
+export { ComponentMappingEditor, type ComponentMappingEditorProps } from './ComponentMappingEditor';
+export { CameraTourPlayer, type CameraTourPlayerProps } from './CameraTourPlayer';
+
 // Diagram components
 export { diagramTemplates, diagramTypeMeta, type DiagramTemplate } from './DiagramTemplates';
 export {

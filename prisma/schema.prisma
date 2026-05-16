@@ -220,6 +220,13 @@ model User {
   // Work Instruction relations
   workInstructionsCreated  WorkInstruction[]       @relation("WICreatedBy")
 
+  // Enterprise Model Library relations (Phase A)
+  uploadedModels  ModelLibrary[]          @relation("ModelUploadedBy")
+  meshMappings    MeshComponentMapping[]  @relation("MappingCreatedBy")
+  tours           InspectionTour[]        @relation("TourCreatedBy")
+  bookmarks       AssetViewBookmark[]     @relation("BookmarkCreatedBy")
+  processingJobs  ModelProcessingJob[]   @relation("JobQueuedBy")
+
   @@map("users")
 }
 
@@ -314,6 +321,7 @@ model Plant {
   plantAccess    UserPlant[]
   assets         Asset[]
   inventoryItems InventoryItem[]
+  models         ModelLibrary[] @relation("ModelPlant")
 
   @@map("plants")
 }
@@ -744,6 +752,9 @@ model Asset {
 
   // Component Maintenance Intelligence relations
   spatialNodes SpatialNode[] @relation("SpatialAsset")
+
+  // Enterprise Model Library relations (Phase A)
+  models ModelLibrary[] @relation("ModelAsset")
 
   @@map("assets")
 }
@@ -1948,6 +1959,7 @@ model DigitalTwin {
   createdBy User               @relation("DigitalTwinCreatedBy", fields: [createdById], references: [id])
   scenes    DigitalTwinScene[]
   componentRegistry ComponentRegistry[] @relation("RegistryTwin")
+  tours     InspectionTour[]
 
   @@index([assetId])
   @@index([createdById])
@@ -2037,14 +2049,18 @@ model DigitalTwinScene {
 
   twin          DigitalTwin        @relation(fields: [twinId], references: [id], onDelete: Cascade)
   model         AssetModel         @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  modelFile     ModelLibrary?      @relation(fields: [modelFileId], references: [id])
+  modelFileId   String?
   createdBy     User               @relation("SceneCreatedBy", fields: [createdById], references: [id])
   hotspots      TwinHotspot[]
   annotations   TwinAnnotation[]
   cameraPresets TwinCameraPreset[]
+  bookmarks     AssetViewBookmark[]
 
   @@index([twinId])
   @@index([modelId])
   @@index([createdById])
+  @@index([modelFileId])
   @@map("digital_twin_scenes")
 }
 
@@ -2554,11 +2570,14 @@ model ModelVersion {
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  assetModel  AssetModel @relation("ModelVersions", fields: [assetModelId], references: [id], onDelete: Cascade)
-  uploadedBy  User       @relation("ModelVersionUploaded", fields: [uploadedById], references: [id])
+  assetModel    AssetModel    @relation("ModelVersions", fields: [assetModelId], references: [id], onDelete: Cascade)
+  modelLibrary  ModelLibrary? @relation(fields: [modelLibraryId], references: [id])
+  modelLibraryId String?
+  uploadedBy    User          @relation("ModelVersionUploaded", fields: [uploadedById], references: [id])
 
   @@unique([assetModelId, version])
   @@index([assetModelId])
+  @@index([modelLibraryId])
   @@map("model_versions")
 }
 
@@ -2919,4 +2938,151 @@ model WorkInstructionExecution {
   @@index([technicianId])
   @@index([status])
   @@map("work_instruction_executions")
+}
+
+// ============================================================================
+// PHASE A — ENTERPRISE MODEL LIBRARY
+// ============================================================================
+
+model ModelLibrary {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?  @db.Text
+  originalFile    String   // original filename
+  storedPath      String   // storage path (local or S3)
+  fileSize        Int      // bytes
+  mimeType        String   @default("model/gltf-binary")
+  format          String   @default("glb") // glb, gltf, fbx, obj, step
+  version         Int      @default(1)
+  status          String   @default("processing") // processing, ready, failed, archived
+  thumbnail       String?  // auto-generated thumbnail path
+  boundingBox     String?  @db.Text // JSON: {minX, minY, minZ, maxX, maxY, maxZ}
+  geometryStats   String?  @db.Text // JSON: {vertices, faces, meshes, materials, animations}
+  dracoCompressed Boolean  @default(false)
+  optimizedForWeb Boolean  @default(false)
+  maxLodPolygons  Int?     // highest LOD polygon count
+  metadata        String?  @db.Text // JSON: any additional model metadata
+  processingLog   String?  @db.Text
+  processingError String?  @db.Text
+  assetId         String?
+  plantId         String?
+  uploadedById    String
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  asset      Asset?                  @relation("ModelAsset", fields: [assetId], references: [id])
+  plant      Plant?                  @relation("ModelPlant", fields: [plantId], references: [id])
+  uploadedBy User                    @relation("ModelUploadedBy", fields: [uploadedById], references: [id])
+  scenes     DigitalTwinScene[]
+  versions   ModelVersion[]
+  meshComponentMappings MeshComponentMapping[]
+  modelProcessingJobs  ModelProcessingJob[]
+
+  @@index([assetId])
+  @@index([plantId])
+  @@index([uploadedById])
+  @@index([status])
+  @@index([format])
+  @@map("model_library")
+}
+
+model MeshComponentMapping {
+  id                String   @id @default(cuid())
+  modelId           String
+  meshName          String   // GLTF node/mesh name
+  meshPath          String   // GLTF node path (e.g., "Root/Pump/Impeller")
+  mappingType       String   // component, spare_part, sensor, inspection_point, lubrication_point, pm_schedule, tool_requirement, work_instruction
+  targetId          String   // ID of the mapped entity
+  targetName        String?  // display name
+  color             String?  // hex color for highlighting (e.g., "#ff0000")
+  opacity           Float    @default(1.0)
+  isHighlighted     Boolean  @default(false)
+  isVisible         Boolean  @default(true)
+  metadata          String?  @db.Text // JSON: any additional mapping data
+  sortOrder         Int      @default(0)
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  model      ModelLibrary   @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  createdBy  User            @relation("MappingCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([modelId, meshName, mappingType, targetId])
+  @@index([modelId])
+  @@index([meshName])
+  @@index([mappingType])
+  @@index([targetId])
+  @@map("mesh_component_mappings")
+}
+
+model InspectionTour {
+  id              String   @id @default(cuid())
+  twinId          String
+  name            String
+  description     String?  @db.Text
+  steps           String   @db.Text // JSON: TourStep[] with camera positions, duration, narration
+  estimatedTime   Int      @default(0) // seconds
+  difficulty      String   @default("basic") // basic, intermediate, advanced
+  isPublished     Boolean  @default(false)
+  sortOrder       Int      @default(0)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  twin       DigitalTwin  @relation(fields: [twinId], references: [id], onDelete: Cascade)
+  createdBy  User          @relation("TourCreatedBy", fields: [createdById], references: [id])
+
+  @@index([twinId])
+  @@index([isPublished])
+  @@map("inspection_tours")
+}
+
+model ModelProcessingJob {
+  id              String   @id @default(cuid())
+  modelId         String
+  jobType         String   // validation, thumbnail, draco_compress, optimize, lod_generation, metadata_extraction
+  status          String   @default("queued") // queued, running, completed, failed
+  input           String?  @db.Text // JSON: job parameters
+  output          String?  @db.Text // JSON: job results
+  error           String?  @db.Text
+  progress        Int      @default(0) // 0-100
+  startedAt       DateTime?
+  completedAt     DateTime?
+  duration        Int?     // milliseconds
+  queuedById      String
+  createdAt       DateTime @default(now())
+
+  model     ModelLibrary @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  queuedBy  User         @relation("JobQueuedBy", fields: [queuedById], references: [id])
+
+  @@index([modelId])
+  @@index([status])
+  @@index([jobType])
+  @@map("model_processing_jobs")
+}
+
+model AssetViewBookmark {
+  id              String   @id @default(cuid())
+  sceneId         String
+  name            String
+  description     String?
+  cameraPosition  String   @db.Text // JSON: {x, y, z}
+  cameraTarget    String   @db.Text // JSON: {x, y, z}
+  cameraUp        String?  @db.Text // JSON: {x, y, z}
+  cameraFov       Float    @default(50)
+  isOrthographic  Boolean  @default(false)
+  zoomLevel       Float?   // for orthographic
+  hiddenMeshes    String?  @db.Text // JSON: string[] of mesh paths to hide
+  highlightedMeshes String? @db.Text // JSON: string[] of mesh paths to highlight
+  sectionPlane    String?  @db.Text // JSON: {normal, constant}
+  createdById     String
+  createdAt       DateTime @default(now())
+
+  scene     DigitalTwinScene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  createdBy User              @relation("BookmarkCreatedBy", fields: [createdById], references: [id])
+
+  @@index([sceneId])
+  @@index([createdById])
+  @@map("asset_view_bookmarks")
 }
