@@ -227,6 +227,17 @@ model User {
   bookmarks       AssetViewBookmark[]     @relation("BookmarkCreatedBy")
   processingJobs  ModelProcessingJob[]   @relation("JobQueuedBy")
 
+  // Engineering BOM & Assembly Intelligence relations (Phase B)
+  bomRevisionsApproved BomRevision[]        @relation("BomRevApprovedBy")
+  bomRevisionsCreated  BomRevision[]        @relation("BomRevCreatedBy")
+  altPartsApproved     AlternatePart[]      @relation("AltPartApprovedBy")
+  altPartsCreated      AlternatePart[]      @relation("AltPartCreatedBy")
+  spareAnalyses        CriticalSpareAnalysis[] @relation("SpareAnalyzedBy")
+  ecrRequested         EngineeringChangeRequest[] @relation("EcrRequestedBy")
+  ecrReviewed          EngineeringChangeRequest[] @relation("EcrReviewedBy")
+  ecrApproved          EngineeringChangeRequest[] @relation("EcrApprovedBy")
+  ecrCreated           EngineeringChangeRequest[] @relation("EcrCreatedBy")
+
   @@map("users")
 }
 
@@ -322,6 +333,9 @@ model Plant {
   assets         Asset[]
   inventoryItems InventoryItem[]
   models         ModelLibrary[] @relation("ModelPlant")
+
+  // Engineering BOM & Assembly Intelligence relations (Phase B)
+  changeRequests EngineeringChangeRequest[] @relation("EcrPlant")
 
   @@map("plants")
 }
@@ -756,6 +770,9 @@ model Asset {
   // Enterprise Model Library relations (Phase A)
   models ModelLibrary[] @relation("ModelAsset")
 
+  // Engineering BOM & Assembly Intelligence relations (Phase B)
+  changeRequests EngineeringChangeRequest[] @relation("EcrAsset")
+
   @@map("assets")
 }
 
@@ -805,6 +822,9 @@ model InventoryItem {
   // Repair module relations
   repairMaterialRequests RepairMaterialRequest[]
   sparePartLinks         ComponentSparePart[] @relation("SparePartInventory")
+
+  // Engineering BOM & Assembly Intelligence relations (Phase B)
+  bomItems BomRevisionItem[] @relation("BomItemInventory")
 
   @@map("inventory_items")
 }
@@ -1934,6 +1954,9 @@ model BillOfMaterial {
   parent     Asset @relation("BomParent", fields: [parentId], references: [id], onDelete: Cascade)
   childAsset Asset @relation("BomChild", fields: [childAssetId], references: [id], onDelete: Cascade)
 
+  revisions      BomRevision[]
+  changeRequests EngineeringChangeRequest[]
+
   @@unique([parentId, childAssetId])
   @@map("bill_of_materials")
 }
@@ -2473,6 +2496,12 @@ model ComponentRegistry {
   lubricationSchedules     ComponentLubricationSchedule[]
   lubricationRecords       ComponentLubricationRecord[]
   replacementHistory       ComponentReplacementHistory[]
+
+  // Engineering BOM & Assembly Intelligence relations (Phase B)
+  bomItems              BomRevisionItem[]    @relation("BomItemComponent")
+  altPrimaryParts       AlternatePart[]      @relation("AltPrimaryPart")
+  altAlternateParts     AlternatePart[]      @relation("AltAlternatePart")
+  spareAnalysis         CriticalSpareAnalysis?
 
   @@unique([componentCode])
   @@index([parentId])
@@ -3085,4 +3114,154 @@ model AssetViewBookmark {
   @@index([sceneId])
   @@index([createdById])
   @@map("asset_view_bookmarks")
+}
+
+// ============================================================================
+// ENGINEERING BOM & ASSEMBLY INTELLIGENCE (Phase B)
+// ============================================================================
+
+model BomRevision {
+  id              String   @id @default(cuid())
+  bomId           String
+  revision        String   // e.g., "A", "B", "C", "1.0", "2.0"
+  description     String?  @db.Text
+  effectivityFrom DateTime?
+  effectivityTo   DateTime?
+  changeReason    String?  @db.Text // engineering change description
+  status          String   @default("draft") // draft, pending_approval, approved, released, superseded, obsolete
+  approvedById    String?
+  approvedAt      DateTime?
+  isActive        Boolean  @default(true)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  bom        BillOfMaterial        @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  approvedBy User?                 @relation("BomRevApprovedBy", fields: [approvedById], references: [id])
+  createdBy  User                  @relation("BomRevCreatedBy", fields: [createdById], references: [id])
+  items      BomRevisionItem[]
+
+  @@index([bomId])
+  @@index([status])
+  @@index([isActive])
+  @@map("bom_revisions")
+}
+
+model BomRevisionItem {
+  id                String   @id @default(cuid())
+  revisionId        String
+  parentItemId      String?  // for hierarchical BOM (sub-assemblies)
+  componentId       String?  // link to ComponentRegistry
+  inventoryItemId   String?  // link to InventoryItem (spare part)
+  itemNumber        String   // engineering part number
+  itemName          String
+  description       String?  @db.Text
+  quantity          Float    @default(1)
+  unitOfMeasure     String   @default("EA") // EA, KG, M, L, SET, etc.
+  assemblySequence  Int?     // order in assembly
+  relationshipType  String   @default("mechanical") // mechanical, electrical, hydraulic, pneumatic, process
+  isCritical        Boolean  @default(false)
+  leadTimeDays      Int?
+  notes             String?  @db.Text
+
+  revision     BomRevision          @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  parent       BomRevisionItem?     @relation("BomItemHierarchy", fields: [parentItemId], references: [id])
+  children     BomRevisionItem[]    @relation("BomItemHierarchy")
+  component    ComponentRegistry?   @relation("BomItemComponent", fields: [componentId], references: [id])
+  inventory    InventoryItem?       @relation("BomItemInventory", fields: [inventoryItemId], references: [id])
+
+  @@index([revisionId])
+  @@index([parentItemId])
+  @@index([componentId])
+  @@index([inventoryItemId])
+  @@map("bom_revision_items")
+}
+
+model AlternatePart {
+  id                String   @id @default(cuid())
+  primaryPartId     String   // ComponentRegistry ID
+  alternatePartId   String   // ComponentRegistry ID
+  interchangeability String @default("equivalent") // equivalent, superior, inferior, modified
+  notes             String?  @db.Text
+  approvedById      String?
+  approvedAt        DateTime?
+  isActive          Boolean  @default(true)
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  primaryPart   ComponentRegistry @relation("AltPrimaryPart", fields: [primaryPartId], references: [id], onDelete: Cascade)
+  alternatePart ComponentRegistry @relation("AltAlternatePart", fields: [alternatePartId], references: [id], onDelete: Cascade)
+  approvedBy     User?              @relation("AltPartApprovedBy", fields: [approvedById], references: [id])
+  createdBy      User               @relation("AltPartCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([primaryPartId, alternatePartId])
+  @@index([primaryPartId])
+  @@index([alternatePartId])
+  @@map("alternate_parts")
+}
+
+model EngineeringChangeRequest {
+  id              String   @id @default(cuid())
+  ecrNumber       String   @unique // ECR-YYYYMM-NNNN
+  title           String
+  description     String   @db.Text
+  changeType      String   // addition, modification, deletion, substitution
+  reason          String   @db.Text
+  impact          String?  @db.Text // JSON: affected assemblies, cost impact, schedule impact
+  priority        String   @default("medium") // low, medium, high, critical
+  status          String   @default("draft") // draft, submitted, reviewing, approved, rejected, implemented, closed
+  requestedById   String
+  reviewedById    String?
+  approvedById    String?
+  reviewedAt      DateTime?
+  approvedAt      DateTime?
+  implementedAt   DateTime?
+  bomId           String?
+  assetId         String?
+  plantId         String?
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  bom         BillOfMaterial?      @relation(fields: [bomId], references: [id])
+  asset       Asset?               @relation("EcrAsset", fields: [assetId], references: [id])
+  plant       Plant?               @relation("EcrPlant", fields: [plantId], references: [id])
+  requestedBy User                 @relation("EcrRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy  User?                @relation("EcrReviewedBy", fields: [reviewedById], references: [id])
+  approvedBy  User?                @relation("EcrApprovedBy", fields: [approvedById], references: [id])
+  createdBy  User                 @relation("EcrCreatedBy", fields: [createdById], references: [id])
+
+  @@index([status])
+  @@index([bomId])
+  @@index([assetId])
+  @@index([plantId])
+  @@index([requestedById])
+  @@map("engineering_change_requests")
+}
+
+model CriticalSpareAnalysis {
+  id                String   @id @default(cuid())
+  componentId       String
+  criticalityScore  Float    @default(0) // 0-100
+  leadTimeRisk      String   @default("low") // low, medium, high, critical
+  stockoutRisk      String   @default("low")
+  recommendedStock  Int?
+  currentStock      Int      @default(0)
+  annualUsage       Float    @default(0)
+  unitCost          Float?
+  stockValue        Float?
+  lastAnalysisDate  DateTime @default(now())
+  notes             String?  @db.Text
+  analyzedById      String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  component   ComponentRegistry @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  analyzedBy  User               @relation("SpareAnalyzedBy", fields: [analyzedById], references: [id])
+
+  @@unique([componentId])
+  @@index([criticalityScore])
+  @@index([leadTimeRisk])
+  @@map("critical_spare_analysis")
 }
