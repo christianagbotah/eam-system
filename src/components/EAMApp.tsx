@@ -152,6 +152,9 @@ const SystemHealthPage = lazy(() => import('./modules/SettingsPages').then(m => 
 const QueueManagerPage = lazy(() => import('./modules/QueueManagerPage'));
 const UserPreferencesPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.UserPreferencesPage })));
 
+// Observability
+const ObservabilityDashboardPage = lazy(() => import('./modules/ObservabilityPages').then(m => ({ default: m.ObservabilityDashboard })));
+
 
 // ============================================================================
 // MAIN APP SHELL
@@ -297,6 +300,8 @@ function AppShell() {
       case 'settings-health': return <SystemHealthPage />;
       case 'settings-queues': return <QueueManagerPage />;
       case 'settings-preferences': return <UserPreferencesPage />;
+      // Observability
+      case 'observability-dashboard': return <ObservabilityDashboardPage />;
       // Legacy fallbacks
       case 'assets':
       case 'asset-detail': return <AssetsPage />;
@@ -420,6 +425,8 @@ function AppShell() {
     'settings-health': 'System Health',
     'settings-queues': 'Queue Manager',
     'settings-preferences': 'My Preferences',
+    // Observability
+    'observability-dashboard': 'Observability',
     // Legacy
     'assets': 'Asset Register',
     'asset-detail': 'Asset Details',
