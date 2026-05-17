@@ -2,7 +2,9 @@
 // JOB QUEUE — BullMQ-like abstraction with in-memory fallback
 // ============================================================================
 
+import { Queue, Worker, Job as BullJob, JobsOptions } from 'bullmq';
 import { createLogger } from '@/lib/logger';
+import { getRedisClient, closeRedisClient } from '@/lib/redis';
 
 const logger = createLogger('queue');
 
@@ -252,22 +254,345 @@ class InMemoryQueue {
 }
 
 // ============================================================================
-// Queue Singleton & Public API
+// BullMQ Adapter — production queue backed by Redis via BullMQ
 // ============================================================================
 
-const queueInstance = new InMemoryQueue();
+/**
+ * Shared connection options derived from REDIS_URL.
+ * Each BullMQ Queue/Worker needs its own ioredis instance.
+ */
+function createBullMQConnection() {
+  const url = process.env.REDIS_URL;
+  if (!url) throw new Error('REDIS_URL is required for BullMQ');
+  return { connection: { url } };
+}
 
+/**
+ * Adapter that wraps BullMQ Queue + Worker into the same API surface
+ * as InMemoryQueue, allowing seamless switching at the jobQueue facade.
+ */
+class BullMQQueueAdapter {
+  private queues = new Map<string, Queue>();
+  private workers = new Map<string, Worker>();
+  private eventListeners = new Map<string, Set<{
+    event: 'completed' | 'failed' | 'progress';
+    callback: (...args: unknown[]) => void;
+  }>>();
+
+  private getOrCreateQueue(queueName: string): Queue {
+    let q = this.queues.get(queueName);
+    if (!q) {
+      q = new Queue(queueName, {
+        ...createBullMQConnection(),
+        defaultJobOptions: {
+          removeOnComplete: { count: 200 },
+          removeOnFail: { count: 100 },
+        },
+      });
+      this.queues.set(queueName, q);
+    }
+    return q;
+  }
+
+  async add<T>(queueName: string, definition: JobDefinition<T>): Promise<string> {
+    const queue = this.getOrCreateQueue(queueName);
+
+    const opts: JobsOptions = {};
+    if (definition.id) opts.jobId = definition.id;
+    if (definition.priority) opts.priority = definition.priority;
+    if (definition.attempts) opts.attempts = definition.attempts;
+    if (definition.delay && definition.delay > 0) opts.delay = definition.delay;
+    if (definition.backoff) {
+      opts.backoff = {
+        type: 'exponential',
+        delay: definition.backoff,
+      };
+    }
+
+    const job = await queue.add(definition.name, definition.data, opts);
+    logger.info(`BullMQ job added to queue [${queueName}]`, {
+      jobId: job?.id,
+      jobName: definition.name,
+    });
+    return job?.id ?? `unknown-${Date.now()}`;
+  }
+
+  async process<T>(queueName: string, handler: (job: JobRecord<T>) => Promise<unknown>): Promise<void> {
+    // Prevent duplicate workers for the same queue
+    if (this.workers.has(queueName)) {
+      logger.warn(`Worker already registered for [${queueName}], skipping`);
+      return;
+    }
+
+    const worker = new Worker(queueName, async (bullJob: BullJob) => {
+      // Adapt BullMQ job → JobRecord shape for the handler
+      const jobRecord: JobRecord = {
+        id: bullJob.id ?? '',
+        name: bullJob.name,
+        data: bullJob.data as T,
+        status: 'active',
+        progress: 0,
+        attempts: bullJob.attemptsMade,
+        maxAttempts: bullJob.opts?.attempts ?? 3,
+        createdAt: new Date(bullJob.timestamp ?? Date.now()).toISOString(),
+        startedAt: new Date(bullJob.processedOn ?? Date.now()).toISOString(),
+      };
+
+      const result = await handler(jobRecord);
+      return result;
+    }, {
+      ...createBullMQConnection(),
+      concurrency: 5,
+      autorun: true,
+    });
+
+    // --- Wire up event listeners ---
+    worker.on('completed', (bullJob: BullJob) => {
+      logger.info(`BullMQ job completed [${queueName}]`, { jobId: bullJob.id });
+      this.fireEvent(queueName, 'completed', bullJob);
+    });
+
+    worker.on('failed', (bullJob: BullJob | undefined, err: Error) => {
+      logger.error(`BullMQ job failed [${queueName}]`, {
+        jobId: bullJob?.id,
+        error: err.message,
+      });
+      this.fireEvent(queueName, 'failed', bullJob, err);
+    });
+
+    worker.on('progress', (bullJob: BullJob, progress: number) => {
+      this.fireEvent(queueName, 'progress', bullJob, progress);
+    });
+
+    worker.on('error', (err: Error) => {
+      logger.error(`BullMQ worker error [${queueName}]`, { error: err.message });
+    });
+
+    this.workers.set(queueName, worker);
+    logger.info(`BullMQ worker started for [${queueName}]`);
+  }
+
+  private fireEvent(queueName: string, event: string, ...args: unknown[]) {
+    const listeners = this.eventListeners.get(queueName);
+    if (listeners) {
+      for (const listener of listeners) {
+        if (listener.event === event) {
+          try { listener.callback(...args); } catch (e) { /* skip */ }
+        }
+      }
+    }
+  }
+
+  async getJob(queueName: string, jobId: string): Promise<JobRecord | null> {
+    const queue = this.getOrCreateQueue(queueName);
+    const bullJob = await queue.getJob(jobId);
+    if (!bullJob) return null;
+
+    const state = await bullJob.getState();
+    return this.bullJobToRecord(bullJob, state);
+  }
+
+  async getQueueJobs(queueName: string): Promise<JobRecord[]> {
+    const queue = this.getOrCreateQueue(queueName);
+    const states: Array<'waiting' | 'active' | 'completed' | 'failed' | 'delayed'> = [
+      'waiting', 'active', 'completed', 'failed', 'delayed',
+    ];
+
+    const jobs: JobRecord[] = [];
+    for (const state of states) {
+      const bullJobs = await queue.getJobs([state], 0, 200);
+      for (const bj of bullJobs) {
+        jobs.push(this.bullJobToRecord(bj, state));
+      }
+    }
+    return jobs;
+  }
+
+  async getQueueStatus(queueName: string) {
+    const queue = this.getOrCreateQueue(queueName);
+
+    const [waiting, active, completed, failed, delayed] = await Promise.all([
+      queue.getWaitingCount(),
+      queue.getActiveCount(),
+      queue.getCompletedCount(),
+      queue.getFailedCount(),
+      queue.getDelayedCount(),
+    ]);
+
+    return {
+      name: queueName,
+      total: waiting + active + completed + failed + delayed,
+      waiting,
+      active,
+      completed,
+      failed,
+      delayed,
+    };
+  }
+
+  async getAllQueueStatus() {
+    const statuses: Record<string, Awaited<ReturnType<typeof this.getQueueStatus>>> = {};
+    for (const queueName of Object.values(QUEUES)) {
+      statuses[queueName] = await this.getQueueStatus(queueName);
+    }
+    return statuses;
+  }
+
+  async clearQueue(queueName: string): Promise<number> {
+    const queue = this.getOrCreateQueue(queueName);
+    await queue.drain();
+    await queue.obliterate({ force: true });
+    return 0; // obliterate doesn't return count
+  }
+
+  async retryJob(queueName: string, jobId: string): Promise<boolean> {
+    const queue = this.getOrCreateQueue(queueName);
+    try {
+      const job = await queue.getJob(jobId);
+      if (!job) return false;
+      await job.retry();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async removeJob(queueName: string, jobId: string): Promise<boolean> {
+    const queue = this.getOrCreateQueue(queueName);
+    try {
+      const job = await queue.getJob(jobId);
+      if (!job) return false;
+      await job.remove();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Gracefully shut down all workers and queues. Call on process exit.
+   */
+  async close(): Promise<void> {
+    for (const [, worker] of this.workers) {
+      try { await worker.close(); } catch { /* ignore */ }
+    }
+    for (const [, queue] of this.queues) {
+      try { await queue.close(); } catch { /* ignore */ }
+    }
+    this.workers.clear();
+    this.queues.clear();
+    logger.info('BullMQ connections closed gracefully');
+  }
+
+  // ------- Internal helpers -------
+
+  private bullJobToRecord(bullJob: BullJob, state: string): JobRecord {
+    return {
+      id: bullJob.id ?? '',
+      name: bullJob.name,
+      data: bullJob.data,
+      status: this.mapBullState(state) as JobStatus,
+      progress: bullJob.progress ?? 0,
+      result: undefined, // Not trivially available from BullMQ after the fact
+      error: bullJob.failedReason ?? undefined,
+      attempts: bullJob.attemptsMade,
+      maxAttempts: bullJob.opts?.attempts ?? 3,
+      createdAt: new Date(bullJob.timestamp ?? Date.now()).toISOString(),
+      startedAt: bullJob.processedOn ? new Date(bullJob.processedOn).toISOString() : undefined,
+      completedAt: bullJob.finishedOn ? new Date(bullJob.finishedOn).toISOString() : undefined,
+      failedAt: bullJob.finishedOn && state === 'failed' ? new Date(bullJob.finishedOn).toISOString() : undefined,
+    };
+  }
+
+  private mapBullState(state: string): string {
+    switch (state) {
+      case 'waiting': return 'waiting';
+      case 'active': return 'active';
+      case 'completed': return 'completed';
+      case 'failed': return 'failed';
+      case 'delayed': return 'delayed';
+      default: return 'waiting';
+    }
+  }
+}
+
+// ============================================================================
+// Queue Singleton & Public API — lazy detection of Redis availability
+// ============================================================================
+
+const memoryInstance = new InMemoryQueue();
+
+/**
+ * Determine whether Redis is available right now.
+ * Returns true if REDIS_URL is set and the client reports it is available.
+ */
+function isRedisAvailable(): boolean {
+  if (!process.env.REDIS_URL) return false;
+  try {
+    const client = getRedisClient();
+    return client.isAvailable() && client.getType() === 'redis';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Internal adapter reference — lazily initialized on first call.
+ * Once chosen (BullMQ or in-memory), it stays that way for the process lifetime.
+ */
+let adapterInstance: InMemoryQueue | BullMQQueueAdapter | null = null;
+let adapterInitialized = false;
+
+function getAdapter(): InMemoryQueue | BullMQQueueAdapter {
+  if (!adapterInitialized) {
+    adapterInitialized = true;
+    if (isRedisAvailable()) {
+      adapterInstance = new BullMQQueueAdapter();
+      logger.info('Job queue using BullMQ adapter (production)');
+    } else {
+      adapterInstance = memoryInstance;
+      logger.info('Job queue using in-memory adapter (development/sandbox)');
+    }
+  }
+  return adapterInstance!;
+}
+
+/**
+ * Backward-compatible facade. All existing code that imports `jobQueue`
+ * and calls `.add()`, `.process()`, etc. will continue to work.
+ *
+ * On first use the adapter is chosen:
+ *   - REDIS_URL set + client available → BullMQQueueAdapter
+ *   - Otherwise                        → InMemoryQueue
+ */
 export const jobQueue = {
-  add: queueInstance.add.bind(queueInstance),
-  process: queueInstance.process.bind(queueInstance),
-  getJob: queueInstance.getJob.bind(queueInstance),
-  getJobs: queueInstance.getQueueJobs.bind(queueInstance),
-  getStatus: queueInstance.getQueueStatus.bind(queueInstance),
-  getAllStatus: queueInstance.getAllQueueStatus.bind(queueInstance),
-  clear: queueInstance.clearQueue.bind(queueInstance),
-  retry: queueInstance.retryJob.bind(queueInstance),
-  remove: queueInstance.removeJob.bind(queueInstance),
+  add: (...args: Parameters<InMemoryQueue['add']>) => getAdapter().add(...args),
+  process: (...args: Parameters<InMemoryQueue['process']>) => getAdapter().process(...args),
+  getJob: (...args: Parameters<InMemoryQueue['getJob']>) => getAdapter().getJob(...args),
+  getJobs: (...args: Parameters<InMemoryQueue['getQueueJobs']>) => getAdapter().getQueueJobs(...args),
+  getStatus: (...args: Parameters<InMemoryQueue['getQueueStatus']>) => getAdapter().getQueueStatus(...args),
+  getAllStatus: (...args: Parameters<InMemoryQueue['getAllQueueStatus']>) => getAdapter().getAllQueueStatus(...args),
+  clear: (...args: Parameters<InMemoryQueue['clearQueue']>) => getAdapter().clearQueue(...args),
+  retry: (...args: Parameters<InMemoryQueue['retryJob']>) => getAdapter().retryJob(...args),
+  remove: (...args: Parameters<InMemoryQueue['removeJob']>) => getAdapter().removeJob(...args),
 };
+
+/**
+ * Returns which adapter is in use: 'bullmq' or 'memory'.
+ */
+export function getQueueAdapterType(): 'bullmq' | 'memory' {
+  const adapter = getAdapter();
+  return adapter instanceof BullMQQueueAdapter ? 'bullmq' : 'memory';
+}
+
+/**
+ * Gracefully shut down the queue adapter. Useful on process exit.
+ */
+export async function closeQueueAdapter(): Promise<void> {
+  if (adapterInstance instanceof BullMQQueueAdapter) {
+    await adapterInstance.close();
+  }
+}
 
 // ============================================================================
 // Pre-built Job Processors — registered on app startup
