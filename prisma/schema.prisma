@@ -4375,3 +4375,104 @@ model SyncOperation {
   @@index([status])
   @@map("sync_operations")
 }
+
+// ============================================================================
+// INDUSTRIAL DOCUMENT INTELLIGENCE (Phase 10)
+// ============================================================================
+
+model EngineeringDocument {
+  id                String   @id @default(cuid())
+  documentNumber    String   @unique // auto-generated, e.g. "PID-MEC-001-REV-A"
+  title             String
+  description       String?  @db.Text
+  category          String   // p_id, pfd, isometric, electrical, instrumentation, mechanical, civil, safety, quality, procedure, manual, specification
+  subcategory       String?
+  discipline        String?  // mechanical, electrical, instrument, civil, process, piping
+  plantId           String?
+  area              String?
+  folderPath        String?  // virtual folder hierarchy
+  status            String   @default("draft") // draft, under_review, approved, issued, superseded, obsolete
+  version           Int      @default(1)
+  revision          String   @default("A") // A, B, C, ...
+  fileSize          Int?
+  fileMimeType      String?
+  fileUrl           String?  // storage URL
+  thumbnailUrl      String?
+  extractedText     String?  @db.Text // OCR/text extraction result
+  metadata          Json?    // extracted metadata (title block, equipment list, etc.)
+  tags              Json?    // auto-generated or manual tags
+  linkedAssetIds    Json?    // array of asset IDs referenced in this document
+  linkedTagNumbers  Json?    // array of equipment/instrument tag numbers found
+  issuedById        String?
+  approvedById      String?
+  reviewNotes       String?  @db.Text
+  effectiveDate     DateTime?
+  reviewDate        DateTime?
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  revisions         DocumentRevision[]
+
+  @@index([category])
+  @@index([plantId])
+  @@index([status])
+  @@index([discipline])
+  @@index([documentNumber])
+  @@map("engineering_documents")
+}
+
+model DocumentRevision {
+  id                String   @id @default(cuid())
+  documentId        String
+  version           Int
+  revision          String
+  changeDescription String?  @db.Text
+  fileSize          Int?
+  fileUrl           String?
+  changeType        String?  // new, revision, correction, withdrawal
+  changedById       String
+  approvedById      String?
+  approvedAt        DateTime?
+  createdAt         DateTime @default(now())
+
+  document          EngineeringDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, version])
+  @@map("document_revisions")
+}
+
+model PidTagLink {
+  id                String   @id @default(cuid())
+  documentId        String
+  tagNumber         String   // e.g. "P-101A", "TT-201", "LV-301"
+  tagType           String?  // equipment, instrument, line, valve, vessel
+  assetId           String?  // linked to asset database
+  x                 Float?   // position on P&ID (for overlay)
+  y                 Float?
+  isVerified        Boolean  @default(false)
+  verifiedById      String?
+  verifiedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([documentId])
+  @@index([tagNumber])
+  @@index([assetId])
+  @@map("pid_tag_links")
+}
+
+model DocumentSearchLog {
+  id                String   @id @default(cuid())
+  userId            String?
+  query             String
+  filters           Json?
+  resultCount       Int      @default(0)
+  clickedDocumentId String?
+  zeroResults       Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  @@index([query])
+  @@index([createdAt])
+  @@map("document_search_logs")
+}

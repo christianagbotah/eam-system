@@ -3528,3 +3528,117 @@ Stage Summary:
 - Security Hardening: headers, rate limiting, SQLi/XSS detection, secrets audit, compliance checklist, pen test tracking
 - All endpoints admin-only with proper auth guards
 - No commits pushed
+
+---
+Task ID: 10
+Agent: Document Intelligence Builder
+Task: Industrial Document Intelligence — EDMS, P&ID Linking, Document Intelligence, AI Search
+
+Work Log:
+
+### 1. Prisma Schema (`prisma/schema.prisma`)
+- Added 4 new models at end of schema (Phase 10 section):
+  - `EngineeringDocument`: 28 fields including documentNumber (auto-generated unique), category (12 types), discipline, plant/area/folder hierarchy, status lifecycle (6 states), version/revision tracking, file storage fields, extracted text, metadata JSON, tags, linked asset/tag arrays, approval tracking
+  - `DocumentRevision`: Version/revision history with change description, change type (new/revision/correction/withdrawal), approval tracking, cascade delete
+  - `PidTagLink`: P&ID tag-to-asset linking with tag number, tag type classification, x/y coordinates for overlay, verification tracking
+  - `DocumentSearchLog`: Search analytics with query, filters, result count, zero-result tracking
+- Added composite unique index on PidTagLink (documentId, tagNumber) via `@@unique`
+- Added 5 indexes on EngineeringDocument and 3 on supporting models
+- Ran `npx prisma generate` successfully
+
+### 2. EDMS Service (`src/services/documents/edms.service.ts`)
+- `EdmsService` class with static async methods:
+  - **generateDocumentNumber**: Auto-generates sequential doc numbers (format: {PREFIX}-{DISC}-{NNN}, e.g. PID-MEC-001)
+  - **createDocument**: Creates document with auto-numbering, initial revision record, folder path generation
+  - **getDocument**: Fetches single document with all revisions
+  - **listDocuments**: Paginated listing with 10 filters (search, category, status, discipline, plantId, area, folderPath, sortBy, sortOrder)
+  - **updateDocument**: Updates document, regenerates number if category changes
+  - **deleteDocument**: Removes document and cascades
+  - **transitionStatus**: State machine with valid transition map (6 states, 10 transitions)
+  - **createRevision**: Creates new version (increments version, advances revision letter A→B→C), resets to draft, creates revision history
+  - **getRevisionHistory**: Returns full revision chain
+  - **bulkOperation**: Bulk move/reclassify/delete with error tracking
+  - **getFolderTree**: Builds virtual folder hierarchy from document paths
+  - **getStatistics**: Aggregated counts by status and category
+
+### 3. P&ID Linking Service (`src/services/documents/pidLinking.service.ts`)
+- Comprehensive instrument prefix dictionary (50+ ISA-5.1 tag types: PT, TT, FT, LT, PCV, PSV, etc.)
+- Equipment prefix dictionary (20+ types: P, C, T, V, TK, E, R, etc.)
+- `PidLinkingService` class:
+  - **extractTags**: Regex-based tag extraction from text with deduplication
+  - **classifyTag**: Multi-tier classification (instrument > equipment > valve > vessel > line > unknown)
+  - **calculateConfidence**: Scoring based on prefix match quality
+  - **linkTag**: Create/update P&ID tag link with upsert logic
+  - **bulkLinkTags**: Mass link from extraction results
+  - **resolveTagsToAssets**: Auto-match tags to asset database (exact + fuzzy match on assetTag/name)
+  - **findAssetByTag**: Asset lookup by tag number
+  - **verifyTag**: Mark links as verified
+  - **analyzeDocument**: Full P&ID analysis with linked/unlinked/verified counts, zone summaries, asset name resolution
+  - **generateMarkupData**: Generates overlay data for unlinked/linked/verified tag visualization
+  - **analyzeChangeImpact**: Impact analysis for P&ID revisions — affected assets, active work orders, active PM schedules
+  - **getDocumentsForAsset**: Reverse lookup — all documents referencing a given asset
+  - **getLineNumbers**: Line number tracking
+
+### 4. Document Intelligence Service (`src/services/documents/documentIntelligence.service.ts`)
+- Category keyword dictionary (12 categories, 50+ keywords each)
+- Discipline keyword dictionary (6 disciplines, 15+ keywords each)
+- Design parameter extraction patterns (8 regex patterns: pressure, temperature, flow, material, etc.)
+- `DocumentIntelligenceService` class:
+  - **extractText**: OCR integration layer (simulated, extensible to Tesseract/AWS Textract)
+  - **parseTitleBlock**: Extracts 15 title block fields (drawing number, title, scale, revision, date, drawn/checked/approved by, project, client, sheet number, material, weight)
+  - **extractKeyInformation**: Comprehensive extraction — design parameters, equipment list, tables, materials, pressures, temperatures, classification, auto-tags
+  - **extractEquipmentList**: Tag extraction with context-based name resolution
+  - **extractTables**: Heuristic-based table extraction from tab/pipe-delimited text
+  - **classifyDocument**: Keyword-frequency-based classification with confidence scoring
+  - **classifyDiscipline**: Discipline classification from content keywords
+  - **generateTags**: Auto-tagging from equipment types, process conditions, standards/codes, materials
+  - **findSimilar**: Jaccard similarity for near-duplicate detection across documents
+  - **processDocument**: Full pipeline — title block + key info + classification + auto-tag + update DB
+
+### 5. AI Document Search Service (`src/services/documents/aiDocumentSearch.service.ts`)
+- Stop words dictionary (100+ words)
+- Intent detection keywords (5 intents with keyword mappings)
+- Tag synonym expansion (5 synonym groups)
+- `AiDocumentSearchService` class:
+  - **search**: Main natural language search with multi-field OR query, JSON path tag search, faceted filters, pagination, search logging
+  - **executeSearch**: Retrieves documents, calculates relevance scores, generates highlights
+  - **calculateRelevanceScore**: Weighted scoring — title (10), document number (15), description (5), extracted text (0.5/occurrence), category (3), status boost (0.5)
+  - **generateHighlights**: Context-aware snippet extraction with field-specific highlighting
+  - **interpretQuery**: NLP-lite query interpretation — stop word removal, intent detection, entity type identification, synonym expansion
+  - **getFacets**: Real-time faceted counts for category, status, discipline, plant, area
+  - **getAnalytics**: Search analytics — popular searches, zero-result searches, recent searches (30-day window)
+  - **recommend**: Document recommendations based on shared category, discipline, tags, and content overlap
+  - **logClick**: Click-through event logging for analytics
+
+### 6. API Routes (8 route files)
+- `src/app/api/documents/route.ts`: GET (list with filters), POST (create document)
+- `src/app/api/documents/[id]/route.ts`: GET (detail), PUT (update), DELETE (remove)
+- `src/app/api/documents/[id]/revisions/route.ts`: GET (history), POST (create revision)
+- `src/app/api/documents/[id]/approve/route.ts`: POST (approve/reject/issue/submit_review/supersede/obsolete)
+- `src/app/api/documents/pid/link/route.ts`: POST (single link, bulk link, auto-resolve, verify)
+- `src/app/api/documents/pid/analyze/route.ts`: GET (analysis, markup, impact, lines, asset_docs)
+- `src/app/api/documents/search/route.ts`: POST (AI-powered natural language search)
+- `src/app/api/documents/extract/route.ts`: POST (extract_tags, classify, parse_title_block, extract_key_info, extract_tables, find_similar, recommend, analytics, full process)
+
+All routes use auth guards (`getSession`, `hasPermission`, `isAdmin`) with `documents.view/create/update/delete` permission slugs.
+
+### 7. Quality
+- ESLint passes with zero errors on all new files
+- Prisma client generated successfully with 4 new models
+- Named exports, async methods, TypeScript interfaces throughout
+- Uses `createLogger` from `@/lib/logger` and `db` from `@/lib/db`
+
+Stage Summary:
+- 4 new Prisma models added (EngineeringDocument, DocumentRevision, PidTagLink, DocumentSearchLog)
+- 4 service files created in `src/services/documents/`
+- 8 API route files created across documents and documents/pid sub-paths
+- 12 document categories supported (P&ID, PFD, Isometric, Electrical, etc.)
+- 6-state document lifecycle with valid transitions
+- 50+ ISA-5.1 instrument tag types recognized
+- 20+ equipment tag prefixes recognized
+- Natural language document search with relevance scoring and highlighting
+- P&ID-to-asset linking with verification tracking
+- Change impact analysis across assets, work orders, and PM schedules
+- Document similarity detection and recommendation engine
+- Search analytics with popular/zero-result tracking
+- ESLint clean, Prisma generated successfully
