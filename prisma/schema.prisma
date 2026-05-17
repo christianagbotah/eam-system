@@ -3980,3 +3980,289 @@ model SpareOptimization {
   @@index([abcClassification])
   @@map("spare_optimizations")
 }
+
+// ============================================================================
+// ENTERPRISE WORKFLOW ORCHESTRATION (Phase 4)
+// ============================================================================
+
+model WorkflowDefinition {
+  id              String   @id @default(cuid())
+  name            String
+  key             String   @unique // e.g. "work_order_approval", "permit_to_work"
+  version         Int      @default(1)
+  category        String?  // maintenance, procurement, safety, quality, engineering
+  description     String?  @db.Text
+  stepsJson       Json?    // array of step definitions
+  transitionsJson Json?    // array of transition rules
+  triggersJson    Json?    // event triggers
+  variablesSchema Json?    // workflow variable schema
+  isActive        Boolean  @default(false)
+  isSystem        Boolean  @default(false) // cannot be deleted
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  instances WorkflowInstance[]
+
+  @@index([key])
+  @@index([category])
+  @@index([isActive])
+  @@map("workflow_definitions")
+}
+
+model WorkflowInstance {
+  id              String   @id @default(cuid())
+  definitionId    String
+  entityType      String?  // work_order, maintenance_request, safety_permit, etc.
+  entityId        String?  // reference to the entity
+  currentStepId   String?
+  status          String   @default("pending") // pending, running, suspended, completed, cancelled, failed
+  variables       Json?    // workflow context variables
+  startedAt       DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  startedById     String?
+  completedById   String?
+  cancelledById   String?
+  errorDetail     String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  definition  WorkflowDefinition  @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  stepHistory WorkflowStepHistory[]
+
+  @@index([entityType, entityId])
+  @@index([status])
+  @@index([definitionId])
+  @@map("workflow_instances")
+}
+
+model WorkflowStepHistory {
+  id          String   @id @default(cuid())
+  instanceId  String
+  stepId      String
+  stepName    String
+  action      String   // started, completed, approved, rejected, skipped, escalated
+  assignedTo  String?  // userId or role
+  performedBy String?  // userId
+  comment     String?  @db.Text
+  durationMs  Int?     // time spent on this step
+  variables   Json?    // step-level variables snapshot
+  slaStatus   String?  // within_sla, at_risk, breached
+  createdAt   DateTime @default(now())
+
+  instance WorkflowInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@index([stepId])
+  @@map("workflow_step_history")
+}
+
+model SlaPolicy {
+  id                String   @id @default(cuid())
+  name              String
+  entityType        String?  // work_order, maintenance_request, safety_incident
+  priority          String?  // low, medium, high, critical, emergency
+  responseMinutes   Int?     // max time to first response
+  resolutionMinutes Int?     // max time to resolution
+  escalationRules   Json?    // escalation steps
+  businessHoursOnly Boolean  @default(false)
+  warningPercent    Int      @default(75) // warn at 75% of SLA used
+  isActive          Boolean  @default(true)
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("sla_policies")
+}
+
+model SlaTracking {
+  id              String   @id @default(cuid())
+  policyId        String
+  entityType      String
+  entityId        String
+  startedAt       DateTime
+  responseAt      DateTime?
+  resolvedAt      DateTime?
+  breachedAt      DateTime?
+  pausedAt        DateTime?
+  resumedAt       DateTime?
+  totalPausedMs   Int      @default(0)
+  status          String   @default("active") // active, paused, completed, breached, cancelled
+  escalationLevel Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([entityType, entityId])
+  @@index([policyId])
+  @@index([status])
+  @@map("sla_tracking")
+}
+
+model BusinessCalendar {
+  id           String   @id @default(cuid())
+  name         String
+  timezone     String   @default("UTC")
+  workingDays  Json?    // array of day indices [1,2,3,4,5]
+  workingHours Json?    // array of {start: "08:00", end: "17:00"}
+  holidays     Json?    // array of {date: "2026-01-01", name: "New Year"}
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("business_calendars")
+}
+
+// ============================================================================
+// STO MANAGEMENT (Phase 5)
+// ============================================================================
+
+model StoEvent {
+  id                String   @id @default(cuid())
+  stoNumber         String   @unique // STO-YYYYMM-NNNN
+  name              String
+  description       String?  @db.Text
+  type              String   @default("turnaround") // planned_shutdown, turnaround, forced_outage, emergency
+  plantId           String
+  unitId            String?  // production unit or area
+  status            String   @default("planning") // planning, scheduled, pre_shutdown, in_progress, startup, completed, cancelled
+  plannedStartDate  DateTime?
+  plannedEndDate    DateTime?
+  actualStartDate   DateTime?
+  actualEndDate     DateTime?
+  estimatedDurationHours Float?
+  actualDurationHours   Float?
+  budgetAmount      Float?
+  actualCost        Float    @default(0)
+  scopeJson         Json?    // equipment and work packages
+  milestonesJson    Json?    // milestone definitions
+  riskAssessment    Json?
+  notes             String?  @db.Text
+  createdById       String
+  approvedById      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tasks             StoTask[]
+  contractors       StoContractorAssignment[]
+  progressReports   StoProgressReport[]
+
+  @@index([plantId])
+  @@index([status])
+  @@index([plannedStartDate])
+  @@map("sto_events")
+}
+
+model StoTask {
+  id              String   @id @default(cuid())
+  eventId         String
+  workOrderId     String?  // linked WO
+  title           String
+  description     String?  @db.Text
+  discipline      String?  // mechanical, electrical, instrument, civil, safety
+  priority        String   @default("medium")
+  estimatedHours  Float?
+  actualHours     Float?
+  startDate       DateTime?
+  endDate         DateTime?
+  earlyStart      DateTime?
+  earlyFinish     DateTime?
+  lateStart       DateTime?
+  lateFinish      DateTime?
+  totalFloat      Float?   // hours
+  freeFloat       Float?
+  isOnCriticalPath Boolean  @default(false)
+  status          String   @default("pending") // pending, in_progress, completed, cancelled
+  progress        Float    @default(0) // 0-100%
+  predecessorIds  Json?    // array of StoTask IDs
+  successorIds    Json?    // array of StoTask IDs
+  assignedToId    String?  // contractor or internal crew
+  notes           String?  @db.Text
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  event           StoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([isOnCriticalPath])
+  @@index([status])
+  @@map("sto_tasks")
+}
+
+model StoContractor {
+  id                String   @id @default(cuid())
+  name              String
+  code              String   @unique
+  contactPerson     String?
+  contactPhone      String?
+  contactEmail      String?
+  company           String?
+  taxId             String?
+  address           String?  @db.Text
+  specialties       Json?    // array of disciplines
+  qualificationLevel String? // tier1, tier2, tier3
+  insuranceExpiry   DateTime?
+  safetyCertExpiry  DateTime?
+  rating            Float?   // 1-5
+  isActive          Boolean  @default(true)
+  notes             String?  @db.Text
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  assignments       StoContractorAssignment[]
+
+  @@map("sto_contractors")
+}
+
+model StoContractorAssignment {
+  id              String   @id @default(cuid())
+  contractorId    String
+  eventId         String
+  taskIds         Json?    // array of StoTask IDs
+  laborCount      Int?
+  startDate       DateTime?
+  endDate         DateTime?
+  budgetAmount    Float?
+  actualCost      Float?
+  accessPermitId  String?
+  status          String   @default("assigned") // assigned, mobilized, on_site, demobilized, completed
+  performanceRating Float?
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contractor      StoContractor @relation(fields: [contractorId], references: [id], onDelete: Cascade)
+  event           StoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([contractorId])
+  @@index([eventId])
+  @@map("sto_contractor_assignments")
+}
+
+model StoProgressReport {
+  id              String   @id @default(cuid())
+  eventId         String
+  reportDate      DateTime @default(now())
+  overallProgress Float    @default(0) // 0-100%
+  tasksCompleted  Int      @default(0)
+  tasksTotal      Int      @default(0)
+  tasksInProgress Int      @default(0)
+  issuesCount     Int      @default(0)
+  holdsCount      Int      @default(0)
+  incidentsCount  Int      @default(0)
+  manHoursToday   Float?
+  manHoursTotal   Float?
+  budgetSpent     Float?
+  budgetRemaining Float?
+  highlights      String?  @db.Text
+  issues          Json?    // array of {description, severity, status}
+  notes           String?  @db.Text
+  reportedById    String
+  createdAt       DateTime @default(now())
+
+  event           StoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, reportDate])
+  @@map("sto_progress_reports")
+}

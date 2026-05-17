@@ -3047,3 +3047,191 @@ Stage Summary:
 - TCO and lifecycle forecasting with NPV, replacement optimization, CAPEX planning
 - Spare parts optimization with EOQ, ABC-XYZ classification, safety stock calculation
 - ESLint clean, Prisma generate successful
+Task ID: 5
+Agent: STO Management Implementation
+Task: Build STO (Shutdown / Turnaround / Outage) Management system
+
+Work Log:
+
+### 1. Prisma Schema (5 models appended)
+- StoEvent: STO event with type, status, scheduling, budget, scope (JSON), milestones (JSON), risk assessment (JSON)
+- StoTask: Work packages with CPM fields (early/late start/finish, float, critical path flag), dependencies (JSON)
+- StoContractor: Contractor registry with specialties, qualifications, insurance/cert tracking, rating
+- StoContractorAssignment: Contractor-to-event assignment with mobilization workflow status
+- StoProgressReport: Daily progress tracking with tasks, man-hours, budget, issues (JSON)
+- All models include proper indexes and @@map table names
+- `npx prisma generate` successful (v7.8.0)
+
+### 2. STO Planning Service (`src/services/sto/planning.service.ts`)
+- STO event creation with type validation (planned_shutdown, turnaround, forced_outage, emergency)
+- Auto-generated STO number format: STO-YYYYMM-NNNN
+- Scope definition: equipment list, work packages, inspection requirements
+- Duration estimation based on work package complexity + overheads
+- Budget estimation (labor, materials, contractors, equipment, contingency)
+- Default milestone generation per STO type (12 milestones for turnaround, 6 for emergency)
+- Risk assessment generator with type-specific and universal risks
+- STO event CRUD with list filtering (plantId, status, type, search)
+
+### 3. STO Scheduling Service (`src/services/sto/scheduling.service.ts`)
+- Gantt chart data generation with discipline color coding
+- Resource summary (labor requirements vs availability)
+- Overlap detection between STO events with severity scoring
+- Resource-constrained scheduling feasibility check
+- Drag-and-drop rescheduling (proportional task shifting)
+- Schedule versioning with snapshot storage and comparison
+- Weather-aware scheduling with seasonal/heuristic considerations
+
+### 4. STO Contractor Coordination Service (`src/services/sto/contractor.service.ts`)
+- Contractor registration with full details and specialties
+- Contractor listing with search, specialty filter, qualification level, expiring certs
+- Soft delete (isActive flag) with active assignment protection
+- Assignment to STO events with mobilization status workflow
+- Contractor availability checker for scheduling (date range, specialty match)
+- Performance tracking: schedule adherence, budget variance, quality score, overall score
+- Expiring insurance/certification alerting (configurable threshold)
+
+### 5. STO Critical Path & Milestone Service (`src/services/sto/criticalPath.service.ts`)
+- Full CPM implementation: topological sort, forward pass, backward pass
+- Float calculation: total float and free float per task
+- Critical path identification and DB update
+- Milestone status calculation from task progress
+- Convergence/divergence point identification
+- What-if scenario analysis: add/remove tasks, change durations, dependency modifications
+- Simulated longest-path duration calculation for scenario comparison
+
+### 6. STO Execution & Reporting Service (`src/services/sto/execution.service.ts`)
+- Daily progress report submission with budget tracking
+- Automatic task status updates from progress data
+- Progress history with summary statistics
+- Work completion percentage by discipline/package
+- Actual vs planned comparison (schedule, budget, scope, progress)
+- Punch list management (add/clear items stored in event JSON)
+- Shift handover notes (stored in event JSON)
+- Startup readiness verification (9-point checklist)
+- STO closeout report generation with lessons learned
+- Lessons learned capture API
+
+### 7. API Routes (10 route files)
+- `GET/POST /api/sto/events` — List with filters, create with validation
+- `GET/PUT/DELETE /api/sto/events/[id]` — Get, update, soft-cancel (admin only)
+- `GET /api/sto/events/[id]/schedule` — Gantt chart data
+- `GET/POST /api/sto/events/[id]/progress` — Progress history, submit report
+- `GET/POST /api/sto/events/[id]/milestones` — Milestones, punch list, handovers, lessons
+- `GET/POST /api/sto/contractors` — List with filters, register
+- `GET/PUT/DELETE /api/sto/contractors/[id]` — Get, update, deactivate
+- `POST /api/sto/critical-path` — Calculate critical path, what-if analysis
+- `GET /api/sto/reports` — Multiple report types (closeout, actual vs planned, overlaps, etc.)
+
+### 8. Quality
+- ESLint passes with zero errors across all new files
+- TypeScript type checks pass (zero STO-specific errors)
+- All routes follow existing patterns: auth checks, permission gates, audit logging
+- Named exports, async functions, TypeScript interfaces throughout
+- Uses createLogger from @/lib/logger, db from @/lib/db
+
+Stage Summary:
+- 5 new Prisma models (StoEvent, StoTask, StoContractor, StoContractorAssignment, StoProgressReport)
+- 5 new service files (planning, scheduling, contractor, criticalPath, execution)
+- 10 new API route files covering full STO lifecycle
+- Full CPM critical path calculation with forward/backward pass
+- What-if scenario analysis for schedule optimization
+- Contractor management with availability, performance tracking, certification expiry
+- Comprehensive execution tracking: progress, punch lists, shift handovers, startup readiness
+- Closeout report generation with lessons learned
+- All files lint-clean and type-safe
+---
+Task ID: 4
+Agent: Workflow Orchestration Builder
+Task: Enterprise Workflow Orchestration — centralized workflow engine
+
+Work Log:
+
+### 1. Prisma Schema — 6 New Models
+- Added WorkflowDefinition model: name, key (unique), version, category, stepsJson, transitionsJson, triggersJson, variablesSchema, isActive, isSystem
+- Added WorkflowInstance model: definitionId (FK), entityType, entityId, currentStepId, status, variables, lifecycle timestamps, startedById/completedById/cancelledById
+- Added WorkflowStepHistory model: instanceId (FK), stepId, stepName, action, assignedTo, performedBy, comment, durationMs, variables snapshot, slaStatus
+- Added SlaPolicy model: name, entityType, priority, responseMinutes, resolutionMinutes, escalationRules, businessHoursOnly, warningPercent
+- Added SlaTracking model: policyId, entityType, entityId (unique composite), response/resolved/breached timestamps, pause/resume tracking, totalPausedMs, escalationLevel
+- Added BusinessCalendar model: name, timezone, workingDays, workingHours, holidays
+- Proper indexes on all query fields
+- Ran prisma generate successfully
+
+### 2. Workflow Engine Service (src/services/workflow/engine.service.ts)
+- WorkflowDefinition management via DesignerService
+- Instance lifecycle: start, advance, suspend, resume, cancel, complete
+- Step execution with pre-conditions and post-actions (notify, update_field, call_api, trigger_job, set_variable)
+- Transition resolution with condition expression evaluation (supports {{variable}} templating)
+- Step types: start, task, approval, condition, fork, join, end, timer
+- Approval chains: single, majority, unanimous, sequential
+- Fork/join parallel execution tracking
+- Condition-based branching with expression evaluation
+- Role-based step assignment
+- Workflow variables/context persisting across steps
+- Event trigger evaluation (entity_create, status_change, alarm, schedule)
+- Dead/stuck workflow detection (configurable threshold)
+- Post-action execution: notifications via Notification model, entity field updates via dynamic model mapping
+- Duration tracking per step via WorkflowStepHistory
+
+### 3. Workflow Designer Service (src/services/workflow/designer.service.ts)
+- Template CRUD: create, update, get, get by key, list (paginated with category/isActive/search filters), delete
+- Versioning: createVersion — creates a copy with incremented version, deactivates old version
+- Activation: activateDefinition — validates, deactivates other versions with same key, activates target
+- Clone: cloneDefinition — creates new definition from source with new key/name
+- Import/Export: exportDefinition (JSON schema), importDefinition (with _imported key suffix)
+- Workflow validation: start/end step checks, duplicate ID detection, transition target validation, fork/join integrity, approval step requirements, trigger event validation
+- Category management: maintenance, procurement, safety, quality, engineering
+- System definition protection (isSystem flag prevents deletion)
+
+### 4. SLA Orchestration Service (src/services/workflow/sla.service.ts)
+- SLA Policy CRUD: create, update, get, list (with entityType/priority/isActive filters), delete (with active tracking protection)
+- SLA Tracking: start, recordResponse, resolve, cancel, pause, resume
+- Pause/resume with accumulated pause time tracking (totalPausedMs)
+- SLA status calculation: responseUsed%, resolutionUsed%, responseRemaining, resolutionRemaining, within_sla/at_risk/breached status
+- Next escalation prediction based on escalation rules
+- Breach check (cron-ready): detects resolution SLA breaches, auto-escalates based on % thresholds
+- Compliance metrics: total, withinSla, breached, active, complianceRate, avgResponseMinutes, avgResolutionMinutes
+- Business Calendar: create, list, get, isBusinessTime check, calculateBusinessMinutes
+- Business time calculation with working days, hours, holiday exclusions
+
+### 5. Workflow Analytics Service (src/services/workflow/workflowAnalytics.service.ts)
+- Full analytics summary with all metrics combined
+- Summary stats: total/running/completed/failed instances, avgCycleTime, completionRate
+- Throughput: daily aggregation (started, completed, cancelled, failed) over configurable date range
+- Cycle time by workflow type: avg/min/max/median cycle times per definition
+- Bottleneck identification: steps sorted by avgDurationMs, includes occurrence count and wait time estimation
+- Approval latency analysis: avg/median approval times, rejection rates per step
+- Dead workflow detection: configurable stuck threshold (default 7 days)
+- SLA compliance rate from SlaTracking data
+- Escalation frequency counting
+- Process mining: actual vs expected path analysis with deviation rate calculation
+- Volume forecast: simple linear regression on weekly data, 4-week prediction with declining confidence
+
+### 6. API Routes (10 files)
+- GET/POST /api/workflow/definitions — list (paginated, filtered) and create
+- GET/PUT/DELETE /api/workflow/definitions/[id] — get, update, delete
+- POST /api/workflow/definitions/[id]/activate — activate definition (validates first)
+- GET/POST /api/workflow/instances — list (filtered) and start workflow
+- GET/POST /api/workflow/instances/[id] — get (with step history) and suspend/resume/cancel
+- POST /api/workflow/instances/[id]/advance — advance to next step (complete/approve/reject/skip/escalate)
+- GET/POST /api/workflow/sla — list policies and create
+- GET /api/workflow/sla/compliance — SLA compliance metrics with date range filtering
+- GET /api/workflow/analytics — full analytics dashboard with process paths and volume forecast
+
+### 7. Quality
+- ESLint: zero errors across all 4 service files and 10 route files
+- TypeScript: zero errors in workflow files (tsc --noEmit clean)
+- Prisma generate: successful
+- Uses existing patterns: createLogger, db, requireAuth, handleApiError, paginatedResponse
+- All routes require authentication
+- Proper error handling with enterprise error classes
+
+Stage Summary:
+- 6 new Prisma models (WorkflowDefinition, WorkflowInstance, WorkflowStepHistory, SlaPolicy, SlaTracking, BusinessCalendar)
+- 4 new service files in src/services/workflow/
+- 10 new API route files in src/app/api/workflow/
+- Full workflow lifecycle management (start → advance → complete/cancel/fail)
+- Configurable workflow definitions with steps, transitions, triggers, and variables
+- SLA policy and tracking system with breach detection and escalation
+- Business calendar support for working hours and holidays
+- Comprehensive analytics: throughput, cycle time, bottlenecks, process mining, forecasting
+- ESLint clean, TypeScript clean, Prisma generated successfully
