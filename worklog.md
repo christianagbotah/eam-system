@@ -3403,3 +3403,128 @@ Stage Summary:
 - OEE-based capacity simulation with maintenance trade-off analysis
 - All routes auth-gated with proper validation
 - ESLint clean, TypeScript clean, no commits pushed
+
+---
+Task ID: 8
+Agent: Infrastructure Hardening
+Task: Enterprise Infrastructure Hardening — Observability, Metrics, Logging, DR, Security
+
+Work Log:
+
+### 1. OpenTelemetry Integration Service (`src/services/observability/openTelemetry.service.ts`)
+- Distributed tracing with W3C traceparent/tracestate header support
+- Span management: createRootSpan, createChildSpan, endSpan, setSpanAttributes, addSpanEvent, recordSpanError
+- Span kinds: internal, server, client, producer, consumer
+- Context propagation: extractContext (from headers), injectContext (to headers)
+- Correlation ID mapping (x-correlation-id → traceId) with auto-expiry
+- Trace sampling strategies: always, never, probability (configurable ratio), adaptive (error-rate based)
+- Custom instrumentation: `withSpan<T>()` wrapper for async functions, `instrumentApiRoute()` for route handlers
+- OTLP export configuration (endpoint, headers, timeout) for Jaeger/Tempo/Zipkin
+- Trace query API: filter by traceId, serviceName, spanName, duration range, status, time range
+- Trace aggregation: totalTraces, totalSpans, avgDuration, errorRate, byService breakdown, top slow traces
+- In-memory store with configurable max span limit (50k) and automatic eviction
+
+### 2. Prometheus Metrics Service (`src/services/observability/prometheusMetrics.service.ts`)
+- Full metric type support: Counter, Gauge, Histogram, Summary
+- Counter: incrementCounter with label support
+- Gauge: setGauge, incrementGauge (positive/negative)
+- Histogram: observeHistogram with configurable bucket boundaries
+- Summary: observeSummary with time-windowed quantiles (p50, p90, p95, p99), auto-eviction
+- Label set key encoding for multi-dimensional metrics
+- Metric registration API with duplicate detection
+- Prometheus text exposition format (`# HELP`, `# TYPE`, metric lines, histogram `_bucket`/`_sum`/`_count`, summary quantile lines)
+- JSON format alternative via `?format=json` query parameter
+- Auto-bootstrapped 16 built-in metric families across 3 categories:
+  - Application: http_requests_total, http_request_duration_seconds, http_errors_total
+  - Business: work_orders_created_total, work_orders_open, pm_compliance_total, mttr_hours, alarms_triggered_total, alarms_active, maintenance_requests_total, wo_completion_hours
+  - System: db_connections_active/pool_size, db_query_duration_seconds, redis_hit_rate, queue_depth, queue_jobs_total, process_cpu/memory/uptime
+
+### 3. Centralized Logging Service (`src/services/observability/centralizedLogging.service.ts`)
+- 6 log levels: trace, debug, info, warn, error, fatal with priority-based filtering
+- Structured log entries with: id, timestamp, level, message, service, context, traceId, correlationId, userId, requestId, durationMs, error details, tags, metadata
+- Log correlation: automatic traceId/correlationId linkage from OpenTelemetry context
+- Log search API: filter by level, service, traceId, correlationId, userId, requestId, context, message pattern (regex), time range, tags; pagination with offset/limit
+- Log statistics: byLevel, byService, hourly breakdown (24h), error rate calculation
+- Log anomaly detection: error spike detection (rolling 1-minute window, 3x baseline threshold), severity auto-scaling (high/critical)
+- Log retention policies: configurable per-level retention (trace 24h → fatal 90 days), max entry cap (100k), automatic rotation timer
+- Audit trail management: recordAudit (action, actor, resource, changes tracking), queryAudit with full filtering
+- Convenience methods: trace(), debug(), info(), warn(), error(), fatal()
+
+### 4. Disaster Recovery Service (`src/services/observability/disasterRecovery.service.ts`)
+- Backup management: triggerBackup (database/config/files/full), SQLite file copy with SHA-256 checksum
+- Backup verification: checksum integrity check, restore test (integrity, recordCount, schemaValidation, dataSample)
+- Backup scheduling: createSchedule with hourly/daily/weekly/monthly frequencies, enable/disable, auto-scheduler (1-minute check interval)
+- Backup retention enforcement: expiry-based cleanup with configurable retentionDays (default 30)
+- DR runbook management: createRunbook with scenarios (steps, rollback steps, severity, estimated duration), review tracking
+- DR drill tracking: createDrill, startDrill, completeDrill with RTO/RPO achieved, findings, score (0-100), auto-update runbook.lastDrillAt
+- RTO/RPO monitoring: real-time status (target vs estimated), last backup age, backup count, health assessment with issue detection
+- Backup dashboard: comprehensive data aggregation (RTO/RPO, recent backups, schedules, drills, storage stats, runbooks)
+- Restore test history: listRestoreTests by backupId
+
+### 5. Security Hardening Service (`src/services/observability/securityHardening.service.ts`)
+- Security headers: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy, Permissions-Policy; validate, apply to responses, reset to defaults
+- Rate limiting: per-user/IP/endpoint/global scopes, configurable rules (maxRequests, windowMs, blockDurationMs), auto-blocked state with expiry
+- 4 pre-registered rate limit rules: auth endpoints (10/min), API writes (100/min), data export (3/5min), global (1000/min)
+- SQL injection detection: 10 regex patterns (keyword chains, tautologies, time-based blind, benchmark, sleep, comment injection)
+- XSS detection: 13 regex patterns (script tags, javascript: URIs, event handlers, iframe/object/embed, SVG onload, data URIs, eval, DOM access)
+- CSRF protection: generateCSRFToken (crypto.randomBytes 32 bytes), verifyCSRFToken (timing-safe comparison), protection check API
+- Secrets management audit: recursive source file scanning (6 secret patterns: passwords, API keys, secrets, tokens, AWS keys, private keys), comment/type exclusion
+- Security scanning: runSecurityScan with 6 scan types (full, secrets, sqli_patterns, xss_patterns, csrf_check, headers_check, dependency_audit), finding severity summary
+- Compliance checklist: 20 items across authentication, authorization, headers, rate limiting, input validation, data protection, observability, backup categories
+- Compliance scoring: pass/fail/warning counts, percentage score
+- Penetration test tracking: createPenTest, updatePenTest with findings and risk scores
+- Security audit log: recordAuditEvent, queryAuditLog with severity filtering
+
+### 6. API Routes (6 new endpoints, all admin-only)
+
+#### GET `/api/observability/traces`
+- Query traces by traceId (returns full trace), or filter by serviceName, spanName, duration range, status, time range
+- Admin-only access
+
+#### GET `/api/observability/metrics`
+- Default: Prometheus text exposition format (`text/plain; version=0.0.4`)
+- `?format=json`: structured metric data (single metric or full list)
+- Admin-only access
+
+#### GET `/api/observability/logs`
+- `?view=search`: Full log search with all filters (level, service, traceId, correlationId, userId, requestId, context, message pattern, time range)
+- `?view=stats`: Log statistics for dashboard (byLevel, byService, hourly breakdown, error rate, anomalies)
+- `?view=anomalies`: Detected log anomaly events
+- `?view=level`: Get/set minimum log level
+- Admin-only access
+
+#### GET+POST `/api/observability/backups`
+- GET views: dashboard, rto-rpo, list, schedules, runbooks, drills, restore-tests
+- POST actions: backup (trigger), verify (backup ID), delete (backup ID), enforce-retention, create-schedule, create-runbook, create-drill
+- Admin-only access
+
+#### GET `/api/observability/security/audit`
+- `?view=audit`: Application audit trail (action, userId, resourceType, resourceId, result, time range)
+- `?view=security`: Security audit log (eventType, severity, time range)
+- `?view=compliance`: Compliance checklist + score
+- `?view=pentests`: Penetration test records
+- `?view=rate-limits`: Rate limit rules
+- `?view=headers`: Security headers config + validation findings
+- Admin-only access
+
+#### POST `/api/observability/security/scan`
+- Actions: scan (run security scan by type), test-sqli (scan input for SQL injection), test-xss (scan input for XSS patterns), csrf-token (generate), update-headers, reset-headers, create-pentest, update-pentest
+- Admin-only access
+
+### Quality
+- ESLint passes with zero errors across all 11 new files
+- All services use `createLogger` from `@/lib/logger`
+- Named exports, async, TypeScript interfaces throughout
+- No new Prisma models (infrastructure services only)
+
+Stage Summary:
+- 5 new service files in `src/services/observability/`
+- 6 new API route files in `src/app/api/observability/`
+- 11 files created total
+- OpenTelemetry: distributed tracing with W3C context propagation, 4 sampling strategies
+- Prometheus: 16 auto-bootstrapped metric families, text exposition format
+- Centralized Logging: 6 levels, trace correlation, anomaly detection, 100k buffer, audit trail
+- Disaster Recovery: backup scheduling, verification, DR runbooks, drill tracking, RTO/RPO monitoring
+- Security Hardening: headers, rate limiting, SQLi/XSS detection, secrets audit, compliance checklist, pen test tracking
+- All endpoints admin-only with proper auth guards
+- No commits pushed
