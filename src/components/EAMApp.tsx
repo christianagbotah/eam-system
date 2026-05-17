@@ -79,6 +79,9 @@ const IotDevicesPage = lazy(() => import('./modules/IoTPages').then(m => ({ defa
 const IotMonitoringPage = lazy(() => import('./modules/IoTPages').then(m => ({ default: m.IotMonitoringPage })));
 const IotRulesPage = lazy(() => import('./modules/IoTPages').then(m => ({ default: m.IotRulesPage })));
 
+// Industrial Connectivity
+const ConnectivityPage = lazy(() => import('./modules/ConnectivityPages').then(m => ({ default: m.ConnectivityPage })));
+
 // Analytics
 const AnalyticsPage = lazy(() => import('./modules/AnalyticsPages').then(m => ({ default: m.AnalyticsPage })));
 const AnalyticsKpiPage = lazy(() => import('./modules/AnalyticsPages').then(m => ({ default: m.AnalyticsKpiPage })));
@@ -220,6 +223,8 @@ function AppShell() {
       case 'iot-devices': return <IotDevicesPage />;
       case 'iot-monitoring': return <IotMonitoringPage />;
       case 'iot-rules': return <IotRulesPage />;
+      // Industrial Connectivity
+      case 'connectivity': return <ConnectivityPage />;
       // Analytics
       case 'analytics-kpi': return <AnalyticsKpiPage />;
       case 'analytics-oee': return <AnalyticsOeePage />;
@@ -341,6 +346,8 @@ function AppShell() {
     'iot-devices': 'IoT Devices',
     'iot-monitoring': 'IoT Monitoring',
     'iot-rules': 'IoT Rules',
+    // Industrial Connectivity
+    'connectivity': 'Connectivity',
     // Analytics
     'analytics-kpi': 'KPI Dashboard',
     'analytics-oee': 'OEE',

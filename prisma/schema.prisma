@@ -4476,3 +4476,29 @@ model DocumentSearchLog {
   @@index([createdAt])
   @@map("document_search_logs")
 }
+
+// ============================================================================
+// DOMAIN EVENT BUS — typed event sourcing for cross-module orchestration
+// ============================================================================
+
+model DomainEvent {
+  id            String   @id @default(cuid())
+  eventType     String   // e.g. WorkOrderCompleted, AssetHealthChanged
+  entityName    String?  // e.g. WorkOrder, Asset
+  entityId      String?  // the entity's primary key
+  payload       Json?    // typed event payload
+  correlationId String?  // groups related events together
+  causationId   String?  // tracks which event caused this one
+  source        String?  // originating service/module
+  status        String   @default("pending") // pending, processed, dead_letter
+  processedAt   DateTime?
+  retryCount    Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  @@index([eventType])
+  @@index([correlationId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([entityName, entityId])
+  @@map("domain_events")
+}
