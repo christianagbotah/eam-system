@@ -2775,3 +2775,48 @@ Stage Summary:
 - Nearby asset search with radius-based filtering
 - Route optimization with nearest-neighbor heuristic
 - Technician location logging framework
+
+---
+Task ID: N-1
+Agent: Phase N Observability & DevOps Agent
+Task: Build observability service, monitoring APIs, CI/CD, Docker
+
+Work Log:
+- Created ObservabilityService: metrics recording, error events, system snapshots, error stats, dashboard aggregation
+- Created /api/observability/metrics (GET metric points), /errors (GET error events), /dashboard (GET full dashboard)
+- Created .github/workflows/ci.yml with lint, build validation, security audit jobs
+- Created Dockerfile with multi-stage build (bun install → build → production)
+- Created docker-compose.yml with app + Redis
+
+Stage Summary:
+- In-memory metrics with 10K point buffer and auto-trim
+- Error event tracking with severity/source grouping
+- Admin-only observability dashboard API
+- GitHub Actions CI/CD pipeline (lint, build, security audit)
+- Production Dockerfile with health check
+- Docker Compose with Redis sidecar
+
+---
+Task ID: O-1
+Agent: Phase O Reporting & BI Agent
+Task: Build industrial KPIs, reporting engine, and export APIs
+
+Work Log:
+- Created IndustrialKpiService: OEE calculation, reliability KPIs (MTBF/MTTR/MTTF), maintenance backlog, production impact, KPI dashboard with trends
+- Created ReportExportService: CSV/JSON export with download generation
+- Created /api/reporting/kpis (GET with metric param: dashboard, oee, reliability, backlog)
+- Created /api/reporting/generate (POST: generate & download reports in CSV/JSON)
+- Fixed schema field references: used `type` instead of `workOrderType`, `actualEnd` instead of `completedAt`
+- Fixed API route structure: single GET handler with `metric` query parameter (no duplicate exports)
+- Fixed report generation API: resolved duplicate variable declaration and header quoting issues
+- All 4 files pass ESLint with zero new errors
+
+Stage Summary:
+- OEE calculation: Availability × Performance × Quality with configurable period
+- Reliability: MTBF, MTTR, MTTF, failure rate, PM compliance from FailureRecord and WorkOrder data
+- Maintenance backlog: by priority, by age, overdue detection, estimated hours
+- Production impact: downtime hours, production loss, cost impact, by failure mode/asset category
+- Report types: OEE, Reliability, Backlog, Executive Dashboard
+- Export formats: CSV (default), JSON
+- 6-period trend analysis in executive dashboard
+- TTL-based caching: LONG (5min) for KPIs, MEDIUM (2min) for backlog
