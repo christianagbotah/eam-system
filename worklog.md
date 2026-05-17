@@ -2952,3 +2952,98 @@ Stage Summary:
 - Prisma client regenerated successfully
 - ESLint passes with zero errors
 - No commits or pushes made (as instructed)
+
+---
+Task ID: 3
+Agent: Advanced Reliability Engineering
+Task: Phase 3 — Advanced Reliability Engineering (RBI, SIL, Degradation, Lifecycle, Spares)
+
+Work Log:
+
+### 1. Prisma Schema Additions (5 new models)
+- **RbiAssessment** — Risk-Based Inspection with PoF, CoF, 5×5 risk matrix categories (I–V), degradation mechanisms, damage factors, inspection effectiveness (A–F), remaining life, thinning rates
+- **SilAssessment** — Safety Integrity Level per IEC 61511 with SIL 1–4, SIF management, PFD/SFF calculation, architecture voting (1oo1, 1oo2, 2oo3), LOPA layers, proof test intervals, SIS component tracking
+- **DegradationProfile** — Condition monitoring with model types (linear, exponential, power_law, logarithmic), health index (0–100%), degradation stages (normal/alert/alarm/critical), predicted failure dates, degradation rates
+- **LifecycleForecast** — TCO, replacement analysis, maintenance cost forecasting, health trajectory prediction, recommended actions (continue_maintenance/repair/replace/upgrade)
+- **SpareOptimization** — ABC-XYZ classification, EOQ, reorder points, safety stock, service level optimization, criticality-based stocking, stock-out risk, savings potential
+- Prisma client regenerated successfully
+
+### 2. RBI Service (`src/services/reliability/rbi.service.ts`)
+- Full CRUD for RBI assessments with auto-computation of risk category, damage factor, remaining life, next inspection date
+- 5×5 risk matrix: I (Low ≤0.04), II (Medium ≤0.12), III (High ≤0.25), IV (Very High ≤0.40), V (Critical >0.40)
+- 9 degradation mechanisms: corrosion, erosion, fatigue, creep, HIC/SOHIC, brittle fracture, SCC, HTHA, naphthenic acid
+- Inspection effectiveness categories A–F with risk reduction factors
+- Remaining life estimation from thinning rates and thickness data
+- Next inspection date calculation based on effectiveness and remaining life
+- Summary/grouping by asset, equipment type, or corrosion circuit
+- Reference data endpoints for risk matrix, inspection effectiveness, degradation mechanisms
+
+### 3. SIL Service (`src/services/reliability/sil.service.ts`)
+- SIL verification per IEC 61511 (SIL 1–4) with PFD ranges and SFF requirements
+- SIF (Safety Instrumented Function) management with full lifecycle
+- LOPA (Layer of Protection Analysis) integration — sums PFD of independent protection layers
+- PFD calculation for individual components and voted groups (kooN architecture)
+- SFF (Safe Failure Fraction) calculation for architecture constraint checking
+- Proof test interval optimization via binary search (1–120 month range)
+- Full gap analysis with actionable recommendations
+- Component data model: safe/dangerous/dangerous-detected failure rates, proof test coverage, MTTR
+- Status workflow: draft → active → approved → archived (auto-promotes on SIL verification pass)
+
+### 4. Degradation Analysis Service (`src/services/reliability/degradation.service.ts`)
+- 4 degradation curve models: linear, exponential, power law, logarithmic
+- Auto model selection using R² comparison (best fit chosen automatically)
+- Health Index calculation (0–100%) based on alert/alarm/critical thresholds
+- Degradation stage classification: Normal → Alert → Alarm → Critical
+- Remaining useful life prediction with failure date estimation (binary search)
+- Multi-parameter degradation combining multiple condition monitoring parameters with weighted scoring
+- Degradation rate change detection (accelerating/decelerating/stable)
+- Upsert pattern for continuous profile updates
+
+### 5. Asset Lifecycle Forecasting Service (`src/services/reliability/lifecycleForecast.service.ts`)
+- TCO (Total Cost of Ownership) calculation with NPV discounting
+- Monthly cost breakdown with 3% annual operating cost escalation
+- Maintenance cost forecasting using linear regression on historical WO costs with seasonal variation
+- Replacement analysis: compares cost-of-continuing vs cost-of-replacement with ROI and payback calculation
+- Health trajectory prediction combining asset health score with degradation profile rates
+- CAPEX planning: identifies all assets needing replacement in immediate/1yr/2yr/3yr horizons
+- Recommended actions: continue_maintenance, repair, replace, upgrade
+
+### 6. Spare Parts Optimization Service (`src/services/reliability/spareOptimization.service.ts`)
+- EOQ (Economic Order Quantity) calculation using classic square-root formula
+- Reorder point = lead time demand + safety stock
+- Safety stock from z-score × demand std dev × √lead time (service level 90–99%)
+- ABC classification: A (80% value), B (15%), C (5%)
+- XYZ classification: X (CV<0.5 consistent), Y (CV 0.5–1.0 variable), Z (CV>1.0 highly variable)
+- Criticality determination from ABC-XYZ matrix with asset criticality escalation
+- Stock-out risk calculation based on current stock vs reorder point
+- Bulk optimization for up to 100 items with summary statistics
+- Inverse normal CDF (Abramowitz-Stegun approximation) for z-score calculation
+
+### 7. API Routes (12 route files)
+- `GET/POST /api/reliability/rbi` — list assessments, summary by group, reference data, create
+- `GET/PUT/DELETE /api/reliability/rbi/[id]` — single assessment CRUD
+- `GET/POST /api/reliability/sil` — list SIFs, reference data, create with verification
+- `GET/PUT/DELETE /api/reliability/sil/[id]` — single SIF CRUD
+- `GET/POST /api/reliability/degradation` — list profiles, multi-param analysis, rate change detection, alerts, compute
+- `GET/POST /api/reliability/lifecycle` — list forecasts, maintenance cost forecast, replacement analysis, health trajectory, CAPEX plan, compute TCO
+- `GET/POST /api/reliability/spares` — list optimizations, summary dashboard, reference data, single/bulk analyze
+
+### 8. Quality
+- ESLint passes with zero errors on all 12 new files
+- Prisma client generated successfully with all 5 new models
+- All services use `createLogger`, `db`, named exports, async methods
+- All public methods have JSDoc comments
+- TypeScript interfaces for all request/response types
+- Auth guards on all API routes (session + permission checks)
+- Admin-only for write operations
+
+Stage Summary:
+- 5 new Prisma models added (RbiAssessment, SilAssessment, DegradationProfile, LifecycleForecast, SpareOptimization)
+- 5 new service files created in `src/services/reliability/`
+- 12 new API route files created in `src/app/api/reliability/`
+- Complete RBI workflow with 5×5 risk matrix and remaining life estimation
+- Full SIL verification engine per IEC 61511 with PFD/SFF calculations
+- 4 degradation curve models with auto-selection and health indexing
+- TCO and lifecycle forecasting with NPV, replacement optimization, CAPEX planning
+- Spare parts optimization with EOQ, ABC-XYZ classification, safety stock calculation
+- ESLint clean, Prisma generate successful

@@ -3833,3 +3833,150 @@ model DataQualityReport {
   @@index([sourceId, periodStart])
   @@map("data_quality_reports")
 }
+
+// ============================================================================
+// ADVANCED RELIABILITY ENGINEERING (Phase 3)
+// ============================================================================
+
+model RbiAssessment {
+  id                    String   @id @default(cuid())
+  assetId               String
+  equipmentType         String?
+  corrosionCircuit      String?
+  operatingConditions   Json?    // temperature, pressure, fluid, etc.
+  degradationMechanisms Json?    // array of {mechanism, rate, description}
+  probabilityOfFailure  Float    // 0.0-1.0
+  consequenceOfFailure  Float    // 0.0-1.0
+  riskCategory          String   // I, II, III, IV, V
+  riskScore             Float    // PoF * CoF
+  currentDamageFactor   Float?
+  inspectionEffectiveness String? // A, B, C, D, E, F
+  nextInspectionDate    DateTime?
+  remainingLifeYears    Float?
+  thinningRate          Float?   // mm/year
+  currentThickness      Float?
+  minimumThickness      Float?
+  status                String   @default("active") // active, closed, superseded
+  notes                 String?  @db.Text
+  assessedById          String
+  approvedById          String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([assetId])
+  @@index([riskCategory])
+  @@index([status])
+  @@map("rbi_assessments")
+}
+
+model SilAssessment {
+  id                      String   @id @default(cuid())
+  assetId                 String
+  sifName                 String
+  sifDescription          String?  @db.Text
+  silTarget               Int      // 1, 2, 3, or 4
+  silAchieved             Int?
+  pfdRequired             Float?   // e.g. 0.01 for SIL 1
+  pfdCalculated           Float?
+  sffRequired             Float?   // e.g. 0.90 for SIL 1 (Type B)
+  sffCalculated           Float?
+  architecture            String?  // 1oo1, 1oo2, 2oo3, etc.
+  proofTestIntervalMonths Int      @default(12)
+  demandRate              Float?   // demands per year
+  meanTimeToFailSpurious  Float?   // MTTF spurious (years)
+  lopaLayers              Json?    // IPLs considered
+  components              Json?    // SIS components with failure rates
+  status                  String   @default("active") // draft, active, approved, archived
+  assessedById            String
+  approvedById            String?
+  notes                   String?  @db.Text
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([assetId])
+  @@index([silTarget])
+  @@index([status])
+  @@map("sil_assessments")
+}
+
+model DegradationProfile {
+  id                    String   @id @default(cuid())
+  assetId               String
+  parameterName         String   // e.g. "Vibration", "Temperature", "Pressure"
+  unit                  String?
+  modelType             String   @default("linear") // linear, exponential, power_law, logarithmic
+  modelParams           Json?    // model-specific parameters
+  currentValue          Float?
+  healthIndex           Float?   // 0-100%
+  degradationStage      String   @default("normal") // normal, alert, alarm, critical
+  alertThreshold        Float?
+  alarmThreshold        Float?
+  criticalThreshold     Float?
+  predictedFailureDate  DateTime?
+  degradationRate       Float?   // rate of change per day
+  confidence            Float?   // 0-1 model fit confidence
+  dataPoints            Int      @default(0)
+  lastUpdated           DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([assetId, parameterName])
+  @@index([degradationStage])
+  @@map("degradation_profiles")
+}
+
+model LifecycleForecast {
+  id                    String   @id @default(cuid())
+  assetId               String
+  forecastType          String   // tco, replacement, maintenance_cost, health_trajectory
+  forecastPeriodMonths  Int      @default(36)
+  data                  Json?    // forecast-specific data
+  totalCost             Float?
+  acquisitionCost       Float?
+  operatingCost         Float?
+  maintenanceCost       Float?
+  disposalCost          Float?
+  replacementDate       DateTime?
+  replacementReason     String?
+  healthTrajectory      Json?    // array of {month, healthIndex}
+  monthlyCostForecast   Json?    // array of {month, predictedCost}
+  recommendedAction     String?  // continue_maintenance, repair, replace, upgrade
+  confidence            Float?   // 0-1
+  createdById           String
+  createdAt             DateTime @default(now())
+
+  @@index([assetId])
+  @@map("lifecycle_forecasts")
+}
+
+model SpareOptimization {
+  id                    String   @id @default(cuid())
+  inventoryItemId       String
+  abcClassification     String?  // A, B, C
+  xyzClassification     String?  // X, Y, Z
+  annualDemand          Float?
+  unitCost              Float?
+  holdingCostPercent    Float?   @default(25) // % of unit cost per year
+  orderingCost          Float?
+  leadTimeDays          Float?
+  serviceLevel          Float?   @default(0.95)
+  eoq                   Float?   // Economic Order Quantity
+  reorderPoint          Float?
+  safetyStock           Float?
+  stockOutRisk          Float?   // probability
+  criticality           String?  // low, medium, high, critical
+  recommendedStock      Float?
+  currentStock          Float?
+  annualHoldingCost     Float?
+  annualOrderingCost    Float?
+  totalAnnualCost       Float?
+  savingsPotential      Float?   // cost reduction from optimization
+  analysisPeriod        String?  @db.Text
+  analyzedById          String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([inventoryItemId])
+  @@index([abcClassification])
+  @@map("spare_optimizations")
+}
