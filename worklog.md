@@ -2591,3 +2591,21 @@ Stage Summary:
 - Resume action persists to server
 - Abandon action available in UI
 - Persistent execution state via Zustand store
+
+---
+Task ID: 7
+Agent: Phase G Spatial Intelligence Agent
+Task: Build spatial & facility intelligence service and APIs
+
+Work Log:
+- Created FacilityIntelligenceService with facility tree, equipment locations, stats, search, and navigation
+- Created /api/spatial-nodes/stats for facility statistics
+- Created /api/spatial-nodes/search for equipment search
+- Created /api/spatial-nodes/navigate for pathfinding between locations
+
+Stage Summary:
+- Facility tree with hierarchical node counts
+- Equipment location mapping with full path
+- Facility stats: locations by type, equipment counts, occupancy
+- Full-text search across facility equipment
+- Navigation pathfinding using LCA algorithm
