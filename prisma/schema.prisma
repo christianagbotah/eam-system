@@ -3718,3 +3718,118 @@ model EventStreamRecord {
   @@index([timestamp])
   @@map("event_stream_records")
 }
+
+// ============================================================================
+// HISTORIAN & TIME-SERIES INTELLIGENCE (Phase 2)
+// ============================================================================
+
+model DownsamplingPolicy {
+  id                    String   @id @default(cuid())
+  sourceId              String?  // null = global default
+  rawRetentionDays      Int      @default(7)
+  minuteRetentionDays   Int      @default(30)
+  hourlyRetentionDays   Int      @default(90)
+  dailyRetentionDays    Int      @default(730)
+  weeklyRetentionDays   Int      @default(3650)
+  aggregationMethod     String   @default("avg") // avg, min, max, last, maxmin
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("downsampling_policies")
+}
+
+model DownsampledReading {
+  id          String   @id @default(cuid())
+  sourceId    String
+  interval    String   // '1m', '5m', '1h', '1d', '1w'
+  bucketStart DateTime
+  avgValue    Float
+  minValue    Float
+  maxValue    Float
+  sumValue    Float    @default(0)
+  count       Int      @default(0)
+  stdDev      Float?   @default(0)
+  quality     Float?   @default(100) // average quality of source readings in bucket
+  createdAt   DateTime @default(now())
+
+  @@unique([sourceId, interval, bucketStart])
+  @@index([sourceId, interval, bucketStart])
+  @@index([sourceId, interval])
+  @@map("downsampled_readings")
+}
+
+model RetentionPolicy {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  sourceId        String?
+  keepDays        Int
+  aggregationKeepDays Int? // keep downsampled data longer
+  isActive        Boolean  @default(true)
+  lastExecutedAt  DateTime?
+  totalDeleted    Int      @default(0)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("retention_policies")
+}
+
+model AnomalyDetectionConfig {
+  id                String   @id @default(cuid())
+  sourceId          String?  // null = global
+  mappingId         String?
+  method            String   @default("zscore") // zscore, modified_zscore, iqr, ema, rate_of_change, pattern
+  windowSize        Int      @default(30) // number of readings for baseline
+  threshold         Float    @default(3) // standard deviations or IQR multiplier
+  cooldownMinutes   Int      @default(15)
+  confirmationCount Int      @default(2) // require N consecutive anomalies
+  isActive          Boolean  @default(true)
+  config            Json?    // method-specific params
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("anomaly_detection_configs")
+}
+
+model AnomalyRecord {
+  id            String   @id @default(cuid())
+  sourceId      String
+  mappingId     String?
+  detectedAt    DateTime @default(now())
+  method        String
+  value         Float
+  expectedValue Float?
+  anomalyScore  Float
+  severity      String   @default("warning") // low, warning, high, critical
+  confirmed     Boolean  @default(false)
+  acknowledgedAt DateTime?
+  acknowledgedById String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  @@index([sourceId, detectedAt])
+  @@index([severity])
+  @@index([confirmed])
+  @@map("anomaly_records")
+}
+
+model DataQualityReport {
+  id              String   @id @default(cuid())
+  sourceId        String?
+  reportPeriod    String   // '1h', '1d', '1w'
+  periodStart     DateTime
+  periodEnd       DateTime
+  expectedCount   Int      @default(0)
+  actualCount     Int      @default(0)
+  completeness    Float    @default(0) // actual/expected as percentage
+  avgQuality      Float?
+  gapCount        Int      @default(0)
+  anomalyCount    Int      @default(0)
+  storageBytes    Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([sourceId, periodStart])
+  @@map("data_quality_reports")
+}

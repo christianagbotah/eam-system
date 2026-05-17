@@ -2843,3 +2843,112 @@ Stage Summary:
 - Event-driven architecture with event stream processor
 - All adapters follow EventEmitter pattern for consistent API
 - All production adapter methods have placeholder implementations with clear comments for real package integration
+
+---
+Task ID: 2
+Agent: Time-Series Intelligence Builder
+Task: Industrial-scale historian with downsampling, retention, anomaly detection, aggregation, and dashboard services
+
+Work Log:
+
+### 1. Prisma Schema Additions
+- Added 6 new models to `prisma/schema.prisma` (appended at end):
+  - `DownsamplingPolicy` — per-source or global downsampling configuration with retention tiers
+  - `DownsampledReading` — aggregated readings at 1m/5m/1h/1d/1w intervals with unique constraint on [sourceId, interval, bucketStart]
+  - `RetentionPolicy` — configurable retention with keepDays and aggregationKeepDays, execution tracking
+  - `AnomalyDetectionConfig` — per-source/mapping detection config with method, window, threshold, cooldown, confirmation
+  - `AnomalyRecord` — anomaly events with score, severity, confirmation, acknowledgment
+  - `DataQualityReport` — periodic data quality metrics with completeness, gaps, anomaly count
+- Ran `npx prisma generate` successfully
+
+### 2. Downsampling Service (`src/services/historian/downsampling.service.ts`)
+- Configurable multi-tier downsampling: raw → 1m → 5m → 1h → 1d → 1w
+- LTB (Last Time Bucket) tracking: in-memory + DB-backed, only processes new data
+- Per-source policy lookup with global fallback
+- Support for avg, min, max, sum, count, stddev, percentile aggregations
+- Delta-of-delta encoding utilities for storage compression concepts
+- Policy upsert/CRUD, source status queries, periodic job runner
+- Exports: `downsamplingService` object with named methods
+
+### 3. Retention Service (`src/services/historian/retention.service.ts`)
+- Configurable retention policies per source or globally
+- 5 built-in templates: Standard Industrial, Critical Equipment, High-Frequency Sensor, Regulatory Compliance, Minimal Storage
+- Automatic cleanup job: deletes raw + downsampled readings per policy
+- Template application creates cascading policies (raw + each tier)
+- Retention summary with storage estimates and source-level breakdowns
+- Tracks last executed, total deleted per policy
+- Exports: `retentionService` object with named methods
+
+### 4. Anomaly Detection Pipeline (`src/services/historian/anomalyPipeline.service.ts`)
+- 6 detection methods implemented:
+  - Z-Score: N standard deviations from mean
+  - Modified Z-Score: MAD-based robust detection
+  - IQR: Interquartile range bounds
+  - EMA Deviation: Exponential moving average baseline
+  - Rate-of-Change: Sudden value change detection
+  - Pattern Deviation: Time-of-day / day-of-week baseline
+- Anomaly scoring 0-100 with severity classification (low/warning/high/critical)
+- False positive filtering: cooldown tracking (per-source), confirmation window (N consecutive anomalies)
+- Config management: per-source, per-mapping, or global defaults
+- Anomaly history query with pagination, severity filtering
+- Trend analysis: compares recent vs older period for increasing/stable/decreasing
+- Acknowledgment support for anomaly records
+- Summary endpoint with unacknowledged count and top anomaly sources
+- Exports: `anomalyPipelineService` object with named methods
+
+### 5. Aggregation Pipeline (`src/services/historian/aggregationPipeline.service.ts`)
+- Multi-source aggregation: combines multiple tags into unified time buckets
+- Gap filling strategies: forward fill, linear interpolation, none (with configurable max gap)
+- Time-weighted average: weights each reading by duration of validity
+- Rollup queries: hourly → daily → weekly → monthly with smart source tier selection
+- Comparison queries: current period vs previous equivalent period with change percentages
+- Statistical summaries: count, avg, min, max, stdDev, p5/p25/p50/p75/p95, skewness, kurtosis
+- Batch summaries for multiple sources
+- Exports: `aggregationPipelineService` object with named methods
+
+### 6. Historian Dashboard Service (`src/services/historian/historianDashboard.service.ts`)
+- Real-time tag monitoring overview: status (active/stale/inactive), trend detection, readings/hour
+- Data completeness metrics: expected vs actual readings per source, overall % completeness
+- Storage utilization: raw + downsampled counts, estimated bytes, formatted sizes, per-source breakdown
+- Ingestion rate tracking: readings/sec, readings/min, readings/hour, peak per minute
+- Top consumers: sources ranked by data volume with daily averages
+- Anomaly summary: by severity, by source, unacknowledged count
+- Data quality scores: composite score (0-100) from completeness, quality, timeliness, consistency with letter grades (A-F)
+- Full dashboard endpoint returning all sections in one call
+- Exports: `historianDashboardService` object with named methods
+
+### 7. API Routes (5 new routes)
+
+#### `/api/historian/downsample/route.ts`
+- GET: List downsampling policies, tiers, per-source status, query downsampled data
+- POST (admin): Trigger downsampling for single source or all sources
+
+#### `/api/historian/retention/route.ts`
+- GET: List policies, retention summary, available templates
+- POST (admin): Execute cleanup (single/all), apply template, create policy
+
+#### `/api/historian/anomalies/route.ts`
+- GET: Anomaly history with pagination, summary, trend analysis, config list
+- POST: Configure detection, run detection, acknowledge anomaly, delete config
+
+#### `/api/historian/aggregate/route.ts`
+- POST: Multi-source aggregation, TWA, rollup, period comparison, statistical summaries
+
+#### `/api/historian/dashboard/route.ts`
+- GET: Full dashboard or individual sections (tag-monitor, completeness, storage, ingestion, top-consumers, anomaly-summary, quality-scores)
+
+### 8. Quality
+- ESLint passes with zero errors on all 11 new files
+- All services follow existing patterns: `createLogger`, `db`, `cache` imports
+- All public methods have JSDoc comments
+- All methods are async
+- Named exports used throughout
+- TypeScript interfaces for all data types
+
+Stage Summary:
+- 6 new Prisma models added (71 models total)
+- 5 new service files created in `src/services/historian/`
+- 5 new API route files created in `src/app/api/historian/`
+- Prisma client regenerated successfully
+- ESLint passes with zero errors
+- No commits or pushes made (as instructed)
