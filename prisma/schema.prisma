@@ -250,6 +250,9 @@ model User {
   downtimeAnalyses      DowntimeAnalysis[]       @relation("DowntimeCreatedBy")
   rulAnalyses           RemainingUsefulLife[]     @relation("RulAnalyzedBy")
 
+  // Industrial Connectivity (Phase 1)
+  gatewaysCreated EdgeGateway[] @relation("GatewayCreatedBy")
+
   @@map("users")
 }
 
@@ -351,6 +354,9 @@ model Plant {
 
   // Real-Time Industrial Telemetry relations (Phase C)
   telemetrySources TelemetryDataSource[] @relation("TelemetryPlant")
+
+  // Industrial Connectivity (Phase 1)
+  gateways EdgeGateway[] @relation("GatewayPlant")
 
   @@map("plants")
 }
@@ -3336,6 +3342,11 @@ model TelemetryDataSource {
   mappings   TelemetryMapping[]
   streams    TelemetryStream[]
 
+  // Industrial Connectivity (Phase 1)
+  gatewayId  String?
+  gateway    EdgeGateway? @relation("GatewaySource", fields: [gatewayId], references: [id], onDelete: SetNull)
+  sessions   ConnectivitySession[]
+
   @@index([sourceType])
   @@index([status])
   @@index([plantId])
@@ -3603,4 +3614,107 @@ model TelemetryReading {
   @@index([timestamp])
   @@index([sourceId, timestamp])
   @@map("telemetry_readings")
+}
+
+// ============================================================================
+// INDUSTRIAL CONNECTIVITY (Phase 1 — New Architecture)
+// ============================================================================
+
+model EdgeGateway {
+  id                String   @id @default(cuid())
+  name              String
+  gatewayCode       String   @unique
+  ipAddress         String?
+  macAddress        String?
+  firmwareVersion   String?
+  protocolVersion   String?
+  plantId           String?
+  location          String?
+  status            String   @default("offline") // online, offline, degraded, maintenance
+  lastHeartbeatAt   DateTime?
+  lastSyncAt        DateTime?
+  bufferingEnabled  Boolean  @default(true)
+  bufferSize        Int      @default(10000) // max readings to buffer offline
+  batchSize         Int      @default(500) // readings per batch sync
+  syncIntervalMs    Int      @default(5000) // sync interval in ms
+  config            Json? // gateway-specific config (polling intervals, etc.)
+  capabilities      Json? // JSON array of supported protocols
+  metadata          Json?
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  plant       Plant?              @relation("GatewayPlant", fields: [plantId], references: [id])
+  createdBy   User                @relation("GatewayCreatedBy", fields: [createdById], references: [id])
+  sources     TelemetryDataSource[] @relation("GatewaySource")
+  connections ConnectivitySession[]
+
+  @@index([status])
+  @@index([plantId])
+  @@map("edge_gateways")
+}
+
+model ConnectivitySession {
+  id            String   @id @default(cuid())
+  sourceId      String   // → TelemetryDataSource
+  gatewayId     String?  // → EdgeGateway (null = direct connection)
+  protocol      String   // mqtt, opcua, modbus_tcp, bacnet, siemens_s7, ethernet_ip, rest_api
+  status        String   @default("disconnected") // connecting, connected, disconnected, error
+  connectedAt   DateTime?
+  disconnectedAt DateTime?
+  errorCount    Int      @default(0)
+  lastError     String?  @db.Text
+  bytesIn       BigInt   @default(0)
+  bytesOut      BigInt   @default(0)
+  messagesIn    Int      @default(0)
+  messagesOut   Int      @default(0)
+  metadata      Json?    // protocol-specific session data
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  source  TelemetryDataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  gateway EdgeGateway?        @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
+
+  @@index([sourceId])
+  @@index([status])
+  @@index([gatewayId])
+  @@map("connectivity_sessions")
+}
+
+model TelemetryBatch {
+  id          String   @id @default(cuid())
+  sourceId    String   // → TelemetryDataSource
+  gatewayId   String?  // → EdgeGateway
+  batchNumber Int
+  status      String   @default("pending") // pending, processing, completed, failed
+  readingCount Int     @default(0)
+  startTime   DateTime
+  endTime     DateTime
+  processedAt DateTime?
+  errorCount  Int      @default(0)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([sourceId])
+  @@index([status])
+  @@index([gatewayId])
+  @@map("telemetry_batches")
+}
+
+model EventStreamRecord {
+  id          String   @id @default(cuid())
+  eventType   String   // data_ingested, alarm_triggered, anomaly_detected, connection_changed, batch_processed, sync_completed
+  sourceType  String?  // mqtt, opcua, modbus_tcp, etc.
+  sourceId    String?
+  entityId    String?  // related entity ID (mapping, alarm, source, etc.)
+  severity    String   @default("info") // info, warning, error, critical
+  payload     Json?    // event-specific data
+  correlationId String? // for tracing event chains
+  timestamp   DateTime @default(now())
+
+  @@index([eventType])
+  @@index([sourceId])
+  @@index([severity])
+  @@index([timestamp])
+  @@map("event_stream_records")
 }
