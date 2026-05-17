@@ -1247,7 +1247,7 @@ function RulTab() {
     }
   }, [componentId]);
 
-  useEffect(() => { loadRul(); }, [loadAnalyses]);
+  useEffect(() => { loadRul(); }, [loadRul]);
 
   const handleCompute = async () => {
     try {
