@@ -3909,3 +3909,26 @@ Stage Summary:
 - All 4 user roles tested: admin, viewer1, tech1, planner1
 - All tests follow established patterns: helper functions, graceful skip, proper waits
 - Playwright test list confirms 224 tests in 11 files (all valid, no syntax errors)
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix 502 Bad Gateway on VPS — diagnose and resolve build failures
+
+Work Log:
+- Investigated VPS 502 error: nginx running but upstream Next.js app not reachable
+- Found 3 syntax errors preventing `next build` from compiling
+- Fixed schedulingOptimizer.service.ts:252 — `catch` inside `findUnique()` → `.catch()`
+- Fixed sparePartsAI.service.ts:404 — semicolons in JS object literal → commas
+- Fixed rcaGenerator.service.ts:259,265,281 — same semicolons-in-object fix
+- Discovered `src/lib/create-mariadb-adapter.ts` was MISSING (referenced by db.ts)
+- Created the missing MariaDB adapter wrapper for Prisma 7.8.0
+- Rewrote `src/lib/db.ts` to handle both MySQL (VPS) and sandbox environments
+- Fixed securityHardening.service.ts:139 — unterminated group in SQL injection regex
+- Build verified: ✓ Compiled in 20.3s, ✓ 221/221 static pages
+- Committed and pushed as `22a5592`
+
+Stage Summary:
+- Root cause: 3 syntax errors + missing adapter file prevented build → no running app → 502
+- All 6 issues fixed, build passes clean
+- VPS needs `git pull` + rebuild + restart to resolve

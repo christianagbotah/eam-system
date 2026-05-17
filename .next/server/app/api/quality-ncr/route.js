@@ -2,7 +2,7 @@ var R=require("../../../chunks/[turbopack]_runtime.js")("server/app/api/quality-
 R.c("server/chunks/[root-of-the-server]__139d8a27._.js")
 R.c("server/chunks/[root-of-the-server]__0b38188a._.js")
 R.c("server/chunks/[root-of-the-server]__f408c708._.js")
-R.c("server/chunks/_e77930fd._.js")
+R.c("server/chunks/_d0cf5501._.js")
 R.c("server/chunks/_next-internal_server_app_api_quality-ncr_route_actions_a6c50e3e.js")
 R.m(837802)
 module.exports=R.m(837802).exports
