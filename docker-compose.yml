@@ -1,28 +1,161 @@
-version: '3.8'
+# ============================================================================
+# iAssetsPro EAM Platform — Docker Compose (Production)
+# Services: app (Next.js), Redis, MariaDB
+# ============================================================================
 
 services:
+  # ---------------------------------------------------------------------------
+  # Application — Next.js 16 + Bun runtime
+  # ---------------------------------------------------------------------------
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iassetspro-app
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-3000}:3000"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=file:/data/iassetspro.db
+      - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
     volumes:
-      - ./data:/data
+      - app-data:/app/data
+      - uploads:/app/public/uploads
     depends_on:
+      mariadb:
+        condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
     restart: unless-stopped
+    networks:
+      - eam-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+        reservations:
+          memory: 512M
+          cpus: "0.5"
 
+  # ---------------------------------------------------------------------------
+  # MariaDB — Primary Database
+  # ---------------------------------------------------------------------------
+  mariadb:
+    image: mariadb:11.4
+    container_name: iassetspro-db
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    env_file:
+      - .env
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-rootpassword}
+      - MYSQL_DATABASE=${DB_NAME:-iassetspro}
+      - MYSQL_USER=${DB_USER:-eam}
+      - MYSQL_PASSWORD=${DB_PASSWORD:-eampassword}
+    volumes:
+      - db-data:/var/lib/mysql
+      - ./scripts:/docker-entrypoint-initdb.d:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=512M
+      - --innodb-log-file-size=128M
+      - --max-connections=200
+      - --query-cache-size=64M
+      - --slow-query-log=1
+      - --slow-query-log-file=/var/lib/mysql/slow.log
+      - --long-query-time=2
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 15s
+      timeout: 10s
+      start_period: 45s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - eam-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+        reservations:
+          memory: 256M
+          cpus: "0.25"
+
+  # ---------------------------------------------------------------------------
+  # Redis — Caching & Session Store
+  # ---------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
+    container_name: iassetspro-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
+    command:
+      - redis-server
+      - --maxmemory
+      - "${REDIS_MAXMEMORY:-256mb}"
+      - --maxmemory-policy
+      - allkeys-lru
+      - --appendonly
+      - "yes"
+      - --save
+      - "60"
+      - "1000"
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
+      start_period: 10s
       retries: 5
     restart: unless-stopped
+    networks:
+      - eam-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 64M
+          cpus: "0.1"
+
+# ============================================================================
+# Volumes — Persistent Data
+# ============================================================================
+volumes:
+  db-data:
+    name: iassetspro-db-data
+    driver: local
+  redis-data:
+    name: iassetspro-redis-data
+    driver: local
+  app-data:
+    name: iassetspro-app-data
+    driver: local
+  uploads:
+    name: iassetspro-uploads
+    driver: local
+
+# ============================================================================
+# Network — Isolated Bridge
+# ============================================================================
+networks:
+  eam-network:
+    name: iassetspro-network
+    driver: bridge
+    internal: false
