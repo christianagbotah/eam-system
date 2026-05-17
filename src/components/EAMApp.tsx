@@ -152,6 +152,9 @@ const SystemHealthPage = lazy(() => import('./modules/SettingsPages').then(m => 
 const QueueManagerPage = lazy(() => import('./modules/QueueManagerPage'));
 const UserPreferencesPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.UserPreferencesPage })));
 
+// Historian
+const HistorianDashboardPage = lazy(() => import('./modules/HistorianPages').then(m => ({ default: m.HistorianDashboard })));
+
 // Observability
 const ObservabilityDashboardPage = lazy(() => import('./modules/ObservabilityPages').then(m => ({ default: m.ObservabilityDashboard })));
 
@@ -302,6 +305,8 @@ function AppShell() {
       case 'settings-preferences': return <UserPreferencesPage />;
       // Observability
       case 'observability-dashboard': return <ObservabilityDashboardPage />;
+      // Historian
+      case 'historian-dashboard': return <HistorianDashboardPage />;
       // Legacy fallbacks
       case 'assets':
       case 'asset-detail': return <AssetsPage />;
@@ -427,6 +432,8 @@ function AppShell() {
     'settings-preferences': 'My Preferences',
     // Observability
     'observability-dashboard': 'Observability',
+    // Historian
+    'historian-dashboard': 'Historian Dashboard',
     // Legacy
     'assets': 'Asset Register',
     'asset-detail': 'Asset Details',
