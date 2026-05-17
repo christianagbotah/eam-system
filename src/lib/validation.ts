@@ -52,3 +52,61 @@ export function parseJsonSafe<T = unknown>(value: string | null | undefined, fal
     return fallback;
   }
 }
+
+// ============================================================================
+// ADDITIONAL VALIDATION UTILITIES
+// ============================================================================
+
+/** Validate UUID format */
+export function isUUID(value: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(value);
+}
+
+/** Validate email format */
+export function isEmail(value: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(value);
+}
+
+/** Validate phone number (E.164 format) */
+export function isPhoneNumber(value: string): boolean {
+  const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+  return phoneRegex.test(value.replace(/[\s\-()]/g, ''));
+}
+
+/** Sanitize string — remove potential XSS vectors (HTML entity escaping) */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+/** Validate pagination parameters */
+export function validatePagination(page: unknown, limit: unknown): { page: number; limit: number } {
+  const p = typeof page === 'string' ? parseInt(page, 10) : (typeof page === 'number' ? page : 1);
+  const l = typeof limit === 'string' ? parseInt(limit, 10) : (typeof limit === 'number' ? limit : 20);
+  return {
+    page: Math.max(1, isNaN(p) ? 1 : p),
+    limit: Math.min(100, Math.max(1, isNaN(l) ? 20 : l)),
+  };
+}
+
+/** Validate date range */
+export function validateDateRange(from?: string, to?: string): { from?: Date; to?: Date; valid: boolean } {
+  const fromDate = from ? new Date(from) : undefined;
+  const toDate = to ? new Date(to) : undefined;
+
+  if (fromDate && isNaN(fromDate.getTime())) return { valid: false };
+  if (toDate && isNaN(toDate.getTime())) return { valid: false };
+  if (fromDate && toDate && fromDate > toDate) return { valid: false };
+
+  return { from: fromDate, to: toDate, valid: true };
+}
+
+/** Validate enum value (type guard) */
+export function isEnumValue<T extends string>(value: unknown, validValues: readonly T[]): value is T {
+  return typeof value === 'string' && validValues.includes(value as T);
+}
