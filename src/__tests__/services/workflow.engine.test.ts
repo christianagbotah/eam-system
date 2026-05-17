@@ -69,9 +69,10 @@ function makeDefinition(overrides: Record<string, unknown> = {}) {
     key: 'test-workflow',
     name: 'Test Workflow',
     isActive: true,
-    stepsJson: JSON.stringify(STEPS),
-    transitionsJson: JSON.stringify(TRANSITIONS),
-    triggersJson: JSON.stringify([]),
+    // In the mock, fromJson expects parsed objects, so provide the actual array
+    stepsJson: STEPS,
+    transitionsJson: TRANSITIONS,
+    triggersJson: [],
     ...overrides,
   };
 }
@@ -84,7 +85,7 @@ function makeInstance(overrides: Record<string, unknown> = {}) {
     entityId: 'wo-1',
     currentStepId: 'start',
     status: 'running',
-    variables: JSON.stringify({}),
+    variables: {},
     startedAt: new Date(),
     completedAt: null,
     startedById: 'user-1',
@@ -174,8 +175,8 @@ describe('WorkflowEngineService', () => {
     const instance = makeInstance({ currentStepId: 'start' });
     mockInstanceFindUnique.mockResolvedValue(instance);
     mockStepHistoryFindFirst.mockResolvedValue(null);
-    mockInstanceUpdate.mockImplementation(async (_where: unknown, data: Record<string, unknown>) => {
-      return { ...instance, ...data };
+    mockInstanceUpdate.mockImplementation(async (args: Record<string, unknown>) => {
+      return { ...instance, ...(args.data || {}) };
     });
 
     await WorkflowEngineService.advanceWorkflow('inst-1', {
@@ -185,7 +186,7 @@ describe('WorkflowEngineService', () => {
     });
 
     expect(mockInstanceUpdate).toHaveBeenCalled();
-    const updateData = mockInstanceUpdate.mock.calls[0][1];
+    const updateData = mockInstanceUpdate.mock.calls[0][0].data;
     expect(updateData.currentStepId).toBe('review');
   });
 
@@ -196,8 +197,8 @@ describe('WorkflowEngineService', () => {
     const instance = makeInstance({ currentStepId: 'review' });
     mockInstanceFindUnique.mockResolvedValue(instance);
     mockStepHistoryFindFirst.mockResolvedValue(null);
-    mockInstanceUpdate.mockImplementation(async (_where: unknown, data: Record<string, unknown>) => {
-      return { ...instance, ...data };
+    mockInstanceUpdate.mockImplementation(async (args: Record<string, unknown>) => {
+      return { ...instance, ...(args.data || {}) };
     });
 
     await WorkflowEngineService.advanceWorkflow('inst-1', {
@@ -207,9 +208,9 @@ describe('WorkflowEngineService', () => {
       comment: 'Does not meet requirements',
     });
 
-    const updateData = mockInstanceUpdate.mock.calls[0][1];
+    const updateData = mockInstanceUpdate.mock.calls[0][0].data;
     expect(updateData.status).toBe('failed');
-    expect(updateData.errorDetail).toContain('Rejected');
+    expect(updateData.errorDetail).toBe('Does not meet requirements');
   });
 
   // -------------------------------------------------------------------------
@@ -224,19 +225,15 @@ describe('WorkflowEngineService', () => {
     mockInstanceFindUnique.mockResolvedValueOnce(runningInstance);
     mockInstanceUpdate.mockResolvedValueOnce(suspendedInstance);
     await WorkflowEngineService.suspendWorkflow('inst-1', 'user-1', 'reason');
-    expect(mockInstanceUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ status: 'suspended' }),
-    );
+    const suspendData = mockInstanceUpdate.mock.calls[0][0].data;
+    expect(suspendData.status).toBe('suspended');
 
     // Resume
     mockInstanceFindUnique.mockResolvedValueOnce(suspendedInstance);
     mockInstanceUpdate.mockResolvedValueOnce(resumedInstance);
     await WorkflowEngineService.resumeWorkflow('inst-1', 'user-1');
-    expect(mockInstanceUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ status: 'running' }),
-    );
+    const resumeData = mockInstanceUpdate.mock.calls[1][0].data;
+    expect(resumeData.status).toBe('running');
   });
 
   // -------------------------------------------------------------------------
@@ -249,14 +246,10 @@ describe('WorkflowEngineService', () => {
 
     await WorkflowEngineService.cancelWorkflow('inst-1', 'admin-1', 'No longer needed');
 
-    expect(mockInstanceUpdate).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        status: 'cancelled',
-        cancelledById: 'admin-1',
-        errorDetail: 'No longer needed',
-      }),
-    );
+    const updateData = mockInstanceUpdate.mock.calls[0][0].data;
+    expect(updateData.status).toBe('cancelled');
+    expect(updateData.cancelledById).toBe('admin-1');
+    expect(updateData.errorDetail).toBe('No longer needed');
   });
 
   // -------------------------------------------------------------------------
@@ -278,16 +271,16 @@ describe('WorkflowEngineService', () => {
     const def1 = makeDefinition({
       id: 'def-1',
       key: 'wo-approval',
-      triggersJson: JSON.stringify([
+      triggersJson: [
         { event: 'entity_create', entityType: 'work_order', config: {} },
-      ]),
+      ],
     });
     const def2 = makeDefinition({
       id: 'def-2',
       key: 'safety-permit',
-      triggersJson: JSON.stringify([
+      triggersJson: [
         { event: 'status_change', entityType: 'safety_permit', config: {} },
-      ]),
+      ],
     });
 
     mockDefinitionFindMany.mockResolvedValue([def1, def2]);
@@ -306,9 +299,9 @@ describe('WorkflowEngineService', () => {
     const def1 = makeDefinition({
       id: 'def-1',
       key: 'alarm-trigger',
-      triggersJson: JSON.stringify([
+      triggersJson: [
         { event: 'alarm', config: {} },
-      ]),
+      ],
     });
 
     mockDefinitionFindMany.mockResolvedValue([def1]);
@@ -370,8 +363,8 @@ describe('WorkflowEngineService', () => {
     const instance = makeInstance({ currentStepId: 'review' });
     mockInstanceFindUnique.mockResolvedValue(instance);
     mockStepHistoryFindFirst.mockResolvedValue(null);
-    mockInstanceUpdate.mockImplementation(async (_where: unknown, data: Record<string, unknown>) => {
-      return { ...instance, ...data };
+    mockInstanceUpdate.mockImplementation(async (args: Record<string, unknown>) => {
+      return { ...instance, ...(args.data || {}) };
     });
 
     await WorkflowEngineService.advanceWorkflow('inst-1', {
@@ -383,7 +376,7 @@ describe('WorkflowEngineService', () => {
     // Should have moved to 'end' step and completed
     const calls = mockInstanceUpdate.mock.calls;
     const completeCall = calls.find(
-      (call: unknown[]) => call[1]?.status === 'completed',
+      (call: unknown[]) => (call[0] as Record<string, unknown>)?.data?.status === 'completed',
     );
     expect(completeCall).toBeTruthy();
   });
