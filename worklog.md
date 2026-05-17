@@ -2642,3 +2642,64 @@ Stage Summary:
 - 5 CSS animation utilities
 - Card hover effect class
 - Mobile-first responsive utilities
+---
+Task ID: J-3
+Agent: Phase J Search & DB Agent
+Task: Build enterprise search, search APIs, API v1, and database index hardening
+
+Work Log:
+- Created EnterpriseSearchService with global search across assets/WOs/MRs/components/inventory
+- Created /api/search for global search with type filtering and pagination
+- Created /api/search/suggest for autocomplete suggestions
+- Created /api/v1/status for API version and infrastructure status
+- Added performance indexes to Asset, WorkOrder, MaintenanceRequest, TelemetryStream, WorkInstruction, WorkInstructionExecution models
+
+Stage Summary:
+- Global search with relevance scoring across 5 entity types
+- Autocomplete suggestions endpoint
+- API v1 infrastructure with version status endpoint
+- Database indexes for commonly queried fields
+
+---
+Task ID: J-2
+Agent: Phase J Time-Series & Storage Agent
+Task: Build time-series data service and object storage abstraction
+
+Work Log:
+- Created TimeSeriesService with write/read/aggregate/stats/retain/listSources
+- Created ObjectStorageService with upload/download/delete/list/signed URLs/storage stats
+- Created /api/time-series (POST write, GET query with raw/stats/aggregate/latest modes)
+- Created /api/time-series/sources (GET list data sources)
+- Created /api/files/upload (POST multipart upload)
+- Created /api/files/[...path] (GET download, DELETE)
+- Added TelemetryReading model to Prisma schema (sourceId, value, quality, timestamp with indexes)
+- Generated Prisma client with new model
+
+Stage Summary:
+- Time-series abstraction over Prisma with bucket aggregation and downsampling
+- Object storage with local filesystem fallback, MIME validation, signed URLs
+- File upload/download/delete APIs with caching headers
+
+---
+Task ID: J-1
+Agent: Phase J Redis & Queue Agent
+Task: Build Redis abstraction layer and job queue architecture
+
+Work Log:
+- Created src/lib/redis.ts with RedisLike interface, InMemoryRedis fallback, singleton pattern, and redisHelpers for JSON serialization
+- Created src/lib/queue.ts with InMemoryQueue, 10 named job queues, retry/backoff, job CRUD, pre-built processors for all EAM subsystems
+- Created src/app/api/queues/route.ts (GET status, POST test/retry/remove, DELETE clear queue)
+- Created src/app/api/infra/redis/route.ts (Redis health check endpoint)
+- Created src/lib/queueInit.ts for startup registration of default processors
+- Created src/components/modules/QueueManagerPage.tsx — full dashboard with queue cards, job table, Redis status, architecture docs
+- Added settings-queues page type to src/types/index.ts
+- Wired QueueManagerPage into EAMApp.tsx (lazy import, renderPage, pageTitle)
+- Added Queue Manager nav entry to Sidebar.tsx
+
+Stage Summary:
+- Redis abstraction with automatic in-memory fallback when REDIS_URL not set
+- 10 named job queues: notifications, telemetry, reports, indexing, email, scheduling, predictive, cache, audit, workflow
+- Job retry with exponential backoff (5s, 10s, 15s intervals)
+- Admin-only queue management endpoints with full CRUD
+- Production-ready Queue Manager dashboard with tabbed UI (Queues / Redis)
+- Seamless architecture: swap to real Redis by setting REDIS_URL env var

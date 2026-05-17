@@ -643,6 +643,7 @@ export type PageName =
   | 'settings-departments'
   | 'settings-security'
   | 'settings-health'
+  | 'settings-queues'
   | 'settings-preferences'
   // Legacy fallbacks
   | 'assets'

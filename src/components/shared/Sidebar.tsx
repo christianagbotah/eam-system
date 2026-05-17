@@ -254,6 +254,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'settings-audit', label: 'Audit Logs', icon: Eye },
         { page: 'settings-security', label: 'Security', icon: ShieldAlert },
         { page: 'settings-health', label: 'System Health', icon: HeartPulse },
+        { page: 'settings-queues', label: 'Queue Manager', icon: Layers },
         { page: 'settings-preferences', label: 'My Preferences', icon: Settings },
       ],
     },

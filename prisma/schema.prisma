@@ -437,6 +437,11 @@ model MaintenanceRequest {
   // Comments
   comments MaintenanceRequestComment[]
 
+  @@index([plantId])
+  @@index([status])
+  @@index([priority])
+  @@index([departmentId])
+  @@index([createdAt])
   @@map("maintenance_requests")
 }
 
@@ -525,6 +530,12 @@ model WorkOrder {
   // Component Maintenance Intelligence relations
   componentMaintenanceHistory ComponentMaintenanceHistory[] @relation("ComponentWorkOrder")
 
+  @@index([plantId])
+  @@index([status])
+  @@index([priority])
+  @@index([assignedTo])
+  @@index([assetId])
+  @@index([createdAt])
   @@map("work_orders")
 }
 
@@ -792,6 +803,10 @@ model Asset {
   rcmAnalyses     RcmAnalysis[]
   downtimeAnalyses DowntimeAnalysis[]
 
+  @@index([plantId])
+  @@index([status])
+  @@index([categoryId])
+  @@index([criticality])
   @@map("assets")
 }
 
@@ -2995,6 +3010,7 @@ model WorkInstructionExecution {
 
   @@index([workInstructionId])
   @@index([technicianId])
+  @@index([workOrderId])
   @@index([status])
   @@map("work_instruction_executions")
 }
@@ -3375,6 +3391,7 @@ model TelemetryStream {
   @@index([mappingId])
   @@index([sourceId])
   @@index([timestamp])
+  @@index([sourceId, timestamp])
   @@index([isAnomaly])
   @@map("telemetry_streams")
 }
@@ -3569,4 +3586,21 @@ model RemainingUsefulLife {
   @@unique([componentId])
   @@index([estimatedRul])
   @@map("remaining_useful_life")
+}
+
+// ============================================================================
+// PHASE J — TIME-SERIES DATA LAYER
+// ============================================================================
+
+model TelemetryReading {
+  id        String   @id @default(cuid())
+  sourceId  String
+  value     Float
+  quality   String   @default("good") // good, uncertain, bad
+  timestamp DateTime @default(now())
+
+  @@index([sourceId])
+  @@index([timestamp])
+  @@index([sourceId, timestamp])
+  @@map("telemetry_readings")
 }
