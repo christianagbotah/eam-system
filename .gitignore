@@ -18,12 +18,8 @@ node_modules/.prisma/client/
 # testing
 /coverage
 
-# next.js — commit the full standalone output for cPanel (pre-built, no build needed)
-.next/*
-!.next/BUILD_ID
-!.next/server/
-!.next/static/
-!.next/standalone/
+# next.js — ALWAYS ignore .next (built on VPS after git pull)
+.next/
 /out/
 
 # production
@@ -86,4 +82,3 @@ db/*.db-journal
 .env.local
 .env.production
 .github-token
-.next/
