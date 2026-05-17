@@ -401,7 +401,7 @@ export class SparePartsAIService {
             select: { id: true, alternatePartId: true },
           },
           workOrderMaterials: {
-            select: { workOrder: { select: { id: true; assetId: true; priority: true } } },
+            select: { workOrder: { select: { id: true, assetId: true, priority: true } } },
             take: 20,
           },
         },

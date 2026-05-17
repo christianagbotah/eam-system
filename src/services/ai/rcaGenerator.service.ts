@@ -256,13 +256,13 @@ export class RCAGeneratorService {
         [historicalFailures, historicalWOs] = await Promise.all([
           db.failureRecord.findMany({
             where: { assetId, detectedAt: { gte: oneYearAgo } },
-            include: { asset: { select: { id: true; name: true } } },
+            include: { asset: { select: { id: true, name: true } } },
             orderBy: { detectedAt: 'desc' },
             take: 20,
           }),
           db.workOrder.findMany({
             where: { assetId, createdAt: { gte: oneYearAgo }, status: { in: ['completed', 'closed'] } },
-            include: { asset: { select: { id: true; name: true } } },
+            include: { asset: { select: { id: true, name: true } } },
             orderBy: { createdAt: 'desc' },
             take: 20,
           }),
@@ -278,7 +278,7 @@ export class RCAGeneratorService {
             ...(assetId ? { assetId: { not: assetId } } : {}),
             detectedAt: { gte: new Date(Date.now() - 365 * 86400000) },
           },
-          include: { asset: { select: { id: true; name: true } } },
+          include: { asset: { select: { id: true, name: true } } },
           orderBy: { detectedAt: 'desc' },
           take: 10,
         });

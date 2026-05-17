@@ -136,7 +136,7 @@ const defaultHeaders: SecurityHeadersConfig = {
 // ── SQL Injection Patterns ──────────────────────────────────────────────────
 
 const sqlInjectionPatterns: SQLInjectionPattern[] = [
-  { pattern: /(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|EXEC|EXECUTE)\b.*(\b(FROM|INTO|WHERE|SET|TABLE|DATABASE)\b)/i, description: 'SQL keyword chain detected', severity: 'high' },
+  { pattern: /\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|EXEC|EXECUTE)\b.*\b(FROM|INTO|WHERE|SET|TABLE|DATABASE)\b/i, description: 'SQL keyword chain detected', severity: 'high' },
   { pattern: /--\s*$/m, description: 'SQL comment detected', severity: 'medium' },
   { pattern: /;\s*(DROP|DELETE|TRUNCATE|ALTER|UPDATE)/i, description: 'SQL statement termination followed by destructive command', severity: 'critical' },
   { pattern: /'\s*(OR|AND)\s+.*=/i, description: 'SQL boolean-based injection pattern', severity: 'high' },

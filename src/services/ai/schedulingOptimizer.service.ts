@@ -249,7 +249,7 @@ export class SchedulingOptimizerService {
 
           predictiveActions.push({
             assetId: health.assetId,
-            assetName: (await db.asset.findUnique({ where: { id: health.assetId }, select: { name: true } } catch(() => ({ name: 'Unknown' }))))?.name || 'Unknown',
+            assetName: (await db.asset.findUnique({ where: { id: health.assetId }, select: { name: true } }).catch(() => ({ name: 'Unknown' } as any)))?.name || 'Unknown',
             healthScore: health.score,
             failureProbability: prediction?.probability || 0.5,
             suggestedScheduleDate: suggestedDate.toISOString().split('T')[0],
