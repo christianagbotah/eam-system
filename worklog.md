@@ -2703,3 +2703,43 @@ Stage Summary:
 - Admin-only queue management endpoints with full CRUD
 - Production-ready Queue Manager dashboard with tabbed UI (Queues / Redis)
 - Seamless architecture: swap to real Redis by setting REDIS_URL env var
+
+---
+Task ID: K-1
+Agent: Phase K AI Engine Agent
+Task: Build predictive maintenance engine, AI copilot, and AI APIs
+
+Work Log:
+- Created PredictiveEngine service (src/services/predictiveEngine.service.ts) with health scoring, failure prediction, anomaly detection, maintenance optimization, batch assessment, insights dashboard
+- Created AiCopilotService (src/services/aiCopilot.service.ts) with troubleshooting (7 rule sets), maintenance plan recommendations, reliability analysis
+- Created 5 AI API routes: POST /api/ai/troubleshoot, GET /api/ai/health/[assetId], GET /api/ai/predict/[assetId], GET /api/ai/anomalies, GET /api/ai/insights
+- Adapted code to actual Prisma schema: installedDate (not installDate), TelemetryDataSource (not telemetrySource), categoryId (not assetTypeId), failureSeverity (not severity)
+
+Stage Summary:
+- Weighted health score calculation (5 factors: age, condition, criticality, WO frequency, failure history)
+- Failure probability prediction with time horizons (7d/30d/90d)
+- Statistical anomaly detection (3-sigma rule, spike/drop classification)
+- Maintenance strategy optimization with savings estimation
+- AI copilot with built-in troubleshooting knowledge base for 7 common industrial issue categories
+- All endpoints authenticated via getSession(), zero lint errors on new files
+
+---
+Task ID: K-2
+Agent: Phase K Knowledge Graph & Scheduling Agent
+Task: Build industrial knowledge graph and intelligent scheduling service
+
+Work Log:
+- Created KnowledgeGraphService with graph build, BFS pathfinding, neighbor traversal, structural analysis, entity details
+- Created IntelligentSchedulingService with priority scoring, optimal date calculation, conflict detection, skill inference
+- Created /api/ai/schedule for PM optimization
+- Created /api/knowledge-graph/path for entity pathfinding
+- Created /api/knowledge-graph/entity/[id] for entity details with relationships
+
+Stage Summary:
+- Knowledge graph with 6 entity types (asset, work_order, failure, technician, spare_part, sensor, procedure)
+- BFS shortest path between any two entities
+- Multi-hop neighbor traversal
+- Priority scoring (1-10) based on criticality, condition, WO priority, age
+- Workforce utilization calculation
+- Resource conflict detection
+- Skill inference from WO titles
