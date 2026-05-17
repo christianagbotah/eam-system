@@ -2,7 +2,6 @@
 // JOB QUEUE — BullMQ-like abstraction with in-memory fallback
 // ============================================================================
 
-import { Queue, Worker, Job as BullJob, JobsOptions } from 'bullmq';
 import { createLogger } from '@/lib/logger';
 import { getRedisClient, closeRedisClient } from '@/lib/redis';
 
@@ -272,16 +271,18 @@ function createBullMQConnection() {
  * as InMemoryQueue, allowing seamless switching at the jobQueue facade.
  */
 class BullMQQueueAdapter {
-  private queues = new Map<string, Queue>();
-  private workers = new Map<string, Worker>();
+  private queues = new Map<string, any>(); // BullMQ Queue instances
+  private workers = new Map<string, any>(); // BullMQ Worker instances
   private eventListeners = new Map<string, Set<{
     event: 'completed' | 'failed' | 'progress';
     callback: (...args: unknown[]) => void;
   }>>();
 
-  private getOrCreateQueue(queueName: string): Queue {
+  private getOrCreateQueue(queueName: string): any {
     let q = this.queues.get(queueName);
     if (!q) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { Queue } = require('bullmq');
       q = new Queue(queueName, {
         ...createBullMQConnection(),
         defaultJobOptions: {
@@ -297,7 +298,7 @@ class BullMQQueueAdapter {
   async add<T>(queueName: string, definition: JobDefinition<T>): Promise<string> {
     const queue = this.getOrCreateQueue(queueName);
 
-    const opts: JobsOptions = {};
+    const opts: Record<string, any> = {};
     if (definition.id) opts.jobId = definition.id;
     if (definition.priority) opts.priority = definition.priority;
     if (definition.attempts) opts.attempts = definition.attempts;
@@ -324,7 +325,10 @@ class BullMQQueueAdapter {
       return;
     }
 
-    const worker = new Worker(queueName, async (bullJob: BullJob) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Worker } = require('bullmq');
+
+    const worker = new Worker(queueName, async (bullJob: any) => {
       // Adapt BullMQ job → JobRecord shape for the handler
       const jobRecord: JobRecord = {
         id: bullJob.id ?? '',
@@ -347,12 +351,12 @@ class BullMQQueueAdapter {
     });
 
     // --- Wire up event listeners ---
-    worker.on('completed', (bullJob: BullJob) => {
+    worker.on('completed', (bullJob: any) => {
       logger.info(`BullMQ job completed [${queueName}]`, { jobId: bullJob.id });
       this.fireEvent(queueName, 'completed', bullJob);
     });
 
-    worker.on('failed', (bullJob: BullJob | undefined, err: Error) => {
+    worker.on('failed', (bullJob: any, err: Error) => {
       logger.error(`BullMQ job failed [${queueName}]`, {
         jobId: bullJob?.id,
         error: err.message,
@@ -360,7 +364,7 @@ class BullMQQueueAdapter {
       this.fireEvent(queueName, 'failed', bullJob, err);
     });
 
-    worker.on('progress', (bullJob: BullJob, progress: number) => {
+    worker.on('progress', (bullJob: any, progress: number) => {
       this.fireEvent(queueName, 'progress', bullJob, progress);
     });
 
@@ -486,7 +490,7 @@ class BullMQQueueAdapter {
 
   // ------- Internal helpers -------
 
-  private bullJobToRecord(bullJob: BullJob, state: string): JobRecord {
+  private bullJobToRecord(bullJob: any, state: string): JobRecord {
     return {
       id: bullJob.id ?? '',
       name: bullJob.name,

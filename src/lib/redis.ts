@@ -2,7 +2,6 @@
 // REDIS CLIENT — Production abstraction with in-memory fallback
 // ============================================================================
 
-import Redis from 'ioredis';
 import { createLogger } from '@/lib/logger';
 
 const logger = createLogger('redis');
@@ -142,12 +141,16 @@ class InMemoryRedis implements RedisLike {
 // ============================================================================
 
 class RealRedis implements RedisLike {
-  private client: Redis;
-  private subscriber: Redis; // Separate connection for pub/sub (ioredis requirement)
+  private client: any; // ioredis.Redis — typed as any to avoid static import
+  private subscriber: any;
   private _available = false;
   private connecting = false;
 
   constructor(url: string) {
+    // Dynamic import of ioredis — only required when REDIS_URL is actually set
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Redis = require('ioredis');
+
     const retryStrategy = (times: number): number => {
       if (times > 20) {
         logger.error('Redis max retry attempts reached, giving up');
