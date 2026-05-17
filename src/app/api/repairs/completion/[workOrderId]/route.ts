@@ -6,6 +6,9 @@ import { notifyUser } from '@/lib/notifications';
 // GET /api/repairs/completion/[workOrderId]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ workOrderId: string }> }) {
   try {
+    const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
     const { workOrderId } = await params;
     const completion = await db.repairCompletion.findUnique({
       where: { workOrderId },
@@ -20,6 +23,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             status: true,
             assignedSupervisor: { select: { id: true, fullName: true } },
             planner: { select: { id: true, fullName: true } },
+            assignedTo: { select: { id: true, fullName: true, avatar: true } },
           },
         },
       },
@@ -58,7 +62,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       let calculatedLaborHours = 0;
       for (const tl of timeLogs) {
         if (tl.action === 'start' || tl.action === 'resume' || tl.action === 'complete') {
-          calculatedLaborHours += 0.5; // simplified
+          calculatedLaborHours += (tl.duration || 0);
         }
       }
 
@@ -196,7 +200,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       // Close WO
       await db.workOrder.update({
         where: { id: workOrderId },
-        data: { status: 'closed', laborCost: completion.totalLaborHours * 50, partsCost: completion.totalMaterialCost },
+        data: { status: 'closed', laborCost: completion.totalLaborHours * (Number(process.env.DEFAULT_LABOR_RATE_HOURS) || 50), partsCost: completion.totalMaterialCost },
       });
       await db.workOrderStatusHistory.create({ data: { workOrderId, fromStatus: wo.status, toStatus: 'closed', performedById: session.userId, notes: 'Planner closed work order' } });
 

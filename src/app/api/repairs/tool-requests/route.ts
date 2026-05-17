@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
+import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 
 const URGENCY_ORDER: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 };
@@ -20,6 +21,15 @@ export async function GET(request: NextRequest) {
     const stats = searchParams.get('stats') === 'true';
 
     const where: Record<string, unknown> = {};
+
+    // Apply plant scope filter
+    if (session) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope) {
+        applyPlantScope(where, plantScope);
+      }
+    }
+
     if (workOrderId) where.workOrderId = workOrderId;
     if (status) where.status = status;
     if (requestedById) where.requestedById = requestedById;

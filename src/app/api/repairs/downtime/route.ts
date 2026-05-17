@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { Prisma } from '@prisma/client';
 
 // GET /api/repairs/downtime
 export async function GET(request: NextRequest) {
   try {
+    const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
     const { searchParams } = new URL(request.url);
     const workOrderId = searchParams.get('workOrderId');
     const assetId = searchParams.get('assetId');
@@ -17,6 +21,12 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20', 10);
 
     const where: Record<string, unknown> = {};
+
+    // Apply plant scope filter
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope) {
+      applyPlantScope(where, plantScope);
+    }
     if (workOrderId) where.workOrderId = workOrderId;
     if (assetId) where.assetId = assetId;
     if (category) where.category = category;
@@ -79,6 +89,7 @@ export async function POST(request: NextRequest) {
         downtimeStart: start, downtimeEnd: end, durationMinutes,
         reason, category: category || 'unplanned', impactLevel: impactLevel || 'medium',
         productionLoss: productionLoss || null, notes: notes || null,
+        createdById: session.userId,
       },
       include: { workOrder: { select: { id: true, woNumber: true, title: true } } },
     });

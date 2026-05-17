@@ -189,6 +189,7 @@ model User {
   userSkills   UserSkill[]
 
   // Repair module relations
+  downtimeLogged      WorkOrderDowntime[]      @relation("DowntimeCreatedBy")
   repairMatReqRequested      RepairMaterialRequest[] @relation("RepairMatReqRequested")
   repairMatReqSupApproved    RepairMaterialRequest[] @relation("RepairMatReqSupApproved")
   repairMatReqStoreApproved  RepairMaterialRequest[] @relation("RepairMatReqStoreApproved")
@@ -462,7 +463,7 @@ model WorkOrder {
   description          String?
   type                 String    @default("corrective") // preventive, corrective, predictive, inspection, project, emergency
   priority             String    @default("medium") // low, medium, high, critical
-  status               String    @default("draft") // draft, requested, approved, planned, assigned, in_progress, waiting_parts, on_hold, completed, closed, cancelled
+  status               String    @default("draft") // draft, requested, approved, planned, assigned, in_progress, waiting_parts, on_hold, completed, verified, closed, cancelled
   maintenanceRequestId String?   @unique
   pmScheduleId         String? // → PmSchedule (auto-generated WOs link back)
   assetId              String?
@@ -2310,6 +2311,7 @@ model RepairMaterialRequest {
   urgency                     String    @default("normal") // low, normal, high, critical
   reason                      String
   notes                       String?
+  plantId                     String?
   status                      String    @default("pending") // pending, supervisor_approved, storekeeper_approved, issued, partially_returned, fully_returned, rejected
   supervisorApprovedQuantity  Float? // qty approved by supervisor (may differ from requested)
   storekeeperApprovedQuantity Float? // qty approved by storekeeper (may differ from supervisor qty)
@@ -2350,6 +2352,7 @@ model RepairToolRequest {
   toolName                String
   reason                  String
   notes                   String?
+  plantId                 String?
   status                  String    @default("pending") // pending, supervisor_approved, storekeeper_approved, issued, returned, rejected
   urgency                 String    @default("normal") // low, normal, high, critical
   rejectionReason         String?
@@ -2391,6 +2394,7 @@ model ToolTransferRequest {
   toUserId                String // → User
   reason                  String
   notes                   String?
+  plantId                 String?
   status                  String    @default("pending") // pending, storekeeper_approved, awaiting_handover, transferred, rejected
   rejectionReason         String?
   toolConditionAtTransfer String? // new, good, fair, poor — captured at approval
@@ -2429,11 +2433,16 @@ model WorkOrderDowntime {
   impactLevel     String    @default("medium") // low, medium, high, critical
   productionLoss  Float?
   notes           String?
+  plantId         String?
+  createdById     String
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   // WorkOrder relation
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  // User relation
+  createdBy User @relation("DowntimeCreatedBy", fields: [createdById], references: [id])
 
   @@map("wo_downtimes")
 }

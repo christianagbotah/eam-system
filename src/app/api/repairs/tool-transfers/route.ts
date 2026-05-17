@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 
 // GET /api/repairs/tool-transfers
@@ -16,6 +17,15 @@ export async function GET(request: NextRequest) {
     const stats = searchParams.get('stats') === 'true';
 
     const where: Record<string, unknown> = {};
+
+    // Apply plant scope filter
+    if (session) {
+      const plantScope = await getPlantScope(request, session);
+      if (plantScope) {
+        applyPlantScope(where, plantScope);
+      }
+    }
+
     if (status) where.status = status;
     if (toolId) where.toolId = toolId;
 

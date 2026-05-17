@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getSession } from '@/lib/auth';
 
 // GET /api/repairs/kpi
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
     const [
       totalWos,
       completedWos,
