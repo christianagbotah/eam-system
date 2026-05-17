@@ -1,0 +1,3 @@
+{
+  "/api/reliability/rcm/[id]/route": "app/api/reliability/rcm/[id]/route.js"
+}

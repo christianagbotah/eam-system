@@ -1,0 +1,3 @@
+{
+  "/api/telemetry/alarms/route": "app/api/telemetry/alarms/route.js"
+}

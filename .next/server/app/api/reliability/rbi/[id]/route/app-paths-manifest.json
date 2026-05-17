@@ -1,0 +1,3 @@
+{
+  "/api/reliability/rbi/[id]/route": "app/api/reliability/rbi/[id]/route.js"
+}

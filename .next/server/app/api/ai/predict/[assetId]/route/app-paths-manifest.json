@@ -1,0 +1,3 @@
+{
+  "/api/ai/predict/[assetId]/route": "app/api/ai/predict/[assetId]/route.js"
+}

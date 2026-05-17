@@ -1,0 +1,3 @@
+{
+  "/api/digital-twins/[id]/route": "app/api/digital-twins/[id]/route.js"
+}

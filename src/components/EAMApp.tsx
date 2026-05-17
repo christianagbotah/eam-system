@@ -122,6 +122,10 @@ const SafetyTrainingPage = lazy(() => import('./modules/SafetyPages').then(m => 
 const SafetyEquipmentPage = lazy(() => import('./modules/SafetyPages').then(m => ({ default: m.SafetyEquipmentPage })));
 const SafetyPermitsPage = lazy(() => import('./modules/SafetyPages').then(m => ({ default: m.SafetyPermitsPage })));
 
+// Planner Workbench
+const PlannerWorkbenchPage = lazy(() => import('./modules/PlannerWorkbench'));
+const EnterpriseReportsPage = lazy(() => import('./modules/EnterpriseReports'));
+
 // Reliability Engineering (Phase D)
 const ReliabilityEngineeringPage = lazy(() => import('./modules/ReliabilityEngineeringPage'));
 
@@ -218,6 +222,9 @@ function AppShell() {
       case 'pm-templates': return <PmTemplatesPage />;
       case 'pm-triggers': return <PmTriggersPage />;
       case 'pm-calendar': return <PmCalendarPage />;
+      // Planner Workbench
+      case 'planner-workbench': return <PlannerWorkbenchPage />;
+      case 'enterprise-reports': return <EnterpriseReportsPage />;
       // Repairs
       case 'repairs-material-requests': return <RepairMaterialRequestsPage />;
       case 'repairs-tool-requests': return <RepairToolRequestsPage />;
@@ -345,6 +352,9 @@ function AppShell() {
     'pm-templates': 'PM Templates',
     'pm-triggers': 'PM Triggers',
     'pm-calendar': 'PM Calendar',
+    // Planner Workbench
+    'planner-workbench': 'Planner Workbench',
+    'enterprise-reports': 'Enterprise Reports',
     // Repairs Module
     'repairs-material-requests': 'Material Requests',
     'repairs-tool-requests': 'Tool Requests',

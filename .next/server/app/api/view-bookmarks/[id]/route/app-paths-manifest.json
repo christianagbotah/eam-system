@@ -1,0 +1,3 @@
+{
+  "/api/view-bookmarks/[id]/route": "app/api/view-bookmarks/[id]/route.js"
+}

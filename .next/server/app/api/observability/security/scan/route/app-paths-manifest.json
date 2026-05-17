@@ -1,0 +1,3 @@
+{
+  "/api/observability/security/scan/route": "app/api/observability/security/scan/route.js"
+}

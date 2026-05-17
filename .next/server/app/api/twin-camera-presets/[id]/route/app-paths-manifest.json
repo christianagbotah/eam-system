@@ -1,0 +1,3 @@
+{
+  "/api/twin-camera-presets/[id]/route": "app/api/twin-camera-presets/[id]/route.js"
+}

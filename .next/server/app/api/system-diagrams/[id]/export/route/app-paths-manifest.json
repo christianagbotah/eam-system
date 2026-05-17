@@ -1,0 +1,3 @@
+{
+  "/api/system-diagrams/[id]/export/route": "app/api/system-diagrams/[id]/export/route.js"
+}

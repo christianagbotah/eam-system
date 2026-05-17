@@ -1,0 +1,3 @@
+{
+  "/api/sto/events/[id]/schedule/route": "app/api/sto/events/[id]/schedule/route.js"
+}

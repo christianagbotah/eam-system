@@ -1,0 +1,3 @@
+{
+  "/api/connectivity/gateway/[id]/sync/route": "app/api/connectivity/gateway/[id]/sync/route.js"
+}

@@ -70,6 +70,7 @@ import {
   Package,
   Search,
   MapPin,
+  LayoutGrid,
   ArrowUpDown,
   FileSpreadsheet,
   Shield,
@@ -129,6 +130,13 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'pm-templates', label: 'PM Templates', icon: ClipboardCheck },
         { page: 'pm-triggers', label: 'PM Triggers', icon: Zap },
         { page: 'pm-calendar', label: 'PM Calendar', icon: Calendar },
+      ],
+    },
+    {
+      label: 'Planner', icon: LayoutGrid, perm: 'work_orders.view', moduleCodes: ['work_orders', 'maintenance_requests'],
+      children: [
+        { page: 'planner-workbench', label: 'Workbench', icon: LayoutGrid },
+        { page: 'enterprise-reports', label: 'Enterprise Reports', icon: Gauge },
       ],
     },
     {

@@ -1,0 +1,3 @@
+{
+  "/api/predictive-models/[id]/route": "app/api/predictive-models/[id]/route.js"
+}

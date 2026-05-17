@@ -1,0 +1,3 @@
+{
+  "/api/telemetry/sources/[id]/route": "app/api/telemetry/sources/[id]/route.js"
+}

@@ -1,0 +1,3 @@
+{
+  "/api/historian/anomalies/route": "app/api/historian/anomalies/route.js"
+}

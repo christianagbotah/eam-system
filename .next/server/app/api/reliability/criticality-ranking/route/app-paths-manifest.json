@@ -1,0 +1,3 @@
+{
+  "/api/reliability/criticality-ranking/route": "app/api/reliability/criticality-ranking/route.js"
+}

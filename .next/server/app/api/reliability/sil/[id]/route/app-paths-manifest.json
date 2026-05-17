@@ -1,0 +1,3 @@
+{
+  "/api/reliability/sil/[id]/route": "app/api/reliability/sil/[id]/route.js"
+}

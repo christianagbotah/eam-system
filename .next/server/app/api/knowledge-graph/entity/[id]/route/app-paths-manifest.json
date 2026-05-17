@@ -1,0 +1,3 @@
+{
+  "/api/knowledge-graph/entity/[id]/route": "app/api/knowledge-graph/entity/[id]/route.js"
+}

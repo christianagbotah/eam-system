@@ -1,0 +1,988 @@
+'use client';
+
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { toast } from 'sonner';
+import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/authStore';
+import { format, formatDistanceToNow, differenceInDays, differenceInHours } from 'date-fns';
+
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
+import { EmptyState, LoadingSkeleton, formatDate, formatCurrency } from '@/components/shared/helpers';
+import {
+  LayoutDashboard, GripVertical, ChevronLeft, ChevronRight, Clock, AlertTriangle,
+  CheckCircle2, XCircle, Filter, Search, Plus, Users, Calendar, Wrench,
+  ArrowRightLeft, BarChart3, Target, Timer, TrendingUp, ArrowDown,
+  ArrowUp, Package, ClipboardList, Settings, Zap, CircleDot,
+  Activity, UserCheck, AlertCircle, Eye, MoreHorizontal, Layers,
+  Factory, Hammer, HardHat, Play, Pause, Square, RefreshCw, X,
+  ChevronDown, GripHorizontal, Workflow, CalendarClock, Truck,
+} from 'lucide-react';
+
+// ============================================================================
+// CONSTANTS & TYPES
+// ============================================================================
+
+const KANBAN_COLUMNS = [
+  { key: 'approved', label: 'Approved', color: 'bg-sky-100 border-sky-200 text-sky-800', icon: CheckCircle2 },
+  { key: 'assigned', label: 'Assigned', color: 'bg-violet-100 border-violet-200 text-violet-800', icon: UserCheck },
+  { key: 'in_progress', label: 'In Progress', color: 'bg-amber-100 border-amber-200 text-amber-800', icon: Play },
+  { key: 'pending_review', label: 'Pending Review', color: 'bg-orange-100 border-orange-200 text-orange-800', icon: Eye },
+  { key: 'completed', label: 'Completed', color: 'bg-emerald-100 border-emerald-200 text-emerald-800', icon: CheckCircle2 },
+] as const;
+
+type KanbanStatus = typeof KANBAN_COLUMNS[number]['key'];
+
+const PRIORITY_CONFIG: Record<string, { label: string; color: string; bgColor: string }> = {
+  low: { label: 'Low', color: 'text-slate-600', bgColor: 'bg-slate-100 border-slate-300' },
+  medium: { label: 'Medium', color: 'text-sky-700', bgColor: 'bg-sky-100 border-sky-300' },
+  high: { label: 'High', color: 'text-amber-700', bgColor: 'bg-amber-100 border-amber-300' },
+  urgent: { label: 'Urgent', color: 'text-red-700', bgColor: 'bg-red-100 border-red-300' },
+};
+
+function PriorityBadge({ priority }: { priority: string }) {
+  const cfg = PRIORITY_CONFIG[priority] || PRIORITY_CONFIG.medium;
+  return <Badge variant="outline" className={`${cfg.bgColor} ${cfg.color} text-xs font-medium`}>{cfg.label}</Badge>;
+}
+
+function SLAIndicator({ createdAt, priority }: { createdAt: string; priority: string }) {
+  const hours = useMemo(() => {
+    const slaMap: Record<string, number> = { low: 72, medium: 48, high: 24, urgent: 8 };
+    const sla = slaMap[priority] || 48;
+    return differenceInHours(new Date(createdAt), new Date()) + sla;
+  }, [createdAt, priority]);
+
+  if (hours <= 0) {
+    return (
+      <TooltipProvider><Tooltip><TooltipTrigger asChild>
+        <span className="flex items-center gap-1 text-xs text-red-600 font-medium">
+          <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" /><span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" /></span>
+          BREACHED
+        </span>
+      </TooltipTrigger><TooltipContent>Breached by {Math.abs(hours)}h</TooltipContent></Tooltip></TooltipProvider>
+    );
+  }
+  if (hours <= 12) {
+    return <span className="flex items-center gap-1 text-xs text-amber-600 font-medium"><Timer className="h-3 w-3" />{hours}h left</span>;
+  }
+  return <span className="flex items-center gap-1 text-xs text-emerald-600"><Timer className="h-3 w-3" />{hours}h left</span>;
+}
+
+// ============================================================================
+// PLANNER WORKBENCH
+// ============================================================================
+
+export default function PlannerWorkbench() {
+  const { hasPermission, isAdmin } = useAuthStore();
+
+  // Data state
+  const [workOrders, setWorkOrders] = useState<any[]>([]);
+  const [approvedMRs, setApprovedMRs] = useState<any[]>([]);
+  const [technicians, setTechnicians] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Panel visibility
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+
+  // Filters
+  const [woFilterPriority, setWoFilterPriority] = useState('all');
+  const [woFilterPlant, setWoFilterPlant] = useState('all');
+  const [woFilterTech, setWoFilterTech] = useState('all');
+  const [woSearch, setWoSearch] = useState('');
+  const [mrFilterPriority, setMrFilterPriority] = useState('all');
+  const [mrSearch, setMrSearch] = useState('');
+
+  // Selected items
+  const [selectedMRs, setSelectedMRs] = useState<string[]>([]);
+  const [selectedWOs, setSelectedWOs] = useState<string[]>([]);
+  const [detailWO, setDetailWO] = useState<any>(null);
+  const [detailSheetOpen, setDetailSheetOpen] = useState(false);
+
+  // Create WO dialog
+  const [createWODialogOpen, setCreateWODialogOpen] = useState(false);
+  const [createWOForm, setCreateWOForm] = useState({
+    title: '', priority: 'medium', type: 'corrective', estimatedHours: '', plannedStart: '', notes: '',
+  });
+  const [createWOLoading, setCreateWOLoading] = useState(false);
+
+  // Work Package dialog
+  const [workPackageDialogOpen, setWorkPackageDialogOpen] = useState(false);
+  const [wpForm, setWpForm] = useState({ name: '', assignTo: '', scheduledDate: '', shift: 'day' });
+  const [wpLoading, setWpLoading] = useState(false);
+
+  // Active tab
+  const [activeTab, setActiveTab] = useState('kanban');
+
+  // Fetch data
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [woRes, mrRes, userRes] = await Promise.all([
+        api.get('/api/work-orders?limit=100'),
+        api.get('/api/maintenance-requests?status=approved&limit=50'),
+        api.get('/api/users'),
+      ]);
+      if (woRes.success && woRes.data) setWorkOrders(woRes.data);
+      if (mrRes.success && mrRes.data) {
+        const approved = Array.isArray(mrRes.data) ? mrRes.data : [];
+        setApprovedMRs(approved.filter((mr: any) => mr.status === 'approved'));
+      }
+      if (userRes.success && userRes.data) {
+        const users = Array.isArray(userRes.data) ? userRes.data : [];
+        setTechnicians(users.filter((u: any) => u.roles?.some((r: any) =>
+          ['maintenance_technician', 'maintenance_supervisor', 'maintenance_manager'].includes(r.slug)
+        )));
+      }
+    } catch (_e) {
+      // Silent catch
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData, refreshKey]);
+
+  // Filtered WOs for Kanban
+  const filteredWOs = useMemo(() => {
+    return workOrders.filter(wo => {
+      if (woFilterPriority !== 'all' && wo.priority !== woFilterPriority) return false;
+      if (woFilterPlant !== 'all' && wo.plantId !== woFilterPlant) return false;
+      if (woFilterTech !== 'all' && wo.assignedTo?.id !== woFilterTech) return false;
+      if (woSearch) {
+        const q = woSearch.toLowerCase();
+        if (!wo.woNumber?.toLowerCase().includes(q) && !wo.title?.toLowerCase().includes(q) && !wo.assetName?.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [workOrders, woFilterPriority, woFilterPlant, woFilterTech, woSearch]);
+
+  // Filtered MRs for Planning Queue
+  const filteredMRs = useMemo(() => {
+    return approvedMRs.filter(mr => {
+      if (mrFilterPriority !== 'all' && mr.priority !== mrFilterPriority) return false;
+      if (mrSearch) {
+        const q = mrSearch.toLowerCase();
+        if (!mr.title?.toLowerCase().includes(q) && !mr.requestNumber?.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [approvedMRs, mrFilterPriority, mrSearch]);
+
+  // Group WOs by kanban column
+  const kanbanData = useMemo(() => {
+    const grouped: Record<string, any[]> = {};
+    KANBAN_COLUMNS.forEach(col => { grouped[col.key] = []; });
+    filteredWOs.forEach(wo => {
+      const status = wo.status === 'in_progress' ? 'in_progress' : wo.status === 'pending_review' ? 'pending_review' : wo.status === 'completed' ? 'completed' : wo.status === 'assigned' ? 'assigned' : wo.status === 'approved' ? 'approved' : null;
+      if (status && grouped[status]) grouped[status].push(wo);
+      else if (grouped['approved']) grouped['approved'].push(wo); // fallback
+    });
+    return grouped;
+  }, [filteredWOs]);
+
+  // Backlog aging data
+  const backlogAging = useMemo(() => {
+    const openWOs = workOrders.filter(wo => wo.status !== 'completed' && wo.status !== 'closed');
+    const brackets = [
+      { label: '0-7 days', min: 0, max: 7, color: 'bg-emerald-100 text-emerald-800' },
+      { label: '8-14 days', min: 8, max: 14, color: 'bg-sky-100 text-sky-800' },
+      { label: '15-30 days', min: 15, max: 30, color: 'bg-amber-100 text-amber-800' },
+      { label: '31-60 days', min: 31, max: 60, color: 'bg-orange-100 text-orange-800' },
+      { label: '60+ days', min: 61, max: 999, color: 'bg-red-100 text-red-800' },
+    ];
+    return brackets.map(b => {
+      const items = openWOs.filter(wo => {
+        const days = differenceInDays(new Date(), new Date(wo.createdAt));
+        return days >= b.min && days <= b.max;
+      });
+      return { ...b, count: items.length, items };
+    });
+  }, [workOrders]);
+
+  // Capacity planning data for technicians
+  const techCapacity = useMemo(() => {
+    return technicians.map(tech => {
+      const assignedWOs = workOrders.filter(wo =>
+        wo.assignedTo?.id === tech.id && !['completed', 'closed'].includes(wo.status)
+      );
+      const totalHours = assignedWOs.reduce((sum: number, wo: any) => sum + (wo.estimatedHours || 4), 0);
+      const maxHours = 40;
+      const utilization = Math.min(100, Math.round((totalHours / maxHours) * 100));
+      return {
+        ...tech,
+        assignedCount: assignedWOs.length,
+        totalHours,
+        utilization,
+        overAllocated: utilization > 100,
+      };
+    });
+  }, [technicians, workOrders]);
+
+  // Stats
+  const stats = useMemo(() => ({
+    totalOpen: workOrders.filter(wo => !['completed', 'closed'].includes(wo.status)).length,
+    inProgress: workOrders.filter(wo => wo.status === 'in_progress').length,
+    awaitingMR: approvedMRs.length,
+    overdue: workOrders.filter(wo => {
+      if (!wo.plannedStart || ['completed', 'closed'].includes(wo.status)) return false;
+      return new Date(wo.plannedStart) < new Date();
+    }).length,
+    completed: workOrders.filter(wo => wo.status === 'completed').length,
+  }), [workOrders, approvedMRs]);
+
+  // Handlers
+  const handleCreateWO = async () => {
+    if (!createWOForm.title.trim()) { toast.error('Title is required'); return; }
+    setCreateWOLoading(true);
+    const payload: any = { title: createWOForm.title, priority: createWOForm.priority, type: createWOForm.type };
+    if (createWOForm.estimatedHours) payload.estimatedHours = parseFloat(createWOForm.estimatedHours);
+    if (createWOForm.plannedStart) payload.plannedStart = createWOForm.plannedStart;
+    if (createWOForm.notes) payload.notes = createWOForm.notes;
+    const res = await api.post('/api/work-orders', payload);
+    if (res.success) {
+      toast.success('Work order created');
+      setCreateWODialogOpen(false);
+      setCreateWOForm({ title: '', priority: 'medium', type: 'corrective', estimatedHours: '', plannedStart: '', notes: '' });
+      setRefreshKey(k => k + 1);
+    } else {
+      toast.error(res.error || 'Failed to create work order');
+    }
+    setCreateWOLoading(false);
+  };
+
+  const handleCreateWOFromMR = async (mrId: string) => {
+    setCreateWOLoading(true);
+    const res = await api.post(`/api/maintenance-requests/${mrId}/convert`, {
+      title: 'WO from MR', priority: 'medium', type: 'corrective',
+    });
+    if (res.success) {
+      toast.success('Work order created from maintenance request');
+      setRefreshKey(k => k + 1);
+    } else {
+      toast.error(res.error || 'Failed');
+    }
+    setCreateWOLoading(false);
+  };
+
+  const handleCreateWorkPackage = async () => {
+    if (!wpForm.name.trim()) { toast.error('Package name is required'); return; }
+    if (selectedWOs.length === 0) { toast.error('Select at least one work order'); return; }
+    setWpLoading(true);
+    // Simulate work package creation (grouping WOs)
+    await new Promise(resolve => setTimeout(resolve, 800));
+    toast.success(`Work package "${wpForm.name}" created with ${selectedWOs.length} WOs`);
+    setWorkPackageDialogOpen(false);
+    setWpForm({ name: '', assignTo: '', scheduledDate: '', shift: 'day' });
+    setSelectedWOs([]);
+    setWpLoading(false);
+  };
+
+  const toggleMRSelection = (id: string) => {
+    setSelectedMRs(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleWOSelection = (id: string) => {
+    setSelectedWOs(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  if (loading) return <LoadingSkeleton />;
+
+  return (
+    <div className="page-content">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <LayoutDashboard className="h-6 w-6 text-emerald-600" />
+            Planner Workbench
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">Plan, schedule, and manage work orders from a single workspace</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setLeftPanelOpen(!leftPanelOpen)}>
+            <ChevronLeft className={`h-4 w-4 transition-transform ${leftPanelOpen ? '' : 'rotate-180'}`} />
+            <span className="hidden sm:inline ml-1">Queue</span>
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setRightPanelOpen(!rightPanelOpen)}>
+            <span className="hidden sm:inline mr-1">Capacity</span>
+            <ChevronRight className={`h-4 w-4 transition-transform ${rightPanelOpen ? '' : 'rotate-180'}`} />
+          </Button>
+          {hasPermission('work_orders.create') && (
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm" onClick={() => setCreateWODialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-1.5" />New WO
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Stats Bar */}
+      <div className="flex gap-2 flex-wrap">
+        {[
+          { label: 'Open WOs', value: stats.totalOpen, className: 'bg-slate-100 text-slate-700 border-slate-200' },
+          { label: 'In Progress', value: stats.inProgress, className: 'bg-amber-50 text-amber-700 border-amber-200' },
+          { label: 'Awaiting Planning', value: stats.awaitingMR, className: 'bg-sky-50 text-sky-700 border-sky-200' },
+          { label: 'Overdue', value: stats.overdue, className: 'bg-red-50 text-red-700 border-red-200' },
+          { label: 'Completed (MTD)', value: stats.completed, className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+        ].map(s => (
+          <div key={s.label} className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${s.className} transition-colors`}>
+            {s.value} {s.label}
+          </div>
+        ))}
+      </div>
+
+      {/* Tab Navigation */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="kanban"><LayoutDashboard className="h-3.5 w-3.5 mr-1.5" />Kanban Board</TabsTrigger>
+          <TabsTrigger value="work-package"><Layers className="h-3.5 w-3.5 mr-1.5" />Work Packages</TabsTrigger>
+          <TabsTrigger value="backlog"><ArrowDown className="h-3.5 w-3.5 mr-1.5" />Backlog Aging</TabsTrigger>
+          <TabsTrigger value="shutdown"><CalendarClock className="h-3.5 w-3.5 mr-1.5" />Shutdowns</TabsTrigger>
+        </TabsList>
+
+        {/* KANBAN TAB */}
+        <TabsContent value="kanban">
+          <div className="flex gap-4 mt-4">
+            {/* LEFT: Planning Queue */}
+            {leftPanelOpen && (
+              <div className="w-72 shrink-0 hidden lg:block">
+                <Card className="border border-border/60 shadow-sm sticky top-0">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <ClipboardList className="h-4 w-4 text-sky-600" />
+                      Planning Queue
+                      <Badge variant="secondary" className="ml-auto text-xs">{filteredMRs.length}</Badge>
+                    </CardTitle>
+                    <div className="flex items-center gap-2 mt-2">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input placeholder="Search..." value={mrSearch} onChange={e => setMrSearch(e.target.value)} className="pl-8 h-8 text-xs" />
+                      </div>
+                      <Select value={mrFilterPriority} onValueChange={setMrFilterPriority}>
+                        <SelectTrigger className="w-24 h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Med</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                          <SelectItem value="urgent">Urgent</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <ScrollArea className="h-[calc(100vh-340px)]">
+                      <div className="p-2 space-y-1.5">
+                        {filteredMRs.length === 0 ? (
+                          <div className="text-center py-8 text-muted-foreground text-xs">No approved requests</div>
+                        ) : filteredMRs.map(mr => (
+                          <div
+                            key={mr.id}
+                            className={`p-2.5 rounded-lg border transition-all cursor-pointer ${
+                              selectedMRs.includes(mr.id) ? 'border-emerald-400 bg-emerald-50/50' : 'border-transparent hover:bg-muted/50'
+                            }`}
+                            onClick={() => toggleMRSelection(mr.id)}
+                          >
+                            <div className="flex items-start gap-2">
+                              <GripVertical className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono text-[10px] text-muted-foreground">{mr.requestNumber}</span>
+                                  <PriorityBadge priority={mr.priority} />
+                                </div>
+                                <p className="text-xs font-medium mt-1 truncate">{mr.title}</p>
+                                <div className="flex items-center gap-1.5 mt-1">
+                                  <span className="text-[10px] text-muted-foreground">{mr.assetName || 'N/A'}</span>
+                                </div>
+                                <div className="flex items-center justify-between mt-2">
+                                  <SLAIndicator createdAt={mr.createdAt} priority={mr.priority} />
+                                  <Button size="sm" className="h-6 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white px-2"
+                                    onClick={(e) => { e.stopPropagation(); handleCreateWOFromMR(mr.id); }}>
+                                    Create WO
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* MAIN: Kanban Board */}
+            <div className="flex-1 min-w-0">
+              {/* Filters */}
+              <div className="filter-row flex items-center gap-2 flex-wrap mb-4">
+                <div className="relative flex-1 min-w-[200px] max-w-xs">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder="Search WOs..." value={woSearch} onChange={e => setWoSearch(e.target.value)} className="pl-9" />
+                </div>
+                <Select value={woFilterPriority} onValueChange={setWoFilterPriority}>
+                  <SelectTrigger className="w-36"><SelectValue placeholder="Priority" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Priority</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+                {selectedWOs.length > 0 && (
+                  <Button variant="outline" size="sm" className="gap-1.5 border-emerald-300 text-emerald-700" onClick={() => setWorkPackageDialogOpen(true)}>
+                    <Layers className="h-3.5 w-3.5" /> Package ({selectedWOs.length})
+                  </Button>
+                )}
+              </div>
+
+              {/* Kanban Columns */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+                {KANBAN_COLUMNS.map(col => (
+                  <div key={col.key}>
+                    <div className={`flex items-center gap-2 px-3 py-2 rounded-t-lg border ${col.color} font-medium text-xs`}>
+                      <col.icon className="h-3.5 w-3.5" />
+                      {col.label}
+                      <Badge variant="outline" className="ml-auto text-[10px] bg-white/60">{kanbanData[col.key]?.length || 0}</Badge>
+                    </div>
+                    <ScrollArea className="h-[calc(100vh-420px)] bg-muted/30 rounded-b-lg border border-t-0 p-2">
+                      <div className="space-y-2">
+                        {kanbanData[col.key]?.length === 0 && (
+                          <div className="text-center py-6 text-muted-foreground text-xs">No work orders</div>
+                        )}
+                        {kanbanData[col.key]?.map(wo => (
+                          <WOCard
+                            key={wo.id}
+                            wo={wo}
+                            selected={selectedWOs.includes(wo.id)}
+                            onToggleSelect={() => toggleWOSelection(wo.id)}
+                            onClick={() => { setDetailWO(wo); setDetailSheetOpen(true); }}
+                          />
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* RIGHT: Capacity Planning */}
+            {rightPanelOpen && (
+              <div className="w-72 shrink-0 hidden xl:block">
+                <Card className="border border-border/60 shadow-sm sticky top-0">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Users className="h-4 w-4 text-emerald-600" />
+                      Capacity Planning
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <ScrollArea className="h-[calc(100vh-340px)]">
+                      <div className="p-2 space-y-2">
+                        {/* Technician Cards */}
+                        {techCapacity.map(tech => (
+                          <div key={tech.id} className={`p-2.5 rounded-lg border ${tech.overAllocated ? 'border-red-200 bg-red-50/30' : 'border-transparent hover:bg-muted/50'}`}>
+                            <div className="flex items-center gap-2">
+                              <div className={`h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${tech.overAllocated ? 'bg-red-500' : 'bg-emerald-500'}`}>
+                                {tech.fullName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium truncate">{tech.fullName}</p>
+                                <p className="text-[10px] text-muted-foreground">{tech.assignedCount} WOs · {tech.totalHours}h</p>
+                              </div>
+                              {tech.overAllocated && (
+                                <TooltipProvider><Tooltip><TooltipTrigger asChild>
+                                  <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                                </TooltipTrigger><TooltipContent>Over-allocated</TooltipContent></Tooltip></TooltipProvider>
+                              )}
+                            </div>
+                            <div className="mt-2">
+                              <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+                                <span>Utilization</span>
+                                <span className={tech.overAllocated ? 'text-red-600 font-medium' : ''}>{tech.utilization}%</span>
+                              </div>
+                              <Progress value={Math.min(tech.utilization, 100)} className="h-1.5" />
+                            </div>
+                            {/* Simple shift grid M-F */}
+                            <div className="grid grid-cols-5 gap-0.5 mt-2">
+                              {['M', 'T', 'W', 'T', 'F'].map((day, i) => (
+                                <div key={i} className="h-5 rounded text-[8px] flex items-center justify-center font-medium bg-emerald-100 text-emerald-700">
+                                  {day}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+
+                        {techCapacity.length === 0 && (
+                          <div className="text-center py-8 text-muted-foreground text-xs">No technicians found</div>
+                        )}
+
+                        {/* Skill Matching Suggestions */}
+                        <Separator className="my-2" />
+                        <div className="px-1">
+                          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Skill Match Suggestions</p>
+                          <div className="space-y-1.5">
+                            {workOrders.filter(wo => !wo.assignedTo && !['completed', 'closed'].includes(wo.status)).slice(0, 3).map(wo => (
+                              <div key={wo.id} className="p-2 rounded border border-dashed border-emerald-200 bg-emerald-50/30">
+                                <p className="text-[10px] font-medium truncate">{wo.title}</p>
+                                <p className="text-[10px] text-muted-foreground">Priority: {wo.priority} · Est: {wo.estimatedHours || '?'}h</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* WORK PACKAGE TAB */}
+        <TabsContent value="work-package">
+          <Card className="border border-border/60 shadow-sm mt-4">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2"><Layers className="h-4 w-4 text-emerald-600" />Work Package Builder</CardTitle>
+                  <CardDescription className="text-xs mt-1">Group multiple work orders into a single coordinated work package</CardDescription>
+                </div>
+                {selectedWOs.length > 0 && (
+                  <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" size="sm" onClick={() => setWorkPackageDialogOpen(true)}>
+                    <Layers className="h-4 w-4 mr-1.5" />Create Package ({selectedWOs.length})
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-2 flex-wrap mb-4">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder="Search WOs to add..." value={woSearch} onChange={e => setWoSearch(e.target.value)} className="pl-9" />
+                </div>
+                {selectedWOs.length > 0 && (
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedWOs([])}>
+                    <X className="h-3.5 w-3.5 mr-1" />Clear Selection
+                  </Button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {filteredWOs.filter(wo => !['completed', 'closed'].includes(wo.status)).map(wo => (
+                  <div
+                    key={wo.id}
+                    className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                      selectedWOs.includes(wo.id)
+                        ? 'border-emerald-400 bg-emerald-50/50 ring-1 ring-emerald-200'
+                        : 'border-border/60 hover:border-emerald-200 hover:shadow-sm'
+                    }`}
+                    onClick={() => toggleWOSelection(wo.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs text-muted-foreground">{wo.woNumber}</span>
+                      <div className={`h-4 w-4 rounded border-2 flex items-center justify-center ${selectedWOs.includes(wo.id) ? 'bg-emerald-500 border-emerald-500' : 'border-muted-foreground/30'}`}>
+                        {selectedWOs.includes(wo.id) && <CheckCircle2 className="h-3 w-3 text-white" />}
+                      </div>
+                    </div>
+                    <p className="text-sm font-medium mt-1.5 truncate">{wo.title}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <PriorityBadge priority={wo.priority} />
+                      <span className="text-[10px] text-muted-foreground">{wo.assetName || 'No asset'}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground">
+                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{wo.estimatedHours || '?'}h</span>
+                      {wo.assignee && <span className="flex items-center gap-1"><UserCheck className="h-3 w-3" />{wo.assignee.fullName}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {selectedWOs.length > 1 && (
+                <Card className="mt-4 border-emerald-200 bg-emerald-50/30">
+                  <CardContent className="p-4">
+                    <p className="text-sm font-semibold text-emerald-800 mb-2">Dependency Manager</p>
+                    <p className="text-xs text-muted-foreground mb-3">Define execution order for selected work orders</p>
+                    <div className="space-y-2">
+                      {selectedWOs.map((woId, idx) => {
+                        const wo = workOrders.find(w => w.id === woId);
+                        if (!wo) return null;
+                        return (
+                          <div key={woId} className="flex items-center gap-3">
+                            <Badge variant="outline" className="font-mono text-xs">{wo.woNumber}</Badge>
+                            <span className="text-xs truncate flex-1">{wo.title}</span>
+                            {idx > 0 && <ArrowDown className="h-3.5 w-3.5 text-emerald-600" />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* BACKLOG AGING TAB */}
+        <TabsContent value="backlog">
+          <Card className="border border-border/60 shadow-sm mt-4">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2"><ArrowDown className="h-4 w-4 text-amber-600" />Backlog Aging Analysis</CardTitle>
+              <CardDescription className="text-xs">Open work orders by age bracket with urgency indicators</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* Summary */}
+              <div className="grid grid-cols-5 gap-3 mb-6">
+                {backlogAging.map(bracket => (
+                  <div key={bracket.label} className={`text-center p-3 rounded-lg ${bracket.color}`}>
+                    <p className="text-2xl font-bold">{bracket.count}</p>
+                    <p className="text-[11px] font-medium mt-1">{bracket.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Detail Table */}
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>WO #</TableHead>
+                      <TableHead>Title</TableHead>
+                      <TableHead>Priority</TableHead>
+                      <TableHead>Age (days)</TableHead>
+                      <TableHead>Assigned To</TableHead>
+                      <TableHead className="hidden md:table-cell">Asset</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {backlogAging.flatMap(b => b.items).length === 0 ? (
+                      <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground text-sm">No backlog items</TableCell></TableRow>
+                    ) : backlogAging.flatMap(b => b.items.map(wo => {
+                      const days = differenceInDays(new Date(), new Date(wo.createdAt));
+                      const bracket = backlogAging.find(b => days >= b.min && days <= b.max);
+                      return (
+                        <TableRow key={wo.id} className="hover:bg-muted/30 cursor-pointer" onClick={() => { setDetailWO(wo); setDetailSheetOpen(true); }}>
+                          <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
+                          <TableCell className="font-medium text-sm max-w-[200px] truncate">{wo.title}</TableCell>
+                          <TableCell><PriorityBadge priority={wo.priority} /></TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={bracket?.color || ''}>{days}d</Badge>
+                          </TableCell>
+                          <TableCell className="text-sm">{wo.assignee?.fullName || '—'}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground hidden md:table-cell max-w-[150px] truncate">{wo.assetName || '—'}</TableCell>
+                          <TableCell>
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={(e) => { e.stopPropagation(); setDetailWO(wo); setDetailSheetOpen(true); }}>
+                              <Eye className="h-3 w-3 mr-1" />View
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    }))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* SHUTDOWN COORDINATION TAB */}
+        <TabsContent value="shutdown">
+          <Card className="border border-border/60 shadow-sm mt-4">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2"><CalendarClock className="h-4 w-4 text-red-600" />Shutdown Coordination</CardTitle>
+                  <CardDescription className="text-xs">Planned shutdowns with associated work orders and critical paths</CardDescription>
+                </div>
+                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" size="sm">
+                  <Plus className="h-4 w-4 mr-1.5" />Plan Shutdown
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* Sample shutdown data (would come from API in production) */}
+              <div className="space-y-4">
+                {[
+                  { id: '1', name: 'Annual Plant Turnaround', startDate: '2025-03-15', endDate: '2025-03-22', status: 'planning', woCount: 12, criticalPath: true },
+                  { id: '2', name: 'Boiler Inspection Shutdown', startDate: '2025-02-10', endDate: '2025-02-12', status: 'scheduled', woCount: 5, criticalPath: false },
+                  { id: '3', name: 'Compressor Overhaul', startDate: '2025-04-01', endDate: '2025-04-05', status: 'draft', woCount: 8, criticalPath: true },
+                ].map(shutdown => (
+                  <Card key={shutdown.id} className={`border ${shutdown.criticalPath ? 'border-red-200' : 'border-border/60'}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-4">
+                        <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${shutdown.criticalPath ? 'bg-red-100 text-red-600' : 'bg-sky-100 text-sky-600'}`}>
+                          {shutdown.criticalPath ? <AlertCircle className="h-5 w-5" /> : <Calendar className="h-5 w-5" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-sm font-semibold">{shutdown.name}</h3>
+                            <Badge variant="outline" className={`text-[10px] ${shutdown.status === 'planning' ? 'bg-amber-50 text-amber-700' : shutdown.status === 'scheduled' ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-600'}`}>
+                              {shutdown.status.toUpperCase()}
+                            </Badge>
+                            {shutdown.criticalPath && <Badge variant="destructive" className="text-[10px]">CRITICAL PATH</Badge>}
+                          </div>
+                          <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{shutdown.startDate} — {shutdown.endDate}</span>
+                            <span className="flex items-center gap-1"><ClipboardList className="h-3 w-3" />{shutdown.woCount} WOs</span>
+                          </div>
+                          {/* Simple critical path visualization */}
+                          {shutdown.criticalPath && (
+                            <div className="mt-3 flex items-center gap-1">
+                              <div className="h-6 px-2 rounded bg-emerald-100 text-emerald-700 text-[10px] font-medium flex items-center">Prep</div>
+                              <ArrowDown className="h-3 w-3 text-muted-foreground" />
+                              <div className="h-6 px-2 rounded bg-amber-100 text-amber-700 text-[10px] font-medium flex items-center">Shutdown</div>
+                              <ArrowDown className="h-3 w-3 text-muted-foreground" />
+                              <div className="h-6 px-2 rounded bg-red-100 text-red-700 text-[10px] font-medium flex items-center">Repair</div>
+                              <ArrowDown className="h-3 w-3 text-muted-foreground" />
+                              <div className="h-6 px-2 rounded bg-sky-100 text-sky-700 text-[10px] font-medium flex items-center">Test</div>
+                              <ArrowDown className="h-3 w-3 text-muted-foreground" />
+                              <div className="h-6 px-2 rounded bg-emerald-100 text-emerald-700 text-[10px] font-medium flex items-center">Start</div>
+                            </div>
+                          )}
+                        </div>
+                        <Button variant="outline" size="sm" className="h-8 shrink-0">
+                          <Eye className="h-3.5 w-3.5 mr-1" />View
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* WO Detail Sheet */}
+      <Sheet open={detailSheetOpen} onOpenChange={setDetailSheetOpen}>
+        <SheetContent className="sm:max-w-lg w-full overflow-y-auto">
+          {detailWO && (
+            <>
+              <SheetHeader className="mb-4">
+                <SheetTitle className="flex items-center gap-2">
+                  <ClipboardList className="h-5 w-5 text-emerald-600" />
+                  {detailWO.woNumber}
+                </SheetTitle>
+                <SheetDescription>{detailWO.title}</SheetDescription>
+              </SheetHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div><Label className="text-xs text-muted-foreground">Status</Label><p className="text-sm mt-1 capitalize">{detailWO.status?.replace(/_/g, ' ')}</p></div>
+                  <div><Label className="text-xs text-muted-foreground">Priority</Label><div className="mt-1"><PriorityBadge priority={detailWO.priority} /></div></div>
+                  <div><Label className="text-xs text-muted-foreground">Type</Label><p className="text-sm mt-1 capitalize">{detailWO.type || 'Corrective'}</p></div>
+                  <div><Label className="text-xs text-muted-foreground">Asset</Label><p className="text-sm mt-1">{detailWO.assetName || 'N/A'}</p></div>
+                  <div><Label className="text-xs text-muted-foreground">Assigned To</Label><p className="text-sm mt-1">{detailWO.assignee?.fullName || 'Unassigned'}</p></div>
+                  <div><Label className="text-xs text-muted-foreground">Est. Hours</Label><p className="text-sm mt-1">{detailWO.estimatedHours || '?'}h</p></div>
+                  <div><Label className="text-xs text-muted-foreground">Planned Start</Label><p className="text-sm mt-1">{detailWO.plannedStart ? formatDate(detailWO.plannedStart) : '—'}</p></div>
+                  <div><Label className="text-xs text-muted-foreground">Created</Label><p className="text-sm mt-1">{formatDate(detailWO.createdAt)}</p></div>
+                </div>
+                {detailWO.description && (
+                  <div><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailWO.description}</p></div>
+                )}
+                {detailWO.safetyNotes && (
+                  <div><Label className="text-xs text-muted-foreground">Safety Notes</Label><p className="text-sm mt-1 bg-amber-50 rounded-lg p-3 text-amber-800">{detailWO.safetyNotes}</p></div>
+                )}
+                {/* Team Members */}
+                {detailWO.teamMembers && detailWO.teamMembers.length > 0 && (
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Team Members</Label>
+                    <div className="mt-1 space-y-1">
+                      {detailWO.teamMembers.map((tm: any) => (
+                        <div key={tm.id} className="flex items-center gap-2 text-sm">
+                          <div className="h-6 w-6 rounded-full bg-emerald-100 flex items-center justify-center text-[10px] font-bold text-emerald-700">
+                            {tm.user?.fullName?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                          </div>
+                          <span>{tm.user?.fullName}</span>
+                          <Badge variant="outline" className="text-[10px]">{tm.role?.replace(/_/g, ' ')}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Create WO Dialog */}
+      <ResponsiveDialog
+        open={createWODialogOpen}
+        onOpenChange={setCreateWODialogOpen}
+        title="Create Work Order"
+        footer={<Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleCreateWO} disabled={createWOLoading}>{createWOLoading ? 'Creating...' : 'Create WO'}</Button>}
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Title *</Label>
+            <Input value={createWOForm.title} onChange={e => setCreateWOForm(f => ({ ...f, title: e.target.value }))} placeholder="Work order title" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Priority</Label>
+              <Select value={createWOForm.priority} onValueChange={v => setCreateWOForm(f => ({ ...f, priority: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="urgent">Urgent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Type</Label>
+              <Select value={createWOForm.type} onValueChange={v => setCreateWOForm(f => ({ ...f, type: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="corrective">Corrective</SelectItem>
+                  <SelectItem value="preventive">Preventive</SelectItem>
+                  <SelectItem value="predictive">Predictive</SelectItem>
+                  <SelectItem value="emergency">Emergency</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Est. Hours</Label>
+              <Input type="number" value={createWOForm.estimatedHours} onChange={e => setCreateWOForm(f => ({ ...f, estimatedHours: e.target.value }))} placeholder="4" />
+            </div>
+            <div className="space-y-2">
+              <Label>Planned Start</Label>
+              <Input type="date" value={createWOForm.plannedStart} onChange={e => setCreateWOForm(f => ({ ...f, plannedStart: e.target.value }))} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Notes</Label>
+            <Textarea value={createWOForm.notes} onChange={e => setCreateWOForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional notes..." rows={3} />
+          </div>
+        </div>
+      </ResponsiveDialog>
+
+      {/* Work Package Dialog */}
+      <ResponsiveDialog
+        open={workPackageDialogOpen}
+        onOpenChange={setWorkPackageDialogOpen}
+        title="Create Work Package"
+        footer={<Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleCreateWorkPackage} disabled={wpLoading}>{wpLoading ? 'Creating...' : 'Create Package'}</Button>}
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Package Name *</Label>
+            <Input value={wpForm.name} onChange={e => setWpForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g., Line 3 Overhaul" />
+          </div>
+          <div className="space-y-2">
+            <Label>Assign To</Label>
+            <Select value={wpForm.assignTo} onValueChange={v => setWpForm(f => ({ ...f, assignTo: v }))}>
+              <SelectTrigger><SelectValue placeholder="Select technician..." /></SelectTrigger>
+              <SelectContent>
+                {technicians.map(tech => <SelectItem key={tech.id} value={tech.id}>{tech.fullName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Scheduled Date</Label>
+              <Input type="date" value={wpForm.scheduledDate} onChange={e => setWpForm(f => ({ ...f, scheduledDate: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Shift</Label>
+              <Select value={wpForm.shift} onValueChange={v => setWpForm(f => ({ ...f, shift: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day">Day Shift</SelectItem>
+                  <SelectItem value="night">Night Shift</SelectItem>
+                  <SelectItem value="weekend">Weekend</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Selected Work Orders ({selectedWOs.length})</Label>
+            <ScrollArea className="max-h-32 mt-1">
+              <div className="space-y-1">
+                {selectedWOs.map(woId => {
+                  const wo = workOrders.find(w => w.id === woId);
+                  return wo ? <div key={woId} className="text-xs flex items-center gap-2"><Badge variant="outline" className="font-mono text-[10px]">{wo.woNumber}</Badge><span className="truncate">{wo.title}</span></div> : null;
+                })}
+              </div>
+            </ScrollArea>
+          </div>
+        </div>
+      </ResponsiveDialog>
+    </div>
+  );
+}
+
+// ============================================================================
+// WO CARD COMPONENT (for Kanban)
+// ============================================================================
+
+function WOCard({ wo, selected, onToggleSelect, onClick }: { wo: any; selected: boolean; onToggleSelect: () => void; onClick: () => void }) {
+  return (
+    <div
+      className={`p-3 rounded-lg border transition-all cursor-pointer group ${
+        selected ? 'border-emerald-400 bg-emerald-50/50 ring-1 ring-emerald-200' : 'border-border/60 hover:border-emerald-200 hover:shadow-sm bg-white'
+      }`}
+      onClick={onClick}
+    >
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="font-mono text-[10px] text-muted-foreground">{wo.woNumber}</span>
+        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+          <TooltipProvider><Tooltip><TooltipTrigger asChild>
+            <button onClick={onToggleSelect} className={`h-4 w-4 rounded border-2 flex items-center justify-center ${selected ? 'bg-emerald-500 border-emerald-500' : 'border-muted-foreground/30 hover:border-emerald-400'}`}>
+              {selected && <CheckCircle2 className="h-3 w-3 text-white" />}
+            </button>
+          </TooltipTrigger><TooltipContent>Toggle selection</TooltipContent></Tooltip></TooltipProvider>
+        </div>
+      </div>
+      <p className="text-xs font-medium leading-tight line-clamp-2 mb-2">{wo.title}</p>
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <PriorityBadge priority={wo.priority} />
+      </div>
+      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+        {wo.assetName && <span className="truncate max-w-[80px]">{wo.assetName}</span>}
+      </div>
+      <Separator className="my-2" />
+      <div className="flex items-center justify-between">
+        {wo.assignee ? (
+          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <div className="h-4 w-4 rounded-full bg-emerald-100 flex items-center justify-center text-[8px] font-bold text-emerald-700">
+              {wo.assignee.fullName?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+            </div>
+            <span className="truncate max-w-[60px]">{wo.assignee.fullName}</span>
+          </span>
+        ) : (
+          <span className="text-[10px] text-muted-foreground italic">Unassigned</span>
+        )}
+        {wo.createdAt && <SLAIndicator createdAt={wo.createdAt} priority={wo.priority} />}
+      </div>
+    </div>
+  );
+}

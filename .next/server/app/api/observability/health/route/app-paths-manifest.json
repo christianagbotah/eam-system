@@ -1,0 +1,3 @@
+{
+  "/api/observability/health/route": "app/api/observability/health/route.js"
+}

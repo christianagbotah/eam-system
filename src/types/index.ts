@@ -564,6 +564,9 @@ export type PageName =
   | 'pm-templates'
   | 'pm-triggers'
   | 'pm-calendar'
+  // Planner Workbench
+  | 'planner-workbench'
+  | 'enterprise-reports'
   // Repairs Module (6 subpages)
   | 'repairs-material-requests'
   | 'repairs-tool-requests'

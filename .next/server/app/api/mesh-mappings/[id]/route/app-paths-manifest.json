@@ -1,0 +1,3 @@
+{
+  "/api/mesh-mappings/[id]/route": "app/api/mesh-mappings/[id]/route.js"
+}
