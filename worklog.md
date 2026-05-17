@@ -3642,3 +3642,20 @@ Stage Summary:
 - Document similarity detection and recommendation engine
 - Search analytics with popular/zero-result tracking
 - ESLint clean, Prisma generated successfully
+---
+Task ID: 1
+Agent: Main
+Task: Fix Prisma schema push error — "Can't DROP INDEX assets_plantId_fkey"
+
+Work Log:
+- Diagnosed the error: Prisma 7.8.0 uses `_fkey` suffix (PostgreSQL convention) for index naming, but MySQL/MariaDB auto-names FK indexes differently (e.g., `assets_ibfk_N`)
+- Created `scripts/fix-schema-drift.sql` — dynamic SQL script to drop all FK constraints and non-unique indexes on the `assets` table before re-pushing
+- Created `scripts/fix-schema-drift.sh` — automated bash script with interactive prompts that: (1) reads DB credentials from .env, (2) drops FK constraints, (3) drops non-unique indexes, (4) runs `prisma db push`
+- Validated schema with `prisma validate` and `prisma generate` — no schema issues found
+- Committed as `c0b5c67` → rebased to `b38a896` after pulling remote changes, pushed to origin/main
+
+Stage Summary:
+- Root cause: Schema drift between Prisma's expected index naming and MySQL/MariaDB's actual FK index naming
+- Fix scripts committed and pushed to `scripts/fix-schema-drift.sql` and `scripts/fix-schema-drift.sh`
+- User should run one of these on their production VPS before running `prisma db push`
+- Alternative quick fix: `prisma db push --force-reset` (if no data to preserve) or `prisma db push --accept-data-loss`
