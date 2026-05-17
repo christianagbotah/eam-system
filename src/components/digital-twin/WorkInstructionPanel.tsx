@@ -22,6 +22,8 @@ import {
   Package,
   SkipForward,
   Send,
+  XCircle,
+  Zap,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +37,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { api } from '@/lib/api';
+import { toast } from 'sonner';
+import { useAuthStore } from '@/stores/authStore';
 import type {
   WorkInstruction,
   WorkInstructionStep,
@@ -163,6 +167,10 @@ export default function WorkInstructionPanel({
   isOpen,
   onClose,
 }: WorkInstructionPanelProps) {
+  // Auth
+  const { user } = useAuthStore();
+  const technicianId = user?.id || 'unknown';
+
   // Data state
   const [instruction, setInstruction] = useState<WorkInstruction | null>(null);
   const [loading, setLoading] = useState(true);
@@ -283,13 +291,13 @@ export default function WorkInstructionPanel({
     try {
       await api.post(`/api/work-instructions/${instruction.id}/execute`, {
         action: 'start',
-        technicianId: 'current_user',
+        technicianId,
         workOrderId: '',
         stepResults: [],
         safetyResults: Array.from(safetyPassed.entries()).map(([stepNumber, isPassed]) => ({
           stepNumber,
           isPassed,
-          acknowledgedById: 'current_user',
+          acknowledgedById: technicianId,
           acknowledgedAt: new Date().toISOString(),
           notes: null,
         })),
@@ -305,7 +313,7 @@ export default function WorkInstructionPanel({
     } finally {
       setIsSubmitting(false);
     }
-  }, [instruction, safetyPassed]);
+  }, [instruction, safetyPassed, technicianId]);
 
   const pauseWork = useCallback(async () => {
     if (!instruction) return;
@@ -313,23 +321,57 @@ export default function WorkInstructionPanel({
     try {
       await api.post(`/api/work-instructions/${instruction.id}/execute`, {
         action: 'pause',
-        technicianId: 'current_user',
+        technicianId,
         workOrderId: '',
         stepResults: Array.from(stepResults.values()),
         notes,
         completionEvidence: [],
       });
       setExecStatus('paused');
+      toast.success('Work paused');
     } catch {
       setExecStatus('paused');
     } finally {
       setIsSubmitting(false);
     }
-  }, [instruction, stepResults, notes]);
+  }, [instruction, stepResults, notes, technicianId]);
 
   const resumeWork = useCallback(async () => {
-    setExecStatus('in_progress');
-  }, []);
+    if (!instruction) return;
+    try {
+      await api.post(`/api/work-instructions/${instruction.id}/execute`, {
+        action: 'resume',
+        workOrderId: '',
+        technicianId,
+      });
+      setExecStatus('in_progress');
+      toast.success('Work resumed');
+    } catch {
+      setExecStatus('in_progress'); // fallback to local state
+      toast.error('Failed to sync resume with server');
+    }
+  }, [instruction, technicianId]);
+
+  const abandonWork = useCallback(async () => {
+    if (!instruction) return;
+    try {
+      await api.post(`/api/work-instructions/${instruction.id}/execute`, {
+        action: 'abandon',
+        workOrderId: '',
+        technicianId,
+      });
+      setExecStatus('not_started');
+      setCurrentStep(1);
+      setStepResults(new Map());
+      setSafetyPassed(new Map());
+      setToolVerified(new Map());
+      setPartVerified(new Map());
+      setNotes('');
+      toast.info('Work instruction abandoned');
+    } catch {
+      toast.error('Failed to abandon');
+    }
+  }, [instruction, technicianId]);
 
   const completeWork = useCallback(async () => {
     if (!instruction) return;
@@ -337,13 +379,13 @@ export default function WorkInstructionPanel({
     try {
       await api.post(`/api/work-instructions/${instruction.id}/execute`, {
         action: 'complete',
-        technicianId: 'current_user',
+        technicianId,
         workOrderId: '',
         stepResults: Array.from(stepResults.values()),
         safetyResults: Array.from(safetyPassed.entries()).map(([stepNumber, isPassed]) => ({
           stepNumber,
           isPassed,
-          acknowledgedById: 'current_user',
+          acknowledgedById: technicianId,
           acknowledgedAt: new Date().toISOString(),
           notes: null,
         })),
@@ -352,7 +394,7 @@ export default function WorkInstructionPanel({
           toolName: instruction.requiredTools.find((t) => t.id === toolId)?.toolName ?? toolId,
           isVerified,
           verifiedAt: isVerified ? new Date().toISOString() : null,
-          verifiedById: isVerified ? 'current_user' : null,
+          verifiedById: isVerified ? technicianId : null,
           notes: null,
         })),
         partVerifications: Array.from(partVerified.entries()).map(([partId, isVerified]) => ({
@@ -360,7 +402,7 @@ export default function WorkInstructionPanel({
           partName: instruction.requiredParts.find((p) => p.id === partId)?.partName ?? partId,
           isVerified,
           verifiedAt: isVerified ? new Date().toISOString() : null,
-          verifiedById: isVerified ? 'current_user' : null,
+          verifiedById: isVerified ? technicianId : null,
           quantityVerified: null,
           notes: null,
         })),
@@ -368,13 +410,14 @@ export default function WorkInstructionPanel({
         completionEvidence: [],
       });
       setExecStatus('completed');
+      toast.success('Work instruction completed!');
     } catch {
       // Still mark completed locally
       setExecStatus('completed');
     } finally {
       setIsSubmitting(false);
     }
-  }, [instruction, stepResults, safetyPassed, toolVerified, partVerified, notes]);
+  }, [instruction, stepResults, safetyPassed, toolVerified, partVerified, notes, technicianId]);
 
   // ─── Render ───────────────────────────────────────────────────────────
 
@@ -927,6 +970,15 @@ export default function WorkInstructionPanel({
                         <Send className="h-3.5 w-3.5" />
                       )}
                       Complete & Submit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs gap-1.5 text-red-500 border-red-300 hover:bg-red-50"
+                      onClick={abandonWork}
+                    >
+                      <XCircle className="h-3.5 w-3.5" />
+                      Abandon
                     </Button>
                   </>
                 )}
