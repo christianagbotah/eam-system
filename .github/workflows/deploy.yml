@@ -1,153 +1,240 @@
 # =============================================================================
-# Auto-Deploy to Webuzo VPS on push to main
+# iAssetsPro EAM — Deployment Pipeline
 # =============================================================================
-# Triggers: Every push to 'main' branch
-# What it does:
-#   1. SSH into the VPS
-#   2. Pulls latest code from GitHub
-#   3. Installs dependencies
-#   4. Copies prebuilt Prisma client
-#   5. Builds Next.js (standalone)
-#   6. Copies static assets into standalone
-#   7. Patches server for Webuzo proxy
-#   8. Restarts the PM2 process
+# Triggers on push to main after CI passes.
+# Builds Docker image, pushes to GHCR, deploys via SSH, runs smoke test.
 #
-# ONE-TIME SETUP REQUIRED:
-#   1. Add these GitHub Secrets (Settings > Secrets and variables > Actions):
-#      - VPS_HOST       → Your VPS IP or domain (e.g. 103.x.x.x)
-#      - VPS_USER       → SSH username (e.g. root, or your Webuzo user)
-#      - VPS_SSH_KEY    → Full private key contents (cat ~/.ssh/id_rsa)
-#      - VPS_PORT       → SSH port (default: 22)
-#      - VPS_APP_PATH   → App path on VPS (e.g. /root/eam-system)
+# REQUIRED GITHUB SECRETS:
+#   DOCKER_REGISTRY_USER    — GHCR username (e.g. your GitHub username)
+#   DOCKER_REGISTRY_TOKEN   — GitHub Personal Access Token (packages:write)
+#   DEPLOY_HOST             — VPS IP or domain
+#   DEPLOY_USER             — SSH username
+#   DEPLOY_SSH_KEY          — Full SSH private key
+#   DEPLOY_PORT             — SSH port (default: 22)
+#   DEPLOY_PATH             — App path on VPS (default: /opt/iassetspro)
+#   PRODUCTION_URL          — Production URL for smoke tests
 #
-#   2. Run scripts/webuzo-setup.sh ONCE on the VPS to prepare it
+# OPTIONAL SECRETS:
+#   SLACK_WEBHOOK_URL       — Slack webhook for deploy notifications
 # =============================================================================
 
-name: Deploy to VPS
+name: Deploy
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:  # Allow manual trigger from GitHub Actions tab
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: "Skip waiting for CI pipeline"
+        type: boolean
+        default: false
 
+# Only one deployment at a time
 concurrency:
-  group: vps-deploy
-  cancel-in-progress: true  # Only one deploy at a time
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/iassetspro-eam
 
 jobs:
-  deploy:
-    name: Deploy to Webuzo VPS
+  # ---------------------------------------------------------------------------
+  # Job: Deploy to Production
+  # ---------------------------------------------------------------------------
+  deploy-production:
+    name: Deploy to Production
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
+    # Wait for CI to pass unless manually skipped
     steps:
-      - name: Checkout code
+      - name: Wait for CI to succeed
+        if: ${{ !inputs.skip_tests }}
+        uses: fountainhead/action-wait-for-check@v1.0.0
+        id: wait-for-ci
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          checkName: Build
+          ref: ${{ github.sha }}
+          timeoutSeconds: 900
+
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_REGISTRY_USER }}
+          password: ${{ secrets.DOCKER_REGISTRY_TOKEN }}
+
+      - name: Generate version tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_BUILD_VERSION=${{ github.sha }}
+            NEXT_PUBLIC_BUILD_TIME=${{ github.event.head_commit.timestamp }}
 
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
           script: |
             set -e
 
-            APP_PATH="${{ secrets.VPS_APP_PATH || '/root/eam-system' }}"
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/iassetspro' }}"
+            IMAGE_TAG="${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
 
             echo "========================================="
-            echo "  EAM Auto-Deploy to Webuzo VPS"
+            echo "  iAssetsPro EAM — Production Deploy"
             echo "  $(date '+%Y-%m-%d %H:%M:%S %Z')"
+            echo "  Commit: ${{ github.sha }}"
             echo "========================================="
 
-            # ── Step 1: Pull latest code ──
-            echo ""
-            echo "[1/7] Pulling latest code..."
-            cd "$APP_PATH"
-            git fetch origin main
-            git reset --hard origin/main
-            echo "  Current commit: $(git log --oneline -1)"
+            # Ensure deploy directory exists
+            mkdir -p "$DEPLOY_PATH"
+            cd "$DEPLOY_PATH"
 
-            # ── Step 2: Install dependencies ──
-            echo ""
-            echo "[2/7] Installing dependencies..."
-            npm install --legacy-peer-deps 2>&1 | tail -5
-            echo "  Dependencies installed"
-
-            # ── Step 3: Copy prebuilt Prisma client ──
-            echo ""
-            echo "[3/7] Setting up Prisma client..."
-            if [ -d "prisma/prebuilt/.prisma" ]; then
-              cp -r prisma/prebuilt/.prisma node_modules/.prisma
-              echo "  Prebuilt Prisma client copied"
-            else
-              npx prisma generate
-              echo "  Prisma client generated (no prebuilt found)"
+            # Copy docker-compose from repo if it doesn't exist
+            if [ ! -f docker-compose.yml ]; then
+              echo "[WARN] docker-compose.yml not found — expecting pre-staged on VPS"
             fi
 
-            # ── Step 4: Build Next.js ──
-            echo ""
-            echo "[4/7] Building Next.js (standalone)..."
-            export NEXT_TELEMETRY_DISABLED=1
-            npx next build 2>&1 | tail -10
-            echo "  Build complete"
+            # Log in to GHCR
+            echo "${{ secrets.DOCKER_REGISTRY_TOKEN }}" | docker login ${{ env.DOCKER_REGISTRY }} \
+              -u "${{ secrets.DOCKER_REGISTRY_USER }}" --password-stdin
 
-            # ── Step 5: Copy assets into standalone ──
+            # Pull the latest image
             echo ""
-            echo "[5/7] Copying static assets to standalone..."
-            cp -r node_modules/.prisma/client .next/standalone/node_modules/.prisma/client
-            cp -r node_modules/@prisma/adapter-mariadb .next/standalone/node_modules/@prisma/adapter-mariadb 2>/dev/null || true
-            cp -r node_modules/mariadb .next/standalone/node_modules/mariadb 2>/dev/null || true
-            cp -r .next/static .next/standalone/.next/
-            cp -r public .next/standalone/
-            echo "  Assets copied"
+            echo "[1/3] Pulling latest Docker image..."
+            docker compose pull app 2>&1 || docker pull "$IMAGE_TAG" 2>&1
+            echo "  Image pulled successfully"
 
-            # ── Step 6: Patch server for Webuzo proxy ──
+            # Restart services
             echo ""
-            echo "[6/7] Patching server for reverse proxy..."
-            if [ -f "patch-server.js" ]; then
-              node patch-server.js
-              echo "  Server patched"
-            else
-              echo "  No patch-server.js found, skipping"
-            fi
+            echo "[2/3] Restarting services..."
+            docker compose up -d --force-recreate app 2>&1 || \
+              docker run -d --name iassetspro-app \
+                --restart unless-stopped \
+                -p 3000:3000 \
+                --env-file .env \
+                "$IMAGE_TAG"
+            echo "  Services restarted"
 
-            # ── Step 7: Restart the service ──
+            # Clean up old images
             echo ""
-            echo "[7/7] Restarting service..."
-            if command -v pm2 &> /dev/null; then
-              pm2 restart eam-system 2>/dev/null || pm2 start npm --name eam-system -- start
-              pm2 save
-              echo "  PM2 restarted successfully"
-            elif command -v systemctl &> /dev/null && sudo systemctl is-enabled eam-system 2>/dev/null; then
-              sudo systemctl restart eam-system
-              echo "  systemd service restarted"
-            else
-              echo "  WARNING: No process manager found!"
-              echo "  Run: pm2 start npm --name eam-system -- start"
-              exit 1
-            fi
+            echo "[3/3] Cleaning up old images..."
+            docker image prune -f
 
             echo ""
             echo "========================================="
             echo "  Deploy Complete!"
-            echo "  $(date '+%Y-%m-%d %H:%M:%S %Z')"
             echo "========================================="
 
-            # Health check
-            echo ""
-            echo "Running health check..."
-            sleep 5
-            for i in $(seq 1 8); do
-              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ --max-time 5 2>/dev/null || echo "000")
-              if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "307" ]; then
-                echo "  Health check PASSED (HTTP $HTTP_CODE)"
-                exit 0
-              fi
-              echo "  Attempt $i/8: HTTP $HTTP_CODE (retrying in 5s)..."
-              sleep 5
-            done
-            echo "  WARNING: Health check did not pass. Check PM2 logs: pm2 logs eam-system"
-            exit 0  # Don't fail the workflow - deploy itself succeeded
+      - name: Run smoke test against production
+        run: |
+          PRODUCTION_URL="${{ secrets.PRODUCTION_URL }}"
+          if [ -z "$PRODUCTION_URL" ]; then
+            echo "⚠️  PRODUCTION_URL secret not set — skipping smoke test"
+            exit 0
+          fi
+
+          echo "Running smoke test against $PRODUCTION_URL ..."
+
+          # Wait for the server to be ready
+          MAX_RETRIES=12
+          RETRY_DELAY=10
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              "${PRODUCTION_URL}/api/health" --max-time 10 2>/dev/null || echo "000")
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Smoke test PASSED — API health endpoint returned HTTP 200"
+              exit 0
+            fi
+
+            echo "  Attempt $i/$MAX_RETRIES: HTTP $HTTP_CODE (retrying in ${RETRY_DELAY}s)..."
+            sleep $RETRY_DELAY
+          done
+
+          echo "❌ Smoke test FAILED — health endpoint did not return 200 after $MAX_RETRIES attempts"
+          exit 1
+
+      # --- Success notification ---
+      - name: Deployment summary — Success
+        if: success()
+        run: |
+          echo "## ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Triggered by** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Image tag** | \`latest\` + \`sha-${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+
+      # --- Failure notification ---
+      - name: Deployment summary — Failure
+        if: failure()
+        run: |
+          echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Failed step** | ${{ github.job }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Action required** | Check logs above for details |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> ⚡ [View run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+
+      # --- Optional Slack notification ---
+      - name: Notify Slack on success
+        if: success() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-type: application/json' \
+            -d '{
+              "text": "✅ *iAssetsPro EAM* deployed to production\nCommit: `'${{ github.sha }}'` by '${{ github.actor }}'\nBranch: `${{ github.ref_name }}`"
+            }' || true
+
+      - name: Notify Slack on failure
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-type: application/json' \
+            -d '{
+              "text": "❌ *iAssetsPro EAM* deployment FAILED\nCommit: `'${{ github.sha }}'`\n<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
+            }' || true
