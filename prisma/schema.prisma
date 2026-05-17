@@ -4266,3 +4266,112 @@ model StoProgressReport {
   @@index([eventId, reportDate])
   @@map("sto_progress_reports")
 }
+
+// ============================================================================
+// MOBILE FIELD OPERATIONS (Phase 7)
+// ============================================================================
+
+model InspectionTemplate {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?  @db.Text
+  category        String?  // safety, quality, environmental, equipment, regulatory
+  frequency       String?  // daily, weekly, monthly, quarterly, annual, on_demand
+  estimatedMinutes Int?
+  sectionsJson    Json?    // array of {title, items: [{type, label, required, options, conditional}]}
+  passThreshold   Float?   @default(0.8) // minimum pass rate
+  isActive        Boolean  @default(true)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  inspections     MobileInspection[]
+
+  @@map("inspection_templates")
+}
+
+model MobileInspection {
+  id              String   @id @default(cuid())
+  templateId      String
+  assetId         String?
+  workOrderId     String?
+  inspectorId     String
+  status          String   @default("in_progress") // in_progress, completed, failed
+  startedAt       DateTime?
+  completedAt     DateTime?
+  score           Float?   // 0-1 overall score
+  passCount       Int      @default(0)
+  failCount       Int      @default(0)
+  conditionalCount Int     @default(0)
+  naCount         Int      @default(0)
+  totalItems      Int      @default(0)
+  resultsJson     Json?    // detailed results per item
+  findingsJson    Json?    // array of {itemId, severity, description, photos}
+  photosJson      Json?    // array of {url, caption, gps}
+  signatureData   String?  // base64 signature image
+  gpsCoordinates  Json?    // {lat, lng, accuracy}
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  template        InspectionTemplate @relation(fields: [templateId], references: [id])
+
+  @@index([templateId])
+  @@index([assetId])
+  @@index([inspectorId])
+  @@index([status])
+  @@map("mobile_inspections")
+}
+
+model GeofenceZone {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  zoneType        String   @default("radius") // radius, polygon
+  coordinates     Json?    // {center: {lat,lng}, radius} or {points: [{lat,lng}]}
+  plantId         String?
+  alertOnEnter    Boolean  @default(false)
+  alertOnExit     Boolean  @default(false)
+  requiresPermit  Boolean  @default(false)
+  hazardLevel     String?  // low, medium, high, critical
+  isActive        Boolean  @default(true)
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([plantId])
+  @@map("geofence_zones")
+}
+
+model GeofenceEvent {
+  id              String   @id @default(cuid())
+  zoneId          String
+  userId          String
+  eventType       String   // entered, exited
+  coordinates     Json?    // {lat, lng, accuracy}
+  timestamp       DateTime @default(now())
+
+  @@index([zoneId, timestamp])
+  @@index([userId])
+  @@map("geofence_events")
+}
+
+model SyncOperation {
+  id              String   @id @default(cuid())
+  userId          String
+  deviceId        String?
+  operationType   String   // upload, download, conflict
+  entityType      String?  // work_order, inspection, etc.
+  entityId        String?
+  dataJson        Json?
+  status          String   @default("pending") // pending, processing, completed, failed, conflict
+  conflictReason  String?
+  resolvedBy      String?
+  resolution      String?  // server_wins, client_wins, merge, manual
+  createdAt       DateTime @default(now())
+  resolvedAt      DateTime?
+
+  @@index([userId, status])
+  @@index([status])
+  @@map("sync_operations")
+}

@@ -3235,3 +3235,171 @@ Stage Summary:
 - Business calendar support for working hours and holidays
 - Comprehensive analytics: throughput, cycle time, bottlenecks, process mining, forecasting
 - ESLint clean, TypeScript clean, Prisma generated successfully
+
+---
+Task ID: 7 (Mobile)
+Agent: Mobile Field Operations Builder
+Task: Build comprehensive mobile-first technician platform
+
+Work Log:
+
+### 1. Offline-First PWA Service (`src/services/mobile/offlineFirst.service.ts`)
+- Data package management: builds offline data packages by entity type (work_orders, assets, inspection_templates, etc.)
+- Sync priority configuration: 4-level priority (critical/high/medium/low) with 9 default entity configs
+- Conflict resolution strategies: server_wins, client_wins, merge (deep field-level), manual
+- Data versioning for conflict detection: timestamp-based versioning with per-entity version tracking
+- Offline operation queue: priority-sorted queue with retry logic (max 5 retries), status tracking
+- Storage quota management: estimates localStorage usage, cleanup recommendations at 80%/90%
+- Background sync triggers: server-side getPendingSyncOperations, recordSyncOperation, resolveSyncOperation
+- Progressive data loading: 4-phase plan (essential → core → reference → enrichment)
+- Offline indicator status tracking: online/offline/degraded status with connection metadata
+
+### 2. Field Work Execution Service (`src/services/mobile/fieldExecution.service.ts`)
+- Guided work order execution: auto-generates 9-step checklist per WO (safety → PPE → LOTO → permits → inspection → scan → work → measurements → completion)
+- Digital permit-to-work management: permit types (hot_work, confined_space, electrical, etc.) with lifecycle
+- LOTO verification workflow: energy source isolation steps (electrical, mechanical, hydraulic, pneumatic) with verify/release tracking
+- Task completion with mandatory fields: photo evidence, measurements, signatures per checklist step
+- Voice note recording management: create/store/transcript voice notes with offline sync status
+- QR/barcode scanning: processes raw scan values → resolves to asset/work_order/spare_part/tool entities via DB lookup
+- Measurement recording with validation: range validation (min/max), within-range assessment, warning logging
+- Time tracking with automatic start/stop: integrates with WorkOrderTimeLog, calculates duration from last start/resume
+- Multi-step form management: dynamic form builder with field types (text, number, photo, signature, measurement), validation rules
+
+### 3. Mobile AI Assistant Service (`src/services/mobile/mobileAI.service.ts`)
+- Voice-activated troubleshooting: NLP intent classification with regex pattern matching across 9 intents
+- Context-aware recommendations: analyzes WO context (type, priority, pending materials) + asset context (criticality, overdue PMs)
+- Image recognition stub for equipment damage: ImageAssessment structure ready for vision API integration
+- Natural language work order search: entity extraction (WO numbers, asset tags, equipment types) + DB search
+- Procedural guidance: step-by-step repair instructions for bearings, seals, and generic procedures with tools/time estimates
+- Safety checklist verification with AI: generates safety items based on WO context + work-specific requirements
+- Hands-free mode: speech-optimized text formatting, markdown stripping, length limiting for TTS
+- Entity extraction: WO numbers (WO-YYYYMM-NNNN), MR numbers, asset tags, equipment types from natural language
+
+### 4. Geospatial Field Service (`src/services/mobile/geospatialField.service.ts`)
+- Advanced geofencing: radius-based (haversine) and polygon-based (ray casting) zone detection with boundary distance calculation
+- Indoor positioning support: BLE beacon RSSI-to-distance conversion (path loss model), proximity-based position estimation
+- Asset proximity detection: find assets within radius of GPS coordinates, sorted by distance
+- Route optimization: nearest-neighbor TSP heuristic with priority weighting (critical → high → medium → low), savings calculation
+- GPS track recording: distance, duration, average/max speed calculation from track point arrays
+- Location-based safety alerts: geofence breach detection, restricted area alerts, critical asset proximity warnings
+- Distance and ETA calculations: haversine distance, walking/driving duration, bearing + compass direction
+
+### 5. Mobile Inspection Service (`src/services/mobile/inspection.service.ts`)
+- Dynamic inspection form builder: parses sectionsJson into flat items with conditional logic (show/hide based on parent answers)
+- Inspection template management: CRUD for templates with sections, pass thresholds, frequency tracking
+- Conditional logic in forms: items can be conditionally visible based on other items' values
+- Inspection scoring: pass/fail/conditional/na counting, pass rate calculation, critical item auto-fail logic
+- Defect tracking with severity: cosmetic/minor/major/critical classification, requiresFollowUp flag
+- Follow-up work order generation: auto-creates corrective WOs from critical/major findings with priority mapping
+- Inspection history and trend analysis: monthly score/pass-rate/findings trends, grouped by period
+- Regulatory compliance tracking: compliance rate per template based on frequency, overdue detection, category breakdown
+
+### 6. API Routes (8 files)
+- `POST /api/mobile/sync` — Upload offline changes (batch operations, version conflict detection, entity-specific processing)
+- `GET /api/mobile/sync/packages` — Download data packages for offline (5 entity types, plant-scoped, user-scoped WOs)
+- `POST /api/mobile/execution` — Submit field execution updates (checklist, measurements, voice notes, completion)
+- `POST/GET /api/mobile/voice` — Process voice commands + list available commands help
+- `GET/POST /api/mobile/geofence` — Get zones + record enter/exit events with hazard level tracking
+- `GET/POST /api/mobile/inspections` — List/create mobile inspections with auto-scoring
+- `GET/POST /api/mobile/inspections/templates` — List/create inspection templates with sectionsJson validation
+- `POST /api/mobile/scanner` — Process QR/barcode scan results (resolve to entity)
+
+### 7. Prisma Schema (5 new models)
+- `InspectionTemplate` — template definition with sectionsJson, pass threshold, frequency, category
+- `MobileInspection` — inspection execution with scoring (pass/fail/conditional/na counts), findings, photos, GPS, signature
+- `GeofenceZone` — radius and polygon zones with hazard levels, permit requirements, plant scoping
+- `GeofenceEvent` — enter/exit event log with coordinates and timestamps
+- `SyncOperation` — offline sync operation tracking with conflict resolution audit trail
+
+### 8. Quality
+- Prisma generate successful (v7.8.0)
+- ESLint passes with zero errors on all new files
+- All services use `createLogger` from `@/lib/logger`, `db` from `@/lib/db`
+- Named exports, async, TypeScript interfaces throughout
+- Auth-guards on all API routes (getSession + permission checks)
+
+Stage Summary:
+- 5 mobile service files created in `src/services/mobile/`
+- 8 API route files created in `src/app/api/mobile/`
+- 5 new Prisma models added to `prisma/schema.prisma`
+- Prisma client regenerated successfully
+- ESLint clean, zero errors
+- No commits pushed (as instructed)
+
+---
+Task ID: 6
+Agent: Digital Twin Simulation Engineer
+Task: Advanced Digital Twin Simulation Services
+
+Work Log:
+
+### 1. Advanced Simulation Engine (`src/services/simulation/advancedSimulation.service.ts`)
+- **Multi-physics framework** with 5 simulation domains:
+  - Process flow: Mass balance, Darcy-Weisbach pressure drop, junction pressure weighted average
+  - Thermal: Fourier conduction, Newton convection, Stefan-Boltzmann radiation with thermal mass integration
+  - Vibration: SDOF equation of motion (m·ẍ + c·ẋ + k·x = F₀·sin(ωt)), semi-implicit Euler integration, RMS velocity, natural frequency / damping ratio derivation
+  - Energy flow: Variable load profile, part-load efficiency degradation (quadratic model), 3-phase current calculation, cumulative energy integration
+  - Pressure drop: Reynolds number, Swamee-Jain friction factor, Darcy-Weisbach major losses, minor fitting losses, filter clogging quadratic model
+- **Simulation modes**: steady_state (iterative convergence) and transient (time-stepped with configurable dt)
+- **Scenario analysis**: what-if, worst-case, design-basis with parameter override and delta comparison
+- **Result caching**: In-memory Map with 15-minute TTL, replay via getCachedResult/listCachedResults
+- **Telemetry enrichment**: Attempts to fetch latest readings for parameter initial conditions
+- All mathematical formulas clearly commented with equations
+
+### 2. Failure Propagation Simulator (`src/services/simulation/failurePropagation.service.ts`)
+- **Failure tree construction**: Hierarchical tree with root=failed asset, children=downstream impacts, probability-weighted propagation
+- **Cascade path extraction**: DFS traversal extracting all propagation paths with timing
+- **10 failure mode profiles**: bearing_failure, seal_leak, motor_burnout, valve_stuck, overheating, vibration_excess, corrosion_breakthrough, electrical_fault, control_system_failure, structural_crack — each with propagation time, safety hazard level, env risk, quality impact
+- **Production impact**: Lost output = rate × downtime × severity_factor, affected product lines
+- **Safety impact**: Hazard type classification, potential injuries, hazard zones with radius calculation, evacuation/shutdown recommendation
+- **Environmental impact**: Emission type estimation, release quantity, containment probability, cleanup time, regulatory reporting
+- **Recovery estimation**: PERT three-point model (optimistic/most-likely/pessimistic), parts/labor/production/environmental cost breakdown
+- **Risk mitigation**: 7+ recommendations across preventive/detective/corrective categories, priority-scored
+- **Overall risk score**: Weighted composite (severity 25%, production 20%, safety 30%, environment 15%, quality 10%)
+
+### 3. Live Process Overlay Service (`src/services/simulation/processOverlay.service.ts`)
+- **Full overlay generation**: Fetches twin + assets + mesh bindings + IoT devices + telemetry mappings + readings
+- **Asset status determination**: Normal/warning/alarm/offline/maintenance based on telemetry thresholds (temperature >100/150°C, vibration >5/10 mm/s, pressure <2/>12 bar, flow <20/<5 m³/h)
+- **Color-coded status**: emerald=normal, amber=warning, red=alarm, gray=offline, blue=maintenance
+- **Metric overlays**: Trend detection (up/down/stable), deviation % from typical ranges, alarm threshold display
+- **Flow visualization**: Normalized flow rate, particle speed/density, forward/reverse/stopped direction, color coding
+- **Heat maps**: Temperature/pressure/vibration point grids with normalized values, 5-stop color scale (blue→cyan→green→amber→red)
+- **KPI overlays**: Primary metric labels with trend indicators for 3D model elements
+- **Alert zones**: Pulsing animation for alarm assets, static zones for warnings, typed by metric (temperature/pressure/vibration/leak)
+- **Lightweight status-only endpoint**: For efficient polling (no heat maps/flows)
+- **Overlay summary**: Health score calculation weighted by status priorities
+
+### 4. Production Impact Simulator (`src/services/simulation/productionImpact.service.ts`)
+- **Downtime impact**: Scenario-based (single/multiple failure, degradation, maintenance planning), historical WO blending (60/40), derating by failure frequency
+- **Bottleneck analysis**: Per-asset effective capacity = rated × availability × performance, identifies capacity/reliability/maintenance/quality bottleneck type
+- **Capacity simulation**: Full OEE model (Availability × Performance × Quality), capacity gap vs demand, overtime estimation
+- **Maintenance trade-off**: Weibull failure probability model (β=2, η=2000h), PERT recovery estimation, net benefit calculation
+- **Schedule optimization**: Greedy algorithm with staggered maintenance windows, utilization and demand gap metrics
+- **Quality impact**: Exponential degradation model D=1-exp(-3×(usage)²), scrap rate increase, rework rate, cost estimation, days-to-critical projection
+- **Energy analysis**: Specific Energy Consumption (SEC), baseline vs actual deviation, waste calculation, efficiency rating (excellent/critical)
+
+### 5. API Routes (5 endpoints)
+- **POST `/api/simulation/run`**: Run multi-physics simulation with domain/mode/parameter validation
+- **GET `/api/simulation/scenarios`**: List scenario presets by domain (or all domains)
+- **POST `/api/simulation/scenarios`**: Run scenario comparison (base + override with delta analysis)
+- **POST `/api/simulation/failure-propagation`**: Analyze failure cascade with unknown-mode warning
+- **GET `/api/simulation/overlay`**: Full or status-only overlay data for digital twin
+- **POST `/api/simulation/production-impact`**: Full production impact analysis with optional energy
+- All routes authenticated via getSession(), with input validation and structured error responses
+
+### 6. Quality
+- ESLint passes with zero errors
+- TypeScript compilation clean (no errors in simulation files)
+- All services are stateless computation services (no new Prisma models)
+- Uses createLogger from @/lib/logger, db from @/lib/db
+- Named exports, async, TypeScript interfaces throughout
+
+Stage Summary:
+- 4 service files created in `src/services/simulation/`
+- 5 API route files created in `src/app/api/simulation/`
+- 5 simulation domains with real physics formulas
+- 10 failure mode profiles with cascade analysis
+- Full 3D overlay data generation (status, flows, heat maps, KPIs, alerts)
+- OEE-based capacity simulation with maintenance trade-off analysis
+- All routes auth-gated with proper validation
+- ESLint clean, TypeScript clean, no commits pushed
