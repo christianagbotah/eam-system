@@ -25,7 +25,7 @@ import 'reactflow/dist/style.css';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { toast } from 'sonner';
-import { nodeTypes, edgeTypes, type AssetNodeData } from './DiagramNodeTypes';
+import { nodeTypes, edgeTypes, type AssetNodeData, type InstrumentNodeData, type ElectricalNodeData, type ControlNodeData, type HeatExchangerNodeData, type VesselNodeData } from './DiagramNodeTypes';
 import { diagramTemplates, diagramTypeMeta, type DiagramTemplate } from './DiagramTemplates';
 
 import {
@@ -35,6 +35,7 @@ import {
   Droplets, Zap, Wind, FlaskConical, Settings, Shield, X,
   Layers, Info, MoreVertical, ArrowLeft, Lock, Unlock, Grid3X3,
   Map, AlertTriangle, FileImage, Users, Clock, RotateCcw, ChevronUp,
+  ArrowLeftRight,
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -330,6 +331,54 @@ function createNode(type: string, position: { x: number; y: number }, overrides?
       baseData.flowRate = 0;
       baseData.pressure = 0;
       baseData.flowDirection = 'forward';
+      break;
+    case 'instrumentNode':
+      baseData.label = 'New Instrument';
+      baseData.tag = `PT-${Math.floor(Math.random() * 900 + 100)}`;
+      baseData.measureType = 'Pressure';
+      baseData.value = null;
+      baseData.unit = 'bar';
+      baseData.alarmHigh = null;
+      baseData.alarmLow = null;
+      baseData.status = 'normal';
+      break;
+    case 'electricalNode':
+      baseData.label = 'New Electrical';
+      baseData.name = `SWGR-${Math.floor(Math.random() * 900 + 100)}`;
+      baseData.equipType = 'switchgear';
+      baseData.voltage = null;
+      baseData.current = null;
+      baseData.power = null;
+      baseData.status = 'energized';
+      break;
+    case 'controlNode':
+      baseData.label = 'New Controller';
+      baseData.name = `PLC-${Math.floor(Math.random() * 900 + 100)}`;
+      baseData.controllerType = 'PLC';
+      baseData.ioCount = { in: 0, out: 0 };
+      baseData.scanRate = 100;
+      baseData.status = 'running';
+      baseData.program = null;
+      break;
+    case 'heatExchangerNode':
+      baseData.label = 'New Heat Exchanger';
+      baseData.name = `HE-${Math.floor(Math.random() * 900 + 100)}`;
+      baseData.exchangerType = 'shell_tube';
+      baseData.hotIn = null;
+      baseData.hotOut = null;
+      baseData.coldIn = null;
+      baseData.coldOut = null;
+      baseData.effectiveness = null;
+      baseData.status = 'operational';
+      break;
+    case 'vesselNode':
+      baseData.label = 'New Vessel';
+      baseData.name = `V-${Math.floor(Math.random() * 900 + 100)}`;
+      baseData.vesselType = 'separator';
+      baseData.pressure = null;
+      baseData.temperature = null;
+      baseData.level = null;
+      baseData.status = 'operational';
       break;
   }
 
@@ -751,6 +800,221 @@ function PropertiesPanel({
           </>
         )}
 
+        {/* Instrument Node specific fields */}
+        {nodeType === 'instrumentNode' && (() => {
+          const d = data as unknown as InstrumentNodeData;
+          return (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Tag</Label>
+                <Input value={d.tag || ''} onChange={(e) => handleChange('tag', e.target.value)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Measure Type</Label>
+                <Input value={d.measureType || ''} onChange={(e) => handleChange('measureType', e.target.value)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-slate-400 font-medium">Value</Label>
+                  <Input type="number" step={0.1} value={d.value?.toString() ?? ''} onChange={(e) => handleChange('value', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-slate-400 font-medium">Unit</Label>
+                  <Input value={d.unit || ''} onChange={(e) => handleChange('unit', e.target.value)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-slate-400 font-medium">Alarm High</Label>
+                  <Input type="number" step={0.1} value={d.alarmHigh?.toString() ?? ''} onChange={(e) => handleChange('alarmHigh', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-slate-400 font-medium">Alarm Low</Label>
+                  <Input type="number" step={0.1} value={d.alarmLow?.toString() ?? ''} onChange={(e) => handleChange('alarmLow', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+                </div>
+              </div>
+            </>
+          );
+        })()}
+
+        {/* Electrical Node specific fields */}
+        {nodeType === 'electricalNode' && (() => {
+          const d = data as unknown as ElectricalNodeData;
+          return (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Name</Label>
+                <Input value={d.name || ''} onChange={(e) => handleChange('name', e.target.value)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Equipment Type</Label>
+                <Select value={d.equipType || 'switchgear'} onValueChange={(v) => handleChange('equipType', v)}>
+                  <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-700">
+                    {['switchgear', 'transformer', 'mcc', 'breaker', 'generator'].map((t) => (
+                      <SelectItem key={t} value={t} className="text-xs text-slate-300 capitalize">{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-slate-400 font-medium">Voltage</Label>
+                  <Input type="number" step={1} value={d.voltage?.toString() ?? ''} onChange={(e) => handleChange('voltage', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-slate-400 font-medium">Current</Label>
+                  <Input type="number" step={0.1} value={d.current?.toString() ?? ''} onChange={(e) => handleChange('current', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Power (kW)</Label>
+                <Input type="number" step={0.1} value={d.power?.toString() ?? ''} onChange={(e) => handleChange('power', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Status</Label>
+                <Select value={d.status || 'energized'} onValueChange={(v) => handleChange('status', v)}>
+                  <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-700">
+                    {['energized', 'deenergized', 'fault', 'maintenance'].map((s) => (
+                      <SelectItem key={s} value={s} className="text-xs text-slate-300 capitalize">{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          );
+        })()}
+
+        {/* Control Node specific fields */}
+        {nodeType === 'controlNode' && (() => {
+          const d = data as unknown as ControlNodeData;
+          return (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Name</Label>
+                <Input value={d.name || ''} onChange={(e) => handleChange('name', e.target.value)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Controller Type</Label>
+                <Select value={d.controllerType || 'PLC'} onValueChange={(v) => handleChange('controllerType', v)}>
+                  <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-700">
+                    {['PLC', 'DCS', 'SIS', 'SCADA'].map((t) => (
+                      <SelectItem key={t} value={t} className="text-xs text-slate-300">{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Scan Rate (ms)</Label>
+                <Input type="number" value={d.scanRate?.toString() ?? ''} onChange={(e) => handleChange('scanRate', e.target.value ? parseInt(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Program</Label>
+                <Input value={d.program ?? ''} onChange={(e) => handleChange('program', e.target.value)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Status</Label>
+                <Select value={d.status || 'running'} onValueChange={(v) => handleChange('status', v)}>
+                  <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-700">
+                    {['running', 'stopped', 'fault', 'programming'].map((s) => (
+                      <SelectItem key={s} value={s} className="text-xs text-slate-300 capitalize">{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          );
+        })()}
+
+        {/* Heat Exchanger Node specific fields */}
+        {nodeType === 'heatExchangerNode' && (() => {
+          const d = data as unknown as HeatExchangerNodeData;
+          return (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Name</Label>
+                <Input value={d.name || ''} onChange={(e) => handleChange('name', e.target.value)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Exchanger Type</Label>
+                <Select value={d.exchangerType || 'shell_tube'} onValueChange={(v) => handleChange('exchangerType', v)}>
+                  <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-700">
+                    {['shell_tube', 'plate', 'air_cooled'].map((t) => (
+                      <SelectItem key={t} value={t} className="text-xs text-slate-300 capitalize">{t.replace('_', ' ')}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-slate-400 font-medium">Hot In (°C)</Label>
+                  <Input type="number" step={0.1} value={d.hotIn?.toString() ?? ''} onChange={(e) => handleChange('hotIn', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-slate-400 font-medium">Hot Out (°C)</Label>
+                  <Input type="number" step={0.1} value={d.hotOut?.toString() ?? ''} onChange={(e) => handleChange('hotOut', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-slate-400 font-medium">Cold In (°C)</Label>
+                  <Input type="number" step={0.1} value={d.coldIn?.toString() ?? ''} onChange={(e) => handleChange('coldIn', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-slate-400 font-medium">Cold Out (°C)</Label>
+                  <Input type="number" step={0.1} value={d.coldOut?.toString() ?? ''} onChange={(e) => handleChange('coldOut', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Effectiveness (%)</Label>
+                <Input type="number" step={0.1} min={0} max={100} value={d.effectiveness?.toString() ?? ''} onChange={(e) => handleChange('effectiveness', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+            </>
+          );
+        })()}
+
+        {/* Vessel Node specific fields */}
+        {nodeType === 'vesselNode' && (() => {
+          const d = data as unknown as VesselNodeData;
+          return (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Name</Label>
+                <Input value={d.name || ''} onChange={(e) => handleChange('name', e.target.value)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Vessel Type</Label>
+                <Select value={d.vesselType || 'separator'} onValueChange={(v) => handleChange('vesselType', v)}>
+                  <SelectTrigger className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-700">
+                    {['separator', 'reactor', 'distillation', 'absorber', 'flash'].map((t) => (
+                      <SelectItem key={t} value={t} className="text-xs text-slate-300 capitalize">{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-slate-400 font-medium">Pressure (bar)</Label>
+                  <Input type="number" step={0.1} value={d.pressure?.toString() ?? ''} onChange={(e) => handleChange('pressure', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-slate-400 font-medium">Temperature (°C)</Label>
+                  <Input type="number" step={0.1} value={d.temperature?.toString() ?? ''} onChange={(e) => handleChange('temperature', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[11px] text-slate-400 font-medium">Level (%)</Label>
+                <Input type="number" min={0} max={100} value={d.level?.toString() ?? ''} onChange={(e) => handleChange('level', e.target.value ? parseFloat(e.target.value) : null)} className="h-8 text-xs bg-slate-800 border-slate-700 text-slate-200" />
+              </div>
+            </>
+          );
+        })()}
+
         {/* Node ID (read-only) */}
         <Separator className="bg-slate-700/50" />
         <div className="space-y-1">
@@ -876,18 +1140,35 @@ function FlowEditorInner({
 
   const handleExportImage = useCallback(() => {
     try {
-      const el = document.querySelector('.react-flow__viewport');
-      if (!el) return;
-      // Simple approach: use canvas rendering
-      toast.info('Preparing image export...');
-      // Fallback to screenshot instruction since html-to-image is not installed
-      setTimeout(() => {
-        toast.info('Use browser screenshot tools (Ctrl+Shift+S) to capture the diagram');
-      }, 500);
+      const viewportEl = document.querySelector('.react-flow__viewport') as HTMLElement;
+      if (!viewportEl) return;
+
+      // Clone viewport to capture current state
+      const clone = viewportEl.cloneNode(true) as HTMLElement;
+      clone.style.transform = 'none';
+      
+      const svgData = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080">
+          <rect width="100%" height="100%" fill="#0f172a"/>
+          <g transform="translate(0,0) scale(1)">
+            ${clone.innerHTML}
+          </g>
+        </svg>`;
+
+      const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${diagramName || 'diagram'}.svg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Diagram exported as SVG');
     } catch {
       toast.error('Failed to export image');
     }
-  }, []);
+  }, [diagramName]);
 
   const handleAutoLayout = useCallback(() => {
     const currentNodes = getNodes();
@@ -1019,6 +1300,27 @@ function FlowEditorInner({
                       <DropdownMenuItem onClick={() => addNodeAtCenter('junctionNode')} className="text-xs text-slate-300 gap-2">
                         <CircleDot className="h-3.5 w-3.5 text-slate-400" /> Junction
                       </DropdownMenuItem>
+                      <DropdownMenuSeparator className="bg-slate-700" />
+                      <div className="px-2 py-1 text-[9px] font-semibold text-slate-500 uppercase tracking-wider">P&ID</div>
+                      <DropdownMenuItem onClick={() => addNodeAtCenter('instrumentNode')} className="text-xs text-slate-300 gap-2">
+                        <Thermometer className="h-3.5 w-3.5 text-cyan-400" /> Instrument
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => addNodeAtCenter('vesselNode')} className="text-xs text-slate-300 gap-2">
+                        <FlaskConical className="h-3.5 w-3.5 text-slate-400" /> Vessel
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => addNodeAtCenter('heatExchangerNode')} className="text-xs text-slate-300 gap-2">
+                        <ArrowLeftRight className="h-3.5 w-3.5 text-orange-400" /> Heat Exchanger
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="bg-slate-700" />
+                      <div className="px-2 py-1 text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Electrical</div>
+                      <DropdownMenuItem onClick={() => addNodeAtCenter('electricalNode')} className="text-xs text-slate-300 gap-2">
+                        <Zap className="h-3.5 w-3.5 text-amber-400" /> Electrical
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator className="bg-slate-700" />
+                      <div className="px-2 py-1 text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Control</div>
+                      <DropdownMenuItem onClick={() => addNodeAtCenter('controlNode')} className="text-xs text-slate-300 gap-2">
+                        <Cpu className="h-3.5 w-3.5 text-violet-400" /> Controller
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
@@ -1028,10 +1330,7 @@ function FlowEditorInner({
                 {/* Undo/Redo (ReactFlow built-in) */}
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className={toolbarBtnStyle} onClick={() => {
-                      const inst = reactFlowInstance as unknown as { undo?: () => void };
-                      inst.undo?.();
-                    }}>
+                    <Button variant="ghost" size="icon" className={toolbarBtnStyle} disabled>
                       <Undo2 className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
@@ -1039,10 +1338,7 @@ function FlowEditorInner({
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon" className={toolbarBtnStyle} onClick={() => {
-                      const inst = reactFlowInstance as unknown as { redo?: () => void };
-                      inst.redo?.();
-                    }}>
+                    <Button variant="ghost" size="icon" className={toolbarBtnStyle} disabled>
                       <Redo2 className="h-3.5 w-3.5" />
                     </Button>
                   </TooltipTrigger>
@@ -1258,7 +1554,7 @@ function FlowEditor(props: Parameters<typeof FlowEditorInner>[0]) {
 // MAIN SYSTEM DIAGRAM PAGE
 // ============================================================================
 
-export default function SystemDiagramPage() {
+export default function SystemDiagramPage({ twinId, twinName }: { twinId?: string; twinName?: string } = {}) {
   const { hasPermission, isAdmin, user } = useAuthStore();
   const canEdit = hasPermission('digital_twin.create') || hasPermission('digital_twin.update') || isAdmin();
 
@@ -1273,6 +1569,9 @@ export default function SystemDiagramPage() {
   const [view, setView] = useState<'list' | 'editor'>('list');
   const [currentDiagram, setCurrentDiagram] = useState<SystemDiagram | null>(null);
   const [editorKey, setEditorKey] = useState(0);
+
+  // Twin context (when opened from digital twin viewer)
+  const [twinContext] = useState({ twinId: twinId || null, twinName: twinName || null });
 
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false);
@@ -1291,7 +1590,7 @@ export default function SystemDiagramPage() {
     try {
       const params = new URLSearchParams();
       if (searchQuery) params.set('search', searchQuery);
-      if (typeFilter !== 'all') params.set('diagramType', typeFilter);
+      if (typeFilter !== 'all') params.set('type', typeFilter);
       params.set('limit', '50');
 
       const res = await api.get(`/api/system-diagrams?${params.toString()}`);
@@ -1318,10 +1617,9 @@ export default function SystemDiagramPage() {
       const res = await api.post('/api/system-diagrams', {
         name: createForm.name,
         description: createForm.description || null,
-        diagramType: createForm.type,
+        type: createForm.type,
         nodes: [],
         edges: [],
-        isTemplate: false,
       });
       if (res.success && res.data) {
         toast.success('Diagram created');
@@ -1348,10 +1646,9 @@ export default function SystemDiagramPage() {
       const res = await api.post('/api/system-diagrams', {
         name: `${template.name} - Copy`,
         description: template.description,
-        diagramType: template.diagramType,
+        type: template.diagramType,
         nodes: template.nodes,
         edges: template.edges,
-        isTemplate: false,
       });
       if (res.success && res.data) {
         toast.success(`Loaded "${template.name}" template`);
@@ -1378,10 +1675,9 @@ export default function SystemDiagramPage() {
       const res = await api.post('/api/system-diagrams', {
         name: `${diagram.name} (Copy)`,
         description: diagram.description,
-        diagramType: diagram.type,
-        nodes: diagram.nodes,
-        edges: diagram.edges,
-        isTemplate: false,
+        type: diagram.type,
+        nodes: (() => { try { return JSON.parse(diagram.nodes); } catch { return []; } })(),
+        edges: (() => { try { return JSON.parse(diagram.edges); } catch { return []; } })(),
       });
       if (res.success && res.data) {
         toast.success('Diagram duplicated');

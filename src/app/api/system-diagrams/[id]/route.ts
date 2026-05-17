@@ -59,7 +59,9 @@ export async function PUT(
     }
 
     const updateData: Record<string, unknown> = {};
-    const allowedFields = ['name', 'description', 'type', 'nodes', 'edges', 'viewport', 'plantId'];
+    const allowedFields = ['name', 'description', 'type', 'nodes', 'edges', 'viewport', 'plantId', 'isTemplate'];
+
+    updateData.updatedById = session.userId;
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {

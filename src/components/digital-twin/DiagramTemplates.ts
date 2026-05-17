@@ -541,6 +541,63 @@ export const processFlowTemplate: DiagramTemplate = {
   ],
 };
 
+// --- DCS Process Control System Template ---
+export const controlSystemTemplate: DiagramTemplate = {
+  id: 'control-system-dcs',
+  name: 'DCS Process Control System',
+  description: 'Distributed control system with PLCs, field instruments, motor control centers, and signal wiring for a process unit',
+  diagramType: 'control',
+  thumbnail: 'dcs',
+  nodes: [
+    // DCS Controller
+    { id: 'dcs-01', type: 'controlNode', position: { x: 400, y: 40 }, data: { label: 'DCS Main', name: 'DCS-01', controllerType: 'DCS', ioCount: { in: 64, out: 48 }, scanRate: 50, status: 'running', program: 'Process_Control_v3.2' } },
+    // Safety Instrumented System
+    { id: 'sis-01', type: 'controlNode', position: { x: 400, y: 200 }, data: { label: 'SIS', name: 'SIS-01', controllerType: 'SIS', ioCount: { in: 24, out: 16 }, scanRate: 20, status: 'running', program: 'ESD_System_v2.1' } },
+    // Field PLCs
+    { id: 'plc-area1', type: 'controlNode', position: { x: 100, y: 120 }, data: { label: 'Area 1 PLC', name: 'PLC-A1', controllerType: 'PLC', ioCount: { in: 32, out: 24 }, scanRate: 100, status: 'running', program: 'Area1_Control' } },
+    { id: 'plc-area2', type: 'controlNode', position: { x: 700, y: 120 }, data: { label: 'Area 2 PLC', name: 'PLC-A2', controllerType: 'PLC', ioCount: { in: 32, out: 24 }, scanRate: 100, status: 'running', program: 'Area2_Control' } },
+    // MCC
+    { id: 'mcc-01', type: 'electricalNode', position: { x: 50, y: 300 }, data: { label: 'MCC-01', name: 'MCC-01', equipType: 'mcc', voltage: 415, current: 120, power: 85, status: 'energized' } },
+    { id: 'mcc-02', type: 'electricalNode', position: { x: 750, y: 300 }, data: { label: 'MCC-02', name: 'MCC-02', equipType: 'mcc', voltage: 415, current: 95, power: 68, status: 'energized' } },
+    // Switchgear
+    { id: 'swgr-main', type: 'electricalNode', position: { x: 350, y: 350 }, data: { label: 'Main Switchgear', name: 'SWGR-MS', equipType: 'switchgear', voltage: 11000, current: 250, power: 4800, status: 'energized' } },
+    { id: 'xfmr-01', type: 'electricalNode', position: { x: 520, y: 350 }, data: { label: 'Step Down', name: 'XFMR-01', equipType: 'transformer', voltage: 415, current: 600, power: 430, status: 'energized' } },
+    // Field Instruments
+    { id: 'pt-001', type: 'instrumentNode', position: { x: 0, y: 0 }, data: { label: 'Pressure Transmitter', tag: 'PT-001', measureType: 'Pressure', value: 4.2, unit: 'bar', alarmHigh: 6.0, alarmLow: 1.5, status: 'normal' } },
+    { id: 'tt-001', type: 'instrumentNode', position: { x: 200, y: 0 }, data: { label: 'Temp Transmitter', tag: 'TT-001', measureType: 'Temperature', value: 82.5, unit: '°C', alarmHigh: 95, alarmLow: 60, status: 'normal' } },
+    { id: 'ft-001', type: 'instrumentNode', position: { x: 600, y: 0 }, data: { label: 'Flow Transmitter', tag: 'FT-001', measureType: 'Flow', value: 125.3, unit: 'm³/h', alarmHigh: 150, alarmLow: 50, status: 'normal' } },
+    { id: 'lt-001', type: 'instrumentNode', position: { x: 400, y: 500 }, data: { label: 'Level Transmitter', tag: 'LT-001', measureType: 'Level', value: 72, unit: '%', alarmHigh: 85, alarmLow: 20, status: 'normal' } },
+    { id: 'at-001', type: 'instrumentNode', position: { x: 800, y: 500 }, data: { label: 'Analyzer', tag: 'AT-001', measureType: 'pH', value: 7.2, unit: 'pH', alarmHigh: 9.0, alarmLow: 5.5, status: 'normal' } },
+    { id: 'pst-001', type: 'instrumentNode', position: { x: 100, y: 500 }, data: { label: 'PSH Alarm', tag: 'PSH-001', measureType: 'Pressure', value: 5.8, unit: 'bar', alarmHigh: 6.5, alarmLow: null, status: 'warning' } },
+    // Junction points
+    { id: 'junc-bus', type: 'junctionNode', position: { x: 400, y: 130 }, data: { label: 'Comm Bus' } },
+  ],
+  edges: [
+    // DCS to communication bus
+    { id: 'e-dcs-bus', source: 'dcs-01', target: 'junc-bus', type: 'signalEdge', data: {} },
+    { id: 'e-sis-bus', source: 'sis-01', target: 'junc-bus', type: 'signalEdge', data: {} },
+    // PLCs to bus
+    { id: 'e-plca-bus', source: 'plc-area1', target: 'junc-bus', type: 'signalEdge', data: {} },
+    { id: 'e-plcb-bus', source: 'plc-area2', target: 'junc-bus', type: 'signalEdge', data: {} },
+    // Instruments to PLCs
+    { id: 'e-pt-plca', source: 'pt-001', target: 'plc-area1', type: 'signalEdge', data: {} },
+    { id: 'e-tt-plca', source: 'tt-001', target: 'plc-area1', type: 'signalEdge', data: {} },
+    { id: 'e-ft-plcb', source: 'ft-001', target: 'plc-area2', type: 'signalEdge', data: {} },
+    // Instruments to DCS
+    { id: 'e-lt-dcs', source: 'lt-001', target: 'dcs-01', type: 'signalEdge', data: {} },
+    { id: 'e-at-dcs', source: 'at-001', target: 'dcs-01', type: 'signalEdge', data: {} },
+    // Safety signal
+    { id: 'e-pst-sis', source: 'pst-001', target: 'sis-01', type: 'signalEdge', data: {} },
+    // PLCs to MCCs
+    { id: 'e-plca-mcc1', source: 'plc-area1', target: 'mcc-01', type: 'cableEdge', data: {} },
+    { id: 'e-plcb-mcc2', source: 'plc-area2', target: 'mcc-02', type: 'cableEdge', data: {} },
+    // Power distribution
+    { id: 'e-swgr-xfmr', source: 'swgr-main', target: 'xfmr-01', type: 'processFlowEdge', data: { flowStatus: 'normal' } },
+    { id: 'e-xfmr-mcc1', source: 'xfmr-01', target: 'mcc-01', type: 'processFlowEdge', data: { flowStatus: 'normal' } },
+    { id: 'e-xfmr-mcc2', source: 'xfmr-01', target: 'mcc-02', type: 'processFlowEdge', data: { flowStatus: 'normal' } },
+  ],
+};
+
 // --- All Templates ---
 export const diagramTemplates: DiagramTemplate[] = [
   chilledWaterTemplate,
@@ -549,6 +606,7 @@ export const diagramTemplates: DiagramTemplate[] = [
   steamDistributionTemplate,
   fireProtectionTemplate,
   processFlowTemplate,
+  controlSystemTemplate,
 ];
 
 // --- Diagram type metadata ---

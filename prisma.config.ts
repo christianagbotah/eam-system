@@ -6,7 +6,7 @@ config();
 
 // Determine database URL - support both MySQL (VPS) and SQLite (sandbox)
 let dbUrl = process.env.DATABASE_URL || '';
-let provider = 'mysql'; // default
+let provider: 'mysql' | 'sqlite' = 'mysql'; // default
 
 if (dbUrl.startsWith('file:') || dbUrl.includes('sqlite')) {
   // Sandbox/local SQLite

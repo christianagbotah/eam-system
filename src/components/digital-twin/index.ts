@@ -45,3 +45,11 @@ export {
   type PumpNodeData, type TankNodeData, type MotorNodeData, type PipeNodeData,
   type CustomNodeTypes, type CustomEdgeTypes,
 } from './DiagramNodeTypes';
+
+// Diagram telemetry overlay
+export {
+  DiagramTelemetryService,
+  type TelemetryOverlayConfig,
+  type TelemetrySourceConfig,
+  type TelemetrySnapshot,
+} from '@/services/diagramTelemetry.service';

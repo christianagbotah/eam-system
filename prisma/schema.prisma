@@ -167,6 +167,7 @@ model User {
   assetModelsCreated    AssetModel[]       @relation("AssetModelUploadedBy")
   scenesCreated         DigitalTwinScene[] @relation("SceneCreatedBy")
   systemDiagramsCreated SystemDiagram[]    @relation("SystemDiagramCreatedBy")
+  SystemDiagramUpdates SystemDiagram[] @relation("SystemDiagramUpdatedBy")
 
   // Twin Annotation relation
   twinAnnotations TwinAnnotation[]
@@ -2189,12 +2190,15 @@ model SystemDiagram {
   viewport     String?  @db.Text // JSON: {x, y, zoom}
   thumbnailUrl String?
   version      Int      @default(1)
+  isTemplate   Boolean  @default(false)
+  updatedById  String?
   isActive     Boolean  @default(true)
   createdById  String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   createdByIdUser User @relation("SystemDiagramCreatedBy", fields: [createdById], references: [id])
+  updatedByIdUser User? @relation("SystemDiagramUpdatedBy", fields: [updatedById], references: [id])
 
   @@index([plantId])
   @@index([createdById])

@@ -2459,3 +2459,101 @@ Stage Summary:
 - All currencies across the entire codebase now use the single ₵ symbol
 - formatCurrency() simplified to always output ₵{amount}
 - No USD, EUR, GBP, NGN, $, or GHS prefixes remain in any UI
+---
+Task ID: 2
+Agent: Phase E SystemDiagramPage Fix Agent
+Task: Fix critical bugs in SystemDiagramPage.tsx
+
+Work Log:
+- Fixed diagramType → type field mismatch on GET (line 1294) and POST (lines 1321, 1351, 1381)
+- Removed isTemplate: false from all three POST calls (lines ~1324, 1354, 1384)
+- Fixed double-stringify on duplicate by parsing JSON before sending (lines 1394-1395)
+- Replaced image export stub with real SVG export implementation (lines 877-907)
+- Disabled non-functional Undo/Redo buttons (lines 1048, 1056)
+- Added twinId/twinName optional props to SystemDiagramPage component (line 1272)
+- Added twinContext state for digital twin viewer integration (line 1289)
+
+Stage Summary:
+- All 5 critical bugs fixed
+- Diagram create, duplicate, and type filtering now work correctly
+- SVG export functional with viewport cloning
+- Twin context integration ready
+- ESLint passes with zero errors from SystemDiagramPage.tsx
+
+
+---
+Task ID: 4
+Agent: Phase E Template & Telemetry Agent
+Task: Add control system template, telemetry overlay service, and real-time data hooks
+
+Work Log:
+- Added DCS Process Control System template with 14 nodes and 15 edges to DiagramTemplates.ts
+- Created diagramTelemetry.service.ts with overlay config, snapshot fetching, node data application, and alarm status
+- Created useDiagramTelemetry hook for live data in diagram editor
+- Created /api/telemetry/overlay API endpoint
+- Updated diagram index exports in digital-twin/index.ts
+
+Stage Summary:
+- Control system template includes DCS, SIS, PLCs, MCCs, switchgear, transformers, and field instruments
+- Telemetry service can map instrument/sensor nodes to live data sources via TelemetryMapping + TelemetryStream
+- Real-time overlay refreshes every 5 seconds by default
+- Alarm detection for high/low threshold violations on instrument nodes
+- ESLint passes with zero errors in all modified/created files
+
+---
+Task ID: 3
+Agent: Phase E Enhanced Node Types Agent
+Task: Add P&ID, electrical, control, heat exchanger, and vessel node types
+
+Work Log:
+- Added 5 new node types to DiagramNodeTypes.tsx: InstrumentNode, ElectricalNode, ControlNode, HeatExchangerNode, VesselNode
+- Added CableEdge type for electrical connections with animated flow dot
+- Added corresponding TypeScript interfaces (InstrumentNodeData, ElectricalNodeData, ControlNodeData, HeatExchangerNodeData, VesselNodeData)
+- Updated nodeTypes export (8 → 13 types) and edgeTypes export (3 → 4 types)
+- Added `getSmoothStepPath` to reactflow imports for CableEdge
+- Added createNode cases for all 5 new types in SystemDiagramPage.tsx
+- Added toolbar dropdown entries organized by category (P&ID, Electrical, Control)
+- Added ArrowLeftRight icon import for Heat Exchanger menu item
+- Added full PropertiesPanel support for all 5 new node types with typed data casting
+- Imported new data types from DiagramNodeTypes in SystemDiagramPage.tsx
+- Verified with bun run lint — zero errors in modified files
+
+Stage Summary:
+- Total node types now: 13 (was 8)
+- Total edge types now: 4 (was 3)
+- Full P&ID instrument support with alarm thresholds and pulsing alarm indicator
+- Electrical single-line symbols (switchgear, transformer, MCC, breaker, generator) with status coloring
+- Control system nodes (PLC, DCS, SIS, SCADA) with I/O counts, scan rate, and program name
+- Heat exchanger with hot/cold side temperatures and effectiveness percentage
+- Vessel types (separator, reactor, distillation, absorber, flash) with level fill and distillation tray internals
+- CableEdge with amber dashed line and animated flow dot for electrical connections
+
+---
+Task ID: Phase-E-1
+Agent: Phase E API & Schema Fix Agent
+Task: Fix system-diagrams API field mismatches, update schema, create versioning/export APIs and service layer
+
+Work Log:
+- Fixed diagramType vs type field mismatch in GET and POST endpoints
+- Added isTemplate field handling to POST create endpoint
+- Added isTemplate to allowedFields in PUT handler
+- Added updatedById tracking in PUT handler (auto-set from session)
+- Created /api/system-diagrams/[id]/versions/route.ts for version history via audit log
+- Created /api/system-diagrams/[id]/export/route.ts for JSON file download export
+- Updated Prisma schema: added isTemplate (Boolean), updatedById (String?) fields to SystemDiagram
+- Added updatedByIdUser relation on SystemDiagram model
+- Added SystemDiagramUpdates reverse relation on User model
+- Regenerated Prisma client successfully (schema valid)
+- Created src/services/systemDiagram.service.ts with validateDiagram, getDiagramStats, compareVersions
+- Fixed hasPermission call signatures in new routes (uses session parameter per codebase convention)
+- Fixed createLogger import (uses createLogger, not getLogger)
+- Verified with bun run lint — zero errors in modified/created files
+
+Stage Summary:
+- All critical API bugs fixed (field mismatch, missing fields)
+- Versioning API ready at /api/system-diagrams/[id]/versions
+- Export API ready at /api/system-diagrams/[id]/export
+- SystemDiagramService with validation, stats, and comparison methods
+- Schema updated with isTemplate + updatedById + relations
+- Note: db push could not run due to pre-existing Prisma/SQLite provider mismatch in sandbox (schema.prisma says mysql but DB is SQLite via prisma.config.ts override). Schema changes are valid and client was regenerated.
+

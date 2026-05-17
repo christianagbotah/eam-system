@@ -1,7 +1,7 @@
 'use client';
 
 import React, { memo } from 'react';
-import { Handle, Position, type NodeProps, type EdgeProps, getBezierPath } from 'reactflow';
+import { Handle, Position, type NodeProps, type EdgeProps, getBezierPath, getSmoothStepPath } from 'reactflow';
 import {
   Cpu, Thermometer, Gauge, Activity, GitBranch,
   ChevronDown, ChevronUp, Droplets, Zap, Wind, FlaskConical,
@@ -744,6 +744,64 @@ export interface PipeNodeData {
   [key: string]: unknown;
 }
 
+export interface InstrumentNodeData {
+  label?: string;
+  tag?: string;
+  measureType?: string;
+  value?: number | null;
+  unit?: string;
+  alarmHigh?: number | null;
+  alarmLow?: number | null;
+  status?: string;
+  [key: string]: unknown;
+}
+
+export interface ElectricalNodeData {
+  label?: string;
+  name?: string;
+  equipType?: 'switchgear' | 'transformer' | 'mcc' | 'breaker' | 'generator';
+  voltage?: number | null;
+  current?: number | null;
+  power?: number | null;
+  status?: 'energized' | 'deenergized' | 'fault' | 'maintenance';
+  [key: string]: unknown;
+}
+
+export interface ControlNodeData {
+  label?: string;
+  name?: string;
+  controllerType?: 'PLC' | 'DCS' | 'SIS' | 'SCADA';
+  ioCount?: { in: number; out: number } | number;
+  scanRate?: number | null;
+  status?: 'running' | 'stopped' | 'fault' | 'programming';
+  program?: string | null;
+  [key: string]: unknown;
+}
+
+export interface HeatExchangerNodeData {
+  label?: string;
+  name?: string;
+  exchangerType?: 'shell_tube' | 'plate' | 'air_cooled';
+  hotIn?: number | null;
+  hotOut?: number | null;
+  coldIn?: number | null;
+  coldOut?: number | null;
+  effectiveness?: number | null;
+  status?: 'operational' | 'fouled' | 'bypass' | 'offline';
+  [key: string]: unknown;
+}
+
+export interface VesselNodeData {
+  label?: string;
+  name?: string;
+  vesselType?: 'separator' | 'reactor' | 'distillation' | 'absorber' | 'flash';
+  pressure?: number | null;
+  temperature?: number | null;
+  level?: number | null;
+  status?: 'operational' | 'shutdown' | 'alarm' | 'maintenance';
+  [key: string]: unknown;
+}
+
 function PipeNodeComponent({ data, selected }: NodeProps) {
   const nodeData = data as unknown as PipeNodeData;
   const pressureColor = (nodeData.pressure ?? 0) > 10 ? '#ef4444' : (nodeData.pressure ?? 0) > 6 ? '#f59e0b' : '#06b6d4';
@@ -832,6 +890,351 @@ function PipeNodeComponent({ data, selected }: NodeProps) {
 }
 
 export const PipeNode = memo(PipeNodeComponent);
+
+// ============================================================================
+// INSTRUMENT NODE — P&ID bubble
+// ============================================================================
+
+function InstrumentNodeComponent({ data, selected }: NodeProps<InstrumentNodeData>) {
+  const tag = data.tag || 'PT-001';
+  const measureType = data.measureType || 'Pressure';
+  const value = data.value ?? null;
+  const unit = data.unit || 'bar';
+  const alarmHigh = data.alarmHigh ?? null;
+  const alarmLow = data.alarmLow ?? null;
+  const isAlarmed = alarmHigh !== null && value !== null && (value > alarmHigh || value < alarmLow);
+
+  return (
+    <div className={`relative ${selected ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-slate-900' : ''}`}>
+      {/* P&ID bubble shape */}
+      <div className={`w-[72px] h-[52px] rounded-lg border-2 flex flex-col items-center justify-center relative overflow-hidden ${
+        isAlarmed ? 'border-red-400 bg-red-950/60' : 'border-cyan-400 bg-cyan-950/40'
+      }`}>
+        {/* Top line (instrument line) */}
+        <div className={`absolute top-0 left-1/2 -translate-x-1/2 w-px h-2 ${isAlarmed ? 'bg-red-400' : 'bg-cyan-400'}`} />
+        
+        {/* Tag number */}
+        <span className="text-[9px] font-bold text-cyan-300 tracking-wide">{tag}</span>
+        
+        {/* Value display */}
+        {value !== null ? (
+          <span className={`text-sm font-mono font-bold ${isAlarmed ? 'text-red-400' : 'text-white'}`}>
+            {typeof value === 'number' ? value.toFixed(1) : value}
+            <span className="text-[8px] text-slate-400 ml-0.5">{unit}</span>
+          </span>
+        ) : (
+          <span className="text-[8px] text-slate-500">-- {unit}</span>
+        )}
+
+        {/* Alarm indicator */}
+        {isAlarmed && (
+          <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-500 animate-pulse" />
+        )}
+
+        {/* Measure type badge */}
+        <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-[7px] text-slate-500 whitespace-nowrap bg-slate-900 px-1">
+          {measureType}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export const InstrumentNode = memo(InstrumentNodeComponent);
+
+// ============================================================================
+// ELECTRICAL NODE — Single-line symbol
+// ============================================================================
+
+function ElectricalNodeComponent({ data, selected }: NodeProps<ElectricalNodeData>) {
+  const name = data.name || 'MCC-01';
+  const equipType = data.equipType || 'switchgear';
+  const voltage = data.voltage ?? null;
+  const current = data.current ?? null;
+  const status = data.status || 'energized';
+  const power = data.power ?? null;
+
+  const statusColor = status === 'energized' ? 'text-emerald-400 border-emerald-500/50' :
+    status === 'fault' ? 'text-red-400 border-red-500/50' :
+    status === 'maintenance' ? 'text-amber-400 border-amber-500/50' :
+    'text-slate-400 border-slate-500/50';
+
+  const bgColor = status === 'energized' ? 'bg-emerald-950/40' :
+    status === 'fault' ? 'bg-red-950/40' :
+    status === 'maintenance' ? 'bg-amber-950/40' :
+    'bg-slate-800/40';
+
+  const icon = equipType === 'transformer' ? '⏛' :
+    equipType === 'generator' ? '⚡' :
+    equipType === 'breaker' ? '⏻' :
+    equipType === 'mcc' ? '⊞' : '⎍';
+
+  return (
+    <div className={`relative ${selected ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-slate-900' : ''}`}>
+      <div className={`w-[80px] rounded-lg border-2 px-2 py-2 ${statusColor} ${bgColor}`}>
+        {/* Equipment icon */}
+        <div className="text-center text-lg mb-0.5">{icon}</div>
+        
+        {/* Name */}
+        <div className="text-[8px] font-bold text-center truncate">{name}</div>
+        
+        {/* Voltage/Current */}
+        <div className="text-center mt-1 space-y-0.5">
+          {voltage !== null && (
+            <div className="text-[9px] font-mono text-slate-300">
+              {voltage}<span className="text-[7px] text-slate-500">V</span>
+            </div>
+          )}
+          {current !== null && (
+            <div className="text-[9px] font-mono text-slate-300">
+              {current}<span className="text-[7px] text-slate-500">A</span>
+            </div>
+          )}
+          {power !== null && (
+            <div className="text-[9px] font-mono text-amber-300">
+              {power}<span className="text-[7px] text-slate-500">kW</span>
+            </div>
+          )}
+        </div>
+
+        {/* Status dot */}
+        <div className={`absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full border border-slate-900 ${
+          status === 'energized' ? 'bg-emerald-400' :
+          status === 'fault' ? 'bg-red-500 animate-pulse' :
+          status === 'maintenance' ? 'bg-amber-400' :
+          'bg-slate-500'
+        }`} />
+
+        {/* Type label */}
+        <span className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 text-[7px] text-slate-500 whitespace-nowrap bg-slate-900 px-1 capitalize">
+          {equipType}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export const ElectricalNode = memo(ElectricalNodeComponent);
+
+// ============================================================================
+// CONTROL NODE — PLC/DCS/Controller
+// ============================================================================
+
+function ControlNodeComponent({ data, selected }: NodeProps<ControlNodeData>) {
+  const name = data.name || 'PLC-01';
+  const controllerType = data.controllerType || 'PLC';
+  const ioCount = data.ioCount ?? { in: 0, out: 0 };
+  const scanRate = data.scanRate ?? null;
+  const status = data.status || 'running';
+  const program = data.program || null;
+
+  const statusColor = status === 'running' ? 'text-emerald-400 border-emerald-500/50' :
+    status === 'fault' ? 'text-red-400 border-red-500/50' :
+    status === 'programming' ? 'text-violet-400 border-violet-500/50' :
+    'text-slate-400 border-slate-500/50';
+
+  const bgColor = status === 'running' ? 'bg-emerald-950/30' :
+    status === 'fault' ? 'bg-red-950/30' :
+    status === 'programming' ? 'bg-violet-950/30' :
+    'bg-slate-800/40';
+
+  return (
+    <div className={`relative ${selected ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-slate-900' : ''}`}>
+      <div className={`w-[84px] rounded-lg border-2 ${statusColor} ${bgColor}`}>
+        {/* Header */}
+        <div className={`text-center text-[8px] font-bold px-1 py-0.5 rounded-t-md ${
+          status === 'running' ? 'bg-emerald-900/50' :
+          status === 'fault' ? 'bg-red-900/50' :
+          status === 'programming' ? 'bg-violet-900/50' :
+          'bg-slate-700/50'
+        }`}>
+          {controllerType}
+        </div>
+        
+        {/* Body */}
+        <div className="px-2 py-1.5 text-center">
+          <div className="text-[9px] font-semibold text-white mb-1">{name}</div>
+          
+          {/* I/O counts */}
+          <div className="flex justify-center gap-2 text-[8px]">
+            <span className="text-sky-400">I:{typeof ioCount === 'object' ? ioCount.in : 0}</span>
+            <span className="text-emerald-400">O:{typeof ioCount === 'object' ? ioCount.out : 0}</span>
+          </div>
+          
+          {/* Scan rate */}
+          {scanRate !== null && (
+            <div className="text-[7px] text-slate-400 mt-0.5">{scanRate}ms scan</div>
+          )}
+          
+          {/* Program name */}
+          {program && (
+            <div className="text-[7px] text-violet-300 mt-0.5 truncate max-w-full">{program}</div>
+          )}
+        </div>
+
+        {/* Running indicator */}
+        {status === 'running' && (
+          <div className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full bg-emerald-400 animate-pulse border border-slate-900" />
+        )}
+        {status === 'fault' && (
+          <div className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full bg-red-500 animate-pulse border border-slate-900" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export const ControlNode = memo(ControlNodeComponent);
+
+// ============================================================================
+// HEAT EXCHANGER NODE
+// ============================================================================
+
+function HeatExchangerNodeComponent({ data, selected }: NodeProps<HeatExchangerNodeData>) {
+  const name = data.name || 'HE-001';
+  const exchangerType = data.exchangerType || 'shell_tube';
+  const hotIn = data.hotIn ?? null;
+  const hotOut = data.hotOut ?? null;
+  const coldIn = data.coldIn ?? null;
+  const coldOut = data.coldOut ?? null;
+  const effectiveness = data.effectiveness ?? null;
+  const status = data.status || 'operational';
+
+  const statusColor = status === 'operational' ? 'border-orange-500/50' :
+    status === 'fouled' ? 'border-amber-500/50' :
+    status === 'bypass' ? 'border-slate-500/50' :
+    'border-red-500/50';
+
+  return (
+    <div className={`relative ${selected ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-slate-900' : ''}`}>
+      <div className={`w-[90px] rounded-lg border-2 ${statusColor} bg-orange-950/20 p-1.5`}>
+        {/* Shell/Tube visual */}
+        <div className="relative h-8 rounded border border-orange-600/30 bg-slate-800/60 mb-1 overflow-hidden">
+          {/* Tubes */}
+          <div className="absolute inset-y-1 left-1 right-1 flex justify-between">
+            {[0,1,2,3].map(i => (
+              <div key={i} className={`w-0.5 rounded ${status === 'fouled' ? 'bg-amber-600' : 'bg-orange-400'}`} />
+            ))}
+          </div>
+          {/* Flow arrows */}
+          <div className="absolute inset-0 flex items-center justify-center text-[8px] text-orange-300">
+            ⇄
+          </div>
+        </div>
+        
+        {/* Name */}
+        <div className="text-[8px] font-bold text-center text-orange-200">{name}</div>
+        
+        {/* Temperatures */}
+        <div className="grid grid-cols-2 gap-x-1 mt-1 text-[7px]">
+          <div className="text-center">
+            <div className="text-red-400">{hotIn !== null ? `${hotIn}°` : '--'}</div>
+            <div className="text-red-300/60">Hot In</div>
+          </div>
+          <div className="text-center">
+            <div className="text-blue-400">{coldIn !== null ? `${coldIn}°` : '--'}</div>
+            <div className="text-blue-300/60">Cold In</div>
+          </div>
+          <div className="text-center">
+            <div className="text-red-300">{hotOut !== null ? `${hotOut}°` : '--'}</div>
+            <div className="text-red-300/60">Hot Out</div>
+          </div>
+          <div className="text-center">
+            <div className="text-blue-300">{coldOut !== null ? `${coldOut}°` : '--'}</div>
+            <div className="text-blue-300/60">Cold Out</div>
+          </div>
+        </div>
+        
+        {/* Effectiveness */}
+        {effectiveness !== null && (
+          <div className="text-center mt-1">
+            <span className="text-[8px] text-orange-300 font-mono">{effectiveness}% eff</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export const HeatExchangerNode = memo(HeatExchangerNodeComponent);
+
+// ============================================================================
+// VESSEL NODE — Distillation column, reactor, separator
+// ============================================================================
+
+function VesselNodeComponent({ data, selected }: NodeProps<VesselNodeData>) {
+  const name = data.name || 'V-001';
+  const vesselType = data.vesselType || 'separator';
+  const pressure = data.pressure ?? null;
+  const temperature = data.temperature ?? null;
+  const level = data.level ?? null;
+  const status = data.status || 'operational';
+
+  const statusColor = status === 'operational' ? 'border-slate-400/50' :
+    status === 'shutdown' ? 'border-slate-600/50' :
+    status === 'alarm' ? 'border-red-500/50' :
+    'border-amber-500/50';
+
+  // Height varies by vessel type
+  const height = vesselType === 'distillation' ? 'h-[100px]' :
+    vesselType === 'reactor' ? 'h-[80px]' :
+    'h-[70px]';
+
+  return (
+    <div className={`relative ${selected ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-slate-900' : ''}`}>
+      <div className={`w-[64px] ${height} rounded-xl border-2 ${statusColor} bg-slate-800/60 overflow-hidden`}>
+        {/* Vessel body */}
+        <div className="absolute inset-1 rounded-lg border border-slate-600/30">
+          {/* Level fill */}
+          {level !== null && (
+            <div
+              className="absolute bottom-0 left-0 right-0 bg-cyan-800/40 transition-all duration-700"
+              style={{ height: `${Math.min(100, Math.max(0, level))}%` }}
+            />
+          )}
+          
+          {/* Internals for distillation */}
+          {vesselType === 'distillation' && (
+            <div className="absolute inset-x-1 top-2 bottom-2 flex flex-col justify-between">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="h-px bg-slate-500/40" />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Name at top */}
+        <div className="relative z-10 text-center pt-1">
+          <div className="text-[8px] font-bold text-slate-200">{name}</div>
+        </div>
+        
+        {/* Operating params at bottom */}
+        <div className="absolute bottom-1 left-0 right-0 z-10 text-center space-y-0.5">
+          {pressure !== null && (
+            <div className="text-[7px] font-mono text-amber-300">{pressure} bar</div>
+          )}
+          {temperature !== null && (
+            <div className="text-[7px] font-mono text-red-300">{temperature}°C</div>
+          )}
+          {level !== null && (
+            <div className="text-[7px] font-mono text-cyan-300">{level}%</div>
+          )}
+        </div>
+
+        {/* Top/bottom nozzles */}
+        <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-2 bg-slate-600 rounded-t" />
+        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-2 bg-slate-600 rounded-b" />
+      </div>
+      
+      {/* Type label */}
+      <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[7px] text-slate-500 whitespace-nowrap bg-slate-900 px-1 capitalize">
+        {vesselType}
+      </span>
+    </div>
+  );
+}
+
+export const VesselNode = memo(VesselNodeComponent);
 
 // ============================================================================
 // CUSTOM EDGE TYPES
@@ -1022,6 +1425,48 @@ function PipeEdge({
   );
 }
 
+// --- Cable Edge (electrical wire) ---
+
+function CableEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  style = {},
+  markerEnd,
+}: EdgeProps) {
+  const [edgePath] = getSmoothStepPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+    borderRadius: 16,
+  });
+
+  return (
+    <>
+      <path
+        id={id}
+        className="react-flow__edge-path"
+        d={edgePath}
+        stroke="#f59e0b"
+        strokeWidth={2}
+        strokeDasharray="6 3"
+        style={style}
+        markerEnd={markerEnd}
+      />
+      <circle r="3" fill="#f59e0b" opacity={0.6}>
+        <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} />
+      </circle>
+    </>
+  );
+}
+
 // ============================================================================
 // EXPORT: Node & Edge type maps for ReactFlow
 // ============================================================================
@@ -1035,12 +1480,18 @@ export const nodeTypes = {
   tankNode: TankNode,
   motorNode: MotorNode,
   pipeNode: PipeNode,
+  instrumentNode: InstrumentNode,
+  electricalNode: ElectricalNode,
+  controlNode: ControlNode,
+  heatExchangerNode: HeatExchangerNode,
+  vesselNode: VesselNode,
 };
 
 export const edgeTypes = {
   processFlowEdge: ProcessFlowEdge,
   signalEdge: SignalEdge,
   pipeEdge: PipeEdge,
+  cableEdge: CableEdge,
 };
 
 export type CustomNodeTypes = typeof nodeTypes;

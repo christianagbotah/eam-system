@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
-    const type = searchParams.get('type');
+    const type = searchParams.get('type') || searchParams.get('diagramType');
     let page = parseInt(searchParams.get('page') || '1', 10);
     let limit = parseInt(searchParams.get('limit') || '20', 10);
     page = Math.max(1, isNaN(page) ? 1 : page);
@@ -75,12 +75,16 @@ export async function POST(request: NextRequest) {
     const {
       name,
       description,
-      type,
+      type: bodyType,
+      diagramType,
       nodes,
       edges,
       viewport,
       plantId,
+      isTemplate: bodyIsTemplate,
     } = body;
+    const type = bodyType || diagramType;
+    const isTemplate = bodyIsTemplate || false;
 
     if (!name) {
       return NextResponse.json({ success: false, error: 'Diagram name is required' }, { status: 400 });
@@ -88,6 +92,10 @@ export async function POST(request: NextRequest) {
 
     if (!type) {
       return NextResponse.json({ success: false, error: 'Diagram type is required' }, { status: 400 });
+    }
+
+    if (typeof isTemplate !== 'boolean') {
+      return NextResponse.json({ success: false, error: 'isTemplate must be a boolean' }, { status: 400 });
     }
 
     if (!nodes || !Array.isArray(nodes)) {
@@ -107,6 +115,7 @@ export async function POST(request: NextRequest) {
         edges: JSON.stringify(edges),
         viewport: viewport ? JSON.stringify(viewport) : null,
         plantId: plantId || null,
+        isTemplate,
         createdById: session.userId,
       },
       include: {
