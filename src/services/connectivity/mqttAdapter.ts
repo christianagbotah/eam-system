@@ -84,12 +84,31 @@ interface BrokerHealth {
   lastAttemptAt: number;
   lastSuccessAt: number | null;
   avgConnectTimeMs: number;
-  healthScore: number; // 0-100
+  healthScore: number;
+  recentAttempts: Array<{ success: boolean; latencyMs: number; timestamp: number }>;
 }
 
 interface MpsWindowEntry {
   count: number;
   windowStart: number;
+}
+
+interface PendingAck {
+  messageId: string;
+  topic: string;
+  qos: 1 | 2;
+  stage: 'pending' | 'received' | 'released';
+  enqueuedAt: number;
+  expiresAt: number;
+}
+
+interface ThroughputMetrics {
+  messagesReceivedPerSec: number;
+  messagesPublishedPerSec: number;
+  avgMessageSizeBytes: number;
+  peakMessagesPerSec: number;
+  totalMessagesReceived: number;
+  totalMessagesPublished: number;
 }
 
 export class MQTTAdapter extends EventEmitter {
@@ -142,6 +161,23 @@ export class MQTTAdapter extends EventEmitter {
   private latencySamples: number[] = [];
   private connectStartTime = 0;
 
+  // ── 7. Retained Messages ────────────────────────────────────────────
+  private retainedMessages: Map<string, IncomingMessage> = new Map();
+
+  // ── 8. QoS Enforcement ──────────────────────────────────────────────
+  private pendingAcknowledgments: Map<string, PendingAck> = new Map();
+  private pendingAckCleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+  // ── 9. Throughput Metrics ───────────────────────────────────────────
+  private publishCount = 0;
+  private peakMps = 0;
+  private publishMpsWindows: MpsWindowEntry[] = [];
+  private currentPublishMpsWindow: MpsWindowEntry | null = null;
+
+  // ── 10. Connection Pool (static) ────────────────────────────────────
+  private static connectionPool: Map<string, { instance: MQTTAdapter; refCount: number }> = new Map();
+  private _poolKey = '';
+
   constructor(config: MQTTConnectionConfig) {
     super();
     this.config = config;
@@ -170,8 +206,10 @@ export class MQTTAdapter extends EventEmitter {
         lastSuccessAt: null,
         avgConnectTimeMs: 0,
         healthScore: 100,
+        recentAttempts: [],
       });
     }
+    this._poolKey = `${config.broker}:${config.port}:${config.clientId}`;
   }
 
   getStatus() {
@@ -207,6 +245,14 @@ export class MQTTAdapter extends EventEmitter {
       dedupCacheSize: this.dedupCache.size,
       // Broker health
       brokerHealth: Array.from(this.brokerHealthMap.values()),
+      // Throughput metrics
+      throughputMetrics: this.getThroughputMetrics(),
+      // Retained messages
+      retainedMessageCount: this.retainedMessages.size,
+      // Pending acks
+      pendingAcks: this.pendingAcknowledgments.size,
+      // Connection pool
+      poolRefCount: MQTTAdapter.connectionPool.get(this._poolKey)?.refCount ?? 0,
     };
   }
 
@@ -250,8 +296,10 @@ export class MQTTAdapter extends EventEmitter {
         health.avgConnectTimeMs = health.avgConnectTimeMs === 0
           ? connectTimeMs
           : Math.round((health.avgConnectTimeMs * (health.successfulConnections - 1) + connectTimeMs) / health.successfulConnections);
-        // Boost health score
-        health.healthScore = Math.min(100, health.healthScore + 5);
+        // Recalculate health score with rolling window
+        health.recentAttempts.push({ success: true, latencyMs: connectTimeMs, timestamp: Date.now() });
+        if (health.recentAttempts.length > 50) health.recentAttempts.shift();
+        this.recalculateHealthScore(health);
 
         this.emit('connected');
         this.emit('status_change', { status: 'connected', brokerIndex: brokerIdx });
@@ -262,6 +310,7 @@ export class MQTTAdapter extends EventEmitter {
         this.setupBatching();
         this.setupDedupCleanup();
         this.setupDeviceTimeoutCheck();
+        this.setupAckCleanup();
 
         // Flush offline buffer
         await this.flushOfflineBuffer();
@@ -270,8 +319,9 @@ export class MQTTAdapter extends EventEmitter {
       } catch (error) {
         lastError = error as Error;
         health.failedConnections++;
-        // Penalize health score
-        health.healthScore = Math.max(0, health.healthScore - 15);
+        health.recentAttempts.push({ success: false, latencyMs: 0, timestamp: Date.now() });
+        if (health.recentAttempts.length > 50) health.recentAttempts.shift();
+        this.recalculateHealthScore(health);
         log.warn(`MQTT broker [${broker.broker}:${broker.port}] connection failed: ${(error as Error).message}`);
 
         // Move to next broker
@@ -296,6 +346,8 @@ export class MQTTAdapter extends EventEmitter {
     this.cleanupTimers();
     // Production: await this.client?.endAsync();
     this.subscriptions.clear();
+    this.retainedMessages.clear();
+    this.pendingAcknowledgments.clear();
     this.emit('disconnected');
     this.emit('status_change', { status: 'disconnected' });
     log.info('MQTT disconnected');
@@ -306,6 +358,13 @@ export class MQTTAdapter extends EventEmitter {
     this.subscriptions.set(subscription.topic, subscription);
     // Production: this.client.subscribe(subscription.topic, { qos: subscription.qos });
     log.info(`Subscribed to MQTT topic: ${subscription.topic} (QoS ${subscription.qos})`);
+    // Emit retained messages matching this subscription pattern
+    for (const [retainedTopic, msg] of this.retainedMessages) {
+      if (this.matchTopic(subscription.topic, retainedTopic)) {
+        this.emit('data', { topic: msg.topic, payload: msg.payload, qos: msg.qos, retain: true, mappingId: subscription.mappingId, timestamp: new Date() });
+        log.debug(`Emitted retained message for ${retainedTopic} → ${subscription.topic}`);
+      }
+    }
   }
 
   unsubscribe(topic: string): void {
@@ -334,6 +393,14 @@ export class MQTTAdapter extends EventEmitter {
     log.debug(`Published to ${topic}: ${message.toString().substring(0, 100)}`);
     this.messageCount++;
     this.bytesSent += msgSize;
+    // Track publish throughput
+    this.publishCount++;
+    this.trackPublishMps();
+    // Store retained message when retain flag is set
+    if (retain) {
+      this.retainedMessages.set(topic, { topic, payload: message, qos, retain: true });
+      log.debug(`Stored retained message for topic: ${topic}`);
+    }
   }
 
   // Handle incoming message (called by production MQTT client 'message' event)
@@ -368,37 +435,25 @@ export class MQTTAdapter extends EventEmitter {
     // ── 5. Device status tracking ──────────────────────────────────────
     this.updateDeviceStatus(msg.topic);
 
-    // ── 4. Add to batch buffer ─────────────────────────────────────────
-    const subscription = this.subscriptions.get(msg.topic);
-    if (subscription) {
-      this.batchBuffer.push({
-        topic: msg.topic,
-        payload: msg.payload,
-        qos: msg.qos,
-        retain: msg.retain,
-        mappingId: subscription.mappingId,
-        timestamp: new Date(),
-      });
-
-      // Check batch flush conditions
-      if (this.batchBuffer.length >= this.batchMaxSize) {
-        this.flushBatch();
+    // ── 4. Wildcard topic matching + QoS enforcement + batch ──────────────
+    const matchedSubs = this.findMatchingSubscriptions(msg.topic);
+    for (const subscription of matchedSubs) {
+      // Enforce minimum QoS between subscription and message
+      const effectiveQos = Math.min(msg.qos, subscription.qos) as 0 | 1 | 2;
+      if (effectiveQos > 0) {
+        const ackId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        this.pendingAcknowledgments.set(ackId, {
+          messageId: ackId, topic: msg.topic, qos: effectiveQos as 1 | 2,
+          stage: effectiveQos === 2 ? 'pending' : 'received',
+          enqueuedAt: now, expiresAt: now + 30_000,
+        });
+        this.emit('ack_required', { ackId, topic: msg.topic, qos: effectiveQos, stage: effectiveQos === 2 ? 'PUBREC' : 'PUBACK' });
       }
+      this.batchBuffer.push({ topic: msg.topic, payload: msg.payload, qos: effectiveQos, retain: msg.retain, mappingId: subscription.mappingId, timestamp: new Date() });
+      if (this.batchBuffer.length >= this.batchMaxSize) this.flushBatch();
+      this.emit('data', { topic: msg.topic, payload: msg.payload, qos: effectiveQos, retain: msg.retain, mappingId: subscription.mappingId, timestamp: new Date() });
     }
-
-    // Also emit individual 'data' event for real-time consumers
-    if (subscription) {
-      this.emit('data', {
-        topic: msg.topic,
-        payload: msg.payload,
-        qos: msg.qos,
-        retain: msg.retain,
-        mappingId: subscription.mappingId,
-        timestamp: new Date(),
-      });
-    } else {
-      log.debug(`No mapping for topic: ${msg.topic}`);
-    }
+    if (matchedSubs.length === 0) log.debug(`No mapping for topic: ${msg.topic}`);
 
     // Track latency (handler completion time)
     const latencyMs = Date.now() - handlerStart;
@@ -469,6 +524,18 @@ export class MQTTAdapter extends EventEmitter {
         this.connect().catch(() => {});
       });
     }
+  }
+
+  /** Recalculate health score: success rate 70%, latency 20%, error penalty 10% */
+  private recalculateHealthScore(health: BrokerHealth): void {
+    const recent = health.recentAttempts;
+    if (recent.length === 0) { health.healthScore = 100; return; }
+    const successRate = recent.filter(a => a.success).length / recent.length;
+    const successes = recent.filter(a => a.success);
+    const avgLat = successes.length > 0 ? successes.reduce((s, a) => s + a.latencyMs, 0) / successes.length : 0;
+    const latencyPenalty = Math.max(0, 1 - avgLat / 10000); // <10s = no penalty
+    const errorRate = 1 - successRate;
+    health.healthScore = Math.round((successRate * 0.7 + latencyPenalty * 0.2 + (1 - errorRate) * 0.1) * 100);
   }
 
   /** Get the best broker (highest health score) */
@@ -626,6 +693,7 @@ export class MQTTAdapter extends EventEmitter {
     if (this.batchTimer) { clearInterval(this.batchTimer); this.batchTimer = null; }
     if (this.dedupCleanupInterval) { clearInterval(this.dedupCleanupInterval); this.dedupCleanupInterval = null; }
     if (this.deviceCheckInterval) { clearInterval(this.deviceCheckInterval); this.deviceCheckInterval = null; }
+    if (this.pendingAckCleanupInterval) { clearInterval(this.pendingAckCleanupInterval); this.pendingAckCleanupInterval = null; }
 
     // Flush remaining batch on disconnect
     if (this.batchBuffer.length > 0) {
@@ -651,6 +719,128 @@ export class MQTTAdapter extends EventEmitter {
     }, delay);
   }
 
+  // ── 7. Wildcard Topic Matching ────────────────────────────────────────
+
+  /** Match MQTT topic pattern against actual topic. Supports + (single-level) and # (multi-level, must be last). */
+  matchTopic(pattern: string, topic: string): boolean {
+    const pp = pattern.split('/');
+    const tp = topic.split('/');
+    for (let i = 0; i < pp.length; i++) {
+      if (pp[i] === '#') return true;
+      if (i >= tp.length) return false;
+      if (pp[i] !== '+' && pp[i] !== tp[i]) return false;
+    }
+    return pp.length === tp.length;
+  }
+
+  private findMatchingSubscriptions(topic: string): MQTTSubscription[] {
+    const matches: MQTTSubscription[] = [];
+    for (const sub of this.subscriptions.values()) {
+      if (this.matchTopic(sub.topic, topic)) matches.push(sub);
+    }
+    return matches;
+  }
+
+  // ── 8. QoS Acknowledgment ─────────────────────────────────────────────
+
+  /** Acknowledge a pending message (PUBACK for QoS1, PUBREC/PUBREL/COMP for QoS2). */
+  acknowledgeMessage(ackId: string, stage?: string): boolean {
+    const ack = this.pendingAcknowledgments.get(ackId);
+    if (!ack || ack.expiresAt < Date.now()) {
+      if (ack) this.pendingAcknowledgments.delete(ackId);
+      return false;
+    }
+    if (ack.qos === 1) {
+      this.pendingAcknowledgments.delete(ackId);
+      this.emit('ack_complete', { ackId, topic: ack.topic, qos: 1 });
+    } else if (ack.qos === 2) {
+      const nextStage = stage === 'released' ? 'released' : 'received';
+      ack.stage = nextStage as PendingAck['stage'];
+      if (nextStage === 'released') {
+        this.pendingAcknowledgments.delete(ackId);
+        this.emit('ack_complete', { ackId, topic: ack.topic, qos: 2 });
+      } else {
+        this.emit('ack_required', { ackId, topic: ack.topic, qos: 2, stage: 'PUBREL' });
+      }
+    }
+    return true;
+  }
+
+  private setupAckCleanup(): void {
+    if (this.pendingAckCleanupInterval) clearInterval(this.pendingAckCleanupInterval);
+    this.pendingAckCleanupInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [id, ack] of this.pendingAcknowledgments) {
+        if (ack.expiresAt <= now) {
+          this.pendingAcknowledgments.delete(id);
+          this.emit('ack_timeout', { ackId: id, topic: ack.topic, qos: ack.qos });
+          this.droppedCount++;
+        }
+      }
+    }, 10_000);
+  }
+
+  // ── 9. Throughput Metrics ─────────────────────────────────────────────
+
+  private trackPublishMps(): void {
+    const now = Date.now();
+    if (!this.currentPublishMpsWindow || now - this.currentPublishMpsWindow.windowStart >= 1000) {
+      if (this.currentPublishMpsWindow) this.publishMpsWindows.push(this.currentPublishMpsWindow);
+      this.currentPublishMpsWindow = { count: 1, windowStart: now };
+      while (this.publishMpsWindows.length > 60) this.publishMpsWindows.shift();
+    } else {
+      this.currentPublishMpsWindow.count++;
+    }
+    const current = this.getMessagesPerSecond();
+    if (current > this.peakMps) this.peakMps = current;
+  }
+
+  /** Get comprehensive throughput metrics for monitoring dashboards. */
+  getThroughputMetrics(): ThroughputMetrics {
+    const pw = [...this.publishMpsWindows];
+    if (this.currentPublishMpsWindow) pw.push(this.currentPublishMpsWindow);
+    const pubMps = pw.length > 0 ? pw.reduce((s, w) => s + w.count, 0) / pw.length : 0;
+    const totalMsgs = this.messageCount + this.publishCount;
+    return {
+      messagesReceivedPerSec: this.getMessagesPerSecond(),
+      messagesPublishedPerSec: Math.round(pubMps * 100) / 100,
+      avgMessageSizeBytes: totalMsgs > 0 ? Math.round((this.bytesReceived + this.bytesSent) / totalMsgs) : 0,
+      peakMessagesPerSec: this.peakMps,
+      totalMessagesReceived: this.messageCount,
+      totalMessagesPublished: this.publishCount,
+    };
+  }
+
+  // ── 10. Connection Pool ───────────────────────────────────────────────
+
+  /** Acquire a shared adapter. Reuses existing connection for the same broker/clientId. */
+  static acquire(config: MQTTConnectionConfig): MQTTAdapter {
+    const key = `${config.broker}:${config.port}:${config.clientId}`;
+    const existing = MQTTAdapter.connectionPool.get(key);
+    if (existing) {
+      existing.refCount++;
+      log.info(`Connection pool: reusing adapter for ${key} (refCount: ${existing.refCount})`);
+      return existing.instance;
+    }
+    const instance = new MQTTAdapter(config);
+    MQTTAdapter.connectionPool.set(key, { instance, refCount: 1 });
+    log.info(`Connection pool: created new adapter for ${key}`);
+    return instance;
+  }
+
+  /** Release this adapter back to the pool. Disconnects when refCount reaches zero. */
+  release(): void {
+    const entry = MQTTAdapter.connectionPool.get(this._poolKey);
+    if (!entry) return;
+    entry.refCount--;
+    log.info(`Connection pool: released adapter for ${this._poolKey} (refCount: ${entry.refCount})`);
+    if (entry.refCount <= 0) {
+      MQTTAdapter.connectionPool.delete(this._poolKey);
+      this.disconnect();
+      log.info(`Connection pool: destroyed adapter for ${this._poolKey}`);
+    }
+  }
+
   // ── Configuration Update ───────────────────────────────────────────────
 
   /** Update config at runtime (e.g., for failover broker list changes) */
@@ -674,6 +864,7 @@ export class MQTTAdapter extends EventEmitter {
             lastSuccessAt: null,
             avgConnectTimeMs: 0,
             healthScore: 100,
+            recentAttempts: [],
           });
         }
       }
@@ -694,6 +885,12 @@ export class MQTTAdapter extends EventEmitter {
     this.totalBatchesFlushed = 0;
     this.dedupCache.clear();
     this.deviceRegistry.clear();
+    this.publishCount = 0;
+    this.peakMps = 0;
+    this.publishMpsWindows = [];
+    this.currentPublishMpsWindow = null;
+    this.retainedMessages.clear();
+    this.pendingAcknowledgments.clear();
     log.info('MQTT adapter statistics reset');
   }
 }

@@ -227,6 +227,9 @@ model User {
   // Work Instruction relations
   workInstructionsCreated  WorkInstruction[]       @relation("WICreatedBy")
 
+  // Work Order Task Execution relations
+  woTasksCompleted WorkOrderTaskExecution[] @relation("TaskCompletedBy")
+
   // Enterprise Model Library relations (Phase A)
   uploadedModels  ModelLibrary[]          @relation("ModelUploadedBy")
   meshMappings    MeshComponentMapping[]  @relation("MappingCreatedBy")
@@ -250,6 +253,10 @@ model User {
   weibullAnalyses       WeibullAnalysis[]        @relation("WeibullAnalyzedBy")
   downtimeAnalyses      DowntimeAnalysis[]       @relation("DowntimeCreatedBy")
   rulAnalyses           RemainingUsefulLife[]     @relation("RulAnalyzedBy")
+
+  // Work Package relations
+  wpCreated       WorkPackage[] @relation("WPCreatedBy")
+  wpAssigned      WorkPackage[] @relation("WPAssignedTo")
 
   // Industrial Connectivity (Phase 1)
   gatewaysCreated EdgeGateway[] @relation("GatewayCreatedBy")
@@ -353,6 +360,9 @@ model Plant {
   // Engineering BOM & Assembly Intelligence relations (Phase B)
   changeRequests EngineeringChangeRequest[] @relation("EcrPlant")
 
+  // Work Package relations
+  workPackages WorkPackage[] @relation("WPPlant")
+
   // Real-Time Industrial Telemetry relations (Phase C)
   telemetrySources TelemetryDataSource[] @relation("TelemetryPlant")
 
@@ -449,6 +459,8 @@ model MaintenanceRequest {
   @@index([priority])
   @@index([departmentId])
   @@index([createdAt])
+  @@index([status, priority])
+  @@index([plantId, workflowStatus])
   @@map("maintenance_requests")
 }
 
@@ -520,6 +532,7 @@ model WorkOrder {
   timeLogs    WorkOrderTimeLog[]
   materials   WorkOrderMaterial[]
   comments    WorkOrderComment[]
+  taskExecutions WorkOrderTaskExecution[]
 
   // Status History relations
   statusHistory WorkOrderStatusHistory[]
@@ -534,15 +547,23 @@ model WorkOrder {
   repairCompletion       RepairCompletion?
   failureRecords         FailureRecord[] @relation("FailureWorkOrder")
 
+  // Work Package relation
+  workPackageId String?
+  workPackage WorkPackage? @relation(fields: [workPackageId], references: [id])
+
   // Component Maintenance Intelligence relations
   componentMaintenanceHistory ComponentMaintenanceHistory[] @relation("ComponentWorkOrder")
 
   @@index([plantId])
+  @@index([workPackageId])
   @@index([status])
   @@index([priority])
   @@index([assignedTo])
   @@index([assetId])
   @@index([createdAt])
+  @@index([status, priority])
+  @@index([assignedTo, status])
+  @@index([plantId, status])
   @@map("work_orders")
 }
 
@@ -611,8 +632,63 @@ model WorkOrderComment {
 }
 
 // ============================================================================
-// 6. STATUS TRANSITIONS (DB-driven state machine)
+// 5.5 WORK PACKAGES
 // ============================================================================
+
+model WorkPackage {
+  id                   String    @id @default(cuid())
+  name                 String
+  description          String?   @db.Text
+  plantId              String?
+  assignedToId         String?   // → User
+  scheduledDate        DateTime?
+  shift                String?   // morning, afternoon, night
+  status               String    @default("planned") // planned, in_progress, completed, cancelled
+  totalEstimatedHours  Float     @default(0)
+  totalActualHours     Float     @default(0)
+  notes                String?   @db.Text
+  createdById          String
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  // Relations
+  workOrders WorkOrder[]
+  assignee   User?      @relation("WPAssignedTo", fields: [assignedToId], references: [id])
+  plant      Plant?     @relation("WPPlant", fields: [plantId], references: [id])
+  createdBy  User       @relation("WPCreatedBy", fields: [createdById], references: [id])
+
+  @@index([plantId])
+  @@index([status])
+  @@index([assignedToId])
+  @@index([scheduledDate])
+  @@index([createdAt])
+  @@map("work_packages")
+}
+
+model WorkOrderTaskExecution {
+  id              String    @id @default(cuid())
+  workOrderId     String
+  templateTaskId  String?   // → PmTemplateTask (if from template)
+  taskNumber      Int
+  description     String
+  taskType        String    @default("check") // check, measure, inspect, lubricate, replace, record
+  requiredParts   String?   @db.Text // JSON array of {partName, quantity, unit}
+  estimatedMinutes Int?
+  status          String    @default("pending") // pending, in_progress, completed, skipped, failed
+  completedById   String?   // → User
+  completedAt     DateTime?
+  notes           String?   @db.Text
+  findings        String?   @db.Text
+  photos          String?   @db.Text // JSON array of attachment URLs
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workOrder    WorkOrder       @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  completedBy  User?           @relation("TaskCompletedBy", fields: [completedById], references: [id])
+  templateTask PmTemplateTask? @relation(fields: [templateTaskId], references: [id])
+
+  @@map("wo_task_executions")
+}
 
 model StatusTransition {
   id               String   @id @default(cuid())
@@ -645,6 +721,8 @@ model AuditLog {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, createdAt])
+  @@index([entityType, createdAt])
   @@map("audit_logs")
 }
 
@@ -713,6 +791,7 @@ model Notification {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, isRead, createdAt])
   @@map("notifications")
 }
 
@@ -887,6 +966,7 @@ model StockMovement {
   item        InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
   performedBy User          @relation(fields: [performedById], references: [id])
 
+  @@index([itemId, createdAt])
   @@map("stock_movements")
 }
 
@@ -963,6 +1043,8 @@ model PmTemplateTask {
   isActive         Boolean @default(true)
 
   template PmTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  taskExecutions WorkOrderTaskExecution[]
 
   @@map("pm_template_tasks")
 }
@@ -2312,7 +2394,7 @@ model RepairMaterialRequest {
   reason                      String
   notes                       String?
   plantId                     String?
-  status                      String    @default("pending") // pending, supervisor_approved, storekeeper_approved, issued, partially_returned, fully_returned, rejected
+  status                      String    @default("pending") // pending, supervisor_approved, store_approved, picking, issued, returned, closed, rejected
   supervisorApprovedQuantity  Float? // qty approved by supervisor (may differ from requested)
   storekeeperApprovedQuantity Float? // qty approved by storekeeper (may differ from supervisor qty)
   stockReserved               Boolean   @default(false) // whether stock was reserved at storekeeper approval
@@ -2325,6 +2407,10 @@ model RepairMaterialRequest {
   issuedAt                    DateTime?
   returnedById                String? // → User
   returnedAt                  DateTime?
+  consumedQty                 Float? // amount actually consumed during repair
+  wastedQty                   Float? // amount wasted/discarded
+  pickedAt                    DateTime? // when store picked the items
+  pickedBy                    String? // who picked the items
   createdAt                   DateTime  @default(now())
   updatedAt                   DateTime  @updatedAt
 
@@ -3486,6 +3572,7 @@ model AlarmEvent {
   @@index([status])
   @@index([severity])
   @@index([createdAt])
+  @@index([mappingId, severity, status])
   @@map("alarm_events")
 }
 
@@ -4509,5 +4596,67 @@ model DomainEvent {
   @@index([status])
   @@index([createdAt])
   @@index([entityName, entityId])
+  @@index([eventType, createdAt])
   @@map("domain_events")
+}
+
+// ============================================================================
+// OBSERVABILITY — Persisted logs, traces, and metric snapshots
+// ============================================================================
+
+model ObservabilityLog {
+  id           String   @id @default(cuid())
+  level        String   // trace, debug, info, warn, error, fatal
+  service      String?
+  message      String   @db.Text
+  traceId      String?
+  correlationId String?
+  userId       String?
+  requestId    String?
+  durationMs   Float?
+  errorMessage String?  @db.Text
+  tags         String?  @db.Text // JSON array
+  metadata     Json?
+  timestamp    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([level])
+  @@index([service])
+  @@index([timestamp])
+  @@index([traceId])
+  @@map("observability_logs")
+}
+
+model ObservabilityTrace {
+  id           String   @id @default(cuid())
+  traceId      String
+  spanId       String
+  parentSpanId String?
+  name         String
+  serviceName  String?
+  durationMs   Float?
+  status       String?  // ok, error, timeout
+  attributes   Json?
+  timestamp    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([traceId])
+  @@index([serviceName])
+  @@index([timestamp])
+  @@map("observability_traces")
+}
+
+model ObservabilityMetricSnapshot {
+  id        String   @id @default(cuid())
+  name      String
+  type      String   // counter, gauge, histogram, summary
+  value     Float
+  labels    String?  @db.Text // JSON object
+  unit      String?
+  timestamp DateTime
+  createdAt DateTime @default(now())
+
+  @@index([name])
+  @@index([timestamp])
+  @@map("observability_metric_snapshots")
 }

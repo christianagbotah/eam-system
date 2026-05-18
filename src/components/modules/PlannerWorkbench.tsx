@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
@@ -40,6 +40,25 @@ import {
   Factory, Hammer, HardHat, Play, Pause, Square, RefreshCw, X,
   ChevronDown, GripHorizontal, Workflow, CalendarClock, Truck,
 } from 'lucide-react';
+
+import {
+  DndContext,
+  closestCorners,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  type DragStartEvent,
+  type DragEndEvent,
+  type DragOverEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  type UniqueIdentifier,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // ============================================================================
 // CONSTANTS & TYPES
@@ -133,9 +152,16 @@ export default function PlannerWorkbench() {
   const [workPackageDialogOpen, setWorkPackageDialogOpen] = useState(false);
   const [wpForm, setWpForm] = useState({ name: '', assignTo: '', scheduledDate: '', shift: 'day' });
   const [wpLoading, setWpLoading] = useState(false);
+  const [workPackages, setWorkPackages] = useState<any[]>([]);
+  const [wpLoadingList, setWpLoadingList] = useState(false);
 
   // Active tab
   const [activeTab, setActiveTab] = useState('kanban');
+
+  // DnD state
+  const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
+  const [localKanbanData, setLocalKanbanData] = useState<Record<string, any[]>>({});
+  const dndApiCalledRef = useRef(false);
 
   // Fetch data
   const fetchData = useCallback(async () => {
@@ -163,7 +189,18 @@ export default function PlannerWorkbench() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData, refreshKey]);
+  const fetchWorkPackages = useCallback(async () => {
+    setWpLoadingList(true);
+    try {
+      const res = await api.get('/api/work-packages?limit=50');
+      if (res.success && res.data) setWorkPackages(res.data);
+    } catch (_e) {
+      // Silent catch
+    }
+    setWpLoadingList(false);
+  }, []);
+
+  useEffect(() => { fetchData(); fetchWorkPackages(); }, [fetchData, fetchWorkPackages, refreshKey]);
 
   // Filtered WOs for Kanban
   const filteredWOs = useMemo(() => {
@@ -291,12 +328,22 @@ export default function PlannerWorkbench() {
     if (!wpForm.name.trim()) { toast.error('Package name is required'); return; }
     if (selectedWOs.length === 0) { toast.error('Select at least one work order'); return; }
     setWpLoading(true);
-    // Simulate work package creation (grouping WOs)
-    await new Promise(resolve => setTimeout(resolve, 800));
-    toast.success(`Work package "${wpForm.name}" created with ${selectedWOs.length} WOs`);
-    setWorkPackageDialogOpen(false);
-    setWpForm({ name: '', assignTo: '', scheduledDate: '', shift: 'day' });
-    setSelectedWOs([]);
+    const res = await api.post('/api/work-packages', {
+      name: wpForm.name,
+      assignedToId: wpForm.assignTo || undefined,
+      scheduledDate: wpForm.scheduledDate || undefined,
+      shift: wpForm.shift !== 'day' ? wpForm.shift : undefined,
+      workOrderIds: selectedWOs,
+    });
+    if (res.success) {
+      toast.success(`Work package "${wpForm.name}" created with ${selectedWOs.length} WOs`);
+      setWorkPackageDialogOpen(false);
+      setWpForm({ name: '', assignTo: '', scheduledDate: '', shift: 'day' });
+      setSelectedWOs([]);
+      fetchWorkPackages();
+    } else {
+      toast.error(res.error || 'Failed to create work package');
+    }
     setWpLoading(false);
   };
 
@@ -307,6 +354,172 @@ export default function PlannerWorkbench() {
   const toggleWOSelection = (id: string) => {
     setSelectedWOs(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
+
+  // --- DnD Handlers ---
+
+  // Find which column a WO id belongs to
+  const findColumnForId = useCallback((id: UniqueIdentifier): string | undefined => {
+    for (const col of KANBAN_COLUMNS) {
+      const items = localKanbanData[col.key];
+      if (items && items.some(wo => wo.id === id)) return col.key;
+    }
+    return undefined;
+  }, [localKanbanData]);
+
+  // Find the WO data object for a given id
+  const findWOById = useCallback((id: UniqueIdentifier): any => {
+    for (const col of KANBAN_COLUMNS) {
+      const items = localKanbanData[col.key];
+      if (items) {
+        const found = items.find(wo => wo.id === id);
+        if (found) return found;
+      }
+    }
+    return null;
+  }, [localKanbanData]);
+
+  // Sync local kanban data from kanbanData whenever it changes
+  useEffect(() => {
+    setLocalKanbanData(prev => {
+      const next: Record<string, any[]> = {};
+      let changed = false;
+      for (const col of KANBAN_COLUMNS) {
+        const source = kanbanData[col.key] || [];
+        const prevItems = prev[col.key] || [];
+        // Use source when source has different length or if local has stale items
+        if (source.length !== prevItems.length) {
+          next[col.key] = source;
+          changed = true;
+        } else {
+          next[col.key] = prevItems;
+        }
+      }
+      // On first load, always use kanbanData
+      if (Object.keys(prev).length === 0) {
+        return { ...kanbanData };
+      }
+      return changed ? next : prev;
+    });
+  }, [kanbanData]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id);
+    dndApiCalledRef.current = false;
+  }, []);
+
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const activeColumn = findColumnForId(active.id);
+    const overColumn = findColumnForId(over.id);
+    if (!activeColumn || !overColumn) return;
+
+    setLocalKanbanData(prev => {
+      const sourceItems = [...(prev[activeColumn] || [])];
+      const destItems = [...(prev[overColumn] || [])];
+      const activeIdx = sourceItems.findIndex(wo => wo.id === active.id);
+      if (activeIdx === -1) return prev;
+
+      // Remove from source
+      const [movedItem] = sourceItems.splice(activeIdx, 1);
+
+      if (activeColumn === overColumn) {
+        // Same column reorder
+        const overIdx = destItems.findIndex(wo => wo.id === over.id);
+        destItems.splice(overIdx, 0, movedItem);
+        return { ...prev, [activeColumn]: destItems };
+      }
+
+      // Cross-column move: insert before over item or at end
+      const overIdx = destItems.findIndex(wo => wo.id === over.id);
+      if (overIdx === -1) {
+        destItems.push(movedItem);
+      } else {
+        destItems.splice(overIdx, 0, movedItem);
+      }
+
+      return {
+        ...prev,
+        [activeColumn]: sourceItems,
+        [overColumn]: destItems,
+      };
+    });
+  }, [findColumnForId]);
+
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+    if (!over || active.id === over.id) return;
+    if (dndApiCalledRef.current) return;
+
+    const sourceColumn = findColumnForId(active.id);
+    const destColumn = findColumnForId(over.id);
+    if (!sourceColumn || !destColumn) return;
+
+    // Determine if this was a cross-column move (status change)
+    const isCrossColumn = sourceColumn !== destColumn;
+
+    if (isCrossColumn) {
+      dndApiCalledRef.current = true;
+      const woId = String(active.id);
+      const targetStatus = destColumn;
+
+      try {
+        let endpoint = '';
+        let statusLabel = '';
+
+        switch (targetStatus) {
+          case 'in_progress':
+            endpoint = `/api/work-orders/${woId}/start`;
+            statusLabel = 'In Progress';
+            break;
+          case 'pending_review':
+            endpoint = `/api/work-orders/${woId}/complete`;
+            statusLabel = 'Pending Review';
+            break;
+          case 'completed':
+            endpoint = `/api/work-orders/${woId}/complete`;
+            statusLabel = 'Completed';
+            break;
+          case 'assigned':
+            endpoint = `/api/work-orders/${woId}/assign`;
+            statusLabel = 'Assigned';
+            break;
+          case 'approved':
+            // No specific API for moving back to approved, just update status
+            statusLabel = 'Approved';
+            break;
+          default:
+            statusLabel = targetStatus;
+        }
+
+        if (endpoint) {
+          const res = await api.post(endpoint, {});
+          if (res.success) {
+            toast.success(`WO moved to ${statusLabel}`);
+            setRefreshKey(k => k + 1);
+          } else {
+            toast.error(res.error || `Failed to move WO to ${statusLabel}`);
+            setRefreshKey(k => k + 1); // Revert
+          }
+        } else {
+          // Just refresh to reflect the move
+          setRefreshKey(k => k + 1);
+        }
+      } catch {
+        toast.error('Failed to update work order status');
+        setRefreshKey(k => k + 1); // Revert
+      }
+    }
+  }, [findColumnForId]);
+
+  // The WO card being dragged for DragOverlay
+  const activeWO = activeId ? findWOById(activeId) : null;
 
   if (loading) return <LoadingSkeleton />;
 
@@ -459,34 +672,44 @@ export default function PlannerWorkbench() {
                 )}
               </div>
 
-              {/* Kanban Columns */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
-                {KANBAN_COLUMNS.map(col => (
-                  <div key={col.key}>
-                    <div className={`flex items-center gap-2 px-3 py-2 rounded-t-lg border ${col.color} font-medium text-xs`}>
-                      <col.icon className="h-3.5 w-3.5" />
-                      {col.label}
-                      <Badge variant="outline" className="ml-auto text-[10px] bg-white/60">{kanbanData[col.key]?.length || 0}</Badge>
+              {/* Kanban Columns — DnD enabled */}
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCorners}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragEnd={handleDragEnd}
+              >
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+                  {KANBAN_COLUMNS.map(col => {
+                    const items = localKanbanData[col.key] || [];
+                    return (
+                      <KanbanColumn
+                        key={col.key}
+                        id={col.key}
+                        column={col}
+                        items={items}
+                        selectedWOs={selectedWOs}
+                        onToggleSelect={toggleWOSelection}
+                        onCardClick={(wo) => { setDetailWO(wo); setDetailSheetOpen(true); }}
+                      />
+                    );
+                  })}
+                </div>
+                <DragOverlay>
+                  {activeWO ? (
+                    <div className="w-64 opacity-90 rotate-2">
+                      <WOCard
+                        wo={activeWO}
+                        selected={false}
+                        onToggleSelect={() => {}}
+                        onClick={() => {}}
+                        isDragging
+                      />
                     </div>
-                    <ScrollArea className="h-[calc(100vh-420px)] bg-muted/30 rounded-b-lg border border-t-0 p-2">
-                      <div className="space-y-2">
-                        {kanbanData[col.key]?.length === 0 && (
-                          <div className="text-center py-6 text-muted-foreground text-xs">No work orders</div>
-                        )}
-                        {kanbanData[col.key]?.map(wo => (
-                          <WOCard
-                            key={wo.id}
-                            wo={wo}
-                            selected={selectedWOs.includes(wo.id)}
-                            onToggleSelect={() => toggleWOSelection(wo.id)}
-                            onClick={() => { setDetailWO(wo); setDetailSheetOpen(true); }}
-                          />
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  </div>
-                ))}
-              </div>
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
             </div>
 
             {/* RIGHT: Capacity Planning */}
@@ -565,6 +788,87 @@ export default function PlannerWorkbench() {
 
         {/* WORK PACKAGE TAB */}
         <TabsContent value="work-package">
+          {/* Existing Work Packages */}
+          {workPackages.length > 0 && (
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold flex items-center gap-2"><Layers className="h-4 w-4 text-emerald-600" />Existing Work Packages</h3>
+                <Badge variant="outline" className="text-xs">{workPackages.length} packages</Badge>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {workPackages.map((wp: any) => {
+                  const wpStatusColor: Record<string, string> = {
+                    planned: 'bg-sky-100 text-sky-700 border-sky-200',
+                    in_progress: 'bg-amber-100 text-amber-700 border-amber-200',
+                    completed: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+                    cancelled: 'bg-slate-100 text-slate-500 border-slate-200',
+                  };
+                  const colorCls = wpStatusColor[wp.status] || 'bg-slate-100 text-slate-600 border-slate-200';
+                  return (
+                    <Card key={wp.id} className={`border ${wp.status === 'cancelled' ? 'opacity-60' : ''}`}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-semibold truncate">{wp.name}</p>
+                              <Badge variant="outline" className={`text-[10px] ${colorCls}`}>
+                                {wp.status?.replace(/_/g, ' ')}
+                              </Badge>
+                            </div>
+                            {wp.assignee && (
+                              <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                                <UserCheck className="h-3 w-3" />{wp.assignee.fullName}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
+                              <span className="flex items-center gap-1"><ClipboardList className="h-3 w-3" />{wp._count?.workOrders || wp.workOrders?.length || 0} WOs</span>
+                              <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{wp.totalEstimatedHours}h est</span>
+                              {wp.scheduledDate && (
+                                <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{formatDate(wp.scheduledDate)}</span>
+                              )}
+                              {wp.shift && (
+                                <Badge variant="outline" className="text-[10px]">{wp.shift}</Badge>
+                              )}
+                            </div>
+                          </div>
+                          {(isAdmin() || hasPermission('work_orders.delete')) && wp.status !== 'in_progress' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-red-600 shrink-0"
+                              onClick={async () => {
+                                try {
+                                  const res = await api.delete(`/api/work-packages/${wp.id}`);
+                                  if (res.success) {
+                                    toast.success(res.message || 'Work package deleted');
+                                    fetchWorkPackages();
+                                  } else {
+                                    toast.error(res.error || 'Failed to delete');
+                                  }
+                                } catch {
+                                  toast.error('Failed to delete work package');
+                                }
+                              }}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {wpLoadingList && <Skeleton className="h-24 mt-4" />}
+          {!wpLoadingList && workPackages.length === 0 && (
+            <div className="mt-4 text-center py-6 text-muted-foreground text-sm border border-dashed rounded-lg">
+              <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>No work packages yet. Select work orders below to create one.</p>
+            </div>
+          )}
+
           <Card className="border border-border/60 shadow-sm mt-4">
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -944,11 +1248,15 @@ export default function PlannerWorkbench() {
 // WO CARD COMPONENT (for Kanban)
 // ============================================================================
 
-function WOCard({ wo, selected, onToggleSelect, onClick }: { wo: any; selected: boolean; onToggleSelect: () => void; onClick: () => void }) {
+function WOCard({ wo, selected, onToggleSelect, onClick, isDragging }: { wo: any; selected: boolean; onToggleSelect: () => void; onClick: () => void; isDragging?: boolean }) {
   return (
     <div
       className={`p-3 rounded-lg border transition-all cursor-pointer group ${
-        selected ? 'border-emerald-400 bg-emerald-50/50 ring-1 ring-emerald-200' : 'border-border/60 hover:border-emerald-200 hover:shadow-sm bg-white'
+        isDragging
+          ? 'border-emerald-400 bg-emerald-50/50 shadow-xl ring-2 ring-emerald-300'
+          : selected
+            ? 'border-emerald-400 bg-emerald-50/50 ring-1 ring-emerald-200'
+            : 'border-border/60 hover:border-emerald-200 hover:shadow-sm bg-white'
       }`}
       onClick={onClick}
     >
@@ -983,6 +1291,98 @@ function WOCard({ wo, selected, onToggleSelect, onClick }: { wo: any; selected: 
         )}
         {wo.createdAt && <SLAIndicator createdAt={wo.createdAt} priority={wo.priority} />}
       </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// SORTABLE WORK ORDER CARD (for DnD Kanban)
+// ============================================================================
+
+function SortableWorkOrderCard({ wo, selected, onToggleSelect, onClick }: { wo: any; selected: boolean; onToggleSelect: () => void; onClick: () => void }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: wo.id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 50 : 'auto',
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      <div className="flex items-center gap-1 mb-1">
+        <button
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
+          onClick={e => e.stopPropagation()}
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </button>
+        <WOCard
+          wo={wo}
+          selected={selected}
+          onToggleSelect={onToggleSelect}
+          onClick={onClick}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// KANBAN COLUMN (with SortableContext)
+// ============================================================================
+
+function KanbanColumn({
+  id,
+  column,
+  items,
+  selectedWOs,
+  onToggleSelect,
+  onCardClick,
+}: {
+  id: string;
+  column: (typeof KANBAN_COLUMNS)[number];
+  items: any[];
+  selectedWOs: string[];
+  onToggleSelect: (id: string) => void;
+  onCardClick: (wo: any) => void;
+}) {
+  const sortableIds = items.map(wo => wo.id);
+
+  return (
+    <div>
+      <div className={`flex items-center gap-2 px-3 py-2 rounded-t-lg border ${column.color} font-medium text-xs`}>
+        <column.icon className="h-3.5 w-3.5" />
+        {column.label}
+        <Badge variant="outline" className="ml-auto text-[10px] bg-white/60">{items.length}</Badge>
+      </div>
+      <ScrollArea className="h-[calc(100vh-420px)] bg-muted/30 rounded-b-lg border border-t-0 p-2">
+        <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+          <div className="space-y-2">
+            {items.length === 0 && (
+              <div className="text-center py-6 text-muted-foreground text-xs">Drop work orders here</div>
+            )}
+            {items.map(wo => (
+              <SortableWorkOrderCard
+                key={wo.id}
+                wo={wo}
+                selected={selectedWOs.includes(wo.id)}
+                onToggleSelect={() => onToggleSelect(wo.id)}
+                onClick={() => onCardClick(wo)}
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </ScrollArea>
     </div>
   );
 }

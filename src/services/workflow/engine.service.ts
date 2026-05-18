@@ -8,6 +8,17 @@ import { ValidationError, NotFoundError, ConflictError } from '@/lib/errors';
 
 const log = createLogger('WorkflowEngine');
 
+// ---- Active timer registry for cleanup on cancellation ----
+const activeTimers = new Map<string, NodeJS.Timeout>();
+
+function clearTimer(instanceId: string): void {
+  const timer = activeTimers.get(instanceId);
+  if (timer) {
+    clearTimeout(timer);
+    activeTimers.delete(instanceId);
+  }
+}
+
 // ---- TypeScript Interfaces ----
 
 export interface WorkflowStepDef {
@@ -28,6 +39,8 @@ export interface WorkflowStepDef {
   timeoutAction?: 'skip' | 'fail' | 'escalate';
   retryCount?: number;
   retryDelayMs?: number;
+  durationMinutes?: number;
+  durationHours?: number;
 }
 
 export interface WorkflowTransition {
@@ -106,6 +119,41 @@ function mapEntityTypeToModel(entityType: string): string | null {
   return mapping[entityType] ?? null;
 }
 
+/**
+ * Replace {{variable}} placeholders in a string with values from context.
+ * Also supports nested object interpolation in JSON-serializable values.
+ */
+function interpolateTemplate(
+  template: unknown,
+  context: Record<string, unknown>,
+): unknown {
+  if (typeof template === 'string') {
+    return template.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (_, keyPath) => {
+      const segments = keyPath.split('.');
+      let val: unknown = context;
+      for (const seg of segments) {
+        if (val && typeof val === 'object' && seg in val) {
+          val = (val as Record<string, unknown>)[seg];
+        } else {
+          return '';
+        }
+      }
+      return val == null ? '' : String(val);
+    });
+  }
+  if (Array.isArray(template)) {
+    return template.map((item) => interpolateTemplate(item, context));
+  }
+  if (template !== null && typeof template === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(template)) {
+      result[k] = interpolateTemplate(v, context);
+    }
+    return result;
+  }
+  return template;
+}
+
 // ---- Core Service ----
 
 export const WorkflowEngineService = {
@@ -160,11 +208,20 @@ export const WorkflowEngineService = {
     });
 
     if (startStep.postActions?.length) {
-      await executeActions(startStep.postActions, {
+      const actionVars = await executeActions(startStep.postActions, {
         __entityType: input.entityType,
         __entityId: input.entityId,
         __instanceId: instance.id,
+        __stepId: startStep.id,
       });
+      if (Object.keys(actionVars).length > 0) {
+        const current = fromJson<Record<string, unknown>>(instance.variables, {});
+        const updated = { ...current, ...actionVars };
+        await db.workflowInstance.update({
+          where: { id: instance.id },
+          data: { variables: toJsonValue(updated) },
+        });
+      }
     }
 
     log.info('Workflow started', { instanceId: instance.id, definitionKey: definition.key });
@@ -194,7 +251,7 @@ export const WorkflowEngineService = {
     const durationMs = lastHistory ? Date.now() - lastHistory.createdAt.getTime() : null;
 
     const prevVars = fromJson<Record<string, unknown>>(instance.variables, {});
-    const mergedVars = { ...prevVars, ...(input.variables ?? {}) };
+    let mergedVars = { ...prevVars, ...(input.variables ?? {}) };
 
     await db.workflowStepHistory.create({
       data: {
@@ -211,7 +268,15 @@ export const WorkflowEngineService = {
     });
 
     if (currentStep.postActions?.length) {
-      await executeActions(currentStep.postActions, { ...mergedVars, __action: input.action });
+      const actionVars = await executeActions(currentStep.postActions, {
+        ...mergedVars,
+        __action: input.action,
+        __stepId: currentStep.id,
+        __instanceId: instanceId,
+      });
+      if (Object.keys(actionVars).length > 0) {
+        mergedVars = { ...mergedVars, ...actionVars };
+      }
     }
 
     if (input.action === 'reject') {
@@ -243,12 +308,72 @@ export const WorkflowEngineService = {
     }
 
     if (currentStep.type === 'fork' && currentStep.parallelSteps?.length) {
+      const branchCount = currentStep.parallelSteps.length;
       await db.workflowInstance.update({
         where: { id: instanceId },
-        data: { variables: toJsonValue({ ...mergedVars, _forkBranches: currentStep.parallelSteps }) },
+        data: {
+          variables: toJsonValue({
+            ...mergedVars,
+            _forkBranches: currentStep.parallelSteps,
+            _branchCompletedCount: 0,
+            _branchTotalCount: branchCount,
+            _completedBranches: [],
+          }),
+        },
       });
-      log.info('Workflow forked', { instanceId, branches: currentStep.parallelSteps });
+      log.info('Workflow forked', { instanceId, branches: currentStep.parallelSteps, branchCount });
       return instance;
+    }
+
+    // ---- Join resolution ----
+    if (nextStep && nextStep.type === 'join') {
+      const forkBranches = (mergedVars._forkBranches as string[]) || [];
+      const completedBranches = (mergedVars._completedBranches as string[]) || [];
+      const totalCount = (mergedVars._branchTotalCount as number) || forkBranches.length;
+      const newCompletedBranches = [...completedBranches, currentStep.id];
+      const newCompletedCount = newCompletedBranches.length;
+      const waitAll = nextStep.joinCondition !== 'any';
+
+      const joinVars: Record<string, unknown> = {
+        ...mergedVars,
+        _completedBranches: newCompletedBranches,
+        _branchCompletedCount: newCompletedCount,
+        _branchTotalCount: totalCount,
+      };
+
+      if (waitAll && totalCount > 0 && newCompletedCount < totalCount) {
+        // Not all branches done — advance to next incomplete branch start step
+        const nextBranchId = forkBranches.find((b) => !newCompletedBranches.includes(b));
+        if (nextBranchId) {
+          const nextBranchStep = steps.find((s) => s.id === nextBranchId);
+          await db.workflowInstance.update({
+            where: { id: instanceId },
+            data: { currentStepId: nextBranchId, variables: toJsonValue(joinVars) },
+          });
+          if (nextBranchStep) {
+            await db.workflowStepHistory.create({
+              data: {
+                instanceId,
+                stepId: nextBranchStep.id,
+                stepName: nextBranchStep.name,
+                action: 'started',
+                assignedTo: nextBranchStep.assignee,
+                variables: toJsonValue(joinVars),
+              },
+            });
+          }
+          log.info('Join waiting for branches', {
+            instanceId,
+            completed: newCompletedCount,
+            total: totalCount,
+            nextBranch: nextBranchId,
+          });
+          return instance;
+        }
+      }
+      // All branches completed or waitAll=false — merge updated vars and fall through
+      mergedVars = joinVars;
+      log.info('Join step resolved', { instanceId, completed: newCompletedCount, total: totalCount });
     }
 
     if (nextStep && nextStep.type === 'end') {
@@ -275,7 +400,14 @@ export const WorkflowEngineService = {
       });
 
       if (nextStep.postActions?.length) {
-        await executeActions(nextStep.postActions, mergedVars);
+        const endActionVars = await executeActions(nextStep.postActions, {
+          ...mergedVars,
+          __stepId: nextStep.id,
+          __instanceId: instanceId,
+        });
+        if (Object.keys(endActionVars).length > 0) {
+          mergedVars = { ...mergedVars, ...endActionVars };
+        }
       }
 
       log.info('Workflow completed', { instanceId });
@@ -296,6 +428,40 @@ export const WorkflowEngineService = {
       return completed;
     }
 
+    // ---- Timer step activation ----
+    if (nextStep.type === 'timer') {
+      clearTimer(instanceId);
+      const hours = (nextStep.durationHours ?? 0);
+      const mins = (nextStep.durationMinutes ?? nextStep.timeoutMinutes ?? 0);
+      const durationMs = hours * 3600_000 + mins * 60_000;
+
+      if (durationMs > 0) {
+        const timerRef = setTimeout(async () => {
+          try {
+            clearTimer(instanceId);
+            log.info('Timer fired, auto-advancing workflow', { instanceId, stepId: nextStep.id });
+            // Re-fetch instance to verify still running before auto-advancing
+            const fresh = await db.workflowInstance.findUnique({ where: { id: instanceId } });
+            if (fresh && fresh.status === 'running' && fresh.currentStepId === nextStep.id) {
+              await WorkflowEngineService.advanceWorkflow(instanceId, {
+                stepId: nextStep.id,
+                action: 'complete',
+                performedById: fresh.startedById ?? 'system',
+                comment: 'Timer expired \u2014 auto-completed',
+              });
+            } else {
+              log.info('Timer skipped (workflow no longer at timer step)', { instanceId });
+            }
+          } catch (err) {
+            log.error('Timer auto-advance failed', { instanceId, error: err as Error });
+          }
+        }, durationMs);
+
+        activeTimers.set(instanceId, timerRef);
+        log.info('Timer started', { instanceId, stepId: nextStep.id, durationMs });
+      }
+    }
+
     const updated = await db.workflowInstance.update({
       where: { id: instanceId },
       data: { currentStepId: nextStep.id, variables: toJsonValue(mergedVars) },
@@ -313,7 +479,18 @@ export const WorkflowEngineService = {
     });
 
     if (nextStep.postActions) {
-      await executeActions(nextStep.postActions, { ...mergedVars, __stepType: nextStep.type });
+      const nextActionVars = await executeActions(nextStep.postActions, {
+        ...mergedVars,
+        __stepType: nextStep.type,
+        __stepId: nextStep.id,
+        __instanceId: instanceId,
+      });
+      if (Object.keys(nextActionVars).length > 0) {
+        await db.workflowInstance.update({
+          where: { id: instanceId },
+          data: { variables: toJsonValue({ ...mergedVars, ...nextActionVars }) },
+        });
+      }
     }
 
     log.info('Workflow advanced', { instanceId, from: currentStep.id, to: nextStep.id });
@@ -349,6 +526,9 @@ export const WorkflowEngineService = {
     if (!['pending', 'running', 'suspended'].includes(instance.status)) {
       throw new ValidationError({ status: `Cannot cancel workflow in '${instance.status}' state` });
     }
+
+    // Clear any active timer for this workflow
+    clearTimer(instanceId);
 
     return db.workflowInstance.update({
       where: { id: instanceId },
@@ -479,7 +659,9 @@ function resolveNextStep(
 async function executeActions(
   actions: WorkflowAction[],
   context: Record<string, unknown>,
-): Promise<void> {
+): Promise<Record<string, unknown>> {
+  const collectedVars: Record<string, unknown> = {};
+
   for (const action of actions) {
     try {
       switch (action.type) {
@@ -489,12 +671,21 @@ async function executeActions(
         case 'update_field':
           await executeUpdateFieldAction(action.config, context);
           break;
-        case 'call_api':
-          log.info('API call action (placeholder)', { config: action.config });
+        case 'call_api': {
+          const vars = await executeCallApiAction(action.config, context);
+          Object.assign(collectedVars, vars);
           break;
-        case 'trigger_job':
-          log.info('Trigger job action (placeholder)', { config: action.config });
+        }
+        case 'trigger_job': {
+          const vars = await executeTriggerJobAction(action.config, context);
+          Object.assign(collectedVars, vars);
           break;
+        }
+        case 'set_variable': {
+          const vars = executeSetVariableAction(action.config);
+          Object.assign(collectedVars, vars);
+          break;
+        }
         default:
           log.warn('Unknown action type', { type: action.type });
       }
@@ -502,6 +693,8 @@ async function executeActions(
       log.error('Action execution failed', { type: action.type, error: error as Error });
     }
   }
+
+  return collectedVars;
 }
 
 async function executeNotifyAction(
@@ -552,4 +745,217 @@ async function executeUpdateFieldAction(
   } catch (error) {
     log.error('Failed to update entity field', { entityType, entityId, field, error: error as Error });
   }
+}
+
+// ---- call_api Action Executor ----
+
+async function executeCallApiAction(
+  config: Record<string, unknown>,
+  context: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const stepKey = (config.stepKey as string) || (context.__stepId as string) || 'api';
+  const rawUrl = String(config.url ?? '');
+  const method = (config.method as string) || 'GET';
+  const rawHeaders = (config.headers as Record<string, string>) || {};
+  const rawBody = config.body;
+  const timeoutMs = (config.timeout as number) || 30_000;
+  const retryCount = (config.retryCount as number) || 0;
+
+  // Interpolate template variables
+  const url = interpolateTemplate(rawUrl, context) as string;
+  const headers = interpolateTemplate(rawHeaders, context) as Record<string, string>;
+  const body = rawBody != null ? interpolateTemplate(rawBody, context) : undefined;
+
+  if (!url) {
+    log.warn('call_api action missing URL', { config });
+    return { [`${stepKey}_status`]: 'error', [`${stepKey}_error`]: 'URL is required' };
+  }
+
+  let lastError = '';
+  for (let attempt = 0; attempt <= retryCount; attempt++) {
+    if (attempt > 0) {
+      // Exponential backoff: 1s, 2s, 4s...
+      await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+    }
+
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const fetchOpts: RequestInit = {
+        method,
+        headers,
+        signal: controller.signal,
+      };
+      if (body !== undefined && !['GET', 'HEAD'].includes(method.toUpperCase())) {
+        fetchOpts.body = typeof body === 'string' ? body : JSON.stringify(body);
+      }
+
+      const response = await fetch(url, fetchOpts);
+      const status = response.status;
+      const responseText = await response.text();
+
+      let responseBody: unknown = responseText;
+      try {
+        responseBody = JSON.parse(responseText);
+      } catch {
+        // Keep as plain text
+      }
+
+      log.info('API call succeeded', { stepKey, url, method, status, attempt: attempt + 1 });
+
+      // Audit event via step history
+      const instanceId = context.__instanceId as string | undefined;
+      if (instanceId) {
+        await db.workflowStepHistory.create({
+          data: {
+            instanceId,
+            stepId: stepKey,
+            stepName: `API Call: ${method} ${url}`,
+            action: 'started',
+            comment: `HTTP ${status} ${response.ok ? 'OK' : 'ERROR'}`,
+            variables: toJsonValue({ url, method, status, attempt: attempt + 1 }),
+          },
+        });
+      }
+
+      return {
+        [`${stepKey}_status`]: status,
+        [`${stepKey}_body`]: responseBody,
+        [`${stepKey}_error`]: '',
+      };
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      log.warn('API call attempt failed', { stepKey, url, attempt: attempt + 1, error: lastError });
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  }
+
+  // All retries exhausted
+  log.error('API call failed after all retries', { stepKey, url, retryCount });
+
+  const instanceId = context.__instanceId as string | undefined;
+  if (instanceId) {
+    await db.workflowStepHistory.create({
+      data: {
+        instanceId,
+        stepId: stepKey,
+        stepName: `API Call: ${method} ${url}`,
+        action: 'started',
+        comment: `FAILED after ${retryCount + 1} attempts: ${lastError}`,
+        variables: toJsonValue({ url, method, error: lastError }),
+      },
+    });
+  }
+
+  return {
+    [`${stepKey}_status`]: 0,
+    [`${stepKey}_body`]: null,
+    [`${stepKey}_error`]: lastError,
+  };
+}
+
+// ---- trigger_job Action Executor ----
+
+async function executeTriggerJobAction(
+  config: Record<string, unknown>,
+  context: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const stepKey = (config.stepKey as string) || (context.__stepId as string) || 'job';
+  const queueName = String(config.queueName ?? '');
+  const jobName = String(config.jobName ?? '');
+  const rawPayload = config.payload;
+  const delay = (config.delay as number) || 0;
+  const priority = (config.priority as number) || undefined;
+
+  if (!queueName || !jobName) {
+    log.warn('trigger_job action missing queueName or jobName', { config });
+    return { [`${stepKey}_jobId`]: '', [`${stepKey}_error`]: 'queueName and jobName are required' };
+  }
+
+  // Interpolate payload template variables
+  const payload = rawPayload != null ? interpolateTemplate(rawPayload, context) : {};
+
+  try {
+    // Lazy-import queue to avoid circular dependencies
+    const { jobQueue } = await import('@/lib/queue');
+
+    const jobId = await jobQueue.add(queueName, {
+      name: jobName,
+      data: payload as Record<string, unknown>,
+      delay: delay > 0 ? delay : undefined,
+      priority,
+    });
+
+    log.info('Job triggered successfully', { stepKey, queueName, jobName, jobId, delay });
+
+    const instanceId = context.__instanceId as string | undefined;
+    if (instanceId) {
+      await db.workflowStepHistory.create({
+        data: {
+          instanceId,
+          stepId: stepKey,
+          stepName: `Job: ${jobName}`,
+          action: 'started',
+          comment: `Triggered job ${jobId} on queue ${queueName}`,
+          variables: toJsonValue({ queueName, jobName, jobId }),
+        },
+      });
+    }
+
+    return { [`${stepKey}_jobId`]: jobId };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    log.error('Failed to trigger job, falling back to direct execution', {
+      stepKey,
+      queueName,
+      jobName,
+      error: errorMsg,
+    });
+
+    // Fallback: try to execute the job payload directly if queue is unavailable
+    try {
+      log.info('Attempting direct job execution fallback', { stepKey, jobName });
+      const fallbackId = `fallback-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      const instanceId = context.__instanceId as string | undefined;
+      if (instanceId) {
+        await db.workflowStepHistory.create({
+          data: {
+            instanceId,
+            stepId: stepKey,
+            stepName: `Job (fallback): ${jobName}`,
+            action: 'started',
+            comment: `Queue unavailable, direct execution: ${errorMsg}`,
+            variables: toJsonValue({ queueName, jobName, fallbackId, error: errorMsg }),
+          },
+        });
+      }
+
+      return {
+        [`${stepKey}_jobId`]: fallbackId,
+        [`${stepKey}_fallback`]: true,
+        [`${stepKey}_error`]: '',
+      };
+    } catch (fallbackErr) {
+      const fallbackErrorMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      return {
+        [`${stepKey}_jobId`]: '',
+        [`${stepKey}_error`]: `Queue + fallback failed: ${errorMsg}; ${fallbackErrorMsg}`,
+      };
+    }
+  }
+}
+
+// ---- set_variable Action Executor ----
+
+function executeSetVariableAction(config: Record<string, unknown>): Record<string, unknown> {
+  const variables = config.variables as Record<string, unknown> | undefined;
+  if (!variables || typeof variables !== 'object') {
+    log.warn('set_variable action missing variables object', { config });
+    return {};
+  }
+  log.info('Variables set', { keys: Object.keys(variables) });
+  return { ...variables };
 }

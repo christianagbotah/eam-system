@@ -283,7 +283,7 @@ export interface PersonalTool {
 }
 
 // Repair Module
-export type RepairMaterialRequestStatus = 'pending' | 'supervisor_approved' | 'storekeeper_approved' | 'issued' | 'partially_returned' | 'fully_returned' | 'rejected';
+export type RepairMaterialRequestStatus = 'pending' | 'supervisor_approved' | 'storekeeper_approved' | 'store_approved' | 'picking' | 'issued' | 'returned' | 'closed' | 'partially_returned' | 'fully_returned' | 'rejected';
 export type RepairToolRequestStatus = 'pending' | 'supervisor_approved' | 'storekeeper_approved' | 'issued' | 'returned' | 'rejected';
 export type ToolTransferStatus = 'pending' | 'storekeeper_approved' | 'awaiting_handover' | 'transferred' | 'rejected';
 
@@ -315,6 +315,10 @@ export interface RepairMaterialRequest {
   issuedAt?: string;
   returnedById?: string;
   returnedAt?: string;
+  consumedQty?: number;
+  wastedQty?: number;
+  pickedAt?: string;
+  pickedBy?: string;
   createdAt: string;
   updatedAt: string;
   // Joined
@@ -325,6 +329,7 @@ export interface RepairMaterialRequest {
   storekeeperApprovedBy?: { id: string; fullName: string; username: string };
   issuedByUser?: { id: string; fullName: string; username: string };
   returnedByUser?: { id: string; fullName: string; username: string };
+  pickedByUser?: { id: string; fullName: string; username: string };
 }
 
 export interface RepairToolRequest {

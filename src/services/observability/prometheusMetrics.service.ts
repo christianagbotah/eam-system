@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { createLogger } from '@/lib/logger';
+import { cache } from '@/lib/cache';
 
 const logger = createLogger('prometheusMetrics');
 
@@ -45,6 +46,11 @@ interface SummaryValue extends BaseMetric {
 }
 
 type MetricRecord = CounterValue | GaugeValue | HistogramValue | SummaryValue;
+
+// ── Internal tracking counters for high-level methods ────────────────────────
+
+let cacheHits = 0;
+let cacheMisses = 0;
 
 // ── Label Set Key ───────────────────────────────────────────────────────────
 
@@ -168,7 +174,7 @@ export const PrometheusMetricsService = {
     logger.info(`Registered summary: ${key}`);
   },
 
-  // ── Operations ──────────────────────────────────────────────────────────
+  // ── Low-Level Operations ────────────────────────────────────────────────
 
   /**
    * Increment a counter
@@ -329,12 +335,147 @@ export const PrometheusMetricsService = {
     return result;
   },
 
+  // ── High-Level Instrumentation Methods ─────────────────────────────────
+
+  /**
+   * Record an API request — updates http_requests_total, http_request_duration_seconds, http_errors_total
+   * @param durationMs - Request duration in milliseconds
+   * @param method - HTTP method (GET, POST, etc.)
+   * @param path - API path (e.g. /api/work-orders)
+   * @param statusCode - HTTP status code
+   */
+  recordApiRequest(durationMs: number, method: string, path: string, statusCode: number): void {
+    const normalizedPath = normalizePath(path);
+    const statusStr = String(statusCode);
+    const durationSeconds = durationMs / 1000;
+
+    // Counter: total requests by method, endpoint, status
+    this.incrementCounter('http_requests_total', 1, { method, endpoint: normalizedPath, status: statusStr });
+
+    // Histogram: request duration by method and endpoint
+    this.observeHistogram('http_request_duration_seconds', durationSeconds, { method, endpoint: normalizedPath });
+
+    // Counter: errors (4xx and 5xx)
+    if (statusCode >= 400) {
+      this.incrementCounter('http_errors_total', 1, { method, endpoint: normalizedPath, status_code: statusStr });
+    }
+  },
+
+  /**
+   * Record a database query — updates db_queries_total and db_query_duration_seconds
+   * @param durationMs - Query duration in milliseconds
+   * @param operation - Operation type (findMany, create, update, delete, raw, etc.)
+   * @param model - Optional Prisma model name (WorkOrder, User, etc.)
+   */
+  recordDbQuery(durationMs: number, operation: string, model?: string): void {
+    const durationSeconds = durationMs / 1000;
+    const safeModel = model || 'unknown';
+
+    // Counter: total queries by operation and model
+    this.incrementCounter('db_queries_total', 1, { operation, model: safeModel });
+
+    // Gauge: latest query duration (not cumulative — shows last observation per operation)
+    this.setGauge('db_query_duration_seconds', durationSeconds, { operation });
+  },
+
+  /**
+   * Record a cache hit
+   */
+  recordCacheHit(): void {
+    cacheHits++;
+    this.incrementCounter('cache_operations_total', 1, { result: 'hit' });
+  },
+
+  /**
+   * Record a cache miss
+   */
+  recordCacheMiss(): void {
+    cacheMisses++;
+    this.incrementCounter('cache_operations_total', 1, { result: 'miss' });
+  },
+
+  /**
+   * Set the number of active WebSocket connections
+   * @param count - Current number of active WebSocket sessions
+   */
+  setWebSocketSessions(count: number): void {
+    this.setGauge('websocket_sessions_active', count);
+  },
+
+  /**
+   * Increment WebSocket sessions (e.g. on connect)
+   */
+  incrementWebSocketSessions(): void {
+    this.incrementGauge('websocket_sessions_active', 1);
+  },
+
+  /**
+   * Decrement WebSocket sessions (e.g. on disconnect)
+   */
+  decrementWebSocketSessions(): void {
+    this.incrementGauge('websocket_sessions_active', -1);
+  },
+
+  /**
+   * Set the queue depth for a named queue
+   * @param queueName - Name of the queue
+   * @param depth - Current depth (number of pending jobs)
+   */
+  setQueueDepth(queueName: string, depth: number): void {
+    this.setGauge('queue_depth', depth, { queue_name: queueName });
+  },
+
+  /**
+   * Record a processed queue job
+   * @param queueName - Name of the queue
+   * @param status - Job result (completed, failed, retry)
+   */
+  recordQueueJob(queueName: string, status: string): void {
+    this.incrementCounter('queue_jobs_total', 1, { queue_name: queueName, status });
+  },
+
+  /**
+   * Get current cache hit/miss ratio (0-1)
+   */
+  getCacheHitRate(): number {
+    const total = cacheHits + cacheMisses;
+    if (total === 0) return 0;
+    return cacheHits / total;
+  },
+
+  // ── Auto-collected Process Metrics ─────────────────────────────────────
+
+  /**
+   * Collect and update process-level gauges (called during exposition)
+   */
+  collectProcessMetrics(): void {
+    // Uptime
+    this.setGauge('process_uptime_seconds', process.uptime());
+
+    // Memory
+    const mem = process.memoryUsage();
+    this.setGauge('process_memory_bytes', mem.rss, { type: 'rss' });
+    this.setGauge('process_memory_bytes', mem.heapUsed, { type: 'heap_used' });
+    this.setGauge('process_memory_bytes', mem.heapTotal, { type: 'heap_total' });
+    this.setGauge('process_memory_bytes', mem.external, { type: 'external' });
+
+    // Cache stats from the in-memory cache
+    const stats = cache.getStats();
+    this.setGauge('cache_entries', stats.entries);
+    this.setGauge('cache_hit_rate', stats.hitRate / 100); // convert percentage to 0-1 ratio
+    this.setGauge('cache_total_hits', stats.totalHits);
+  },
+
   // ── Prometheus Text Format Exposition ───────────────────────────────────
 
   /**
-   * Render all metrics in Prometheus text exposition format
+   * Render all metrics in Prometheus text exposition format.
+   * Auto-collects process metrics before rendering.
    */
   async exposition(): Promise<string> {
+    // Collect volatile metrics before exposition
+    this.collectProcessMetrics();
+
     const lines: string[] = [];
 
     for (const metric of metricsStore.values()) {
@@ -406,20 +547,31 @@ export const PrometheusMetricsService = {
     this.registerCounter('maintenance_requests_total', 'Total maintenance requests', ['status']);
     this.registerHistogram('wo_completion_hours', 'Work order completion time in hours', [1, 2, 4, 8, 12, 24, 48, 72, 168], ['type', 'priority']);
 
-    // ── System Metrics ──
+    // ── Database Metrics ──
     this.registerGauge('db_connections_active', 'Active database connections', []);
     this.registerGauge('db_connections_pool_size', 'Database connection pool size', []);
-    this.registerGauge('db_query_duration_seconds', 'Database query duration', ['operation']);
+    this.registerGauge('db_query_duration_seconds', 'Latest database query duration in seconds', ['operation']);
     this.registerCounter('db_queries_total', 'Total database queries', ['operation', 'model']);
-    this.registerGauge('redis_hit_rate', 'Redis cache hit rate (0-1)', []);
-    this.registerCounter('redis_operations_total', 'Total Redis operations', ['operation', 'result']);
+
+    // ── Cache Metrics ──
+    this.registerGauge('cache_entries', 'Number of entries in the in-memory cache', []);
+    this.registerGauge('cache_hit_rate', 'Cache hit rate (0-1)', []);
+    this.registerGauge('cache_total_hits', 'Total cache hits', []);
+    this.registerCounter('cache_operations_total', 'Total cache operations', ['result']);
+
+    // ── Queue Metrics ──
     this.registerGauge('queue_depth', 'Job queue depth', ['queue_name']);
     this.registerCounter('queue_jobs_total', 'Total jobs processed', ['queue_name', 'status']);
+
+    // ── WebSocket Metrics ──
+    this.registerGauge('websocket_sessions_active', 'Currently active WebSocket sessions', []);
+
+    // ── Process Metrics ──
     this.registerGauge('process_cpu_usage', 'Process CPU usage ratio (0-1)', []);
     this.registerGauge('process_memory_bytes', 'Process memory usage in bytes', ['type']);
     this.registerGauge('process_uptime_seconds', 'Process uptime in seconds', []);
 
-    logger.info('Built-in metrics bootstrapped (16 metric families)');
+    logger.info('Built-in metrics bootstrapped (21 metric families)');
   },
 
   // ── Cleanup ─────────────────────────────────────────────────────────────
@@ -437,9 +589,24 @@ export const PrometheusMetricsService = {
    */
   clear(): void {
     metricsStore.clear();
+    cacheHits = 0;
+    cacheMisses = 0;
     logger.info('All metrics cleared');
   },
 };
+
+// ── Path Normalization ───────────────────────────────────────────────────────
+
+/**
+ * Normalize an API path for Prometheus labels by replacing dynamic segments
+ * with placeholders. E.g. /api/work-orders/abc123 → /api/work-orders/:id
+ */
+function normalizePath(path: string): string {
+  return path
+    .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '/:id')
+    .replace(/\/[0-9a-f]{24}/gi, '/:id')
+    .replace(/\/\d+/g, '/:id');
+}
 
 // ── Auto-bootstrap on import ────────────────────────────────────────────────
 PrometheusMetricsService.bootstrap();

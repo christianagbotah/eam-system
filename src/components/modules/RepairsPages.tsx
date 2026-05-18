@@ -49,9 +49,12 @@ const statusColors: Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-800',
   supervisor_approved: 'bg-blue-100 text-blue-800',
   storekeeper_approved: 'bg-indigo-100 text-indigo-800',
+  store_approved: 'bg-indigo-100 text-indigo-800',
+  picking: 'bg-violet-100 text-violet-800',
   issued: 'bg-green-100 text-green-800',
   partially_returned: 'bg-teal-100 text-teal-800',
   fully_returned: 'bg-gray-100 text-gray-800',
+  returned: 'bg-gray-100 text-gray-800',
   rejected: 'bg-red-100 text-red-800',
   transferred: 'bg-emerald-100 text-emerald-800',
   pending_review: 'bg-orange-100 text-orange-800',
@@ -292,8 +295,9 @@ const MATERIAL_STAGES: PipelineStage[] = [
   { key: 'pending', label: 'Pending', icon: Clock },
   { key: 'supervisor_approved', label: 'Supervisor Review', icon: ShieldCheck },
   { key: 'storekeeper_approved', label: 'Store Review', icon: Warehouse },
+  { key: 'picking', label: 'Picking', icon: PackageOpen },
   { key: 'issued', label: 'Issued', icon: PackageCheck },
-  { key: 'fully_returned', label: 'Returned', icon: RotateCcw },
+  { key: 'closed', label: 'Reconciled', icon: ClipboardList },
 ];
 
 const TOOL_STAGES: PipelineStage[] = [
@@ -352,6 +356,9 @@ export function RepairMaterialRequestsPage() {
   const [workOrderIdFilter, setWorkOrderIdFilter] = useState('');
   const [pagination, setPagination] = useState<{ page: number; totalPages: number; total: number } | null>(null);
   const [createForm, setCreateForm] = useState({ workOrderId: '', itemName: '', itemId: '', quantityRequested: '', unit: 'each', unitCost: '', reason: '', notes: '', urgency: 'medium' });
+  const [reconcileOpen, setReconcileOpen] = useState(false);
+  const [reconcileTarget, setReconcileTarget] = useState<any>(null);
+  const [reconcileForm, setReconcileForm] = useState({ consumedQty: '', wastedQty: '', notes: '' });
 
   useEffect(() => {
     if (pageParams?.workOrderId) {
@@ -425,6 +432,44 @@ export function RepairMaterialRequestsPage() {
     setSubmitting(false);
   };
 
+  const handlePick = async (id: string) => {
+    setSubmitting(true);
+    const res = await api.post('/api/repairs/material-requests/pick', { id });
+    if (res.success) { toast.success('Items being picked'); fetchRequests(); if (detailOpen && detailItem?.id === id) setDetailOpen(false); }
+    else toast.error(res.error || 'Failed to pick');
+    setSubmitting(false);
+  };
+
+  const handleReconcile = async () => {
+    if (!reconcileTarget) return;
+    const consumed = parseFloat(reconcileForm.consumedQty);
+    const wasted = parseFloat(reconcileForm.wastedQty) || 0;
+    if (isNaN(consumed) || consumed < 0) { toast.error('Enter a valid consumed quantity'); return; }
+    if (isNaN(wasted) || wasted < 0) { toast.error('Enter a valid wasted quantity'); return; }
+    if (consumed + wasted > reconcileTarget.quantityIssued) {
+      toast.error(`Consumed + wasted (${consumed + wasted}) cannot exceed issued (${reconcileTarget.quantityIssued})`);
+      return;
+    }
+    setSubmitting(true);
+    const res = await api.post('/api/repairs/material-requests/reconcile', {
+      id: reconcileTarget.id,
+      consumedQty: consumed,
+      wastedQty: wasted > 0 ? wasted : undefined,
+      notes: reconcileForm.notes || undefined,
+    });
+    if (res.success) {
+      toast.success(res.data?.reconciliation
+        ? `Reconciled: ${res.data.reconciliation.consumedQty} consumed, ${res.data.reconciliation.wastedQty} wasted, ${res.data.reconciliation.returnedQty} returned`
+        : 'Reconciliation completed');
+      setReconcileOpen(false);
+      setReconcileTarget(null);
+      setReconcileForm({ consumedQty: '', wastedQty: '', notes: '' });
+      fetchRequests();
+      if (detailOpen) setDetailOpen(false);
+    } else toast.error(res.error || 'Failed to reconcile');
+    setSubmitting(false);
+  };
+
   const filtered = useMemo(() => requests.filter(r =>
     !searchText || r.itemName?.toLowerCase().includes(searchText.toLowerCase()) || r.workOrder?.woNumber?.toLowerCase().includes(searchText.toLowerCase())
   ), [requests, searchText]);
@@ -474,7 +519,9 @@ export function RepairMaterialRequestsPage() {
             <SelectItem value="pending">Pending</SelectItem>
             <SelectItem value="supervisor_approved">Supervisor Approved</SelectItem>
             <SelectItem value="storekeeper_approved">Store Approved</SelectItem>
+            <SelectItem value="picking">Picking</SelectItem>
             <SelectItem value="issued">Issued</SelectItem>
+            <SelectItem value="closed">Closed</SelectItem>
             <SelectItem value="rejected">Rejected</SelectItem>
           </SelectContent>
         </Select>
@@ -555,14 +602,24 @@ export function RepairMaterialRequestsPage() {
                             </>
                           )}
                           {r.status === 'storekeeper_approved' && isStoreOrAdmin(user) && (
-                            <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setQtyTarget({ id: r.id, action: 'issue', max: r.quantityApproved, field: 'quantityToIssue' }); setQtyOpen(true); }}>
+                            <Button size="sm" className="h-7 gap-1 bg-violet-600 hover:bg-violet-700 text-white" onClick={(e) => { e.stopPropagation(); handlePick(r.id); }} disabled={submitting}>
+                              <PackageOpen className="h-3.5 w-3.5" /> Pick
+                            </Button>
+                          )}
+                          {r.status === 'picking' && isStoreOrAdmin(user) && (
+                            <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={(e) => { e.stopPropagation(); setQtyTarget({ id: r.id, action: 'issue', max: r.quantityApproved, field: 'quantityToIssue' }); setQtyOpen(true); }}>
                               <PackageCheck className="h-3.5 w-3.5" /> Issue
                             </Button>
                           )}
                           {r.status === 'issued' && (
-                            <Button size="sm" variant="outline" className="h-7 gap-1 border-amber-400 text-amber-700 hover:bg-amber-50" onClick={() => { setQtyTarget({ id: r.id, action: 'record_return', max: r.quantityIssued, field: 'quantityToReturn' }); setQtyOpen(true); }}>
-                              <RotateCcw className="h-3.5 w-3.5" /> Return
-                            </Button>
+                            <>
+                              <Button size="sm" variant="outline" className="h-7 gap-1 border-violet-400 text-violet-700 hover:bg-violet-50" onClick={(e) => { e.stopPropagation(); setReconcileTarget(r); setReconcileForm({ consumedQty: '', wastedQty: '', notes: '' }); setReconcileOpen(true); }}>
+                                <ClipboardList className="h-3.5 w-3.5" /> Reconcile
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-7 gap-1 border-amber-400 text-amber-700 hover:bg-amber-50" onClick={(e) => { e.stopPropagation(); setQtyTarget({ id: r.id, action: 'record_return', max: r.quantityIssued, field: 'quantityToReturn' }); setQtyOpen(true); }}>
+                                <RotateCcw className="h-3.5 w-3.5" /> Return
+                              </Button>
+                            </>
                           )}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
@@ -626,6 +683,20 @@ export function RepairMaterialRequestsPage() {
                         </div>
                       ))}
                     </div>
+                    {/* Reconciliation Status for issued/closed items */}
+                    {(detailItem.status === 'issued' || detailItem.status === 'closed' || detailItem.status === 'picking') && (
+                      <div className="grid grid-cols-3 gap-2 mt-2">
+                        {[
+                          { label: 'Consumed', val: detailItem.consumedQty ?? '—', color: 'text-teal-600', bg: 'bg-teal-50' },
+                          { label: 'Wasted', val: detailItem.wastedQty ?? '—', color: 'text-red-500', bg: 'bg-red-50' },
+                          { label: 'Variance', val: detailItem.consumedQty != null ? Math.max(0, (detailItem.quantityIssued || 0) - (detailItem.consumedQty || 0) - (detailItem.wastedQty || 0)) : '—', color: 'text-orange-600', bg: 'bg-orange-50' },
+                        ].map(q => (
+                          <div key={q.label} className={`${q.bg} rounded-lg p-2 text-center`}>
+                            <p className={`text-lg font-bold ${q.color}`}>{q.val}</p><p className="text-[10px] text-muted-foreground">{q.label}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <Separator />
                   <div className="space-y-2">
@@ -634,7 +705,7 @@ export function RepairMaterialRequestsPage() {
                   </div>
                   <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                   {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
-                  {((detailItem.status === 'pending' && isSupervisorOrAdmin(user)) || (detailItem.status === 'supervisor_approved' && isStoreOrAdmin(user)) || (detailItem.status === 'storekeeper_approved' && isStoreOrAdmin(user)) || detailItem.status === 'issued') && (
+                  {((detailItem.status === 'pending' && isSupervisorOrAdmin(user)) || (detailItem.status === 'supervisor_approved' && isStoreOrAdmin(user)) || (detailItem.status === 'storekeeper_approved' && isStoreOrAdmin(user)) || (detailItem.status === 'picking' && isStoreOrAdmin(user)) || detailItem.status === 'issued') && (
                     <>
                       <Separator />
                       <div className="flex flex-wrap gap-2">
@@ -651,10 +722,16 @@ export function RepairMaterialRequestsPage() {
                           </>
                         )}
                         {detailItem.status === 'storekeeper_approved' && (
+                          <Button size="sm" className="gap-1 bg-violet-600 hover:bg-violet-700 text-white" onClick={() => handlePick(detailItem.id)} disabled={submitting}><PackageOpen className="h-3.5 w-3.5" /> Pick Items</Button>
+                        )}
+                        {detailItem.status === 'picking' && (
                           <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setQtyTarget({ id: detailItem.id, action: 'issue', max: detailItem.quantityApproved, field: 'quantityToIssue' }); setQtyOpen(true); }} disabled={submitting}><PackageCheck className="h-3.5 w-3.5" /> Issue</Button>
                         )}
                         {detailItem.status === 'issued' && (
-                          <Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setQtyTarget({ id: detailItem.id, action: 'record_return', max: detailItem.quantityIssued, field: 'quantityToReturn' }); setQtyOpen(true); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return</Button>
+                          <>
+                            <Button size="sm" variant="outline" className="gap-1 border-violet-400 text-violet-700" onClick={() => { setReconcileTarget(detailItem); setReconcileForm({ consumedQty: '', wastedQty: '', notes: '' }); setReconcileOpen(true); }} disabled={submitting}><ClipboardList className="h-3.5 w-3.5" /> Reconcile</Button>
+                            <Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setQtyTarget({ id: detailItem.id, action: 'record_return', max: detailItem.quantityIssued, field: 'quantityToReturn' }); setQtyOpen(true); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return</Button>
+                          </>
                         )}
                       </div>
                     </>
@@ -665,9 +742,11 @@ export function RepairMaterialRequestsPage() {
                     { label: 'Request Created', date: detailItem.createdAt, user: detailItem.requestedBy?.fullName, status: 'active' },
                     { label: 'Supervisor Approval', date: detailItem.supervisorApprovedAt, user: detailItem.supervisorApprovedBy?.fullName, status: detailItem.status },
                     { label: 'Store Approval', date: detailItem.storekeeperApprovedAt, user: detailItem.storekeeperApprovedBy?.fullName, status: detailItem.status },
+                    { label: 'Items Picked', date: detailItem.pickedAt, user: detailItem.pickedByUser?.fullName },
                     { label: 'Material Issued', date: detailItem.issuedAt, user: detailItem.issuedBy?.fullName },
+                    { label: 'Reconciliation', date: detailItem.consumedQty != null ? detailItem.updatedAt : undefined, notes: detailItem.consumedQty != null ? `Consumed: ${detailItem.consumedQty}, Wasted: ${detailItem.wastedQty ?? 0}` : undefined },
                     { label: 'Material Returned', date: detailItem.returnedAt, user: detailItem.returnedBy?.fullName },
-                  ].filter(e => e.date || e.status === 'active')} />
+                  ].filter(e => e.date || e.status === 'active' || e.notes)} />
                 </TabsContent>
               </Tabs>
             </>
@@ -701,6 +780,63 @@ export function RepairMaterialRequestsPage() {
 
       <RejectDialog open={rejectOpen} onClose={() => { setRejectOpen(false); setRejectTarget(null); }} onConfirm={(reason) => { if (rejectTarget) handleAction(rejectTarget.id, rejectTarget.action, { notes: reason }); }} title="Reject Material Request" />
       <QuantityDialog open={qtyOpen} onClose={() => { setQtyOpen(false); setQtyTarget(null); }} onConfirm={(qty) => { if (qtyTarget) handleAction(qtyTarget.id, qtyTarget.action, { [qtyTarget.field]: qty }); }} title={qtyTarget?.action === 'issue' ? 'Issue Quantity' : 'Return Quantity'} description={qtyTarget?.action === 'issue' ? `Enter quantity to issue (max ${qtyTarget?.max || 0})` : `Enter quantity to return (max ${qtyTarget?.max || 0})`} max={qtyTarget?.max || 0} fieldLabel={qtyTarget?.action === 'issue' ? 'Quantity to Issue' : 'Quantity to Return'} />
+
+      {/* Reconciliation Dialog */}
+      <ResponsiveDialog open={reconcileOpen} onOpenChange={(v) => { if (!v) { setReconcileOpen(false); setReconcileTarget(null); setReconcileForm({ consumedQty: '', wastedQty: '', notes: '' }); } }}>
+        
+          <div className="space-y-1.5 mb-4">
+            <h2 className="text-lg font-semibold leading-none tracking-tight">Material Reconciliation</h2>
+            <p className="text-sm text-muted-foreground">Record actual consumption for {reconcileTarget?.itemName} — Issued: {reconcileTarget?.quantityIssued} {reconcileTarget?.unit}</p>
+          </div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Consumed Quantity *</Label>
+                <Input type="number" value={reconcileForm.consumedQty} onChange={e => setReconcileForm(f => ({ ...f, consumedQty: e.target.value }))} placeholder="Amount consumed" min={0} max={reconcileTarget?.quantityIssued || 0} />
+                <p className="text-[11px] text-muted-foreground mt-1">Material actually used in the repair</p>
+              </div>
+              <div>
+                <Label>Wasted Quantity</Label>
+                <Input type="number" value={reconcileForm.wastedQty} onChange={e => setReconcileForm(f => ({ ...f, wastedQty: e.target.value }))} placeholder="Amount discarded" min={0} />
+                <p className="text-[11px] text-muted-foreground mt-1">Material discarded/damaged</p>
+              </div>
+            </div>
+            {/* Live reconciliation preview */}
+            {reconcileForm.consumedQty && (
+              <div className="bg-muted/50 rounded-lg p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground mb-1">Reconciliation Preview</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-sm font-bold text-teal-600">{parseFloat(reconcileForm.consumedQty) || 0}</p>
+                    <p className="text-[10px] text-muted-foreground">Consumed</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-red-500">{parseFloat(reconcileForm.wastedQty) || 0}</p>
+                    <p className="text-[10px] text-muted-foreground">Wasted</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-orange-600">{Math.max(0, (reconcileTarget?.quantityIssued || 0) - (parseFloat(reconcileForm.consumedQty) || 0) - (parseFloat(reconcileForm.wastedQty) || 0))}</p>
+                    <p className="text-[10px] text-muted-foreground">To Return</p>
+                  </div>
+                </div>
+                {(parseFloat(reconcileForm.consumedQty) || 0) + (parseFloat(reconcileForm.wastedQty) || 0) > (reconcileTarget?.quantityIssued || 0) && (
+                  <p className="text-xs text-red-600 mt-1">⚠ Total exceeds issued quantity</p>
+                )}
+              </div>
+            )}
+            <div>
+              <Label>Notes</Label>
+              <Textarea value={reconcileForm.notes} onChange={e => setReconcileForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes about consumption..." rows={2} />
+            </div>
+          </div>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => { setReconcileOpen(false); setReconcileTarget(null); setReconcileForm({ consumedQty: '', wastedQty: '', notes: '' }); }}>Cancel</Button>
+            <Button className="bg-violet-600 hover:bg-violet-700 text-white gap-2" onClick={handleReconcile} disabled={submitting || !reconcileForm.consumedQty}>
+              <ClipboardList className="h-4 w-4" /> Submit Reconciliation
+            </Button>
+          </div>
+        
+      </ResponsiveDialog>
     </div>
   );
 }
@@ -1748,6 +1884,19 @@ export function RepairCompletionPage() {
 export function RepairAnalyticsPage() {
   const [kpi, setKpi] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [reconReport, setReconReport] = useState<any>(null);
+  const [reconLoading, setReconLoading] = useState(false);
+  const [reconPage, setReconPage] = useState(1);
+
+  // New report state
+  const [enterpriseReport, setEnterpriseReport] = useState<any>(null);
+  const [enterpriseLoading, setEnterpriseLoading] = useState(false);
+  const [downtimeReport, setDowntimeReport] = useState<any>(null);
+  const [downtimeLoading, setDowntimeLoading] = useState(false);
+  const [repeatReport, setRepeatReport] = useState<any>(null);
+  const [repeatLoading, setRepeatLoading] = useState(false);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -1757,20 +1906,83 @@ export function RepairAnalyticsPage() {
     })();
   }, []);
 
+  const fetchReconReport = useCallback(async (p: number = 1) => {
+    setReconLoading(true);
+    const res = await api.get(`/api/repairs/material-requests/reconciliation-report?page=${p}&limit=10`);
+    if (res.success) {
+      setReconReport(res.data);
+      setReconPage(p);
+    } else {
+      toast.error(res.error || 'Failed to load reconciliation report');
+    }
+    setReconLoading(false);
+  }, []);
+
+  const fetchEnterpriseReport = useCallback(async () => {
+    setEnterpriseLoading(true);
+    const params = new URLSearchParams();
+    if (dateFrom) params.set('from', dateFrom);
+    if (dateTo) params.set('to', dateTo);
+    const res = await api.get(`/api/reports/enterprise?${params}`);
+    if (res.success) setEnterpriseReport(res.data);
+    else toast.error(res.error || 'Failed to load enterprise report');
+    setEnterpriseLoading(false);
+  }, [dateFrom, dateTo]);
+
+  const fetchDowntimeReport = useCallback(async () => {
+    setDowntimeLoading(true);
+    const params = new URLSearchParams();
+    if (dateFrom) params.set('from', dateFrom);
+    if (dateTo) params.set('to', dateTo);
+    const res = await api.get(`/api/reports/downtime?${params}`);
+    if (res.success) setDowntimeReport(res.data);
+    else toast.error(res.error || 'Failed to load downtime report');
+    setDowntimeLoading(false);
+  }, [dateFrom, dateTo]);
+
+  const fetchRepeatReport = useCallback(async () => {
+    setRepeatLoading(true);
+    const params = new URLSearchParams();
+    if (dateFrom) params.set('from', dateFrom);
+    if (dateTo) params.set('to', dateTo);
+    const res = await api.get(`/api/reports/repeat-failures?${params}`);
+    if (res.success) setRepeatReport(res.data);
+    else toast.error(res.error || 'Failed to load repeat failure report');
+    setRepeatLoading(false);
+  }, [dateFrom, dateTo]);
+
   if (loading) return <LoadingSkeleton />;
 
   return (
     <div className="page-content">
-      <div>
-        <h2 className="text-2xl font-bold flex items-center gap-2"><BarChart3 className="h-6 w-6 text-blue-600" /> Repairs Analytics</h2>
-        <p className="text-muted-foreground">Key performance indicators for the repairs module</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold flex items-center gap-2"><BarChart3 className="h-6 w-6 text-blue-600" /> Repairs Analytics</h2>
+          <p className="text-muted-foreground">Key performance indicators and enterprise reports for the repairs module</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-40 h-9 text-sm" placeholder="From" />
+          <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-40 h-9 text-sm" placeholder="To" />
+          {(dateFrom || dateTo) && (
+            <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); }} className="h-9"><X className="h-3.5 w-3.5" /></Button>
+          )}
+        </div>
       </div>
 
       {!kpi ? (
         <EmptyState icon={BarChart3} title="No data available" />
       ) : (
-        <>
-          {/* Work Order KPIs */}
+        <Tabs defaultValue="overview">
+          <TabsList className="flex-wrap">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="backlog" className="gap-1"><Clock className="h-3.5 w-3.5" /> Backlog</TabsTrigger>
+            <TabsTrigger value="downtime-deep" className="gap-1"><Timer className="h-3.5 w-3.5" /> Downtime</TabsTrigger>
+            <TabsTrigger value="repeat-failures" className="gap-1"><AlertTriangle className="h-3.5 w-3.5" /> Repeat Failures</TabsTrigger>
+            <TabsTrigger value="reconciliation" className="gap-1"><ClipboardList className="h-3.5 w-3.5" /> Reconciliation</TabsTrigger>
+          </TabsList>
+
+          {/* ===== OVERVIEW TAB ===== */}
+          <TabsContent value="overview" className="mt-4 space-y-6">
           <Card>
             <CardHeader><CardTitle>Work Order Metrics</CardTitle></CardHeader>
             <CardContent>
@@ -1784,7 +1996,6 @@ export function RepairAnalyticsPage() {
             </CardContent>
           </Card>
 
-          {/* Material & Tool KPIs */}
           <div className="grid md:grid-cols-2 gap-6">
             <Card>
               <CardHeader><CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" /> Material Requests</CardTitle></CardHeader>
@@ -1811,7 +2022,6 @@ export function RepairAnalyticsPage() {
             </Card>
           </div>
 
-          {/* Downtime & Rework */}
           <div className="grid md:grid-cols-2 gap-6">
             <Card>
               <CardHeader><CardTitle className="flex items-center gap-2"><Timer className="h-5 w-5" /> Downtime Analysis</CardTitle></CardHeader>
@@ -1834,7 +2044,6 @@ export function RepairAnalyticsPage() {
             </Card>
           </div>
 
-          {/* Recent Completions */}
           {kpi.recentCompletions && kpi.recentCompletions.length > 0 && (
             <Card>
               <CardHeader><CardTitle>Recent Completions</CardTitle></CardHeader>
@@ -1855,7 +2064,494 @@ export function RepairAnalyticsPage() {
               </CardContent>
             </Card>
           )}
-        </>
+          </TabsContent>
+
+          {/* ===== BACKLOG ANALYSIS TAB ===== */}
+          <TabsContent value="backlog" className="mt-4 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Backlog Analysis</h3>
+                <p className="text-sm text-muted-foreground">Open work orders by age bracket, priority, and department</p>
+              </div>
+              <Button onClick={fetchEnterpriseReport} disabled={enterpriseLoading} className="gap-2"><RefreshCw className={`h-4 w-4 ${enterpriseLoading ? 'animate-spin' : ''}`} /> Load Report</Button>
+            </div>
+
+            {enterpriseLoading && !enterpriseReport ? <LoadingSkeleton /> : enterpriseReport ? (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <StatsCard icon={Clock} count={enterpriseReport.backlogAnalytics?.totalOpen || 0} label="Total Open WOs" color="text-amber-600" bgColor="bg-amber-50" />
+                  <StatsCard icon={BarChart3} count={enterpriseReport.summary?.completionRate || 0} label="Completion Rate" color="text-emerald-600" bgColor="bg-emerald-50" />
+                  <StatsCard icon={DollarSign} count={formatCurrency(enterpriseReport.summary?.totalMaintenanceCost || 0)} label="Total Maint. Cost" color="text-teal-600" bgColor="bg-teal-50" />
+                  <StatsCard icon={TrendingUp} count={enterpriseReport.summary?.avgCostPerWO || 0} label="Avg Cost/WO" color="text-sky-600" bgColor="bg-sky-50" />
+                </div>
+
+                {/* Backlog by Age */}
+                <Card>
+                  <CardHeader><CardTitle className="flex items-center gap-2"><Clock className="h-5 w-5 text-amber-600" /> Backlog by Age Bracket</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {enterpriseReport.backlogAnalytics?.byAgeBracket?.map((bracket: any) => {
+                        const total = enterpriseReport.backlogAnalytics.totalOpen || 1;
+                        const pct = Math.round((bracket.count / total) * 100);
+                        const color = bracket.ageBracket.includes('60+') ? 'bg-red-500' : bracket.ageBracket.includes('31') ? 'bg-orange-500' : bracket.ageBracket.includes('15') ? 'bg-amber-500' : 'bg-teal-500';
+                        return (
+                          <div key={bracket.ageBracket} className="space-y-1">
+                            <div className="flex justify-between text-sm">
+                              <span className="font-medium">{bracket.ageBracket}</span>
+                              <span className="text-muted-foreground">{bracket.count} WOs ({pct}%)</span>
+                            </div>
+                            <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden"><div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} /></div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Backlog by Priority */}
+                <div className="grid md:grid-cols-2 gap-6">
+                  <Card>
+                    <CardHeader><CardTitle>By Priority</CardTitle></CardHeader>
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader><TableRow><TableHead>Priority</TableHead><TableHead className="text-right">Count</TableHead><TableHead className="text-right">%</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {enterpriseReport.backlogAnalytics?.byPriority?.map((p: any) => (
+                            <TableRow key={p.priority}>
+                              <TableCell><PriorityBadge priority={p.priority} /></TableCell>
+                              <TableCell className="text-right font-medium">{p.count}</TableCell>
+                              <TableCell className="text-right text-muted-foreground">{enterpriseReport.backlogAnalytics.totalOpen > 0 ? Math.round(p.count / enterpriseReport.backlogAnalytics.totalOpen * 100) : 0}%</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+
+                  {/* Cost Analytics */}
+                  <Card>
+                    <CardHeader><CardTitle className="flex items-center gap-2"><DollarSign className="h-5 w-5 text-teal-600" /> Cost Breakdown</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {[
+                          { label: 'Labor', value: enterpriseReport.costAnalytics?.labor || 0, color: 'text-blue-600' },
+                          { label: 'Parts', value: enterpriseReport.costAnalytics?.parts || 0, color: 'text-amber-600' },
+                          { label: 'Contractor', value: enterpriseReport.costAnalytics?.contractor || 0, color: 'text-purple-600' },
+                        ].map(item => (
+                          <div key={item.label} className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">{item.label}</span>
+                            <span className={`font-semibold ${item.color}`}>{formatCurrency(item.value)}</span>
+                          </div>
+                        ))}
+                        <Separator />
+                        <div className="flex justify-between items-center font-bold">
+                          <span>Total</span>
+                          <span className="text-teal-700">{formatCurrency(enterpriseReport.costAnalytics?.total || 0)}</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* SLA Compliance */}
+                {enterpriseReport.slaComplianceByPriority && enterpriseReport.slaComplianceByPriority.length > 0 && (
+                  <Card>
+                    <CardHeader><CardTitle>SLA Compliance by Priority</CardTitle></CardHeader>
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader><TableRow><TableHead>Priority</TableHead><TableHead className="text-right">Within SLA</TableHead><TableHead className="text-right">Breached</TableHead><TableHead className="text-right">Total</TableHead><TableHead className="text-right">Compliance</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {enterpriseReport.slaComplianceByPriority.map((s: any) => (
+                            <TableRow key={s.priority}>
+                              <TableCell><PriorityBadge priority={s.priority} /></TableCell>
+                              <TableCell className="text-right text-emerald-600">{s.withinSLA}</TableCell>
+                              <TableCell className="text-right text-red-500">{s.breached}</TableCell>
+                              <TableCell className="text-right">{s.total}</TableCell>
+                              <TableCell className="text-right">
+                                <Badge variant="outline" className={s.compliancePercent >= 90 ? 'bg-emerald-100 text-emerald-700' : s.compliancePercent >= 70 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}>
+                                  {s.compliancePercent}%
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            ) : (
+              <Card><CardContent className="py-12"><EmptyState icon={Clock} title="No backlog data" description="Click 'Load Report' to generate the backlog analysis" /></CardContent></Card>
+            )}
+          </TabsContent>
+
+          {/* ===== DOWNTIME DEEP DIVE TAB ===== */}
+          <TabsContent value="downtime-deep" className="mt-4 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Downtime Deep Dive</h3>
+                <p className="text-sm text-muted-foreground">Detailed downtime analysis with MTBF, MTTR, and availability metrics</p>
+              </div>
+              <Button onClick={fetchDowntimeReport} disabled={downtimeLoading} className="gap-2"><RefreshCw className={`h-4 w-4 ${downtimeLoading ? 'animate-spin' : ''}`} /> Load Report</Button>
+            </div>
+
+            {downtimeLoading && !downtimeReport ? <LoadingSkeleton /> : downtimeReport ? (
+              <>
+                {/* KPI Metrics */}
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                  <StatsCard icon={Timer} count={`${downtimeReport.metrics?.totalDowntimeHours || 0}h`} label="Total Downtime" color="text-red-600" bgColor="bg-red-50" />
+                  <StatsCard icon={Activity} count={`${downtimeReport.metrics?.mtbfHours || 0}h`} label="MTBF" color="text-blue-600" bgColor="bg-blue-50" />
+                  <StatsCard icon={Wrench} count={`${downtimeReport.metrics?.mttrHours || 0}h`} label="MTTR" color="text-orange-600" bgColor="bg-orange-50" />
+                  <StatsCard icon={TrendingUp} count={`${downtimeReport.metrics?.availabilityPercent || 100}%`} label="Availability" color="text-emerald-600" bgColor="bg-emerald-50" />
+                  <StatsCard icon={AlertTriangle} count={downtimeReport.metrics?.totalEvents || 0} label="Downtime Events" color="text-amber-600" bgColor="bg-amber-50" />
+                </div>
+
+                {/* Top 10 Assets by Downtime */}
+                {downtimeReport.top10Assets && downtimeReport.top10Assets.length > 0 && (
+                  <Card>
+                    <CardHeader><CardTitle>Top 10 Assets by Downtime</CardTitle></CardHeader>
+                    <CardContent className="p-0">
+                      <div className="max-h-96 overflow-y-auto">
+                        <Table>
+                          <TableHeader><TableRow><TableHead>Asset</TableHead><TableHead className="text-right">Events</TableHead><TableHead className="text-right">Total Hours</TableHead><TableHead className="text-right">Planned (h)</TableHead><TableHead className="text-right">Unplanned (h)</TableHead><TableHead className="text-right">Prod. Loss</TableHead></TableRow></TableHeader>
+                          <TableBody>
+                            {downtimeReport.top10Assets.map((a: any, idx: number) => (
+                              <TableRow key={a.assetName}>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-muted-foreground w-5">#{idx + 1}</span>
+                                    <span className="font-medium text-sm">{a.assetName}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">{a.events}</TableCell>
+                                <TableCell className="text-right font-semibold text-red-600">{a.totalHours}</TableCell>
+                                <TableCell className="text-right text-blue-600">{a.plannedHours}</TableCell>
+                                <TableCell className="text-right text-red-500">{a.unplannedHours}</TableCell>
+                                <TableCell className="text-right text-amber-600">{a.productionLoss > 0 ? formatCurrency(a.productionLoss) : '—'}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <div className="grid md:grid-cols-2 gap-6">
+                  {/* By Category */}
+                  {downtimeReport.breakdownByCategory && downtimeReport.breakdownByCategory.length > 0 && (
+                    <Card>
+                      <CardHeader><CardTitle>By Category</CardTitle></CardHeader>
+                      <CardContent className="p-0">
+                        <Table>
+                          <TableHeader><TableRow><TableHead>Category</TableHead><TableHead className="text-right">Events</TableHead><TableHead className="text-right">Hours</TableHead></TableRow></TableHeader>
+                          <TableBody>
+                            {downtimeReport.breakdownByCategory.map((c: any) => (
+                              <TableRow key={c.category}>
+                                <TableCell><StatusBadge status={c.category} /></TableCell>
+                                <TableCell className="text-right">{c.events}</TableCell>
+                                <TableCell className="text-right font-medium">{c.totalHours}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Cost Impact */}
+                  <Card>
+                    <CardHeader><CardTitle className="flex items-center gap-2"><DollarSign className="h-5 w-5 text-teal-600" /> Cost Impact</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        <div className="flex justify-between"><span className="text-sm text-muted-foreground">Production Loss</span><span className="font-semibold text-red-600">{formatCurrency(downtimeReport.costImpact?.totalProductionLoss || 0)}</span></div>
+                        <div className="flex justify-between"><span className="text-sm text-muted-foreground">Related WO Cost</span><span className="font-semibold">{formatCurrency(downtimeReport.costImpact?.relatedWOCost || 0)}</span></div>
+                        <Separator />
+                        <div className="flex justify-between items-center font-bold text-lg"><span>Est. Total Impact</span><span className="text-red-700">{formatCurrency(downtimeReport.costImpact?.estimatedTotalImpact || 0)}</span></div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Trend */}
+                {downtimeReport.trending?.data && downtimeReport.trending.data.length > 0 && (
+                  <Card>
+                    <CardHeader><CardTitle>Downtime Trend ({downtimeReport.trending.grouping})</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {downtimeReport.trending.data.map((t: any) => {
+                          const maxHours = Math.max(...downtimeReport.trending.data.map((d: any) => d.totalHours), 1);
+                          const pct = Math.round((t.totalHours / maxHours) * 100);
+                          return (
+                            <div key={t.period} className="flex items-center gap-3">
+                              <span className="text-xs text-muted-foreground w-24 flex-shrink-0">{t.period}</span>
+                              <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden"><div className="h-full rounded-full bg-red-400 transition-all" style={{ width: `${pct}%` }} /></div>
+                              <span className="text-xs font-medium w-16 text-right">{t.totalHours}h</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            ) : (
+              <Card><CardContent className="py-12"><EmptyState icon={Timer} title="No downtime data" description="Click 'Load Report' to generate the downtime analysis" /></CardContent></Card>
+            )}
+          </TabsContent>
+
+          {/* ===== REPEAT FAILURES TAB ===== */}
+          <TabsContent value="repeat-failures" className="mt-4 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Repeat Failure Analysis</h3>
+                <p className="text-sm text-muted-foreground">Assets with recurring failures requiring investigation</p>
+              </div>
+              <Button onClick={fetchRepeatReport} disabled={repeatLoading} className="gap-2"><RefreshCw className={`h-4 w-4 ${repeatLoading ? 'animate-spin' : ''}`} /> Load Report</Button>
+            </div>
+
+            {repeatLoading && !repeatReport ? <LoadingSkeleton /> : repeatReport ? (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                  <StatsCard icon={AlertTriangle} count={repeatReport.problematicAssets?.length || 0} label="Problematic Assets" color="text-red-600" bgColor="bg-red-50" />
+                  <StatsCard icon={FileText} count={repeatReport.totalFailureRecords || 0} label="Total Failure Records" color="text-slate-600" bgColor="bg-slate-50" />
+                  <StatsCard icon={Info} count={repeatReport.recommendedActions?.length || 0} label="Recommended Actions" color="text-amber-600" bgColor="bg-amber-50" />
+                </div>
+
+                {/* Problematic Assets Table */}
+                {repeatReport.problematicAssets && repeatReport.problematicAssets.length > 0 ? (
+                  <Card>
+                    <CardHeader><CardTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-red-500" /> Problematic Assets (3+ Failures)</CardTitle></CardHeader>
+                    <CardContent className="p-0">
+                      <div className="max-h-96 overflow-y-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Asset</TableHead>
+                              <TableHead className="text-center">Failures</TableHead>
+                              <TableHead>Failure Modes</TableHead>
+                              <TableHead className="text-right">Downtime</TableHead>
+                              <TableHead className="text-right">Cost</TableHead>
+                              <TableHead className="text-right">Freq/Month</TableHead>
+                              <TableHead>Last Failure</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {repeatReport.problematicAssets.map((a: any) => (
+                              <TableRow key={a.assetId}>
+                                <TableCell>
+                                  <div>
+                                    <p className="font-medium text-sm">{a.assetName}</p>
+                                    {a.assetCode && <p className="text-xs text-muted-foreground">{a.assetCode}</p>}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <Badge variant="outline" className={a.failureCount >= 5 ? 'bg-red-100 text-red-700' : a.failureCount >= 3 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100'}>
+                                    {a.failureCount}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex flex-wrap gap-1">
+                                    {a.failureModes?.map((fm: string) => (
+                                      <Badge key={fm} variant="secondary" className="text-[10px]">{fm}</Badge>
+                                    ))}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right text-red-600">{a.totalDowntimeHours}h</TableCell>
+                                <TableCell className="text-right">{formatCurrency(a.totalRepairCost)}</TableCell>
+                                <TableCell className="text-right font-medium text-orange-600">{a.frequencyPerMonth}</TableCell>
+                                <TableCell className="text-sm text-muted-foreground">
+                                  {a.lastFailureDate ? formatDistanceToNow(new Date(a.lastFailureDate), { addSuffix: true }) : '—'}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card><CardContent className="py-8"><EmptyState icon={CheckCircle2} title="No problematic assets found" description="All assets are within acceptable failure thresholds" /></CardContent></Card>
+                )}
+
+                {/* Recommended Actions */}
+                {repeatReport.recommendedActions && repeatReport.recommendedActions.length > 0 && (
+                  <Card>
+                    <CardHeader><CardTitle className="flex items-center gap-2"><Info className="h-5 w-5 text-amber-500" /> Recommended Actions</CardTitle></CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {repeatReport.recommendedActions.map((action: any, idx: number) => {
+                          const typeConfig: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
+                            pm_schedule_review: { icon: Clock, color: 'text-blue-600', bg: 'bg-blue-50' },
+                            component_replacement: { icon: Wrench, color: 'text-red-600', bg: 'bg-red-50' },
+                            rca: { icon: Search, color: 'text-amber-600', bg: 'bg-amber-50' },
+                            replacement_analysis: { icon: DollarSign, color: 'text-purple-600', bg: 'bg-purple-50' },
+                          };
+                          const cfg = typeConfig[action.type] || { icon: Info, color: 'text-slate-600', bg: 'bg-slate-50' };
+                          const IconComp = cfg.icon;
+                          return (
+                            <div key={idx} className={`flex items-start gap-3 p-3 rounded-lg border ${action.priority === 'high' ? 'border-red-200 bg-red-50/50' : 'border-amber-200 bg-amber-50/30'}`}>
+                              <div className={`${cfg.bg} p-2 rounded-lg flex-shrink-0 mt-0.5`}><IconComp className={`h-4 w-4 ${cfg.color}`} /></div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium">{action.action}</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">{action.reason}</p>
+                              </div>
+                              <Badge variant="outline" className={action.priority === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}>
+                                {action.priority}
+                              </Badge>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Root Cause Frequency */}
+                {repeatReport.rootCauseFrequency && repeatReport.rootCauseFrequency.length > 0 && (
+                  <Card>
+                    <CardHeader><CardTitle>Top Root Causes</CardTitle></CardHeader>
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader><TableRow><TableHead>Root Cause</TableHead><TableHead className="text-right">Occurrences</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {repeatReport.rootCauseFrequency.map((rc: any, idx: number) => (
+                            <TableRow key={idx}>
+                              <TableCell className="text-sm max-w-md truncate">{rc.rootCause}</TableCell>
+                              <TableCell className="text-right"><Badge variant="secondary">{rc.count}</Badge></TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            ) : (
+              <Card><CardContent className="py-12"><EmptyState icon={AlertTriangle} title="No repeat failure data" description="Click 'Load Report' to generate the repeat failure analysis" /></CardContent></Card>
+            )}
+          </TabsContent>
+
+          {/* ===== RECONCILIATION TAB ===== */}
+          <TabsContent value="reconciliation" className="mt-4 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Material Reconciliation Report</h3>
+                <p className="text-sm text-muted-foreground">Track consumed, wasted, and returned materials across all repair work orders</p>
+              </div>
+              <Button onClick={() => fetchReconReport(1)} disabled={reconLoading} className="gap-2"><RefreshCw className={`h-4 w-4 ${reconLoading ? 'animate-spin' : ''}`} /> Load Report</Button>
+            </div>
+
+            {reconReport ? (
+              <>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 text-center">
+                    <p className="text-3xl font-bold text-violet-700">{reconReport.summary.totalRecords}</p>
+                    <p className="text-xs text-muted-foreground">Total Issued</p>
+                  </div>
+                  <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 text-center">
+                    <p className="text-3xl font-bold text-teal-700">{reconReport.summary.overallReconciliationRate}%</p>
+                    <p className="text-xs text-muted-foreground">Reconciliation Rate</p>
+                  </div>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+                    <p className="text-3xl font-bold text-red-600">{reconReport.summary.overallWasteRate}%</p>
+                    <p className="text-xs text-muted-foreground">Waste Rate</p>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 text-center">
+                    <p className="text-3xl font-bold text-emerald-700">{reconReport.summary.completionRate}%</p>
+                    <p className="text-xs text-muted-foreground">Reported</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                  <StatsCard icon={PackageOpen} count={reconReport.summary.totalRequested} label="Total Requested" color="text-slate-600" bgColor="bg-slate-50" />
+                  <StatsCard icon={PackageCheck} count={reconReport.summary.totalIssued} label="Total Issued" color="text-emerald-600" bgColor="bg-emerald-50" />
+                  <StatsCard icon={ClipboardList} count={reconReport.summary.totalConsumed} label="Total Consumed" color="text-teal-600" bgColor="bg-teal-50" />
+                  <StatsCard icon={AlertTriangle} count={reconReport.summary.totalWasted} label="Total Wasted" color="text-red-600" bgColor="bg-red-50" />
+                  <StatsCard icon={RotateCcw} count={reconReport.summary.totalReturned} label="Total Returned" color="text-amber-600" bgColor="bg-amber-50" />
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <StatsCard icon={DollarSign} count={formatCurrency(reconReport.summary.totalCost)} label="Total Issued Cost" color="text-sky-600" bgColor="bg-sky-50" />
+                  <StatsCard icon={DollarSign} count={formatCurrency(reconReport.summary.totalWastedCost)} label="Total Waste Cost" color="text-red-600" bgColor="bg-red-50" />
+                  <StatsCard icon={TrendingUp} count={formatCurrency(reconReport.summary.savingsFromReturns)} label="Savings from Returns" color="text-emerald-600" bgColor="bg-emerald-50" />
+                </div>
+
+                {reconReport.itemBreakdown && reconReport.itemBreakdown.length > 0 && (
+                  <Card>
+                    <CardHeader><CardTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-red-500" /> Top Wasteful Items</CardTitle></CardHeader>
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader><TableRow><TableHead>Item</TableHead><TableHead className="text-right">Total Issued</TableHead><TableHead className="text-right">Wasted</TableHead><TableHead className="text-right">Waste Rate</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {reconReport.itemBreakdown.slice(0, 5).map((item: any) => (
+                            <TableRow key={item.itemName}>
+                              <TableCell className="font-medium">{item.itemName}</TableCell>
+                              <TableCell className="text-right">{item.totalIssued}</TableCell>
+                              <TableCell className="text-right text-red-600">{item.totalWasted}</TableCell>
+                              <TableCell className="text-right">
+                                <Badge variant="outline" className={item.wasteRate > 20 ? 'bg-red-100 text-red-700' : item.wasteRate > 10 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}>
+                                  {item.wasteRate}%
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <Card>
+                  <CardHeader><CardTitle>Reconciliation Details</CardTitle></CardHeader>
+                  <CardContent className="p-0">
+                    <div className="max-h-96 overflow-y-auto">
+                      <Table>
+                        <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>WO #</TableHead><TableHead className="text-right">Issued</TableHead><TableHead className="text-right">Consumed</TableHead><TableHead className="text-right">Wasted</TableHead><TableHead className="text-right">Returned</TableHead><TableHead className="text-right">Rate</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {reconReport.details.map((d: any) => (
+                            <TableRow key={d.id}>
+                              <TableCell className="font-medium text-sm">{d.itemName}</TableCell>
+                              <TableCell><Badge variant="outline" className="font-mono text-xs">{d.woNumber}</Badge></TableCell>
+                              <TableCell className="text-right">{d.issuedQty}</TableCell>
+                              <TableCell className="text-right text-teal-600">{d.consumedQty}</TableCell>
+                              <TableCell className="text-right text-red-500">{d.wastedQty}</TableCell>
+                              <TableCell className="text-right text-amber-600">{d.returnedQty}</TableCell>
+                              <TableCell className="text-right">
+                                {d.reconciliationRate !== null ? (
+                                  <Badge variant="outline" className={d.reconciliationRate >= 90 ? 'bg-emerald-100 text-emerald-700' : d.reconciliationRate >= 70 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}>
+                                    {d.reconciliationRate}%
+                                  </Badge>
+                                ) : <span className="text-xs text-muted-foreground">Pending</span>}
+                              </TableCell>
+                              <TableCell>{d.isReconciled ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <Clock className="h-4 w-4 text-amber-500" />}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {reconReport.pagination && reconReport.pagination.totalPages > 1 && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">Page {reconReport.pagination.page} of {reconReport.pagination.totalPages}</p>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" disabled={reconPage <= 1} onClick={() => fetchReconReport(reconPage - 1)}>Previous</Button>
+                      <Button variant="outline" size="sm" disabled={reconPage >= reconReport.pagination.totalPages} onClick={() => fetchReconReport(reconPage + 1)}>Next</Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <Card>
+                <CardContent className="py-12">
+                  <EmptyState icon={ClipboardList} title="No reconciliation data loaded" description="Click 'Load Report' to generate the reconciliation report" />
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   );

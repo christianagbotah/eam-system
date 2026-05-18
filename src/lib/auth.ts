@@ -1,5 +1,8 @@
 import { db } from '@/lib/db';
 import { randomUUID } from 'crypto';
+import { createLogger } from '@/lib/logger';
+
+const logger = createLogger('auth');
 
 // ============================================================================
 // SESSION MANAGEMENT — DB-backed with in-memory LRU cache
@@ -340,4 +343,308 @@ export async function warmSessionCache(): Promise<void> {
   } catch {
     // Silently fail — DB may not be ready during cold start
   }
+}
+
+// ============================================================================
+// TOKEN ROTATION ARCHITECTURE
+// Refresh token rotation, token family tracking, absolute expiry, binding
+// ============================================================================
+
+/** Max absolute session duration regardless of refresh (7 days). */
+const ABSOLUTE_SESSION_MAX_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** In-memory token family store for reuse detection. */
+const globalForTokenRotation = globalThis as unknown as {
+  _tokenFamilies: Map<string, TokenFamilyRecord> | undefined;
+};
+
+if (!globalForTokenRotation._tokenFamilies) {
+  globalForTokenRotation._tokenFamilies = new Map();
+}
+const tokenFamilies = globalForTokenRotation._tokenFamilies;
+
+/** Tracks a chain of tokens issued from the same initial authentication. */
+interface TokenFamilyRecord {
+  /** The family ID (tied to the initial login session). */
+  familyId: string;
+  /** Set of token IDs that have been issued and invalidated in this family. */
+  usedTokenIds: Set<string>;
+  /** The currently active (latest) token ID in this family. */
+  activeTokenId: string | null;
+  /** Whether the entire family has been revoked (reuse detected). */
+  revoked: boolean;
+  /** Timestamp when the family was created. */
+  createdAt: number;
+  /** Timestamp when the family was last rotated. */
+  lastRotatedAt: number;
+}
+
+interface RotateResult {
+  /** The new token. */
+  newToken: string;
+  /** The new session data. */
+  session: SessionData;
+  /** Whether this rotation detected reuse (family was already revoked). */
+  reuseDetected: boolean;
+}
+
+/**
+ * Rotate a refresh token: issue a new one and invalidate the old.
+ * Implements token family tracking to detect refresh token reuse attacks.
+ *
+ * When a previously-used refresh token is presented again, it indicates
+ * a token theft scenario. In response, the entire token family is revoked,
+ * forcing the legitimate user to re-authenticate.
+ */
+export async function rotateRefreshToken(
+  oldToken: string,
+  userAgent?: string,
+  ipAddress?: string,
+): Promise<RotateResult> {
+  // Validate the old token
+  const oldSession = await getSessionAsync(oldToken);
+  if (!oldSession) {
+    logger.warn('Token rotation failed: old token invalid or expired');
+    return { newToken: '', session: oldSession!, reuseDetected: false };
+  }
+
+  // Check absolute session expiry
+  const now = Date.now();
+  const sessionAge = now - oldSession.createdAt.getTime();
+  if (sessionAge > ABSOLUTE_SESSION_MAX_MS) {
+    logger.warn('Token rotation rejected: absolute session max exceeded', {
+      userId: oldSession.userId,
+      sessionAgeMs: sessionAge,
+      maxMs: ABSOLUTE_SESSION_MAX_MS,
+    });
+    await deleteSession(oldToken);
+    return { newToken: '', session: oldSession, reuseDetected: false };
+  }
+
+  // Look up or create token family
+  let family = tokenFamilies.get(oldToken);
+  if (!family) {
+    // First rotation for this token — create a new family
+    family = {
+      familyId: `tf-${randomUUID().slice(0, 12)}`,
+      usedTokenIds: new Set([oldToken]),
+      activeTokenId: oldToken,
+      revoked: false,
+      createdAt: now,
+      lastRotatedAt: now,
+    };
+    tokenFamilies.set(oldToken, family);
+  }
+
+  // ── Reuse Detection ────────────────────────────────────────────────────
+  // If the family is already revoked, or the old token is not the active one,
+  // we have detected reuse. Revoke the entire family.
+  if (family.revoked) {
+    logger.error('Token reuse detected: family already revoked', {
+      familyId: family.familyId,
+      userId: oldSession.userId,
+    });
+    await revokeTokenFamily(family.familyId);
+    return { newToken: '', session: oldSession, reuseDetected: true };
+  }
+
+  if (family.activeTokenId !== oldToken) {
+    // The presented token is NOT the latest — someone is reusing an old token
+    logger.error('Token reuse detected: stale token presented', {
+      familyId: family.familyId,
+      userId: oldSession.userId,
+      presentedToken: oldToken.slice(0, 8),
+      expectedToken: family.activeTokenId?.slice(0, 8),
+    });
+    // Revoke the entire family
+    family.revoked = true;
+    await revokeTokenFamily(family.familyId);
+    // Invalidate old session
+    sessionCache.delete(oldToken);
+    try {
+      await db.session.deleteMany({ where: { token: oldToken } });
+    } catch { /* ignore */ }
+    return { newToken: '', session: oldSession, reuseDetected: true };
+  }
+
+  // ── Rotate ─────────────────────────────────────────────────────────────
+  // Mark the old token as used
+  family.usedTokenIds.add(oldToken);
+
+  // Delete the old session from DB and cache
+  sessionCache.delete(oldToken);
+  try {
+    await db.session.deleteMany({ where: { token: oldToken } });
+  } catch { /* ignore */ }
+
+  // Create a new session
+  const { token: newToken, session } = await createSession(oldSession.userId);
+
+  // Update family record
+  family.usedTokenIds.add(newToken);
+  family.activeTokenId = newToken;
+  family.lastRotatedAt = now;
+
+  // Re-key the family map to the new token for lookup chain
+  tokenFamilies.delete(oldToken);
+  tokenFamilies.set(newToken, family);
+
+  // Store binding metadata (user agent + IP)
+  storeTokenBinding(newToken, { userAgent: userAgent || '', ipAddress: ipAddress || '' });
+
+  logger.info('Token rotated successfully', {
+    familyId: family.familyId,
+    userId: oldSession.userId,
+    newToken: newToken.slice(0, 8),
+  });
+
+  return { newToken, session, reuseDetected: false };
+}
+
+/**
+ * Detect whether a token has been reused within its token family.
+ * Returns true if reuse is detected (the token is not the latest in its family,
+ * or the family has been revoked).
+ */
+export function detectTokenReuse(tokenFamily: string, tokenId: string): boolean {
+  const family = tokenFamilies.get(tokenFamily);
+  if (!family) return false;
+  if (family.revoked) return true;
+  return family.activeTokenId !== tokenId;
+}
+
+// ── Token Binding (UA/IP) ────────────────────────────────────────────────────
+
+const globalForTokenBinding = globalThis as unknown as {
+  _tokenBindings: Map<string, { userAgent: string; ipAddress: string; boundAt: number }> | undefined;
+};
+
+if (!globalForTokenBinding._tokenBindings) {
+  globalForTokenBinding._tokenBindings = new Map();
+}
+const tokenBindings = globalForTokenBinding._tokenBindings;
+
+/** Store binding metadata for a token (user agent + IP at creation time). */
+function storeTokenBinding(
+  token: string,
+  binding: { userAgent: string; ipAddress: string },
+): void {
+  tokenBindings.set(token, {
+    userAgent: binding.userAgent,
+    ipAddress: binding.ipAddress,
+    boundAt: Date.now(),
+  });
+  // Cleanup old bindings (keep last 2000)
+  if (tokenBindings.size > 2000) {
+    const entries = [...tokenBindings.entries()]
+      .sort((a, b) => a[1].boundAt - b[1].boundAt);
+    for (let i = 0; i < 500; i++) {
+      tokenBindings.delete(entries[i][0]);
+    }
+  }
+}
+
+/**
+ * Validate token binding — check if the current request's UA/IP matches
+ * the token's original binding. Returns reasons if mismatch detected.
+ *
+ * This is a replay detection mechanism — if a token is used from a
+ * significantly different UA/IP, it may indicate token theft.
+ */
+export function validateTokenBinding(
+  token: string,
+  currentUserAgent: string,
+  currentIpAddress: string,
+): { valid: boolean; reasons: string[] } {
+  const binding = tokenBindings.get(token);
+  if (!binding) {
+    // No binding stored yet — this is fine for backward compatibility
+    return { valid: true, reasons: [] };
+  }
+
+  const reasons: string[] = [];
+
+  // Check user agent — normalize for comparison (ignore version numbers)
+  if (binding.userAgent && currentUserAgent) {
+    const normalizeUA = (ua: string) =>
+      ua.replace(/\/[\d.]+/g, '/VER').replace(/\s*\([^\)]*\)/g, '').toLowerCase();
+    if (normalizeUA(binding.userAgent) !== normalizeUA(currentUserAgent)) {
+      reasons.push('User agent mismatch — different browser or client');
+    }
+  }
+
+  // Check IP address — warn on change, but don't block (mobile networks change IPs)
+  if (binding.ipAddress && currentIpAddress &&
+      binding.ipAddress !== currentIpAddress &&
+      binding.ipAddress !== 'unknown' &&
+      currentIpAddress !== 'unknown') {
+    reasons.push(`IP address changed from ${binding.ipAddress} to ${currentIpAddress}`);
+  }
+
+  return { valid: reasons.length === 0, reasons };
+}
+
+/**
+ * Revoke all sessions in a token family by deleting all known tokens
+ * from the cache and database.
+ */
+async function revokeTokenFamily(familyId: string): Promise<void> {
+  let targetFamily: TokenFamilyRecord | null = null;
+
+  for (const [, family] of tokenFamilies.entries()) {
+    if (family.familyId === familyId) {
+      targetFamily = family;
+      break;
+    }
+  }
+
+  if (!targetFamily) return;
+
+  // Invalidate all tokens in the family
+  for (const tokenId of targetFamily.usedTokenIds) {
+    sessionCache.delete(tokenId);
+    try {
+      await db.session.deleteMany({ where: { token: tokenId } });
+    } catch { /* ignore */ }
+    tokenBindings.delete(tokenId);
+  }
+
+  // Clean up family record
+  for (const [key, family] of tokenFamilies.entries()) {
+    if (family.familyId === familyId) {
+      tokenFamilies.delete(key);
+    }
+  }
+
+  logger.warn('Token family revoked', {
+    familyId,
+    tokensRevoked: targetFamily.usedTokenIds.size,
+  });
+}
+
+/**
+ * Get token rotation metrics for monitoring.
+ */
+export function getTokenRotationMetrics() {
+  let totalFamilies = 0;
+  let revokedFamilies = 0;
+  let totalTokens = 0;
+
+  const seenFamilies = new Set<string>();
+
+  for (const [, family] of tokenFamilies.entries()) {
+    seenFamilies.add(family.familyId);
+    totalTokens += family.usedTokenIds.size;
+    if (family.revoked) revokedFamilies++;
+  }
+
+  totalFamilies = seenFamilies.size;
+
+  return {
+    totalFamilies,
+    revokedFamilies,
+    totalTokensTracked: totalTokens,
+    absoluteSessionMaxMs: ABSOLUTE_SESSION_MAX_MS,
+    bindingRecordsCount: tokenBindings.size,
+  };
 }

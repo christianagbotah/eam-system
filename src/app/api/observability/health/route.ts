@@ -128,6 +128,20 @@ export async function GET(request: NextRequest) {
       checks.queue = { status: 'healthy', latencyMs: 0, details: 'Queue metrics not available' };
     }
 
+    // ── Observability persistence status ────────────────────────────────────
+    try {
+      const { getStatus } = await import('@/services/observability/persistence.service');
+      const persistStatus = getStatus();
+      const tp = persistStatus.totalPersisted;
+      checks.persistence = {
+        status: persistStatus.isRunning ? 'healthy' : 'degraded',
+        latencyMs: 0,
+        details: `Running: ${persistStatus.isRunning}, Flush: ${persistStatus.config.flushIntervalMs}ms, Persisted: ${tp.logs} logs / ${tp.traces} traces / ${tp.metrics} metrics`,
+      };
+    } catch {
+      checks.persistence = { status: 'healthy', latencyMs: 0, details: 'Persistence service not loaded' };
+    }
+
     // ── Overall status determination ─────────────────────────────────────────
     const statusValues = Object.values(checks);
     const hasUnhealthy = statusValues.some(c => c.status === 'unhealthy');
