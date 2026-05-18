@@ -5177,3 +5177,34 @@ Stage Summary:
 - Work orders locked via planner_close or regular close are now permanently immutable
 - Zero exceptions — not even admin can modify a locked work order
 - Complete audit trail integrity guaranteed after WO closure
+
+---
+Task ID: shutdown-tab-fix
+Agent: Main Agent
+Task: Fix Planner Workbench Shutdown tab — View button not working, replace hardcoded data with real STO API
+
+Work Log:
+- Identified root cause: View button on line 1072 had no onClick handler; entire shutdown tab used hardcoded sample data
+- Added STO state variables (stoEvents, stoLoading, selectedSTO, stoDetailOpen, stoDetailLoading, stoDetailData, createSTODialogOpen, createSTOForm, createSTOLoading)
+- Implemented fetchSTOEvents() → GET /api/sto/events?limit=50
+- Implemented handleViewSTO(event) → opens Sheet, fetches GET /api/sto/events/{id} + GET /api/sto/events/{id}/milestones in parallel
+- Implemented handleCreateSTO() → POST /api/sto/events with plantId from auth store
+- Replaced hardcoded shutdown cards with dynamic rendering from stoEvents array
+- Added STO Detail Sheet with full information: status badges, description, planned/actual dates, duration, budget/cost, scope (equipment + work packages from scopeJson), milestones from milestonesJson, notes, metadata
+- Added Create STO Dialog (ResponsiveDialog) with fields: Name, Type (planned_shutdown/turnaround/forced_outage/emergency), Description, Planned Start/End, Est Duration, Budget
+- Added loading skeletons (3 Skeleton rows) during STO fetch
+- Added EmptyState when no STO events exist
+- Color-coded status badges for all 7 STO statuses (planning, scheduled, pre_shutdown, in_progress, startup, completed, cancelled)
+- Type labels: Planned Shutdown, Turnaround, Forced Outage, Emergency
+- Fixed: restored Work Package dialog that was accidentally removed during edit
+- Fixed: DollarSign icon import added
+- Fixed: smart-quote parsing error in EmptyState description (used single quotes)
+- Fixed: React Compiler useCallback deps warning (added user to deps)
+- Zero ESLint errors after fixes
+
+Stage Summary:
+- 1 file modified: src/components/modules/PlannerWorkbench.tsx (+332 lines, -52 lines)
+- View button now opens a full STO detail Sheet with real API data
+- Plan Shutdown button now opens a create dialog with full form
+- Shutdown tab fetches real data from STO API instead of hardcoded samples
+- Commit: 97e0b4f4, pushed to main
