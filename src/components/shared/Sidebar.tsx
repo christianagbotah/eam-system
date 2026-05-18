@@ -131,6 +131,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'assets-condition-monitoring', label: 'Condition Monitoring', icon: Activity },
         { page: 'assets-digital-twin', label: 'Digital Twin', icon: Box },
         { page: 'system-diagrams', label: 'System Diagrams', icon: GitBranch },
+        { page: 'asset-categories', label: 'Categories', icon: FolderOpen },
         { page: 'assets-health', label: 'Asset Health', icon: HeartPulse },
       ],
     },

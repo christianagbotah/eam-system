@@ -545,7 +545,8 @@ export type PageName =
   | 'dashboard'
   | 'chat'
   | 'notifications'
-  // Assets (6 subpages)
+  // Assets (7 subpages)
+  | 'asset-categories'
   | 'assets-machines'
   | 'assets-hierarchy'
   | 'assets-bom'

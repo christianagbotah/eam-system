@@ -38,6 +38,7 @@ const AssetsConditionMonitoringPage = lazy(() => import('./modules/AssetPages').
 const DigitalTwinMainPage = lazy(() => import('./digital-twin/DigitalTwinMainPage').then(m => ({ default: m.DigitalTwinMainPage })));
 const SystemDiagramPage = lazy(() => import('./digital-twin/SystemDiagramPage'));
 const AssetHealthPage = lazy(() => import('./modules/AssetPages').then(m => ({ default: m.AssetHealthPage })));
+const AssetCategoriesPage = lazy(() => import('./modules/AssetCategoriesPage'));
 
 // Maintenance
 const MaintenanceRequestsPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceRequestsPage })));
@@ -203,6 +204,7 @@ function AppShell() {
       case 'chat': return <ChatPage />;
       case 'notifications': return <NotificationsPage />;
       // Assets
+      case 'asset-categories': return <AssetCategoriesPage />;
       case 'assets-machines': return <AssetsMachinesPage />;
       case 'assets-hierarchy': return <AssetsHierarchyPage />;
       case 'assets-bom': return <AssetsBomPage />;
@@ -336,6 +338,7 @@ function AppShell() {
     'chat': 'Chat',
     'notifications': 'Notifications',
     // Assets
+    'asset-categories': 'Asset Categories',
     'assets-machines': 'Machines',
     'assets-hierarchy': 'Asset Hierarchy',
     'assets-bom': 'Bill of Materials',

@@ -103,7 +103,7 @@ export default function AssetCategoriesPage() {
       }
     });
     return roots.filter(r => matchIds.has(r.id));
-  }, [categories, searchText]);
+  }, [categories, searchText, getChildren]);
 
   const totalCategories = categories.length;
   const totalAssets = categories.reduce((sum, c) => sum + (c._count?.assets ?? 0), 0);

@@ -5256,3 +5256,29 @@ Stage Summary:
 - Core modules always visible regardless of licensing
 - Case-insensitive module code matching
 - Graceful loading behavior (show all until API responds)
+---
+Task ID: user-dept-view-fix
+Agent: Main Agent
+Task: Fix department display and add View profile action
+
+Work Log:
+- Fixed department display: changed `u.department?.name` to `u.department` on line 179 of SettingsPages.tsx (plain string field from Prisma, not a relation object)
+- Confirmed no other `department?.name` references in the user table rendering (only form fields which correctly use form.department)
+- Added `Phone` to lucide-react imports (needed for the View sheet contact info)
+- Added Sheet components import from `@/components/ui/sheet` (Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription)
+- Added state variables: `viewUser` (User | null) and `viewOpen` (boolean)
+- Added "View" DropdownMenuItem with Eye icon before the Edit item in user actions dropdown
+- Added comprehensive View User Profile Sheet component after the Reset Password dialog, showing:
+  - Header: User avatar (initials), full name, username, status badge
+  - Contact Information: email, phone, department (conditionally rendered)
+  - Roles section with colored badges
+  - Plant Access section with Factory icon badges
+  - Primary Plant info (conditionally rendered)
+  - Activity timestamps: created, updated, last login
+- Sheet is responsive (sm:max-w-lg) with overflow-y-auto
+- Properly cleans up viewUser state on Sheet close
+
+Stage Summary:
+- Department column now displays correctly as plain string on Users page
+- View profile Sheet shows comprehensive user details accessible from the actions dropdown
+- No existing functionality broken; all changes are additive
