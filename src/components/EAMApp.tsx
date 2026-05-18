@@ -579,8 +579,8 @@ function AppShell() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto pb-16 lg:pb-0">
-          <div className="animate-in fade-in-0 duration-300">
+        <main className="flex-1 min-h-0 overflow-y-auto pb-16 lg:pb-0">
+          <div className="animate-in fade-in-0 duration-300 min-h-fit">
             <Suspense fallback={<LoadingSkeleton />}>
               {renderPage()}
             </Suspense>
