@@ -5150,3 +5150,30 @@ Stage Summary:
 - Team time logging with leader/member validation
 - Active WO enforcement for single-work-order-at-a-time rule
 - WO immutability after planner closure with admin override capability
+
+---
+Task ID: wo-permanent-lock
+Agent: Main Agent
+Task: Enforce permanent WO immutability after planner closure — remove all admin override capability
+
+Work Log:
+- Audited all WO mutation API endpoints for isLocked bypass logic
+- Found 7 routes with `isLocked && !session.roles.includes('admin')` pattern allowing admin to bypass lock
+- Found 1 route (`/repairs/completion/[workOrderId]`) with full admin override logic using `overrideReason`
+- Found 1 route (`/work-orders/bulk-update`) completely missing isLocked check
+- Found 1 route (`/work-orders/[id]/materials/[materialId]` PUT) missing isLocked check on status updates
+- Removed admin bypass in all 7 routes, changed to permanent lock with clear error message
+- Removed admin override with overrideReason in repairs/completion endpoint
+- Added isLocked check to bulk-update endpoint (pre-query to reject entire batch if any locked)
+- Added isLocked check to materials PUT endpoint (status approve/issue/return updates)
+- Verified frontend has no admin override UI (only shows Locked badge)
+- Verified state machine transitions prevent moves from 'closed' status (safety net)
+- Verified comments remain allowed on locked WOs (intentional post-closure notes)
+- Ran lint: no new errors (pre-existing 1865 errors unchanged)
+- Committed and pushed: b9dc1a67
+
+Stage Summary:
+- 9 API route files modified to enforce permanent WO lock
+- Work orders locked via planner_close or regular close are now permanently immutable
+- Zero exceptions — not even admin can modify a locked work order
+- Complete audit trail integrity guaranteed after WO closure
