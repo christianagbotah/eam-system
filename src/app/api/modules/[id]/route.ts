@@ -48,7 +48,10 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       );
     }
 
-    // Check existing company module for lock status
+    // Check existing company module for lock status and update target
+    // NOTE: Do NOT filter by companyId: null — MariaDB treats NULL as distinct
+    // in unique indexes, which can lead to duplicate records or missed lookups.
+    // In single-tenant mode, just match on systemModuleId alone.
     const existingCompanyModule = await db.companyModule.findFirst({
       where: { systemModuleId: id },
     });
@@ -67,8 +70,15 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       );
     }
 
-    // Build update data
-    const updateData: Record<string, unknown> = {};
+    // Build update data with proper typing
+    const updateData: {
+      isActive?: boolean;
+      isEnabled?: boolean;
+      licensedAt?: Date | null;
+      licensedBy?: string | null;
+      activatedAt?: Date | null;
+      activatedBy?: string | null;
+    } = {};
     if (typeof isActive === 'boolean') {
       updateData.isActive = isActive;
       if (isActive) {
@@ -87,23 +97,18 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       }
     }
 
-    // Find existing company module (SQLite treats NULL as distinct in unique indexes,
-    // so we cannot use upsert with companyId: null)
-    const existing = await db.companyModule.findFirst({
-      where: { systemModuleId: id, companyId: null },
-    });
-
+    // Update or create company module — reuse existingCompanyModule from earlier
+    // (no separate findFirst with companyId: null needed)
     let companyModule;
-    if (existing) {
+    if (existingCompanyModule) {
       companyModule = await db.companyModule.update({
-        where: { id: existing.id },
+        where: { id: existingCompanyModule.id },
         data: updateData,
       });
     } else {
       companyModule = await db.companyModule.create({
         data: {
           systemModuleId: id,
-          companyId: null,
           isActive: (isActive as boolean) ?? false,
           isEnabled: (isEnabled as boolean) ?? false,
           licensedAt: isActive ? new Date() : null,
@@ -126,6 +131,7 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update module';
+    console.error('[modules/update] Error updating module:', message, error);
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

@@ -9,6 +9,7 @@ interface NavigationState {
   mobileSidebarOpen: boolean;
   enabledModules: Set<string> | null; // null = not loaded yet (show all)
   fetchModules: () => Promise<void>;
+  refreshModules: () => Promise<void>; // force re-fetch, bypasses cache
   navigate: (page: PageName, params?: Record<string, string>, replace?: boolean) => void;
   goBack: () => void;
   toggleSidebar: () => void;
@@ -64,6 +65,11 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   fetchModules: async () => {
     // Avoid duplicate fetches if already loaded
     if (get().enabledModules !== null) return;
+    await get().refreshModules();
+  },
+
+  refreshModules: async () => {
+    // Force re-fetch from API (bypasses cache)
     try {
       const res = await api.get<any[]>('/api/modules');
       if (res.success && Array.isArray(res.data)) {
@@ -72,9 +78,8 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
           if (m.isEnabled || m.isCore) enabled.add(m.code);
         });
         // Safety: if no modules are enabled, keep null so all sidebar items remain visible
-        // This prevents an empty Set from hiding every menu group
         if (enabled.size === 0) {
-          // Don't update — stay null (show all)
+          set({ enabledModules: null });
           return;
         }
         set({ enabledModules: enabled });

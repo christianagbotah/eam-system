@@ -877,6 +877,7 @@ export function SettingsModulesPage() {
   const [activeTab, setActiveTab] = useState('licensing');
   const [searchQuery, setSearchQuery] = useState('');
   const { hasPermission } = useAuthStore();
+  const refreshModules = useNavigationStore(s => s.refreshModules);
   const canLicense = hasPermission('modules.activate');
   const canManage = hasPermission('modules.manage');
 
@@ -919,6 +920,7 @@ export function SettingsModulesPage() {
     if (res.success) {
       setModules(prev => prev.map(m => m.id === mod.id ? { ...m, isActive: nextIsActive, isEnabled: nextIsActive ? m.isEnabled : false } : m));
       toast.success(`${mod.name} ${nextIsActive ? 'licensed successfully' : 'license revoked'}`);
+      refreshModules(); // sync sidebar immediately
     } else {
       toast.error(res.error || 'Failed to update module license');
     }
@@ -935,6 +937,7 @@ export function SettingsModulesPage() {
     if (res.success) {
       setModules(prev => prev.map(m => m.id === mod.id ? { ...m, isEnabled: nextIsEnabled } : m));
       toast.success(`${mod.name} ${nextIsEnabled ? 'activated' : 'deactivated'}`);
+      refreshModules(); // sync sidebar immediately
     } else {
       toast.error(res.error || 'Failed to update module');
     }
