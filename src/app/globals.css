@@ -435,6 +435,7 @@ header[class*="bg-header"] {
    ============================================================================ */
 .page-content {
   max-width: 1600px;
+  width: 100%;
   margin-left: auto;
   margin-right: auto;
   padding: 1rem 0.75rem;
@@ -452,6 +453,14 @@ header[class*="bg-header"] {
   .page-content {
     padding: 2rem;
   }
+}
+
+/* ============================================================================
+   SCROLL CONTAINMENT — ensures pages scroll inside the app shell
+   ============================================================================ */
+main[class*="flex-1"] {
+  min-height: 0 !important;
+  overflow-y: auto !important;
 }
 
 /* ============================================================================

@@ -433,12 +433,12 @@ function GaugeCircle({ value, label, size = 140 }: { value: number; label: strin
   const offset = circumference - (value / 100) * circumference;
   return (
     <div className="flex flex-col items-center gap-2">
-      <div className={`rounded-2xl p-4 ${gaugeBg(value)}`}>
+      <div className={`relative rounded-2xl p-4 ${gaugeBg(value)}`}>
         <svg width={size} height={size} className="-rotate-90">
           <circle cx={size / 2} cy={size / 2} r={radius} fill="none" className="stroke-muted" strokeWidth="10" />
           <circle cx={size / 2} cy={size / 2} r={radius} fill="none" className={gaugeStrokeColor(value)} strokeWidth="10" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 1s ease' }} />
         </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <span className={`text-2xl font-bold ${gaugeColor(value)}`}>{value}%</span>
         </div>
       </div>
@@ -505,14 +505,14 @@ export function AnalyticsOeePage() {
           <div className="flex flex-col md:flex-row items-center gap-8 justify-center">
             <div className="flex flex-col items-center">
               <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Overall OEE</p>
-              <div className={`relative w-44 h-44 rounded-2xl p-4 ${gaugeBg(oee)}`}>
-                <svg width="144" height="144" className="-rotate-90">
+              <div className={`relative w-44 h-44 rounded-2xl p-4 flex items-center justify-center ${gaugeBg(oee)}`}>
+                <svg width="144" height="144" className="-rotate-90 absolute">
                   <circle cx="72" cy="72" r="60" fill="none" className="stroke-muted" strokeWidth="12" />
                   <circle cx="72" cy="72" r="60" fill="none" className={gaugeStrokeColor(oee)} strokeWidth="12" strokeLinecap="round"
                     strokeDasharray={2 * Math.PI * 60} strokeDashoffset={2 * Math.PI * 60 - (oee / 100) * 2 * Math.PI * 60}
                     style={{ transition: 'stroke-dashoffset 1s ease' }} />
                 </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <div className="relative z-10 flex flex-col items-center justify-center pointer-events-none">
                   <span className={`text-3xl font-bold ${gaugeColor(oee)}`}>{oee}%</span>
                   <span className="text-xs text-muted-foreground">Target: {oeeTarget}%</span>
                 </div>
