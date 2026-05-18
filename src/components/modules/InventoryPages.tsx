@@ -900,6 +900,18 @@ export function InventoryAdjustmentsPage() {
 
   useEffect(() => { fetchAdjustments(); }, [fetchAdjustments]);
 
+  const fetchItemOptions = useCallback(async () => {
+    const res = await api.get('/api/inventory?limit=500');
+    const items = res.success ? (res.data || []) : [];
+    return items.map((item: any) => ({ value: item.id, label: item.name + (item.itemCode ? ` (${item.itemCode})` : '') }));
+  }, []);
+
+  const fetchLocationOptions = useCallback(async () => {
+    const res = await api.get('/api/inventory/locations?limit=100');
+    const locs = res.success ? (res.data || []) : [];
+    return locs.map((loc: any) => ({ value: loc.id, label: loc.name || loc.code }));
+  }, []);
+
   const adjStatusColors: Record<string, string> = { pending: 'bg-amber-50 text-amber-700 border-amber-200', approved: 'bg-emerald-50 text-emerald-700 border-emerald-200', rejected: 'bg-red-50 text-red-700 border-red-200' };
 
   const filtered = adjustments.filter((a: any) => {
@@ -983,8 +995,8 @@ export function InventoryAdjustmentsPage() {
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Inventory Adjustment</h2><p className="text-sm text-muted-foreground">Record a stock adjustment for an inventory item.</p></div>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Item *</Label><Input placeholder="Ball Bearing 6205" value={form.item} onChange={e => setForm({ ...form, item: e.target.value })} /></div>
-              <div className="space-y-2"><Label>Location *</Label><Input placeholder="WH-A1" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} /></div>
+              <div className="space-y-2"><Label>Item *</Label><AsyncSearchableSelect value={form.item} onValueChange={v => setForm({ ...form, item: v })} fetchOptions={fetchItemOptions} placeholder="Search item..." /></div>
+              <div className="space-y-2"><Label>Location *</Label><AsyncSearchableSelect value={form.location} onValueChange={v => setForm({ ...form, location: v })} fetchOptions={fetchLocationOptions} placeholder="Search location..." /></div>
             </div>
             <div className="space-y-2"><Label>Adjustment Type *</Label><Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger><SelectContent>{adjTypes.map(t => <SelectItem key={t} value={t}>{t.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())}</SelectItem>)}</SelectContent></Select></div>
             <div className="grid grid-cols-2 gap-4">

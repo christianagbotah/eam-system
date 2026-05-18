@@ -16,6 +16,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
@@ -50,6 +51,13 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   }
   return json.data as T;
 }
+
+// ── SHARED FETCH HELPERS ──────────────────────────────────────────────────
+
+const fetchAssetOptions = async () => {
+  const assets = await apiFetch<any[]>('/api/assets?limit=500');
+  return assets.map((a: any) => ({ value: a.id, label: (a.name || a.assetTag) + (a.serialNumber ? ` — ${a.serialNumber}` : '') }));
+};
 
 // ── TYPES ───────────────────────────────────────────────────────────────────
 
@@ -747,7 +755,7 @@ function RcmAnalysisTab() {
                     <DialogDescription>Create a reliability-centered maintenance analysis</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 py-2">
-                    <div><Label>Asset ID</Label><Input value={form.assetId} onChange={(e) => setForm({ ...form, assetId: e.target.value })} /></div>
+                    <div><Label>Asset ID</Label><AsyncSearchableSelect value={form.assetId} onValueChange={(v) => setForm({ ...form, assetId: v })} fetchOptions={fetchAssetOptions} placeholder="Search asset..." /></div>
                     <div><Label>Name</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
                     <div><Label>Description</Label><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} /></div>
                     <div>
@@ -1130,7 +1138,7 @@ function DowntimeTab() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <Label className="text-xs text-muted-foreground">Asset ID</Label>
-              <Input value={form.assetId} onChange={(e) => setForm({ ...form, assetId: e.target.value })} />
+              <AsyncSearchableSelect value={form.assetId} onValueChange={(v) => setForm({ ...form, assetId: v })} fetchOptions={fetchAssetOptions} placeholder="Search asset..." />
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Period Start</Label>

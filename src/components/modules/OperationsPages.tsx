@@ -32,6 +32,7 @@ import {
   Activity, BookOpen, ClipboardCheck, ClipboardList, Settings, Send, Target, TrendingUp,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 
 export function OperationsMeterReadingsPage() {
   const { hasPermission, isAdmin } = useAuthStore();
@@ -536,6 +537,16 @@ export function OperationsShiftHandoverPage() {
   const [editForm, setEditForm] = useState({ shift: 'Morning', area: '', status: 'pending', fromOperator: '', toOperator: '', handoverDate: '', items: '', notes: '' });
   const [editLoading, setEditLoading] = useState(false);
 
+  const areaOptions = [
+    { value: 'Plant A', label: 'Plant A' },
+    { value: 'Plant B', label: 'Plant B' },
+    { value: 'Plant C', label: 'Plant C' },
+    { value: 'Warehouse', label: 'Warehouse' },
+    { value: 'Workshop', label: 'Workshop' },
+    { value: 'Office', label: 'Office' },
+    { value: 'External', label: 'External' },
+  ];
+
   useEffect(() => {
     api.get<any>('/api/shift-handovers').then(res => {
       if (res.success) {
@@ -712,7 +723,7 @@ export function OperationsShiftHandoverPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Handover Date</Label><Input type="date" value={editForm.handoverDate} onChange={e => setEditForm(f => ({ ...f, handoverDate: e.target.value }))} /></div>
-              <div><Label>Area</Label><Input value={editForm.area} onChange={e => setEditForm(f => ({ ...f, area: e.target.value }))} placeholder="e.g. Plant A" /></div>
+              <div><Label>Area</Label><SearchableSelect value={editForm.area} onValueChange={v => setEditForm(f => ({ ...f, area: v }))} options={areaOptions} placeholder="Select area..." clearable={false} /></div>
             </div>
             <div><Label>Tasks Summary</Label><Textarea value={editForm.items} onChange={e => setEditForm(f => ({ ...f, items: e.target.value }))} rows={3} /></div>
             <div><Label>Notes</Label><Textarea value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} rows={3} /></div>

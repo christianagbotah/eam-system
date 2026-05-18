@@ -1004,6 +1004,13 @@ export function AssetsConditionMonitoringPage() {
   const [searchText, setSearchText] = useState('');
 
   const parameterUnits: Record<string, string> = { vibration: 'mm/s', temperature: '°C', pressure: 'bar', flow: 'L/min', current: 'A' };
+
+  const fetchAssetOptions = useCallback(async () => {
+    const res = await api.get('/api/assets?limit=500');
+    const assets = res.success ? (res.data || []) : [];
+    return assets.map((a: any) => ({ value: a.id, label: a.name || a.assetTag }));
+  }, []);
+
   const fetchMonitoring = async () => {
     setLoading(true);
     try {
@@ -1150,7 +1157,7 @@ export function AssetsConditionMonitoringPage() {
       <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
         <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Add Monitoring Point</h2><p className="text-sm text-muted-foreground">Configure a new condition monitoring point</p></div>
           <div className="space-y-4">
-            <div><Label>Asset</Label><Input placeholder="e.g. Main Compressor A" value={form.asset} onChange={e => setForm(f => ({ ...f, asset: e.target.value }))} /></div>
+            <div><Label>Asset</Label><AsyncSearchableSelect value={form.asset} onValueChange={v => setForm(f => ({ ...f, asset: v }))} fetchOptions={fetchAssetOptions} placeholder="Search asset..." /></div>
             <div><Label>Parameter</Label><Select value={form.parameter} onValueChange={v => setForm(f => ({ ...f, parameter: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="vibration">Vibration</SelectItem><SelectItem value="temperature">Temperature</SelectItem><SelectItem value="pressure">Pressure</SelectItem><SelectItem value="flow">Flow Rate</SelectItem><SelectItem value="current">Current</SelectItem></SelectContent></Select></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Normal Min</Label><Input placeholder="0" value={form.normalMin} onChange={e => setForm(f => ({ ...f, normalMin: e.target.value }))} /></div>

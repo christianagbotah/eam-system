@@ -232,8 +232,22 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   const [machineDown, setMachineDown] = useState(false);
   const [itemType, setItemType] = useState<'machine' | 'manual'>('machine');
   const [manualAssetName, setManualAssetName] = useState('');
+  const [manualAssetId, setManualAssetId] = useState('');
+  const [manualMode, setManualMode] = useState(false);
   const [location, setLocation] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const fetchManualAssetOptions = useCallback(async () => {
+    const res = await api.get('/api/assets?limit=500');
+    if (res.success && res.data) {
+      const assets = (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+        value: a.id,
+        label: (a.name || a.assetTag) + (a.serialNumber ? ` — ${a.serialNumber}` : ''),
+      }));
+      return [...assets, { value: '__create_new__', label: '+ Create new asset', group: '' }];
+    }
+    return [{ value: '__create_new__', label: '+ Create new asset', group: '' }];
+  }, []);
 
   // Auto-populate department from user's profile (read-only for non-admins)
   useEffect(() => {
@@ -257,7 +271,11 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
     setLoading(true);
     const payload: any = { title, description, priority, departmentId, category, machineDownStatus: machineDown, itemType, location };
     if (itemType === 'machine' && assetId) payload.assetId = assetId;
-    if (itemType === 'manual' && manualAssetName) payload.assetName = manualAssetName;
+    if (itemType === 'manual') {
+      if (manualAssetId) payload.assetId = manualAssetId;
+      else if (manualAssetName) payload.assetName = manualAssetName;
+      else { toast.error('Please select or enter an asset name'); setLoading(false); return; }
+    }
     const res = await api.post('/api/maintenance-requests', payload);
     if (res.success) {
       toast.success('Maintenance request created');
@@ -347,7 +365,29 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-2">
             <Label>Asset Name *</Label>
-            <Input value={manualAssetName} onChange={e => setManualAssetName(e.target.value)} placeholder="Enter asset/item name" required />
+            {manualMode ? (
+              <div className="flex gap-1.5">
+                <Input value={manualAssetName} onChange={e => setManualAssetName(e.target.value)} placeholder="Enter new asset/item name" className="flex-1" />
+                <Button type="button" variant="ghost" size="sm" className="shrink-0 text-xs text-muted-foreground h-9" onClick={() => { setManualMode(false); setManualAssetName(''); setManualAssetId(''); }}>
+                  <Search className="h-3.5 w-3.5 mr-1" />Search
+                </Button>
+              </div>
+            ) : (
+              <AsyncSearchableSelect
+                value={manualAssetId}
+                onValueChange={(val) => {
+                  if (val === '__create_new__') {
+                    setManualMode(true);
+                    setManualAssetId('');
+                  } else {
+                    setManualAssetId(val);
+                  }
+                }}
+                fetchOptions={fetchManualAssetOptions}
+                placeholder="Search or select asset..."
+                searchPlaceholder="Search assets by name, tag, or serial..."
+              />
+            )}
           </div>
           <div className="space-y-2">
             <Label>Location</Label>
@@ -4259,10 +4299,22 @@ export function MaintenanceCalibrationPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ instrument: '', serialNumber: '', type: '', lastCalibration: '', nextDue: '', technician: '', certificates: '' });
+  const [technicianId, setTechnicianId] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [calibrations, setCalibrations] = useState<any[]>([]);
   const [kpis, setKpis] = useState({ total: 0, calibrated: 0, dueSoon: 0, overdue: 0 });
+
+  const fetchTechnicianOptions = useCallback(async () => {
+    const res = await api.get('/api/users?limit=500&role=technician');
+    if (res.success && res.data) {
+      return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+        value: u.id,
+        label: u.fullName + (u.staffId ? ` (${u.staffId})` : ''),
+      }));
+    }
+    return [];
+  }, []);
 
   const loadCalibrations = async () => {
     try {
@@ -4324,11 +4376,13 @@ export function MaintenanceCalibrationPage() {
         calibrationDate: form.lastCalibration || undefined,
         nextDueDate: form.nextDue || undefined,
         standardUsed: form.certificates || undefined,
-        technician: form.technician || undefined,
+        technicianId: technicianId || undefined,
+        technicianName: form.technician || undefined,
       });
       if (res.success) {
         toast.success('Calibration record created successfully');
         setCreateOpen(false);
+        setTechnicianId('');
         setForm({ instrument: '', serialNumber: '', type: '', lastCalibration: '', nextDue: '', technician: '', certificates: '' });
         loadCalibrations();
       } else {
@@ -4364,7 +4418,13 @@ export function MaintenanceCalibrationPage() {
                     <div className="grid gap-2"><Label className="text-xs">Next Due</Label><Input type="date" value={form.nextDue} onChange={e => setForm({ ...form, nextDue: e.target.value })} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="grid gap-2"><Label className="text-xs">Technician</Label><Input placeholder="e.g. James Miller" value={form.technician} onChange={e => setForm({ ...form, technician: e.target.value })} /></div>
+                    <div className="grid gap-2"><Label className="text-xs">Technician</Label><AsyncSearchableSelect
+                      value={technicianId}
+                      onValueChange={(val) => { setTechnicianId(val); setForm(f => ({ ...f, technician: val })); }}
+                      fetchOptions={fetchTechnicianOptions}
+                      placeholder="Select technician..."
+                      searchPlaceholder="Search technicians..."
+                    /></div>
                     <div className="grid gap-2"><Label className="text-xs">Certificates</Label><Input placeholder="e.g. CERT-2024-001" value={form.certificates} onChange={e => setForm({ ...form, certificates: e.target.value })} /></div>
                   </div>
                 </div>
@@ -4458,6 +4518,17 @@ export function MaintenanceRiskAssessmentPage() {
     { label: 'Medium Risk', value: kpis.medium, icon: ShieldAlert, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
     { label: 'Low Risk', value: kpis.low, icon: ShieldCheck, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
   ];
+
+  const fetchRiskAssetOptions = useCallback(async () => {
+    const res = await api.get('/api/assets?limit=500');
+    if (res.success && res.data) {
+      return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+        value: a.id,
+        label: a.name || a.assetTag,
+      }));
+    }
+    return [];
+  }, []);
 
   const mapRiskLevel = (level: string) => {
     if (level === 'extreme') return 'critical';
@@ -4564,7 +4635,13 @@ export function MaintenanceRiskAssessmentPage() {
             <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}><Plus className="h-3.5 w-3.5" />New Assessment</Button>
             <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="New Risk Assessment" description="Evaluate risk for an asset" footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.asset || !form.likelihood || !form.consequence}>{saving ? 'Creating...' : 'Create Assessment'}</Button></div>}>
                 <div className="grid gap-4 py-2">
-                  <div className="grid gap-2"><Label className="text-xs">Asset</Label><Input placeholder="e.g. CNC Lathe #3" value={form.asset} onChange={e => setForm({ ...form, asset: e.target.value })} /></div>
+                  <div className="grid gap-2"><Label className="text-xs">Asset</Label><AsyncSearchableSelect
+                    value={form.asset}
+                    onValueChange={v => setForm({ ...form, asset: v })}
+                    fetchOptions={fetchRiskAssetOptions}
+                    placeholder="Select asset..."
+                    searchPlaceholder="Search assets..."
+                  /></div>
                   <div className="grid gap-2"><Label className="text-xs">Category</Label><Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}><SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger><SelectContent><SelectItem value="mechanical">Mechanical</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="safety">Safety</SelectItem><SelectItem value="environmental">Environmental</SelectItem><SelectItem value="operational">Operational</SelectItem></SelectContent></Select></div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="grid gap-2"><Label className="text-xs">Likelihood (1-5)</Label><Select value={form.likelihood} onValueChange={v => setForm({ ...form, likelihood: v })}><SelectTrigger><SelectValue placeholder="1-5" /></SelectTrigger><SelectContent><SelectItem value="1">1 - Rare</SelectItem><SelectItem value="2">2 - Unlikely</SelectItem><SelectItem value="3">3 - Possible</SelectItem><SelectItem value="4">4 - Likely</SelectItem><SelectItem value="5">5 - Almost Certain</SelectItem></SelectContent></Select></div>
@@ -5323,7 +5400,24 @@ export function PmTemplatesPage() {
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Category</Label>
-              <Input value={formCategory} onChange={e => setFormCategory(e.target.value)} placeholder="e.g., Mechanical, Electrical" />
+              <SearchableSelect
+                value={formCategory}
+                onValueChange={setFormCategory}
+                options={[
+                  { value: 'Mechanical', label: 'Mechanical' },
+                  { value: 'Electrical', label: 'Electrical' },
+                  { value: 'Hydraulic', label: 'Hydraulic' },
+                  { value: 'Pneumatic', label: 'Pneumatic' },
+                  { value: 'Instrumentation', label: 'Instrumentation' },
+                  { value: 'Civil', label: 'Civil' },
+                  { value: 'Lubrication', label: 'Lubrication' },
+                  { value: 'Inspection', label: 'Inspection' },
+                  { value: 'Calibration', label: 'Calibration' },
+                  { value: 'Other', label: 'Other' },
+                ]}
+                placeholder="Select category..."
+                searchPlaceholder="Search categories..."
+              />
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
