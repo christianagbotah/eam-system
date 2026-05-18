@@ -1808,17 +1808,42 @@ export function WorkOrdersPage() {
 
 export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
   const { user, isAdmin } = useAuthStore();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [type, setType] = useState('corrective');
-  const [priority, setPriority] = useState('medium');
-  const [assetId, setAssetId] = useState('');
-  const [departmentId, setDepartmentId] = useState('');
-  const [assignedToId, setAssignedToId] = useState('');
-  const [estimatedHours, setEstimatedHours] = useState('');
-  const [loading, setLoading] = useState(false);
+  const isMobile = useIsMobile();
 
+  // ── Form State (mirrors convert form minus request info) ──
+  const [form, setForm] = useState({
+    // Basic
+    title: '',
+    description: '',
+    assetId: '',
+    // Section: WO Details
+    type: 'corrective' as string,
+    priority: 'medium' as string,
+    tradeActivity: 'mechanical' as string,
+    technicalDescription: '',
+    estimatedHours: '',
+    estimatedHoursDisplay: '',
+    scheduledDate: '',
+    deliveryDate: '',
+    // Section: Resource Assignment
+    departmentId: '',
+    assignType: 'technician' as 'technician' | 'supervisor',
+    selectedWorkerIds: [] as string[],
+    teamLeaderId: '',
+    requiredParts: [] as string[],
+    requiredTools: [] as string[],
+    // Section: Safety
+    safetyNotes: '',
+    ppeRequired: '',
+    notes: '',
+  });
+  const [loading, setLoading] = useState(false);
   const [departmentLabel, setDepartmentLabel] = useState('');
+
+  // Dropdown data
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<any[]>([]);
+  const [toolsData, setToolsData] = useState<any[]>([]);
 
   // Auto-populate department from user's profile (read-only for non-admins)
   useEffect(() => {
@@ -1828,7 +1853,10 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
       api.get('/api/departments').then(res => {
         if (res.success && Array.isArray(res.data)) {
           const dept = res.data.find((d: any) => d.name === user.department);
-          if (dept) setDepartmentId(dept.id);
+          if (dept) {
+            setForm(f => ({ ...f, departmentId: dept.id }));
+            setDepartments(res.data);
+          }
         }
       });
     }
@@ -1836,13 +1864,84 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
 
   const isDepartmentLocked = !isAdmin() && !!user?.department;
 
+  // Load dropdown data when form opens
+  useEffect(() => {
+    if (departments.length === 0) {
+      Promise.all([
+        api.get('/api/departments'),
+        api.get('/api/inventory'),
+        api.get('/api/tools'),
+      ]).then(([deptsRes, invRes, toolsRes]) => {
+        if (deptsRes.success && Array.isArray(deptsRes.data)) setDepartments(deptsRes.data);
+        if (invRes.success && Array.isArray(invRes.data)) setInventoryItems(invRes.data);
+        if (toolsRes.success && Array.isArray(toolsRes.data)) setToolsData(toolsRes.data);
+      }).catch(() => {/* dropdowns will be empty */});
+    }
+  }, []);
+
+  // ── Helpers ──
+  const updateField = (field: string, value: any) => setForm(f => ({ ...f, [field]: value }));
+
+  const handleEstHoursChange = (val: string) => {
+    let displayVal = val;
+    let decimalVal = val;
+    if (val.includes(':')) {
+      const [h, m] = val.split(':').map(Number);
+      if (!isNaN(h) && !isNaN(m)) {
+        decimalVal = String(h + m / 60);
+      }
+    }
+    setForm(f => ({ ...f, estimatedHours: decimalVal, estimatedHoursDisplay: displayVal }));
+  };
+
+  const addToArray = (field: 'requiredParts' | 'requiredTools', id: string) => {
+    setForm(f => {
+      const arr = [...f[field]] as string[];
+      if (!arr.includes(id)) arr.push(id);
+      return { ...f, [field]: arr };
+    });
+  };
+
+  const removeFromArray = (field: 'requiredParts' | 'requiredTools', id: string) => {
+    setForm(f => ({ ...f, [field]: f[field].filter((x: string) => x !== id) }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const res = await api.post('/api/work-orders', {
-      title, description, type, priority, assetId, departmentId, assignedToId,
-      estimatedHours: estimatedHours ? parseFloat(estimatedHours) : undefined,
-    });
+    const payload: any = {
+      title: form.title,
+      description: form.description || undefined,
+      type: form.type,
+      priority: form.priority,
+      assetId: form.assetId || undefined,
+      departmentId: form.departmentId || undefined,
+      tradeActivity: form.tradeActivity,
+      technicalDescription: form.technicalDescription || undefined,
+      assignmentType: form.assignType === 'technician' ? 'direct' : 'via_supervisor',
+      estimatedHours: form.estimatedHours ? parseFloat(form.estimatedHours) : undefined,
+      plannedStart: form.scheduledDate || undefined,
+      deliveryDateRequired: form.deliveryDate || undefined,
+      safetyNotes: form.safetyNotes || undefined,
+      ppeRequired: form.ppeRequired || undefined,
+      notes: form.notes || undefined,
+      requiredParts: form.requiredParts.length > 0 ? form.requiredParts : undefined,
+      requiredTools: form.requiredTools.length > 0 ? form.requiredTools : undefined,
+    };
+    // Build team members from selected workers
+    if (form.selectedWorkerIds.length > 0) {
+      const teamMembers = form.selectedWorkerIds.map(workerId => ({
+        userId: workerId,
+        role: workerId === form.teamLeaderId ? 'team_leader' : 'assistant',
+      }));
+      payload.teamMembers = teamMembers;
+      payload.assignedTo = form.selectedWorkerIds[0];
+      payload.teamLeaderId = form.teamLeaderId || null;
+    }
+    if (form.assignType === 'supervisor' && form.teamLeaderId) {
+      payload.assignedSupervisorId = form.teamLeaderId;
+    }
+    const res = await api.post('/api/work-orders', payload);
     if (res.success) {
       toast.success('Work order created');
       onSuccess();
@@ -1852,115 +1951,362 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     setLoading(false);
   };
 
-  return (
-    <form id="create-wo-form" onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-2">
-        <Label>Title *</Label>
-        <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Work order title" required />
-      </div>
-      <div className="space-y-2">
-        <Label>Description</Label>
-        <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Detailed description of work to be done" rows={3} />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Type</Label>
-          <Select value={type} onValueChange={setType}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="corrective">Corrective</SelectItem>
-              <SelectItem value="preventive">Preventive</SelectItem>
-              <SelectItem value="predictive">Predictive</SelectItem>
-              <SelectItem value="inspection">Inspection</SelectItem>
-              <SelectItem value="emergency">Emergency</SelectItem>
-              <SelectItem value="project">Project</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Priority</Label>
-          <Select value={priority} onValueChange={setPriority}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="low">Low</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-              <SelectItem value="critical">Critical</SelectItem>
-              <SelectItem value="emergency">Emergency</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Asset / Machine</Label>
-          <AsyncSearchableSelect
-            value={assetId}
-            onValueChange={setAssetId}
-            fetchOptions={async () => {
-              const res = await api.get('/api/assets');
-              if (res.success && res.data) {
-                return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
-                  value: a.id,
-                  label: `${a.name} [${a.assetTag}]`,
-                  badge: a.status,
-                }));
-              }
-              return [];
-            }}
-            placeholder="Select asset..."
-            searchPlaceholder="Search assets by name or tag..."
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Department {isDepartmentLocked && <span className="text-xs text-muted-foreground">(auto-filled)</span>}</Label>
-          {isDepartmentLocked ? (
-            <div className="flex h-[42px] w-full items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-              {departmentLabel || departmentId}
+  // ── Render ──
+  if (isMobile) {
+    return (
+      <MobileStepperSheet
+        open={true}
+        onOpenChange={() => onSuccess()}
+        title="Create Work Order"
+        description="Fill in all details for the new work order."
+        steps={[
+          { key: 'details', label: 'Details', icon: ClipboardCheck },
+          { key: 'resources', label: 'Resources', icon: Users },
+          { key: 'safety', label: 'Safety', icon: ShieldAlert },
+        ]}
+        actionLabel="Create Work Order"
+        actionLoading={loading}
+        onAction={handleSubmit}
+      >
+        {(stepKey) => stepKey === 'details' ? (
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label className="text-xs">Title *</Label>
+              <Input className="min-h-[44px]" value={form.title} onChange={e => updateField('title', e.target.value)} placeholder="Work order title" />
             </div>
-          ) : (
-          <AsyncSearchableSelect
-            value={departmentId}
-            onValueChange={setDepartmentId}
-            fetchOptions={async () => {
-              const res = await api.get('/api/departments');
-              if (res.success && res.data) {
-                return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
-                  value: d.id,
-                  label: d.name,
-                }));
-              }
-              return [];
-            }}
-            placeholder="Select department..."
-            searchPlaceholder="Search departments..."
-          />
-          )}
+            <div className="space-y-2">
+              <Label className="text-xs">Description</Label>
+              <Textarea value={form.description} onChange={e => updateField('description', e.target.value)} placeholder="Problem description..." rows={2} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[10px]">Type</Label>
+                <Select value={form.type} onValueChange={v => updateField('type', v)}>
+                  <SelectTrigger className="min-h-[44px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="breakdown">Breakdown</SelectItem>
+                    <SelectItem value="corrective">Corrective</SelectItem>
+                    <SelectItem value="preventive">Preventive</SelectItem>
+                    <SelectItem value="emergency">Emergency</SelectItem>
+                    <SelectItem value="inspection">Inspection</SelectItem>
+                    <SelectItem value="project">Project</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px]">Priority</Label>
+                <Select value={form.priority} onValueChange={v => updateField('priority', v)}>
+                  <SelectTrigger className="min-h-[44px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                    <SelectItem value="emergency">Emergency</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">Asset / Machine</Label>
+              <AsyncSearchableSelect value={form.assetId} onValueChange={v => updateField('assetId', v)}
+                fetchOptions={async () => { const r = await api.get('/api/assets'); if (r.success && r.data) return (Array.isArray(r.data) ? r.data : []).map((a: any) => ({ value: a.id, label: `${a.name} [${a.assetTag}]`, badge: a.status })); return []; }}
+                placeholder="Select asset..." searchPlaceholder="Search assets..." />
+            </div>
+          </div>
+        ) : stepKey === 'resources' ? (
+          <div className="space-y-3">
+            <WorkerAssignmentSelector
+              selectedWorkerIds={form.selectedWorkerIds}
+              teamLeaderId={form.teamLeaderId}
+              onSelectedWorkersChange={(ids) => updateField('selectedWorkerIds', ids)}
+              onTeamLeaderChange={(id) => updateField('teamLeaderId', id)}
+              departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
+              selectedDepartmentIds={form.departmentId ? [form.departmentId] : []}
+              onDepartmentsChange={(ids) => updateField('departmentId', ids[0] || '')}
+              assignType={form.assignType}
+              onAssignTypeChange={(type) => updateField('assignType', type)}
+              label="Resource Assignment"
+              hideDepartmentFilter={true}
+            />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Safety Notes</Label>
+              <Textarea value={form.safetyNotes} onChange={e => updateField('safetyNotes', e.target.value)} placeholder="Safety hazards, LOTO requirements..." rows={2} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">PPE Required</Label>
+              <Input className="min-h-[44px]" value={form.ppeRequired} onChange={e => updateField('ppeRequired', e.target.value)} placeholder="Safety glasses, gloves, helmet..." />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Notes</Label>
+              <Textarea value={form.notes} onChange={e => updateField('notes', e.target.value)} placeholder="Additional notes..." rows={2} />
+            </div>
+          </div>
+        )}
+      </MobileStepperSheet>
+    );
+  }
+
+  // Desktop layout — matches convert form structure (4 sections minus request info)
+  return (
+    <form id="create-wo-form" onSubmit={handleSubmit} className="space-y-5">
+      {/* ── Basic Info ── */}
+      <div className="space-y-3">
+        <div className="space-y-2">
+          <Label>Title *</Label>
+          <Input value={form.title} onChange={e => updateField('title', e.target.value)} placeholder="Work order title" required />
+        </div>
+        <div className="space-y-2">
+          <Label>Description</Label>
+          <Textarea value={form.description} onChange={e => updateField('description', e.target.value)} placeholder="Problem description..." rows={2} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Label>Asset / Machine</Label>
+            <AsyncSearchableSelect
+              value={form.assetId}
+              onValueChange={v => updateField('assetId', v)}
+              fetchOptions={async () => {
+                const res = await api.get('/api/assets');
+                if (res.success && res.data) {
+                  return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                    value: a.id,
+                    label: `${a.name} [${a.assetTag}]`,
+                    badge: a.status,
+                  }));
+                }
+                return [];
+              }}
+              placeholder="Select asset..."
+              searchPlaceholder="Search assets by name or tag..."
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Department {isDepartmentLocked && <span className="text-xs text-muted-foreground">(auto-filled)</span>}</Label>
+            {isDepartmentLocked ? (
+              <div className="flex h-[42px] w-full items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
+                {departmentLabel || form.departmentId}
+              </div>
+            ) : (
+              <AsyncSearchableSelect
+                value={form.departmentId}
+                onValueChange={v => updateField('departmentId', v)}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/departments');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
+                      value: d.id,
+                      label: d.name,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select department..."
+                searchPlaceholder="Search departments..."
+              />
+            )}
+          </div>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Assigned To</Label>
-          <AsyncSearchableSelect
-            value={assignedToId}
-            onValueChange={setAssignedToId}
-            fetchOptions={async () => {
-              const res = await api.get('/api/workers?role=technician');
-              if (res.success && res.data) {
-                return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
-                  value: u.id,
-                  label: `${u.fullName} (${u.username})`,
-                }));
-              }
-              return [];
-            }}
-            placeholder="Select technician..."
-            searchPlaceholder="Search technicians..."
-          />
+
+      {/* ── SECTION 2: Work Order Details (purple background) ── */}
+      <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-4 sm:p-6">
+        <h3 className="text-sm font-semibold text-purple-800 uppercase tracking-wider flex items-center gap-2 mb-4">
+          <ClipboardCheck className="h-4 w-4" />Work Order Details
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Work Order Type</Label>
+            <Select value={form.type} onValueChange={v => updateField('type', v)}>
+              <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="breakdown">Breakdown</SelectItem>
+                <SelectItem value="corrective">Corrective</SelectItem>
+                <SelectItem value="preventive">Preventive</SelectItem>
+                <SelectItem value="emergency">Emergency</SelectItem>
+                <SelectItem value="inspection">Inspection</SelectItem>
+                <SelectItem value="project">Project</SelectItem>
+                <SelectItem value="predictive">Predictive</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Priority</Label>
+            <Select value={form.priority} onValueChange={v => updateField('priority', v)}>
+              <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="low">Low</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="critical">Critical</SelectItem>
+                <SelectItem value="urgent">Urgent</SelectItem>
+                <SelectItem value="emergency">Emergency</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Trade Activity</Label>
+            <Select value={form.tradeActivity} onValueChange={v => updateField('tradeActivity', v)}>
+              <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="mechanical">Mechanical</SelectItem>
+                <SelectItem value="electrical">Electrical</SelectItem>
+                <SelectItem value="civil">Civil</SelectItem>
+                <SelectItem value="facility">Facility</SelectItem>
+                <SelectItem value="workshop">Workshop</SelectItem>
+                <SelectItem value="instrumentation">Instrumentation</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Est. Hours</Label>
+            <Input
+              className="min-h-[44px]"
+              value={form.estimatedHoursDisplay || form.estimatedHours}
+              onChange={e => handleEstHoursChange(e.target.value)}
+              placeholder="2.5 or 2:30"
+            />
+            <p className="text-[10px] text-muted-foreground">Supports 2.5 or 2:30 format</p>
+          </div>
+          <div className="sm:col-span-2 lg:col-span-4 space-y-1.5">
+            <Label className="text-xs">Technical Description</Label>
+            <Textarea
+              value={form.technicalDescription}
+              onChange={e => updateField('technicalDescription', e.target.value)}
+              placeholder="Detailed technical description of the work to be performed..."
+              rows={3}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Scheduled Date</Label>
+            <Input
+              className="min-h-[44px]"
+              type="datetime-local"
+              value={form.scheduledDate}
+              onChange={e => updateField('scheduledDate', e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Delivery Date</Label>
+            <Input
+              className="min-h-[44px]"
+              type="date"
+              value={form.deliveryDate}
+              onChange={e => updateField('deliveryDate', e.target.value)}
+            />
+          </div>
         </div>
-        <div className="space-y-2">
-          <Label>Est. Hours</Label>
-          <Input type="number" value={estimatedHours} onChange={e => setEstimatedHours(e.target.value)} placeholder="0" />
+      </div>
+
+      {/* ── SECTION 3: Resource Assignment (green background) ── */}
+      <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 sm:p-6">
+        <div className="grid gap-4">
+          <WorkerAssignmentSelector
+            selectedWorkerIds={form.selectedWorkerIds}
+            teamLeaderId={form.teamLeaderId}
+            onSelectedWorkersChange={(ids) => updateField('selectedWorkerIds', ids)}
+            onTeamLeaderChange={(id) => updateField('teamLeaderId', id)}
+            departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
+            selectedDepartmentIds={form.departmentId ? [form.departmentId] : []}
+            onDepartmentsChange={(ids) => updateField('departmentId', ids[0] || '')}
+            assignType={form.assignType}
+            onAssignTypeChange={(type) => updateField('assignType', type)}
+            label="Resource Assignment"
+            hideDepartmentFilter={true}
+          />
+
+          {/* Required Spare Parts */}
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center gap-1"><PackageSearch className="h-3.5 w-3.5" />Required Spare Parts</Label>
+            <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+              {form.requiredParts.length === 0 && <span className="text-sm text-muted-foreground">Select spare parts from inventory...</span>}
+              {form.requiredParts.map(partId => {
+                const item = inventoryItems.find(i => i.id === partId);
+                return item ? (
+                  <Badge key={partId} variant="secondary" className="gap-1">
+                    {item.itemName || item.name}
+                    <button onClick={() => removeFromArray('requiredParts', partId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+                  </Badge>
+                ) : null;
+              })}
+            </div>
+            <Select onValueChange={v => addToArray('requiredParts', v)}>
+              <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add spare part..." /></SelectTrigger>
+              <SelectContent>
+                {inventoryItems.filter(i => !form.requiredParts.includes(i.id)).slice(0, 50).map(i => (
+                  <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Required Tools */}
+          <div className="space-y-2">
+            <Label className="text-xs flex items-center gap-1"><Hammer className="h-3.5 w-3.5" />Required Tools</Label>
+            <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+              {form.requiredTools.length === 0 && <span className="text-sm text-muted-foreground">Select tools...</span>}
+              {form.requiredTools.map(toolId => {
+                const tool = toolsData.find(t => t.id === toolId);
+                return tool ? (
+                  <Badge key={toolId} variant="secondary" className="gap-1">
+                    {tool.toolName || tool.name}
+                    <button onClick={() => removeFromArray('requiredTools', toolId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+                  </Badge>
+                ) : null;
+              })}
+            </div>
+            <Select onValueChange={v => addToArray('requiredTools', v)}>
+              <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add tool..." /></SelectTrigger>
+              <SelectContent>
+                {toolsData.filter(t => !form.requiredTools.includes(t.id)).slice(0, 50).map(t => (
+                  <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      {/* ── SECTION 4: Safety Notes (amber background) ── */}
+      <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 sm:p-6">
+        <h3 className="text-sm font-semibold text-amber-800 uppercase tracking-wider flex items-center gap-2 mb-4">
+          <ShieldAlert className="h-4 w-4" />Safety Notes
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2 space-y-1.5">
+            <Label className="text-xs">Safety Notes</Label>
+            <Textarea
+              value={form.safetyNotes}
+              onChange={e => updateField('safetyNotes', e.target.value)}
+              placeholder="Any safety hazards, precautions, or lockout/tagout requirements..."
+              rows={3}
+            />
+          </div>
+          <div className="sm:col-span-2 space-y-1.5">
+            <Label className="text-xs flex items-center gap-1"><HardHat className="h-3.5 w-3.5" />PPE Required</Label>
+            <Input
+              className="min-h-[44px]"
+              value={form.ppeRequired}
+              onChange={e => updateField('ppeRequired', e.target.value)}
+              placeholder="e.g. Safety glasses, gloves, helmet, hearing protection"
+            />
+          </div>
+          <div className="sm:col-span-2 space-y-1.5">
+            <Label className="text-xs">General Notes</Label>
+            <Textarea
+              value={form.notes}
+              onChange={e => updateField('notes', e.target.value)}
+              placeholder="Any additional notes or special instructions..."
+              rows={2}
+            />
+          </div>
         </div>
       </div>
     </form>
