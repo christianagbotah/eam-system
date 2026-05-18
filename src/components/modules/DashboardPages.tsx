@@ -134,10 +134,25 @@ export function DashboardPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { navigate } = useNavigationStore();
 
+  const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     api.get<DashboardStats>('/api/dashboard/stats').then(res => {
       if (res.success && res.data) setStats(res.data);
       setLoading(false);
+    });
+  }, []);
+
+  // Fetch enabled module codes for cross-module filtering
+  useEffect(() => {
+    api.get('/api/modules').then(res => {
+      if (res.success && res.data) {
+        const enabled = new Set<string>();
+        (res.data || []).forEach((m: any) => {
+          if (m.isCore || m.isEnabled) enabled.add(m.code.toLowerCase());
+        });
+        setEnabledModules(enabled);
+      }
     });
   }, []);
 
@@ -300,6 +315,15 @@ export function DashboardPage() {
     .filter(a => a.roles.includes('all') || a.roles.some(r => userRoles.includes(r)));
 
   // Cross-module overview data
+  const moduleMap: Record<string, string> = {
+    'Assets': 'assets',
+    'Safety': 'safety',
+    'Production': 'production',
+    'IoT': 'iot_sensors',
+    'Quality': 'quality',
+    'Inventory': 'inventory',
+  };
+
   const crossModuleData = [
     { label: 'Assets', value: stats?.assetHealth?.total || 0, detail: `${assetsAtRisk} at risk`, color: 'bg-orange-500', textColor: 'text-orange-600 dark:text-orange-400', bgColor: 'bg-orange-50 dark:bg-orange-950/30', borderColor: 'border-orange-100 dark:border-orange-900/40' },
     { label: 'Safety', value: safetyIncidents, detail: `${stats?.safetyAlerts?.overdueInspections || 0} overdue`, color: 'bg-red-500', textColor: 'text-red-600 dark:text-red-400', bgColor: 'bg-red-50 dark:bg-red-950/30', borderColor: 'border-red-100 dark:border-red-900/40' },
@@ -308,6 +332,14 @@ export function DashboardPage() {
     { label: 'Quality', value: qualityIssues, detail: `${stats?.quality?.pendingAudits || 0} audits`, color: 'bg-pink-500', textColor: 'text-pink-600 dark:text-pink-400', bgColor: 'bg-pink-50 dark:bg-pink-950/30', borderColor: 'border-pink-100 dark:border-pink-900/40' },
     { label: 'Inventory', value: lowStockItems, detail: `${stats?.inventoryAlerts?.pendingRequests || 0} reqs`, color: 'bg-amber-500', textColor: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-100 dark:border-amber-900/40' },
   ];
+
+  // Filter cross-module cards to only show enabled modules
+  const filteredCrossModuleData = enabledModules.size > 0
+    ? crossModuleData.filter(mod => {
+        const code = moduleMap[mod.label];
+        return !code || enabledModules.has(code.toLowerCase());
+      })
+    : crossModuleData;
 
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-[1600px] mx-auto">
@@ -464,7 +496,7 @@ export function DashboardPage() {
           <h3 className="text-sm font-semibold text-foreground">Cross-Module Overview</h3>
         </div>
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-          {crossModuleData.map((mod) => (
+          {filteredCrossModuleData.map((mod) => (
             <div key={mod.label} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${mod.borderColor} ${mod.bgColor} transition-all hover:shadow-sm`}>
               <div className={`h-2.5 w-2.5 rounded-full ${mod.color} shrink-0`} />
               <div className="min-w-0 flex-1">

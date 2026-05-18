@@ -3,6 +3,7 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
+import { api } from '@/lib/api';
 import { getInitials } from '@/components/shared/helpers';
 import type { PageName } from '@/types';
 
@@ -89,6 +90,22 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const expanded = forceExpanded ?? sidebarOpen;
   const { user, permissions, hasPermission, isAdmin, logout } = useAuthStore();
   const [openMenus, setOpenMenus] = useState<string[]>([]);
+  const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
+
+  // Fetch enabled module codes on mount
+  useEffect(() => {
+    api.get('/api/modules').then(res => {
+      if (res.success && res.data) {
+        const enabled = new Set<string>();
+        (res.data || []).forEach((m: any) => {
+          if (m.isCore || m.isEnabled) {
+            enabled.add(m.code.toLowerCase());
+          }
+        });
+        setEnabledModules(enabled);
+      }
+    });
+  }, []);
 
   // Menu group definition
   interface NavGroup {
@@ -328,15 +345,26 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     });
   }, [currentPage]);
 
-  // Filter visible groups based on permissions
+  // Filter visible groups based on permissions and module activation
   const visibleGroups = useMemo(() => {
     const isAdm = isAdmin();
     return menuGroups.filter(g => {
-      if (isAdm) return true;
-      if (!permissions || permissions.length === 0) return true;
-      return hasPermission(g.perm);
+      // Permission check
+      if (!isAdm && permissions && permissions.length > 0 && !hasPermission(g.perm)) return false;
+
+      // Module activation check — only apply once modules have loaded
+      if (enabledModules.size > 0) {
+        // Single module code check
+        if (g.moduleCode && g.moduleCode !== 'core' && !enabledModules.has(g.moduleCode.toLowerCase())) return false;
+        // Multiple module codes check — show if ANY is enabled
+        if (g.moduleCodes && g.moduleCodes.length > 0) {
+          if (!g.moduleCodes.some(code => enabledModules.has(code.toLowerCase()))) return false;
+        }
+      }
+
+      return true;
     });
-  }, [menuGroups, hasPermission, permissions, isAdmin]);
+  }, [menuGroups, hasPermission, permissions, isAdmin, enabledModules]);
 
   // Get tooltip text for collapsed sidebar
   const getGroupTooltip = (group: NavGroup) => {
