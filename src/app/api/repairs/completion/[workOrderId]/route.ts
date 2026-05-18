@@ -49,7 +49,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const { workOrderId } = await params;
     const body = await request.json();
-    const { action, completionNotes, findings, rootCause, correctiveAction, materialsUsedSummary, toolsUsedSummary, totalLaborHours, totalMaterialCost, totalToolCost, totalDowntimeMinutes, supervisorReviewNotes, reworkReason, closureNotes, overrideReason } = body;
+    const { action, completionNotes, findings, rootCause, correctiveAction, materialsUsedSummary, toolsUsedSummary, totalLaborHours, totalMaterialCost, totalToolCost, totalDowntimeMinutes, supervisorReviewNotes, reworkReason, closureNotes } = body;
 
     const wo = await db.workOrder.findUnique({
       where: { id: workOrderId },
@@ -58,31 +58,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!wo) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
 
     // ── IMMUTABILITY CHECK ──
-    // After planner_close, the WO is locked. Only GET is allowed.
-    // Admin can bypass with explicit overrideReason.
+    // After planner_close, the WO is permanently locked. No mutations allowed.
+    // This is non-negotiable — even admin cannot override a planner-closed work order.
     if (wo.isLocked) {
-      // Only GET is allowed on locked WOs
-      // For POST, only admin with explicit overrideReason can proceed
-      if (!session.roles.includes('admin')) {
-        return NextResponse.json({
-          success: false,
-          error: `Work order is locked${wo.lockReason ? ` (${wo.lockReason})` : ''}. No mutations allowed. Contact an administrator if changes are needed.`,
-          isLocked: true,
-        }, { status: 403 });
-      }
-
-      if (!overrideReason) {
-        return NextResponse.json({
-          success: false,
-          error: `Work order is locked. Admin override requires an explicit 'overrideReason' field.`,
-          isLocked: true,
-        }, { status: 400 });
-      }
-
-      // Admin with override - proceed but log the override
-      await createAuditLog(session.userId, 'RepairCompletion', 'admin_override_locked_wo', workOrderId, {
-        newValues: { action, overrideReason },
-      });
+      return NextResponse.json({
+        success: false,
+        error: `Work order is permanently locked${wo.lockReason ? ` (${wo.lockReason})` : ''}. No modifications are allowed by anyone, including administrators. The work order has been completed and archived by the planner.`,
+        isLocked: true,
+      }, { status: 403 });
     }
 
     const now = new Date();

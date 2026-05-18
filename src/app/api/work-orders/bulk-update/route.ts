@@ -66,7 +66,24 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Perform bulk update
+    // Reject if any WO in the batch is permanently locked
+    const lockedWos = await db.workOrder.findMany({
+      where: { id: { in: ids }, isLocked: true },
+      select: { id: true, woNumber: true },
+    });
+    if (lockedWos.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `${lockedWos.length} work order(s) are permanently locked and cannot be modified.`,
+          lockedIds: lockedWos.map((w) => w.id),
+          lockedNumbers: lockedWos.map((w) => w.woNumber),
+        },
+        { status: 400 },
+      );
+    }
+
+    // Perform bulk update (only on non-locked WOs)
     const result = await db.workOrder.updateMany({
       where: { id: { in: ids } },
       data: updateData,

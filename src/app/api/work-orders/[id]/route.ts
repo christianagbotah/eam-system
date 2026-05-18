@@ -98,10 +98,10 @@ export async function PUT(
       );
     }
 
-    // Don't allow updates on locked WOs
-    if (existing.isLocked && !session.roles.includes('admin')) {
+    // Don't allow updates on locked WOs — permanent lock, no exceptions (not even admin)
+    if (existing.isLocked) {
       return NextResponse.json(
-        { success: false, error: 'Work order is locked' },
+        { success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' },
         { status: 400 }
       );
     }

@@ -31,6 +31,11 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
+    // Block all mutations on permanently locked WOs
+    if (wo.isLocked) {
+      return NextResponse.json({ success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' }, { status: 400 });
+    }
+
     // Validate material belongs to the WO
     const existing = await db.workOrderMaterial.findUnique({
       where: { id: materialId },
@@ -111,8 +116,8 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    if (wo.isLocked && !session.roles.includes('admin')) {
-      return NextResponse.json({ success: false, error: 'Work order is locked' }, { status: 400 });
+    if (wo.isLocked) {
+      return NextResponse.json({ success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' }, { status: 400 });
     }
 
     // Validate material belongs to the WO
