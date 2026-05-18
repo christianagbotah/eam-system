@@ -25,7 +25,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
-import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';;
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -44,7 +45,7 @@ import {
   GitBranch, ScanLine, Truck, FolderOpen, Target, TrendingUp, Zap, Mail,
   Send, ShieldAlert, ShieldCheck, BarChart3, Package, ClipboardList, Gauge, X,
   AlertCircle, FileBarChart, EyeOff, Save, Wifi, Play, Monitor, HeartPulse, Server, MessageSquare,
-  FileDown, FileUp, Info, Filter, ExternalLink,
+  FileDown, FileUp, Info, Filter, ExternalLink, Phone,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { EmptyState, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
@@ -64,6 +65,8 @@ export function SettingsUsersPage() {
   const [resetOpen, setResetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [viewUser, setViewUser] = useState<User | null>(null);
+  const [viewOpen, setViewOpen] = useState(false);
   const [resetPwd, setResetPwd] = useState('');
 
   const emptyForm = { fullName: '', username: '', email: '', phone: '', department: '', password: '', status: 'active' as string, roleIds: [] as string[] };
@@ -173,7 +176,7 @@ export function SettingsUsersPage() {
                   </TableCell>
                   <TableCell className="font-mono text-xs">{u.username}</TableCell>
                   <TableCell className="text-sm hidden md:table-cell">{u.email}</TableCell>
-                  <TableCell className="text-sm hidden lg:table-cell">{u.department?.name || '-'}</TableCell>
+                  <TableCell className="text-sm hidden lg:table-cell">{u.department || '-'}</TableCell>
                   <TableCell className="hidden md:table-cell">
                     <div className="flex gap-1 flex-wrap">
                       {u.roles?.map(r => (<Badge key={r.id} variant="outline" style={{ borderColor: r.color || undefined, color: r.color || undefined }} className="text-[10px]">{r.name}</Badge>))}
@@ -186,6 +189,7 @@ export function SettingsUsersPage() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => { setSelectedUser(u); setViewUser(u); setViewOpen(true); }}><Eye className="h-3.5 w-3.5 mr-2" />View</DropdownMenuItem>
                         {(hasPermission('users.update') || isAdmin()) && <DropdownMenuItem onClick={() => openEdit(u)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>}
                         <DropdownMenuItem onClick={() => { setSelectedUser(u); setResetPwd(''); setResetOpen(true); }}><Key className="h-3.5 w-3.5 mr-2" />Reset Password</DropdownMenuItem>
                         {(hasPermission('users.update') || isAdmin()) && <DropdownMenuItem onClick={() => toggleStatus(u)}>{u.status === 'active' ? <UserPlus className="h-3.5 w-3.5 mr-2" /> : <UserMinus className="h-3.5 w-3.5 mr-2" />}{u.status === 'active' ? 'Deactivate' : 'Activate'}</DropdownMenuItem>}
@@ -327,6 +331,123 @@ export function SettingsUsersPage() {
           </div>
         
       </ResponsiveDialog>
+
+      {/* View User Profile Sheet */}
+      <Sheet open={viewOpen} onOpenChange={(open) => { setViewOpen(open); if (!open) setViewUser(null); }}>
+        <SheetContent side="right" className="sm:max-w-lg overflow-y-auto">
+          {viewUser && (
+            <>
+              <SheetHeader>
+                <SheetTitle>User Profile</SheetTitle>
+                <SheetDescription>View details for {viewUser.fullName}</SheetDescription>
+              </SheetHeader>
+              <div className="px-4 pb-6 space-y-6">
+                {/* Header with avatar */}
+                <div className="flex items-center gap-4">
+                  <Avatar className="h-14 w-14">
+                    <AvatarFallback className="text-lg bg-emerald-100 text-emerald-700 font-semibold">{getInitials(viewUser.fullName)}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <h3 className="text-lg font-semibold">{viewUser.fullName}</h3>
+                    <p className="text-sm text-muted-foreground font-mono">@{viewUser.username}</p>
+                  </div>
+                  <Badge variant={viewUser.status === 'active' ? 'default' : 'secondary'} className={viewUser.status === 'active' ? 'bg-emerald-100 text-emerald-700 ml-auto' : 'ml-auto'}>{viewUser.status}</Badge>
+                </div>
+
+                <Separator />
+
+                {/* Contact Info */}
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Contact Information</h4>
+                  <div className="grid gap-3">
+                    <div className="flex items-center gap-3">
+                      <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm">{viewUser.email || '-'}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm">{viewUser.phone || '-'}</span>
+                    </div>
+                    {viewUser.department && (
+                      <div className="flex items-center gap-3">
+                        <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="text-sm">{viewUser.department}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Roles */}
+                {viewUser.roles && viewUser.roles.length > 0 && (
+                  <>
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Roles</h4>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {viewUser.roles.map(r => (
+                          <Badge key={r.id} variant="outline" style={{ borderColor: r.color || undefined, color: r.color || undefined }}>{r.name}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <Separator />
+                  </>
+                )}
+
+                {/* Plant Access */}
+                {viewUser.plantAccess && viewUser.plantAccess.length > 0 && (
+                  <>
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Plant Access</h4>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {viewUser.plantAccess.map(p => (
+                          <Badge key={p.id} variant="secondary"><Factory className="h-3 w-3 mr-1" />{p.name}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <Separator />
+                  </>
+                )}
+
+                {/* Primary Plant */}
+                {viewUser.plant && (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <Factory className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Primary Plant</p>
+                        <p className="text-sm font-medium">{viewUser.plant.name}</p>
+                      </div>
+                    </div>
+                    <Separator />
+                  </>
+                )}
+
+                {/* Timestamps */}
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Activity</h4>
+                  <div className="grid gap-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground flex items-center gap-2"><Calendar className="h-3.5 w-3.5" />Created</span>
+                      <span>{viewUser.createdAt ? formatDateTime(viewUser.createdAt) : '-'}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground flex items-center gap-2"><RefreshCw className="h-3.5 w-3.5" />Updated</span>
+                      <span>{viewUser.updatedAt ? formatDateTime(viewUser.updatedAt) : '-'}</span>
+                    </div>
+                    {viewUser.lastLoginAt && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground flex items-center gap-2"><Clock className="h-3.5 w-3.5" />Last Login</span>
+                        <span>{formatDateTime(viewUser.lastLoginAt)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

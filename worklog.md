@@ -5208,3 +5208,51 @@ Stage Summary:
 - Plan Shutdown button now opens a create dialog with full form
 - Shutdown tab fetches real data from STO API instead of hardcoded samples
 - Commit: 97e0b4f4, pushed to main
+---
+Task ID: module-visibility-filter
+Agent: General-purpose agent
+Task: Hide unactivated/unlicensed modules from sidebar and dashboard
+
+Work Log:
+
+### 1. Sidebar.tsx (`src/components/shared/Sidebar.tsx`) — MODIFIED
+- Added `import { api } from '@/lib/api';` (api was not previously imported)
+- Added `enabledModules` state (`useState<Set<string>>`) to track which modules are active
+- Added `useEffect` hook to fetch `GET /api/modules` on mount:
+  - Builds a Set of lowercase module codes where `m.isCore || m.isEnabled`
+  - Stores in `enabledModules` state
+- Updated `visibleGroups` useMemo to include module activation filtering:
+  - Preserves existing permission-based filtering (non-admin users checked against `hasPermission`)
+  - Only applies module filtering when `enabledModules.size > 0` (API has loaded) to avoid flash/hide
+  - Core modules (`moduleCode === 'core'`) always visible — Dashboard, Chat, Notifications protected
+  - Single `moduleCode`: hidden if not in enabled set
+  - Multiple `moduleCodes`: hidden if NONE of the codes are in enabled set (any-match = visible)
+  - Case-insensitive matching via `.toLowerCase()` on both sides
+- Added `enabledModules` to useMemo dependency array
+
+### 2. DashboardPages.tsx (`src/components/modules/DashboardPages.tsx`) — MODIFIED
+- Added `enabledModules` state (`useState<Set<string>>`) before the early return (hooks rule compliance)
+- Added `useEffect` hook to fetch `GET /api/modules` on mount (before early return)
+- Added `moduleMap` mapping cross-module overview labels to module codes:
+  - Assets → 'assets', Safety → 'safety', Production → 'production',
+  - IoT → 'iot_sensors', Quality → 'quality', Inventory → 'inventory'
+- Added `filteredCrossModuleData` that filters `crossModuleData` to only show enabled modules
+  - Uses moduleMap to look up code; if no mapping found, item is always shown (safe default)
+  - Only filters when `enabledModules.size > 0` (API loaded) to avoid flash
+- Updated JSX to render `filteredCrossModuleData` instead of `crossModuleData` (line ~482)
+
+### 3. Quality
+- ESLint passes with zero errors on both files
+- No existing imports duplicated (api was already imported in DashboardPages, not in Sidebar)
+- All hooks placed before early returns (React rules of hooks)
+- Core modules (Dashboard, Chat, Notifications) always visible
+- No flash/hide on initial load — all modules shown until API responds
+
+Stage Summary:
+- 2 files modified (Sidebar.tsx, DashboardPages.tsx)
+- 66 lines added, 6 lines removed
+- Module-aware filtering on sidebar navigation (15 nav groups filtered)
+- Module-aware filtering on dashboard cross-module overview (6 cards filtered)
+- Core modules always visible regardless of licensing
+- Case-insensitive module code matching
+- Graceful loading behavior (show all until API responds)
