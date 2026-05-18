@@ -5282,3 +5282,48 @@ Stage Summary:
 - Department column now displays correctly as plain string on Users page
 - View profile Sheet shows comprehensive user details accessible from the actions dropdown
 - No existing functionality broken; all changes are additive
+
+---
+Task ID: asset-categories-page
+Agent: Asset Categories Implementation
+Task: Add asset categories management page with full CRUD
+
+Work Log:
+
+### 1. New Component: `AssetCategoriesPage.tsx` (~310 lines)
+- **Location**: `src/components/modules/AssetCategoriesPage.tsx`
+- Full CRUD page following existing patterns (SettingsDepartmentsPage, InventoryCategoriesPage)
+- **Features**:
+  - Header with title, count badge, search input, "Add Category" button (admin-only)
+  - Hierarchical tree table with expand/collapse (ChevronRight icons, indentation)
+  - Columns: Name (with folder icon + indent), Code, Description (truncated, hidden on mobile), Parent (badge), Status (Active/Inactive badge), Assets count, Created date, Actions dropdown
+  - **Actions dropdown**: Edit, Deactivate/Activate toggle, Delete (with confirmation)
+  - **Create/Edit Dialog** using ResponsiveDialog: Name (required), Code (required), Description, Parent category (AsyncSearchableSelect from /api/asset-categories, excludes self when editing), Active Status toggle (Switch)
+  - Empty state when no categories exist
+  - Loading skeleton while fetching
+  - Search filtering with ancestor expansion (shows path to matched items)
+  - Admin-gated actions via `hasPermission('assets.update') || isAdmin()`
+
+### 2. EAMApp.tsx Registration
+- Added lazy import: `const AssetCategoriesPage = lazy(() => import('./modules/AssetCategoriesPage'));`
+- Added switch case: `case 'asset-categories': return <AssetCategoriesPage />;`
+- Added page title: `'asset-categories': 'Asset Categories'`
+
+### 3. Sidebar Navigation
+- Added `{ page: 'asset-categories', label: 'Categories', icon: FolderOpen }` to Assets children array, before 'assets-health'
+- FolderOpen already imported from lucide-react
+
+### 4. Type Registration
+- Added `'asset-categories'` to `PageName` type in `src/types/index.ts`
+- Updated comment to reflect 7 asset subpages (was 6)
+
+### 5. Quality
+- ESLint passes with zero errors on all changed files
+- No existing functionality broken
+
+Stage Summary:
+- 1 new file: AssetCategoriesPage.tsx (~310 lines)
+- 3 modified files: EAMApp.tsx, Sidebar.tsx, types/index.ts
+- Full CRUD for asset categories with tree table display
+- Responsive dialog for create/edit with AsyncSearchableSelect for parent category
+- Admin-gated create/edit/deactivate/delete operations
