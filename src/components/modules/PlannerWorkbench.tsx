@@ -38,7 +38,7 @@ import {
   ArrowUp, Package, ClipboardList, Settings, Zap, CircleDot,
   Activity, UserCheck, AlertCircle, Eye, MoreHorizontal, Layers,
   Factory, Hammer, HardHat, Play, Pause, Square, RefreshCw, X,
-  ChevronDown, GripHorizontal, Workflow, CalendarClock, Truck,
+  ChevronDown, GripHorizontal, Workflow, CalendarClock, Truck, DollarSign,
 } from 'lucide-react';
 
 import {
@@ -114,7 +114,7 @@ function SLAIndicator({ createdAt, priority }: { createdAt: string; priority: st
 // ============================================================================
 
 export default function PlannerWorkbench() {
-  const { hasPermission, isAdmin } = useAuthStore();
+  const { hasPermission, isAdmin, user } = useAuthStore();
 
   // Data state
   const [workOrders, setWorkOrders] = useState<any[]>([]);
@@ -154,6 +154,20 @@ export default function PlannerWorkbench() {
   const [wpLoading, setWpLoading] = useState(false);
   const [workPackages, setWorkPackages] = useState<any[]>([]);
   const [wpLoadingList, setWpLoadingList] = useState(false);
+
+  // STO / Shutdown state
+  const [stoEvents, setStoEvents] = useState<any[]>([]);
+  const [stoLoading, setStoLoading] = useState(false);
+  const [selectedSTO, setSelectedSTO] = useState<any>(null);
+  const [stoDetailOpen, setStoDetailOpen] = useState(false);
+  const [stoDetailLoading, setStoDetailLoading] = useState(false);
+  const [stoDetailData, setStoDetailData] = useState<any>(null);
+  const [createSTODialogOpen, setCreateSTODialogOpen] = useState(false);
+  const [createSTOForm, setCreateSTOForm] = useState({
+    name: '', type: 'planned_shutdown', description: '', plannedStartDate: '',
+    plannedEndDate: '', estimatedDurationHours: '', budgetAmount: '',
+  });
+  const [createSTOLoading, setCreateSTOLoading] = useState(false);
 
   // Active tab
   const [activeTab, setActiveTab] = useState('kanban');
@@ -200,7 +214,75 @@ export default function PlannerWorkbench() {
     setWpLoadingList(false);
   }, []);
 
-  useEffect(() => { fetchData(); fetchWorkPackages(); }, [fetchData, fetchWorkPackages, refreshKey]);
+  // Fetch STO events
+  const fetchSTOEvents = useCallback(async () => {
+    setStoLoading(true);
+    try {
+      const res = await api.get('/api/sto/events?limit=50');
+      if (res.success && res.data) {
+        setStoEvents(Array.isArray(res.data) ? res.data : res.data.events || []);
+      }
+    } catch (_e) {
+      // Silent catch
+    }
+    setStoLoading(false);
+  }, []);
+
+  // View STO detail
+  const handleViewSTO = useCallback(async (event: any) => {
+    setSelectedSTO(event);
+    setStoDetailOpen(true);
+    setStoDetailLoading(true);
+    setStoDetailData(null);
+    try {
+      const [detailRes, milestoneRes] = await Promise.all([
+        api.get(`/api/sto/events/${event.id}`),
+        api.get(`/api/sto/events/${event.id}/milestones`).catch(() => ({ success: false })),
+      ]);
+      if (detailRes.success && detailRes.data) setStoDetailData(detailRes.data);
+      if (milestoneRes.success && milestoneRes.data) {
+        setStoDetailData(prev => prev ? { ...prev, milestones: milestoneRes.data } : null);
+      }
+    } catch (_e) {
+      toast.error('Failed to load shutdown details');
+    }
+    setStoDetailLoading(false);
+  }, []);
+
+  // Create STO event
+  const handleCreateSTO = useCallback(async () => {
+    if (!createSTOForm.name.trim()) {
+      toast.error('Shutdown name is required');
+      return;
+    }
+    setCreateSTOLoading(true);
+    try {
+      const payload: Record<string, unknown> = {
+        name: createSTOForm.name,
+        type: createSTOForm.type,
+        plantId: user?.plantId || undefined,
+        description: createSTOForm.description || null,
+        plannedStartDate: createSTOForm.plannedStartDate ? new Date(createSTOForm.plannedStartDate).toISOString() : null,
+        plannedEndDate: createSTOForm.plannedEndDate ? new Date(createSTOForm.plannedEndDate).toISOString() : null,
+        estimatedDurationHours: createSTOForm.estimatedDurationHours ? parseFloat(createSTOForm.estimatedDurationHours) : null,
+        budgetAmount: createSTOForm.budgetAmount ? parseFloat(createSTOForm.budgetAmount) : null,
+      };
+      const res = await api.post('/api/sto/events', payload);
+      if (res.success) {
+        toast.success('Shutdown event created successfully');
+        setCreateSTODialogOpen(false);
+        setCreateSTOForm({ name: '', type: 'planned_shutdown', description: '', plannedStartDate: '', plannedEndDate: '', estimatedDurationHours: '', budgetAmount: '' });
+        fetchSTOEvents();
+      } else {
+        toast.error(res.error || 'Failed to create shutdown event');
+      }
+    } catch (_e) {
+      toast.error('Failed to create shutdown event');
+    }
+    setCreateSTOLoading(false);
+  }, [createSTOForm, fetchSTOEvents, user]);
+
+  useEffect(() => { fetchData(); fetchWorkPackages(); fetchSTOEvents(); }, [fetchData, fetchWorkPackages, fetchSTOEvents, refreshKey]);
 
   // Filtered WOs for Kanban
   const filteredWOs = useMemo(() => {
@@ -1021,62 +1103,83 @@ export default function PlannerWorkbench() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle className="text-base flex items-center gap-2"><CalendarClock className="h-4 w-4 text-red-600" />Shutdown Coordination</CardTitle>
-                  <CardDescription className="text-xs">Planned shutdowns with associated work orders and critical paths</CardDescription>
+                  <CardDescription className="text-xs">Planned shutdowns, turnarounds, and outages with associated work orders</CardDescription>
                 </div>
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" size="sm">
+                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" size="sm" onClick={() => setCreateSTODialogOpen(true)}>
                   <Plus className="h-4 w-4 mr-1.5" />Plan Shutdown
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
-              {/* Sample shutdown data (would come from API in production) */}
-              <div className="space-y-4">
-                {[
-                  { id: '1', name: 'Annual Plant Turnaround', startDate: '2025-03-15', endDate: '2025-03-22', status: 'planning', woCount: 12, criticalPath: true },
-                  { id: '2', name: 'Boiler Inspection Shutdown', startDate: '2025-02-10', endDate: '2025-02-12', status: 'scheduled', woCount: 5, criticalPath: false },
-                  { id: '3', name: 'Compressor Overhaul', startDate: '2025-04-01', endDate: '2025-04-05', status: 'draft', woCount: 8, criticalPath: true },
-                ].map(shutdown => (
-                  <Card key={shutdown.id} className={`border ${shutdown.criticalPath ? 'border-red-200' : 'border-border/60'}`}>
-                    <CardContent className="p-4">
-                      <div className="flex items-start gap-4">
-                        <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${shutdown.criticalPath ? 'bg-red-100 text-red-600' : 'bg-sky-100 text-sky-600'}`}>
-                          {shutdown.criticalPath ? <AlertCircle className="h-5 w-5" /> : <Calendar className="h-5 w-5" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="text-sm font-semibold">{shutdown.name}</h3>
-                            <Badge variant="outline" className={`text-[10px] ${shutdown.status === 'planning' ? 'bg-amber-50 text-amber-700' : shutdown.status === 'scheduled' ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-600'}`}>
-                              {shutdown.status.toUpperCase()}
-                            </Badge>
-                            {shutdown.criticalPath && <Badge variant="destructive" className="text-[10px]">CRITICAL PATH</Badge>}
-                          </div>
-                          <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{shutdown.startDate} — {shutdown.endDate}</span>
-                            <span className="flex items-center gap-1"><ClipboardList className="h-3 w-3" />{shutdown.woCount} WOs</span>
-                          </div>
-                          {/* Simple critical path visualization */}
-                          {shutdown.criticalPath && (
-                            <div className="mt-3 flex items-center gap-1">
-                              <div className="h-6 px-2 rounded bg-emerald-100 text-emerald-700 text-[10px] font-medium flex items-center">Prep</div>
-                              <ArrowDown className="h-3 w-3 text-muted-foreground" />
-                              <div className="h-6 px-2 rounded bg-amber-100 text-amber-700 text-[10px] font-medium flex items-center">Shutdown</div>
-                              <ArrowDown className="h-3 w-3 text-muted-foreground" />
-                              <div className="h-6 px-2 rounded bg-red-100 text-red-700 text-[10px] font-medium flex items-center">Repair</div>
-                              <ArrowDown className="h-3 w-3 text-muted-foreground" />
-                              <div className="h-6 px-2 rounded bg-sky-100 text-sky-700 text-[10px] font-medium flex items-center">Test</div>
-                              <ArrowDown className="h-3 w-3 text-muted-foreground" />
-                              <div className="h-6 px-2 rounded bg-emerald-100 text-emerald-700 text-[10px] font-medium flex items-center">Start</div>
+              {stoLoading ? <div className="space-y-3"><Skeleton className="h-24 w-full rounded-lg" /><Skeleton className="h-24 w-full rounded-lg" /><Skeleton className="h-24 w-full rounded-lg" /></div> : stoEvents.length === 0 ? (
+                <EmptyState icon={CalendarClock} title="No shutdown events" description='Click "Plan Shutdown" to create a new shutdown/turnaround/outage event.' />
+              ) : (
+                <div className="space-y-4">
+                  {stoEvents.map((event: any) => {
+                    const isCritical = (event.scopeJson as any)?.criticalPath === true || (event.milestonesJson as any)?.length > 0;
+                    const stoStatusColor: Record<string, string> = {
+                      planning: 'bg-amber-50 text-amber-700 border-amber-200',
+                      scheduled: 'bg-sky-50 text-sky-700 border-sky-200',
+                      pre_shutdown: 'bg-orange-50 text-orange-700 border-orange-200',
+                      in_progress: 'bg-red-50 text-red-700 border-red-200',
+                      startup: 'bg-violet-50 text-violet-700 border-violet-200',
+                      completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                      cancelled: 'bg-slate-100 text-slate-500 border-slate-200',
+                    };
+                    const typeLabel: Record<string, string> = {
+                      planned_shutdown: 'Planned Shutdown',
+                      turnaround: 'Turnaround',
+                      forced_outage: 'Forced Outage',
+                      emergency: 'Emergency',
+                    };
+                    return (
+                      <Card key={event.id} className={`border ${isCritical ? 'border-red-200 bg-red-50/20' : 'border-border/60'} hover:shadow-md transition-shadow`}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-4">
+                            <div className={`h-10 w-10 rounded-lg flex items-center justify-center shrink-0 ${isCritical ? 'bg-red-100 text-red-600' : 'bg-sky-100 text-sky-600'}`}>
+                              {isCritical ? <AlertCircle className="h-5 w-5" /> : <Calendar className="h-5 w-5" />}
                             </div>
-                          )}
-                        </div>
-                        <Button variant="outline" size="sm" className="h-8 shrink-0">
-                          <Eye className="h-3.5 w-3.5 mr-1" />View
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="text-sm font-semibold">{event.name}</h3>
+                                {event.stoNumber && <Badge variant="outline" className="font-mono text-[10px]">{event.stoNumber}</Badge>}
+                                <Badge variant="outline" className={`text-[10px] ${stoStatusColor[event.status] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                                  {(event.status || '').replace(/_/g, ' ').toUpperCase()}
+                                </Badge>
+                                {isCritical && <Badge variant="destructive" className="text-[10px]">CRITICAL PATH</Badge>}
+                              </div>
+                              <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground flex-wrap">
+                                <span className="flex items-center gap-1">
+                                  <Wrench className="h-3 w-3" />
+                                  {typeLabel[event.type] || event.type}
+                                </span>
+                                {event.plannedStartDate && (
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" />
+                                    {formatDate(event.plannedStartDate)}{event.plannedEndDate ? ` — ${formatDate(event.plannedEndDate)}` : ''}
+                                  </span>
+                                )}
+                                {event.estimatedDurationHours != null && (
+                                  <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{event.estimatedDurationHours}h est.</span>
+                                )}
+                                {event.budgetAmount != null && event.budgetAmount > 0 && (
+                                  <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{formatCurrency(event.budgetAmount)}</span>
+                                )}
+                              </div>
+                              {event.description && (
+                                <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2">{event.description}</p>
+                              )}
+                            </div>
+                            <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={() => handleViewSTO(event)}>
+                              <Eye className="h-3.5 w-3.5 mr-1" />View
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1237,6 +1340,183 @@ export default function PlannerWorkbench() {
                 })}
               </div>
             </ScrollArea>
+          </div>
+        </div>
+      </ResponsiveDialog>
+
+      {/* STO Detail Sheet */}
+      <Sheet open={stoDetailOpen} onOpenChange={setStoDetailOpen}>
+        <SheetContent className="sm:max-w-xl w-full overflow-y-auto">
+          {stoDetailLoading ? (
+            <div className="space-y-4 mt-6"><Skeleton className="h-6 w-3/4" /><Skeleton className="h-4 w-1/2" /><Skeleton className="h-32 w-full rounded-lg" /><Skeleton className="h-32 w-full rounded-lg" /></div>
+          ) : stoDetailData ? (
+            <>
+              <SheetHeader className="mb-4">
+                <SheetTitle className="flex items-center gap-2">
+                  <CalendarClock className="h-5 w-5 text-red-600" />
+                  {stoDetailData.stoNumber || stoDetailData.name}
+                </SheetTitle>
+                <SheetDescription>{stoDetailData.name}</SheetDescription>
+              </SheetHeader>
+              <div className="space-y-4">
+                {/* Status badges */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge variant="outline" className="capitalize">{(stoDetailData.status || '').replace(/_/g, ' ')}</Badge>
+                  <Badge variant="outline" className="capitalize">{(stoDetailData.type || '').replace(/_/g, ' ')}</Badge>
+                  {stoDetailData.estimatedDurationHours != null && (
+                    <Badge variant="outline"><Clock className="h-3 w-3 mr-1" />{stoDetailData.estimatedDurationHours}h</Badge>
+                  )}
+                </div>
+
+                {/* Description */}
+                {stoDetailData.description && (
+                  <div><Label className="text-xs text-muted-foreground">Description</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{stoDetailData.description}</p></div>
+                )}
+
+                {/* Date & Schedule Info */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Planned Start</Label>
+                    <p className="text-sm mt-1">{stoDetailData.plannedStartDate ? formatDate(stoDetailData.plannedStartDate) : '—'}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Planned End</Label>
+                    <p className="text-sm mt-1">{stoDetailData.plannedEndDate ? formatDate(stoDetailData.plannedEndDate) : '—'}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Actual Start</Label>
+                    <p className="text-sm mt-1">{stoDetailData.actualStartDate ? formatDate(stoDetailData.actualStartDate) : '—'}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Actual End</Label>
+                    <p className="text-sm mt-1">{stoDetailData.actualEndDate ? formatDate(stoDetailData.actualEndDate) : '—'}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Actual Duration</Label>
+                    <p className="text-sm mt-1">{stoDetailData.actualDurationHours != null ? `${stoDetailData.actualDurationHours}h` : '—'}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Budget</Label>
+                    <p className="text-sm mt-1">{stoDetailData.budgetAmount != null ? formatCurrency(stoDetailData.budgetAmount) : '—'}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Actual Cost</Label>
+                    <p className="text-sm mt-1 font-medium">{formatCurrency(stoDetailData.actualCost || 0)}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Unit/Area</Label>
+                    <p className="text-sm mt-1">{stoDetailData.unitId || '—'}</p>
+                  </div>
+                </div>
+
+                {/* Scope (equipment & work packages) */}
+                {stoDetailData.scopeJson && typeof stoDetailData.scopeJson === 'object' && Object.keys(stoDetailData.scopeJson).length > 0 && (
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Scope</Label>
+                    <div className="mt-1 bg-muted/50 rounded-lg p-3 space-y-1">
+                      {Array.isArray(stoDetailData.scopeJson.equipment) && stoDetailData.scopeJson.equipment.length > 0 && (
+                        <div>
+                          <p className="text-[10px] text-muted-foreground uppercase font-medium mb-1">Equipment</p>
+                          {stoDetailData.scopeJson.equipment.map((eq: any, i: number) => (
+                            <p key={i} className="text-xs">• {eq.name || eq.assetName || eq}</p>
+                          ))}
+                        </div>
+                      )}
+                      {Array.isArray(stoDetailData.scopeJson.workPackages) && stoDetailData.scopeJson.workPackages.length > 0 && (
+                        <div>
+                          <p className="text-[10px] text-muted-foreground uppercase font-medium mb-1 mt-2">Work Packages</p>
+                          {stoDetailData.scopeJson.workPackages.map((wp: any, i: number) => (
+                            <p key={i} className="text-xs">• {wp.name || wp}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Milestones */}
+                {(stoDetailData.milestones?.milestones?.length > 0 || (Array.isArray(stoDetailData.milestonesJson) && stoDetailData.milestonesJson.length > 0)) && (
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Milestones</Label>
+                    <div className="mt-1 space-y-2">
+                      {(stoDetailData.milestones?.milestones || stoDetailData.milestonesJson || []).map((ms: any, i: number) => (
+                        <div key={i} className="flex items-center gap-2 text-xs">
+                          <div className={`h-2 w-2 rounded-full shrink-0 ${ms.completed ? 'bg-emerald-500' : ms.inProgress ? 'bg-amber-500' : 'bg-slate-300'}`} />
+                          <span className="font-medium">{ms.name || ms.title}</span>
+                          {ms.durationHours && <span className="text-muted-foreground">({ms.durationHours}h)</span>}
+                          {ms.completed && <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 ml-auto">Done</Badge>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Notes */}
+                {stoDetailData.notes && (
+                  <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{stoDetailData.notes}</p></div>
+                )}
+
+                {/* Meta */}
+                <Separator />
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                  <span>Created: {stoDetailData.createdAt ? formatDate(stoDetailData.createdAt) : ''}</span>
+                  <span>Updated: {stoDetailData.updatedAt ? formatDate(stoDetailData.updatedAt) : ''}</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="mt-6"><EmptyState icon={CalendarClock} title="No details available" description="Could not load shutdown event details." /></div>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Create STO Dialog */}
+      <ResponsiveDialog
+        open={createSTODialogOpen}
+        onOpenChange={setCreateSTODialogOpen}
+        title="Plan Shutdown / Turnaround / Outage"
+        footer={<Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleCreateSTO} disabled={createSTOLoading}>{createSTOLoading ? 'Creating...' : 'Create Event'}</Button>}
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Event Name *</Label>
+            <Input value={createSTOForm.name} onChange={e => setCreateSTOForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g., Annual Plant Turnaround" />
+          </div>
+          <div className="space-y-2">
+            <Label>Type *</Label>
+            <Select value={createSTOForm.type} onValueChange={v => setCreateSTOForm(f => ({ ...f, type: v }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="planned_shutdown">Planned Shutdown</SelectItem>
+                <SelectItem value="turnaround">Turnaround</SelectItem>
+                <SelectItem value="forced_outage">Forced Outage</SelectItem>
+                <SelectItem value="emergency">Emergency</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Textarea value={createSTOForm.description} onChange={e => setCreateSTOForm(f => ({ ...f, description: e.target.value }))} placeholder="Scope, objectives, etc." rows={3} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Planned Start</Label>
+              <Input type="date" value={createSTOForm.plannedStartDate} onChange={e => setCreateSTOForm(f => ({ ...f, plannedStartDate: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Planned End</Label>
+              <Input type="date" value={createSTOForm.plannedEndDate} onChange={e => setCreateSTOForm(f => ({ ...f, plannedEndDate: e.target.value }))} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Est. Duration (hours)</Label>
+              <Input type="number" value={createSTOForm.estimatedDurationHours} onChange={e => setCreateSTOForm(f => ({ ...f, estimatedDurationHours: e.target.value }))} placeholder="e.g., 168" />
+            </div>
+            <div className="space-y-2">
+              <Label>Budget (₵)</Label>
+              <Input type="number" value={createSTOForm.budgetAmount} onChange={e => setCreateSTOForm(f => ({ ...f, budgetAmount: e.target.value }))} placeholder="e.g., 50000" />
+            </div>
           </div>
         </div>
       </ResponsiveDialog>
