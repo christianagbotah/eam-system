@@ -2574,3 +2574,1040 @@ export function RepairAnalyticsPage() {
     </div>
   );
 }
+
+// ============================================================================
+// PAGE 8: SPARE PART RETURNS (Reusable Parts Refurbishment)
+// ============================================================================
+
+const SPARE_RETURN_STAGES: PipelineStage[] = [
+  { key: 'pending', label: 'Pending', icon: Clock },
+  { key: 'inspected', label: 'Inspected', icon: Eye },
+  { key: 'refurbishing', label: 'Refurbishing', icon: Wrench },
+  { key: 'refurbished', label: 'Refurbished', icon: CheckCircle2 },
+  { key: 'returned_to_store', label: 'In Store', icon: Warehouse },
+  { key: 'disposed', label: 'Disposed', icon: Ban },
+];
+
+export function SparePartReturnsPage() {
+  const { user, hasPermission, isAdmin } = useAuthStore();
+  const [returns, setReturns] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<any>(null);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [searchText, setSearchText] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<{ page: number; totalPages: number; total: number } | null>(null);
+  const [detailItem, setDetailItem] = useState<any>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    workOrderId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1',
+    conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false,
+    refurbishmentNotes: '', estimatedRefurbCost: '', notes: '',
+  });
+  const [actionOpen, setActionOpen] = useState(false);
+  const [actionTarget, setActionTarget] = useState<{ id: string; action: string } | null>(null);
+  const [actionForm, setActionForm] = useState({ notes: '', refurbishmentNeeded: true, estimatedCost: '', disposalReason: '' });
+
+  const fetchReturns = useCallback(async () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (filterStatus !== 'all') params.set('status', filterStatus);
+    params.set('page', String(page));
+    params.set('limit', '20');
+    const [listRes, statsRes] = await Promise.all([
+      api.get(`/api/repairs/spare-part-returns?${params}`),
+      api.get('/api/repairs/spare-part-returns?stats=true'),
+    ]);
+    if (listRes.success) { setReturns(listRes.data || []); if (listRes.pagination) setPagination(listRes.pagination); }
+    if (statsRes.success) setStats(statsRes.data);
+    setLoading(false);
+  }, [filterStatus, page]);
+
+  useEffect(() => { fetchReturns(); }, [fetchReturns]);
+
+  const handleCreate = async () => {
+    if (!createForm.workOrderId || !createForm.itemName) { toast.error('Work Order and Item Name are required'); return; }
+    setSubmitting(true);
+    const res = await api.post('/api/repairs/spare-part-returns', {
+      workOrderId: createForm.workOrderId, itemId: createForm.itemId || undefined,
+      itemName: createForm.itemName, partSerialNumber: createForm.partSerialNumber || undefined,
+      quantity: parseFloat(createForm.quantity) || 1, conditionOnReturn: createForm.conditionOnReturn,
+      damageDescription: createForm.damageDescription || undefined,
+      refurbishmentNeeded: createForm.refurbishmentNeeded,
+      refurbishmentNotes: createForm.refurbishmentNotes || undefined,
+      estimatedRefurbCost: createForm.estimatedRefurbCost ? parseFloat(createForm.estimatedRefurbCost) : undefined,
+      notes: createForm.notes || undefined,
+    });
+    if (res.success) {
+      toast.success('Spare part return created'); setCreateOpen(false);
+      setCreateForm({ workOrderId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1', conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false, refurbishmentNotes: '', estimatedRefurbCost: '', notes: '' });
+      fetchReturns();
+    } else toast.error(res.error || 'Failed');
+    setSubmitting(false);
+  };
+
+  const handleAction = async (id: string, action: string, extra?: Record<string, any>) => {
+    setSubmitting(true);
+    const res = await api.post(`/api/repairs/spare-part-returns/${id}`, { action, ...extra });
+    if (res.success) { toast.success('Action completed'); fetchReturns(); if (detailOpen && detailItem?.id === id) { setDetailOpen(false); } setActionOpen(false); }
+    else toast.error(res.error || 'Failed');
+    setSubmitting(false);
+  };
+
+  const filtered = useMemo(() => returns.filter(r =>
+    !searchText || r.itemName?.toLowerCase().includes(searchText.toLowerCase()) || r.returnNumber?.toLowerCase().includes(searchText.toLowerCase())
+  ), [returns, searchText]);
+
+  return (
+    <div className="page-content">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-teal-100 rounded-xl"><RefreshCw className="h-6 w-6 text-teal-700" /></div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-bold tracking-tight">Spare Part Returns</h2>
+              <Badge variant="secondary" className="font-mono">{returns.length}</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">Track reusable parts returned from machines for refurbishment</p>
+          </div>
+        </div>
+        {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Return</Button>}
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatsCard icon={Clock} count={stats?.byStatus?.pending ?? 0} label="Pending Inspection" color="text-yellow-600" bgColor="bg-yellow-50" />
+        <StatsCard icon={Wrench} count={stats?.byStatus?.refurbishing ?? 0} label="Being Refurbished" color="text-blue-600" bgColor="bg-blue-50" />
+        <StatsCard icon={CheckCircle2} count={stats?.byStatus?.refurbished ?? 0} label="Refurbished" color="text-emerald-600" bgColor="bg-emerald-50" />
+        <StatsCard icon={Warehouse} count={stats?.byStatus?.returned_to_store ?? 0} label="Back in Store" color="text-teal-600" bgColor="bg-teal-50" />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Search parts..." value={searchText} onChange={(e) => setSearchText(e.target.value)} className="pl-9" />
+        </div>
+        <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); setPage(1); }}>
+          <SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="inspected">Inspected</SelectItem>
+            <SelectItem value="refurbishing">Refurbishing</SelectItem>
+            <SelectItem value="refurbished">Refurbished</SelectItem>
+            <SelectItem value="returned_to_store">Returned to Store</SelectItem>
+            <SelectItem value="disposed">Disposed</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <Card className="overflow-hidden">
+        <CardContent className="p-0">
+          {loading ? <LoadingSkeleton /> : filtered.length === 0 ? (
+            <EmptyState icon={RefreshCw} title="No spare part returns" description="Return reusable parts from machines for refurbishment" />
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead>Return #</TableHead>
+                    <TableHead>Part</TableHead>
+                    <TableHead>WO #</TableHead>
+                    <TableHead>Condition</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Time</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((r) => (
+                    <TableRow key={r.id} className="cursor-pointer hover:bg-muted/30" onClick={() => { setDetailItem(r); setDetailOpen(true); }}>
+                      <TableCell><Badge variant="outline" className="font-mono text-xs">{r.returnNumber}</Badge></TableCell>
+                      <TableCell>
+                        <div className="font-medium text-sm">{r.itemName}</div>
+                        {r.partSerialNumber && <div className="text-xs text-muted-foreground">SN: {r.partSerialNumber}</div>}
+                      </TableCell>
+                      <TableCell><Badge variant="outline" className="font-mono text-xs">{r.workOrder?.woNumber}</Badge></TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={r.conditionOnReturn === 'good' || r.conditionOnReturn === 'new' ? 'bg-emerald-100 text-emerald-800' : r.conditionOnReturn === 'damaged' || r.conditionOnReturn === 'worn' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}>
+                          {r.conditionOnReturn?.replace('_', ' ')}
+                        </Badge>
+                      </TableCell>
+                      <TableCell><span className="font-medium">{r.quantity}</span></TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <StatusBadge status={r.status} />
+                          <MiniPipeline stages={SPARE_RETURN_STAGES} currentStatus={r.status} />
+                        </div>
+                      </TableCell>
+                      <TableCell><OverduePulse isOverdue={false} date={r.createdAt} /></TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+                          {r.status === 'pending' && (isAdmin() || hasPermission('inventory.update')) && (
+                            <Button size="sm" className="h-7 gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => { setActionTarget({ id: r.id, action: 'inspect' }); setActionForm({ notes: '', refurbishmentNeeded: true, estimatedCost: '', disposalReason: '' }); setActionOpen(true); }}>
+                              <Eye className="h-3.5 w-3.5" /> Inspect
+                            </Button>
+                          )}
+                          {r.status === 'inspected' && r.refurbishmentNeeded && (isAdmin() || hasPermission('inventory.update')) && (
+                            <Button size="sm" className="h-7 gap-1 bg-violet-600 hover:bg-violet-700 text-white" onClick={() => handleAction(r.id, 'start_refurbishment')}>
+                              <Wrench className="h-3.5 w-3.5" /> Start Refurb
+                            </Button>
+                          )}
+                          {r.status === 'refurbishing' && (isAdmin() || hasPermission('inventory.update')) && (
+                            <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(r.id, 'complete_refurbishment')}>
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Complete
+                            </Button>
+                          )}
+                          {r.status === 'refurbished' && isStoreOrAdmin(user) && (
+                            <Button size="sm" className="h-7 gap-1 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => handleAction(r.id, 'return_to_store')}>
+                              <Warehouse className="h-3.5 w-3.5" /> To Store
+                            </Button>
+                          )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => { setDetailItem(r); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View Details</DropdownMenuItem>
+                              {(isAdmin() || hasPermission('inventory.update')) && r.status !== 'disposed' && r.status !== 'returned_to_store' && r.status !== 'rejected' && (
+                                <DropdownMenuItem className="text-red-600" onClick={() => handleAction(r.id, 'dispose', { disposalReason: 'Disposed as unusable' })}><Ban className="h-4 w-4 mr-2" /> Dispose</DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Inspect Dialog */}
+      <ResponsiveDialog open={actionOpen} onOpenChange={setActionOpen}>
+        {actionTarget?.action === 'inspect' && (
+          <>
+            <div className="space-y-1.5 mb-4">
+              <h2 className="text-lg font-semibold">Inspect Spare Part Return</h2>
+              <p className="text-sm text-muted-foreground">Assess condition and determine if refurbishment is needed.</p>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-3 rounded-lg border">
+                <input type="checkbox" id="refurbNeeded" checked={actionForm.refurbishmentNeeded} onChange={e => setActionForm(p => ({ ...p, refurbishmentNeeded: e.target.checked }))} className="h-4 w-4" />
+                <Label htmlFor="refurbNeeded">Refurbishment Needed</Label>
+              </div>
+              {actionForm.refurbishmentNeeded && (
+                <div className="space-y-2">
+                  <Label>Estimated Refurbishment Cost</Label>
+                  <Input type="number" value={actionForm.estimatedCost} onChange={e => setActionForm(p => ({ ...p, estimatedCost: e.target.value }))} placeholder="0.00" />
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label>Inspection Notes</Label>
+                <Textarea value={actionForm.notes} onChange={e => setActionForm(p => ({ ...p, notes: e.target.value }))} placeholder="Findings from inspection..." rows={3} />
+              </div>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button variant="outline" onClick={() => setActionOpen(false)}>Cancel</Button>
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white" disabled={submitting} onClick={() => handleAction(actionTarget.id, 'inspect', {
+                  refurbishmentNeeded: actionForm.refurbishmentNeeded,
+                  estimatedRefurbCost: actionForm.estimatedCost ? parseFloat(actionForm.estimatedCost) : undefined,
+                  inspectionNotes: actionForm.notes || undefined,
+                })}>Submit Inspection</Button>
+              </div>
+            </div>
+          </>
+        )}
+      </ResponsiveDialog>
+
+      {/* Create Dialog */}
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold">Return Spare Part</h2>
+          <p className="text-sm text-muted-foreground">Register a reusable part returned from a machine during repair.</p>
+        </div>
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label>Work Order *</Label>
+            <AsyncSearchableSelect placeholder="Search work order..." fetchOptions={async (q) => {
+              const res = await api.get(`/api/work-orders?search=${q}&status=in_progress,assigned,planned&limit=20`);
+              if (res.success) return (res.data || []).map((wo: any) => ({ value: wo.id, label: `${wo.woNumber} - ${wo.title}` }));
+              return [];
+            }} value={createForm.workOrderId} onChange={v => setCreateForm(p => ({ ...p, workOrderId: v }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Item Name *</Label>
+              <Input value={createForm.itemName} onChange={e => setCreateForm(p => ({ ...p, itemName: e.target.value }))} placeholder="Part name" />
+            </div>
+            <div className="space-y-2">
+              <Label>Quantity</Label>
+              <Input type="number" value={createForm.quantity} onChange={e => setCreateForm(p => ({ ...p, quantity: e.target.value }))} min="1" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Serial Number</Label>
+              <Input value={createForm.partSerialNumber} onChange={e => setCreateForm(p => ({ ...p, partSerialNumber: e.target.value }))} placeholder="If available" />
+            </div>
+            <div className="space-y-2">
+              <Label>Condition on Return</Label>
+              <Select value={createForm.conditionOnReturn} onValueChange={v => setCreateForm(p => ({ ...p, conditionOnReturn: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="new">New</SelectItem>
+                  <SelectItem value="good">Good</SelectItem>
+                  <SelectItem value="fair">Fair</SelectItem>
+                  <SelectItem value="poor">Poor</SelectItem>
+                  <SelectItem value="damaged">Damaged</SelectItem>
+                  <SelectItem value="worn">Worn</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Damage/Wear Description</Label>
+            <Textarea value={createForm.damageDescription} onChange={e => setCreateForm(p => ({ ...p, damageDescription: e.target.value }))} placeholder="Describe any damage or wear..." rows={2} />
+          </div>
+          <div className="flex items-center gap-3 p-3 rounded-lg border">
+            <input type="checkbox" id="createRefurb" checked={createForm.refurbishmentNeeded} onChange={e => setCreateForm(p => ({ ...p, refurbishmentNeeded: e.target.checked }))} className="h-4 w-4" />
+            <Label htmlFor="createRefurb">Needs Refurbishment</Label>
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={submitting} onClick={handleCreate}>Submit Return</Button>
+          </div>
+        </div>
+      </ResponsiveDialog>
+
+      {/* Detail Sheet */}
+      <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
+        <SheetContent className="sm:max-w-lg w-full overflow-y-auto">
+          {detailItem && (
+            <>
+              <SheetHeader className="mb-4">
+                <SheetTitle className="flex items-center gap-2"><RefreshCw className="h-5 w-5 text-teal-600" /> {detailItem.returnNumber}</SheetTitle>
+                <SheetDescription>{detailItem.itemName}</SheetDescription>
+              </SheetHeader>
+              <Tabs defaultValue="details">
+                <TabsList className="w-full"><TabsTrigger value="details" className="flex-1">Details</TabsTrigger><TabsTrigger value="timeline" className="flex-1">Timeline</TabsTrigger></TabsList>
+                <TabsContent value="details" className="mt-4 space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><Label className="text-xs text-muted-foreground">Status</Label><div className="mt-1"><StatusBadge status={detailItem.status} /></div></div>
+                    <div><Label className="text-xs text-muted-foreground">Condition</Label><p className="text-sm mt-1 capitalize">{detailItem.conditionOnReturn?.replace('_', ' ')}</p></div>
+                    <div><Label className="text-xs text-muted-foreground">Quantity</Label><p className="text-sm mt-1 font-medium">{detailItem.quantity}</p></div>
+                    <div><Label className="text-xs text-muted-foreground">WO #</Label><p className="text-sm mt-1 font-mono">{detailItem.workOrder?.woNumber}</p></div>
+                  </div>
+                  <Separator />
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Refurbishment</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-muted/50 rounded-lg p-2 text-center">
+                        <p className="text-sm font-medium">{detailItem.refurbishmentNeeded ? 'Yes' : 'No'}</p>
+                        <p className="text-[10px] text-muted-foreground">Needed</p>
+                      </div>
+                      <div className="bg-muted/50 rounded-lg p-2 text-center">
+                        <p className="text-sm font-medium">{detailItem.estimatedRefurbCost ? formatCurrency(detailItem.estimatedRefurbCost) : '—'}</p>
+                        <p className="text-[10px] text-muted-foreground">Est. Cost</p>
+                      </div>
+                    </div>
+                  </div>
+                  {detailItem.damageDescription && (
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Damage Description</Label><p className="text-sm bg-red-50 text-red-800 rounded-lg p-2">{detailItem.damageDescription}</p></div>
+                  )}
+                  {detailItem.inspectionNotes && (
+                    <div className="space-y-1"><Label className="text-xs text-muted-foreground">Inspection Notes</Label><p className="text-sm bg-blue-50 text-blue-800 rounded-lg p-2">{detailItem.inspectionNotes}</p></div>
+                  )}
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div><Label className="text-xs text-muted-foreground">Returned By</Label><p className="text-sm mt-1">{detailItem.requestedBy?.fullName}</p></div>
+                    <div><Label className="text-xs text-muted-foreground">Created</Label><p className="text-sm mt-1">{format(new Date(detailItem.createdAt), 'MMM d, yyyy')}</p></div>
+                  </div>
+                </TabsContent>
+                <TabsContent value="timeline" className="mt-4">
+                  <DetailTimeline events={[
+                    { label: 'Part Returned', date: detailItem.createdAt, user: detailItem.requestedBy?.fullName },
+                    { label: 'Inspected', date: detailItem.inspectedAt, user: detailItem.inspectedBy?.fullName, notes: detailItem.inspectionNotes },
+                    { label: 'Refurbishment Started', date: detailItem.refurbishmentStart, user: detailItem.refurbisher?.fullName },
+                    { label: 'Refurbishment Completed', date: detailItem.refurbishmentEnd, user: detailItem.refurbisher?.fullName },
+                    { label: 'Returned to Store', date: detailItem.returnedToStoreAt, user: detailItem.returnedToStore?.fullName },
+                    { label: 'Disposed', date: detailItem.disposedAt, user: detailItem.disposedByUser?.fullName, notes: detailItem.disposalReason },
+                  ].filter(e => e.date)} />
+                </TabsContent>
+              </Tabs>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
+
+// ============================================================================
+// PAGE 9: DAMAGED TOOL REPORTS
+// ============================================================================
+
+const DAMAGE_STAGES: PipelineStage[] = [
+  { key: 'reported', label: 'Reported', icon: AlertTriangle },
+  { key: 'assessed', label: 'Assessed', icon: Search },
+  { key: 'repair_in_progress', label: 'Repairing', icon: Wrench },
+  { key: 'repaired', label: 'Repaired', icon: CheckCircle2 },
+  { key: 'written_off', label: 'Written Off', icon: Ban },
+];
+
+export function DamagedToolReportsPage() {
+  const { user, hasPermission, isAdmin } = useAuthStore();
+  const [reports, setReports] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<any>(null);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [searchText, setSearchText] = useState('');
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<{ page: number; totalPages: number; total: number } | null>(null);
+  const [detailItem, setDetailItem] = useState<any>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    toolId: '', workOrderId: '', damageType: 'broken', damageSeverity: 'medium',
+    damageDescription: '', occurredAt: '', technicianId: '',
+  });
+  const [actionOpen, setActionOpen] = useState(false);
+  const [actionTarget, setActionTarget] = useState<{ id: string; action: string } | null>(null);
+  const [actionForm, setActionForm] = useState({ notes: '', estimatedCost: '', vendorName: '', reason: '' });
+
+  const fetchReports = useCallback(async () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (filterStatus !== 'all') params.set('status', filterStatus);
+    params.set('page', String(page));
+    params.set('limit', '20');
+    const [listRes, statsRes] = await Promise.all([
+      api.get(`/api/repairs/damaged-tools?${params}`),
+      api.get('/api/repairs/damaged-tools?stats=true'),
+    ]);
+    if (listRes.success) { setReports(listRes.data || []); if (listRes.pagination) setPagination(listRes.pagination); }
+    if (statsRes.success) setStats(statsRes.data);
+    setLoading(false);
+  }, [filterStatus, page]);
+
+  useEffect(() => { fetchReports(); }, [fetchReports]);
+
+  const handleCreate = async () => {
+    if (!createForm.toolId || !createForm.damageDescription) { toast.error('Tool and damage description are required'); return; }
+    setSubmitting(true);
+    const res = await api.post('/api/repairs/damaged-tools', {
+      toolId: createForm.toolId, workOrderId: createForm.workOrderId || undefined,
+      damageType: createForm.damageType, damageSeverity: createForm.damageSeverity,
+      damageDescription: createForm.damageDescription,
+      occurredAt: createForm.occurredAt || undefined, technicianId: createForm.technicianId || undefined,
+    });
+    if (res.success) {
+      toast.success('Damaged tool report created'); setCreateOpen(false);
+      setCreateForm({ toolId: '', workOrderId: '', damageType: 'broken', damageSeverity: 'medium', damageDescription: '', occurredAt: '', technicianId: '' });
+      fetchReports();
+    } else toast.error(res.error || 'Failed');
+    setSubmitting(false);
+  };
+
+  const handleAction = async (id: string, action: string, extra?: Record<string, any>) => {
+    setSubmitting(true);
+    const res = await api.post(`/api/repairs/damaged-tools/${id}`, { action, ...extra });
+    if (res.success) { toast.success('Action completed'); fetchReports(); if (detailOpen && detailItem?.id === id) setDetailOpen(false); setActionOpen(false); }
+    else toast.error(res.error || 'Failed');
+    setSubmitting(false);
+  };
+
+  const filtered = useMemo(() => reports.filter(r =>
+    !searchText || r.tool?.name?.toLowerCase().includes(searchText.toLowerCase()) || r.reportNumber?.toLowerCase().includes(searchText.toLowerCase()) || r.damageDescription?.toLowerCase().includes(searchText.toLowerCase())
+  ), [reports, searchText]);
+
+  return (
+    <div className="page-content">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-red-100 rounded-xl"><AlertTriangle className="h-6 w-6 text-red-700" /></div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-bold tracking-tight">Damaged Tool Reports</h2>
+              <Badge variant="secondary" className="font-mono">{reports.length}</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">Report and track damaged tools with repair lifecycle</p>
+          </div>
+        </div>
+        {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Report Damage</Button>}
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatsCard icon={AlertTriangle} count={stats?.byStatus?.reported ?? 0} label="Reported" color="text-red-600" bgColor="bg-red-50" />
+        <StatsCard icon={Wrench} count={stats?.byStatus?.repair_in_progress ?? 0} label="In Repair" color="text-blue-600" bgColor="bg-blue-50" />
+        <StatsCard icon={CheckCircle2} count={stats?.byStatus?.repaired ?? 0} label="Repaired" color="text-emerald-600" bgColor="bg-emerald-50" />
+        <StatsCard icon={Ban} count={stats?.byStatus?.written_off ?? 0} label="Written Off" color="text-gray-600" bgColor="bg-gray-50" />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Search tools, reports..." value={searchText} onChange={(e) => setSearchText(e.target.value)} className="pl-9" />
+        </div>
+        <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); setPage(1); }}>
+          <SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="reported">Reported</SelectItem>
+            <SelectItem value="assessed">Assessed</SelectItem>
+            <SelectItem value="repair_quoted">Quoted</SelectItem>
+            <SelectItem value="repair_in_progress">In Repair</SelectItem>
+            <SelectItem value="repaired">Repaired</SelectItem>
+            <SelectItem value="written_off">Written Off</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <Card className="overflow-hidden">
+        <CardContent className="p-0">
+          {loading ? <LoadingSkeleton /> : filtered.length === 0 ? (
+            <EmptyState icon={AlertTriangle} title="No damaged tool reports" description="Report tool damage to track repairs and replacements" />
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead>Report #</TableHead>
+                    <TableHead>Tool</TableHead>
+                    <TableHead>Damage</TableHead>
+                    <TableHead>Severity</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>WO #</TableHead>
+                    <TableHead>Time</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((r) => (
+                    <TableRow key={r.id} className="cursor-pointer hover:bg-muted/30" onClick={() => { setDetailItem(r); setDetailOpen(true); }}>
+                      <TableCell><Badge variant="outline" className="font-mono text-xs">{r.reportNumber}</Badge></TableCell>
+                      <TableCell>
+                        <div className="font-medium text-sm">{r.tool?.name}</div>
+                        <div className="text-xs text-muted-foreground">{r.tool?.toolCode}</div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">{r.damageType?.replace('_', ' ')}</div>
+                        <div className="text-xs text-muted-foreground truncate max-w-[150px]">{r.damageDescription}</div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={r.damageSeverity === 'critical' ? 'bg-red-100 text-red-800' : r.damageSeverity === 'high' ? 'bg-orange-100 text-orange-800' : r.damageSeverity === 'medium' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}>
+                          {r.damageSeverity}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <StatusBadge status={r.status} />
+                          <MiniPipeline stages={DAMAGE_STAGES} currentStatus={r.status} />
+                        </div>
+                      </TableCell>
+                      <TableCell>{r.workOrder?.woNumber ? <Badge variant="outline" className="font-mono text-xs">{r.workOrder.woNumber}</Badge> : '—'}</TableCell>
+                      <TableCell><OverduePulse isOverdue={false} date={r.createdAt} /></TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
+                          {r.status === 'reported' && (isAdmin() || hasPermission('tools.update')) && (
+                            <Button size="sm" className="h-7 gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => { setActionTarget({ id: r.id, action: 'assess' }); setActionForm({ notes: '', estimatedCost: '', vendorName: '', reason: '' }); setActionOpen(true); }}>
+                              <Search className="h-3.5 w-3.5" /> Assess
+                            </Button>
+                          )}
+                          {r.status === 'assessed' && (isAdmin() || hasPermission('tools.update')) && (
+                            <Button size="sm" className="h-7 gap-1 bg-violet-600 hover:bg-violet-700 text-white" onClick={() => { setActionTarget({ id: r.id, action: 'start_repair' }); setActionForm({ notes: '', estimatedCost: '', vendorName: '', reason: '' }); setActionOpen(true); }}>
+                              <Wrench className="h-3.5 w-3.5" /> Start Repair
+                            </Button>
+                          )}
+                          {r.status === 'repair_in_progress' && (isAdmin() || hasPermission('tools.update')) && (
+                            <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(r.id, 'complete_repair')}>
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Complete
+                            </Button>
+                          )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => { setDetailItem(r); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View</DropdownMenuItem>
+                              {(isAdmin() || hasPermission('tools.update')) && !['repaired', 'written_off', 'replaced'].includes(r.status) && (
+                                <DropdownMenuItem className="text-red-600" onClick={() => { setActionTarget({ id: r.id, action: 'write_off' }); setActionForm({ notes: '', estimatedCost: '', vendorName: '', reason: '' }); setActionOpen(true); }}><Ban className="h-4 w-4 mr-2" /> Write Off</DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Action Dialog */}
+      <ResponsiveDialog open={actionOpen} onOpenChange={setActionOpen}>
+        {actionTarget?.action === 'assess' && (
+          <>
+            <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold">Assess Damage</h2><p className="text-sm text-muted-foreground">Evaluate damage and estimate repair cost.</p></div>
+            <div className="space-y-3">
+              <div className="space-y-2"><Label>Estimated Repair Cost</Label><Input type="number" value={actionForm.estimatedCost} onChange={e => setActionForm(p => ({ ...p, estimatedCost: e.target.value }))} placeholder="0.00" /></div>
+              <div className="space-y-2"><Label>Assessment Notes</Label><Textarea value={actionForm.notes} onChange={e => setActionForm(p => ({ ...p, notes: e.target.value }))} rows={3} /></div>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button variant="outline" onClick={() => setActionOpen(false)}>Cancel</Button>
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white" disabled={submitting} onClick={() => handleAction(actionTarget.id, 'assess', { assessmentNotes: actionForm.notes, estimatedRepairCost: actionForm.estimatedCost ? parseFloat(actionForm.estimatedCost) : undefined })}>Submit Assessment</Button>
+              </div>
+            </div>
+          </>
+        )}
+        {actionTarget?.action === 'start_repair' && (
+          <>
+            <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold">Start Repair</h2><p className="text-sm text-muted-foreground">Begin the repair process.</p></div>
+            <div className="space-y-3">
+              <div className="space-y-2"><Label>Repair Vendor</Label><Input value={actionForm.vendorName} onChange={e => setActionForm(p => ({ ...p, vendorName: e.target.value }))} placeholder="Vendor or in-house" /></div>
+              <div className="space-y-2"><Label>Notes</Label><Textarea value={actionForm.notes} onChange={e => setActionForm(p => ({ ...p, notes: e.target.value }))} rows={2} /></div>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button variant="outline" onClick={() => setActionOpen(false)}>Cancel</Button>
+                <Button className="bg-violet-600 hover:bg-violet-700 text-white" disabled={submitting} onClick={() => handleAction(actionTarget.id, 'start_repair', { repairVendorName: actionForm.vendorName || undefined })}>Start Repair</Button>
+              </div>
+            </div>
+          </>
+        )}
+        {actionTarget?.action === 'write_off' && (
+          <>
+            <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold text-red-600">Write Off Tool</h2><p className="text-sm text-muted-foreground">This will mark the tool as retired and unrepairable.</p></div>
+            <div className="space-y-3">
+              <div className="space-y-2"><Label>Write-Off Reason *</Label><Textarea value={actionForm.reason} onChange={e => setActionForm(p => ({ ...p, reason: e.target.value }))} rows={3} /></div>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button variant="outline" onClick={() => setActionOpen(false)}>Cancel</Button>
+                <Button variant="destructive" disabled={submitting || !actionForm.reason} onClick={() => handleAction(actionTarget.id, 'write_off', { writeOffReason: actionForm.reason })}>Write Off</Button>
+              </div>
+            </div>
+          </>
+        )}
+      </ResponsiveDialog>
+
+      {/* Create Dialog */}
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+        <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold">Report Damaged Tool</h2><p className="text-sm text-muted-foreground">Document tool damage for tracking and repair.</p></div>
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label>Tool *</Label>
+            <AsyncSearchableSelect placeholder="Search tool..." fetchOptions={async (q) => {
+              const res = await api.get(`/api/tools?search=${q}&limit=20`);
+              if (res.success) return (res.data || []).map((t: any) => ({ value: t.id, label: `${t.toolCode} - ${t.name}` }));
+              return [];
+            }} value={createForm.toolId} onChange={v => setCreateForm(p => ({ ...p, toolId: v }))} />
+          </div>
+          <div className="space-y-2">
+            <Label>Work Order (if related)</Label>
+            <AsyncSearchableSelect placeholder="Search work order..." fetchOptions={async (q) => {
+              const res = await api.get(`/api/work-orders?search=${q}&limit=20`);
+              if (res.success) return (res.data || []).map((wo: any) => ({ value: wo.id, label: `${wo.woNumber} - ${wo.title}` }));
+              return [];
+            }} value={createForm.workOrderId} onChange={v => setCreateForm(p => ({ ...p, workOrderId: v }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Damage Type *</Label>
+              <Select value={createForm.damageType} onValueChange={v => setCreateForm(p => ({ ...p, damageType: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="broken">Broken</SelectItem>
+                  <SelectItem value="worn">Worn</SelectItem>
+                  <SelectItem value="malfunctioning">Malfunctioning</SelectItem>
+                  <SelectItem value="missing_parts">Missing Parts</SelectItem>
+                  <SelectItem value="cosmetic">Cosmetic</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Severity *</Label>
+              <Select value={createForm.damageSeverity} onValueChange={v => setCreateForm(p => ({ ...p, damageSeverity: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="critical">Critical</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Damage Description *</Label>
+            <Textarea value={createForm.damageDescription} onChange={e => setCreateForm(p => ({ ...p, damageDescription: e.target.value }))} placeholder="Describe the damage..." rows={3} />
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button className="bg-red-600 hover:bg-red-700 text-white" disabled={submitting} onClick={handleCreate}>Submit Report</Button>
+          </div>
+        </div>
+      </ResponsiveDialog>
+
+      {/* Detail Sheet */}
+      <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
+        <SheetContent className="sm:max-w-lg w-full overflow-y-auto">
+          {detailItem && (
+            <>
+              <SheetHeader className="mb-4">
+                <SheetTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-red-600" /> {detailItem.reportNumber}</SheetTitle>
+                <SheetDescription>{detailItem.tool?.name} — {detailItem.tool?.toolCode}</SheetDescription>
+              </SheetHeader>
+              <Tabs defaultValue="details">
+                <TabsList className="w-full"><TabsTrigger value="details" className="flex-1">Details</TabsTrigger><TabsTrigger value="timeline" className="flex-1">Timeline</TabsTrigger></TabsList>
+                <TabsContent value="details" className="mt-4 space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><Label className="text-xs text-muted-foreground">Status</Label><div className="mt-1"><StatusBadge status={detailItem.status} /></div></div>
+                    <div><Label className="text-xs text-muted-foreground">Severity</Label><div className="mt-1"><Badge variant="outline" className={detailItem.damageSeverity === 'critical' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}>{detailItem.damageSeverity}</Badge></div></div>
+                    <div><Label className="text-xs text-muted-foreground">Damage Type</Label><p className="text-sm mt-1 capitalize">{detailItem.damageType?.replace('_', ' ')}</p></div>
+                    <div><Label className="text-xs text-muted-foreground">WO #</Label><p className="text-sm mt-1 font-mono">{detailItem.workOrder?.woNumber || '—'}</p></div>
+                  </div>
+                  <Separator />
+                  <div><Label className="text-xs text-muted-foreground">Damage Description</Label><p className="text-sm mt-1 bg-red-50 text-red-900 rounded-lg p-3">{detailItem.damageDescription}</p></div>
+                  {detailItem.assessmentNotes && <div><Label className="text-xs text-muted-foreground">Assessment</Label><p className="text-sm mt-1 bg-blue-50 text-blue-900 rounded-lg p-3">{detailItem.assessmentNotes}</p></div>}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-muted/50 rounded-lg p-3 text-center"><p className="text-lg font-bold">{detailItem.estimatedRepairCost ? formatCurrency(detailItem.estimatedRepairCost) : '—'}</p><p className="text-[10px] text-muted-foreground">Est. Cost</p></div>
+                    <div className="bg-muted/50 rounded-lg p-3 text-center"><p className="text-lg font-bold">{detailItem.actualRepairCost ? formatCurrency(detailItem.actualRepairCost) : '—'}</p><p className="text-[10px] text-muted-foreground">Actual Cost</p></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div><Label className="text-xs text-muted-foreground">Reported By</Label><p className="text-sm mt-1">{detailItem.reportedBy?.fullName}</p></div>
+                    <div><Label className="text-xs text-muted-foreground">Technician</Label><p className="text-sm mt-1">{detailItem.technician?.fullName || '—'}</p></div>
+                  </div>
+                </TabsContent>
+                <TabsContent value="timeline" className="mt-4">
+                  <DetailTimeline events={[
+                    { label: 'Damage Reported', date: detailItem.createdAt, user: detailItem.reportedBy?.fullName },
+                    { label: 'Assessed', date: detailItem.assessedAt, notes: detailItem.assessmentNotes },
+                    { label: 'Repair Started', date: detailItem.repairStartedAt },
+                    { label: 'Repair Completed', date: detailItem.repairCompletedAt },
+                    { label: 'Written Off', date: detailItem.writtenOffAt, notes: detailItem.writeOffReason },
+                  ].filter(e => e.date)} />
+                </TabsContent>
+              </Tabs>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
+
+// ============================================================================
+// PAGE 10: MAINTENANCE LIFECYCLE REPORTS
+// ============================================================================
+
+export function MaintenanceReportsPage() {
+  const { user } = useAuthStore();
+  const [reportType, setReportType] = useState('lifecycle');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [plantFilter, setPlantFilter] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [reportData, setReportData] = useState<any>(null);
+  const [reportGenerated, setReportGenerated] = useState(false);
+
+  const REPORT_TYPES = [
+    { value: 'lifecycle', label: 'Full Lifecycle', icon: Activity, description: 'MR → WO end-to-end turnaround analysis' },
+    { value: 'execution', label: 'WO Execution', icon: ClipboardList, description: 'Completion rates, actual vs estimated hours, rework' },
+    { value: 'technician_performance', label: 'Technician Performance', icon: User, description: 'Per-technician WO completion, time accuracy, rework' },
+    { value: 'materials', label: 'Materials & Parts', icon: Package, description: 'Material usage, reconciliation, spare part returns' },
+    { value: 'downtime', label: 'Downtime Analysis', icon: Timer, description: 'Equipment downtime by asset, category, impact' },
+    { value: 'tools', label: 'Tool Management', icon: Wrench, description: 'Damage rates, repair costs, transfers' },
+  ];
+
+  const generateReport = async () => {
+    setLoading(true);
+    const params = new URLSearchParams({ type: reportType });
+    if (dateFrom) params.set('from', dateFrom);
+    if (dateTo) params.set('to', dateTo);
+    if (plantFilter) params.set('plantId', plantFilter);
+    const res = await api.get(`/api/repairs/reports?${params}`);
+    if (res.success) { setReportData(res.data); setReportGenerated(true); }
+    else toast.error(res.error || 'Failed to generate report');
+    setLoading(false);
+  };
+
+  const exportCSV = () => {
+    if (!reportData) return;
+    const type = reportType;
+    let csvContent = '';
+    if (type === 'technician_performance' && reportData.technicians) {
+      csvContent = 'Technician,WO Completed,Avg Hours/WO,Rework Rate,Total Hours\n' +
+        reportData.technicians.map((t: any) =>
+          `"${t.name}",${t.woCount},${t.avgHoursPerWo},${t.reworkRate}%,${t.totalHours}`
+        ).join('\n');
+    } else if (type === 'execution') {
+      csvContent = 'Metric,Value\n' + Object.entries(reportData).map(([k, v]: [string, any]) =>
+        `${k},${typeof v === 'object' ? JSON.stringify(v) : v}`
+      ).join('\n');
+    } else if (type === 'downtime' && reportData.byAsset) {
+      csvContent = 'Asset,Total Downtime (min),Avg Duration,Incidents,Production Loss\n' +
+        reportData.byAsset.map((a: any) =>
+          `"${a.assetName}",${a.totalDowntime},${a.avgDuration},${a.incidentCount},${a.totalProductionLoss || 0}`
+        ).join('\n');
+    } else {
+      csvContent = 'Key,Value\n' + Object.entries(reportData).map(([k, v]: [string, any]) =>
+        `"${k}",${typeof v === 'object' ? JSON.stringify(v) : v}`
+      ).join('\n');
+    }
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `maintenance-report-${type}-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    toast.success('Report exported');
+  };
+
+  return (
+    <div className="page-content">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-emerald-100 rounded-xl"><BarChart3 className="h-6 w-6 text-emerald-700" /></div>
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Maintenance Reports</h2>
+            <p className="text-sm text-muted-foreground">Enterprise-grade analytics from request to completion</p>
+          </div>
+        </div>
+        {reportGenerated && reportData && (
+          <Button variant="outline" onClick={exportCSV} className="gap-2"><DollarSign className="h-4 w-4" /> Export CSV</Button>
+        )}
+      </div>
+
+      {/* Report Type Selection */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+        {REPORT_TYPES.map(rt => (
+          <button key={rt.value} onClick={() => { setReportType(rt.value); setReportGenerated(false); }}
+            className={`p-4 rounded-lg border-2 text-left transition-all ${reportType === rt.value ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200' : 'border-gray-200 hover:border-gray-300 hover:bg-muted/30'}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <rt.icon className={`h-4 w-4 ${reportType === rt.value ? 'text-emerald-600' : 'text-gray-500'}`} />
+              <span className="text-sm font-semibold">{rt.label}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">{rt.description}</p>
+          </button>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <Card className="p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">From Date</Label>
+            <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-40" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">To Date</Label>
+            <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-40" />
+          </div>
+          <Button onClick={generateReport} disabled={loading} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+            {loading ? <Activity className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
+            Generate Report
+          </Button>
+        </div>
+      </Card>
+
+      {/* Report Display */}
+      {loading && <LoadingSkeleton />}
+      {reportGenerated && reportData && (
+        <div className="space-y-4">
+          {/* Lifecycle Report */}
+          {reportType === 'lifecycle' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatsCard icon={Clock} count={reportData.totalRequests ?? 0} label="Total MRs" color="text-blue-600" bgColor="bg-blue-50" />
+                <StatsCard icon={CheckCircle2} count={reportData.convertedToWO ?? 0} label="Converted to WO" color="text-emerald-600" bgColor="bg-emerald-50" />
+                <StatsCard icon={Timer} count={`${reportData.avgTurnaroundHours ?? 0}h`} label="Avg Turnaround" color="text-teal-600" bgColor="bg-teal-50" />
+                <StatsCard icon={TrendingUp} count={`${reportData.avgMrToWoHours ?? 0}h`} label="MR→WO Time" color="text-amber-600" bgColor="bg-amber-50" />
+              </div>
+              {reportData.stageBreakdown && (
+                <Card><CardHeader><CardTitle className="text-base">Stage Breakdown</CardTitle></CardHeader><CardContent>
+                  <div className="space-y-3">
+                    {reportData.stageBreakdown.map((stage: any, i: number) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className="w-40 text-sm font-medium truncate">{stage.name}</div>
+                        <div className="flex-1"><Progress value={Math.min(100, (stage.avgHours / (reportData.avgTurnaroundHours || 1)) * 100)} className="h-3" /></div>
+                        <div className="w-20 text-sm text-right text-muted-foreground">{stage.avgHours?.toFixed(1)}h avg</div>
+                        <div className="w-16 text-sm text-right text-muted-foreground">{stage.count} items</div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent></Card>
+              )}
+              {reportData.priorityBreakdown && (
+                <Card><CardHeader><CardTitle className="text-base">By Priority</CardTitle></CardHeader><CardContent>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    {Object.entries(reportData.priorityBreakdown).map(([key, val]: [string, any]) => (
+                      <div key={key} className="bg-muted/50 rounded-lg p-3 text-center">
+                        <p className="text-2xl font-bold">{val.count || 0}</p>
+                        <p className="text-xs text-muted-foreground capitalize">{key} ({val.avgHours?.toFixed(1)}h avg)</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent></Card>
+              )}
+            </div>
+          )}
+
+          {/* Execution Report */}
+          {reportType === 'execution' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatsCard icon={ClipboardList} count={reportData.totalWOs ?? 0} label="Total WOs" color="text-blue-600" bgColor="bg-blue-50" />
+                <StatsCard icon={CheckCircle2} count={`${reportData.completionRate ?? 0}%`} label="Completion Rate" color="text-emerald-600" bgColor="bg-emerald-50" />
+                <StatsCard icon={Timer} count={`${reportData.avgActualHours ?? 0}h`} label="Avg Actual Hours" color="text-teal-600" bgColor="bg-teal-50" />
+                <StatsCard icon={AlertTriangle} count={`${reportData.reworkRate ?? 0}%`} label="Rework Rate" color="text-red-600" bgColor="bg-red-50" />
+              </div>
+              {reportData.byType && (
+                <Card><CardHeader><CardTitle className="text-base">By Work Order Type</CardTitle></CardHeader><CardContent>
+                  <div className="space-y-3">
+                    {reportData.byType.map((t: any) => (
+                      <div key={t.type} className="flex items-center gap-4">
+                        <div className="w-32 text-sm font-medium capitalize">{t.type?.replace('_', ' ')}</div>
+                        <div className="flex-1"><Progress value={t.count ? (t.count / reportData.totalWOs) * 100 : 0} className="h-3" /></div>
+                        <div className="w-20 text-sm text-right">{t.count} WOs</div>
+                        <div className="w-24 text-sm text-right text-muted-foreground">{t.avgHours?.toFixed(1)}h avg</div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent></Card>
+              )}
+            </div>
+          )}
+
+          {/* Technician Performance Report */}
+          {reportType === 'technician_performance' && (
+            <div className="space-y-4">
+              {reportData.technicians && reportData.technicians.length > 0 ? (
+                <Card><CardHeader><CardTitle className="text-base">Technician Performance</CardTitle></CardHeader><CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead>Technician</TableHead>
+                        <TableHead className="text-center">WOs Completed</TableHead>
+                        <TableHead className="text-center">Avg Hours/WO</TableHead>
+                        <TableHead className="text-center">Total Hours</TableHead>
+                        <TableHead className="text-center">Rework Rate</TableHead>
+                        <TableHead className="text-center">On-Time Rate</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {reportData.technicians.map((t: any) => (
+                        <TableRow key={t.userId}>
+                          <TableCell><div className="flex items-center gap-2"><AvatarPlaceholder name={t.name} /><span className="font-medium text-sm">{t.name}</span></div></TableCell>
+                          <TableCell className="text-center font-medium">{t.woCount}</TableCell>
+                          <TableCell className="text-center">{t.avgHoursPerWo?.toFixed(1)}h</TableCell>
+                          <TableCell className="text-center">{t.totalHours?.toFixed(1)}h</TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="outline" className={t.reworkRate > 10 ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}>{t.reworkRate}%</Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="outline" className={t.onTimeRate >= 80 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}>{t.onTimeRate}%</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent></Card>
+              ) : (
+                <Card><CardContent className="py-12"><EmptyState icon={User} title="No data" description="No technician performance data for the selected period" /></CardContent></Card>
+              )}
+            </div>
+          )}
+
+          {/* Materials Report */}
+          {reportType === 'materials' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatsCard icon={Package} count={reportData.totalMaterialCost ? formatCurrency(reportData.totalMaterialCost) : '₵0'} label="Total Material Cost" color="text-amber-600" bgColor="bg-amber-50" />
+                <StatsCard icon={RefreshCw} count={reportData.sparePartReturns ?? 0} label="Parts Returned" color="text-teal-600" bgColor="bg-teal-50" />
+                <StatsCard icon={AlertTriangle} count={`${reportData.wasteRate ?? 0}%`} label="Waste Rate" color="text-red-600" bgColor="bg-red-50" />
+                <StatsCard icon={DollarSign} count={reportData.savingsFromReturns ? formatCurrency(reportData.savingsFromReturns) : '₵0'} label="Return Savings" color="text-emerald-600" bgColor="bg-emerald-50" />
+              </div>
+              {reportData.byItem && (
+                <Card><CardHeader><CardTitle className="text-base">Top Materials by Usage</CardTitle></CardHeader><CardContent>
+                  <div className="space-y-2">
+                    {reportData.byItem.slice(0, 10).map((item: any, i: number) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground w-5">{i + 1}.</span>
+                        <span className="flex-1 text-sm font-medium truncate">{item.itemName}</span>
+                        <span className="text-sm">{item.totalQty}</span>
+                        <span className="text-sm font-medium w-24 text-right">{formatCurrency(item.totalCost || 0)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent></Card>
+              )}
+            </div>
+          )}
+
+          {/* Downtime Report */}
+          {reportType === 'downtime' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatsCard icon={Timer} count={`${reportData.totalDowntimeMinutes ?? 0}m`} label="Total Downtime" color="text-red-600" bgColor="bg-red-50" />
+                <StatsCard icon={Activity} count={`${reportData.avgDurationMinutes ?? 0}m`} label="Avg Duration" color="text-amber-600" bgColor="bg-amber-50" />
+                <StatsCard icon={DollarSign} count={reportData.totalProductionLoss ? formatCurrency(reportData.totalProductionLoss) : '₵0'} label="Production Loss" color="text-orange-600" bgColor="bg-orange-50" />
+                <StatsCard icon={TrendingUp} count={reportData.incidentCount ?? 0} label="Incidents" color="text-blue-600" bgColor="bg-blue-50" />
+              </div>
+              {reportData.byAsset && (
+                <Card><CardHeader><CardTitle className="text-base">Downtime by Asset</CardTitle></CardHeader><CardContent className="p-0">
+                  <Table>
+                    <TableHeader><TableRow className="bg-muted/50">
+                      <TableHead>Asset</TableHead><TableHead className="text-center">Incidents</TableHead><TableHead className="text-center">Total (min)</TableHead><TableHead className="text-center">Avg (min)</TableHead><TableHead className="text-right">Production Loss</TableHead>
+                    </TableRow></TableHeader>
+                    <TableBody>
+                      {reportData.byAsset.slice(0, 15).map((a: any, i: number) => (
+                        <TableRow key={i}>
+                          <TableCell className="font-medium text-sm">{a.assetName}</TableCell>
+                          <TableCell className="text-center">{a.incidentCount}</TableCell>
+                          <TableCell className="text-center">{a.totalDowntime}</TableCell>
+                          <TableCell className="text-center">{a.avgDuration?.toFixed(0)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(a.totalProductionLoss || 0)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent></Card>
+              )}
+            </div>
+          )}
+
+          {/* Tools Report */}
+          {reportType === 'tools' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatsCard icon={AlertTriangle} count={reportData.totalDamageReports ?? 0} label="Damage Reports" color="text-red-600" bgColor="bg-red-50" />
+                <StatsCard icon={Wrench} count={reportData.totalRepairCost ? formatCurrency(reportData.totalRepairCost) : '₵0'} label="Total Repair Cost" color="text-amber-600" bgColor="bg-amber-50" />
+                <StatsCard icon={ArrowRightLeft} count={reportData.totalTransfers ?? 0} label="Tool Transfers" color="text-blue-600" bgColor="bg-blue-50" />
+                <StatsCard icon={Ban} count={reportData.totalWrittenOff ?? 0} label="Written Off" color="text-gray-600" bgColor="bg-gray-50" />
+              </div>
+              {reportData.byDamageType && (
+                <Card><CardHeader><CardTitle className="text-base">By Damage Type</CardTitle></CardHeader><CardContent>
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                    {reportData.byDamageType.map((d: any) => (
+                      <div key={d.type} className="bg-muted/50 rounded-lg p-3">
+                        <p className="text-lg font-bold capitalize">{d.type?.replace('_', ' ')}</p>
+                        <p className="text-xs text-muted-foreground">{d.count} incidents</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent></Card>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!reportGenerated && !loading && (
+        <Card><CardContent className="py-16">
+          <div className="text-center">
+            <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+            <h3 className="text-lg font-semibold text-muted-foreground">Select a report type and generate</h3>
+            <p className="text-sm text-muted-foreground mt-1">Choose from lifecycle, execution, technician, materials, downtime, or tools reports</p>
+          </div>
+        </CardContent></Card>
+      )}
+    </div>
+  );
+}

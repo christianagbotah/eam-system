@@ -207,6 +207,19 @@ model User {
   repairCompSupApproved      RepairCompletion[]      @relation("RepairCompSupApproved")
   repairCompPlannerClosed    RepairCompletion[]      @relation("RepairCompPlannerClosed")
 
+  // Spare Part Return relations
+  sparePartReturnsRequested  SparePartReturn[]       @relation("SparePartReturnRequested")
+  sparePartReturnsInspected  SparePartReturn[]       @relation("SparePartReturnInspected")
+  sparePartReturnsRefurbished SparePartReturn[]      @relation("SparePartReturnRefurbished")
+  sparePartReturnsStored     SparePartReturn[]       @relation("SparePartReturnStored")
+  sparePartReturnsDisposed   SparePartReturn[]       @relation("SparePartReturnDisposed")
+
+  // Damaged Tool Report relations
+  damagedToolReportsFiled    DamagedToolReport[]     @relation("DamagedToolReported")
+  damagedToolReportsAsTech   DamagedToolReport[]     @relation("DamagedToolTechnician")
+  damagedToolReportsRepaired DamagedToolReport[]     @relation("DamagedToolRepaired")
+  damagedToolReportsWrittenOff DamagedToolReport[]   @relation("DamagedToolWrittenOff")
+
   // Attachment relations
   attachments Attachment[]
 
@@ -229,6 +242,9 @@ model User {
 
   // Work Order Task Execution relations
   woTasksCompleted WorkOrderTaskExecution[] @relation("TaskCompletedBy")
+
+  // Time Log relations (team leader logging for members)
+  timeLogsLoggedForOthers WorkOrderTimeLog[] @relation("TimeLogLoggedBy")
 
   // Enterprise Model Library relations (Phase A)
   uploadedModels  ModelLibrary[]          @relation("ModelUploadedBy")
@@ -554,6 +570,12 @@ model WorkOrder {
   // Component Maintenance Intelligence relations
   componentMaintenanceHistory ComponentMaintenanceHistory[] @relation("ComponentWorkOrder")
 
+  // Spare Part Return relations
+  sparePartReturns SparePartReturn[]
+
+  // Damaged Tool Report relations
+  damagedToolReports DamagedToolReport[]
+
   @@index([plantId])
   @@index([workPackageId])
   @@index([status])
@@ -589,10 +611,15 @@ model WorkOrderTimeLog {
   duration    Float? // hours for this log entry (pause/complete)
   notes       String?
   timestamp   DateTime @default(now())
+  loggedById  String? // → User (team leader who logged time on behalf of a team member)
+  isTeamLog   Boolean  @default(false) // true if logged by team leader for a team member
 
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  loggedBy  User?     @relation("TimeLogLoggedBy", fields: [loggedById], references: [id])
 
+  @@index([workOrderId, timestamp])
+  @@index([userId])
   @@map("wo_time_logs")
 }
 
@@ -946,6 +973,9 @@ model InventoryItem {
   // Engineering BOM & Assembly Intelligence relations (Phase B)
   bomItems BomRevisionItem[] @relation("BomItemInventory")
 
+  // Spare Part Return relations
+  sparePartReturns SparePartReturn[] @relation("SparePartReturnItem")
+
   @@map("inventory_items")
 }
 
@@ -1269,6 +1299,7 @@ model Tool {
   // Repair module relations
   repairToolRequests  RepairToolRequest[]
   repairToolTransfers ToolTransferRequest[]
+  damagedToolReports  DamagedToolReport[]
   componentRequirements ComponentToolRequirement[] @relation("ToolComponentReq")
 
   @@map("tools")
@@ -2427,6 +2458,9 @@ model RepairMaterialRequest {
   issuedByUser          User? @relation("RepairMatReqIssued", fields: [issuedById], references: [id])
   returnedByUser        User? @relation("RepairMatReqReturned", fields: [returnedById], references: [id])
 
+  // Spare Part Return relations
+  sparePartReturns SparePartReturn[] @relation("SparePartReturnMatReq")
+
   @@map("repair_material_requests")
 }
 
@@ -2468,6 +2502,9 @@ model RepairToolRequest {
   storekeeperApprovedBy User? @relation("RepairToolReqStoreApproved", fields: [storekeeperApprovedById], references: [id])
   issuedByUser          User? @relation("RepairToolReqIssued", fields: [issuedById], references: [id])
   returnedByUser        User? @relation("RepairToolReqReturned", fields: [returnedById], references: [id])
+
+  // Damaged Tool Report relations
+  damagedToolReports DamagedToolReport[] @relation("DamagedToolReportToolReq")
 
   @@map("repair_tool_requests")
 }
@@ -2568,6 +2605,101 @@ model RepairCompletion {
   plannerClosedBy      User? @relation("RepairCompPlannerClosed", fields: [plannerClosedById], references: [id])
 
   @@map("repair_completions")
+}
+
+// 6. SparePartReturn — Reusable parts returned from machine for refurbishment
+model SparePartReturn {
+  id                  String    @id @default(cuid())
+  returnNumber        String    @unique // format SPR-YYYYMM-NNNN
+  workOrderId         String    // → WorkOrder
+  materialRequestId   String?   // → RepairMaterialRequest
+  itemId              String?   // → InventoryItem
+  itemName            String
+  partSerialNumber    String?
+  quantity            Float     @default(1)
+  conditionOnReturn   String    @default("used") // new, good, fair, poor, damaged, worn
+  damageDescription   String?   @db.Text // description of any damage/wear
+  refurbishmentNeeded Boolean   @default(false)
+  refurbishmentNotes  String?   @db.Text
+  estimatedRefurbCost Float?
+  actualRefurbCost    Float?    @default(0)
+  status              String    @default("pending") // pending, inspected, refurbishing, refurbished, returned_to_store, disposed, rejected
+  inspectedById       String?   // → User
+  inspectedAt         DateTime?
+  inspectionNotes     String?   @db.Text
+  refurbisherId       String?   // → User (who performs refurbishment)
+  refurbishmentStart  DateTime?
+  refurbishmentEnd    DateTime?
+  returnedToStoreById String?   // → User (storekeeper who accepts back)
+  returnedToStoreAt   DateTime?
+  disposedById        String?
+  disposedAt          DateTime?
+  disposalReason      String?
+  plantId             String?
+  requestedById       String    // → User (technician who returned the part)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  workOrder       WorkOrder?             @relation(fields: [workOrderId], references: [id])
+  materialRequest RepairMaterialRequest? @relation("SparePartReturnMatReq", fields: [materialRequestId], references: [id])
+  item            InventoryItem?         @relation("SparePartReturnItem", fields: [itemId], references: [id])
+  requestedBy     User                   @relation("SparePartReturnRequested", fields: [requestedById], references: [id])
+  inspectedBy     User?                  @relation("SparePartReturnInspected", fields: [inspectedById], references: [id])
+  refurbisher     User?                  @relation("SparePartReturnRefurbished", fields: [refurbisherId], references: [id])
+  returnedToStore User?                  @relation("SparePartReturnStored", fields: [returnedToStoreById], references: [id])
+  disposedByUser  User?                  @relation("SparePartReturnDisposed", fields: [disposedById], references: [id])
+
+  @@index([workOrderId])
+  @@index([status])
+  @@index([plantId])
+  @@index([itemId])
+  @@map("spare_part_returns")
+}
+
+// 7. DamagedToolReport — Structured damage reporting for tools
+model DamagedToolReport {
+  id              String   @id @default(cuid())
+  reportNumber    String   @unique // format DTR-YYYYMM-NNNN
+  toolId          String   // → Tool
+  workOrderId     String?  // → WorkOrder
+  toolRequestId   String?  // → RepairToolRequest
+  damageType      String   // broken, worn, malfunctioning, missing_parts, cosmetic, other
+  damageSeverity  String   @default("medium") // low, medium, high, critical
+  damageDescription String  @db.Text
+  damagePhotoUrls String   @default("[]") @db.Text // JSON array of photo URLs
+  occurredAt      DateTime?
+  reportedById    String   // → User
+  technicianId    String?  // → User (technician responsible, if different)
+  status          String   @default("reported") // reported, assessed, repair_quoted, repair_in_progress, repaired, written_off, replaced
+  assessmentNotes String?  @db.Text
+  estimatedRepairCost Float?
+  actualRepairCost    Float?
+  repairVendorId  String?
+  repairVendorName String?
+  repairStartedAt DateTime?
+  repairCompletedAt DateTime?
+  repairCompletedById String?
+  writtenOffById  String?
+  writtenOffAt    DateTime?
+  writeOffReason  String?
+  replacedWithToolId String?
+  plantId         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tool              Tool?               @relation(fields: [toolId], references: [id])
+  workOrder         WorkOrder?          @relation(fields: [workOrderId], references: [id])
+  toolRequest       RepairToolRequest?  @relation("DamagedToolReportToolReq", fields: [toolRequestId], references: [id])
+  reportedBy        User                @relation("DamagedToolReported", fields: [reportedById], references: [id])
+  technician        User?               @relation("DamagedToolTechnician", fields: [technicianId], references: [id])
+  repairCompletedBy User?               @relation("DamagedToolRepaired", fields: [repairCompletedById], references: [id])
+  writtenOffBy      User?               @relation("DamagedToolWrittenOff", fields: [writtenOffById], references: [id])
+
+  @@index([toolId])
+  @@index([workOrderId])
+  @@index([status])
+  @@index([plantId])
+  @@map("damaged_tool_reports")
 }
 
 // ============================================================================

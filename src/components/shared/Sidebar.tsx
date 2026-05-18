@@ -76,6 +76,7 @@ import {
   Shield,
   ClipboardCheck,
   Timer,
+  Recycle,
 } from 'lucide-react';
 
 // ============================================================================
@@ -147,7 +148,10 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'repairs-tool-transfers', label: 'Tool Transfers', icon: ArrowRightLeft },
         { page: 'repairs-downtime', label: 'Downtime', icon: Timer },
         { page: 'repairs-completion', label: 'Completion', icon: ClipboardCheck },
+        { page: 'repairs-spare-part-returns', label: 'Spare Part Returns', icon: Recycle },
+        { page: 'repairs-damaged-tools', label: 'Damaged Tools', icon: AlertTriangle },
         { page: 'repairs-analytics', label: 'Analytics', icon: BarChart3 },
+        { page: 'repairs-reports', label: 'Reports', icon: FileText },
       ],
     },
     {

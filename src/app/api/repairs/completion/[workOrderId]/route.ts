@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { createAuditLog } from '@/lib/audit';
 
 // GET /api/repairs/completion/[workOrderId]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ workOrderId: string }> }) {
@@ -21,6 +22,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
             woNumber: true,
             title: true,
             status: true,
+            isLocked: true,
+            lockReason: true,
+            lockedBy: { select: { id: true, fullName: true } },
             assignedSupervisor: { select: { id: true, fullName: true } },
             planner: { select: { id: true, fullName: true } },
             assignedTo: { select: { id: true, fullName: true, avatar: true } },
@@ -45,13 +49,41 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const { workOrderId } = await params;
     const body = await request.json();
-    const { action, completionNotes, findings, rootCause, correctiveAction, materialsUsedSummary, toolsUsedSummary, totalLaborHours, totalMaterialCost, totalToolCost, totalDowntimeMinutes, supervisorReviewNotes, reworkReason, closureNotes } = body;
+    const { action, completionNotes, findings, rootCause, correctiveAction, materialsUsedSummary, toolsUsedSummary, totalLaborHours, totalMaterialCost, totalToolCost, totalDowntimeMinutes, supervisorReviewNotes, reworkReason, closureNotes, overrideReason } = body;
 
     const wo = await db.workOrder.findUnique({
       where: { id: workOrderId },
       include: { assignedSupervisor: { select: { id: true, fullName: true } }, planner: { select: { id: true, fullName: true } }, assignee: { select: { id: true, fullName: true } } },
     });
     if (!wo) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+
+    // ── IMMUTABILITY CHECK ──
+    // After planner_close, the WO is locked. Only GET is allowed.
+    // Admin can bypass with explicit overrideReason.
+    if (wo.isLocked) {
+      // Only GET is allowed on locked WOs
+      // For POST, only admin with explicit overrideReason can proceed
+      if (!session.roles.includes('admin')) {
+        return NextResponse.json({
+          success: false,
+          error: `Work order is locked${wo.lockReason ? ` (${wo.lockReason})` : ''}. No mutations allowed. Contact an administrator if changes are needed.`,
+          isLocked: true,
+        }, { status: 403 });
+      }
+
+      if (!overrideReason) {
+        return NextResponse.json({
+          success: false,
+          error: `Work order is locked. Admin override requires an explicit 'overrideReason' field.`,
+          isLocked: true,
+        }, { status: 400 });
+      }
+
+      // Admin with override - proceed but log the override
+      await createAuditLog(session.userId, 'RepairCompletion', 'admin_override_locked_wo', workOrderId, {
+        newValues: { action, overrideReason },
+      });
+    }
 
     const now = new Date();
 
@@ -65,6 +97,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           calculatedLaborHours += (tl.duration || 0);
         }
       }
+
+      // Check if technician has logged time (warning only, allow submission)
+      const hasTimeLogs = timeLogs.length > 0;
+      const hasDuration = timeLogs.some((tl) => tl.duration && tl.duration > 0);
 
       // Calculate downtime
       const downtimes = await db.workOrderDowntime.findMany({ where: { workOrderId } });
@@ -123,11 +159,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         await notifyUser(wo.assignedSupervisorId, 'wo_completed', 'Work Order Completed - Review Required', `WO ${wo.woNumber} has been completed by technician. Your review is required.`, 'work_order', workOrderId, 'maintenance-work-orders');
       }
 
-      await db.auditLog.create({
-        data: { userId: session.userId, action: 'submit_completion', entityType: 'repair_completion', entityId: completion.id, newValues: JSON.stringify({ workOrderId, status: 'completed' }) },
+      await createAuditLog(session.userId, 'RepairCompletion', 'submit_completion', completion.id, {
+        newValues: { workOrderId, status: 'completed' },
       });
 
-      return NextResponse.json({ success: true, data: completion });
+      return NextResponse.json({
+        success: true,
+        data: completion,
+        warnings: !hasTimeLogs || !hasDuration
+          ? ['No time has been logged for this work order. Consider logging time for accurate records.']
+          : undefined,
+      });
     }
 
     // Supervisor approval
@@ -150,8 +192,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         await notifyUser(wo.plannerId, 'wo_completed', 'Work Order Ready for Closure', `WO ${wo.woNumber} has been supervisor-approved. Ready for final closure.`, 'work_order', workOrderId, 'maintenance-work-orders');
       }
 
-      await db.auditLog.create({
-        data: { userId: session.userId, action: 'supervisor_approve_completion', entityType: 'repair_completion', entityId: completion.id, newValues: JSON.stringify({ supervisorStatus: 'approved' }) },
+      await createAuditLog(session.userId, 'RepairCompletion', 'supervisor_approve_completion', completion.id, {
+        newValues: { supervisorStatus: 'approved' },
       });
 
       return NextResponse.json({ success: true, data: completion });
@@ -179,8 +221,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         await notifyUser(wo.assignedTo, 'wo_rework', 'Rework Requested', `WO ${wo.woNumber}: ${reworkReason}`, 'work_order', workOrderId, 'maintenance-work-orders');
       }
 
-      await db.auditLog.create({
-        data: { userId: session.userId, action: 'supervisor_request_rework', entityType: 'repair_completion', entityId: completion.id, newValues: JSON.stringify({ supervisorStatus: 'rework_requested', reworkReason }) },
+      await createAuditLog(session.userId, 'RepairCompletion', 'supervisor_request_rework', completion.id, {
+        newValues: { supervisorStatus: 'rework_requested', reworkReason },
       });
 
       return NextResponse.json({ success: true, data: completion });
@@ -192,29 +234,43 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       if (!completion) return NextResponse.json({ success: false, error: 'Completion record not found' }, { status: 400 });
       if (completion.supervisorStatus !== 'approved') return NextResponse.json({ success: false, error: 'Cannot close: supervisor has not approved yet' }, { status: 400 });
 
-      completion = await db.repairCompletion.update({
-        where: { workOrderId },
-        data: { plannerStatus: 'closed', plannerClosedById: session.userId, plannerClosedAt: now, closureNotes: closureNotes || null },
-      });
+      // Perform planner_close with WO immutability (lock)
+      const [updatedCompletion] = await db.$transaction([
+        // Update completion record
+        db.repairCompletion.update({
+          where: { workOrderId },
+          data: { plannerStatus: 'closed', plannerClosedById: session.userId, plannerClosedAt: now, closureNotes: closureNotes || null },
+        }),
+        // Close WO and LOCK it (immutability)
+        db.workOrder.update({
+          where: { id: workOrderId },
+          data: {
+            status: 'closed',
+            isLocked: true,
+            lockedBy: session.userId,
+            lockedAt: now,
+            lockReason: 'Closed by planner — work order is now immutable',
+            laborCost: completion.totalLaborHours * (Number(process.env.DEFAULT_LABOR_RATE_HOURS) || 50),
+            partsCost: completion.totalMaterialCost,
+          },
+        }),
+      ]);
 
-      // Close WO
-      await db.workOrder.update({
-        where: { id: workOrderId },
-        data: { status: 'closed', laborCost: completion.totalLaborHours * (Number(process.env.DEFAULT_LABOR_RATE_HOURS) || 50), partsCost: completion.totalMaterialCost },
+      await db.workOrderStatusHistory.create({
+        data: { workOrderId, fromStatus: wo.status, toStatus: 'closed', performedById: session.userId, notes: 'Planner closed work order — locked for immutability' },
       });
-      await db.workOrderStatusHistory.create({ data: { workOrderId, fromStatus: wo.status, toStatus: 'closed', performedById: session.userId, notes: 'Planner closed work order' } });
 
       // Notify all parties
       const notifyUsers = [wo.assignedTo, wo.assignedSupervisorId].filter(Boolean) as string[];
       for (const uid of notifyUsers) {
-        await notifyUser(uid, 'wo_closed', 'Work Order Closed', `WO ${wo.woNumber} has been closed by planner.`, 'work_order', workOrderId);
+        await notifyUser(uid, 'wo_closed', 'Work Order Closed', `WO ${wo.woNumber} has been closed by planner and locked.`, 'work_order', workOrderId);
       }
 
-      await db.auditLog.create({
-        data: { userId: session.userId, action: 'planner_close_completion', entityType: 'repair_completion', entityId: completion.id, newValues: JSON.stringify({ plannerStatus: 'closed' }) },
+      await createAuditLog(session.userId, 'RepairCompletion', 'planner_close_completion', updatedCompletion.id, {
+        newValues: { plannerStatus: 'closed', isLocked: true, lockReason: 'Closed by planner' },
       });
 
-      return NextResponse.json({ success: true, data: completion });
+      return NextResponse.json({ success: true, data: updatedCompletion });
     }
 
     return NextResponse.json({ success: false, error: `Unknown action: ${action}` }, { status: 400 });

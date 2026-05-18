@@ -60,6 +60,10 @@ const RepairToolTransfersPage = lazy(() => import('./modules/RepairsPages').then
 const RepairDowntimePage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairDowntimePage })));
 const RepairCompletionPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairCompletionPage })));
 const RepairAnalyticsPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairAnalyticsPage })));
+const SparePartReturnsPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.SparePartReturnsPage })));
+const DamagedToolReportsPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.DamagedToolReportsPage })));
+const MaintenanceReportsPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.MaintenanceReportsPage })));
+
 
 // Inventory
 const InventoryPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventoryPage })));
@@ -232,6 +236,9 @@ function AppShell() {
       case 'repairs-downtime': return <RepairDowntimePage />;
       case 'repairs-completion': return <RepairCompletionPage />;
       case 'repairs-analytics': return <RepairAnalyticsPage />;
+      case 'repairs-spare-part-returns': return <SparePartReturnsPage />;
+      case 'repairs-damaged-tools': return <DamagedToolReportsPage />;
+      case 'repairs-reports': return <MaintenanceReportsPage />;
       // IoT
       case 'iot-devices': return <IotDevicesPage />;
       case 'iot-monitoring': return <IotMonitoringPage />;
@@ -362,6 +369,9 @@ function AppShell() {
     'repairs-downtime': 'Downtime Tracking',
     'repairs-completion': 'Completion & Closure',
     'repairs-analytics': 'Repairs Analytics',
+    'repairs-spare-part-returns': 'Spare Part Returns',
+    'repairs-damaged-tools': 'Damaged Tool Reports',
+    'repairs-reports': 'Maintenance Reports',
     // IoT
     'iot-devices': 'IoT Devices',
     'iot-monitoring': 'IoT Monitoring',

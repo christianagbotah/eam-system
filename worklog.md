@@ -5028,3 +5028,125 @@ Stage Summary:
 - 1 new import: crypto (Node.js built-in)
 - ESLint passes with zero errors
 - Full backward compatibility with existing tests and API consumers
+
+---
+Task ID: 3
+Agent: repair-api-builder
+Task: Build repair API routes for spare parts, damaged tools, reports, time logging, and WO enforcement
+
+Work Log:
+- Created spare part returns API (CRUD + workflow)
+- Created damaged tool reports API (CRUD + workflow)  
+- Created comprehensive reports API (6 report types)
+- Enhanced time logs for team member logging
+- Created active WO enforcement API
+- Enhanced completion route with immutability
+
+### 1. Spare Part Returns API (`src/app/api/repairs/spare-part-returns/route.ts`) — NEW
+- **GET**: List spare part returns with filters (status, workOrderId, plantId, itemId), search, pagination
+  - Includes: workOrder, item, requestedBy, inspectedBy, refurbisher, returnedToStore, disposedByUser
+  - `?stats=true` returns aggregate counts by status, pending inspection/refurbishment/store return counts
+- **POST**: Create spare part return with auto-generated returnNumber (SPR-YYYYMM-NNNN)
+  - Validates work order and inventory item existence
+  - Auto-resolves plantId from WO if not provided
+  - Audit log and notification on creation
+
+### 2. Spare Part Returns Detail API (`src/app/api/repairs/spare-part-returns/[id]/route.ts`) — NEW
+- **GET**: Single return with all relations (workOrder with asset, materialRequest, item with stock, all user relations)
+- **PUT**: Update basic fields (itemName, quantity, conditionOnReturn, etc.) with terminal status protection
+- **POST** workflow actions:
+  - `inspect`: pending→inspected, records inspector, notes, refurbishmentNeeded decision
+  - `start_refurbishment`: inspected→refurbishing, records refurbisher and start time
+  - `complete_refurbishment`: refurbishing→refurbished, records end time and actual cost
+  - `return_to_store`: refurbished→returned_to_store, creates StockMovement to restore inventory, records storekeeper
+  - `dispose`: any→disposed, records disposal reason and who disposed
+  - `reject`: pending→rejected, records reason
+  - All actions include audit logs and notifications
+
+### 3. Damaged Tool Reports API (`src/app/api/repairs/damaged-tools/route.ts`) — NEW
+- **GET**: List damaged tool reports with filters (status, workOrderId, plantId, toolId, damageType), search, pagination
+  - Includes: tool, workOrder, reportedBy, technician, repairCompletedBy, writtenOffBy
+  - `?stats=true` returns aggregate counts by status, severity, damage type, pending/in-repair counts, total repair cost
+- **POST**: Create damaged tool report with auto-generated reportNumber (DTR-YYYYMM-NNNN)
+  - Transactional: creates report + updates Tool status to 'in_repair' + creates ToolTransaction
+  - Auto-resolves technicianId from tool's assignee if not provided
+  - Audit log and notification on creation
+
+### 4. Damaged Tool Reports Detail API (`src/app/api/repairs/damaged-tools/[id]/route.ts`) — NEW
+- **GET**: Single report with all relations (tool with assignee, workOrder with asset, all user relations)
+- **PUT**: Update basic fields with terminal status protection
+- **POST** workflow actions:
+  - `assess`: reported→assessed, assessment notes, estimated repair cost
+  - `quote_repair`: assessed→repair_quoted, vendor info, estimated cost
+  - `start_repair`: repair_quoted→repair_in_progress, records start time
+  - `complete_repair`: repair_in_progress→repaired, actual cost, transactionally updates Tool status to 'available' + creates ToolTransaction
+  - `write_off`: any→written_off, reason, transactionally updates Tool status to 'retired' + ToolTransaction
+  - `replace`: any→replaced, replacement tool ID, transactionally retires original tool + activates replacement
+  - All actions include audit logs and notifications
+
+### 5. Comprehensive Reports API (`src/app/api/repairs/reports/route.ts`) — NEW
+- **GET** `/api/repairs/reports?type=<type>&plantId=&from=&to=`
+- 6 report types:
+  - `lifecycle`: Full MR→WO lifecycle tracking with stage durations, turnaround times, averages by stage
+  - `execution`: Completion rates by type/priority, actual vs estimated hours, variance, rework analysis, team metrics
+  - `technician_performance`: Per-technician WO count, avg time, time accuracy, rework rate, completion rate
+  - `materials`: Cost by WO, spare part return analysis, return rates, refurbishment costs
+  - `downtime`: Total/avg downtime, by asset/category/impact level, production loss, top 10 assets
+  - `tools`: Damage reports, repair costs, by type/severity/category, most damaged tools, transfer frequency
+- All reports support plantId, date range filtering
+- Performance-optimized with targeted includes and aggregation
+
+### 6. Enhanced Time Logs API (`src/app/api/work-orders/[id]/time-logs/route.ts`) — MODIFIED
+- **GET** handler added: Returns time logs with summary (total/personal/team entries and hours)
+  - `?includeTeamLogs=true` returns all team logs with loggedBy user info
+  - Default: only returns current user's logs
+- **POST** enhanced for team member time logging:
+  - New fields: `loggedForUserId` (target team member) and `isTeamLog` (boolean)
+  - Validates session user is team leader, assignee, or admin for team logging
+  - Validates target user is a team member or assignee of the WO
+  - Sets `loggedById` to session user (who logged) and `userId` to target (who worked)
+  - Team logs don't update WO's actualHours directly (to avoid double counting)
+  - Pause action filters by userId for correct duration calculation per user
+  - Audit log includes team log metadata
+
+### 7. Active WO Enforcement API (`src/app/api/work-orders/active-enforcement/route.ts`) — NEW
+- **GET**: Checks if technician has active WO sessions (unclosed time logs)
+  - Finds all in_progress WOs assigned to user (primary + team member)
+  - For each WO, checks for unclosed start/resume logs (no subsequent pause)
+  - Returns: `hasActiveWO`, `activeWorkOrder` (the one with unclosed log), `allInProgressWos` with time tracking status
+  - Message guidance for different states (active session, multiple sessions, no active WOs)
+  - Enforces single-WO-at-a-time rule
+
+### 8. Enhanced Completion Route (`src/app/api/repairs/completion/[workOrderId]/route.ts`) — MODIFIED
+- **WO Immutability**: After `planner_close`, sets `isLocked=true` on the WO with lockReason
+  - Locked WOs return 403 for all non-admin users on POST
+  - Admin bypass requires explicit `overrideReason` field
+  - Admin override is audit-logged
+- **GET** now includes `isLocked`, `lockReason`, `lockedBy` in response
+- **Submit action**: Checks if technician has logged time; returns `warnings` array if no time logged (allows submission)
+- Uses `createAuditLog` from audit module (instead of raw db.auditLog.create)
+
+### 9. Quality
+- All 8 files pass ESLint with zero new errors (verified with `npx eslint`)
+- All endpoints follow existing patterns: getSession, createAuditLog, notifyUser
+- All POST/PUT actions include audit logging and notifications
+- Proper error handling with typed error messages
+- No changes to Prisma schema — all models already exist
+
+Stage Summary:
+- New files: 6 API route files
+  - `/api/repairs/spare-part-returns/route.ts`
+  - `/api/repairs/spare-part-returns/[id]/route.ts`
+  - `/api/repairs/damaged-tools/route.ts`
+  - `/api/repairs/damaged-tools/[id]/route.ts`
+  - `/api/repairs/reports/route.ts`
+  - `/api/work-orders/active-enforcement/route.ts`
+- Enhanced files: 2 API route files
+  - `/api/work-orders/[id]/time-logs/route.ts`
+  - `/api/repairs/completion/[workOrderId]/route.ts`
+- All endpoints include auth (getSession), notifications (notifyUser), audit logging (createAuditLog)
+- Full workflow state machines for spare part returns (6 actions) and damaged tool reports (6 actions)
+- Comprehensive reports with 6 report types covering lifecycle, execution, materials, tools, downtime, technician performance
+- Team time logging with leader/member validation
+- Active WO enforcement for single-work-order-at-a-time rule
+- WO immutability after planner closure with admin override capability
