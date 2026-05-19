@@ -10,15 +10,17 @@ export interface User {
   fullName: string;
   avatar?: string;
   phone?: string;
+  staffId?: string;
+  department?: string;
   departmentId?: string;
   supervisorId?: string;
   plantId?: string;
   status: string;
+  isVendorAdmin?: boolean;
   lastLoginAt?: string;
   createdAt: string;
   updatedAt: string;
   // Joined
-  department?: Department;
   plant?: Plant;
   roles?: Role[];
   permissions?: string[];

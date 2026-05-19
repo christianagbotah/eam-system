@@ -45,7 +45,7 @@ import {
   GitBranch, ScanLine, Truck, FolderOpen, Target, TrendingUp, Zap, Mail,
   Send, ShieldAlert, ShieldCheck, BarChart3, Package, ClipboardList, Gauge, X,
   AlertCircle, FileBarChart, EyeOff, Save, Wifi, Play, Monitor, HeartPulse, Server, MessageSquare,
-  FileDown, FileUp, Info, Filter, ExternalLink, Phone,
+  FileDown, FileUp, Info, Filter, ExternalLink, Phone, Hash,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { EmptyState, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
@@ -69,7 +69,7 @@ export function SettingsUsersPage() {
   const [viewOpen, setViewOpen] = useState(false);
   const [resetPwd, setResetPwd] = useState('');
 
-  const emptyForm = { fullName: '', username: '', email: '', phone: '', department: '', password: '', status: 'active' as string, roleIds: [] as string[] };
+  const emptyForm = { fullName: '', username: '', email: '', phone: '', staffId: '', department: '', password: '', status: 'active' as string, roleIds: [] as string[] };
   const [createForm, setCreateForm] = useState(emptyForm);
   const [editForm, setEditForm] = useState(emptyForm);
 
@@ -91,7 +91,7 @@ export function SettingsUsersPage() {
   const filteredUsers = useMemo(() => {
     if (!searchText.trim()) return users;
     const q = searchText.toLowerCase();
-    return users.filter(u => u.fullName.toLowerCase().includes(q) || u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+    return users.filter(u => u.fullName.toLowerCase().includes(q) || u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.staffId || '').toLowerCase().includes(q));
   }, [users, searchText]);
 
   const handleCreate = async () => {
@@ -113,7 +113,7 @@ export function SettingsUsersPage() {
 
   const openEdit = (u: User) => {
     setSelectedUser(u);
-    setEditForm({ fullName: u.fullName, username: u.username, email: u.email, phone: u.phone || '', department: u.department || '', password: '', status: u.status, roleIds: (u.userRoles as UserRole[])?.map(ur => ur.roleId) || [] });
+    setEditForm({ fullName: u.fullName, username: u.username, email: u.email, phone: u.phone || '', staffId: u.staffId || '', department: u.department || '', password: '', status: u.status, roleIds: (u.userRoles as UserRole[])?.map(ur => ur.roleId) || [] });
     setEditOpen(true);
   };
 
@@ -155,8 +155,8 @@ export function SettingsUsersPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>User</TableHead>
-                <TableHead>Username</TableHead>
-                <TableHead className="hidden md:table-cell">Email</TableHead>
+                <TableHead className="hidden md:table-cell">Employee Code</TableHead>
+                <TableHead className="hidden lg:table-cell">Email</TableHead>
                 <TableHead className="hidden lg:table-cell">Department</TableHead>
                 <TableHead className="hidden md:table-cell">Roles</TableHead>
                 <TableHead>Status</TableHead>
@@ -174,8 +174,8 @@ export function SettingsUsersPage() {
                       <span className="font-medium text-sm">{u.fullName}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{u.username}</TableCell>
-                  <TableCell className="text-sm hidden md:table-cell">{u.email}</TableCell>
+                  <TableCell className="font-mono text-xs hidden md:table-cell">{u.staffId || u.username}</TableCell>
+                  <TableCell className="text-sm hidden lg:table-cell">{u.email}</TableCell>
                   <TableCell className="text-sm hidden lg:table-cell">{u.department || '-'}</TableCell>
                   <TableCell className="hidden md:table-cell">
                     <div className="flex gap-1 flex-wrap">
@@ -213,9 +213,10 @@ export function SettingsUsersPage() {
               <div className="space-y-1.5"><Label>Username *</Label><Input value={createForm.username} onChange={e => setCreateForm(f => ({ ...f, username: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Email *</Label><Input type="email" value={createForm.email} onChange={e => setCreateForm(f => ({ ...f, email: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Employee Code</Label><Input value={createForm.staffId} onChange={e => setCreateForm(f => ({ ...f, staffId: e.target.value }))} placeholder="e.g. EMP-001" /></div>
               <div className="space-y-1.5"><Label>Phone</Label><Input value={createForm.phone} onChange={e => setCreateForm(f => ({ ...f, phone: e.target.value }))} /></div>
             </div>
+            <div className="space-y-1.5"><Label>Email *</Label><Input type="email" value={createForm.email} onChange={e => setCreateForm(f => ({ ...f, email: e.target.value }))} /></div>
             <div className="space-y-1.5"><Label>Password *</Label><Input type="password" value={createForm.password} onChange={e => setCreateForm(f => ({ ...f, password: e.target.value }))} /></div>
             <div className="space-y-1.5">
               <Label>Department</Label>
@@ -271,9 +272,10 @@ export function SettingsUsersPage() {
               <div className="space-y-1.5"><Label>Username</Label><Input value={editForm.username} disabled className="bg-muted" /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Email *</Label><Input type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} /></div>
+              <div className="space-y-1.5"><Label>Employee Code</Label><Input value={editForm.staffId} onChange={e => setEditForm(f => ({ ...f, staffId: e.target.value }))} placeholder="e.g. EMP-001" /></div>
               <div className="space-y-1.5"><Label>Phone</Label><Input value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} /></div>
             </div>
+            <div className="space-y-1.5"><Label>Email *</Label><Input type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} /></div>
             <div className="space-y-1.5">
               <Label>Department</Label>
               <AsyncSearchableSelect
@@ -360,6 +362,15 @@ export function SettingsUsersPage() {
                 <div className="space-y-3">
                   <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Contact Information</h4>
                   <div className="grid gap-3">
+                    {viewUser.staffId && (
+                      <div className="flex items-center gap-3">
+                        <Hash className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Employee Code</p>
+                          <p className="text-sm font-mono">{viewUser.staffId}</p>
+                        </div>
+                      </div>
+                    )}
                     <div className="flex items-center gap-3">
                       <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
                       <span className="text-sm">{viewUser.email || '-'}</span>
