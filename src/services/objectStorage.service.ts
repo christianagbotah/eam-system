@@ -4,9 +4,14 @@
 
 import { createLogger } from '@/lib/logger';
 import { writeFile, mkdir, readFile, unlink, stat, readdir } from 'fs/promises';
-import { join } from 'path';
 import { existsSync } from 'fs';
+
 import crypto from 'crypto';
+
+/** Simple path join using string concat — avoids Turbopack tracing path.join() with dynamic args */
+function pjoin(...segments: string[]): string {
+  return segments.filter(Boolean).join('/');
+}
 
 const logger = createLogger('objectStorage');
 
@@ -35,7 +40,7 @@ export interface StorageObject {
   url: string;
 }
 
-const STORAGE_DIR = process.env.STORAGE_PATH || join(process.cwd(), 'data', 'storage');
+const STORAGE_DIR = process.env.STORAGE_PATH || pjoin(process.cwd(), 'data', 'storage');
 const CDN_BASE = process.env.CDN_BASE_URL || '/api/files';
 const MAX_FILE_SIZE = parseInt(process.env.MAX_UPLOAD_SIZE || '52428800', 10); // 50MB
 
@@ -99,7 +104,7 @@ export class ObjectStorageService {
       throw new Error(validation.error);
     }
 
-    const filePath = join(STORAGE_DIR, key);
+    const filePath = pjoin(STORAGE_DIR, key);
     await this.ensureDir(filePath.substring(0, filePath.lastIndexOf('/')));
 
     await writeFile(filePath, buffer);
@@ -122,7 +127,7 @@ export class ObjectStorageService {
    * Download a file
    */
   static async download(key: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
-    const filePath = join(STORAGE_DIR, key);
+    const filePath = pjoin(STORAGE_DIR, key);
 
     try {
       const buffer = await readFile(filePath);
@@ -147,7 +152,7 @@ export class ObjectStorageService {
    * Delete a file
    */
   static async delete(key: string): Promise<boolean> {
-    const filePath = join(STORAGE_DIR, key);
+    const filePath = pjoin(STORAGE_DIR, key);
 
     try {
       await unlink(filePath);
@@ -162,7 +167,7 @@ export class ObjectStorageService {
    * Check if file exists
    */
   static async exists(key: string): Promise<boolean> {
-    const filePath = join(STORAGE_DIR, key);
+    const filePath = pjoin(STORAGE_DIR, key);
     try {
       await stat(filePath);
       return true;
@@ -175,7 +180,7 @@ export class ObjectStorageService {
    * Get file metadata
    */
   static async getMetadata(key: string): Promise<StorageObject | null> {
-    const filePath = join(STORAGE_DIR, key);
+    const filePath = pjoin(STORAGE_DIR, key);
 
     try {
       const stats = await stat(filePath);
@@ -198,7 +203,7 @@ export class ObjectStorageService {
    * List objects with prefix
    */
   static async list(prefix: string, limit = 100): Promise<StorageObject[]> {
-    const dirPath = join(STORAGE_DIR, prefix);
+    const dirPath = pjoin(STORAGE_DIR, prefix);
 
     try {
       if (!existsSync(dirPath)) return [];
@@ -209,7 +214,7 @@ export class ObjectStorageService {
       for (const file of files) {
         if (objects.length >= limit) break;
 
-        const fullPath = join(dirPath, file);
+        const fullPath = pjoin(dirPath, file);
         try {
           const stats = await stat(fullPath);
           if (stats.isFile()) {
@@ -259,7 +264,7 @@ export class ObjectStorageService {
     totalSize: number;
     byPrefix: Record<string, { files: number; size: number }>;
   }> {
-    const baseDir = prefix ? join(STORAGE_DIR, prefix) : STORAGE_DIR;
+    const baseDir = prefix ? pjoin(STORAGE_DIR, prefix) : STORAGE_DIR;
 
     const stats = {
       totalFiles: 0,
@@ -275,7 +280,7 @@ export class ObjectStorageService {
 
         const entries = await readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
-          const fullPath = join(dir, entry.name);
+          const fullPath = pjoin(dir, entry.name);
           if (entry.isDirectory()) {
             await walkDir(fullPath, depth + 1);
           } else {
