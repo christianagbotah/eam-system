@@ -75,7 +75,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
       if (res.success && Array.isArray(res.data)) {
         const enabled = new Set<string>();
         res.data.forEach((m: any) => {
-          if (m.isEnabled || m.isCore) enabled.add(m.code);
+          if (m.isEnabled || m.isCore) enabled.add(m.code.toLowerCase());
         });
         // Safety: if no modules are enabled, keep null so all sidebar items remain visible
         if (enabled.size === 0) {

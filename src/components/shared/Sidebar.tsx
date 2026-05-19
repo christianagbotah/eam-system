@@ -3,7 +3,6 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
-import { api } from '@/lib/api';
 import { getInitials } from '@/components/shared/helpers';
 import type { PageName } from '@/types';
 
@@ -86,26 +85,19 @@ import {
 
 // Sidebar inner content extracted as a separate component with collapsible submenus
 function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
-  const { currentPage, navigate, sidebarOpen } = useNavigationStore();
+  const { currentPage, navigate, sidebarOpen, enabledModules: storeModules } = useNavigationStore();
   const expanded = forceExpanded ?? sidebarOpen;
   const { user, permissions, hasPermission, isAdmin, logout } = useAuthStore();
   const [openMenus, setOpenMenus] = useState<string[]>([]);
-  const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
 
-  // Fetch enabled module codes on mount
-  useEffect(() => {
-    api.get('/api/modules').then(res => {
-      if (res.success && res.data) {
-        const enabled = new Set<string>();
-        (res.data || []).forEach((m: any) => {
-          if (m.isCore || m.isEnabled) {
-            enabled.add(m.code.toLowerCase());
-          }
-        });
-        setEnabledModules(enabled);
-      }
-    });
-  }, []);
+  // Subscribe to enabled modules from the navigation store.
+  // The store fetches on app init and refreshes when modules are toggled,
+  // so the sidebar stays in sync automatically.
+  const enabledModules = useMemo<Set<string>>(() => {
+    if (!storeModules) return new Set<string>(); // null = not loaded yet → show all (size=0 skips filter)
+    // Store already stores lowercase codes
+    return storeModules;
+  }, [storeModules]);
 
   // Menu group definition
   interface NavGroup {
