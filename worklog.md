@@ -5327,3 +5327,23 @@ Stage Summary:
 - Full CRUD for asset categories with tree table display
 - Responsive dialog for create/edit with AsyncSearchableSelect for parent category
 - Admin-gated create/edit/deactivate/delete operations
+---
+Task ID: sys-diagrams-fix
+Agent: Main Agent
+Task: Fix system-diagrams POST 500 error and WebSocket connection timeout
+
+Work Log:
+- Investigated POST /api/system-diagrams 500 error on production
+- Found API handler lacked null check after db.systemDiagram.create (could return null if DB unavailable)
+- Found audit log creation was blocking - if audit log failed, entire diagram creation failed
+- Found useWebSocket hook was spamming console with connection error messages during reconnection
+- Enhanced POST handler: added null check, wrapped audit log in fire-and-forget try-catch, added console.error logging
+- Enhanced PUT/DELETE handlers with same resilience improvements
+- Enhanced GET handlers with console.error logging for debugging
+- Improved useWebSocket hook: limited error logging to first 2 attempts, increased reconnection delays (2s-10s), reduced attempts to 5
+
+Stage Summary:
+- 3 files modified: system-diagrams/route.ts, system-diagrams/[id]/route.ts, useWebSocket.ts
+- Committed as c2b5c8df and pushed to main
+- WebSocket notification service started on port 3004 in dev environment
+- Key note: production 500 likely caused by system_diagrams table not existing — user needs to run prisma db push on production server
