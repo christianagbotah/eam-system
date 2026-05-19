@@ -3,55 +3,60 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 
 /**
- * Find the "canonical" CompanyModule record for a given systemModuleId.
+ * Consolidate all CompanyModule records for a given systemModuleId into one.
  *
- * Priority (same as GET endpoint):
- *  1. companyId = '__default__'
- *  2. companyId IS NULL  (legacy seed)
- *  3. any other companyId
+ * Because MariaDB treats NULL as distinct in unique indexes, multiple rows
+ * with the same systemModuleId and NULL companyId can coexist under
+ * @@unique([systemModuleId, companyId]).  The seed created NULL records,
+ * while later code used '__default__'.  This function:
+ *   1. Finds ALL records for the systemModuleId
+ *   2. Picks the "best" one (prefer '__default__' over NULL, newest first)
+ *   3. Deletes all others
+ *   4. If the kept record has NULL companyId, migrates it to '__default__'
  *
- * Uses orderBy: createdAt desc so that if multiple NULL records exist
- * (MariaDB allows this in unique indexes), we pick the latest.
+ * Returns the single remaining canonical record (with companyId='__default__').
  */
-async function findCanonicalCompanyModule(systemModuleId: string) {
-  return db.companyModule.findFirst({
-    where: {
-      systemModuleId,
-      OR: [
-        { companyId: '__default__' },
-        { companyId: null },
-      ],
-    },
+async function consolidateCompanyModule(systemModuleId: string) {
+  const allRecords = await db.companyModule.findMany({
+    where: { systemModuleId },
     orderBy: { createdAt: 'desc' },
   });
-}
 
-/**
- * Remove duplicate CompanyModule records for a given systemModuleId,
- * keeping only the canonical one (prefers '__default__' over NULL).
- * This is fire-and-forget — errors are logged but don't block the request.
- */
-async function deduplicateCompanyModules(systemModuleId: string, keepId: string) {
-  try {
-    const duplicates = await db.companyModule.findMany({
-      where: {
-        systemModuleId,
-        id: { not: keepId },
-      },
-      select: { id: true },
-    });
-    if (duplicates.length > 0) {
-      await db.companyModule.deleteMany({
-        where: {
-          systemModuleId,
-          id: { not: keepId },
-        },
+  if (allRecords.length === 0) return null;
+  if (allRecords.length === 1) {
+    const record = allRecords[0];
+    // If the sole record has NULL companyId, migrate it
+    if (!record.companyId) {
+      return db.companyModule.update({
+        where: { id: record.id },
+        data: { companyId: '__default__' },
       });
-      console.log(`[modules] Cleaned up ${duplicates.length} duplicate company_module(s) for systemModule ${systemModuleId.slice(0, 8)}`);
     }
-  } catch (err) {
-    console.warn('[modules] Failed to deduplicate company_modules:', (err as Error).message);
+    return record;
   }
+
+  // Multiple records exist — pick the best one to keep
+  const defaultRecord = allRecords.find(r => r.companyId === '__default__');
+  const keep = defaultRecord || allRecords.find(r => r.companyId === null) || allRecords[0];
+
+  // Delete all others first (before any migration that could hit unique constraint)
+  const idsToDelete = allRecords.map(r => r.id).filter(id => id !== keep.id);
+  if (idsToDelete.length > 0) {
+    await db.companyModule.deleteMany({
+      where: { id: { in: idsToDelete } },
+    });
+    console.log(`[modules] Cleaned up ${idsToDelete.length} duplicate company_module(s) for systemModule ${systemModuleId.slice(0, 8)}`);
+  }
+
+  // Migrate NULL companyId to '__default__' if needed (safe now — duplicates are gone)
+  if (!keep.companyId) {
+    return db.companyModule.update({
+      where: { id: keep.id },
+      data: { companyId: '__default__' },
+    });
+  }
+
+  return keep;
 }
 
 // Shared handler for both PUT and PATCH
@@ -95,15 +100,16 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ success: false, error: 'Core modules cannot be disabled' }, { status: 400 });
     }
 
-    // Use the same deterministic strategy as the GET endpoint
-    const existingCompanyModule = await findCanonicalCompanyModule(id);
+    // Consolidate any duplicate records BEFORE the update.
+    // This handles NULL vs '__default__' ambiguity and ensures a single canonical record.
+    const companyModule = await consolidateCompanyModule(id);
 
-    if (existingCompanyModule?.activationLocked && (isActive === false || isEnabled === false)) {
+    if (companyModule?.activationLocked && (isActive === false || isEnabled === false)) {
       return NextResponse.json({ success: false, error: 'Module activation is locked and cannot be changed' }, { status: 400 });
     }
 
     // Cannot enable a module that is not active (vendor hasn't licensed it)
-    if (isEnabled === true && existingCompanyModule && !existingCompanyModule.isActive) {
+    if (isEnabled === true && companyModule && !companyModule.isActive) {
       return NextResponse.json({ success: false, error: 'Module must be licensed/activated by vendor before enabling' }, { status: 400 });
     }
 
@@ -115,7 +121,6 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       licensedBy?: string | null;
       activatedAt?: Date | null;
       activatedBy?: string | null;
-      companyId?: string;
     } = {};
     if (typeof isActive === 'boolean') {
       updateData.isActive = isActive;
@@ -135,24 +140,15 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       }
     }
 
-    let companyModule;
-    if (existingCompanyModule) {
-      // Ensure the canonical record uses '__default__' companyId for determinism.
-      // If it has NULL companyId (legacy seed), migrate it to '__default__'.
-      if (!existingCompanyModule.companyId) {
-        updateData.companyId = '__default__';
-      }
-
-      companyModule = await db.companyModule.update({
-        where: { id: existingCompanyModule.id },
+    let updated;
+    if (companyModule) {
+      updated = await db.companyModule.update({
+        where: { id: companyModule.id },
         data: updateData,
       });
-
-      // Fire-and-forget: clean up any duplicate records
-      deduplicateCompanyModules(id, existingCompanyModule.id);
     } else {
-      // Create new with deterministic companyId to avoid NULL unique-index issues
-      companyModule = await db.companyModule.create({
+      // No record exists — create fresh
+      updated = await db.companyModule.create({
         data: {
           systemModuleId: id,
           companyId: '__default__',
@@ -170,10 +166,10 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       success: true,
       data: {
         id,
-        isActive: companyModule.isActive,
-        isEnabled: companyModule.isEnabled,
-        activatedAt: companyModule.activatedAt,
-        licensedAt: companyModule.licensedAt,
+        isActive: updated.isActive,
+        isEnabled: updated.isEnabled,
+        activatedAt: updated.activatedAt,
+        licensedAt: updated.licensedAt,
       },
     });
   } catch (error: unknown) {
