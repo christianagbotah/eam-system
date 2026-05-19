@@ -113,7 +113,7 @@ export function SettingsUsersPage() {
 
   const openEdit = (u: User) => {
     setSelectedUser(u);
-    setEditForm({ fullName: u.fullName, username: u.username, email: u.email, phone: u.phone || '', department: u.departmentId || '', password: '', status: u.status, roleIds: (u.userRoles as UserRole[])?.map(ur => ur.roleId) || [] });
+    setEditForm({ fullName: u.fullName, username: u.username, email: u.email, phone: u.phone || '', department: u.department || '', password: '', status: u.status, roleIds: (u.userRoles as UserRole[])?.map(ur => ur.roleId) || [] });
     setEditOpen(true);
   };
 
@@ -226,7 +226,7 @@ export function SettingsUsersPage() {
                   const res = await api.get('/api/departments');
                   if (res.success && res.data) {
                     return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
-                      value: d.id,
+                      value: d.name,
                       label: `${d.name} (${d.code})`,
                     }));
                   }
@@ -283,7 +283,7 @@ export function SettingsUsersPage() {
                   const res = await api.get('/api/departments');
                   if (res.success && res.data) {
                     return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
-                      value: d.id,
+                      value: d.name,
                       label: `${d.name} (${d.code})`,
                     }));
                   }
