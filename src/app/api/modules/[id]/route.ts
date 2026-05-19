@@ -2,6 +2,58 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 
+/**
+ * Find the "canonical" CompanyModule record for a given systemModuleId.
+ *
+ * Priority (same as GET endpoint):
+ *  1. companyId = '__default__'
+ *  2. companyId IS NULL  (legacy seed)
+ *  3. any other companyId
+ *
+ * Uses orderBy: createdAt desc so that if multiple NULL records exist
+ * (MariaDB allows this in unique indexes), we pick the latest.
+ */
+async function findCanonicalCompanyModule(systemModuleId: string) {
+  return db.companyModule.findFirst({
+    where: {
+      systemModuleId,
+      OR: [
+        { companyId: '__default__' },
+        { companyId: null },
+      ],
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+/**
+ * Remove duplicate CompanyModule records for a given systemModuleId,
+ * keeping only the canonical one (prefers '__default__' over NULL).
+ * This is fire-and-forget — errors are logged but don't block the request.
+ */
+async function deduplicateCompanyModules(systemModuleId: string, keepId: string) {
+  try {
+    const duplicates = await db.companyModule.findMany({
+      where: {
+        systemModuleId,
+        id: { not: keepId },
+      },
+      select: { id: true },
+    });
+    if (duplicates.length > 0) {
+      await db.companyModule.deleteMany({
+        where: {
+          systemModuleId,
+          id: { not: keepId },
+        },
+      });
+      console.log(`[modules] Cleaned up ${duplicates.length} duplicate company_module(s) for systemModule ${systemModuleId.slice(0, 8)}`);
+    }
+  } catch (err) {
+    console.warn('[modules] Failed to deduplicate company_modules:', (err as Error).message);
+  }
+}
+
 // Shared handler for both PUT and PATCH
 async function handleUpdate(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -43,12 +95,8 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ success: false, error: 'Core modules cannot be disabled' }, { status: 400 });
     }
 
-    // Find existing company module — in single-tenant mode companyId may be null.
-    // MariaDB treats NULL as distinct in unique indexes, so we find any matching
-    // systemModuleId regardless of companyId.
-    const existingCompanyModule = await db.companyModule.findFirst({
-      where: { systemModuleId: id },
-    });
+    // Use the same deterministic strategy as the GET endpoint
+    const existingCompanyModule = await findCanonicalCompanyModule(id);
 
     if (existingCompanyModule?.activationLocked && (isActive === false || isEnabled === false)) {
       return NextResponse.json({ success: false, error: 'Module activation is locked and cannot be changed' }, { status: 400 });
@@ -67,6 +115,7 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       licensedBy?: string | null;
       activatedAt?: Date | null;
       activatedBy?: string | null;
+      companyId?: string;
     } = {};
     if (typeof isActive === 'boolean') {
       updateData.isActive = isActive;
@@ -86,22 +135,23 @@ async function handleUpdate(request: NextRequest, { params }: { params: Promise<
       }
     }
 
-    // Update or create company module using upsert.
-    // Since @@unique([systemModuleId, companyId]) treats NULL companyId as distinct,
-    // we use upsert on the known existing record, or create with a sentinel companyId.
-    // For single-tenant, if no record exists, create with companyId = '__default__'
-    // to avoid NULL unique-index ambiguity. If a record with companyId=null exists,
-    // the findFirst above will find it and we update by its id.
     let companyModule;
     if (existingCompanyModule) {
+      // Ensure the canonical record uses '__default__' companyId for determinism.
+      // If it has NULL companyId (legacy seed), migrate it to '__default__'.
+      if (!existingCompanyModule.companyId) {
+        updateData.companyId = '__default__';
+      }
+
       companyModule = await db.companyModule.update({
         where: { id: existingCompanyModule.id },
         data: updateData,
       });
+
+      // Fire-and-forget: clean up any duplicate records
+      deduplicateCompanyModules(id, existingCompanyModule.id);
     } else {
-      // Create new — use deterministic companyId to avoid NULL unique-index issues.
-      // First try with a sentinel value; if the table already has a NULL record
-      // that wasn't found (unlikely but possible), upsert handles it.
+      // Create new with deterministic companyId to avoid NULL unique-index issues
       companyModule = await db.companyModule.create({
         data: {
           systemModuleId: id,

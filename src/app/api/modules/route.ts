@@ -2,6 +2,46 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
 
+// Prevent any response caching — module states change dynamically
+export const dynamic = 'force-dynamic';
+
+/**
+ * Pick the correct CompanyModule record for a given system module.
+ *
+ * Background: MariaDB treats NULL as distinct in unique indexes, so
+ * @@unique([systemModuleId, companyId]) allows multiple rows with the same
+ * systemModuleId when companyId IS NULL.  The seed creates records with
+ * companyId=NULL, while later code uses the sentinel '__default__'.  This
+ * helper ensures we consistently pick the "right" record.
+ *
+ * Priority:
+ *  1. companyId = '__default__'  (deterministic, created by the fix code)
+ *  2. companyId IS NULL           (legacy seed data)
+ *  3. companyId = any other value (multi-tenant future-proofing)
+ *  4. any record at all (last resort)
+ */
+function pickCompanyModule(
+  companyModules: Array<{
+    id: string;
+    companyId: string | null;
+    isActive: boolean;
+    isEnabled: boolean;
+    activationLocked: boolean;
+    activatedAt: Date | null;
+    licensedAt: Date | null;
+    licensedBy: string | null;
+  }>,
+) {
+  if (!companyModules || companyModules.length === 0) return null;
+  if (companyModules.length === 1) return companyModules[0];
+
+  return (
+    companyModules.find((cm) => cm.companyId === '__default__') ??
+    companyModules.find((cm) => cm.companyId === null) ??
+    companyModules[0]
+  );
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
@@ -19,8 +59,9 @@ export async function GET(request: NextRequest) {
     });
 
     // Collect all licensedBy user IDs to batch-fetch
-    const licensedByUserIds = modules
-      .map((m) => m.companyModules[0]?.licensedBy)
+    const picked = modules.map((m) => pickCompanyModule(m.companyModules as any));
+    const licensedByUserIds = picked
+      .map((cm) => cm?.licensedBy)
       .filter((id): id is string => !!id);
 
     // Batch fetch all licensed-by users
@@ -33,8 +74,8 @@ export async function GET(request: NextRequest) {
       licensedByUsers = Object.fromEntries(users.map((u) => [u.id, { id: u.id, fullName: u.fullName }]));
     }
 
-    const data = modules.map((m) => {
-      const companyModule = m.companyModules[0];
+    const data = modules.map((m, idx) => {
+      const companyModule = picked[idx];
       return {
         id: m.id,
         code: m.code,

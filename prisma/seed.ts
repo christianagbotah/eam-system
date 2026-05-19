@@ -1065,6 +1065,7 @@ async function seed() {
       await db.companyModule.create({
         data: {
           systemModuleId: sysMod.id,
+          companyId: '__default__', // sentinel value — avoids MariaDB NULL unique-index ambiguity
           isActive: mod.isCore || mod.licensed,
           isEnabled: mod.isCore || mod.licensed,
           licensedAt: mod.isCore ? new Date('2024-01-01') : mod.licensed ? new Date('2024-01-15') : null,
