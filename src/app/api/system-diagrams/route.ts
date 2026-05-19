@@ -56,6 +56,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load system diagrams';
+    console.error('[API /api/system-diagrams GET]', message, error);
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
@@ -71,7 +72,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    const body = await request.json();
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ success: false, error: 'Invalid request body' }, { status: 400 });
+    }
+
     const {
       name,
       description,
@@ -86,11 +93,11 @@ export async function POST(request: NextRequest) {
     const type = bodyType || diagramType;
     const isTemplate = bodyIsTemplate || false;
 
-    if (!name) {
+    if (!name || typeof name !== 'string') {
       return NextResponse.json({ success: false, error: 'Diagram name is required' }, { status: 400 });
     }
 
-    if (!type) {
+    if (!type || typeof type !== 'string') {
       return NextResponse.json({ success: false, error: 'Diagram type is required' }, { status: 400 });
     }
 
@@ -109,12 +116,12 @@ export async function POST(request: NextRequest) {
     const diagram = await db.systemDiagram.create({
       data: {
         name,
-        description: description || null,
+        description: typeof description === 'string' ? description : null,
         type,
         nodes: JSON.stringify(nodes),
         edges: JSON.stringify(edges),
         viewport: viewport ? JSON.stringify(viewport) : null,
-        plantId: plantId || null,
+        plantId: typeof plantId === 'string' ? plantId : null,
         isTemplate,
         createdById: session.userId,
       },
@@ -123,7 +130,13 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    await db.auditLog.create({
+    if (!diagram) {
+      console.error('[API /api/system-diagrams POST] db.systemDiagram.create returned null');
+      return NextResponse.json({ success: false, error: 'Failed to create diagram — database may be unavailable' }, { status: 500 });
+    }
+
+    // Audit log — fire-and-forget, don't fail the main operation
+    db.auditLog.create({
       data: {
         userId: session.userId,
         action: 'create',
@@ -131,11 +144,14 @@ export async function POST(request: NextRequest) {
         entityId: diagram.id,
         newValues: JSON.stringify({ name, type, nodeCount: nodes.length, edgeCount: edges.length }),
       },
+    }).catch((auditErr: unknown) => {
+      console.warn('[API /api/system-diagrams POST] Audit log write failed:', auditErr);
     });
 
     return NextResponse.json({ success: true, data: diagram }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create system diagram';
+    console.error('[API /api/system-diagrams POST]', message, error);
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

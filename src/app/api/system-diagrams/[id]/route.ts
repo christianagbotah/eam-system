@@ -32,6 +32,7 @@ export async function GET(
     return NextResponse.json({ success: true, data: diagram });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load system diagram';
+    console.error('[API /api/system-diagrams/[id] GET]', message, error);
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
@@ -51,7 +52,12 @@ export async function PUT(
     }
 
     const { id } = await params;
-    const body = await request.json();
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ success: false, error: 'Invalid request body' }, { status: 400 });
+    }
 
     const existing = await db.systemDiagram.findUnique({ where: { id } });
     if (!existing) {
@@ -73,17 +79,16 @@ export async function PUT(
       }
     }
 
-    const [updated] = await db.$transaction([
-      db.systemDiagram.update({
-        where: { id },
-        data: { ...updateData, version: { increment: 1 } },
-        include: {
-          createdByIdUser: { select: { id: true, fullName: true, username: true } },
-        },
-      }),
-    ]);
+    const updated = await db.systemDiagram.update({
+      where: { id },
+      data: { ...updateData, version: { increment: 1 } },
+      include: {
+        createdByIdUser: { select: { id: true, fullName: true, username: true } },
+      },
+    });
 
-    await db.auditLog.create({
+    // Audit log — fire-and-forget
+    db.auditLog.create({
       data: {
         userId: session.userId,
         action: 'update',
@@ -92,11 +97,14 @@ export async function PUT(
         oldValues: JSON.stringify({ name: existing.name, type: existing.type, version: existing.version }),
         newValues: JSON.stringify(updateData),
       },
+    }).catch((auditErr: unknown) => {
+      console.warn('[API /api/system-diagrams/[id] PUT] Audit log write failed:', auditErr);
     });
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update system diagram';
+    console.error('[API /api/system-diagrams/[id] PUT]', message, error);
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
@@ -124,7 +132,8 @@ export async function DELETE(
 
     await db.systemDiagram.delete({ where: { id } });
 
-    await db.auditLog.create({
+    // Audit log — fire-and-forget
+    db.auditLog.create({
       data: {
         userId: session.userId,
         action: 'delete',
@@ -133,11 +142,14 @@ export async function DELETE(
         oldValues: JSON.stringify({ name: existing.name, type: existing.type }),
         newValues: JSON.stringify({ deleted: true }),
       },
+    }).catch((auditErr: unknown) => {
+      console.warn('[API /api/system-diagrams/[id] DELETE] Audit log write failed:', auditErr);
     });
 
     return NextResponse.json({ success: true, data: { deleted: true } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to delete system diagram';
+    console.error('[API /api/system-diagrams/[id] DELETE]', message, error);
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

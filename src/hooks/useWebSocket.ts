@@ -11,11 +11,16 @@ interface UseWebSocketReturn {
   emit: (event: string, ...args: unknown[]) => void;
 }
 
+/**
+ * WebSocket hook — connects to the notification service (port 3004) via gateway.
+ * Gracefully degrades when the service is unavailable (no noisy console errors).
+ */
 export function useWebSocket(): UseWebSocketReturn {
   const { user, isAuthenticated } = useAuthStore();
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const handlersRef = useRef<Map<string, Set<(...args: unknown[]) => void>>>(new Map());
+  const errorCountRef = useRef(0);
 
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;
@@ -24,16 +29,17 @@ export function useWebSocket(): UseWebSocketReturn {
     const socket = io('/?XTransformPort=3004', {
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 10000,
     });
 
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      console.log('[WS Hook] Connected:', socket.id);
+      console.log('[WS] Connected:', socket.id);
       setConnected(true);
+      errorCountRef.current = 0;
       socket.emit('auth', { userId: user.id });
       socket.emit('subscribe:notifications', user.id);
 
@@ -46,17 +52,21 @@ export function useWebSocket(): UseWebSocketReturn {
     });
 
     socket.on('disconnect', (reason) => {
-      console.log('[WS Hook] Disconnected:', reason);
+      // Don't log transport-level disconnects — they're noisy
       setConnected(false);
     });
 
     socket.on('connect_error', (error) => {
-      console.warn('[WS Hook] Connection error:', error.message);
+      errorCountRef.current++;
+      // Only log first 2 errors to avoid spamming console during reconnection attempts
+      if (errorCountRef.current <= 2) {
+        console.warn('[WS] Notification service unavailable — real-time features disabled');
+      }
       setConnected(false);
     });
 
     socket.on('auth:success', () => {
-      console.log('[WS Hook] Authenticated');
+      console.log('[WS] Authenticated');
     });
 
     return () => {
