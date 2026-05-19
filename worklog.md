@@ -5347,3 +5347,23 @@ Stage Summary:
 - Committed as c2b5c8df and pushed to main
 - WebSocket notification service started on port 3004 in dev environment
 - Key note: production 500 likely caused by system_diagrams table not existing — user needs to run prisma db push on production server
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix Turbopack build warning and module licensing/activation persistence
+
+Work Log:
+- Replaced `path.join()` with local `pjoin()` helper in objectStorage.service.ts to fix Turbopack's overly broad file pattern warning (matches ~10K files when dynamic args used)
+- Diagnosed module persistence issue: MariaDB treats NULL as distinct in unique indexes, so @@unique([systemModuleId, companyId]) allowed multiple rows with same systemModuleId when companyId IS NULL
+- Seed created CompanyModule records with companyId=NULL, while fix code created records with companyId='__default__'
+- GET endpoint used companyModules[0] without deterministic ordering, potentially returning stale record
+- Update handler used findFirst without ordering, updating a different record than what GET returned
+
+Stage Summary:
+- Turbopack fix: commit a3223433 — replaced path.join with string concat helper in objectStorage.service.ts
+- Module persistence fix: commit 4ed4ebd7 — 3 files changed:
+  - GET /api/modules: Added pickCompanyModule() helper for deterministic record selection (prefer '__default__' over NULL)
+  - PUT/PATCH /api/modules/[id]: Added findCanonicalCompanyModule() with same priority logic + auto-migrate NULL→'__default__' + fire-and-forget deduplication
+  - prisma/seed.ts: Use companyId='__default__' for new deployments
+  - Added force-dynamic to prevent response caching
