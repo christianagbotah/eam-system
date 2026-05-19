@@ -22,6 +22,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
@@ -4067,50 +4068,32 @@ export function SecuritySettingsPage() {
 export function SettingsBackupPage() {
   const { isAdmin: isUserAdmin } = useAuthStore();
   const [backingUp, setBackingUp] = useState(false);
-  const [restoring, setRestoring] = useState(false);
-  const [backupHistory, setBackupHistory] = useState<Array<{ id: string; date: string; type: string; size: string; status: string }>>([]);
+  const [backupHistory, setBackupHistory] = useState<Array<{
+    id: string; date: string; type: string; size: string; status: string; recordCount?: number; version?: string;
+  }>>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
 
-  // Enhanced export state
-  const [exportFormat, setExportFormat] = useState<'json' | 'csv'>('json');
-  const [selectedModules, setSelectedModules] = useState<string[]>([
-    'assets', 'work-orders', 'maintenance-requests', 'inventory', 'users',
-  ]);
-  const [exporting, setExporting] = useState(false);
-  const [rateLimitInfo, setRateLimitInfo] = useState<string | null>(null);
-
-  // Enhanced import state
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<{
-    summary: { totalRecords: number; importedCount: number; skippedCount: number; errorCount: number };
-    [key: string]: any;
+  // Restore state
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [restorePreview, setRestorePreview] = useState<{
+    preview: true;
+    backup: { format: string; version: string; exportedAt: string; systemInfo: Record<string, any> };
+    tables: Record<string, { count: number; conflicts: number }>;
+    totals: { records: number; conflicts: number };
+  } | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreResult, setRestoreResult] = useState<{
+    preview: false;
+    results: Record<string, { created: number; updated: number }>;
+    totals: { created: number; updated: number };
   } | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
-  // Recent exports history (localStorage)
-  const [recentExports, setRecentExports] = useState<Array<{
-    id: string; date: string; format: string; modules: string[]; recordCount: number;
-  }>>([]);
-
-  // Export module options
-  const exportModules = useMemo(() => [
-    { key: 'assets', label: 'Assets', icon: Box, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { key: 'work-orders', label: 'Work Orders', icon: ClipboardList, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { key: 'maintenance-requests', label: 'Maintenance Requests', icon: Wrench, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { key: 'inventory', label: 'Inventory', icon: Package, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
-    { key: 'users', label: 'Users', icon: Users, color: 'text-pink-600 bg-pink-50 dark:bg-pink-900/30 dark:text-pink-400' },
-    { key: 'safety-incidents', label: 'Safety Incidents', icon: HardHat, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
-    { key: 'quality-inspections', label: 'Quality Inspections', icon: FlaskConical, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
-    { key: 'production-orders', label: 'Production Orders', icon: Factory, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400' },
-    { key: 'pm-schedules', label: 'PM Schedules', icon: Calendar, color: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400' },
-  ], []);
-
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const importFileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // Load backup history and recent exports
+  // Load backup history
   const loadBackupHistory = useCallback(() => {
-    api.get<Array<{ id: string; date: string; type: string; size: string; status: string }>>('/api/backups').then(res => {
+    api.get('/api/backups').then(res => {
       if (res.success && res.data) setBackupHistory(res.data);
       setLoadingHistory(false);
     }).catch(() => setLoadingHistory(false));
@@ -4118,90 +4101,62 @@ export function SettingsBackupPage() {
 
   useEffect(() => {
     loadBackupHistory();
-    // Load recent exports from localStorage
-    try {
-      const stored = localStorage.getItem('eam_recent_exports');
-      if (stored) setRecentExports(JSON.parse(stored));
-    } catch { /* ignore */ }
   }, [loadBackupHistory]);
 
-  const saveExportHistory = useCallback((entry: typeof recentExports[number]) => {
-    setRecentExports(prev => {
-      const updated = [entry, ...prev].slice(0, 20); // Keep last 20
-      localStorage.setItem('eam_recent_exports', JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
-
   const lastBackup = backupHistory.find(b => b.status === 'completed');
+  const completedBackups = backupHistory.filter(b => b.status === 'completed');
 
   const summaryCards = [
-    { label: 'Last Backup', value: lastBackup?.date ? format(new Date(lastBackup.date), 'MMM d, HH:mm') : 'Never', icon: History, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Total Exports', value: recentExports.length.toString(), icon: FileDown, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Auto-backup', value: 'Enabled', icon: RefreshCw, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Total Backups', value: backupHistory.filter(b => b.status === 'completed').length.toString(), icon: Layers, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    {
+      label: 'Last Backup',
+      value: lastBackup?.date ? format(new Date(lastBackup.date), 'MMM d, HH:mm') : 'Never',
+      icon: History,
+      color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400',
+    },
+    {
+      label: 'Total Backups',
+      value: completedBackups.length.toString(),
+      icon: Layers,
+      color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400',
+    },
+    {
+      label: 'Latest Records',
+      value: lastBackup?.recordCount ? lastBackup.recordCount.toLocaleString() : '—',
+      icon: Database,
+      color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400',
+    },
+    {
+      label: 'Format Version',
+      value: lastBackup?.version || '—',
+      icon: FileBarChart,
+      color: 'text-rose-600 bg-rose-50 dark:bg-rose-900/30 dark:text-rose-400',
+    },
   ];
 
-  // Toggle module selection
-  const toggleModule = useCallback((moduleKey: string) => {
-    setSelectedModules(prev =>
-      prev.includes(moduleKey)
-        ? prev.filter(m => m !== moduleKey)
-        : [...prev, moduleKey]
-    );
-    setRateLimitInfo(null);
-  }, []);
-
-  // Select/deselect all modules
-  const toggleAllModules = useCallback(() => {
-    if (selectedModules.length === exportModules.length) {
-      setSelectedModules([]);
-    } else {
-      setSelectedModules(exportModules.map(m => m.key));
-    }
-    setRateLimitInfo(null);
-  }, [selectedModules.length, exportModules]);
-
-  // Handle enhanced export
-  const handleEnhancedExport = async () => {
-    if (selectedModules.length === 0) {
-      toast.error('Please select at least one module to export');
-      return;
-    }
-    setExporting(true);
-    setRateLimitInfo(null);
+  // ── Create Backup ──────────────────────────────────────────────────────
+  const handleBackup = async () => {
+    setBackingUp(true);
     try {
-      const modules = selectedModules.join(',');
-      const response = await fetch(`/api/admin/data-export?format=${exportFormat}&modules=${modules}`, {
+      const response = await fetch('/api/backups', {
+        method: 'POST',
         headers: { ...getAuthHeaders() },
       });
 
-      if (response.status === 429) {
-        const errorData = await response.json();
-        setRateLimitInfo(errorData.error || 'Rate limit exceeded. Please wait before trying again.');
-        toast.error(errorData.error || 'Rate limit exceeded');
-        setExporting(false);
-        return;
-      }
-
       if (!response.ok) {
-        const errorData = await response.json();
-        toast.error(errorData.error || 'Export failed');
-        setExporting(false);
+        const errorData = await response.json().catch(() => ({}));
+        toast.error(errorData.error || 'Backup failed');
+        setBackingUp(false);
         return;
       }
 
-      // Determine filename and content type
-      const contentType = response.headers.get('content-type') || '';
+      // Extract filename from Content-Disposition
       const contentDisposition = response.headers.get('content-disposition') || '';
       const totalRecords = response.headers.get('x-total-records') || '0';
-      const modulesExported = response.headers.get('x-modules-exported') || '0';
-
-      // Extract filename from content-disposition
-      let filename = `eam-export-${new Date().toISOString().slice(0, 10)}.${exportFormat}`;
+      let filename = `iassetspro-backup-${new Date().toISOString().slice(0, 10)}.json`;
       const filenameMatch = contentDisposition.match(/filename="?([^";\n]+)"?/);
       if (filenameMatch) filename = filenameMatch[1];
 
+      // Download the file
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -4210,109 +4165,15 @@ export function SettingsBackupPage() {
       a.click();
       URL.revokeObjectURL(url);
 
-      // Record in recent exports history
-      saveExportHistory({
-        id: `exp_${Date.now()}`,
-        date: new Date().toISOString(),
-        format: exportFormat,
-        modules: selectedModules,
-        recordCount: parseInt(totalRecords, 10) || 0,
-      });
-
-      toast.success(`Exported ${totalRecords} records from ${modulesExported} module(s) as ${exportFormat.toUpperCase()}`);
-    } catch (err: any) {
-      toast.error(err.message || 'Export failed');
-    }
-    setExporting(false);
-  };
-
-  // Legacy backup (kept for backward compatibility)
-  const handleBackup = async () => {
-    setBackingUp(true);
-    try {
-      const endpoints = ['/api/company-profile', '/api/assets?limit=9999', '/api/inventory?limit=9999', '/api/work-orders?limit=9999', '/api/maintenance-requests?limit=9999'];
-      const keys = ['companyProfile', 'assets', 'inventory', 'workOrders', 'maintenanceRequests'];
-      const results: Record<string, any> = { exportedAt: new Date().toISOString(), version: '2.0.0' };
-      await Promise.all(endpoints.map(async (ep, i) => {
-        const res = await api.get(ep);
-        results[keys[i]] = res.data || res;
-      }));
-      const jsonStr = JSON.stringify(results, null, 2);
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `iassetspro-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-
-      const sizeKB = new Blob([jsonStr]).size / 1024;
-      const sizeStr = sizeKB > 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB.toFixed(1)} KB`;
-      await api.post('/api/backups', { type: 'Manual', size: sizeStr, status: 'completed' });
       loadBackupHistory();
-      toast.success('Backup completed and downloaded successfully');
+      toast.success(`Backup completed — ${parseInt(totalRecords, 10).toLocaleString()} records exported`);
     } catch (err: any) {
-      await api.post('/api/backups', { type: 'Manual', size: '0 KB', status: 'failed' }).catch(() => {});
-      loadBackupHistory();
       toast.error(err.message || 'Backup failed');
     }
     setBackingUp(false);
   };
 
-  const handleRestore = async () => {
-    fileInputRef.current?.click();
-  };
-
-  const onFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setRestoring(true);
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-      if (!data.exportedAt) {
-        toast.error('Invalid backup file format');
-      } else {
-        toast.success(`Backup file loaded (${new Date(data.exportedAt).toLocaleString()}). Restore would require a dedicated server endpoint.`);
-      }
-    } catch {
-      toast.error('Failed to read backup file');
-    }
-    setRestoring(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  // Handle import via API
-  const handleImport = async (file: File) => {
-    if (!file.name.endsWith('.json')) {
-      toast.error('Only JSON files are accepted for import');
-      return;
-    }
-    setImporting(true);
-    setImportResult(null);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const res = await apiFetch('/api/admin/import-data', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (res.success && res.data) {
-        setImportResult(res.data as typeof importResult);
-        const summary = res.data.summary;
-        toast.success(`Import complete: ${summary.importedCount} imported, ${summary.skippedCount} skipped, ${summary.errorCount} errors`);
-      } else {
-        toast.error(res.error || 'Import failed');
-      }
-    } catch (err: any) {
-      toast.error(err.message || 'Import failed');
-    }
-    setImporting(false);
-  };
-
-  // Import drag and drop handlers
+  // ── Restore: file selection ────────────────────────────────────────────
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -4330,346 +4191,472 @@ export function SettingsBackupPage() {
     e.stopPropagation();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file) handleImport(file);
+    if (file && (file.name.endsWith('.json'))) {
+      setRestoreFile(file);
+      setRestorePreview(null);
+      setRestoreResult(null);
+    } else {
+      toast.error('Please upload a .json backup file');
+    }
   }, []);
 
-  const onImportFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onFileSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) handleImport(file);
-    if (importFileInputRef.current) importFileInputRef.current.value = '';
+    if (file) {
+      setRestoreFile(file);
+      setRestorePreview(null);
+      setRestoreResult(null);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, []);
+
+  // ── Restore: preview ───────────────────────────────────────────────────
+  const handlePreviewRestore = async () => {
+    if (!restoreFile) return;
+    setRestoring(true);
+    setRestorePreview(null);
+    setRestoreResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', restoreFile);
+      formData.append('confirm', 'false');
+
+      const res = await apiFetch('/api/backups/restore', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.success && res.data) {
+        setRestorePreview(res.data as typeof restorePreview);
+      } else {
+        toast.error(res.error || 'Failed to preview backup');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Preview failed');
+    }
+    setRestoring(false);
   };
+
+  // ── Restore: execute ───────────────────────────────────────────────────
+  const handleExecuteRestore = async () => {
+    if (!restoreFile) return;
+    setRestoring(true);
+    setRestoreResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', restoreFile);
+      formData.append('confirm', 'true');
+
+      const res = await apiFetch('/api/backups/restore', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.success && res.data) {
+        setRestoreResult(res.data as typeof restoreResult);
+        toast.success(`Restore complete — ${res.data.totals.created} created, ${res.data.totals.updated} updated`);
+      } else {
+        toast.error(res.error || 'Restore failed');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Restore failed');
+    }
+    setRestoring(false);
+  };
+
+  // ── Reset restore state ────────────────────────────────────────────────
+  const resetRestore = useCallback(() => {
+    setRestoreFile(null);
+    setRestorePreview(null);
+    setRestoreResult(null);
+  }, []);
 
   return (
     <div className="page-content">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Backup & Data Export</h1>
-        <p className="text-muted-foreground mt-1">Manage system backups, export data, and import records</p>
+        <h1 className="text-2xl font-bold tracking-tight">Backup & Restore</h1>
+        <p className="text-muted-foreground mt-1">Create system backups, download data, and restore from backup files</p>
       </div>
-      <input ref={fileInputRef} type="file" accept=".json,.sql,.zip" className="hidden" onChange={onFileSelected} />
-      <input ref={importFileInputRef} type="file" accept=".json" className="hidden" onChange={onImportFileSelected} />
+      <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={onFileSelected} />
 
-      {/* Summary cards */}
+      {/* ── Summary Cards ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {summaryCards.map(k => { const I = k.icon; return (
-          <Card key={k.label}><CardContent className="p-4"><div className="flex items-center gap-3"><div className={`h-10 w-10 rounded-lg ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-lg font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+          <Card key={k.label}>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className={`h-10 w-10 rounded-lg ${k.color} flex items-center justify-center`}>
+                  <I className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-lg font-bold">{k.value}</p>
+                  <p className="text-xs text-muted-foreground">{k.label}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         ); })}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Manual Backup */}
-        <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Database className="h-4 w-4" />Manual Backup</CardTitle><CardDescription>Create an immediate backup of all system data as JSON</CardDescription></CardHeader>
-          <CardContent>
-            <Button onClick={handleBackup} disabled={backingUp} className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:w-auto">
-              {backingUp ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Creating Backup...</> : <><Database className="h-4 w-4 mr-2" />Create Backup Now</>}
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Restore */}
-        <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Archive className="h-4 w-4" />Restore Data</CardTitle><CardDescription>Upload a backup file to inspect (restore coming soon)</CardDescription></CardHeader>
-          <CardContent>
-            <Button variant="outline" disabled={restoring} onClick={handleRestore} className="w-full sm:w-auto">
-              {restoring ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Loading...</> : <><Upload className="h-4 w-4 mr-2" />Choose Backup File</>}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Enhanced Data Export */}
+      {/* ── Create Backup Card ────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2"><FileDown className="h-4 w-4" />Data Export</CardTitle>
-          <CardDescription>Comprehensively export data from selected modules in JSON or CSV format</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Database className="h-4 w-4 text-emerald-600" />
+                Create Backup
+              </CardTitle>
+              <CardDescription className="mt-1.5">
+                Export all system data from the database as a JSON file. This includes all plants, assets,
+                work orders, inventory, users, and configuration data.
+              </CardDescription>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Rate limit warning */}
-          {rateLimitInfo && (
-            <Alert variant="destructive">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle>Rate Limited</AlertTitle>
-              <AlertDescription>{rateLimitInfo}</AlertDescription>
-            </Alert>
-          )}
-
-          {/* Format Selection */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Export Format</Label>
-            <div className="flex gap-3">
-              {(['json', 'csv'] as const).map(fmt => (
-                <label
-                  key={fmt}
-                  className={`flex items-center gap-2.5 px-4 py-2.5 rounded-lg border-2 cursor-pointer transition-all ${
-                    exportFormat === fmt
-                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
-                      : 'border-muted hover:border-muted-foreground/30'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="exportFormat"
-                    value={fmt}
-                    checked={exportFormat === fmt}
-                    onChange={() => setExportFormat(fmt)}
-                    className="sr-only"
-                  />
-                  <div className={`h-8 w-8 rounded-md flex items-center justify-center ${
-                    exportFormat === fmt ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
-                  }`}
-                  >
-                    {fmt === 'json' ? <FileBarChart className="h-4 w-4" /> : <Gauge className="h-4 w-4" />}
-                  </div>
-                  <div>
-                    <p className={`text-sm font-medium ${exportFormat === fmt ? 'text-emerald-700 dark:text-emerald-300' : ''}`}>{fmt.toUpperCase()}</p>
-                    <p className="text-[11px] text-muted-foreground">{fmt === 'json' ? 'Structured data with metadata' : 'Spreadsheet-compatible format'}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Module Selection */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Modules to Export</Label>
-              <button
-                onClick={toggleAllModules}
-                className="text-xs text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-medium"
-              >
-                {selectedModules.length === exportModules.length ? 'Deselect All' : 'Select All'}
-              </button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {exportModules.map(mod => {
-                const isSelected = selectedModules.includes(mod.key);
-                const I = mod.icon;
-                return (
-                  <label
-                    key={mod.key}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-all ${
-                      isSelected
-                        ? 'border-emerald-300 bg-emerald-50/50 dark:border-emerald-700 dark:bg-emerald-900/20'
-                        : 'border-muted hover:border-muted-foreground/30'
-                    }`}
-                  >
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={() => toggleModule(mod.key)}
-                    />
-                    <div className={`h-7 w-7 rounded-md flex items-center justify-center shrink-0 ${mod.color}`}>
-                      <I className="h-3.5 w-3.5" />
-                    </div>
-                    <span className={`text-sm ${isSelected ? 'font-medium text-emerald-700 dark:text-emerald-300' : ''}`}>{mod.label}</span>
-                  </label>
-                );
-              })}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {selectedModules.length} of {exportModules.length} modules selected
-            </p>
-          </div>
-
-          {/* Export Button */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        <CardContent>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             <Button
-              onClick={handleEnhancedExport}
-              disabled={exporting || selectedModules.length === 0}
+              onClick={handleBackup}
+              disabled={backingUp}
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              size="lg"
             >
-              {exporting ? (
-                <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Exporting {selectedModules.length} module(s)...</>
+              {backingUp ? (
+                <>
+                  <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
+                  Exporting Data...
+                </>
               ) : (
-                <><Download className="h-4 w-4 mr-2" />Export as {exportFormat.toUpperCase()}</>
+                <>
+                  <Download className="h-5 w-5 mr-2" />
+                  Create Backup Now
+                </>
               )}
             </Button>
-            {selectedModules.length === 0 && (
-              <p className="text-xs text-muted-foreground">Select at least one module above</p>
+            {backingUp && (
+              <div className="w-full sm:w-64">
+                <Progress value={undefined} className="h-2 [&>[data-slot=progress-indicator]]:bg-emerald-600" />
+                <p className="text-xs text-muted-foreground mt-1.5">Querying all tables and building archive...</p>
+              </div>
             )}
           </div>
+          <Alert className="mt-4">
+            <Info className="h-4 w-4" />
+            <AlertTitle>Server-side Export</AlertTitle>
+            <AlertDescription className="text-xs">
+              The backup is generated on the server from the live database. Sensitive fields (passwords, sessions, tokens) are excluded.
+            </AlertDescription>
+          </Alert>
         </CardContent>
       </Card>
 
-      {/* Import Section */}
+      {/* ── Restore Card ──────────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2"><FileUp className="h-4 w-4" />Import Data</CardTitle>
-          <CardDescription>Import assets, inventory items, users, plants, and departments from a JSON file. Existing records are skipped (no duplicates).</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertTitle>Supported modules</AlertTitle>
-            <AlertDescription className="text-xs">
-              Assets, Inventory Items, Users, Plants, Departments. Passwords for imported users are hashed securely.
-            </AlertDescription>
-          </Alert>
-
-          <div
-            className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
-              dragOver ? 'border-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10' : 'hover:border-muted-foreground/30'
-            }`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-            <Upload className={`h-10 w-10 mx-auto mb-3 transition-colors ${dragOver ? 'text-emerald-500' : 'text-muted-foreground'}`} />
-            <p className="text-sm font-medium mb-1">Drag & drop JSON file here</p>
-            <p className="text-xs text-muted-foreground mb-4">or click to browse (.json only)</p>
-            <Button variant="outline" size="sm" disabled={importing} onClick={() => importFileInputRef.current?.click()}>
-              {importing ? <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Importing...</> : 'Choose File'}
-            </Button>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Archive className="h-4 w-4 text-amber-600" />
+                Restore from Backup
+              </CardTitle>
+              <CardDescription className="mt-1.5">
+                Upload a backup file to preview and restore system data. Existing records are updated; new records are created.
+              </CardDescription>
+            </div>
+            {restoreFile && (
+              <Button variant="ghost" size="sm" onClick={resetRestore} className="text-muted-foreground">
+                <X className="h-4 w-4 mr-1" />
+                Clear
+              </Button>
+            )}
           </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Upload Zone */}
+          {!restoreFile && (
+            <div
+              className={`border-2 border-dashed rounded-xl p-10 text-center transition-all cursor-pointer ${
+                dragOver
+                  ? 'border-amber-400 bg-amber-50/50 dark:bg-amber-900/10'
+                  : 'hover:border-amber-300 hover:bg-amber-50/20 dark:hover:border-amber-700'
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className={`h-12 w-12 mx-auto mb-3 transition-colors ${dragOver ? 'text-amber-500' : 'text-muted-foreground/60'}`} />
+              <p className="text-sm font-medium mb-1">Drag & drop backup file here</p>
+              <p className="text-xs text-muted-foreground mb-4">or click to browse (.json files only)</p>
+              <Badge variant="outline" className="text-[11px]">Accepts iAssetsPro backup files v2.0.0+</Badge>
+            </div>
+          )}
 
-          {/* Import Result Summary */}
-          {importResult && (
-            <div className="rounded-lg border p-4 space-y-3">
-              <h4 className="text-sm font-semibold">Import Result</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="text-center">
-                  <p className="text-lg font-bold text-sky-600">{importResult.summary.totalRecords}</p>
-                  <p className="text-[11px] text-muted-foreground">Total Records</p>
+          {/* Selected File Info */}
+          {restoreFile && !restorePreview && !restoreResult && (
+            <div className="rounded-lg border p-4 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center">
+                  <FileBarChart className="h-5 w-5 text-amber-600" />
                 </div>
-                <div className="text-center">
-                  <p className="text-lg font-bold text-emerald-600">{importResult.summary.importedCount}</p>
-                  <p className="text-[11px] text-muted-foreground">Imported</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{restoreFile.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {(restoreFile.size / 1024).toFixed(1)} KB &middot; {restoreFile.type || 'application/json'}
+                  </p>
                 </div>
-                <div className="text-center">
-                  <p className="text-lg font-bold text-amber-600">{importResult.summary.skippedCount}</p>
-                  <p className="text-[11px] text-muted-foreground">Skipped (exists)</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-lg font-bold text-red-600">{importResult.summary.errorCount}</p>
-                  <p className="text-[11px] text-muted-foreground">Errors</p>
-                </div>
+                <Badge variant="outline" className="text-[11px]">Ready</Badge>
               </div>
-              {/* Per-module breakdown */}
-              <div className="space-y-2 mt-2">
-                {Object.entries(importResult).filter(([k]) => k !== 'summary').map(([module, record]: [string, any]) => (
-                  <div key={module} className="flex items-center justify-between text-xs bg-muted/40 rounded-md px-3 py-2">
-                    <span className="font-medium capitalize">{module}</span>
-                    <div className="flex items-center gap-3">
-                      <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">
-                        +{record.imported} imported
-                      </Badge>
-                      <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
-                        {record.skipped} skipped
-                      </Badge>
-                      {record.errors.length > 0 && (
-                        <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200">
-                          {record.errors.length} errors
-                        </Badge>
-                      )}
+              <Button
+                onClick={handlePreviewRestore}
+                disabled={restoring}
+                className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                {restoring ? (
+                  <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Analyzing Backup...</>
+                ) : (
+                  <><Eye className="h-4 w-4 mr-2" />Preview Restore</>
+                )}
+              </Button>
+            </div>
+          )}
+
+          {/* Preview Results */}
+          {restorePreview && (
+            <div className="rounded-lg border p-4 space-y-4">
+              {/* Backup Info */}
+              <div className="flex items-start justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                    Backup File Valid
+                  </h4>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Exported {formatDistanceToNow(new Date(restorePreview.backup.exportedAt), { addSuffix: true })}
+                    {' '}&middot; Version {restorePreview.backup.version}
+                  </p>
+                </div>
+                <Badge variant="outline" className="text-[11px] bg-amber-50 text-amber-700 border-amber-200">
+                  Preview Mode
+                </Badge>
+              </div>
+
+              {/* System Info */}
+              {restorePreview.backup.systemInfo && (
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {[
+                    { label: 'Company', value: restorePreview.backup.systemInfo.companyName },
+                    { label: 'Plants', value: restorePreview.backup.systemInfo.plantCount },
+                    { label: 'Users', value: restorePreview.backup.systemInfo.userCount },
+                    { label: 'Assets', value: restorePreview.backup.systemInfo.assetCount },
+                    { label: 'Work Orders', value: restorePreview.backup.systemInfo.workOrderCount },
+                  ].filter(s => s.value && s.value !== 'N/A').map(s => (
+                    <div key={s.label} className="bg-muted/40 rounded-md px-3 py-2 text-center">
+                      <p className="text-sm font-bold">{typeof s.value === 'number' ? s.value.toLocaleString() : s.value}</p>
+                      <p className="text-[10px] text-muted-foreground">{s.label}</p>
                     </div>
-                  </div>
-                ))}
-              </div>
-              {/* Show first few errors */}
-              {importResult.summary.errorCount > 0 && (
-                <div className="mt-2">
-                  <button
-                    onClick={() => {
-                      const allErrors = Object.entries(importResult)
-                        .filter(([k]) => k !== 'summary')
-                        .flatMap(([, r]: [string, any]) => r.errors);
-                      if (allErrors.length > 0) {
-                        toast.info(allErrors.slice(0, 5).join('\n'));
-                      }
-                    }}
-                    className="text-xs text-red-600 hover:text-red-700 font-medium"
-                  >
-                    View first 5 errors
-                  </button>
+                  ))}
                 </div>
               )}
+
+              {/* Conflict Warning */}
+              {restorePreview.totals.conflicts > 0 && (
+                <Alert className="border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-900/10">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  <AlertTitle className="text-amber-800 dark:text-amber-300">
+                    {restorePreview.totals.conflicts} potential conflict{restorePreview.totals.conflicts !== 1 ? 's' : ''}
+                  </AlertTitle>
+                  <AlertDescription className="text-xs text-amber-700 dark:text-amber-400">
+                    Existing records with matching unique keys will be updated. No data will be deleted.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Table Breakdown */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                  <span>Table breakdown</span>
+                  <span>{restorePreview.totals.records.toLocaleString()} total records</span>
+                </div>
+                <ScrollArea className="max-h-48">
+                  <div className="space-y-1">
+                    {Object.entries(restorePreview.tables).map(([table, info]) => (
+                      <div key={table} className="flex items-center justify-between text-xs bg-muted/30 rounded-md px-3 py-1.5">
+                        <span className="font-medium capitalize">{table.replace(/([A-Z])/g, ' $1').trim()}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">{info.count} records</span>
+                          {info.conflicts > 0 && (
+                            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                              {info.conflicts} update
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                <Button
+                  onClick={handleExecuteRestore}
+                  disabled={restoring}
+                  className="bg-red-600 hover:bg-red-700 text-white flex-1"
+                >
+                  {restoring ? (
+                    <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Restoring Data...</>
+                  ) : (
+                    <><Upload className="h-4 w-4 mr-2" />Execute Restore</>
+                  )}
+                </Button>
+                <Button variant="outline" onClick={resetRestore} disabled={restoring}>
+                  Cancel
+                </Button>
+              </div>
+              {restoring && (
+                <Progress value={undefined} className="h-2 [&>[data-slot=progress-indicator]]:bg-red-600" />
+              )}
             </div>
+          )}
+
+          {/* Restore Result */}
+          {restoreResult && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/30 dark:border-emerald-800 dark:bg-emerald-900/10 p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                <h4 className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Restore Completed Successfully</h4>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="text-center bg-white/60 dark:bg-black/20 rounded-lg p-3">
+                  <p className="text-2xl font-bold text-emerald-600">{restoreResult.totals.created.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">Records Created</p>
+                </div>
+                <div className="text-center bg-white/60 dark:bg-black/20 rounded-lg p-3">
+                  <p className="text-2xl font-bold text-amber-600">{restoreResult.totals.updated.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">Records Updated</p>
+                </div>
+              </div>
+
+              {/* Per-table results */}
+              <ScrollArea className="max-h-48">
+                <div className="space-y-1">
+                  {Object.entries(restoreResult.results)
+                    .filter(([, r]) => r.created > 0 || r.updated > 0)
+                    .map(([table, info]) => (
+                    <div key={table} className="flex items-center justify-between text-xs bg-white/40 dark:bg-black/10 rounded-md px-3 py-1.5">
+                      <span className="font-medium capitalize">{table.replace(/([A-Z])/g, ' $1').trim()}</span>
+                      <div className="flex items-center gap-2">
+                        {info.created > 0 && (
+                          <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">
+                            +{info.created} created
+                          </Badge>
+                        )}
+                        {info.updated > 0 && (
+                          <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                            {info.updated} updated
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+
+              <Button variant="outline" onClick={resetRestore} className="w-full">
+                Done
+              </Button>
+            </div>
+          )}
+
+          {/* Safety Notice */}
+          {!restoreFile && !restorePreview && !restoreResult && (
+            <Alert>
+              <Shield className="h-4 w-4" />
+              <AlertTitle>Safety & Rate Limiting</AlertTitle>
+              <AlertDescription className="text-xs">
+                Restore requires admin privileges. Maximum 1 restore per 30 minutes. Restore uses upsert logic — existing records
+                are updated by unique key, new records are created. No data is ever deleted.
+              </AlertDescription>
+            </Alert>
           )}
         </CardContent>
       </Card>
 
-      {/* Recent Exports History */}
+      {/* ── Backup History Table ──────────────────────────────────────────── */}
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base">Recent Exports</CardTitle>
-            {recentExports.length > 0 && (
-              <button
-                onClick={() => { setRecentExports([]); localStorage.removeItem('eam_recent_exports'); }}
-                className="text-xs text-muted-foreground hover:text-red-500 font-medium"
-              >Clear history</button>
+            <CardTitle className="text-base flex items-center gap-2">
+              <History className="h-4 w-4" />
+              Backup History
+            </CardTitle>
+            {backupHistory.length > 0 && (
+              <Badge variant="outline" className="text-[11px]">
+                {completedBackups.length} successful
+              </Badge>
             )}
           </div>
         </CardHeader>
         <CardContent>
-          {recentExports.length === 0 ? (
-            <div className="text-center py-6">
-              <FileDown className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">No exports yet</p>
-              <p className="text-xs text-muted-foreground">Your export history will appear here</p>
+          {!loadingHistory && backupHistory.length === 0 ? (
+            <div className="text-center py-8">
+              <Database className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">No backups yet</p>
+              <p className="text-xs text-muted-foreground">Create your first backup using the button above</p>
             </div>
           ) : (
-            <div className="max-h-64 overflow-y-auto space-y-2">
-              {recentExports.map(exp => (
-                <div key={exp.id} className="flex items-center justify-between rounded-lg border px-3 py-2.5">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`h-8 w-8 rounded-md flex items-center justify-center shrink-0 ${
-                      exp.format === 'json' ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
-                    }`}>
-                      {exp.format === 'json' ? <FileBarChart className="h-4 w-4" /> : <Gauge className="h-4 w-4" />}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {exp.modules.length === exportModules.length ? 'All modules' : `${exp.modules.length} module(s)`}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {formatDistanceToNow(new Date(exp.date), { addSuffix: true })} &middot; {exp.recordCount.toLocaleString()} records &middot; {exp.format.toUpperCase()}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge variant="outline" className="text-[10px] shrink-0 uppercase">{exp.format}</Badge>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Version</TableHead>
+                    <TableHead>Records</TableHead>
+                    <TableHead>Size</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {backupHistory.slice(0, 20).map(b => (
+                    <TableRow key={b.id}>
+                      <TableCell className="text-sm">{formatDateTime(b.date)}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-[11px]">{b.type}</Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{b.version || '—'}</TableCell>
+                      <TableCell className="text-sm">{b.recordCount ? b.recordCount.toLocaleString() : '—'}</TableCell>
+                      <TableCell className="text-sm">{b.size}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={`text-[11px] ${
+                            b.status === 'completed'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-red-50 text-red-700 border-red-200'
+                          }`}
+                        >
+                          {b.status === 'completed' ? (
+                            <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />Success</span>
+                          ) : (
+                            <span className="flex items-center gap-1"><XCircle className="h-3 w-3" />Failed</span>
+                          )}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Backup History */}
-      <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-base">Backup History</CardTitle></CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Size</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-10">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {backupHistory.map(b => (
-                  <TableRow key={b.id}>
-                    <TableCell className="text-sm">{formatDateTime(b.date)}</TableCell>
-                    <TableCell><Badge variant="outline" className="text-[11px]">{b.type}</Badge></TableCell>
-                    <TableCell className="text-sm">{b.size}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={`text-[11px] ${b.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                        {b.status === 'completed' ? <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />Success</span> : <span className="flex items-center gap-1"><XCircle className="h-3 w-3" />Failed</span>}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {b.status === 'completed' && (
-                        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => toast.info('Download started')}><Download className="h-3.5 w-3.5" /></Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          {backupHistory.length > 20 && (
+            <p className="text-xs text-muted-foreground mt-3 text-center">
+              Showing 20 of {backupHistory.length} backups
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
