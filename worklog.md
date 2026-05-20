@@ -5367,3 +5367,32 @@ Stage Summary:
   - PUT/PATCH /api/modules/[id]: Added findCanonicalCompanyModule() with same priority logic + auto-migrate NULL→'__default__' + fire-and-forget deduplication
   - prisma/seed.ts: Use companyId='__default__' for new deployments
   - Added force-dynamic to prevent response caching
+---
+Task ID: 1
+Agent: Main
+Task: Check if sandbox project is up to date with GitHub
+
+Work Log:
+- Ran git fetch origin and compared local vs remote commits
+- Confirmed local branch is at same commit as origin/main (88802027)
+- Only local change is a trivial file permission change on restore/route.ts (644→755)
+- No files missing, project is fully in sync
+
+Stage Summary:
+- Sandbox project is fully up to date with GitHub, no action needed
+
+---
+Task ID: 2
+Agent: Main
+Task: Fix searchable select dropdown not scrolling with mouse wheel
+
+Work Log:
+- Identified all searchable select components: SearchableSelect, AsyncSearchableSelect, MultiSearchableSelect
+- Root cause: cmdk library inside Radix Popover portal intercepts/consumes wheel events
+- Fix: Added onWheel handler on PopoverContent that finds the [cmdk-list] element and programmatically scrolls it
+- Applied to both SearchableSelect and MultiSearchableSelect; AsyncSearchableSelect inherits via wrapper
+- Linted the file — no errors introduced
+
+Stage Summary:
+- Commit 0eb6a649 pushed: "fix: searchable select dropdown now scrolls with mouse wheel"
+- File changed: src/components/ui/searchable-select.tsx (+24 lines, -2 lines)
