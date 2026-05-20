@@ -5396,3 +5396,23 @@ Work Log:
 Stage Summary:
 - Commit 0eb6a649 pushed: "fix: searchable select dropdown now scrolls with mouse wheel"
 - File changed: src/components/ui/searchable-select.tsx (+24 lines, -2 lines)
+---
+Task ID: 3
+Agent: Main
+Task: Fix Prisma "Argument category is missing" error on asset creation
+
+Work Log:
+- Identified root cause: Prisma requires relation connect syntax instead of raw FK scalars
+- Fixed 5 files:
+  1. src/app/api/assets/route.ts (POST) — converted categoryId, plantId, departmentId, assignedToId, parentId, createdById to { connect: { id } }
+  2. src/app/api/assets/[id]/route.ts (PUT) — built relationFields map to convert FK scalars to connect syntax on update
+  3. src/app/api/admin/import-data/route.ts — converted asset import to use connect syntax
+  4. prisma/seed.ts — converted asset seed data to use connect syntax
+  5. src/app/api/backups/restore/route.ts — added comprehensive FK_TO_RELATION mapping for all tables, verified relation names against Prisma schema
+- Verified relation names against Prisma schema — noted some FK fields (e.g., WorkOrder.assetId, MaintenanceRequest.departmentId) are plain scalars without @relation
+- All files pass lint
+
+Stage Summary:
+- Commit 0b20abf5 pushed: "fix: use Prisma relation connect syntax instead of raw FK scalars for asset create/update"
+- 5 files changed, 155 insertions, 37 deletions
+- User can now create assets without the "Argument category is missing" error
