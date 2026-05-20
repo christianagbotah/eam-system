@@ -498,13 +498,111 @@ function translateRowFKs(tableName: string, record: Record<string, any>): Record
   const fkConfig = FK_MAPPINGS[tableName];
   if (!fkConfig) return record;
 
+  const relationMap = FK_TO_RELATION[tableName];
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(record)) {
     if (fkConfig[key] && value && typeof value === 'string') {
-      result[key] = translateId(fkConfig[key], value);
+      const translatedId = translateId(fkConfig[key], value);
+      // Convert FK scalar to relation connect syntax
+      if (relationMap && relationMap[key]) {
+        result[relationMap[key]] = { connect: { id: translatedId } };
+      } else {
+        result[key] = translatedId;
+      }
     } else {
       result[key] = value;
     }
   }
   return result;
 }
+
+// Maps FK scalar fields → Prisma relation names for tables that need connect syntax
+// Only include fields that have actual @relation declarations in the Prisma schema
+const FK_TO_RELATION: Record<string, Record<string, string>> = {
+  assets: {
+    categoryId: 'category',
+    plantId: 'plant',
+    departmentId: 'department',
+    createdById: 'createdBy',
+    assignedToId: 'assignedTo',
+    parentId: 'parent',
+  },
+  inventoryItems: {
+    plantId: 'plant',
+    createdById: 'createdBy',
+    locationId: 'invLocation',
+    supplierId: 'supplierRef',
+  },
+  maintenanceRequests: {
+    assetId: 'asset',
+    requestedBy: 'requester',
+    supervisorId: 'supervisor',
+    approvedBy: 'approver',
+    assignedPlannerId: 'assignedPlanner',
+    // departmentId and plantId are plain scalars (no @relation) — keep as-is
+  },
+  workOrders: {
+    maintenanceRequestId: 'maintenanceRequest',
+    pmScheduleId: 'pmSchedule',
+    assignedTo: 'assignee',
+    teamLeaderId: 'teamLeader',
+    assignedSupervisorId: 'assignedSupervisor',
+    assignedBy: 'assigner',
+    plannerId: 'planner',
+    lockedBy: 'locker',
+    workPackageId: 'workPackage',
+    // assetId, departmentId, plantId are plain scalars (no @relation) — keep as-is
+  },
+  pmSchedules: {
+    assetId: 'asset',
+    departmentId: 'department',
+    assignedToId: 'assignedTo',
+    createdById: 'createdBy',
+  },
+  workPackages: {
+    plantId: 'plant',
+    assignedToId: 'assignee',
+    createdById: 'createdBy',
+  },
+  departments: {
+    plantId: 'plant',
+    parentId: 'parent',
+    supervisorId: 'supervisor',
+  },
+  maintenanceRequestComments: {
+    maintenanceRequestId: 'maintenanceRequest',
+    userId: 'user',
+  },
+  workOrderTeamMembers: {
+    workOrderId: 'workOrder',
+    userId: 'user',
+  },
+  workOrderTimeLogs: {
+    workOrderId: 'workOrder',
+    userId: 'user',
+    loggedById: 'loggedBy',
+  },
+  workOrderMaterials: {
+    workOrderId: 'workOrder',
+    requestedBy: 'requester',
+    approvedBy: 'approver',
+    issuedBy: 'issuer',
+  },
+  workOrderComments: {
+    workOrderId: 'workOrder',
+    userId: 'user',
+  },
+  workOrderStatusHistory: {
+    workOrderId: 'workOrder',
+    userId: 'performedBy',
+  },
+  notifications: {
+    userId: 'user',
+  },
+  auditLogs: {
+    userId: 'user',
+  },
+  userSkills: {
+    userId: 'user',
+  },
+};

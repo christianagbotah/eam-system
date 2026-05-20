@@ -104,29 +104,42 @@ export async function PUT(
       );
     }
 
-    // Build update data
+    // Build update data — use connect syntax for relation fields
     const updateData: Record<string, unknown> = {};
-    const allowedFields = [
-      'name', 'description', 'categoryId', 'serialNumber', 'manufacturer', 'model',
-      'yearManufactured', 'condition', 'status', 'criticality', 'location',
-      'building', 'floor', 'area', 'plantId', 'departmentId', 'purchaseCost',
-      'expectedLifeYears', 'currentValue', 'depreciationRate', 'imageUrl',
-      'drawingsUrl', 'manualUrl', 'specification', 'parentId', 'assignedToId',
-      'isActive',
+    const scalarFields = [
+      'name', 'description', 'serialNumber', 'manufacturer', 'model',
+      'condition', 'status', 'criticality', 'location',
+      'building', 'floor', 'area', 'imageUrl',
+      'drawingsUrl', 'manualUrl', 'specification', 'isActive',
     ];
+    const dateFields = ['purchaseDate', 'warrantyExpiry', 'installedDate'];
+    const numberFields = ['yearManufactured', 'purchaseCost', 'expectedLifeYears', 'currentValue', 'depreciationRate'];
+    const relationFields: Record<string, string> = {
+      categoryId: 'category',
+      plantId: 'plant',
+      departmentId: 'department',
+      assignedToId: 'assignedTo',
+      parentId: 'parent',
+    };
 
-    for (const field of allowedFields) {
-      if (body[field] !== undefined) {
-        if (['purchaseDate', 'warrantyExpiry', 'installedDate'].includes(field)) {
-          updateData[field] = body[field] ? new Date(body[field]) : null;
-        } else {
-          updateData[field] = body[field];
-        }
+    for (const field of scalarFields) {
+      if (body[field] !== undefined) updateData[field] = body[field];
+    }
+    for (const field of dateFields) {
+      if (body[field] !== undefined) updateData[field] = body[field] ? new Date(body[field]) : null;
+    }
+    for (const field of numberFields) {
+      if (body[field] !== undefined) updateData[field] = body[field] !== null && body[field] !== '' ? Number(body[field]) : null;
+    }
+    // Convert FK scalars to relation connect
+    for (const [fkField, relationName] of Object.entries(relationFields)) {
+      if (body[fkField] !== undefined) {
+        updateData[relationName] = body[fkField] ? { connect: { id: body[fkField] } } : null;
       }
     }
 
     // Prevent self-parent
-    if (updateData.parentId === id) {
+    if (body.parentId === id) {
       return NextResponse.json(
         { success: false, error: 'Asset cannot be its own parent' },
         { status: 400 }

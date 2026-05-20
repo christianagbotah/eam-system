@@ -172,16 +172,23 @@ export async function POST(request: NextRequest) {
 
     const assetTag = await generateAssetTag();
 
+    // Build relation connections
+    const categoryConnect = categoryId ? { connect: { id: categoryId } } : undefined;
+    const plantConnect = plantId ? { connect: { id: plantId } } : undefined;
+    const departmentConnect = departmentId ? { connect: { id: departmentId } } : undefined;
+    const assignedToConnect = assignedToId ? { connect: { id: assignedToId } } : undefined;
+    const parentConnect = parentId ? { connect: { id: parentId } } : undefined;
+
     const asset = await db.asset.create({
       data: {
         assetTag,
         name,
         description: description || null,
-        categoryId,
+        category: categoryConnect,
         serialNumber: serialNumber || null,
         manufacturer: manufacturer || null,
         model: model || null,
-        yearManufactured: yearManufactured || null,
+        yearManufactured: yearManufactured ? parseInt(yearManufactured, 10) : null,
         condition: condition || 'new',
         status: status || 'operational',
         criticality: criticality || 'medium',
@@ -189,22 +196,22 @@ export async function POST(request: NextRequest) {
         building: building || null,
         floor: floor || null,
         area: area || null,
-        plantId,
-        departmentId: departmentId || null,
+        plant: plantConnect,
+        department: departmentConnect,
         purchaseDate: purchaseDate ? new Date(purchaseDate) : null,
-        purchaseCost: purchaseCost || null,
+        purchaseCost: purchaseCost ? parseFloat(purchaseCost) : null,
         warrantyExpiry: warrantyExpiry ? new Date(warrantyExpiry) : null,
         installedDate: installedDate ? new Date(installedDate) : null,
-        expectedLifeYears: expectedLifeYears || null,
-        currentValue: currentValue || null,
-        depreciationRate: depreciationRate || null,
+        expectedLifeYears: expectedLifeYears ? parseInt(expectedLifeYears, 10) : null,
+        currentValue: currentValue ? parseFloat(currentValue) : null,
+        depreciationRate: depreciationRate ? parseFloat(depreciationRate) : null,
         imageUrl: imageUrl || null,
         drawingsUrl: drawingsUrl || null,
         manualUrl: manualUrl || null,
         specification: specification || null,
-        parentId: parentId || null,
-        createdById: session.userId,
-        assignedToId: assignedToId || null,
+        parent: parentConnect,
+        createdBy: { connect: { id: session.userId } },
+        assignedTo: assignedToConnect,
       },
       include: {
         category: { select: { id: true, name: true, code: true } },
