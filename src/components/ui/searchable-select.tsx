@@ -59,6 +59,13 @@ export function SearchableSelect({
   const [query, setQuery] = useState('');
   const selectedOption = options.find(o => o.value === value);
 
+  // Forward mouse wheel events to the scrollable cmdk-list container
+  const handleWheel = React.useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    const listEl = e.currentTarget.querySelector('[cmdk-list]') as HTMLElement | null;
+    if (!listEl) return;
+    listEl.scrollTop += e.deltaY;
+  }, []);
+
   // Group options if groupBy is enabled
   const groupedOptions = React.useMemo(() => {
     if (!groupBy) return [{ group: '', items: options }];
@@ -115,7 +122,11 @@ export function SearchableSelect({
           </div>
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+      <PopoverContent
+        className="w-[--radix-popover-trigger-width] p-0"
+        align="start"
+        onWheel={handleWheel}
+      >
         <Command shouldFilter={false} loop>
           <CommandInput
             placeholder={searchPlaceholder}
@@ -250,6 +261,13 @@ export function MultiSearchableSelect({
   const displayOpts = selectedOpts.slice(0, maxDisplay);
   const remaining = selectedOpts.length - maxDisplay;
 
+  // Forward mouse wheel events to the scrollable cmdk-list container
+  const handleWheel = React.useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    const listEl = e.currentTarget.querySelector('[cmdk-list]') as HTMLElement | null;
+    if (!listEl) return;
+    listEl.scrollTop += e.deltaY;
+  }, []);
+
   const handleSelect = (val: string) => {
     if (values.includes(val)) {
       onValuesChange(values.filter(v => v !== val));
@@ -318,7 +336,11 @@ export function MultiSearchableSelect({
           <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0 ml-1" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+      <PopoverContent
+        className="w-[--radix-popover-trigger-width] p-0"
+        align="start"
+        onWheel={handleWheel}
+      >
         <Command shouldFilter={false} loop>
           <CommandInput
             placeholder={searchPlaceholder}
