@@ -208,7 +208,7 @@ export async function POST(request: NextRequest) {
         imageUrl: imageUrl || null,
         drawingsUrl: drawingsUrl || null,
         manualUrl: manualUrl || null,
-        specification: specification || null,
+        specification: specification || '{}',
         parent: parentConnect,
         createdBy: { connect: { id: session.userId } },
         assignedTo: assignedToConnect,
