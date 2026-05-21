@@ -1,4 +1,3 @@
-import { startTransition } from 'react';
 import { create } from 'zustand';
 import type { PageName } from '@/types';
 import { api } from '@/lib/api';
@@ -91,12 +90,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   },
 
   navigate: (page, params = {}, replace = false) => {
-    // Use startTransition to mark page navigation as a low-priority update.
-    // This prevents React error #306 when lazy-loaded page components suspend
-    // during a synchronous user interaction (click, keypress, etc.).
-    startTransition(() => {
-      set({ currentPage: page, pageParams: params, mobileSidebarOpen: false });
-    });
+    set({ currentPage: page, pageParams: params, mobileSidebarOpen: false });
     pushNavState(page, params, replace);
   },
 
@@ -141,11 +135,9 @@ if (typeof window !== 'undefined') {
     // Normal app navigation — state has our marker and a page
     if (event.state?.[HISTORY_STATE_KEY] && event.state?.page) {
       const { page, params } = event.state;
-      startTransition(() => {
-        useNavigationStore.setState({
-          currentPage: page as PageName,
-          pageParams: params || {},
-        });
+      useNavigationStore.setState({
+        currentPage: page as PageName,
+        pageParams: params || {},
       });
       return;
     }
@@ -154,11 +146,9 @@ if (typeof window !== 'undefined') {
     // Push forward to dashboard to prevent the tab/webview from closing.
     // This is critical for mobile browsers and webviews where pressing back
     // at the root would close the entire tab.
-    startTransition(() => {
-      useNavigationStore.setState({
-        currentPage: 'dashboard',
-        pageParams: {},
-      });
+    useNavigationStore.setState({
+      currentPage: 'dashboard',
+      pageParams: {},
     });
     window.history.pushState(
       { [HISTORY_STATE_KEY]: true, page: 'dashboard', params: {} },
