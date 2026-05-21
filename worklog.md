@@ -5522,3 +5522,22 @@ Stage Summary:
 - **AssetDetailPage.tsx**: Conditional rendering per tab (only active tab renders), abort on unmount, skip loading state for no-fetch tabs
 - **EAMApp.tsx**: Added PageErrorBoundary around Suspense, fixed chunk error retry to reload() first
 - Commit: aa88038e, pushed to main
+
+---
+Task ID: 1
+Agent: Main
+Task: Fix React error #306 and page navigation freeze
+
+Work Log:
+- Diagnosed React error #306 ("component suspended while responding to synchronous input")
+- Root cause: All pages in EAMApp.tsx are React.lazy() loaded. When user clicks navigation, Zustand set() synchronously updates currentPage → new lazy component suspends → React 19 throws #306 because suspension happened during a discrete event
+- Fixed navigationStore.ts: Wrapped navigate() and popstate state updates in React.startTransition() to mark them as low-priority transitions where suspension is acceptable
+- Improved PageErrorBoundary in EAMApp.tsx: Added recognition for #306 and chunk errors, retry mechanism, and contextual error messages
+- Verified lint passes with no errors
+- Committed and pushed to main
+
+Stage Summary:
+- Key fix: `startTransition(() => set({ currentPage: page, ... }))` in navigationStore.ts
+- Also wrapped popstate handler and guard entry in startTransition
+- PageErrorBoundary now distinguishes between chunk/#306 errors (needs reload) and runtime errors (can retry)
+- Both "page navigation freeze" and "tab switching freeze" issues should be resolved by this fix
