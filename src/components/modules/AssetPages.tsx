@@ -381,7 +381,7 @@ export function AssetsPage() {
 
       {/* Detail Side Sheet */}
       <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
-        <SheetContent className="sm:max-w-xl overflow-y-auto p-6 pt-0">
+        <SheetContent className="sm:max-w-3xl overflow-y-auto p-6 pt-0">
           {detailId && <AssetDetailPage id={detailId} />}
         </SheetContent>
       </Sheet>
@@ -389,141 +389,8 @@ export function AssetsPage() {
   );
 }
 
-// ============================================================================
-// ASSET DETAIL PAGE
-// ============================================================================
-
-export function AssetDetailPage({ id }: { id: string }) {
-  const [asset, setAsset] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api.get<any>(`/api/assets/${id}`).then(res => {
-      if (res.success && res.data) setAsset(res.data);
-      setLoading(false);
-    });
-  }, [id]);
-
-  if (loading) return <LoadingSkeleton />;
-  if (!asset) return <div className="p-6">Asset not found</div>;
-
-  const specs: Record<string, string> = asset.specification || {};
-
-  return (
-    <>
-      {/* Header */}
-      <SheetHeader>
-        <SheetTitle>{asset.name}</SheetTitle>
-        <SheetDescription>{asset.assetTag} · {(asset.status || '').replace(/_/g, ' ')}</SheetDescription>
-      </SheetHeader>
-      <div className="flex items-center gap-2 flex-wrap mt-3">
-        <Badge variant="outline" className="capitalize">{(asset.status || '').replace(/_/g, ' ')}</Badge>
-        <Badge variant="outline" className="capitalize">{asset.condition || '-'}</Badge>
-        <Badge variant="outline" className="uppercase">{asset.criticality || '-'}</Badge>
-      </div>
-
-      <ScrollArea className="mt-4 max-h-[calc(100vh-12rem)]">
-        <div className="space-y-6 pb-6">
-          {/* Description */}
-          <Card className="border-0 shadow-sm dark:bg-card">
-            <CardHeader><CardTitle className="text-base">Description</CardTitle></CardHeader>
-            <CardContent><p className="text-sm text-muted-foreground whitespace-pre-wrap">{asset.description || 'No description'}</p></CardContent>
-          </Card>
-
-          {/* Specifications */}
-          {Object.keys(specs).length > 0 && (
-            <Card className="border-0 shadow-sm dark:bg-card">
-              <CardHeader><CardTitle className="text-base">Specifications</CardTitle></CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {Object.entries(specs).map(([key, value]) => (
-                    <div key={key} className="flex justify-between text-sm py-1.5 border-b last:border-0">
-                      <span className="text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</span>
-                      <span className="font-medium">{String(value)}</span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* PM Schedules */}
-          {asset.pmSchedules && asset.pmSchedules.length > 0 && (
-            <Card className="border-0 shadow-sm dark:bg-card">
-              <CardHeader><CardTitle className="text-base">PM Schedules</CardTitle></CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {asset.pmSchedules.map((pm: any) => (
-                    <div key={pm.id} className="flex items-center justify-between text-sm py-2 border-b last:border-0">
-                      <div>
-                        <p className="font-medium">{pm.title}</p>
-                        <p className="text-xs text-muted-foreground">{pm.frequencyType} · Priority: {(pm.priority || '').toUpperCase()}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-muted-foreground">Next Due</p>
-                        <p className="text-sm font-medium">{pm.nextDueDate ? formatDate(pm.nextDueDate) : 'N/A'}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-          {/* Details */}
-          <Card className="border-0 shadow-sm dark:bg-card">
-            <CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Category</span><span className="font-medium">{asset.category?.name || '-'}</span></div>
-              <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Serial Number</span><span className="font-mono font-medium">{asset.serialNumber || '-'}</span></div>
-              <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Manufacturer</span><span className="font-medium">{asset.manufacturer || '-'}</span></div>
-              <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Model</span><span className="font-medium">{asset.model || '-'}</span></div>
-              <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Location</span><span className="font-medium">{asset.location || '-'}</span></div>
-              <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Plant</span><span className="font-medium">{asset.plant?.name || '-'}</span></div>
-              <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Created</span><span className="font-medium">{formatDate(asset.createdAt)}</span></div>
-            </CardContent>
-          </Card>
-
-          {/* Financial */}
-          <Card className="border-0 shadow-sm dark:bg-card">
-            <CardHeader><CardTitle className="text-base">Financial</CardTitle></CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Purchase Cost</span><span className="font-medium">{asset.purchaseCost ? formatCurrency(asset.purchaseCost) : '-'}</span></div>
-              <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Current Value</span><span className="font-medium">{asset.currentValue ? formatCurrency(asset.currentValue) : '-'}</span></div>
-              <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Purchase Date</span><span className="font-medium">{formatDate(asset.purchaseDate)}</span></div>
-              <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Warranty Expiry</span><span className="font-medium">{formatDate(asset.warrantyExpiry)}</span></div>
-              <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Expected Life</span><span className="font-medium">{asset.expectedLifeYears ? `${asset.expectedLifeYears} years` : '-'}</span></div>
-            </CardContent>
-          </Card>
-
-          {/* Assigned To */}
-          {asset.assignedTo && asset.assignedTo.length > 0 && (
-            <Card className="border-0 shadow-sm dark:bg-card">
-              <CardHeader><CardTitle className="text-base">Assigned To</CardTitle></CardHeader>
-              <CardContent className="space-y-2">
-                {asset.assignedTo.map((u: any) => (
-                  <div key={u.id} className="flex items-center gap-2 text-sm">
-                    <Avatar className="h-6 w-6"><AvatarFallback className="text-[9px]">{getInitials(u.fullName || 'U')}</AvatarFallback></Avatar>
-                    <span className="font-medium">{u.fullName}</span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      </ScrollArea>
-    </>
-  );
-}
+import { AssetDetailPage } from './AssetDetailPage';
+export { AssetDetailPage };
 
 // ============================================================================
 // INVENTORY PAGE

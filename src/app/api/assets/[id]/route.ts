@@ -21,9 +21,9 @@ export async function GET(
         category: { select: { id: true, name: true, code: true } },
         plant: { select: { id: true, name: true, code: true } },
         department: { select: { id: true, name: true, code: true } },
-        parent: { select: { id: true, name: true, assetTag: true } },
+        parent: { select: { id: true, name: true, assetTag: true, status: true } },
         children: {
-          select: { id: true, name: true, assetTag: true, status: true, condition: true },
+          select: { id: true, name: true, assetTag: true, status: true, condition: true, category: { select: { id: true, name: true } } },
           orderBy: { name: 'asc' },
         },
         assignedTo: { select: { id: true, fullName: true, username: true } },
@@ -32,6 +32,8 @@ export async function GET(
           where: { isActive: true },
           orderBy: { nextDueDate: 'asc' },
         },
+        digitalTwin: { select: { id: true, name: true, type: true, healthScore: true, isActive: true, lastSynced: true, syncInterval: true } },
+        iotDevices: { select: { id: true, name: true, type: true, parameter: true, unit: true, status: true, lastSeen: true } },
       },
     });
 
