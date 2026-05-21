@@ -212,7 +212,7 @@ export function MaintenanceRequestsPage() {
 
       {/* Detail Side Sheet */}
       <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
-        <SheetContent side="right" className="sm:max-w-xl overflow-y-auto p-0">
+        <SheetContent side="right" className="sm:max-w-xl overflow-y-auto p-6 pt-0">
           {detailId && <MRDetailPage id={detailId} onUpdate={handleRefresh} />}
         </SheetContent>
       </Sheet>
@@ -826,7 +826,7 @@ export function MRDetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   return (
     <>
       {/* Sheet Header */}
-      <SheetHeader className="px-4 pt-4 pb-0 shrink-0">
+      <SheetHeader className="pt-4 pb-0 shrink-0">
         <div className="flex items-center gap-2 flex-wrap pr-8">
           <SheetTitle className="text-lg">{mr.requestNumber}</SheetTitle>
           <StatusBadge status={mr.status} />
@@ -1446,7 +1446,7 @@ export function MRDetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       <SLATimerDisplay slaHours={(mr as any).slaHours} slaStartedAt={(mr as any).slaStartedAt} status={mr.status} />
 
       {/* Scrollable Body - stacked vertically for narrow sheet */}
-      <ScrollArea className="flex-1 px-4 pb-4">
+      <ScrollArea className="flex-1 pb-4">
         <div className="space-y-4">
           {/* Workflow Timeline */}
           <MRWorkflowTimeline mr={mr} />
@@ -1799,7 +1799,7 @@ export function WorkOrdersPage() {
 
       {/* WO Detail Side Sheet */}
       <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
-        <SheetContent className="sm:max-w-xl overflow-y-auto p-0">
+        <SheetContent className="sm:max-w-xl overflow-y-auto p-6 pt-0">
           {detailId && <WODetailPage id={detailId} onUpdate={handleRefresh} />}
         </SheetContent>
       </Sheet>
@@ -2730,7 +2730,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   return (
     <ScrollArea className="h-full">
       {/* Sheet Header */}
-      <SheetHeader className="px-6 pt-6 pb-4">
+      <SheetHeader className="pt-4 pb-4">
         <SheetTitle className="flex items-center gap-2 flex-wrap">
           <span className="font-mono text-sm text-muted-foreground">{wo.woNumber}</span>
           <StatusBadge status={wo.status} />
@@ -2745,7 +2745,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       </SheetHeader>
 
       {/* Actions Bar */}
-      <div className="px-6 pb-4 flex items-center gap-2">
+      <div className="pb-4 flex items-center gap-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={readOnlyDisabled}><CheckCircle2 className="h-4 w-4 mr-1" />Actions</Button>
@@ -2997,7 +2997,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       />
 
       {/* Body — stacked vertically for sheet width */}
-      <div className="px-6 pb-6 space-y-6">
+      <div className="pb-6 space-y-6">
           <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Description</CardTitle></CardHeader>
             <CardContent><p className="text-sm text-muted-foreground whitespace-pre-wrap">{wo.description || 'No description'}</p></CardContent>
