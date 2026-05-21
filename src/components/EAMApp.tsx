@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, lazy, useDeferredValue, useMemo } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useCallback, startTransition } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { getInitials } from '@/components/shared/helpers';
@@ -257,15 +257,32 @@ class PageErrorBoundary extends React.Component<
 // ============================================================================
 
 function AppShell() {
-  const { currentPage, navigate, goBack, toggleSidebar, setMobileSidebarOpen, fetchModules } = useNavigationStore();
+  const storeCurrentPage = useNavigationStore(s => s.currentPage);
+  const { navigate, goBack, toggleSidebar, setMobileSidebarOpen, fetchModules } = useNavigationStore();
   const { user, isAuthenticated, isLoading, logout, hasPermission, isAdmin } = useAuthStore();
 
-  // useDeferredValue lets React keep showing the OLD page while the NEW page's
-  // lazy chunk loads. This prevents React error #306 ("component suspended
-  // while responding to synchronous input") which happens when clicking
-  // navigation triggers an immediate suspension of a not-yet-loaded lazy component.
-  const deferredPage = useDeferredValue(currentPage);
-  const isNavigating = currentPage !== deferredPage;
+  // --- Deferred page rendering to prevent React error #306 ---
+  // When Zustand's currentPage changes (from a click), we don't immediately
+  // switch the rendered page. Instead, we use startTransition inside a
+  // useEffect to defer the switch. This ensures:
+  // 1. The old page stays visible during the click event (no #306)
+  // 2. Suspense properly shows the loading skeleton for the new page
+  // 3. The header title updates immediately for responsiveness
+  const [displayPage, setDisplayPage] = useState(storeCurrentPage);
+
+  useEffect(() => {
+    if (storeCurrentPage !== displayPage) {
+      // Defer the page switch into a React transition.
+      // This is the correct way to use startTransition — from within
+      // a React component (not from a Zustand store action).
+      startTransition(() => {
+        setDisplayPage(storeCurrentPage);
+      });
+    }
+  }, [storeCurrentPage, displayPage]);
+
+  // For header and document title, use the immediate page (responsive)
+  const currentPage = storeCurrentPage;
 
   // Track if user has navigated away from dashboard (to show back button)
   const canGoBack = typeof window !== 'undefined' && window.location.hash !== '#/dashboard' && window.location.hash !== '#' && window.location.hash !== '';
@@ -289,9 +306,9 @@ function AppShell() {
   }
 
   const renderPage = () => {
-    // Use deferredPage (not currentPage) so the switch doesn't suspend synchronously.
-    // React will show the previous page until the new lazy component is ready.
-    switch (deferredPage) {
+    // Use displayPage (deferred via startTransition) so lazy components
+    // don't suspend synchronously during click events.
+    switch (displayPage) {
       // Core
       case 'dashboard': return <DashboardPage />;
       case 'chat': return <ChatPage />;
@@ -685,19 +702,7 @@ function AppShell() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 min-h-0 overflow-y-auto pb-16 lg:pb-0 relative">
-          {/* Navigation transition overlay — shows while deferred page catches up */}
-          {isNavigating && (
-            <div className="absolute inset-0 z-20 bg-background/60 backdrop-blur-[1px] flex items-start justify-center pt-24">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground bg-card border rounded-lg px-4 py-2.5 shadow-sm">
-                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Loading…
-              </div>
-            </div>
-          )}
+        <main className="flex-1 min-h-0 overflow-y-auto pb-16 lg:pb-0">
           <PageErrorBoundary>
             <Suspense fallback={<LoadingSkeleton />}>
               {renderPage()}
