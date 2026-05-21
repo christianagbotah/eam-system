@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+// NOTE: Custom tab implementation used — no Radix Tabs/Content for performance
 import { SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -318,30 +318,36 @@ export function AssetDetailPage({ id }: { id: string }) {
         <Badge variant="outline" className={`uppercase ${criticalityColors[asset.criticality] || ''}`}>{asset.criticality || '-'}</Badge>
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-        <TabsList className="w-full flex overflow-x-auto p-0 h-auto gap-0 bg-transparent border-b rounded-none">
+      {/* Tabs — custom implementation for performance (no Radix TabsContent overhead) */}
+      <div className="mt-4">
+        <div className="w-full flex overflow-x-auto border-b rounded-none" role="tablist">
           {tabs.map((tab) => {
             const TabIcon = tab.icon;
+            const isActive = activeTab === tab.id;
             return (
-            <TabsTrigger
+            <button
               key={tab.id}
-              value={tab.id}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none text-xs whitespace-nowrap flex-shrink-0"
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-none border-b-2 text-xs whitespace-nowrap flex-shrink-0 transition-colors ${
+                isActive
+                  ? 'border-primary text-foreground font-medium'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'
+              }`}
             >
               <TabIcon className="h-3.5 w-3.5" />
               {tab.label}
               {tab.badge ? <span className="ml-0.5 h-4 min-w-4 px-1 rounded-full bg-primary/10 text-primary text-[9px] font-bold flex items-center justify-center">{tab.badge}</span> : null}
-            </TabsTrigger>
+            </button>
             );
           })}
-        </TabsList>
+        </div>
 
         <div className="overflow-y-auto max-h-[calc(100vh-14rem)]">
           <div className="pb-6">
             {/* ==================== OVERVIEW TAB ==================== */}
-            <TabsContent value="overview" className="mt-4 space-y-4">
-              {activeTab === 'overview' && (<>
+            {activeTab === 'overview' && (<div key="tab-overview" className="mt-4 space-y-4">
               {asset.description && (
                 <Card className="border-0 shadow-sm">
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Description</CardTitle></CardHeader>
@@ -477,13 +483,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </CardContent>
                 </Card>
               )}
-            </>)}
-            </TabsContent>
+            </div>)}
 
             {/* ==================== HIERARCHY TAB ==================== */}
-            <TabsContent value="hierarchy" className="mt-4 space-y-4">
-              {activeTab === 'hierarchy' && (<>
-              {!hasHierarchy ? (
+            {activeTab === 'hierarchy' && (<div key="tab-hierarchy" className="mt-4 space-y-4">              {!hasHierarchy ? (
                 <EmptyTab icon={GitBranch} title="No Hierarchy" description="This asset is not part of a hierarchy. Set a Parent Asset or add child assets to build the structure." />
               ) : (
                 <>
@@ -542,12 +545,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                   )}
                 </>
               )}
-            </>)}
-            </TabsContent>
+            </div>)}
 
             {/* ==================== BOM TAB ==================== */}
-            <TabsContent value="bom" className="mt-4 space-y-4">
-              {activeTab === 'bom' && (<>
+            {activeTab === 'bom' && (<div key="tab-bom" className="mt-4 space-y-4">
               {tabDataLoading && activeTab === 'bom' ? (
                 <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : bomItems.length === 0 && bomAsChild.length === 0 ? (
@@ -590,12 +591,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </Card>
                 </>
               )}
-            </>)}
-            </TabsContent>
+            </div>)}
 
             {/* ==================== COMPONENTS TAB ==================== */}
-            <TabsContent value="components" className="mt-4 space-y-4">
-              {activeTab === 'components' && (<>
+            {activeTab === 'components' && (<div key="tab-components" className="mt-4 space-y-4">
               {/* Add Component Form */}
               {showComponentForm && (
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
@@ -710,12 +709,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </Card>
                 </>
               )}
-            </>)}
-            </TabsContent>
+            </div>)}
 
             {/* ==================== CONDITION MONITORING TAB ==================== */}
-            <TabsContent value="condition" className="mt-4 space-y-4">
-              {activeTab === 'condition' && (<>
+            {activeTab === 'condition' && (<div key="tab-condition" className="mt-4 space-y-4">
               {!hasIoT ? (
                 <EmptyTab icon={Activity} title="No Monitoring Devices" description="No IoT sensors or monitoring devices are connected to this asset. Add monitoring points to track condition in real-time." />
               ) : (
@@ -741,12 +738,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                   })}
                 </div>
               )}
-            </>)}
-            </TabsContent>
+            </div>)}
 
             {/* ==================== DIGITAL TWIN TAB ==================== */}
-            <TabsContent value="digital-twin" className="mt-4 space-y-4">
-              {activeTab === 'digital-twin' && (<>
+            {activeTab === 'digital-twin' && (<div key="tab-digital-twin" className="mt-4 space-y-4">
               {/* Create Twin Form */}
               {showTwinForm && (
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
@@ -837,12 +832,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </CardContent>
                 </Card>
               )}
-            </>)}
-            </TabsContent>
+            </div>)}
 
             {/* ==================== DIAGRAMS TAB ==================== */}
-            <TabsContent value="diagrams" className="mt-4 space-y-4">
-              {activeTab === 'diagrams' && (<>
+            {activeTab === 'diagrams' && (<div key="tab-diagrams" className="mt-4 space-y-4">
               {/* Create Diagram Form */}
               {showDiagramForm && (
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
@@ -914,11 +907,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </CardContent>
                 </Card>
               )}
-            </>)}
-            </TabsContent>
+            </div>)}
           </div>
         </div>
-      </Tabs>
+      </div>
     </>
   );
 }
