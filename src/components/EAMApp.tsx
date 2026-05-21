@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, lazy, useState, useEffect, useCallback, startTransition } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { getInitials } from '@/components/shared/helpers';
@@ -23,266 +23,232 @@ import {
   Menu, ChevronLeft, ChevronRight, ChevronDown, Sun, Moon, Bell, LogOut,
   LayoutDashboard, Building2, History, Search,
 } from 'lucide-react';
-
-// Lazy-loaded module pages
-const DashboardPage = lazy(() => import('./modules/DashboardPages').then(m => ({ default: m.DashboardPage })));
-const ChatPage = lazy(() => import('./modules/ChatPage').then(m => ({ default: m.ChatPage })));
-const NotificationsPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.NotificationsPage })));
-
-// Assets
-const AssetsPage = lazy(() => import('./modules/AssetPages').then(m => ({ default: m.AssetsPage })));
-const AssetsMachinesPage = lazy(() => import('./modules/AssetPages').then(m => ({ default: m.AssetsMachinesPage })));
-const AssetsHierarchyPage = lazy(() => import('./modules/AssetPages').then(m => ({ default: m.AssetsHierarchyPage })));
-const AssetsBomPage = lazy(() => import('./modules/AssetPages').then(m => ({ default: m.AssetsBomPage })));
-const AssetsConditionMonitoringPage = lazy(() => import('./modules/AssetPages').then(m => ({ default: m.AssetsConditionMonitoringPage })));
-const DigitalTwinMainPage = lazy(() => import('./digital-twin/DigitalTwinMainPage').then(m => ({ default: m.DigitalTwinMainPage })));
-const SystemDiagramPage = lazy(() => import('./digital-twin/SystemDiagramPage'));
-const AssetHealthPage = lazy(() => import('./modules/AssetPages').then(m => ({ default: m.AssetHealthPage })));
-const AssetCategoriesPage = lazy(() => import('./modules/AssetCategoriesPage'));
-
-// Maintenance
-const MaintenanceRequestsPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceRequestsPage })));
-const MaintenanceWorkOrdersPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceWorkOrdersPage })));
-const PmSchedulesPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.PmSchedulesPage })));
-const PmTemplatesPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.PmTemplatesPage })));
-const PmTriggersPage = lazy(() => import('./modules/PmTriggersPage').then(m => ({ default: m.default })));
-const PmCalendarPage = lazy(() => import('./modules/PmCalendarPage').then(m => ({ default: m.default })));
-
-const MaintenanceDashboardPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceDashboardPage })));
-const MaintenanceAnalyticsPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceAnalyticsPage })));
-const MaintenanceCalibrationPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceCalibrationPage })));
-const MaintenanceRiskAssessmentPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceRiskAssessmentPage })));
-const MaintenanceToolsPage = lazy(() => import('./modules/MaintenancePages').then(m => ({ default: m.MaintenanceToolsPage })));
-
-// Repairs Module
-const RepairMaterialRequestsPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairMaterialRequestsPage })));
-const RepairToolRequestsPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairToolRequestsPage })));
-const RepairToolTransfersPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairToolTransfersPage })));
-const RepairDowntimePage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairDowntimePage })));
-const RepairCompletionPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairCompletionPage })));
-const RepairAnalyticsPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.RepairAnalyticsPage })));
-const SparePartReturnsPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.SparePartReturnsPage })));
-const DamagedToolReportsPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.DamagedToolReportsPage })));
-const MaintenanceReportsPage = lazy(() => import('./modules/RepairsPages').then(m => ({ default: m.MaintenanceReportsPage })));
-
-
-// Inventory
-const InventoryPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventoryPage })));
-const InventoryItemsPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventoryItemsPage })));
-const InventoryCategoriesPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventoryCategoriesPage })));
-const InventoryLocationsPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventoryLocationsPage })));
-const InventoryTransactionsPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventoryTransactionsPage })));
-const InventoryAdjustmentsPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventoryAdjustmentsPage })));
-const InventoryRequestsPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventoryRequestsPage })));
-const InventoryTransfersPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventoryTransfersPage })));
-const InventorySuppliersPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventorySuppliersPage })));
-const InventoryPurchaseOrdersPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventoryPurchaseOrdersPage })));
-const InventoryReceivingPage = lazy(() => import('./modules/InventoryPages').then(m => ({ default: m.InventoryReceivingPage })));
-
-// IoT
-const IotDevicesPage = lazy(() => import('./modules/IoTPages').then(m => ({ default: m.IotDevicesPage })));
-const IotMonitoringPage = lazy(() => import('./modules/IoTPages').then(m => ({ default: m.IotMonitoringPage })));
-const IotRulesPage = lazy(() => import('./modules/IoTPages').then(m => ({ default: m.IotRulesPage })));
-
-// Industrial Connectivity
-const ConnectivityPage = lazy(() => import('./modules/ConnectivityPages').then(m => ({ default: m.ConnectivityPage })));
-
-// Analytics
-const AnalyticsPage = lazy(() => import('./modules/AnalyticsPages').then(m => ({ default: m.AnalyticsPage })));
-const AnalyticsKpiPage = lazy(() => import('./modules/AnalyticsPages').then(m => ({ default: m.AnalyticsKpiPage })));
-const AnalyticsOeePage = lazy(() => import('./modules/AnalyticsPages').then(m => ({ default: m.AnalyticsOeePage })));
-const AnalyticsDowntimePage = lazy(() => import('./modules/AnalyticsPages').then(m => ({ default: m.AnalyticsDowntimePage })));
-const AnalyticsEnergyPage = lazy(() => import('./modules/AnalyticsPages').then(m => ({ default: m.AnalyticsEnergyPage })));
-
-// Operations
-const OperationsMeterReadingsPage = lazy(() => import('./modules/OperationsPages').then(m => ({ default: m.OperationsMeterReadingsPage })));
-const OperationsTrainingPage = lazy(() => import('./modules/OperationsPages').then(m => ({ default: m.OperationsTrainingPage })));
-const OperationsSurveysPage = lazy(() => import('./modules/OperationsPages').then(m => ({ default: m.OperationsSurveysPage })));
-const OperationsTimeLogsPage = lazy(() => import('./modules/OperationsPages').then(m => ({ default: m.OperationsTimeLogsPage })));
-const OperationsShiftHandoverPage = lazy(() => import('./modules/OperationsPages').then(m => ({ default: m.OperationsShiftHandoverPage })));
-const OperationsChecklistsPage = lazy(() => import('./modules/OperationsPages').then(m => ({ default: m.OperationsChecklistsPage })));
-
-// Production
-const ProductionWorkCentersPage = lazy(() => import('./modules/ProductionPages').then(m => ({ default: m.ProductionWorkCentersPage })));
-const ProductionResourcePlanningPage = lazy(() => import('./modules/ProductionPages').then(m => ({ default: m.ProductionResourcePlanningPage })));
-const ProductionSchedulingPage = lazy(() => import('./modules/ProductionPages').then(m => ({ default: m.ProductionSchedulingPage })));
-const ProductionCapacityPage = lazy(() => import('./modules/ProductionPages').then(m => ({ default: m.ProductionCapacityPage })));
-const ProductionEfficiencyPage = lazy(() => import('./modules/ProductionPages').then(m => ({ default: m.ProductionEfficiencyPage })));
-const ProductionBottlenecksPage = lazy(() => import('./modules/ProductionPages').then(m => ({ default: m.ProductionBottlenecksPage })));
-const ProductionOrdersPage = lazy(() => import('./modules/ProductionPages').then(m => ({ default: m.ProductionOrdersPage })));
-const ProductionBatchesPage = lazy(() => import('./modules/ProductionPages').then(m => ({ default: m.ProductionBatchesPage })));
-
-// Quality
-const QualityInspectionsPage = lazy(() => import('./modules/QualityPages').then(m => ({ default: m.QualityInspectionsPage })));
-const QualityNcrPage = lazy(() => import('./modules/QualityPages').then(m => ({ default: m.QualityNcrPage })));
-const QualityAuditsPage = lazy(() => import('./modules/QualityPages').then(m => ({ default: m.QualityAuditsPage })));
-const QualityControlPlansPage = lazy(() => import('./modules/QualityPages').then(m => ({ default: m.QualityControlPlansPage })));
-const QualitySpcPage = lazy(() => import('./modules/QualityPages').then(m => ({ default: m.QualitySpcPage })));
-const QualityCapaPage = lazy(() => import('./modules/QualityPages').then(m => ({ default: m.QualityCapaPage })));
-
-// Safety
-const SafetyIncidentsPage = lazy(() => import('./modules/SafetyPages').then(m => ({ default: m.SafetyIncidentsPage })));
-const SafetyInspectionsPage = lazy(() => import('./modules/SafetyPages').then(m => ({ default: m.SafetyInspectionsPage })));
-const SafetyTrainingPage = lazy(() => import('./modules/SafetyPages').then(m => ({ default: m.SafetyTrainingPage })));
-const SafetyEquipmentPage = lazy(() => import('./modules/SafetyPages').then(m => ({ default: m.SafetyEquipmentPage })));
-const SafetyPermitsPage = lazy(() => import('./modules/SafetyPages').then(m => ({ default: m.SafetyPermitsPage })));
-
-// Planner Workbench
-const PlannerWorkbenchPage = lazy(() => import('./modules/PlannerWorkbench'));
-const EnterpriseReportsPage = lazy(() => import('./modules/EnterpriseReports'));
-
-// Reliability Engineering (Phase D)
-const ReliabilityEngineeringPage = lazy(() => import('./modules/ReliabilityEngineeringPage'));
-
-// Reports
-const ReportsAssetPage = lazy(() => import('./modules/ReportPages').then(m => ({ default: m.ReportsAssetPage })));
-const ReportsMaintenancePage = lazy(() => import('./modules/ReportPages').then(m => ({ default: m.ReportsMaintenancePage })));
-const ReportsInventoryPage = lazy(() => import('./modules/ReportPages').then(m => ({ default: m.ReportsInventoryPage })));
-const ReportsProductionPage = lazy(() => import('./modules/ReportPages').then(m => ({ default: m.ReportsProductionPage })));
-const ReportsQualityPage = lazy(() => import('./modules/ReportPages').then(m => ({ default: m.ReportsQualityPage })));
-const ReportsSafetyPage = lazy(() => import('./modules/ReportPages').then(m => ({ default: m.ReportsSafetyPage })));
-const ReportsFinancialPage = lazy(() => import('./modules/ReportPages').then(m => ({ default: m.ReportsFinancialPage })));
-const ReportsCustomPage = lazy(() => import('./modules/ReportPages').then(m => ({ default: m.ReportsCustomPage })));
-
-// Settings
-const SettingsGeneralPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SettingsGeneralPage })));
-const SettingsUsersPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SettingsUsersPage })));
-const SettingsRolesPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SettingsRolesPage })));
-const SettingsModulesPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SettingsModulesPage })));
-const CompanyProfilePage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.CompanyProfilePage })));
-const SettingsPlantsPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SettingsPlantsPage })));
-const SettingsDepartmentsPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SettingsDepartmentsPage })));
-const SettingsNotificationsPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SettingsNotificationsPage })));
-const SettingsIntegrationsPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SettingsIntegrationsPage })));
-const SettingsBackupPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SettingsBackupPage })));
-const AuditLogsPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.AuditLogsPage })));
-const SecuritySettingsPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SecuritySettingsPage })));
-const SystemHealthPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.SystemHealthPage })));
-const QueueManagerPage = lazy(() => import('./modules/QueueManagerPage'));
-const UserPreferencesPage = lazy(() => import('./modules/SettingsPages').then(m => ({ default: m.UserPreferencesPage })));
-
-// Historian
-const HistorianDashboardPage = lazy(() => import('./modules/HistorianPages').then(m => ({ default: m.HistorianDashboard })));
-
-// Observability
-const ObservabilityDashboardPage = lazy(() => import('./modules/ObservabilityPages').then(m => ({ default: m.ObservabilityDashboard })));
-
+import type { PageName } from '@/types';
 
 // ============================================================================
-// PAGE-LEVEL ERROR BOUNDARY — catches chunk loading & runtime errors inside Suspense
+// PAGE LOADER — manual dynamic imports WITHOUT React.lazy/Suspense
+// ============================================================================
+// React.lazy + Suspense causes Error #306 when combined with Zustand's
+// useSyncExternalStore because Zustand forces synchronous re-renders.
+// Instead, we use a useEffect-based loader that never suspends.
+// Components are cached after first load so navigation is instant.
 // ============================================================================
 
-class PageErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean; error: Error | null; retryCount: number }
-> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { hasError: false, error: null, retryCount: 0 };
-  }
+type PageComponent = React.ComponentType;
 
-  static getDerivedStateFromError(error: Error) {
-    return { hasError: true, error };
-  }
+// Cache loaded components so revisiting a page is instant
+const pageCache = new Map<string, PageComponent>();
 
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('=== PAGE ERROR ===', error.message, info.componentStack);
-  }
+// Registry of dynamic importers — returns the named export from each module
+const pageLoaders: Record<string, () => Promise<PageComponent>> = {
+  // Core
+  'dashboard': () => import('./modules/DashboardPages').then(m => m.DashboardPage),
+  'chat': () => import('./modules/ChatPage').then(m => m.ChatPage),
+  'notifications': () => import('./modules/SettingsPages').then(m => m.NotificationsPage),
+  // Assets
+  'asset-categories': () => import('./modules/AssetCategoriesPage').then(m => m.default),
+  'assets-machines': () => import('./modules/AssetPages').then(m => m.AssetsMachinesPage),
+  'assets-hierarchy': () => import('./modules/AssetPages').then(m => m.AssetsHierarchyPage),
+  'assets-bom': () => import('./modules/AssetPages').then(m => m.AssetsBomPage),
+  'assets-condition-monitoring': () => import('./modules/AssetPages').then(m => m.AssetsConditionMonitoringPage),
+  'assets-digital-twin': () => import('./digital-twin/DigitalTwinMainPage').then(m => m.DigitalTwinMainPage),
+  'digital-twin-viewer': () => import('./digital-twin/DigitalTwinMainPage').then(m => m.DigitalTwinMainPage),
+  'system-diagrams': () => import('./digital-twin/SystemDiagramPage').then(m => m.default),
+  'assets-health': () => import('./modules/AssetPages').then(m => m.AssetHealthPage),
+  // Maintenance
+  'maintenance-work-orders': () => import('./modules/MaintenancePages').then(m => m.MaintenanceWorkOrdersPage),
+  'wo-detail': () => import('./modules/MaintenancePages').then(m => m.MaintenanceWorkOrdersPage),
+  'maintenance-requests': () => import('./modules/MaintenancePages').then(m => m.MaintenanceRequestsPage),
+  'mr-detail': () => import('./modules/MaintenancePages').then(m => m.MaintenanceRequestsPage),
+  'create-mr': () => import('./modules/MaintenancePages').then(m => m.MaintenanceRequestsPage),
+  'maintenance-dashboard': () => import('./modules/MaintenancePages').then(m => m.MaintenanceDashboardPage),
+  'maintenance-analytics': () => import('./modules/MaintenancePages').then(m => m.MaintenanceAnalyticsPage),
+  'maintenance-calibration': () => import('./modules/MaintenancePages').then(m => m.MaintenanceCalibrationPage),
+  'maintenance-risk-assessment': () => import('./modules/MaintenancePages').then(m => m.MaintenanceRiskAssessmentPage),
+  'maintenance-tools': () => import('./modules/MaintenancePages').then(m => m.MaintenanceToolsPage),
+  'pm-schedules': () => import('./modules/MaintenancePages').then(m => m.PmSchedulesPage),
+  'pm-templates': () => import('./modules/MaintenancePages').then(m => m.PmTemplatesPage),
+  'pm-triggers': () => import('./modules/PmTriggersPage').then(m => m.default),
+  'pm-calendar': () => import('./modules/PmCalendarPage').then(m => m.default),
+  // Planner Workbench
+  'planner-workbench': () => import('./modules/PlannerWorkbench').then(m => m.default),
+  'enterprise-reports': () => import('./modules/EnterpriseReports').then(m => m.default),
+  // Repairs
+  'repairs-material-requests': () => import('./modules/RepairsPages').then(m => m.RepairMaterialRequestsPage),
+  'repairs-tool-requests': () => import('./modules/RepairsPages').then(m => m.RepairToolRequestsPage),
+  'repairs-tool-transfers': () => import('./modules/RepairsPages').then(m => m.RepairToolTransfersPage),
+  'repairs-downtime': () => import('./modules/RepairsPages').then(m => m.RepairDowntimePage),
+  'repairs-completion': () => import('./modules/RepairsPages').then(m => m.RepairCompletionPage),
+  'repairs-analytics': () => import('./modules/RepairsPages').then(m => m.RepairAnalyticsPage),
+  'repairs-spare-part-returns': () => import('./modules/RepairsPages').then(m => m.SparePartReturnsPage),
+  'repairs-damaged-tools': () => import('./modules/RepairsPages').then(m => m.DamagedToolReportsPage),
+  'repairs-reports': () => import('./modules/RepairsPages').then(m => m.MaintenanceReportsPage),
+  // IoT
+  'iot-devices': () => import('./modules/IoTPages').then(m => m.IotDevicesPage),
+  'iot-monitoring': () => import('./modules/IoTPages').then(m => m.IotMonitoringPage),
+  'iot-rules': () => import('./modules/IoTPages').then(m => m.IotRulesPage),
+  // Industrial Connectivity
+  'connectivity': () => import('./modules/ConnectivityPages').then(m => m.ConnectivityPage),
+  // Analytics
+  'analytics-kpi': () => import('./modules/AnalyticsPages').then(m => m.AnalyticsKpiPage),
+  'analytics-oee': () => import('./modules/AnalyticsPages').then(m => m.AnalyticsOeePage),
+  'analytics-downtime': () => import('./modules/AnalyticsPages').then(m => m.AnalyticsDowntimePage),
+  'analytics-energy': () => import('./modules/AnalyticsPages').then(m => m.AnalyticsEnergyPage),
+  // Operations
+  'operations-meter-readings': () => import('./modules/OperationsPages').then(m => m.OperationsMeterReadingsPage),
+  'operations-training': () => import('./modules/OperationsPages').then(m => m.OperationsTrainingPage),
+  'operations-surveys': () => import('./modules/OperationsPages').then(m => m.OperationsSurveysPage),
+  'operations-time-logs': () => import('./modules/OperationsPages').then(m => m.OperationsTimeLogsPage),
+  'operations-shift-handover': () => import('./modules/OperationsPages').then(m => m.OperationsShiftHandoverPage),
+  'operations-checklists': () => import('./modules/OperationsPages').then(m => m.OperationsChecklistsPage),
+  // Production
+  'production-work-centers': () => import('./modules/ProductionPages').then(m => m.ProductionWorkCentersPage),
+  'production-resource-planning': () => import('./modules/ProductionPages').then(m => m.ProductionResourcePlanningPage),
+  'production-scheduling': () => import('./modules/ProductionPages').then(m => m.ProductionSchedulingPage),
+  'production-capacity': () => import('./modules/ProductionPages').then(m => m.ProductionCapacityPage),
+  'production-efficiency': () => import('./modules/ProductionPages').then(m => m.ProductionEfficiencyPage),
+  'production-bottlenecks': () => import('./modules/ProductionPages').then(m => m.ProductionBottlenecksPage),
+  'production-orders': () => import('./modules/ProductionPages').then(m => m.ProductionOrdersPage),
+  'production-batches': () => import('./modules/ProductionPages').then(m => m.ProductionBatchesPage),
+  // Quality
+  'quality-inspections': () => import('./modules/QualityPages').then(m => m.QualityInspectionsPage),
+  'quality-ncr': () => import('./modules/QualityPages').then(m => m.QualityNcrPage),
+  'quality-audits': () => import('./modules/QualityPages').then(m => m.QualityAuditsPage),
+  'quality-control-plans': () => import('./modules/QualityPages').then(m => m.QualityControlPlansPage),
+  'quality-spc': () => import('./modules/QualityPages').then(m => m.QualitySpcPage),
+  'quality-capa': () => import('./modules/QualityPages').then(m => m.QualityCapaPage),
+  // Safety
+  'safety-incidents': () => import('./modules/SafetyPages').then(m => m.SafetyIncidentsPage),
+  'safety-inspections': () => import('./modules/SafetyPages').then(m => m.SafetyInspectionsPage),
+  'safety-training': () => import('./modules/SafetyPages').then(m => m.SafetyTrainingPage),
+  'safety-equipment': () => import('./modules/SafetyPages').then(m => m.SafetyEquipmentPage),
+  'safety-permits': () => import('./modules/SafetyPages').then(m => m.SafetyPermitsPage),
+  // Reliability Engineering
+  'reliability-engineering': () => import('./modules/ReliabilityEngineeringPage').then(m => m.default),
+  // Inventory
+  'inventory-items': () => import('./modules/InventoryPages').then(m => m.InventoryItemsPage),
+  'inventory-categories': () => import('./modules/InventoryPages').then(m => m.InventoryCategoriesPage),
+  'inventory-locations': () => import('./modules/InventoryPages').then(m => m.InventoryLocationsPage),
+  'inventory-transactions': () => import('./modules/InventoryPages').then(m => m.InventoryTransactionsPage),
+  'inventory-adjustments': () => import('./modules/InventoryPages').then(m => m.InventoryAdjustmentsPage),
+  'inventory-requests': () => import('./modules/InventoryPages').then(m => m.InventoryRequestsPage),
+  'inventory-transfers': () => import('./modules/InventoryPages').then(m => m.InventoryTransfersPage),
+  'inventory-suppliers': () => import('./modules/InventoryPages').then(m => m.InventorySuppliersPage),
+  'inventory-purchase-orders': () => import('./modules/InventoryPages').then(m => m.InventoryPurchaseOrdersPage),
+  'inventory-receiving': () => import('./modules/InventoryPages').then(m => m.InventoryReceivingPage),
+  // Reports
+  'reports-asset': () => import('./modules/ReportPages').then(m => m.ReportsAssetPage),
+  'reports-maintenance': () => import('./modules/ReportPages').then(m => m.ReportsMaintenancePage),
+  'reports-inventory': () => import('./modules/ReportPages').then(m => m.ReportsInventoryPage),
+  'reports-production': () => import('./modules/ReportPages').then(m => m.ReportsProductionPage),
+  'reports-quality': () => import('./modules/ReportPages').then(m => m.ReportsQualityPage),
+  'reports-safety': () => import('./modules/ReportPages').then(m => m.ReportsSafetyPage),
+  'reports-financial': () => import('./modules/ReportPages').then(m => m.ReportsFinancialPage),
+  'reports-custom': () => import('./modules/ReportPages').then(m => m.ReportsCustomPage),
+  // Settings
+  'settings-general': () => import('./modules/SettingsPages').then(m => m.SettingsGeneralPage),
+  'settings-users': () => import('./modules/SettingsPages').then(m => m.SettingsUsersPage),
+  'settings-roles': () => import('./modules/SettingsPages').then(m => m.SettingsRolesPage),
+  'settings-modules': () => import('./modules/SettingsPages').then(m => m.SettingsModulesPage),
+  'settings-company': () => import('./modules/SettingsPages').then(m => m.CompanyProfilePage),
+  'settings-plants': () => import('./modules/SettingsPages').then(m => m.SettingsPlantsPage),
+  'settings-departments': () => import('./modules/SettingsPages').then(m => m.SettingsDepartmentsPage),
+  'settings-notifications': () => import('./modules/SettingsPages').then(m => m.SettingsNotificationsPage),
+  'settings-integrations': () => import('./modules/SettingsPages').then(m => m.SettingsIntegrationsPage),
+  'settings-backup': () => import('./modules/SettingsPages').then(m => m.SettingsBackupPage),
+  'settings-audit': () => import('./modules/SettingsPages').then(m => m.AuditLogsPage),
+  'settings-security': () => import('./modules/SettingsPages').then(m => m.SecuritySettingsPage),
+  'settings-health': () => import('./modules/SettingsPages').then(m => m.SystemHealthPage),
+  'settings-queues': () => import('./modules/QueueManagerPage').then(m => m.default),
+  'settings-preferences': () => import('./modules/SettingsPages').then(m => m.UserPreferencesPage),
+  // Observability
+  'observability-dashboard': () => import('./modules/ObservabilityPages').then(m => m.ObservabilityDashboard),
+  // Historian
+  'historian-dashboard': () => import('./modules/HistorianPages').then(m => m.HistorianDashboard),
+  // Legacy fallbacks
+  'assets': () => import('./modules/AssetPages').then(m => m.AssetsPage),
+  'asset-detail': () => import('./modules/AssetPages').then(m => m.AssetsPage),
+  'inventory': () => import('./modules/InventoryPages').then(m => m.InventoryPage),
+  'analytics': () => import('./modules/AnalyticsPages').then(m => m.AnalyticsPage),
+};
 
-  private isChunkError(): boolean {
-    const msg = this.state.error?.message || '';
+/**
+ * PageSwitcher — loads page components via useEffect + dynamic imports.
+ * Never uses React.lazy/Suspense, so it NEVER suspends during a click event.
+ * Loaded components are cached for instant subsequent navigation.
+ */
+function PageSwitcher({ page }: { page: string }) {
+  const [Component, setComponent] = useState<PageComponent | null>(
+    () => pageCache.get(page) || null
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // If already cached, use it immediately
+    if (pageCache.has(page)) {
+      setComponent(() => pageCache.get(page)!);
+      setError(null);
+      return;
+    }
+
+    // Show loading while importing
+    setComponent(null);
+    setError(null);
+
+    let cancelled = false;
+    const loader = pageLoaders[page] || pageLoaders['dashboard'];
+    loader()
+      .then(C => {
+        if (!cancelled) {
+          pageCache.set(page, C);
+          setComponent(() => C);
+        }
+      })
+      .catch(err => {
+        if (!cancelled) {
+          console.error(`[PageSwitcher] Failed to load page "${page}":`, err);
+          setError(err instanceof Error ? err.message : 'Failed to load page');
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [page]);
+
+  if (error) {
     return (
-      msg.includes('ChunkLoadError') ||
-      msg.includes('Failed to load chunk') ||
-      msg.includes('Loading chunk') ||
-      msg.includes('Loading CSS chunk') ||
-      msg.includes('error #306') ||
-      msg.includes('suspended while responding')
+      <div className="flex items-center justify-center min-h-[300px]">
+        <div className="text-center space-y-3 p-6 max-w-md">
+          <div className="h-10 w-10 mx-auto rounded-full bg-red-100 dark:bg-red-950/30 flex items-center justify-center">
+            <svg className="h-5 w-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <p className="text-sm font-medium">Page failed to load</p>
+          <p className="text-xs text-muted-foreground">This usually happens after an update. Try reloading.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors"
+          >
+            Reload Page
+          </button>
+        </div>
+      </div>
     );
   }
 
-  handleRetry = () => {
-    // Chunk errors and #306 errors require a full reload to fetch fresh bundles
-    if (this.isChunkError() || this.state.retryCount >= 2) {
-      window.location.reload();
-      return;
-    }
-    // For runtime errors, try re-rendering
-    this.setState({ hasError: false, error: null, retryCount: this.state.retryCount + 1 });
-  };
-
-  render() {
-    if (this.state.hasError && this.state.error) {
-      const isChunk = this.isChunkError();
-      return (
-        <div className="flex items-center justify-center min-h-[300px]">
-          <div className="text-center space-y-3 p-6 max-w-md">
-            <div className={`h-10 w-10 mx-auto rounded-full flex items-center justify-center ${isChunk ? 'bg-amber-100 dark:bg-amber-950/30' : 'bg-red-100 dark:bg-red-950/30'}`}>
-              <svg className={`h-5 w-5 ${isChunk ? 'text-amber-600' : 'text-red-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <p className="text-sm font-medium">{isChunk ? 'Page failed to load' : 'Something went wrong'}</p>
-            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-              {isChunk
-                ? 'This page could not be loaded. This usually happens after an update — reloading will fix it.'
-                : (this.state.error?.message || 'An unexpected error occurred')}
-            </p>
-            <div className="flex gap-2 justify-center">
-              {!isChunk && this.state.retryCount < 2 && (
-                <button
-                  onClick={this.handleRetry}
-                  className="px-4 py-1.5 border border-border hover:bg-muted text-foreground text-xs font-medium rounded-lg transition-colors"
-                >
-                  Try Again
-                </button>
-              )}
-              <button
-                onClick={() => window.location.reload()}
-                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors"
-              >
-                Reload Page
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
+  if (!Component) return <LoadingSkeleton />;
+  return <Component />;
 }
+
 
 // ============================================================================
 // MAIN APP SHELL
 // ============================================================================
 
 function AppShell() {
-  const storeCurrentPage = useNavigationStore(s => s.currentPage);
+  const currentPage = useNavigationStore(s => s.currentPage);
   const { navigate, goBack, toggleSidebar, setMobileSidebarOpen, fetchModules } = useNavigationStore();
   const { user, isAuthenticated, isLoading, logout, hasPermission, isAdmin } = useAuthStore();
-
-  // --- Deferred page rendering to prevent React error #306 ---
-  // When Zustand's currentPage changes (from a click), we don't immediately
-  // switch the rendered page. Instead, we use startTransition inside a
-  // useEffect to defer the switch. This ensures:
-  // 1. The old page stays visible during the click event (no #306)
-  // 2. Suspense properly shows the loading skeleton for the new page
-  // 3. The header title updates immediately for responsiveness
-  const [displayPage, setDisplayPage] = useState(storeCurrentPage);
-
-  useEffect(() => {
-    if (storeCurrentPage !== displayPage) {
-      // Defer the page switch into a React transition.
-      // This is the correct way to use startTransition — from within
-      // a React component (not from a Zustand store action).
-      startTransition(() => {
-        setDisplayPage(storeCurrentPage);
-      });
-    }
-  }, [storeCurrentPage, displayPage]);
-
-  // For header and document title, use the immediate page (responsive)
-  const currentPage = storeCurrentPage;
 
   // Track if user has navigated away from dashboard (to show back button)
   const canGoBack = typeof window !== 'undefined' && window.location.hash !== '#/dashboard' && window.location.hash !== '#' && window.location.hash !== '';
@@ -304,143 +270,6 @@ function AppShell() {
   if (!isAuthenticated) {
     return null;
   }
-
-  const renderPage = () => {
-    // Use displayPage (deferred via startTransition) so lazy components
-    // don't suspend synchronously during click events.
-    switch (displayPage) {
-      // Core
-      case 'dashboard': return <DashboardPage />;
-      case 'chat': return <ChatPage />;
-      case 'notifications': return <NotificationsPage />;
-      // Assets
-      case 'asset-categories': return <AssetCategoriesPage />;
-      case 'assets-machines': return <AssetsMachinesPage />;
-      case 'assets-hierarchy': return <AssetsHierarchyPage />;
-      case 'assets-bom': return <AssetsBomPage />;
-      case 'assets-condition-monitoring': return <AssetsConditionMonitoringPage />;
-      case 'assets-digital-twin':
-      case 'digital-twin-viewer': return <DigitalTwinMainPage />;
-      case 'system-diagrams': return <SystemDiagramPage />;
-      case 'assets-health': return <AssetHealthPage />;
-      // Maintenance
-      case 'maintenance-work-orders':
-      case 'wo-detail': return <MaintenanceWorkOrdersPage />;
-      case 'maintenance-requests':
-      case 'mr-detail':
-      case 'create-mr': return <MaintenanceRequestsPage />;
-      case 'maintenance-dashboard': return <MaintenanceDashboardPage />;
-      case 'maintenance-analytics': return <MaintenanceAnalyticsPage />;
-      case 'maintenance-calibration': return <MaintenanceCalibrationPage />;
-      case 'maintenance-risk-assessment': return <MaintenanceRiskAssessmentPage />;
-      case 'maintenance-tools': return <MaintenanceToolsPage />;
-      case 'pm-schedules': return <PmSchedulesPage />;
-      case 'pm-templates': return <PmTemplatesPage />;
-      case 'pm-triggers': return <PmTriggersPage />;
-      case 'pm-calendar': return <PmCalendarPage />;
-      // Planner Workbench
-      case 'planner-workbench': return <PlannerWorkbenchPage />;
-      case 'enterprise-reports': return <EnterpriseReportsPage />;
-      // Repairs
-      case 'repairs-material-requests': return <RepairMaterialRequestsPage />;
-      case 'repairs-tool-requests': return <RepairToolRequestsPage />;
-      case 'repairs-tool-transfers': return <RepairToolTransfersPage />;
-      case 'repairs-downtime': return <RepairDowntimePage />;
-      case 'repairs-completion': return <RepairCompletionPage />;
-      case 'repairs-analytics': return <RepairAnalyticsPage />;
-      case 'repairs-spare-part-returns': return <SparePartReturnsPage />;
-      case 'repairs-damaged-tools': return <DamagedToolReportsPage />;
-      case 'repairs-reports': return <MaintenanceReportsPage />;
-      // IoT
-      case 'iot-devices': return <IotDevicesPage />;
-      case 'iot-monitoring': return <IotMonitoringPage />;
-      case 'iot-rules': return <IotRulesPage />;
-      // Industrial Connectivity
-      case 'connectivity': return <ConnectivityPage />;
-      // Analytics
-      case 'analytics-kpi': return <AnalyticsKpiPage />;
-      case 'analytics-oee': return <AnalyticsOeePage />;
-      case 'analytics-downtime': return <AnalyticsDowntimePage />;
-      case 'analytics-energy': return <AnalyticsEnergyPage />;
-      // Operations
-      case 'operations-meter-readings': return <OperationsMeterReadingsPage />;
-      case 'operations-training': return <OperationsTrainingPage />;
-      case 'operations-surveys': return <OperationsSurveysPage />;
-      case 'operations-time-logs': return <OperationsTimeLogsPage />;
-      case 'operations-shift-handover': return <OperationsShiftHandoverPage />;
-      case 'operations-checklists': return <OperationsChecklistsPage />;
-      // Production
-      case 'production-work-centers': return <ProductionWorkCentersPage />;
-      case 'production-resource-planning': return <ProductionResourcePlanningPage />;
-      case 'production-scheduling': return <ProductionSchedulingPage />;
-      case 'production-capacity': return <ProductionCapacityPage />;
-      case 'production-efficiency': return <ProductionEfficiencyPage />;
-      case 'production-bottlenecks': return <ProductionBottlenecksPage />;
-      case 'production-orders': return <ProductionOrdersPage />;
-      case 'production-batches': return <ProductionBatchesPage />;
-      // Quality
-      case 'quality-inspections': return <QualityInspectionsPage />;
-      case 'quality-ncr': return <QualityNcrPage />;
-      case 'quality-audits': return <QualityAuditsPage />;
-      case 'quality-control-plans': return <QualityControlPlansPage />;
-      case 'quality-spc': return <QualitySpcPage />;
-      case 'quality-capa': return <QualityCapaPage />;
-      // Safety
-      case 'safety-incidents': return <SafetyIncidentsPage />;
-      case 'safety-inspections': return <SafetyInspectionsPage />;
-      case 'safety-training': return <SafetyTrainingPage />;
-      case 'safety-equipment': return <SafetyEquipmentPage />;
-      case 'safety-permits': return <SafetyPermitsPage />;
-      // Reliability Engineering
-      case 'reliability-engineering': return <ReliabilityEngineeringPage />;
-      // Inventory
-      case 'inventory-items': return <InventoryItemsPage />;
-      case 'inventory-categories': return <InventoryCategoriesPage />;
-      case 'inventory-locations': return <InventoryLocationsPage />;
-      case 'inventory-transactions': return <InventoryTransactionsPage />;
-      case 'inventory-adjustments': return <InventoryAdjustmentsPage />;
-      case 'inventory-requests': return <InventoryRequestsPage />;
-      case 'inventory-transfers': return <InventoryTransfersPage />;
-      case 'inventory-suppliers': return <InventorySuppliersPage />;
-      case 'inventory-purchase-orders': return <InventoryPurchaseOrdersPage />;
-      case 'inventory-receiving': return <InventoryReceivingPage />;
-      // Reports
-      case 'reports-asset': return <ReportsAssetPage />;
-      case 'reports-maintenance': return <ReportsMaintenancePage />;
-      case 'reports-inventory': return <ReportsInventoryPage />;
-      case 'reports-production': return <ReportsProductionPage />;
-      case 'reports-quality': return <ReportsQualityPage />;
-      case 'reports-safety': return <ReportsSafetyPage />;
-      case 'reports-financial': return <ReportsFinancialPage />;
-      case 'reports-custom': return <ReportsCustomPage />;
-      // Settings
-      case 'settings-general': return <SettingsGeneralPage />;
-      case 'settings-users': return <SettingsUsersPage />;
-      case 'settings-roles': return <SettingsRolesPage />;
-      case 'settings-modules': return <SettingsModulesPage />;
-      case 'settings-company': return <CompanyProfilePage />;
-      case 'settings-plants': return <SettingsPlantsPage />;
-      case 'settings-departments': return <SettingsDepartmentsPage />;
-      case 'settings-notifications': return <SettingsNotificationsPage />;
-      case 'settings-integrations': return <SettingsIntegrationsPage />;
-      case 'settings-backup': return <SettingsBackupPage />;
-      case 'settings-audit': return <AuditLogsPage />;
-      case 'settings-security': return <SecuritySettingsPage />;
-      case 'settings-health': return <SystemHealthPage />;
-      case 'settings-queues': return <QueueManagerPage />;
-      case 'settings-preferences': return <UserPreferencesPage />;
-      // Observability
-      case 'observability-dashboard': return <ObservabilityDashboardPage />;
-      // Historian
-      case 'historian-dashboard': return <HistorianDashboardPage />;
-      // Legacy fallbacks
-      case 'assets':
-      case 'asset-detail': return <AssetsPage />;
-      case 'inventory': return <InventoryPage />;
-      case 'analytics': return <AnalyticsPage />;
-      default: return <DashboardPage />;
-    }
-  };
 
   const pageTitle: Record<string, string> = {
     // Core
@@ -703,11 +532,7 @@ function AppShell() {
 
         {/* Page Content */}
         <main className="flex-1 min-h-0 overflow-y-auto pb-16 lg:pb-0">
-          <PageErrorBoundary>
-            <Suspense fallback={<LoadingSkeleton />}>
-              {renderPage()}
-            </Suspense>
-          </PageErrorBoundary>
+          <PageSwitcher page={currentPage} />
         </main>
 
         {/* Mobile Bottom Navigation */}
