@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
@@ -11,9 +11,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
-// NOTE: Custom tab implementation used — no Radix Tabs/Content for performance
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -58,10 +59,7 @@ export function AssetDetailPage({ id }: { id: string }) {
   const [twin, setTwin] = useState<any>(null);
   const [diagrams, setDiagrams] = useState<any[]>([]);
   const [tabDataLoading, setTabDataLoading] = useState(false);
-
-  // Use ref to track loaded tabs — avoids infinite re-renders from Set reference changes
-  const loadedTabsRef = React.useRef(new Set(['overview']));
-  const loadingTabRef = React.useRef<string | null>(null);
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set(['overview']));
 
   // Create dialogs
   const [showComponentForm, setShowComponentForm] = useState(false);
@@ -76,48 +74,25 @@ export function AssetDetailPage({ id }: { id: string }) {
   // Diagram form
   const [diagForm, setDiagForm] = useState({ name: '', type: 'process', description: '' });
 
-  // Abort controller for cleanup on unmount
-  const abortRef = useRef<AbortController>(new AbortController());
-  useEffect(() => {
-    return () => { abortRef.current.abort('unmounted'); };
-  }, []);
-
   // Load main asset data
   useEffect(() => {
-    setLoading(true);
-    setAsset(null);
-    loadedTabsRef.current = new Set(['overview']);
-    loadingTabRef.current = null;
-    setBomItems([]);
-    setBomAsChild([]);
-    setComponents([]);
-    setTwin(null);
-    setDiagrams([]);
-    setTabDataLoading(false);
-
-    const ctrl = new AbortController();
-    api.get<any>(`/api/assets/${id}`, { signal: ctrl.signal }).then(res => {
+    api.get<any>(`/api/assets/${id}`).then(res => {
       if (res.success && res.data) {
         setAsset(res.data);
-        if (res.data.digitalTwin) {
-          setTwin(res.data.digitalTwin);
-          loadedTabsRef.current.add('digital-twin');
-        }
+        if (res.data.digitalTwin) setTwin(res.data.digitalTwin);
       }
       setLoading(false);
-    }).catch(() => {
-      setLoading(false);
     });
-    return () => { ctrl.abort('unmounted'); };
   }, [id]);
 
-  // Reload helpers (used by create handlers)
+  // Reload components
   const reloadComponents = useCallback(() => {
     api.get(`/api/component-registry?assetId=${id}&limit=100`).then(res => {
       if (res.success && res.data) setComponents(Array.isArray(res.data) ? res.data : []);
     }).catch(() => {});
   }, [id]);
 
+  // Reload digital twin
   const reloadTwin = useCallback(() => {
     api.get(`/api/digital-twins?assetId=${id}&limit=1`).then(res => {
       if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
@@ -126,6 +101,7 @@ export function AssetDetailPage({ id }: { id: string }) {
     }).catch(() => {});
   }, [id]);
 
+  // Reload diagrams
   const reloadDiagrams = useCallback(() => {
     api.get(`/api/system-diagrams?limit=100`).then(res => {
       if (res.success && res.data) setDiagrams(Array.isArray(res.data) ? res.data : []);
@@ -134,67 +110,42 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   // Lazy load tab data when tab changes
   useEffect(() => {
-    if (!asset) return;
-    if (loadedTabsRef.current.has(activeTab)) return;
-    if (loadingTabRef.current === activeTab) return;
-
-    loadedTabsRef.current.add(activeTab);
-
-    // Tabs that don't need API calls — skip loading state entirely
-    const noFetchTabs = ['overview', 'hierarchy', 'condition'];
-    if (noFetchTabs.includes(activeTab)) return;
-
-    loadingTabRef.current = activeTab;
+    if (!asset || loadedTabs.has(activeTab) || tabDataLoading) return;
     setTabDataLoading(true);
-
-    const ctrl = new AbortController();
-    const sig = { signal: ctrl.signal };
     const promises: Promise<void>[] = [];
 
+    if (activeTab === 'hierarchy' || activeTab === 'overview') {
+      setLoadedTabs(prev => new Set(prev).add('hierarchy'));
+    }
     if (activeTab === 'bom') {
       promises.push(
-        api.get(`/api/bill-of-materials?parentId=${id}&limit=100`, sig).then(res => {
+        api.get(`/api/bill-of-materials?parentId=${id}&limit=100`).then(res => {
           if (res.success && res.data) setBomItems(Array.isArray(res.data) ? res.data : []);
         }).catch(() => {}),
-        api.get(`/api/bill-of-materials?search=${encodeURIComponent(asset.name)}&limit=100`, sig).then(res => {
+        api.get(`/api/bill-of-materials?search=${encodeURIComponent(asset.name)}&limit=100`).then(res => {
           if (res.success && res.data) {
             const items = Array.isArray(res.data) ? res.data : [];
             setBomAsChild(items.filter((b: any) => b.childAssetId === id));
           }
         }).catch(() => {}),
       );
+      setLoadedTabs(prev => new Set(prev).add('bom'));
     }
     if (activeTab === 'components') {
-      promises.push(
-        api.get(`/api/component-registry?assetId=${id}&limit=100`, sig).then(res => {
-          if (res.success && res.data) setComponents(Array.isArray(res.data) ? res.data : []);
-        }).catch(() => {})
-      );
+      promises.push(reloadComponents());
+      setLoadedTabs(prev => new Set(prev).add('components'));
     }
-    if (activeTab === 'digital-twin') {
-      promises.push(
-        api.get(`/api/digital-twins?assetId=${id}&limit=1`, sig).then(res => {
-          if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
-            setTwin(res.data[0]);
-          }
-        }).catch(() => {})
-      );
+    if (activeTab === 'digital-twin' && !twin) {
+      promises.push(reloadTwin());
+      setLoadedTabs(prev => new Set(prev).add('digital-twin'));
     }
     if (activeTab === 'diagrams') {
-      promises.push(
-        api.get(`/api/system-diagrams?limit=100`, sig).then(res => {
-          if (res.success && res.data) setDiagrams(Array.isArray(res.data) ? res.data : []);
-        }).catch(() => {})
-      );
+      promises.push(reloadDiagrams());
+      setLoadedTabs(prev => new Set(prev).add('diagrams'));
     }
 
-    Promise.all(promises).finally(() => {
-      setTabDataLoading(false);
-      loadingTabRef.current = null;
-    });
-
-    return () => { ctrl.abort('unmounted'); };
-  }, [activeTab, asset, id]);
+    Promise.all(promises).finally(() => setTabDataLoading(false));
+  }, [activeTab, asset, id, loadedTabs, tabDataLoading, twin, reloadComponents, reloadTwin, reloadDiagrams]);
 
   // Handlers
   const handleCreateComponent = async () => {
@@ -318,36 +269,29 @@ export function AssetDetailPage({ id }: { id: string }) {
         <Badge variant="outline" className={`uppercase ${criticalityColors[asset.criticality] || ''}`}>{asset.criticality || '-'}</Badge>
       </div>
 
-      {/* Tabs — custom implementation for performance (no Radix TabsContent overhead) */}
-      <div className="mt-4">
-        <div className="w-full flex overflow-x-auto border-b rounded-none" role="tablist">
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
+        <TabsList className="w-full flex overflow-x-auto p-0 h-auto gap-0 bg-transparent border-b rounded-none">
           {tabs.map((tab) => {
             const TabIcon = tab.icon;
-            const isActive = activeTab === tab.id;
             return (
-            <button
+            <TabsTrigger
               key={tab.id}
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-none border-b-2 text-xs whitespace-nowrap flex-shrink-0 transition-colors ${
-                isActive
-                  ? 'border-primary text-foreground font-medium'
-                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30'
-              }`}
+              value={tab.id}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none text-xs whitespace-nowrap flex-shrink-0"
             >
               <TabIcon className="h-3.5 w-3.5" />
               {tab.label}
               {tab.badge ? <span className="ml-0.5 h-4 min-w-4 px-1 rounded-full bg-primary/10 text-primary text-[9px] font-bold flex items-center justify-center">{tab.badge}</span> : null}
-            </button>
+            </TabsTrigger>
             );
           })}
-        </div>
+        </TabsList>
 
-        <div className="overflow-y-auto max-h-[calc(100vh-14rem)]">
+        <ScrollArea className="max-h-[calc(100vh-14rem)]">
           <div className="pb-6">
             {/* ==================== OVERVIEW TAB ==================== */}
-            {activeTab === 'overview' && (<div key="tab-overview" className="mt-4 space-y-4">
+            <TabsContent value="overview" className="mt-4 space-y-4">
               {asset.description && (
                 <Card className="border-0 shadow-sm">
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Description</CardTitle></CardHeader>
@@ -483,10 +427,11 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </CardContent>
                 </Card>
               )}
-            </div>)}
+            </TabsContent>
 
             {/* ==================== HIERARCHY TAB ==================== */}
-            {activeTab === 'hierarchy' && (<div key="tab-hierarchy" className="mt-4 space-y-4">              {!hasHierarchy ? (
+            <TabsContent value="hierarchy" className="mt-4 space-y-4">
+              {!hasHierarchy ? (
                 <EmptyTab icon={GitBranch} title="No Hierarchy" description="This asset is not part of a hierarchy. Set a Parent Asset or add child assets to build the structure." />
               ) : (
                 <>
@@ -545,10 +490,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                   )}
                 </>
               )}
-            </div>)}
+            </TabsContent>
 
             {/* ==================== BOM TAB ==================== */}
-            {activeTab === 'bom' && (<div key="tab-bom" className="mt-4 space-y-4">
+            <TabsContent value="bom" className="mt-4 space-y-4">
               {tabDataLoading && activeTab === 'bom' ? (
                 <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : bomItems.length === 0 && bomAsChild.length === 0 ? (
@@ -591,10 +536,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </Card>
                 </>
               )}
-            </div>)}
+            </TabsContent>
 
             {/* ==================== COMPONENTS TAB ==================== */}
-            {activeTab === 'components' && (<div key="tab-components" className="mt-4 space-y-4">
+            <TabsContent value="components" className="mt-4 space-y-4">
               {/* Add Component Form */}
               {showComponentForm && (
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
@@ -709,10 +654,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </Card>
                 </>
               )}
-            </div>)}
+            </TabsContent>
 
             {/* ==================== CONDITION MONITORING TAB ==================== */}
-            {activeTab === 'condition' && (<div key="tab-condition" className="mt-4 space-y-4">
+            <TabsContent value="condition" className="mt-4 space-y-4">
               {!hasIoT ? (
                 <EmptyTab icon={Activity} title="No Monitoring Devices" description="No IoT sensors or monitoring devices are connected to this asset. Add monitoring points to track condition in real-time." />
               ) : (
@@ -738,10 +683,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                   })}
                 </div>
               )}
-            </div>)}
+            </TabsContent>
 
             {/* ==================== DIGITAL TWIN TAB ==================== */}
-            {activeTab === 'digital-twin' && (<div key="tab-digital-twin" className="mt-4 space-y-4">
+            <TabsContent value="digital-twin" className="mt-4 space-y-4">
               {/* Create Twin Form */}
               {showTwinForm && (
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
@@ -832,10 +777,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </CardContent>
                 </Card>
               )}
-            </div>)}
+            </TabsContent>
 
             {/* ==================== DIAGRAMS TAB ==================== */}
-            {activeTab === 'diagrams' && (<div key="tab-diagrams" className="mt-4 space-y-4">
+            <TabsContent value="diagrams" className="mt-4 space-y-4">
               {/* Create Diagram Form */}
               {showDiagramForm && (
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
@@ -907,10 +852,10 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </CardContent>
                 </Card>
               )}
-            </div>)}
+            </TabsContent>
           </div>
-        </div>
-      </div>
+        </ScrollArea>
+      </Tabs>
     </>
   );
 }
