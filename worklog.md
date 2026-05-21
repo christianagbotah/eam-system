@@ -5506,3 +5506,19 @@ Stage Summary:
 - Tab switching should now be instant (no re-render loops)
 - Lazy loading still works (each tab fetches data only once)
 - Commit: 6982cbe3
+
+---
+Task ID: 1
+Agent: Main
+Task: Fix tab freeze and page stuck-loading issues
+
+Work Log:
+- Analyzed AssetDetailPage.tsx (869 lines, 7 tabs) - identified that all TabsContent components were always rendered in DOM
+- Analyzed EAMApp.tsx - identified chunk error retry bug and missing error boundary around Suspense
+- Analyzed api.ts - identified missing timeout and abort controller support
+
+Stage Summary:
+- **api.ts**: Added 15s timeout, AbortController support, useAbortRef() hook
+- **AssetDetailPage.tsx**: Conditional rendering per tab (only active tab renders), abort on unmount, skip loading state for no-fetch tabs
+- **EAMApp.tsx**: Added PageErrorBoundary around Suspense, fixed chunk error retry to reload() first
+- Commit: aa88038e, pushed to main
