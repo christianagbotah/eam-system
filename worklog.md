@@ -5482,3 +5482,27 @@ Stage Summary:
 - Root cause: `.prisma/client` directory was missing/stale, making `PrismaClient` have no model delegates
 - Fix: `prisma generate` + dev script updated to auto-generate on every `bun run dev`
 - All API routes (component-registry, digital-twins, system-diagrams) should now work correctly
+
+---
+Task ID: tab-freeze-fix
+Agent: Main Agent
+Task: Fix page freezing when navigating tabs in AssetDetailPage
+
+Work Log:
+- Diagnosed root cause: `loadedTabs` stored as `Set<string>` in useState
+  - Every `setLoadedTabs(prev => new Set(prev).add('x'))` creates a NEW Set reference
+  - This triggers the useEffect again (Set is in dependency array)
+  - Creates infinite re-render loop → page freezes
+- Also identified `twin` state change in deps causing re-fetch loops
+- Also identified `ScrollArea` inside Sheet causing nested scroll jank
+
+- Fix 1: Replaced `useState<Set>` with `React.useRef<Set>` — refs don't trigger re-renders
+- Fix 2: Added `loadingTabRef` to prevent duplicate concurrent fetches for same tab
+- Fix 3: Removed `ScrollArea` wrapper, replaced with plain `overflow-y-auto` div
+- Fix 4: Removed `twin` and `tabDataLoading` from useEffect dependency array
+- Fix 5: Removed unused `ScrollArea` import
+
+Stage Summary:
+- Tab switching should now be instant (no re-render loops)
+- Lazy loading still works (each tab fetches data only once)
+- Commit: 6982cbe3
