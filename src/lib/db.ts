@@ -103,6 +103,18 @@ export const db = new Proxy({} as PrismaClient, {
     try {
       const client = getDb()
       const value = (client as any)[prop]
+      if (value === undefined && typeof prop === 'string' && /^[a-z]/.test(prop)) {
+        // Model delegate is missing — Prisma client may not have been generated
+        // or table doesn't exist in the schema. Log a clear error.
+        const errMsg = `[db] Model or property "${prop}" is undefined on PrismaClient. ` +
+          `This usually means prisma generate was not run after schema changes. ` +
+          `Run: npx prisma generate`
+        console.error(errMsg)
+        // Return a no-op that rejects to make the error visible to callers
+        return (..._args: any[]) => {
+          return Promise.reject(new Error(`PrismaClient property "${prop}" is not available. Run: npx prisma generate`))
+        }
+      }
       if (typeof value === 'function') {
         return value.bind(client)
       }
