@@ -174,11 +174,11 @@ const ObservabilityDashboardPage = lazy(() => import('./modules/ObservabilityPag
 
 class PageErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  { hasError: boolean; error: Error | null }
+  { hasError: boolean; error: Error | null; retryCount: number }
 > {
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, retryCount: 0 };
   }
 
   static getDerivedStateFromError(error: Error) {
@@ -189,21 +189,54 @@ class PageErrorBoundary extends React.Component<
     console.error('=== PAGE ERROR ===', error.message, info.componentStack);
   }
 
+  private isChunkError(): boolean {
+    const msg = this.state.error?.message || '';
+    return (
+      msg.includes('ChunkLoadError') ||
+      msg.includes('Failed to load chunk') ||
+      msg.includes('Loading chunk') ||
+      msg.includes('Loading CSS chunk') ||
+      msg.includes('error #306') ||
+      msg.includes('suspended while responding')
+    );
+  }
+
+  handleRetry = () => {
+    // Chunk errors and #306 errors require a full reload to fetch fresh bundles
+    if (this.isChunkError() || this.state.retryCount >= 2) {
+      window.location.reload();
+      return;
+    }
+    // For runtime errors, try re-rendering
+    this.setState({ hasError: false, error: null, retryCount: this.state.retryCount + 1 });
+  };
+
   render() {
-    if (this.state.hasError) {
+    if (this.state.hasError && this.state.error) {
+      const isChunk = this.isChunkError();
       return (
         <div className="flex items-center justify-center min-h-[300px]">
           <div className="text-center space-y-3 p-6 max-w-md">
-            <div className="h-10 w-10 mx-auto rounded-full bg-amber-100 dark:bg-amber-950/30 flex items-center justify-center">
-              <svg className="h-5 w-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className={`h-10 w-10 mx-auto rounded-full flex items-center justify-center ${isChunk ? 'bg-amber-100 dark:bg-amber-950/30' : 'bg-red-100 dark:bg-red-950/30'}`}>
+              <svg className={`h-5 w-5 ${isChunk ? 'text-amber-600' : 'text-red-600'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <p className="text-sm font-medium">Failed to load page</p>
+            <p className="text-sm font-medium">{isChunk ? 'Page failed to load' : 'Something went wrong'}</p>
             <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-              {this.state.error?.message || 'An unexpected error occurred'}
+              {isChunk
+                ? 'This page could not be loaded. This usually happens after an update — reloading will fix it.'
+                : (this.state.error?.message || 'An unexpected error occurred')}
             </p>
             <div className="flex gap-2 justify-center">
+              {!isChunk && this.state.retryCount < 2 && (
+                <button
+                  onClick={this.handleRetry}
+                  className="px-4 py-1.5 border border-border hover:bg-muted text-foreground text-xs font-medium rounded-lg transition-colors"
+                >
+                  Try Again
+                </button>
+              )}
               <button
                 onClick={() => window.location.reload()}
                 className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors"
