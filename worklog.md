@@ -5416,3 +5416,25 @@ Stage Summary:
 - Commit 0b20abf5 pushed: "fix: use Prisma relation connect syntax instead of raw FK scalars for asset create/update"
 - 5 files changed, 155 insertions, 37 deletions
 - User can now create assets without the "Argument category is missing" error
+---
+Task ID: 4
+Agent: Main + subagents
+Task: Convert entity detail views from full-page to side sheets
+
+Work Log:
+- Analyzed all detail view patterns across the app
+- Found 3 entities using full-page replacement: Assets, Maintenance Requests, Work Orders
+- Found ~16 entities already using ResponsiveDialog (modal) — no change needed
+- Found 1 entity (Users in Settings) already using Side Sheet — good reference
+- Converted AssetDetailPage to side sheet (SheetContent sm:max-w-xl, right side)
+- Converted MRDetailPage to side sheet (SheetContent sm:max-w-xl, right side)
+- Converted WODetailPage to side sheet (SheetContent sm:max-w-xl, right side)
+- Fixed duplicate Sheet import and unclosed ScrollArea tag in MaintenancePages
+- All detail content preserved, just reorganized for narrower sheet layout
+- List views remain visible behind the sheet overlay
+- Dev server compiles and starts successfully
+
+Stage Summary:
+- Commit 6ceb2d50 pushed: "feat: convert asset, MR, and WO detail views from full-page to side sheets"
+- 2 files changed, 86 insertions, 89 deletions
+- Assets, MR, WO detail views now open as right-side sheets instead of replacing the list
