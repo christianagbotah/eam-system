@@ -104,23 +104,18 @@ export async function PUT(
       );
     }
 
-    // Build update data — use connect syntax for relation fields
+    // Build update data — Prisma .update() uses scalar FK fields (not connect syntax)
     const updateData: Record<string, unknown> = {};
     const scalarFields = [
       'name', 'description', 'serialNumber', 'manufacturer', 'model',
       'condition', 'status', 'criticality', 'location',
       'building', 'floor', 'area', 'imageUrl',
       'drawingsUrl', 'manualUrl', 'specification', 'isActive',
+      // FK scalar fields — .update() requires these directly, NOT connect syntax
+      'categoryId', 'plantId', 'departmentId', 'assignedToId', 'parentId',
     ];
     const dateFields = ['purchaseDate', 'warrantyExpiry', 'installedDate'];
     const numberFields = ['yearManufactured', 'purchaseCost', 'expectedLifeYears', 'currentValue', 'depreciationRate'];
-    const relationFields: Record<string, string> = {
-      categoryId: 'category',
-      plantId: 'plant',
-      departmentId: 'department',
-      assignedToId: 'assignedTo',
-      parentId: 'parent',
-    };
 
     for (const field of scalarFields) {
       if (body[field] !== undefined) updateData[field] = body[field];
@@ -130,12 +125,6 @@ export async function PUT(
     }
     for (const field of numberFields) {
       if (body[field] !== undefined) updateData[field] = body[field] !== null && body[field] !== '' ? Number(body[field]) : null;
-    }
-    // Convert FK scalars to relation connect
-    for (const [fkField, relationName] of Object.entries(relationFields)) {
-      if (body[fkField] !== undefined) {
-        updateData[relationName] = body[fkField] ? { connect: { id: body[fkField] } } : null;
-      }
     }
 
     // Prevent self-parent
