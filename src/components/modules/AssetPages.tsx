@@ -24,6 +24,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';;
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -123,11 +124,6 @@ export function AssetsPage() {
   };
 
   if (loading) return <LoadingSkeleton />;
-
-  // Render detail view if an asset is selected
-  if (detailId) {
-    return <AssetDetailPage id={detailId} onBack={() => setDetailId(null)} />;
-  }
 
   return (
     <div className="page-content">
@@ -382,6 +378,13 @@ export function AssetsPage() {
           </div>
         
       </ResponsiveDialog>
+
+      {/* Detail Side Sheet */}
+      <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
+        <SheetContent className="sm:max-w-xl overflow-y-auto">
+          {detailId && <AssetDetailPage id={detailId} />}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -390,7 +393,7 @@ export function AssetsPage() {
 // ASSET DETAIL PAGE
 // ============================================================================
 
-export function AssetDetailPage({ id, onBack }: { id: string; onBack: () => void }) {
+export function AssetDetailPage({ id }: { id: string }) {
   const [asset, setAsset] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -407,23 +410,20 @@ export function AssetDetailPage({ id, onBack }: { id: string; onBack: () => void
   const specs: Record<string, string> = asset.specification || {};
 
   return (
-    <div className="page-content">
+    <>
       {/* Header */}
-      <div className="flex items-start gap-3 flex-wrap">
-        <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-mono text-sm text-muted-foreground">{asset.assetTag}</span>
-            <Badge variant="outline" className="capitalize">{(asset.status || '').replace(/_/g, ' ')}</Badge>
-            <Badge variant="outline" className="capitalize">{asset.condition || '-'}</Badge>
-            <Badge variant="outline" className="uppercase">{asset.criticality || '-'}</Badge>
-          </div>
-          <h1 className="text-xl font-bold mt-1">{asset.name}</h1>
-        </div>
+      <SheetHeader>
+        <SheetTitle>{asset.name}</SheetTitle>
+        <SheetDescription>{asset.assetTag} · {(asset.status || '').replace(/_/g, ' ')}</SheetDescription>
+      </SheetHeader>
+      <div className="flex items-center gap-2 flex-wrap mt-3">
+        <Badge variant="outline" className="capitalize">{(asset.status || '').replace(/_/g, ' ')}</Badge>
+        <Badge variant="outline" className="capitalize">{asset.condition || '-'}</Badge>
+        <Badge variant="outline" className="uppercase">{asset.criticality || '-'}</Badge>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
+      <ScrollArea className="mt-4 max-h-[calc(100vh-12rem)]">
+        <div className="space-y-6 pb-6">
           {/* Description */}
           <Card className="border-0 shadow-sm dark:bg-card">
             <CardHeader><CardTitle className="text-base">Description</CardTitle></CardHeader>
@@ -469,10 +469,7 @@ export function AssetDetailPage({ id, onBack }: { id: string; onBack: () => void
               </CardContent>
             </Card>
           )}
-        </div>
-
-        {/* Right Panel */}
-        <div className="space-y-4">
+          {/* Details */}
           <Card className="border-0 shadow-sm dark:bg-card">
             <CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
@@ -523,8 +520,8 @@ export function AssetDetailPage({ id, onBack }: { id: string; onBack: () => void
             </Card>
           )}
         </div>
-      </div>
-    </div>
+      </ScrollArea>
+    </>
   );
 }
 

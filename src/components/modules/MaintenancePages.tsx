@@ -29,6 +29,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import {
   ClipboardList, Wrench, Plus, Search, ArrowLeft, CheckCircle2, XCircle,
   Clock, AlertTriangle, RefreshCw, Play, Pause, Check, Lock, Eye, Pencil,
@@ -103,10 +104,6 @@ export function MaintenanceRequestsPage() {
   }, [filterStatus, filterPriority, refreshKey]);
 
   const handleRefresh = useCallback(() => setRefreshKey(k => k + 1), []);
-
-  if (detailId) {
-    return <MRDetailPage id={detailId} onBack={() => setDetailId(null)} onUpdate={handleRefresh} />;
-  }
 
   return (
     <div className="page-content">
@@ -212,6 +209,13 @@ export function MaintenanceRequestsPage() {
           </Table>
         </Card>
       )}
+
+      {/* Detail Side Sheet */}
+      <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
+        <SheetContent side="right" className="sm:max-w-xl overflow-y-auto p-0">
+          {detailId && <MRDetailPage id={detailId} onUpdate={handleRefresh} />}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -568,7 +572,7 @@ function MRWorkflowTimeline({ mr }: { mr: MaintenanceRequest }) {
   );
 }
 
-export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void; onUpdate: () => void }) {
+export function MRDetailPage({ id, onUpdate }: { id: string; onUpdate: () => void }) {
   const [mr, setMr] = useState<MaintenanceRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -820,20 +824,18 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   const canConvert = mr.status === 'approved' && hasPermission('maintenance_requests.convert_to_wo') && (mr.assignedPlannerId === user?.id || !mr.assignedPlannerId);
 
   return (
-    <div className="page-content">
-      {/* Header */}
-      <div className="flex items-start gap-3 flex-wrap">
-        <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-mono text-sm text-muted-foreground">{mr.requestNumber}</span>
-            <StatusBadge status={mr.status} />
-            <PriorityBadge priority={mr.priority} />
-            {mr.machineDownStatus && <Badge variant="destructive" className="text-[10px]">MACHINE DOWN</Badge>}
-          </div>
-          <h1 className="text-xl font-bold mt-1">{mr.title}</h1>
+    <>
+      {/* Sheet Header */}
+      <SheetHeader className="px-4 pt-4 pb-0 shrink-0">
+        <div className="flex items-center gap-2 flex-wrap pr-8">
+          <SheetTitle className="text-lg">{mr.requestNumber}</SheetTitle>
+          <StatusBadge status={mr.status} />
+          <PriorityBadge priority={mr.priority} />
+          {mr.machineDownStatus && <Badge variant="destructive" className="text-[10px]">MACHINE DOWN</Badge>}
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <SheetDescription className="text-sm font-medium text-foreground mt-0.5 line-clamp-2">{mr.title}</SheetDescription>
+        {/* Action buttons in header */}
+        <div className="flex items-center gap-2 flex-wrap mt-2">
           {canReject && (
             <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectDialogOpen(true)}>
               <XCircle className="h-4 w-4 mr-1" />Reject
@@ -855,7 +857,7 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             </Button>
           )}
         </div>
-      </div>
+      </SheetHeader>
 
       {/* Reject Dialog */}
       <ResponsiveDialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen} title="Reject Request" description="Please provide a reason for rejection." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setRejectDialogOpen(false)}>Cancel</Button><Button variant="destructive" disabled={actionLoading} onClick={() => handleAction('reject', rejectNotes)}>{actionLoading ? 'Rejecting...' : 'Reject Request'}</Button></div>}>
@@ -1443,9 +1445,9 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
       {/* SLA Timer */}
       <SLATimerDisplay slaHours={(mr as any).slaHours} slaStartedAt={(mr as any).slaStartedAt} status={mr.status} />
 
-      {/* Body */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
+      {/* Scrollable Body - stacked vertically for narrow sheet */}
+      <ScrollArea className="flex-1 px-4 pb-4">
+        <div className="space-y-4">
           {/* Workflow Timeline */}
           <MRWorkflowTimeline mr={mr} />
 
@@ -1553,8 +1555,8 @@ export function MRDetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             </Card>
           )}
         </div>
-      </div>
-    </div>
+      </ScrollArea>
+    </>
   );
 }
 
@@ -1637,10 +1639,6 @@ export function WorkOrdersPage() {
       return closedStatuses.includes(status) ? sum : sum + count;
     }, 0);
   }, [woKpi]);
-
-  if (detailId) {
-    return <WODetailPage id={detailId} onBack={() => setDetailId(null)} onUpdate={handleRefresh} />;
-  }
 
   return (
     <div className="page-content">
@@ -1798,6 +1796,13 @@ export function WorkOrdersPage() {
           </Table>
         </Card>
       )}
+
+      {/* WO Detail Side Sheet */}
+      <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
+        <SheetContent className="sm:max-w-xl overflow-y-auto p-0">
+          {detailId && <WODetailPage id={detailId} onUpdate={handleRefresh} />}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -2317,7 +2322,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
 // WORK ORDER DETAIL PAGE — Enhanced with Team Management, Personal Tools, Role-Based UI
 // ============================================================================
 
-export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () => void; onUpdate: () => void }) {
+export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => void }) {
   const [wo, setWo] = useState<WorkOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -2723,37 +2728,29 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
   };
 
   return (
-    <div className="page-content">
-      {/* Read-Only Banner */}
-      {isReadOnly && (
-        <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-3">
-          <Eye className="h-5 w-5 text-amber-600 shrink-0" />
-          <div>
-            <p className="text-sm font-semibold text-amber-800">Read-Only Access</p>
-            <p className="text-xs text-amber-700">You have read-only access to this work order. Action buttons are disabled.</p>
-          </div>
-        </div>
-      )}
+    <ScrollArea className="h-full">
+      {/* Sheet Header */}
+      <SheetHeader className="px-6 pt-6 pb-4">
+        <SheetTitle className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono text-sm text-muted-foreground">{wo.woNumber}</span>
+          <StatusBadge status={wo.status} />
+          <PriorityBadge priority={wo.priority} />
+          <Badge variant="outline" className="capitalize">{wo.type.replace('_', ' ')}</Badge>
+          {wo.isLocked && <Badge variant="secondary"><Lock className="h-3 w-3 mr-1" />Locked</Badge>}
+          {wo.slaBreached && <Badge variant="destructive" className="text-[10px]"><AlertTriangle className="h-3 w-3 mr-1" />SLA BREACHED</Badge>}
+        </SheetTitle>
+        <SheetDescription className="mt-1">
+          <span className="text-base font-semibold text-foreground">{wo.title}</span>
+        </SheetDescription>
+      </SheetHeader>
 
-      {/* Header */}
-      <div className="flex items-start gap-3 flex-wrap">
-        <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-mono text-sm text-muted-foreground">{wo.woNumber}</span>
-            <StatusBadge status={wo.status} />
-            <PriorityBadge priority={wo.priority} />
-            <Badge variant="outline" className="capitalize">{wo.type.replace('_', ' ')}</Badge>
-            {wo.isLocked && <Badge variant="secondary"><Lock className="h-3 w-3 mr-1" />Locked</Badge>}
-            {wo.slaBreached && <Badge variant="destructive" className="text-[10px]"><AlertTriangle className="h-3 w-3 mr-1" />SLA BREACHED</Badge>}
-          </div>
-          <h1 className="text-xl font-bold mt-1">{wo.title}</h1>
-        </div>
+      {/* Actions Bar */}
+      <div className="px-6 pb-4 flex items-center gap-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={readOnlyDisabled}><CheckCircle2 className="h-4 w-4 mr-1" />Actions</Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="start">
             {canEdit && !isReadOnly && <DropdownMenuItem onClick={openEditWO}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}
             {canEdit && !isReadOnly && <DropdownMenuSeparator />}
             {transitionActions.map(ta => (
@@ -2763,7 +2760,6 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
                 } else if (ta.requiresReason) {
                   setActionDialog(`reason:${ta.actionName}`);
                 } else if (woActionDescriptions[ta.actionName]) {
-                  // Show confirmation dialog for sensitive actions
                   const desc = woActionDescriptions[ta.actionName];
                   setWoConfirmAction({
                     action: ta.actionName,
@@ -2781,6 +2777,12 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+        {isReadOnly && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
+            <Eye className="h-3.5 w-3.5 shrink-0" />
+            Read-Only Access
+          </div>
+        )}
       </div>
 
       {/* Assign Dialog */}
@@ -2994,9 +2996,8 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
         }}
       />
 
-      {/* Body */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
+      {/* Body — stacked vertically for sheet width */}
+      <div className="px-6 pb-6 space-y-6">
           <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Description</CardTitle></CardHeader>
             <CardContent><p className="text-sm text-muted-foreground whitespace-pre-wrap">{wo.description || 'No description'}</p></CardContent>
@@ -3478,9 +3479,8 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
               </div>
             </CardContent>
           </Card>
-        </div>
 
-        {/* Right Panel */}
+        {/* Right Panel — Details, Cost, Source, Team */}
         <div className="space-y-4">
           <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader>
@@ -3569,7 +3569,7 @@ export function WODetailPage({ id, onBack, onUpdate }: { id: string; onBack: () 
           </Card>
         </div>
       </div>
-    </div>
+    </ScrollArea>
   );
 }
 // --- PmSchedulesPage separator ---
