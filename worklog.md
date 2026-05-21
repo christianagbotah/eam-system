@@ -5465,3 +5465,20 @@ Stage Summary:
 - All 5 requested features (hierarchy, BOM, condition monitoring, digital twin, system diagrams) are accessible from asset detail
 - Each tab shows meaningful empty states when no data exists
 - Quick-link cards on Overview tab guide users to other tabs
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix "Cannot read properties of undefined (reading 'findUnique')" error when adding component
+
+Work Log:
+- Diagnosed error: `db.componentRegistry` was `undefined` because Prisma client wasn't generated
+- Ran `npx prisma generate` to regenerate `node_modules/.prisma/client/` with all models including `ComponentRegistry`
+- Verified `.prisma/client` directory was missing before generate, existed after
+- Confirmed dev server API now responds properly (auth-gated, no crash)
+- Added `npx prisma generate` to `dev` script to prevent recurrence
+- Committed as `64eb740c` and pushed
+
+Stage Summary:
+- Root cause: `.prisma/client` directory was missing/stale, making `PrismaClient` have no model delegates
+- Fix: `prisma generate` + dev script updated to auto-generate on every `bun run dev`
+- All API routes (component-registry, digital-twins, system-diagrams) should now work correctly
