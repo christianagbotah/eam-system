@@ -1,21 +1,27 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Building2, GitBranch, Layers, Cpu, Activity, Monitor, MapPin, ChevronRight, Loader2,
+  Building2, GitBranch, Layers, Cpu, Activity, Monitor, MapPin, ChevronRight, Loader2, Plus, X,
 } from 'lucide-react';
 import { formatDate, formatDateTime, getInitials, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 
@@ -28,7 +34,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   );
 }
 
-function EmptyTab({ icon: Icon, title, description }: { icon: any; title: string; description: string }) {
+function EmptyTab({ icon: Icon, title, description, actionLabel, onAction }: { icon: any; title: string; description: string; actionLabel?: string; onAction?: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
       <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center mb-3">
@@ -36,6 +42,9 @@ function EmptyTab({ icon: Icon, title, description }: { icon: any; title: string
       </div>
       <p className="font-medium text-sm">{title}</p>
       <p className="text-xs text-muted-foreground mt-1 max-w-xs">{description}</p>
+      {actionLabel && onAction && (
+        <Button onClick={onAction} size="sm" className="mt-4"><Plus className="h-3.5 w-3.5 mr-1.5" />{actionLabel}</Button>
+      )}
     </div>
   );
 }
@@ -52,17 +61,52 @@ export function AssetDetailPage({ id }: { id: string }) {
   const [tabDataLoading, setTabDataLoading] = useState(false);
   const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set(['overview']));
 
+  // Create dialogs
+  const [showComponentForm, setShowComponentForm] = useState(false);
+  const [showTwinForm, setShowTwinForm] = useState(false);
+  const [showDiagramForm, setShowDiagramForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Component form
+  const [compForm, setCompForm] = useState({ componentCode: '', name: '', componentType: 'component', criticality: 'medium', manufacturer: '', modelNumber: '', serialNumber: '', description: '', expectedLifeHours: '', operatingHours: '' });
+  // Twin form
+  const [twinForm, setTwinForm] = useState({ name: '', type: 'pump', syncInterval: '5min' });
+  // Diagram form
+  const [diagForm, setDiagForm] = useState({ name: '', type: 'process', description: '' });
+
   // Load main asset data
   useEffect(() => {
     api.get<any>(`/api/assets/${id}`).then(res => {
       if (res.success && res.data) {
         setAsset(res.data);
-        // If asset has a digital twin, preload it
         if (res.data.digitalTwin) setTwin(res.data.digitalTwin);
       }
       setLoading(false);
     });
   }, [id]);
+
+  // Reload components
+  const reloadComponents = useCallback(() => {
+    api.get(`/api/component-registry?assetId=${id}&limit=100`).then(res => {
+      if (res.success && res.data) setComponents(Array.isArray(res.data) ? res.data : []);
+    }).catch(() => {});
+  }, [id]);
+
+  // Reload digital twin
+  const reloadTwin = useCallback(() => {
+    api.get(`/api/digital-twins?assetId=${id}&limit=1`).then(res => {
+      if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
+        setTwin(res.data[0]);
+      }
+    }).catch(() => {});
+  }, [id]);
+
+  // Reload diagrams
+  const reloadDiagrams = useCallback(() => {
+    api.get(`/api/system-diagrams?limit=100`).then(res => {
+      if (res.success && res.data) setDiagrams(Array.isArray(res.data) ? res.data : []);
+    }).catch(() => {});
+  }, []);
 
   // Lazy load tab data when tab changes
   useEffect(() => {
@@ -71,7 +115,6 @@ export function AssetDetailPage({ id }: { id: string }) {
     const promises: Promise<void>[] = [];
 
     if (activeTab === 'hierarchy' || activeTab === 'overview') {
-      // hierarchy data is already in asset.parent / asset.children
       setLoadedTabs(prev => new Set(prev).add('hierarchy'));
     }
     if (activeTab === 'bom') {
@@ -89,34 +132,106 @@ export function AssetDetailPage({ id }: { id: string }) {
       setLoadedTabs(prev => new Set(prev).add('bom'));
     }
     if (activeTab === 'components') {
-      promises.push(
-        api.get(`/api/component-registry?assetId=${id}&limit=100`).then(res => {
-          if (res.success && res.data) setComponents(Array.isArray(res.data) ? res.data : []);
-        }).catch(() => {}),
-      );
+      promises.push(reloadComponents());
       setLoadedTabs(prev => new Set(prev).add('components'));
     }
     if (activeTab === 'digital-twin' && !twin) {
-      promises.push(
-        api.get(`/api/digital-twins?assetId=${id}&limit=1`).then(res => {
-          if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
-            setTwin(res.data[0]);
-          }
-        }).catch(() => {}),
-      );
+      promises.push(reloadTwin());
       setLoadedTabs(prev => new Set(prev).add('digital-twin'));
     }
     if (activeTab === 'diagrams') {
-      promises.push(
-        api.get(`/api/system-diagrams?limit=100`).then(res => {
-          if (res.success && res.data) setDiagrams(Array.isArray(res.data) ? res.data : []);
-        }).catch(() => {}),
-      );
+      promises.push(reloadDiagrams());
       setLoadedTabs(prev => new Set(prev).add('diagrams'));
     }
 
     Promise.all(promises).finally(() => setTabDataLoading(false));
-  }, [activeTab, asset, id, loadedTabs, tabDataLoading, twin]);
+  }, [activeTab, asset, id, loadedTabs, tabDataLoading, twin, reloadComponents, reloadTwin, reloadDiagrams]);
+
+  // Handlers
+  const handleCreateComponent = async () => {
+    if (!compForm.componentCode.trim() || !compForm.name.trim()) {
+      toast.error('Component code and name are required');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await api.post('/api/component-registry', {
+        ...compForm,
+        assetId: id,
+        healthScore: 100,
+        lifecycleStatus: 'operational',
+        expectedLifeHours: compForm.expectedLifeHours ? parseFloat(compForm.expectedLifeHours) : null,
+        operatingHours: compForm.operatingHours ? parseFloat(compForm.operatingHours) : 0,
+      });
+      if (res.success) {
+        toast.success('Component registered successfully');
+        setShowComponentForm(false);
+        setCompForm({ componentCode: '', name: '', componentType: 'component', criticality: 'medium', manufacturer: '', modelNumber: '', serialNumber: '', description: '', expectedLifeHours: '', operatingHours: '' });
+        reloadComponents();
+      } else {
+        toast.error(res.error || 'Failed to create component');
+      }
+    } catch {
+      toast.error('Failed to create component');
+    }
+    setSaving(false);
+  };
+
+  const handleCreateTwin = async () => {
+    if (!twinForm.name.trim()) {
+      toast.error('Twin name is required');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await api.post('/api/digital-twins', {
+        name: twinForm.name,
+        assetId: id,
+        type: twinForm.type,
+        syncInterval: twinForm.syncInterval,
+      });
+      if (res.success) {
+        toast.success('Digital twin created successfully');
+        setShowTwinForm(false);
+        setTwinForm({ name: '', type: 'pump', syncInterval: '5min' });
+        reloadTwin();
+      } else {
+        toast.error(res.error || 'Failed to create digital twin');
+      }
+    } catch {
+      toast.error('Failed to create digital twin');
+    }
+    setSaving(false);
+  };
+
+  const handleCreateDiagram = async () => {
+    if (!diagForm.name.trim()) {
+      toast.error('Diagram name is required');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await api.post('/api/system-diagrams', {
+        name: diagForm.name,
+        type: diagForm.type,
+        description: diagForm.description || null,
+        nodes: [],
+        edges: [],
+        isTemplate: false,
+      });
+      if (res.success) {
+        toast.success('System diagram created successfully');
+        setShowDiagramForm(false);
+        setDiagForm({ name: '', type: 'process', description: '' });
+        reloadDiagrams();
+      } else {
+        toast.error(res.error || 'Failed to create diagram');
+      }
+    } catch {
+      toast.error('Failed to create diagram');
+    }
+    setSaving(false);
+  };
 
   if (loading) return <LoadingSkeleton />;
   if (!asset) return <div className="p-6">Asset not found</div>;
@@ -135,7 +250,7 @@ export function AssetDetailPage({ id }: { id: string }) {
     { id: 'overview', label: 'Overview', icon: Building2 },
     { id: 'hierarchy', label: 'Hierarchy', icon: GitBranch, badge: hasHierarchy ? asset.children.length + 1 : 0 },
     { id: 'bom', label: 'BOM', icon: Layers },
-    { id: 'components', label: 'Components', icon: Cpu },
+    { id: 'components', label: 'Components', icon: Cpu, badge: components.length || 0 },
     { id: 'condition', label: 'Monitoring', icon: Activity, badge: hasIoT ? asset.iotDevices.length : 0 },
     { id: 'digital-twin', label: 'Digital Twin', icon: Monitor },
     { id: 'diagrams', label: 'Diagrams', icon: MapPin },
@@ -260,7 +375,6 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </CardContent>
                 </Card>
               )}
-              {/* Quick links to related data */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {hasHierarchy && (
                   <button onClick={() => setActiveTab('hierarchy')} className="flex items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors text-left">
@@ -283,7 +397,6 @@ export function AssetDetailPage({ id }: { id: string }) {
                   <div><p className="text-xs font-medium">Digital Twin</p><p className="text-[10px] text-muted-foreground">{twin ? 'Active' : 'Not created'}</p></div>
                 </button>
               </div>
-              {/* Recent Maintenance Requests */}
               {hasMR && (
                 <Card className="border-0 shadow-sm">
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Recent Maintenance Requests</CardTitle></CardHeader>
@@ -299,7 +412,6 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </CardContent>
                 </Card>
               )}
-              {/* Recent Work Orders */}
               {hasWO && (
                 <Card className="border-0 shadow-sm">
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Recent Work Orders</CardTitle></CardHeader>
@@ -323,7 +435,6 @@ export function AssetDetailPage({ id }: { id: string }) {
                 <EmptyTab icon={GitBranch} title="No Hierarchy" description="This asset is not part of a hierarchy. Set a Parent Asset or add child assets to build the structure." />
               ) : (
                 <>
-                  {/* Parent */}
                   {asset.parent && (
                     <Card className="border-0 shadow-sm">
                       <CardHeader className="pb-2">
@@ -343,7 +454,6 @@ export function AssetDetailPage({ id }: { id: string }) {
                       </CardContent>
                     </Card>
                   )}
-                  {/* Current asset */}
                   <Card className="border-0 shadow-sm border-l-4 border-l-primary">
                     <CardContent className="p-3">
                       <div className="flex items-center gap-3">
@@ -356,12 +466,9 @@ export function AssetDetailPage({ id }: { id: string }) {
                       </div>
                     </CardContent>
                   </Card>
-                  {/* Children */}
                   {asset.children && asset.children.length > 0 && (
                     <Card className="border-0 shadow-sm">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Child Assets ({asset.children.length})</CardTitle>
-                      </CardHeader>
+                      <CardHeader className="pb-2"><CardTitle className="text-sm">Child Assets ({asset.children.length})</CardTitle></CardHeader>
                       <CardContent>
                         <div className="space-y-2">
                           {asset.children.map((child: any) => (
@@ -393,7 +500,6 @@ export function AssetDetailPage({ id }: { id: string }) {
                 <EmptyTab icon={Layers} title="No Bill of Materials" description="No BOM entries found for this asset. Add components to build the bill of materials." />
               ) : (
                 <>
-                  {/* Where this asset is used as a component (BOM as child) */}
                   {bomAsChild.length > 0 && (
                     <Card className="border-0 shadow-sm">
                       <CardHeader className="pb-2"><CardTitle className="text-sm">Used In ({bomAsChild.length})</CardTitle><CardDescription>This asset is a component in the following assemblies</CardDescription></CardHeader>
@@ -408,7 +514,6 @@ export function AssetDetailPage({ id }: { id: string }) {
                       </CardContent>
                     </Card>
                   )}
-                  {/* Components of this asset (BOM as parent) */}
                   <Card className="border-0 shadow-sm">
                     <CardHeader className="pb-2"><CardTitle className="text-sm">Components ({bomItems.length})</CardTitle><CardDescription>Parts and sub-assemblies that make up this asset</CardDescription></CardHeader>
                     <CardContent>
@@ -435,13 +540,81 @@ export function AssetDetailPage({ id }: { id: string }) {
 
             {/* ==================== COMPONENTS TAB ==================== */}
             <TabsContent value="components" className="mt-4 space-y-4">
+              {/* Add Component Form */}
+              {showComponentForm && (
+                <Card className="border-0 shadow-sm border-l-4 border-l-primary">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm">Register New Component</CardTitle>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowComponentForm(false)}><X className="h-3.5 w-3.5" /></Button>
+                    </div>
+                    <CardDescription>Track this part&apos;s lifecycle, health, and maintenance history</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1"><Label className="text-xs">Component Code *</Label><Input className="h-8 text-sm" placeholder="e.g. RPM-DR-001" value={compForm.componentCode} onChange={e => setCompForm(f => ({ ...f, componentCode: e.target.value }))} /></div>
+                      <div className="space-y-1"><Label className="text-xs">Name *</Label><Input className="h-8 text-sm" placeholder="e.g. Drive Roller" value={compForm.name} onChange={e => setCompForm(f => ({ ...f, name: e.target.value }))} /></div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Type</Label>
+                        <Select value={compForm.componentType} onValueChange={v => setCompForm(f => ({ ...f, componentType: v }))}>
+                          <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="component">Component</SelectItem>
+                            <SelectItem value="sub_assembly">Sub-Assembly</SelectItem>
+                            <SelectItem value="consumable">Consumable</SelectItem>
+                            <SelectItem value="instrument">Instrument</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Criticality</Label>
+                        <Select value={compForm.criticality} onValueChange={v => setCompForm(f => ({ ...f, criticality: v }))}>
+                          <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                            <SelectItem value="critical">Critical</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1"><Label className="text-xs">Serial Number</Label><Input className="h-8 text-sm" placeholder="Optional" value={compForm.serialNumber} onChange={e => setCompForm(f => ({ ...f, serialNumber: e.target.value }))} /></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1"><Label className="text-xs">Manufacturer</Label><Input className="h-8 text-sm" placeholder="e.g. SKF" value={compForm.manufacturer} onChange={e => setCompForm(f => ({ ...f, manufacturer: e.target.value }))} /></div>
+                      <div className="space-y-1"><Label className="text-xs">Model Number</Label><Input className="h-8 text-sm" placeholder="e.g. 22222 EK" value={compForm.modelNumber} onChange={e => setCompForm(f => ({ ...f, modelNumber: e.target.value }))} /></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1"><Label className="text-xs">Expected Life (hours)</Label><Input type="number" className="h-8 text-sm" placeholder="e.g. 20000" value={compForm.expectedLifeHours} onChange={e => setCompForm(f => ({ ...f, expectedLifeHours: e.target.value }))} /></div>
+                      <div className="space-y-1"><Label className="text-xs">Operating Hours</Label><Input type="number" className="h-8 text-sm" placeholder="e.g. 5000" value={compForm.operatingHours} onChange={e => setCompForm(f => ({ ...f, operatingHours: e.target.value }))} /></div>
+                    </div>
+                    <div className="space-y-1"><Label className="text-xs">Description</Label><Textarea className="text-sm" rows={2} placeholder="Brief description..." value={compForm.description} onChange={e => setCompForm(f => ({ ...f, description: e.target.value }))} /></div>
+                    <div className="flex justify-end gap-2 pt-1">
+                      <Button variant="outline" size="sm" onClick={() => setShowComponentForm(false)}>Cancel</Button>
+                      <Button size="sm" onClick={handleCreateComponent} disabled={saving || !compForm.componentCode.trim() || !compForm.name.trim()}>
+                        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
+                        Register Component
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {tabDataLoading && activeTab === 'components' ? (
                 <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-              ) : components.length === 0 ? (
-                <EmptyTab icon={Cpu} title="No Components Registered" description="Register components of this asset in the Component Registry to track their lifecycle, health, and maintenance." />
-              ) : (
+              ) : components.length === 0 && !showComponentForm ? (
+                <EmptyTab icon={Cpu} title="No Components Registered" description="Register components of this asset in the Component Registry to track their lifecycle, health, and maintenance." actionLabel="Add Component" onAction={() => setShowComponentForm(true)} />
+              ) : !showComponentForm && (
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={() => setShowComponentForm(true)}><Plus className="h-3.5 w-3.5 mr-1.5" />Add Component</Button>
+                </div>
+              )}
+
+              {components.length > 0 && (
                 <>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
                       { label: 'Total', value: components.length, color: 'bg-slate-50 text-slate-700' },
                       { label: 'Operational', value: components.filter((c: any) => c.lifecycleStatus === 'operational').length, color: 'bg-emerald-50 text-emerald-700' },
@@ -462,7 +635,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                             <TableRow key={c.id}>
                               <TableCell className="font-mono text-xs">{c.componentCode}</TableCell>
                               <TableCell className="font-medium text-sm">{c.name}</TableCell>
-                              <TableCell className="text-xs text-muted-foreground hidden sm:table-cell capitalize">{c.componentType}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground hidden sm:table-cell capitalize">{c.componentType?.replace(/_/g, ' ')}</TableCell>
                               <TableCell className="hidden md:table-cell"><Badge variant="outline" className={`text-[10px] uppercase ${criticalityColors[c.criticality] || ''}`}>{c.criticality}</Badge></TableCell>
                               <TableCell className="text-right">
                                 <div className="flex items-center justify-end gap-2">
@@ -488,75 +661,177 @@ export function AssetDetailPage({ id }: { id: string }) {
               {!hasIoT ? (
                 <EmptyTab icon={Activity} title="No Monitoring Devices" description="No IoT sensors or monitoring devices are connected to this asset. Add monitoring points to track condition in real-time." />
               ) : (
-                <>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {asset.iotDevices.map((d: any) => {
-                      const dotColor = d.status === 'online' || d.status === 'active' ? 'bg-emerald-500' : d.status === 'warning' ? 'bg-amber-500' : 'bg-red-500';
-                      return (
-                        <Card key={d.id} className="border-0 shadow-sm">
-                          <CardContent className="p-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <p className="text-xs font-semibold truncate">{d.name}</p>
-                              <div className={`h-2.5 w-2.5 rounded-full ${dotColor} ${d.status === 'online' ? 'animate-pulse' : ''}`} />
-                            </div>
-                            <p className="text-[10px] text-muted-foreground capitalize">{d.parameter} · {d.type}</p>
-                            <div className="flex items-center justify-between mt-2">
-                              <span className="text-[10px] text-muted-foreground">Status</span>
-                              <Badge variant="outline" className="text-[9px] capitalize">{d.status}</Badge>
-                            </div>
-                            {d.lastSeen && <p className="text-[9px] text-muted-foreground mt-1">Last: {formatDateTime(d.lastSeen)}</p>}
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                </>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {asset.iotDevices.map((d: any) => {
+                    const dotColor = d.status === 'online' || d.status === 'active' ? 'bg-emerald-500' : d.status === 'warning' ? 'bg-amber-500' : 'bg-red-500';
+                    return (
+                      <Card key={d.id} className="border-0 shadow-sm">
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs font-semibold truncate">{d.name}</p>
+                            <div className={`h-2.5 w-2.5 rounded-full ${dotColor} ${d.status === 'online' ? 'animate-pulse' : ''}`} />
+                          </div>
+                          <p className="text-[10px] text-muted-foreground capitalize">{d.parameter} · {d.type}</p>
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="text-[10px] text-muted-foreground">Status</span>
+                            <Badge variant="outline" className="text-[9px] capitalize">{d.status}</Badge>
+                          </div>
+                          {d.lastSeen && <p className="text-[9px] text-muted-foreground mt-1">Last: {formatDateTime(d.lastSeen)}</p>}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
               )}
             </TabsContent>
 
             {/* ==================== DIGITAL TWIN TAB ==================== */}
             <TabsContent value="digital-twin" className="mt-4 space-y-4">
+              {/* Create Twin Form */}
+              {showTwinForm && (
+                <Card className="border-0 shadow-sm border-l-4 border-l-primary">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm">Create Digital Twin</CardTitle>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowTwinForm(false)}><X className="h-3.5 w-3.5" /></Button>
+                    </div>
+                    <CardDescription>Create a digital replica of this asset for simulation and analysis</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-1"><Label className="text-xs">Twin Name *</Label><Input className="h-8 text-sm" placeholder="e.g. Roller Printing Machine DT-001" value={twinForm.name} onChange={e => setTwinForm(f => ({ ...f, name: e.target.value }))} /></div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Type</Label>
+                        <Select value={twinForm.type} onValueChange={v => setTwinForm(f => ({ ...f, type: v }))}>
+                          <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pump">Pump</SelectItem>
+                            <SelectItem value="motor">Motor</SelectItem>
+                            <SelectItem value="compressor">Compressor</SelectItem>
+                            <SelectItem value="valve">Valve</SelectItem>
+                            <SelectItem value="heat_exchanger">Heat Exchanger</SelectItem>
+                            <SelectItem value="conveyor">Conveyor</SelectItem>
+                            <SelectItem value="printing_machine">Printing Machine</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Sync Interval</Label>
+                        <Select value={twinForm.syncInterval} onValueChange={v => setTwinForm(f => ({ ...f, syncInterval: v }))}>
+                          <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="real_time">Real-time</SelectItem>
+                            <SelectItem value="1min">1 min</SelectItem>
+                            <SelectItem value="5min">5 min</SelectItem>
+                            <SelectItem value="15min">15 min</SelectItem>
+                            <SelectItem value="1hr">1 hour</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-1">
+                      <Button variant="outline" size="sm" onClick={() => setShowTwinForm(false)}>Cancel</Button>
+                      <Button size="sm" onClick={handleCreateTwin} disabled={saving || !twinForm.name.trim()}>
+                        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
+                        Create Twin
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {tabDataLoading && activeTab === 'digital-twin' ? (
                 <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-              ) : !twin ? (
-                <EmptyTab icon={Monitor} title="No Digital Twin" description="A digital twin has not been created for this asset. Create one to enable simulation, monitoring, and predictive analysis." />
-              ) : (
-                <>
-                  <Card className="border-0 shadow-sm">
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-4">
-                        <div className="relative h-16 w-16">
-                          <svg className="h-16 w-16 -rotate-90" viewBox="0 0 36 36">
-                            <circle cx="18" cy="18" r="15.9" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted/30" />
-                            <circle cx="18" cy="18" r="15.9" fill="none" strokeWidth="2.5" strokeDasharray={`${(twin.healthScore || 0) * 1} ${100 - (twin.healthScore || 0)}`} className={twin.healthScore >= 80 ? 'text-emerald-500' : twin.healthScore >= 60 ? 'text-amber-500' : 'text-red-500'} strokeLinecap="round" />
-                          </svg>
-                          <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">{twin.healthScore || 0}%</span>
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-sm">{twin.name}</h3>
-                          <p className="text-xs text-muted-foreground capitalize">Type: {twin.type?.replace(/_/g, ' ')}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline" className={twin.isActive ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : 'text-slate-500 bg-slate-50 border-slate-200'}>
-                              <span className="capitalize">{twin.isActive ? 'Active' : 'Inactive'}</span>
-                            </Badge>
-                            <span className="text-[10px] text-muted-foreground">Sync: {twin.syncInterval || 'N/A'}</span>
-                          </div>
+              ) : !twin && !showTwinForm ? (
+                <EmptyTab icon={Monitor} title="No Digital Twin" description="A digital twin has not been created for this asset. Create one to enable simulation, monitoring, and predictive analysis." actionLabel="Create Digital Twin" onAction={() => setShowTwinForm(true)} />
+              ) : twin && !showTwinForm && (
+                <div className="flex justify-end">
+                  <Button size="sm" variant="outline"><Plus className="h-3.5 w-3.5 mr-1.5" />Recreate Twin</Button>
+                </div>
+              )}
+
+              {twin && (
+                <Card className="border-0 shadow-sm">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-4">
+                      <div className="relative h-16 w-16">
+                        <svg className="h-16 w-16 -rotate-90" viewBox="0 0 36 36">
+                          <circle cx="18" cy="18" r="15.9" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted/30" />
+                          <circle cx="18" cy="18" r="15.9" fill="none" strokeWidth="2.5" strokeDasharray={`${(twin.healthScore || 0) * 1} ${100 - (twin.healthScore || 0)}`} className={twin.healthScore >= 80 ? 'text-emerald-500' : twin.healthScore >= 60 ? 'text-amber-500' : 'text-red-500'} strokeLinecap="round" />
+                        </svg>
+                        <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">{twin.healthScore || 0}%</span>
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-sm">{twin.name}</h3>
+                        <p className="text-xs text-muted-foreground capitalize">Type: {twin.type?.replace(/_/g, ' ')}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant="outline" className={twin.isActive ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : 'text-slate-500 bg-slate-50 border-slate-200'}>
+                            <span className="capitalize">{twin.isActive ? 'Active' : 'Inactive'}</span>
+                          </Badge>
+                          <span className="text-[10px] text-muted-foreground">Sync: {twin.syncInterval || 'N/A'}</span>
                         </div>
                       </div>
-                      {twin.lastSynced && <p className="text-[10px] text-muted-foreground mt-3 border-t pt-2">Last synced: {formatDateTime(twin.lastSynced)}</p>}
-                    </CardContent>
-                  </Card>
-                </>
+                    </div>
+                    {twin.lastSynced && <p className="text-[10px] text-muted-foreground mt-3 border-t pt-2">Last synced: {formatDateTime(twin.lastSynced)}</p>}
+                  </CardContent>
+                </Card>
               )}
             </TabsContent>
 
             {/* ==================== DIAGRAMS TAB ==================== */}
             <TabsContent value="diagrams" className="mt-4 space-y-4">
+              {/* Create Diagram Form */}
+              {showDiagramForm && (
+                <Card className="border-0 shadow-sm border-l-4 border-l-primary">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm">Create System Diagram</CardTitle>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowDiagramForm(false)}><X className="h-3.5 w-3.5" /></Button>
+                    </div>
+                    <CardDescription>Create piping, electrical, or process flow diagrams for this plant</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-1"><Label className="text-xs">Diagram Name *</Label><Input className="h-8 text-sm" placeholder="e.g. Textile Production Line 1 - Process Flow" value={diagForm.name} onChange={e => setDiagForm(f => ({ ...f, name: e.target.value }))} /></div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Type</Label>
+                        <Select value={diagForm.type} onValueChange={v => setDiagForm(f => ({ ...f, type: v }))}>
+                          <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="process">Process Flow</SelectItem>
+                            <SelectItem value="piping">Piping & Instrumentation</SelectItem>
+                            <SelectItem value="electrical">Electrical</SelectItem>
+                            <SelectItem value="hvac">HVAC</SelectItem>
+                            <SelectItem value="control">Control System</SelectItem>
+                            <SelectItem value="safety">Safety</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1"><Label className="text-xs">Description</Label><Input className="h-8 text-sm" placeholder="Optional description" value={diagForm.description} onChange={e => setDiagForm(f => ({ ...f, description: e.target.value }))} /></div>
+                    </div>
+                    <div className="flex justify-end gap-2 pt-1">
+                      <Button variant="outline" size="sm" onClick={() => setShowDiagramForm(false)}>Cancel</Button>
+                      <Button size="sm" onClick={handleCreateDiagram} disabled={saving || !diagForm.name.trim()}>
+                        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}
+                        Create Diagram
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {tabDataLoading && activeTab === 'diagrams' ? (
                 <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-              ) : diagrams.length === 0 ? (
-                <EmptyTab icon={MapPin} title="No System Diagrams" description="No system diagrams have been created yet. Create piping, electrical, or process flow diagrams for your plant." />
-              ) : (
+              ) : diagrams.length === 0 && !showDiagramForm ? (
+                <EmptyTab icon={MapPin} title="No System Diagrams" description="No system diagrams have been created yet. Create piping, electrical, or process flow diagrams for your plant." actionLabel="Create Diagram" onAction={() => setShowDiagramForm(true)} />
+              ) : !showDiagramForm && (
+                <div className="flex justify-end">
+                  <Button size="sm" onClick={() => setShowDiagramForm(true)}><Plus className="h-3.5 w-3.5 mr-1.5" />Create Diagram</Button>
+                </div>
+              )}
+
+              {diagrams.length > 0 && (
                 <Card className="border-0 shadow-sm">
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Available Diagrams ({diagrams.length})</CardTitle></CardHeader>
                   <CardContent>
