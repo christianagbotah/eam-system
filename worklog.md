@@ -5541,3 +5541,25 @@ Stage Summary:
 - Also wrapped popstate handler and guard entry in startTransition
 - PageErrorBoundary now distinguishes between chunk/#306 errors (needs reload) and runtime errors (can retry)
 - Both "page navigation freeze" and "tab switching freeze" issues should be resolved by this fix
+
+---
+Task ID: 2
+Agent: Main
+Task: Fix React #306 properly — useDeferredValue instead of store-level startTransition
+
+Work Log:
+- Discovered that previous fix (startTransition in Zustand store) doesn't work
+  because Zustand uses its own subscription model, bypassing React's transition tracking
+- Implemented proper fix using React.useDeferredValue at the component level in AppShell:
+  - deferredPage = useDeferredValue(currentPage) defers the page switch
+  - Old page stays visible while new lazy component chunk loads
+  - Suspense properly handles the lazy loading without throwing Error #306
+  - Added subtle loading overlay during navigation transitions
+- Reverted navigationStore.ts back to direct Zustand set() calls
+- PageErrorBoundary improvements from previous commit kept (retry logic, #306 detection)
+
+Stage Summary:
+- Key insight: startTransition in Zustand stores does NOT work for React concurrent features
+- Proper pattern: useDeferredValue at the React component level
+- isNavigating flag shows a subtle overlay while the deferred page catches up
+- Both "page navigation freeze" and "tab switching freeze" issues resolved
