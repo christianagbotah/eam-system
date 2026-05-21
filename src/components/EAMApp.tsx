@@ -169,6 +169,57 @@ const ObservabilityDashboardPage = lazy(() => import('./modules/ObservabilityPag
 
 
 // ============================================================================
+// PAGE-LEVEL ERROR BOUNDARY — catches chunk loading & runtime errors inside Suspense
+// ============================================================================
+
+class PageErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('=== PAGE ERROR ===', error.message, info.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center min-h-[300px]">
+          <div className="text-center space-y-3 p-6 max-w-md">
+            <div className="h-10 w-10 mx-auto rounded-full bg-amber-100 dark:bg-amber-950/30 flex items-center justify-center">
+              <svg className="h-5 w-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <p className="text-sm font-medium">Failed to load page</p>
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+              {this.state.error?.message || 'An unexpected error occurred'}
+            </p>
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg transition-colors"
+              >
+                Reload Page
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ============================================================================
 // MAIN APP SHELL
 // ============================================================================
 
@@ -593,9 +644,11 @@ function AppShell() {
 
         {/* Page Content */}
         <main className="flex-1 min-h-0 overflow-y-auto pb-16 lg:pb-0">
-          <Suspense fallback={<LoadingSkeleton />}>
-            {renderPage()}
-          </Suspense>
+          <PageErrorBoundary>
+            <Suspense fallback={<LoadingSkeleton />}>
+              {renderPage()}
+            </Suspense>
+          </PageErrorBoundary>
         </main>
 
         {/* Mobile Bottom Navigation */}
@@ -647,10 +700,13 @@ class GlobalErrorBoundary extends React.Component<
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: null, componentStack: null, isChunkError: false });
+    // Always reload for chunk errors — the JS bundle is stale
     if (this.state.isChunkError) {
       window.location.reload();
+      return;
     }
+    // For runtime errors, try re-rendering
+    this.setState({ hasError: false, error: null, componentStack: null, isChunkError: false });
   };
 
   handleHardRefresh = () => {

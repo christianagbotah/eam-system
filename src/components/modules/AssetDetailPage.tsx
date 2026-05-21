@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
@@ -76,9 +76,27 @@ export function AssetDetailPage({ id }: { id: string }) {
   // Diagram form
   const [diagForm, setDiagForm] = useState({ name: '', type: 'process', description: '' });
 
+  // Abort controller for cleanup on unmount
+  const abortRef = useRef<AbortController>(new AbortController());
+  useEffect(() => {
+    return () => { abortRef.current.abort('unmounted'); };
+  }, []);
+
   // Load main asset data
   useEffect(() => {
-    api.get<any>(`/api/assets/${id}`).then(res => {
+    setLoading(true);
+    setAsset(null);
+    loadedTabsRef.current = new Set(['overview']);
+    loadingTabRef.current = null;
+    setBomItems([]);
+    setBomAsChild([]);
+    setComponents([]);
+    setTwin(null);
+    setDiagrams([]);
+    setTabDataLoading(false);
+
+    const ctrl = new AbortController();
+    api.get<any>(`/api/assets/${id}`, { signal: ctrl.signal }).then(res => {
       if (res.success && res.data) {
         setAsset(res.data);
         if (res.data.digitalTwin) {
@@ -87,17 +105,19 @@ export function AssetDetailPage({ id }: { id: string }) {
         }
       }
       setLoading(false);
+    }).catch(() => {
+      setLoading(false);
     });
+    return () => { ctrl.abort('unmounted'); };
   }, [id]);
 
-  // Reload components
+  // Reload helpers (used by create handlers)
   const reloadComponents = useCallback(() => {
     api.get(`/api/component-registry?assetId=${id}&limit=100`).then(res => {
       if (res.success && res.data) setComponents(Array.isArray(res.data) ? res.data : []);
     }).catch(() => {});
   }, [id]);
 
-  // Reload digital twin
   const reloadTwin = useCallback(() => {
     api.get(`/api/digital-twins?assetId=${id}&limit=1`).then(res => {
       if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
@@ -106,7 +126,6 @@ export function AssetDetailPage({ id }: { id: string }) {
     }).catch(() => {});
   }, [id]);
 
-  // Reload diagrams
   const reloadDiagrams = useCallback(() => {
     api.get(`/api/system-diagrams?limit=100`).then(res => {
       if (res.success && res.data) setDiagrams(Array.isArray(res.data) ? res.data : []);
@@ -119,18 +138,25 @@ export function AssetDetailPage({ id }: { id: string }) {
     if (loadedTabsRef.current.has(activeTab)) return;
     if (loadingTabRef.current === activeTab) return;
 
-    loadingTabRef.current = activeTab;
     loadedTabsRef.current.add(activeTab);
+
+    // Tabs that don't need API calls — skip loading state entirely
+    const noFetchTabs = ['overview', 'hierarchy', 'condition'];
+    if (noFetchTabs.includes(activeTab)) return;
+
+    loadingTabRef.current = activeTab;
     setTabDataLoading(true);
 
+    const ctrl = new AbortController();
+    const sig = { signal: ctrl.signal };
     const promises: Promise<void>[] = [];
 
     if (activeTab === 'bom') {
       promises.push(
-        api.get(`/api/bill-of-materials?parentId=${id}&limit=100`).then(res => {
+        api.get(`/api/bill-of-materials?parentId=${id}&limit=100`, sig).then(res => {
           if (res.success && res.data) setBomItems(Array.isArray(res.data) ? res.data : []);
         }).catch(() => {}),
-        api.get(`/api/bill-of-materials?search=${encodeURIComponent(asset.name)}&limit=100`).then(res => {
+        api.get(`/api/bill-of-materials?search=${encodeURIComponent(asset.name)}&limit=100`, sig).then(res => {
           if (res.success && res.data) {
             const items = Array.isArray(res.data) ? res.data : [];
             setBomAsChild(items.filter((b: any) => b.childAssetId === id));
@@ -139,20 +165,36 @@ export function AssetDetailPage({ id }: { id: string }) {
       );
     }
     if (activeTab === 'components') {
-      promises.push(reloadComponents());
+      promises.push(
+        api.get(`/api/component-registry?assetId=${id}&limit=100`, sig).then(res => {
+          if (res.success && res.data) setComponents(Array.isArray(res.data) ? res.data : []);
+        }).catch(() => {})
+      );
     }
     if (activeTab === 'digital-twin') {
-      promises.push(reloadTwin());
+      promises.push(
+        api.get(`/api/digital-twins?assetId=${id}&limit=1`, sig).then(res => {
+          if (res.success && res.data && Array.isArray(res.data) && res.data.length > 0) {
+            setTwin(res.data[0]);
+          }
+        }).catch(() => {})
+      );
     }
     if (activeTab === 'diagrams') {
-      promises.push(reloadDiagrams());
+      promises.push(
+        api.get(`/api/system-diagrams?limit=100`, sig).then(res => {
+          if (res.success && res.data) setDiagrams(Array.isArray(res.data) ? res.data : []);
+        }).catch(() => {})
+      );
     }
 
     Promise.all(promises).finally(() => {
       setTabDataLoading(false);
       loadingTabRef.current = null;
     });
-  }, [activeTab, asset, id, reloadComponents, reloadTwin, reloadDiagrams]);
+
+    return () => { ctrl.abort('unmounted'); };
+  }, [activeTab, asset, id]);
 
   // Handlers
   const handleCreateComponent = async () => {
@@ -299,6 +341,7 @@ export function AssetDetailPage({ id }: { id: string }) {
           <div className="pb-6">
             {/* ==================== OVERVIEW TAB ==================== */}
             <TabsContent value="overview" className="mt-4 space-y-4">
+              {activeTab === 'overview' && (<>
               {asset.description && (
                 <Card className="border-0 shadow-sm">
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Description</CardTitle></CardHeader>
@@ -434,10 +477,12 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </CardContent>
                 </Card>
               )}
+            </>)}
             </TabsContent>
 
             {/* ==================== HIERARCHY TAB ==================== */}
             <TabsContent value="hierarchy" className="mt-4 space-y-4">
+              {activeTab === 'hierarchy' && (<>
               {!hasHierarchy ? (
                 <EmptyTab icon={GitBranch} title="No Hierarchy" description="This asset is not part of a hierarchy. Set a Parent Asset or add child assets to build the structure." />
               ) : (
@@ -497,10 +542,12 @@ export function AssetDetailPage({ id }: { id: string }) {
                   )}
                 </>
               )}
+            </>)}
             </TabsContent>
 
             {/* ==================== BOM TAB ==================== */}
             <TabsContent value="bom" className="mt-4 space-y-4">
+              {activeTab === 'bom' && (<>
               {tabDataLoading && activeTab === 'bom' ? (
                 <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : bomItems.length === 0 && bomAsChild.length === 0 ? (
@@ -543,10 +590,12 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </Card>
                 </>
               )}
+            </>)}
             </TabsContent>
 
             {/* ==================== COMPONENTS TAB ==================== */}
             <TabsContent value="components" className="mt-4 space-y-4">
+              {activeTab === 'components' && (<>
               {/* Add Component Form */}
               {showComponentForm && (
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
@@ -661,10 +710,12 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </Card>
                 </>
               )}
+            </>)}
             </TabsContent>
 
             {/* ==================== CONDITION MONITORING TAB ==================== */}
             <TabsContent value="condition" className="mt-4 space-y-4">
+              {activeTab === 'condition' && (<>
               {!hasIoT ? (
                 <EmptyTab icon={Activity} title="No Monitoring Devices" description="No IoT sensors or monitoring devices are connected to this asset. Add monitoring points to track condition in real-time." />
               ) : (
@@ -690,10 +741,12 @@ export function AssetDetailPage({ id }: { id: string }) {
                   })}
                 </div>
               )}
+            </>)}
             </TabsContent>
 
             {/* ==================== DIGITAL TWIN TAB ==================== */}
             <TabsContent value="digital-twin" className="mt-4 space-y-4">
+              {activeTab === 'digital-twin' && (<>
               {/* Create Twin Form */}
               {showTwinForm && (
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
@@ -784,10 +837,12 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </CardContent>
                 </Card>
               )}
+            </>)}
             </TabsContent>
 
             {/* ==================== DIAGRAMS TAB ==================== */}
             <TabsContent value="diagrams" className="mt-4 space-y-4">
+              {activeTab === 'diagrams' && (<>
               {/* Create Diagram Form */}
               {showDiagramForm && (
                 <Card className="border-0 shadow-sm border-l-4 border-l-primary">
@@ -859,6 +914,7 @@ export function AssetDetailPage({ id }: { id: string }) {
                   </CardContent>
                 </Card>
               )}
+            </>)}
             </TabsContent>
           </div>
         </div>

@@ -1,5 +1,7 @@
-// API wrapper with auth headers
+// API wrapper with auth headers, timeout, and AbortController support
+import React from 'react';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
+const DEFAULT_TIMEOUT_MS = 15_000; // 15 second default timeout
 
 export function getAuthHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {};
@@ -13,21 +15,40 @@ export function getAuthHeaders(): Record<string, string> {
 
 export async function apiFetch<T = any>(
   endpoint: string,
-  options: RequestInit = {}
-): Promise<{ success: boolean; data?: T; error?: string }> {
-  const isFormData = options.body instanceof FormData;
+  options: RequestInit & { timeout?: number } = {}
+): Promise<{ success: boolean; data?: T; error?: string; kpis?: any; pagination?: any }> {
+  const { timeout = DEFAULT_TIMEOUT_MS, signal: externalSignal, ...restOptions } = options;
+  const isFormData = restOptions.body instanceof FormData;
 
   const headers: Record<string, string> = {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...getAuthHeaders(),
-    ...(options.headers as Record<string, string> || {}),
+    ...(restOptions.headers as Record<string, string> || {}),
   };
+
+  // Create AbortController — respects both external signal and timeout
+  const controller = new AbortController();
+  const { signal } = controller;
+
+  // If external signal is provided, abort when it fires
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      return { success: false, error: 'Request was aborted' };
+    }
+    externalSignal.addEventListener('abort', () => controller.abort(externalSignal.reason));
+  }
+
+  // Set up timeout
+  const timeoutId = setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), timeout);
 
   try {
     const res = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
+      ...restOptions,
       headers,
+      signal,
     });
+
+    clearTimeout(timeoutId);
 
     // Handle 204 No Content
     if (res.status === 204) {
@@ -62,17 +83,55 @@ export async function apiFetch<T = any>(
     if (json.pagination !== undefined) result.pagination = json.pagination;
     return result;
   } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err?.name === 'AbortError' || err?.name === 'TimeoutError') {
+      const msg = err?.message || '';
+      if (msg.includes('timed out') || msg.includes('Timeout')) {
+        return { success: false, error: 'Request timed out' };
+      }
+      return { success: false, error: 'Request was cancelled' };
+    }
     return { success: false, error: err.message || 'Network error' };
   }
 }
 
 export const api = {
-  get: <T = any>(endpoint: string) => apiFetch<T>(endpoint),
-  post: <T = any>(endpoint: string, body?: any) =>
-    apiFetch<T>(endpoint, { method: 'POST', body: body instanceof FormData ? body : (body ? JSON.stringify(body) : undefined) }),
-  patch: <T = any>(endpoint: string, body?: any) =>
-    apiFetch<T>(endpoint, { method: 'PATCH', body: body instanceof FormData ? body : (body ? JSON.stringify(body) : undefined) }),
-  put: <T = any>(endpoint: string, body?: any) =>
-    apiFetch<T>(endpoint, { method: 'PUT', body: body instanceof FormData ? body : (body ? JSON.stringify(body) : undefined) }),
-  delete: <T = any>(endpoint: string) => apiFetch<T>(endpoint, { method: 'DELETE' }),
+  get: <T = any>(endpoint: string, opts?: RequestInit & { timeout?: number }) =>
+    apiFetch<T>(endpoint, { ...opts, method: 'GET' }),
+  post: <T = any>(endpoint: string, body?: any, opts?: RequestInit & { timeout?: number }) =>
+    apiFetch<T>(endpoint, {
+      ...opts,
+      method: 'POST',
+      body: body instanceof FormData ? body : (body ? JSON.stringify(body) : undefined),
+    }),
+  patch: <T = any>(endpoint: string, body?: any, opts?: RequestInit & { timeout?: number }) =>
+    apiFetch<T>(endpoint, {
+      ...opts,
+      method: 'PATCH',
+      body: body instanceof FormData ? body : (body ? JSON.stringify(body) : undefined),
+    }),
+  put: <T = any>(endpoint: string, body?: any, opts?: RequestInit & { timeout?: number }) =>
+    apiFetch<T>(endpoint, {
+      ...opts,
+      method: 'PUT',
+      body: body instanceof FormData ? body : (body ? JSON.stringify(body) : undefined),
+    }),
+  delete: <T = any>(endpoint: string, opts?: RequestInit & { timeout?: number }) =>
+    apiFetch<T>(endpoint, { ...opts, method: 'DELETE' }),
 };
+
+/**
+ * React hook that returns an AbortController ref.
+ * The controller is automatically aborted when the component unmounts.
+ * Usage:
+ *   const abortRef = useAbortController();
+ *   api.get('/api/data', { signal: abortRef.current.signal });
+ */
+export function useAbortRef(): React.MutableRefObject<AbortController> {
+  const controllerRef = React.useRef<AbortController>(new AbortController());
+  React.useEffect(() => {
+    const ctrl = controllerRef.current;
+    return () => { ctrl.abort('unmounted'); };
+  }, []);
+  return controllerRef;
+}
