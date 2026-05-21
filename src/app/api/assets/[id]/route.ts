@@ -111,14 +111,17 @@ export async function PUT(
       'condition', 'status', 'criticality', 'location',
       'building', 'floor', 'area', 'imageUrl',
       'drawingsUrl', 'manualUrl', 'specification', 'isActive',
-      // FK scalar fields — .update() requires these directly, NOT connect syntax
-      'categoryId', 'plantId', 'departmentId', 'assignedToId', 'parentId',
     ];
+    // FK scalar fields — empty string must become null to avoid FK constraint violation
+    const fkFields = ['categoryId', 'plantId', 'departmentId', 'assignedToId', 'parentId'];
     const dateFields = ['purchaseDate', 'warrantyExpiry', 'installedDate'];
     const numberFields = ['yearManufactured', 'purchaseCost', 'expectedLifeYears', 'currentValue', 'depreciationRate'];
 
     for (const field of scalarFields) {
       if (body[field] !== undefined) updateData[field] = body[field];
+    }
+    for (const field of fkFields) {
+      if (body[field] !== undefined) updateData[field] = body[field] || null;
     }
     for (const field of dateFields) {
       if (body[field] !== undefined) updateData[field] = body[field] ? new Date(body[field]) : null;
