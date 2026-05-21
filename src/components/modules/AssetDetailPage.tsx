@@ -11,7 +11,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -59,7 +58,10 @@ export function AssetDetailPage({ id }: { id: string }) {
   const [twin, setTwin] = useState<any>(null);
   const [diagrams, setDiagrams] = useState<any[]>([]);
   const [tabDataLoading, setTabDataLoading] = useState(false);
-  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set(['overview']));
+
+  // Use ref to track loaded tabs — avoids infinite re-renders from Set reference changes
+  const loadedTabsRef = React.useRef(new Set(['overview']));
+  const loadingTabRef = React.useRef<string | null>(null);
 
   // Create dialogs
   const [showComponentForm, setShowComponentForm] = useState(false);
@@ -79,7 +81,10 @@ export function AssetDetailPage({ id }: { id: string }) {
     api.get<any>(`/api/assets/${id}`).then(res => {
       if (res.success && res.data) {
         setAsset(res.data);
-        if (res.data.digitalTwin) setTwin(res.data.digitalTwin);
+        if (res.data.digitalTwin) {
+          setTwin(res.data.digitalTwin);
+          loadedTabsRef.current.add('digital-twin');
+        }
       }
       setLoading(false);
     });
@@ -110,13 +115,16 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   // Lazy load tab data when tab changes
   useEffect(() => {
-    if (!asset || loadedTabs.has(activeTab) || tabDataLoading) return;
+    if (!asset) return;
+    if (loadedTabsRef.current.has(activeTab)) return;
+    if (loadingTabRef.current === activeTab) return;
+
+    loadingTabRef.current = activeTab;
+    loadedTabsRef.current.add(activeTab);
     setTabDataLoading(true);
+
     const promises: Promise<void>[] = [];
 
-    if (activeTab === 'hierarchy' || activeTab === 'overview') {
-      setLoadedTabs(prev => new Set(prev).add('hierarchy'));
-    }
     if (activeTab === 'bom') {
       promises.push(
         api.get(`/api/bill-of-materials?parentId=${id}&limit=100`).then(res => {
@@ -129,23 +137,22 @@ export function AssetDetailPage({ id }: { id: string }) {
           }
         }).catch(() => {}),
       );
-      setLoadedTabs(prev => new Set(prev).add('bom'));
     }
     if (activeTab === 'components') {
       promises.push(reloadComponents());
-      setLoadedTabs(prev => new Set(prev).add('components'));
     }
-    if (activeTab === 'digital-twin' && !twin) {
+    if (activeTab === 'digital-twin') {
       promises.push(reloadTwin());
-      setLoadedTabs(prev => new Set(prev).add('digital-twin'));
     }
     if (activeTab === 'diagrams') {
       promises.push(reloadDiagrams());
-      setLoadedTabs(prev => new Set(prev).add('diagrams'));
     }
 
-    Promise.all(promises).finally(() => setTabDataLoading(false));
-  }, [activeTab, asset, id, loadedTabs, tabDataLoading, twin, reloadComponents, reloadTwin, reloadDiagrams]);
+    Promise.all(promises).finally(() => {
+      setTabDataLoading(false);
+      loadingTabRef.current = null;
+    });
+  }, [activeTab, asset, id, reloadComponents, reloadTwin, reloadDiagrams]);
 
   // Handlers
   const handleCreateComponent = async () => {
@@ -288,7 +295,7 @@ export function AssetDetailPage({ id }: { id: string }) {
           })}
         </TabsList>
 
-        <ScrollArea className="max-h-[calc(100vh-14rem)]">
+        <div className="overflow-y-auto max-h-[calc(100vh-14rem)]">
           <div className="pb-6">
             {/* ==================== OVERVIEW TAB ==================== */}
             <TabsContent value="overview" className="mt-4 space-y-4">
@@ -854,7 +861,7 @@ export function AssetDetailPage({ id }: { id: string }) {
               )}
             </TabsContent>
           </div>
-        </ScrollArea>
+        </div>
       </Tabs>
     </>
   );
