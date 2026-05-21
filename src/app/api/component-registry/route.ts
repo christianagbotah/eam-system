@@ -208,6 +208,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, data: component }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create component';
+    // Log full details for debugging
+    console.error('[API /api/component-registry POST] Failed:', {
+      message,
+      componentCode,
+      name,
+      assetId,
+      errorStack: error instanceof Error ? error.stack : undefined,
+    });
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
