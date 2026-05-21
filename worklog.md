@@ -5438,3 +5438,30 @@ Stage Summary:
 - Commit 6ceb2d50 pushed: "feat: convert asset, MR, and WO detail views from full-page to side sheets"
 - 2 files changed, 86 insertions, 89 deletions
 - Assets, MR, WO detail views now open as right-side sheets instead of replacing the list
+---
+Task ID: 1
+Agent: Main
+Task: Build tabbed asset detail page with hierarchy, BOM, components, condition monitoring, digital twin, and system diagrams
+
+Work Log:
+- Read existing AssetDetailPage (simple card-based side sheet with 6 sections)
+- Analyzed all API routes: bill-of-materials, component-registry, digital-twins, system-diagrams, iot-devices
+- Updated /api/assets/[id] GET to include digitalTwin and iotDevices relations, plus category on children
+- Rewrote AssetDetailPage with 7 tabs: Overview, Hierarchy, BOM, Components, Monitoring, Digital Twin, Diagrams
+- Widened side sheet from sm:max-w-xl to sm:max-w-3xl
+- Implemented lazy loading for tab data (only fetches when tab is first opened)
+- Overview tab shows: description, specifications, PM schedules, details+financial (2-col grid), assigned to, quick-link cards, recent MRs, recent WOs
+- Hierarchy tab shows: parent asset card, current asset (highlighted with left border), children list with status/condition badges
+- BOM tab shows: "Used In" table (where this asset is a component) + "Components" table (parts of this asset)
+- Components tab shows: summary KPI cards + component table with health progress bars
+- Monitoring tab shows: IoT device cards with status dots and last-seen timestamps
+- Digital Twin tab shows: health score ring SVG + twin metadata
+- Diagrams tab shows: list of available system diagrams
+- Fixed TSX parser error by extracting AssetDetailPage to separate file (/src/components/modules/AssetDetailPage.tsx)
+- Committed and pushed: f4ee2331
+
+Stage Summary:
+- Asset detail page now has comprehensive tabbed UI instead of flat scroll
+- All 5 requested features (hierarchy, BOM, condition monitoring, digital twin, system diagrams) are accessible from asset detail
+- Each tab shows meaningful empty states when no data exists
+- Quick-link cards on Overview tab guide users to other tabs
