@@ -1654,7 +1654,7 @@ export function DigitalTwinMainPage() {
           <div className="relative" style={{ height: 'calc(100vh - 160px)' }}>
             <DynamicLoader
               loaderKey="system-diagram-page"
-              loader={() => import('./SystemDiagramPage').then(m => ({ default: m.SystemDiagramPage }))}
+              loader={() => import('./SystemDiagramPage')}
               loading={
                 <div className="flex items-center justify-center min-h-[500px] bg-card rounded-2xl border border-border">
                   <div className="text-center">
