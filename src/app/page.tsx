@@ -1,11 +1,9 @@
 'use client';
 
-import React, { Suspense, lazy, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import LoginPage from '@/components/LoginPage';
-
-// Lazy load the heavy app shell - it only downloads after the user logs in
-const EAMApp = lazy(() => import('@/components/EAMApp'));
+import EAMApp from '@/components/EAMApp';
 
 function LoadingScreen() {
   return (
@@ -160,12 +158,14 @@ export default function Home() {
     return <LoginPage />;
   }
 
-  // Logged in → lazy-load the heavy EAMApp with a Suspense fallback
+  // Logged in → render the app shell
+  // NOTE: We do NOT use React.lazy/Suspense here because Zustand's
+  // useSyncExternalStore forces synchronous re-renders on navigation,
+  // which causes React Error #306 (suspended during synchronous input).
+  // Code splitting is handled inside EAMApp via useEffect + dynamic imports.
   return (
     <GlobalErrorBoundary>
-      <Suspense fallback={<LoadingScreen />}>
-        <EAMApp />
-      </Suspense>
+      <EAMApp />
     </GlobalErrorBoundary>
   );
 }

@@ -114,41 +114,49 @@ type ContentView = 'grid' | 'list' | 'analytics';
 type SortField = 'name' | 'type' | 'healthScore' | 'status' | 'lastSynced' | 'alerts';
 type SortDirection = 'asc' | 'desc';
 
-// Lazy-load heavy 3D components to avoid blocking initial render
-import dynamic from 'next/dynamic';
+// ============================================================================
+// DynamicLoader — manual dynamic import WITHOUT React.lazy/Suspense/next/dynamic
+// ============================================================================
+// React.lazy/Suspense + next/dynamic causes Error #306 when combined with
+// Zustand's useSyncExternalStore (synchronous re-renders on navigation).
+// This component uses useEffect + dynamic imports instead, so it NEVER suspends.
+// Components are cached after first load.
+// ============================================================================
 
-const DigitalTwinViewer = dynamic(
-  () => import('./DigitalTwinViewer').then(m => ({ default: m.DigitalTwinViewer })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center min-h-[500px] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl border border-slate-700/50">
-        <div className="text-center">
-          <Loader2 className="h-10 w-10 animate-spin text-emerald-400 mx-auto mb-4" />
-          <p className="text-sm text-slate-400">Loading 3D Viewer...</p>
-        </div>
-      </div>
-    ),
-  }
-);
+const _dynLoaderCache = new Map<string, React.ComponentType<any>>();
 
-const SystemDiagramPageModule = dynamic(
-  () => import('./SystemDiagramPage').then(m => ({ default: m.SystemDiagramPage })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center min-h-[500px] bg-card rounded-2xl border border-border">
-        <div className="text-center">
-          <Loader2 className="h-10 w-10 animate-spin text-emerald-500 mx-auto mb-4" />
-          <p className="text-sm text-muted-foreground">Loading System Diagrams...</p>
-        </div>
-      </div>
-    ),
-  }
-);
+type DynLoaderProps<T = any> = {
+  loader: () => Promise<{ default: React.ComponentType<T> }>;
+  loading: React.ReactNode;
+} & T;
 
-function SystemDiagramPageWrapper({ twinId, twinName }: { twinId: string; twinName: string }) {
-  return <SystemDiagramPageModule twinId={twinId} twinName={twinName} />;
+function DynamicLoader({ loader, loading, ...props }: DynLoaderProps) {
+  const cacheKey = loader.toString();
+  const [Comp, setComp] = useState<React.ComponentType<any> | null>(
+    () => _dynLoaderCache.get(cacheKey) || null
+  );
+
+  useEffect(() => {
+    if (_dynLoaderCache.has(cacheKey)) {
+      setComp(() => _dynLoaderCache.get(cacheKey)!);
+      return;
+    }
+    let cancelled = false;
+    loader()
+      .then(m => {
+        if (!cancelled) {
+          _dynLoaderCache.set(cacheKey, m.default);
+          setComp(() => m.default);
+        }
+      })
+      .catch(err => {
+        if (!cancelled) console.error('[DynamicLoader] Failed:', err);
+      });
+    return () => { cancelled = true; };
+  }, [cacheKey, loader]);
+
+  if (!Comp) return <>{loading}</>;
+  return <Comp {...(props as any)} />;
 }
 
 // ============================================================================
@@ -1591,7 +1599,16 @@ export function DigitalTwinMainPage() {
             </Badge>
           </div>
           <div className="relative" style={{ height: 'calc(100vh - 160px)' }}>
-            <DigitalTwinViewer
+            <DynamicLoader
+              loader={() => import('./DigitalTwinViewer').then(m => ({ default: m.DigitalTwinViewer }))}
+              loading={
+                <div className="flex items-center justify-center min-h-[500px] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl border border-slate-700/50">
+                  <div className="text-center">
+                    <Loader2 className="h-10 w-10 animate-spin text-emerald-400 mx-auto mb-4" />
+                    <p className="text-sm text-slate-400">Loading 3D Viewer...</p>
+                  </div>
+                </div>
+              }
               assetId={selectedTwin.asset?.id}
               twinId={selectedTwin.id}
               twinName={selectedTwin.name}
@@ -1619,7 +1636,19 @@ export function DigitalTwinMainPage() {
             </Badge>
           </div>
           <div className="relative" style={{ height: 'calc(100vh - 160px)' }}>
-            <SystemDiagramPageWrapper twinId={selectedTwin.id} twinName={selectedTwin.name} />
+            <DynamicLoader
+              loader={() => import('./SystemDiagramPage').then(m => ({ default: m.SystemDiagramPage }))}
+              loading={
+                <div className="flex items-center justify-center min-h-[500px] bg-card rounded-2xl border border-border">
+                  <div className="text-center">
+                    <Loader2 className="h-10 w-10 animate-spin text-emerald-500 mx-auto mb-4" />
+                    <p className="text-sm text-muted-foreground">Loading System Diagrams...</p>
+                  </div>
+                </div>
+              }
+              twinId={selectedTwin.id}
+              twinName={selectedTwin.name}
+            />
           </div>
         </div>
       )}
