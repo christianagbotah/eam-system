@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
@@ -59,7 +59,8 @@ export function AssetDetailPage({ id }: { id: string }) {
   const [twin, setTwin] = useState<any>(null);
   const [diagrams, setDiagrams] = useState<any[]>([]);
   const [tabDataLoading, setTabDataLoading] = useState(false);
-  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set(['overview']));
+  const loadedTabsRef = useRef<Set<string>>(new Set(['overview']));
+  const tabDataLoadingRef = useRef(false);
 
   // Create dialogs
   const [showComponentForm, setShowComponentForm] = useState(false);
@@ -109,13 +110,17 @@ export function AssetDetailPage({ id }: { id: string }) {
   }, []);
 
   // Lazy load tab data when tab changes
+  // NOTE: loadedTabsRef is a ref (not state) to avoid infinite re-render loops.
+  // Using a Set in useEffect deps (via useState) creates a new object reference
+  // on every mutation, which triggers the effect again → Error #185.
   useEffect(() => {
-    if (!asset || loadedTabs.has(activeTab) || tabDataLoading) return;
+    if (!asset || loadedTabsRef.current.has(activeTab) || tabDataLoadingRef.current) return;
+    tabDataLoadingRef.current = true;
     setTabDataLoading(true);
     const promises: Promise<void>[] = [];
 
     if (activeTab === 'hierarchy' || activeTab === 'overview') {
-      setLoadedTabs(prev => new Set(prev).add('hierarchy'));
+      loadedTabsRef.current.add('hierarchy');
     }
     if (activeTab === 'bom') {
       promises.push(
@@ -129,23 +134,26 @@ export function AssetDetailPage({ id }: { id: string }) {
           }
         }).catch(() => {}),
       );
-      setLoadedTabs(prev => new Set(prev).add('bom'));
+      loadedTabsRef.current.add('bom');
     }
     if (activeTab === 'components') {
       promises.push(reloadComponents());
-      setLoadedTabs(prev => new Set(prev).add('components'));
+      loadedTabsRef.current.add('components');
     }
     if (activeTab === 'digital-twin' && !twin) {
       promises.push(reloadTwin());
-      setLoadedTabs(prev => new Set(prev).add('digital-twin'));
+      loadedTabsRef.current.add('digital-twin');
     }
     if (activeTab === 'diagrams') {
       promises.push(reloadDiagrams());
-      setLoadedTabs(prev => new Set(prev).add('diagrams'));
+      loadedTabsRef.current.add('diagrams');
     }
 
-    Promise.all(promises).finally(() => setTabDataLoading(false));
-  }, [activeTab, asset, id, loadedTabs, tabDataLoading, twin, reloadComponents, reloadTwin, reloadDiagrams]);
+    Promise.all(promises).finally(() => {
+      tabDataLoadingRef.current = false;
+      setTabDataLoading(false);
+    });
+  }, [activeTab, asset, id, twin, reloadComponents, reloadTwin, reloadDiagrams]);
 
   // Handlers
   const handleCreateComponent = async () => {
