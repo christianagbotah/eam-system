@@ -174,6 +174,11 @@ function toast({ ...props }: Toast) {
 function useToast() {
   const [state, setState] = React.useState<State>(memoryState)
 
+  // NOTE: Empty deps [] is intentional. The listener subscription is a one-time
+  // setup — setState is a stable reference and receives the latest state from
+  // the external dispatch→listeners call chain. Using [state] in deps causes
+  // React Error #185 (Maximum update depth exceeded) because state is a new
+  // object reference on every dispatch, creating an infinite re-subscribe loop.
   React.useEffect(() => {
     listeners.push(setState)
     return () => {
@@ -182,7 +187,8 @@ function useToast() {
         listeners.splice(index, 1)
       }
     }
-  }, [state])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return {
     ...state,
