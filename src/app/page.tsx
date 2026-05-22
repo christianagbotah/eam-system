@@ -158,8 +158,8 @@ export default function Home() {
     return <LoginPage />;
   }
 
-  // Logged in → render the app shell
-  // NOTE: We do NOT use React.lazy/Suspense here because Zustand's
+  // Logged in → render the app shell directly.
+  // IMPORTANT: We do NOT use React.lazy/Suspense here because Zustand's
   // useSyncExternalStore forces synchronous re-renders on navigation,
   // which causes React Error #306 (suspended during synchronous input).
   // Code splitting is handled inside EAMApp via useEffect + dynamic imports.

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
@@ -115,48 +115,63 @@ type SortField = 'name' | 'type' | 'healthScore' | 'status' | 'lastSynced' | 'al
 type SortDirection = 'asc' | 'desc';
 
 // ============================================================================
-// DynamicLoader — manual dynamic import WITHOUT React.lazy/Suspense/next/dynamic
+// DynamicLoader — loads components via useEffect WITHOUT React.lazy/Suspense.
 // ============================================================================
-// React.lazy/Suspense + next/dynamic causes Error #306 when combined with
+// React.lazy + Suspense + next/dynamic cause Error #306 when combined with
 // Zustand's useSyncExternalStore (synchronous re-renders on navigation).
-// This component uses useEffect + dynamic imports instead, so it NEVER suspends.
-// Components are cached after first load.
+// This loader uses useEffect + useRef to prevent infinite re-render loops
+// (which would cause Error #185) even when inline loader functions are used.
 // ============================================================================
 
-const _dynLoaderCache = new Map<string, React.ComponentType<any>>();
+const _dynCache = new Map<string, React.ComponentType<any>>();
 
-type DynLoaderProps<T = any> = {
-  loader: () => Promise<{ default: React.ComponentType<T> }>;
+function DynamicLoader({
+  loaderKey,
+  loader,
+  loading,
+  ...props
+}: {
+  loaderKey: string;           // stable string key (e.g. a static identifier)
+  loader: () => Promise<{ default: React.ComponentType<any> }>;
   loading: React.ReactNode;
-} & T;
-
-function DynamicLoader({ loader, loading, ...props }: DynLoaderProps) {
-  const cacheKey = loader.toString();
+  [key: string]: any;
+}) {
   const [Comp, setComp] = useState<React.ComponentType<any> | null>(
-    () => _dynLoaderCache.get(cacheKey) || null
+    () => _dynCache.get(loaderKey) ?? null
   );
+  const loadedRef = useRef<boolean>(_dynCache.has(loaderKey));
 
   useEffect(() => {
-    if (_dynLoaderCache.has(cacheKey)) {
-      setComp(() => _dynLoaderCache.get(cacheKey)!);
+    // Already loaded (cached from a previous render or session)?
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+
+    // Also check cache again (race with SSR or another mount)
+    if (_dynCache.has(loaderKey)) {
+      setComp(() => _dynCache.get(loaderKey)!);
       return;
     }
+
     let cancelled = false;
     loader()
       .then(m => {
         if (!cancelled) {
-          _dynLoaderCache.set(cacheKey, m.default);
+          _dynCache.set(loaderKey, m.default);
           setComp(() => m.default);
         }
       })
       .catch(err => {
-        if (!cancelled) console.error('[DynamicLoader] Failed:', err);
+        if (!cancelled) {
+          loadedRef.current = false;
+          console.error('[DynamicLoader] Failed:', err);
+        }
       });
     return () => { cancelled = true; };
-  }, [cacheKey, loader]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaderKey]);  // Only re-run when loaderKey changes, NOT on every render
 
   if (!Comp) return <>{loading}</>;
-  return <Comp {...(props as any)} />;
+  return <Comp {...props} />;
 }
 
 // ============================================================================
@@ -1600,6 +1615,7 @@ export function DigitalTwinMainPage() {
           </div>
           <div className="relative" style={{ height: 'calc(100vh - 160px)' }}>
             <DynamicLoader
+              loaderKey="digital-twin-viewer"
               loader={() => import('./DigitalTwinViewer').then(m => ({ default: m.DigitalTwinViewer }))}
               loading={
                 <div className="flex items-center justify-center min-h-[500px] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl border border-slate-700/50">
@@ -1637,6 +1653,7 @@ export function DigitalTwinMainPage() {
           </div>
           <div className="relative" style={{ height: 'calc(100vh - 160px)' }}>
             <DynamicLoader
+              loaderKey="system-diagram-page"
               loader={() => import('./SystemDiagramPage').then(m => ({ default: m.SystemDiagramPage }))}
               loading={
                 <div className="flex items-center justify-center min-h-[500px] bg-card rounded-2xl border border-border">
