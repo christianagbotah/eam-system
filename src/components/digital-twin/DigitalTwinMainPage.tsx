@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
@@ -114,65 +114,12 @@ type ContentView = 'grid' | 'list' | 'analytics';
 type SortField = 'name' | 'type' | 'healthScore' | 'status' | 'lastSynced' | 'alerts';
 type SortDirection = 'asc' | 'desc';
 
-// ============================================================================
-// DynamicLoader — loads components via useEffect WITHOUT React.lazy/Suspense.
-// ============================================================================
-// React.lazy + Suspense + next/dynamic cause Error #306 when combined with
-// Zustand's useSyncExternalStore (synchronous re-renders on navigation).
-// This loader uses useEffect + useRef to prevent infinite re-render loops
-// (which would cause Error #185) even when inline loader functions are used.
-// ============================================================================
-
-const _dynCache = new Map<string, React.ComponentType<any>>();
-
-function DynamicLoader({
-  loaderKey,
-  loader,
-  loading,
-  ...props
-}: {
-  loaderKey: string;           // stable string key (e.g. a static identifier)
-  loader: () => Promise<{ default: React.ComponentType<any> }>;
-  loading: React.ReactNode;
-  [key: string]: any;
-}) {
-  const [Comp, setComp] = useState<React.ComponentType<any> | null>(
-    () => _dynCache.get(loaderKey) ?? null
-  );
-  const loadedRef = useRef<boolean>(_dynCache.has(loaderKey));
-
-  useEffect(() => {
-    // Already loaded (cached from a previous render or session)?
-    if (loadedRef.current) return;
-    loadedRef.current = true;
-
-    // Also check cache again (race with SSR or another mount)
-    if (_dynCache.has(loaderKey)) {
-      setComp(() => _dynCache.get(loaderKey)!);
-      return;
-    }
-
-    let cancelled = false;
-    loader()
-      .then(m => {
-        if (!cancelled) {
-          _dynCache.set(loaderKey, m.default);
-          setComp(() => m.default);
-        }
-      })
-      .catch(err => {
-        if (!cancelled) {
-          loadedRef.current = false;
-          console.error('[DynamicLoader] Failed:', err);
-        }
-      });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaderKey]);  // Only re-run when loaderKey changes, NOT on every render
-
-  if (!Comp) return <>{loading}</>;
-  return <Comp {...props} />;
-}
+// Direct imports — no React.lazy / next/dynamic / DynamicLoader.
+// Using dynamic loading wrappers caused Error #185 (max update depth) and #306.
+// Direct imports are safe here because these components are only rendered
+// when the user explicitly opens the 3D viewer or system diagram view.
+import { DigitalTwinViewer } from './DigitalTwinViewer';
+import SystemDiagramPage from './SystemDiagramPage';
 
 // ============================================================================
 // Helpers
@@ -1614,17 +1561,7 @@ export function DigitalTwinMainPage() {
             </Badge>
           </div>
           <div className="relative" style={{ height: 'calc(100vh - 160px)' }}>
-            <DynamicLoader
-              loaderKey="digital-twin-viewer"
-              loader={() => import('./DigitalTwinViewer').then(m => ({ default: m.DigitalTwinViewer }))}
-              loading={
-                <div className="flex items-center justify-center min-h-[500px] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl border border-slate-700/50">
-                  <div className="text-center">
-                    <Loader2 className="h-10 w-10 animate-spin text-emerald-400 mx-auto mb-4" />
-                    <p className="text-sm text-slate-400">Loading 3D Viewer...</p>
-                  </div>
-                </div>
-              }
+            <DigitalTwinViewer
               assetId={selectedTwin.asset?.id}
               twinId={selectedTwin.id}
               twinName={selectedTwin.name}
@@ -1652,20 +1589,7 @@ export function DigitalTwinMainPage() {
             </Badge>
           </div>
           <div className="relative" style={{ height: 'calc(100vh - 160px)' }}>
-            <DynamicLoader
-              loaderKey="system-diagram-page"
-              loader={() => import('./SystemDiagramPage')}
-              loading={
-                <div className="flex items-center justify-center min-h-[500px] bg-card rounded-2xl border border-border">
-                  <div className="text-center">
-                    <Loader2 className="h-10 w-10 animate-spin text-emerald-500 mx-auto mb-4" />
-                    <p className="text-sm text-muted-foreground">Loading System Diagrams...</p>
-                  </div>
-                </div>
-              }
-              twinId={selectedTwin.id}
-              twinName={selectedTwin.name}
-            />
+            <SystemDiagramPage twinId={selectedTwin.id} twinName={selectedTwin.name} />
           </div>
         </div>
       )}
