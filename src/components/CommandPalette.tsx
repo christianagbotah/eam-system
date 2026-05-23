@@ -216,7 +216,7 @@ function buildNavigationItems(): PaletteItem[] {
 export default function CommandPalette() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigationStore((s) => s.navigate);
-  const { hasPermission } = useAuthStore();
+  const hasPermission = useAuthStore((s) => s.hasPermission);
 
   // ---- Keyboard shortcut (Ctrl+Shift+K / Cmd+Shift+K) ----
   useEffect(() => {

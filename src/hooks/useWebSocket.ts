@@ -16,7 +16,8 @@ interface UseWebSocketReturn {
  * Gracefully degrades when the service is unavailable (no noisy console errors).
  */
 export function useWebSocket(): UseWebSocketReturn {
-  const { user, isAuthenticated } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const handlersRef = useRef<Map<string, Set<(...args: unknown[]) => void>>>(new Map());

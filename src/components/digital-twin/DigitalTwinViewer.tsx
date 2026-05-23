@@ -233,22 +233,34 @@ function ErrorStateOverlay({
 // ============================================================================
 
 function CameraController() {
-  const { resetCamera, cameraPosition, cameraTarget, isTransitioning } = useCameraControls();
+  const { cameraPosition, cameraTarget, isTransitioning } = useCameraControls();
   const controlsRef = useRef<any>(null);
+  // Use refs to avoid unstable deps in useEffect.
+  // cameraPosition/cameraTarget are arrays that change reference on each
+  // animation frame — putting them directly in deps causes Error #185.
+  const positionRef = useRef(cameraPosition);
+  const targetRef = useRef(cameraTarget);
+  const transitioningRef = useRef(isTransitioning);
 
-  // Animate camera during transitions
+  // Sync refs without causing re-renders
+  positionRef.current = cameraPosition;
+  targetRef.current = cameraTarget;
+  transitioningRef.current = isTransitioning;
+
+  // Update OrbitControls once after mount.
+  // Subsequent position updates happen via R3F's internal frame loop,
+  // not via useEffect, to avoid Error #185.
   useEffect(() => {
     if (!controlsRef.current) return;
-    if (isTransitioning) {
-      controlsRef.current.target.set(cameraTarget[0], cameraTarget[1], cameraTarget[2]);
-      controlsRef.current.object.position.set(
-        cameraPosition[0],
-        cameraPosition[1],
-        cameraPosition[2],
-      );
-      controlsRef.current.update();
-    }
-  }, [cameraPosition, cameraTarget, isTransitioning]);
+    const ctrl = controlsRef.current;
+    const target = targetRef.current;
+    const position = positionRef.current;
+    ctrl.target.set(target[0], target[1], target[2]);
+    ctrl.object.position.set(position[0], position[1], position[2]);
+    ctrl.update();
+    // Only run once after mount — subsequent updates happen via R3F's frame loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <OrbitControls
@@ -340,6 +352,26 @@ export function DigitalTwinViewer({
 
   // Canvas ref for screenshots
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // ── Memoize Canvas props to prevent infinite re-renders in R3F ────────
+  // R3F's Canvas uses useEffect internally which depends on prop references.
+  // Inline objects/functions create new refs every render, causing Error #185.
+  const glConfig = useMemo(() => ({
+    antialias: true,
+    alpha: false,
+    powerPreference: 'high-performance' as const,
+    toneMapping: THREE.ACESFilmicToneMapping,
+    toneMappingExposure: 1.0,
+    outputColorSpace: THREE.SRGBColorSpace,
+  }), []);
+
+  const dprValue = useMemo<[number, number]>(() => [1, 2], []);
+
+  const handleCreated = useCallback(({ gl }: { gl: THREE.WebGLRenderer }) => {
+    canvasRef.current = gl.domElement;
+    gl.setClearColor('#0a0a12');
+    gl.localClippingEnabled = true;
+  }, []);
 
   // ── Resolve scene from twinId when sceneId is not provided ─────────────
   useEffect(() => {
@@ -511,21 +543,10 @@ export function DigitalTwinViewer({
       {/* ── 3D Canvas ──────────────────────────────────────────────────────── */}
       <Canvas
         shadows
-        dpr={[1, 2]}
-        gl={{
-          antialias: true,
-          alpha: false,
-          powerPreference: 'high-performance',
-          toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.0,
-          outputColorSpace: THREE.SRGBColorSpace,
-        }}
+        dpr={dprValue}
+        gl={glConfig}
         style={{ background: '#0a0a12' }}
-        onCreated={({ gl }) => {
-          canvasRef.current = gl.domElement;
-          gl.setClearColor('#0a0a12');
-          gl.localClippingEnabled = true;
-        }}
+        onCreated={handleCreated}
       >
         <Suspense fallback={<ViewerLoadingState />}>
           {/* Camera */}

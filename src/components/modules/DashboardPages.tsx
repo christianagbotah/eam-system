@@ -131,7 +131,9 @@ function KPICard({ label, value, sublabel, color, bgColor, borderColor, iconBg, 
 export function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const { user, hasPermission, isAdmin } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
   const { navigate } = useNavigationStore();
 
   const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());

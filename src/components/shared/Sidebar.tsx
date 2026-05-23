@@ -85,9 +85,16 @@ import {
 
 // Sidebar inner content extracted as a separate component with collapsible submenus
 function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
-  const { currentPage, navigate, sidebarOpen, enabledModules: storeModules } = useNavigationStore();
+  const currentPage = useNavigationStore((s) => s.currentPage);
+  const navigate = useNavigationStore((s) => s.navigate);
+  const sidebarOpen = useNavigationStore((s) => s.sidebarOpen);
+  const storeModules = useNavigationStore((s) => s.enabledModules);
   const expanded = forceExpanded ?? sidebarOpen;
-  const { user, permissions, hasPermission, isAdmin, logout } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
+  const permissions = useAuthStore((s) => s.permissions);
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
+  const logout = useAuthStore((s) => s.logout);
   const [openMenus, setOpenMenus] = useState<string[]>([]);
 
   // Subscribe to enabled modules from the navigation store.
@@ -535,7 +542,9 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
 }
 
 export default function Sidebar() {
-  const { sidebarOpen, mobileSidebarOpen, setMobileSidebarOpen } = useNavigationStore();
+  const sidebarOpen = useNavigationStore((s) => s.sidebarOpen);
+  const mobileSidebarOpen = useNavigationStore((s) => s.mobileSidebarOpen);
+  const setMobileSidebarOpen = useNavigationStore((s) => s.setMobileSidebarOpen);
 
   return (
     <>

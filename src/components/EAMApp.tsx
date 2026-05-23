@@ -247,8 +247,17 @@ function PageSwitcher({ page }: { page: string }) {
 
 function AppShell() {
   const currentPage = useNavigationStore(s => s.currentPage);
-  const { navigate, goBack, toggleSidebar, setMobileSidebarOpen, fetchModules } = useNavigationStore();
-  const { user, isAuthenticated, isLoading, logout, hasPermission, isAdmin } = useAuthStore();
+  const navigate = useNavigationStore((s) => s.navigate);
+  const goBack = useNavigationStore((s) => s.goBack);
+  const toggleSidebar = useNavigationStore((s) => s.toggleSidebar);
+  const setMobileSidebarOpen = useNavigationStore((s) => s.setMobileSidebarOpen);
+  const fetchModules = useNavigationStore((s) => s.fetchModules);
+  const user = useAuthStore((s) => s.user);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isLoading = useAuthStore((s) => s.isLoading);
+  const logout = useAuthStore((s) => s.logout);
+  const hasPermission = useAuthStore((s) => s.hasPermission);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
 
   // Track if user has navigated away from dashboard (to show back button)
   const canGoBack = typeof window !== 'undefined' && window.location.hash !== '#/dashboard' && window.location.hash !== '#' && window.location.hash !== '';
