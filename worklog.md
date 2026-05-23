@@ -5583,3 +5583,26 @@ Stage Summary:
 - Added no-cache headers as definitive fix for stale bundle caching
 - Disabled React.StrictMode to prevent double-mounting effects that could amplify dependency issues
 - Committed and pushed as 85701d10
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix React Error #185 (Maximum update depth exceeded)
+
+Work Log:
+- Analyzed production error stack trace, identified chunk 751d984c303c223c contains React Three Fiber Canvas code
+- Extracted minified component names from chunk: au=R3F Canvas, n6=R3F reconciler, uy=page component with useAuthStore, ui=DigitalTwinViewer
+- Found root cause: R3F Canvas props (gl, dpr, onCreated) were inline objects/functions creating new references every render
+- Found secondary issue: CameraController useEffect had unstable array deps from Zustand store
+- Found performance issue: Multiple components using useAuthStore()/useNavigationStore() without selectors
+- Fixed DigitalTwinViewer: memoized glConfig, dprValue, handleCreated with useMemo/useCallback
+- Fixed CameraController: replaced array deps with refs, useEffect runs once on mount
+- Fixed 6 files: Sidebar.tsx, DashboardPages.tsx, CommandPalette.tsx, useWebSocket.tsx, EAMApp.tsx already fixed
+- Verified production build succeeds
+- Committed and pushed to GitHub
+
+Stage Summary:
+- Root cause identified: R3F Canvas inline props causing infinite re-render loop (Error #185)
+- All fixes committed and pushed (commit 3760441e)
+- User MUST run: git pull && npm run build && pm2 restart all
+- Build verified passing with no errors
+---
