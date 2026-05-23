@@ -109,6 +109,7 @@ export function ExplodedView({
   // prevent Error #185 for Zustand set() calls — it only affects React's own
   // setState. The visual animation is driven entirely by the local spring ref.
   useFrame(() => {
+
     const target = explodeMode ? 1 : 0;
     springRef.current = springStep(springRef.current, target);
   });
