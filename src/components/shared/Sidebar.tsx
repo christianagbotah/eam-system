@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { getInitials } from '@/components/shared/helpers';
@@ -95,7 +95,9 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
   const logout = useAuthStore((s) => s.logout);
-  const [openMenus, setOpenMenus] = useState<string[]>([]);
+  // Manual toggle state — only stores menus the user explicitly toggled open.
+  // Auto-expand menus (when a child page is active) are computed in derivedOpenMenus.
+  const [manualOpenMenus, setManualOpenMenus] = useState<Set<string>>(new Set());
 
   // Subscribe to enabled modules from the navigation store.
   // The store fetches on app init and refreshes when modules are toggled,
@@ -289,13 +291,10 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     },
   ], []);
 
-  const toggleMenu = useCallback((label: string) => {
-    setOpenMenus(prev => prev.includes(label) ? prev.filter(l => l !== label) : [...prev, label]);
-  }, []);
-
-  // Auto-expand parent when child is active
-  useEffect(() => {
-    let shouldExpand = false;
+  // Compute the label of the group that should auto-expand (based on active child page).
+  // This is pure derived state — NO setState, NO useEffect, NO queueMicrotask.
+  // Fixes React Error #185 caused by queueMicrotask calling setOpenMenus during render.
+  const autoExpandLabel = useMemo<string | null>(() => {
     for (const group of menuGroups) {
       if (!group.children) continue;
       const childMatch = group.children.some(c => {
@@ -304,34 +303,26 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         if (c.page === 'maintenance-work-orders' && currentPage === 'wo-detail') return true;
         return false;
       });
-      if (childMatch && !openMenus.includes(group.label)) {
-        shouldExpand = true;
-        break;
-      }
+      if (childMatch) return group.label;
     }
-    if (shouldExpand) {
-      // Use queueMicrotask to avoid cascading render warning
-      queueMicrotask(() => {
-        setOpenMenus(prev => {
-          const next = [...prev];
-          for (const group of menuGroups) {
-            if (!group.children) continue;
-            const childMatch = group.children.some(c => {
-              if (c.page === currentPage) return true;
-              if (c.page === 'maintenance-requests' && (currentPage === 'mr-detail' || currentPage === 'create-mr')) return true;
-              if (c.page === 'maintenance-work-orders' && currentPage === 'wo-detail') return true;
-              return false;
-            });
-            if (childMatch && !next.includes(group.label)) {
-              next.push(group.label);
-              break;
-            }
-          }
-          return next;
-        });
-      });
-    }
-  }, [currentPage]);
+    return null;
+  }, [currentPage, menuGroups]);
+
+  // Final open menus = manually opened ∪ auto-expanded
+  const openMenus = useMemo<string[]>(() => {
+    const set = new Set(manualOpenMenus);
+    if (autoExpandLabel) set.add(autoExpandLabel);
+    return Array.from(set);
+  }, [manualOpenMenus, autoExpandLabel]);
+
+  const toggleMenu = useCallback((label: string) => {
+    setManualOpenMenus(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  }, []);
 
   // Check if a group or its children are active
   const isGroupActive = useCallback((group: NavGroup) => {
@@ -400,6 +391,8 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
             const Icon = group.icon;
             const active = isGroupActive(group);
             const isOpen = openMenus.includes(group.label);
+            // Auto-collapse manually-opened menus whose children are no longer active
+            // (handled implicitly since manualOpenMenus only changes on user click)
             const hasChildren = !!group.children;
 
             // Standalone item (no children)

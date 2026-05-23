@@ -581,7 +581,7 @@ export function MRDetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [rejectNotes, setRejectNotes] = useState('');
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
-  const { hasPermission, user } = useAuthStore();
+  const { hasPermission, user, isAdmin } = useAuthStore();
   const isMobile = useIsMobile();
 
   // Assign to Planner dialog
@@ -810,7 +810,7 @@ export function MRDetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   if (!mr) return <div className="p-6">Request not found</div>;
 
   // Only admin or the request sender's own department supervisor can approve/assign
-  const isAdminUser = useAuthStore.getState().isAdmin();
+  const isAdminUser = isAdmin();
   const isDeptSupervisor = user?.roles?.some((r: any) => r.slug === 'maintenance_supervisor' || r.slug === 'admin')
     && (mr.departmentId
       // The frontend can't easily query Department.supervisorId, so we rely on the API

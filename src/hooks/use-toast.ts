@@ -135,8 +135,13 @@ let memoryState: State = { toasts: [] }
 
 function dispatch(action: Action) {
   memoryState = reducer(memoryState, action)
-  listeners.forEach((listener) => {
-    listener(memoryState)
+  // Wrap listener notifications in startTransition to prevent synchronous
+  // setState cascading that causes React Error #185 when toast() is called
+  // during another component's render phase (e.g. from a Zustand store subscriber).
+  React.startTransition(() => {
+    listeners.forEach((listener) => {
+      listener(memoryState)
+    })
   })
 }
 

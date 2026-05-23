@@ -200,24 +200,28 @@ export function AsyncSearchableSelect({
   const [options, setOptions] = useState<SearchableOption[]>([]);
   const [loading, setLoading] = useState(true);
   const mountedRef = useRef(true);
+  // Keep the latest fetchOptions in a ref to avoid recreating the load callback
+  // when the parent passes an inline function. This prevents infinite re-render loops.
+  const fetchOptionsRef = useRef(fetchOptions);
+  fetchOptionsRef.current = fetchOptions;
 
   const load = React.useCallback(async () => {
     setLoading(true);
     try {
-      const opts = await fetchOptions();
+      const opts = await fetchOptionsRef.current();
       if (mountedRef.current) setOptions(opts);
     } catch {
       // Silently fail
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [fetchOptions]);
+  }, []); // Stable — no deps that change between renders
 
   useEffect(() => {
     mountedRef.current = true;
     load();
     return () => { mountedRef.current = false; };
-  }, [load]);
+  }, [load, ...deps]);
 
   return (
     <SearchableSelect

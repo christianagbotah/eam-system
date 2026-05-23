@@ -247,6 +247,7 @@ function PageSwitcher({ page }: { page: string }) {
 
 function AppShell() {
   const currentPage = useNavigationStore(s => s.currentPage);
+  const sidebarOpen = useNavigationStore(s => s.sidebarOpen);
   const navigate = useNavigationStore((s) => s.navigate);
   const goBack = useNavigationStore((s) => s.goBack);
   const toggleSidebar = useNavigationStore((s) => s.toggleSidebar);
@@ -439,7 +440,7 @@ function AppShell() {
             className="hidden lg:flex p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
             onClick={toggleSidebar}
           >
-            {useNavigationStore.getState().sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            {sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
           <div className="hidden sm:flex items-center gap-2">
             <h2 className="text-sm font-semibold text-foreground">{pageTitle[currentPage] || 'Dashboard'}</h2>
