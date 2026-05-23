@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo, useCallback, useState } from 'react';
+import React, { useRef, useMemo, useCallback, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -98,12 +98,22 @@ export function ExplodedView({
   >([]);
   const frameCounterRef = useRef(0);
 
+  // Throttle counter for store updates (avoid 60fps React re-renders from useFrame)
+  const storeUpdateCounter = useRef(0);
+
   // Animate explosion progress — drive the spring
   useFrame(() => {
     const storeProgress = useDigitalTwinStore.getState().explodeProgress;
 
     if (explodeMode && storeProgress < 1) {
-      setExplodeProgress(Math.min(storeProgress + animationSpeed, 1));
+      // Only update the store every ~6 frames to avoid Error #185.
+      // The visual animation is driven by the local spring ref, not the store.
+      storeUpdateCounter.current++;
+      if (storeUpdateCounter.current % 6 === 0) {
+        React.startTransition(() => {
+          setExplodeProgress(Math.min(storeProgress + animationSpeed * 6, 1));
+        });
+      }
     }
 
     // Spring towards target
@@ -172,10 +182,13 @@ export function ExplodedView({
       }
     });
 
-    // Update React state every 5 frames to avoid excessive re-renders
+    // Update React state every 5 frames, wrapped in startTransition
+    // to avoid Error #185 (setState during another component's render)
     frameCounterRef.current++;
     if (frameCounterRef.current % 5 === 0) {
-      setActiveLabels(labels);
+      React.startTransition(() => {
+        setActiveLabels(labels);
+      });
     }
   });
 
@@ -203,7 +216,9 @@ export function ExplodedView({
     meshSpringsRef.current.clear();
     frameCounterRef.current++;
     if (frameCounterRef.current % 5 === 0) {
-      setActiveLabels([]);
+      React.startTransition(() => {
+        setActiveLabels([]);
+      });
     }
   });
 

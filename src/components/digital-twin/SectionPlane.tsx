@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useCallback, useState, useMemo, useEffect } from 'react';
+import React, { useRef, useCallback, useState, useMemo, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -224,7 +224,12 @@ export function SectionPlane({
       const worldPos = new THREE.Vector3();
       planeRef.current.getWorldPosition(worldPos);
       const normalizedPos = worldPos[sectionAxis] / (planeSize / 2);
-      setSectionPosition(normalizedPos);
+      // Wrap in startTransition to avoid Error #185:
+      // onAfterRender fires inside Three.js render loop and can
+      // collide with React's concurrent rendering of other components.
+      React.startTransition(() => {
+        setSectionPosition(normalizedPos);
+      });
     }
   }, [sectionAxis, planeSize, setSectionPosition]);
 

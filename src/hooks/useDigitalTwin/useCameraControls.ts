@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
+import React, { useCallback, useRef } from 'react';
 import { useDigitalTwinStore, type CameraPreset } from '@/stores/digitalTwinStore';
 
 // ============================================================================
@@ -223,8 +223,13 @@ export function useCameraControls(): UseCameraControlsReturn {
           duration,
         },
         (position, target, done) => {
-          setCameraPosition(position);
-          setCameraTarget(target);
+          // Wrap in startTransition to avoid Error #185:
+          // rAF callbacks fire outside React's render cycle and can
+          // collide with concurrent rendering of other components.
+          React.startTransition(() => {
+            setCameraPosition(position);
+            setCameraTarget(target);
+          });
           if (done) {
             onTransitionComplete();
           }
@@ -266,8 +271,10 @@ export function useCameraControls(): UseCameraControlsReturn {
           duration,
         },
         (position, target, done) => {
-          setCameraPosition(position);
-          setCameraTarget(target);
+          React.startTransition(() => {
+            setCameraPosition(position);
+            setCameraTarget(target);
+          });
           if (done) {
             onTransitionComplete();
           }
@@ -305,8 +312,10 @@ export function useCameraControls(): UseCameraControlsReturn {
         duration,
       },
       (position, target, done) => {
-        setCameraPosition(position);
-        setCameraTarget(target);
+        React.startTransition(() => {
+          setCameraPosition(position);
+          setCameraTarget(target);
+        });
         if (done) {
           onTransitionComplete();
         }

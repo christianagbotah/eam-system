@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo, useState, useCallback } from 'react';
+import React, { useRef, useMemo, useState, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -107,17 +107,21 @@ function HotspotPin({ hotspot, isActive, onClick, index }: HotspotPinProps) {
 
     opacityRef.current += (target - opacityRef.current) * 0.06;
 
-    // Toggle visibility when opacity is effectively zero
+    // Toggle visibility when opacity is effectively zero.
+    // Wrapped in startTransition to avoid Error #185 (setState during
+    // another component's render when called from useFrame).
     if (opacityRef.current < 0.02 && isVisible) {
-      setIsVisible(false);
+      React.startTransition(() => setIsVisible(false));
     } else if (opacityRef.current >= 0.02 && !isVisible) {
-      setIsVisible(true);
+      React.startTransition(() => setIsVisible(true));
     }
 
-    // Update React state every 6 frames
+    // Update React state every 6 frames, wrapped in startTransition
     frameCounterRef.current++;
     if (frameCounterRef.current % 6 === 0) {
-      setOpacity(opacityRef.current);
+      React.startTransition(() => {
+        setOpacity(opacityRef.current);
+      });
     }
   });
 
