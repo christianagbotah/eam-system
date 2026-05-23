@@ -103,7 +103,9 @@ export function ExplodedView({
 
   // Animate explosion progress — drive the spring
   useFrame(() => {
-    const storeProgress = useDigitalTwinStore.getState().explodeProgress;
+    // Use the subscribed selector value instead of getState() to avoid
+    // bypassing React's subscription system (prevents Error #185).
+    const storeProgress = explodeProgress;
 
     if (explodeMode && storeProgress < 1) {
       // Only update the store every ~6 frames to avoid Error #185.
@@ -182,8 +184,14 @@ export function ExplodedView({
       }
     });
 
+<<<<<<< HEAD
     // Update React state every 5 frames, wrapped in startTransition
     // to avoid Error #185 (setState during another component's render)
+=======
+    // Update React state every 5 frames to avoid excessive re-renders.
+    // Use a ref to accumulate labels and a separate rAF to sync to state
+    // outside of R3F's frame loop — prevents Error #185.
+>>>>>>> e6125566 (02b52c85-e120-4095-8bba-889422c8e62f)
     frameCounterRef.current++;
     if (frameCounterRef.current % 5 === 0) {
       React.startTransition(() => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { useDigitalTwinStore, type LiveReading, type MeshHealthEntry } from '@/stores/digitalTwinStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { api } from '@/lib/api';
@@ -142,12 +142,17 @@ export function useDigitalTwinScene(
         }
 
         if (mountedRef.current) {
-          updateHealthMap(healthMap);
-          // Batch update readings
-          for (const [key, reading] of Object.entries(readingsMap)) {
-            updateLiveReading(key, reading);
-          }
-          setRefreshCount((c) => c + 1);
+          // Wrap in startTransition to prevent Error #185 when R3F frame loop
+          // interleaves with React's render phase (e.g., when this is called
+          // from a WebSocket handler during Canvas rendering).
+          React.startTransition(() => {
+            updateHealthMap(healthMap);
+            // Batch update readings
+            for (const [key, reading] of Object.entries(readingsMap)) {
+              updateLiveReading(key, reading);
+            }
+            setRefreshCount((c) => c + 1);
+          });
         }
       }
     } catch {
