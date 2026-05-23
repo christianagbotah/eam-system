@@ -29,6 +29,33 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Cache-busting: force browsers to never cache _next/ assets.
+            This inline script runs BEFORE any React code loads, so it catches
+            stale bundles immediately on page load. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                // Version marker — changes on every build, busting any cache
+                var BUILD_VERSION = "20250620-v1";
+                var stored = sessionStorage.getItem('_eam_bv');
+                if (stored && stored !== BUILD_VERSION) {
+                  // Build version changed — clear all caches to force fresh load
+                  if ('caches' in window) {
+                    caches.keys().then(function(names) {
+                      names.forEach(function(n) { caches.delete(n); });
+                    });
+                  }
+                  sessionStorage.setItem('_eam_bv', BUILD_VERSION);
+                } else if (!stored) {
+                  sessionStorage.setItem('_eam_bv', BUILD_VERSION);
+                }
+              })();
+            `,
+          }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
