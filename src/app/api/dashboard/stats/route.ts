@@ -5,6 +5,9 @@ import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 import { Prisma } from '@prisma/client';
 
+// Prevent caching — dashboard data changes frequently
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
@@ -50,12 +53,110 @@ export async function GET(request: NextRequest) {
       // Planners and admins see everything
     }
 
+    // Today's start for trend queries
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    // Helper: generate array of last 7 day dates
+    const last7Days: string[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      last7Days.push(d.toISOString().slice(0, 10));
+    }
+
+    // Helper: fill a day-count map into a 7-element array matching last7Days
+    function fillTrendArray(dayCounts: { day: string; count: number }[]): number[] {
+      const map = new Map(dayCounts.map((r) => [r.day, r.count]));
+      return last7Days.map((d) => map.get(d) || 0);
+    }
+
+    // Date boundaries for this month and last month
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
+    // Merge plant filter into raw SQL where clause if scoped
+    const plantSqlFilter = plantScope.isScoped && plantScope.plantId
+      ? Prisma.sql` AND plantId = ${plantScope.plantId}`
+      : Prisma.sql``;
+
     const [
       mrByStatus,
       woByStatus,
       totalMR,
       totalWO,
       pendingApprovals,
+      overdueWorkOrders,
+      createdTodayMR,
+      completedTodayWO,
+      createdTodayWO,
+      recentRequests,
+      recentWorkOrders,
+      // Asset health
+      assetPoorCount,
+      assetCriticalCount,
+      assetTotalCount,
+      assetByCondition,
+      // Safety alerts
+      safetyOpenIncidents,
+      safetyOverdueInspections,
+      // Production
+      productionActiveOrders,
+      productionOverdueOrders,
+      productionTotalCompleted,
+      productionTotalAll,
+      // IoT status
+      iotTotalDevices,
+      iotOfflineCount,
+      iotAlertCount,
+      // Quality
+      qualityOpenNcrs,
+      qualityFailedInspections,
+      qualityPendingAudits,
+      // Inventory alerts
+      inventoryLowStockItems,
+      inventoryPendingRequests,
+      // Weekly trends (raw SQL)
+      weeklyWoResult,
+      weeklyMrResult,
+      weeklyProdResult,
+      // ===== Enhanced KPIs =====
+      // Maintenance KPIs: MTBF, MTTR, planned vs reactive
+      completedWOsForKPI,
+      preventiveWOsForKPI,
+      correctiveWOsForKPI,
+      // PM schedules
+      pmSchedulesDue,
+      pmSchedulesOverdue,
+      // Cost analysis: this month vs last month
+      thisMonthCostResult,
+      lastMonthCostResult,
+      costByTypeResult,
+      // My assigned work orders (for technician/supervisor dashboards)
+      myActiveWOs,
+      myPendingTasks,
+      myCompletedThisWeek,
+      // Tools checked out (for technicians)
+      myToolsCheckedOut,
+      // Team workload (for supervisors)
+      teamPendingApprovals,
+      teamActiveWOs,
+      // Planning queue (for planners)
+      planningQueueWOs,
+      // Recent notifications count
+      unreadNotifications,
+      // WO type breakdown for donut chart
+      preventiveWO,
+      correctiveWO,
+      emergencyWO,
+      inspectionWO,
+      predictiveWO,
+      // Priority breakdown for MR
+      highPriorityMR,
+      mediumPriorityMR,
+      lowPriorityMR,
     ] = await Promise.all([
       // MR counts by status
       db.maintenanceRequest.groupBy({
@@ -84,6 +185,205 @@ export async function GET(request: NextRequest) {
           status: { in: ['pending', 'in_progress'] },
         },
       }),
+      // Overdue WOs (past planned end and not completed/closed/cancelled)
+      db.workOrder.count({
+        where: {
+          ...plantFilter,
+          plannedEnd: { lt: new Date() },
+          status: { notIn: ['completed', 'closed', 'cancelled'] },
+        },
+      }),
+      // Today's counts for trends
+      db.maintenanceRequest.count({
+        where: { ...plantFilter, createdAt: { gte: todayStart } },
+      }),
+      db.workOrder.count({
+        where: { ...plantFilter, updatedAt: { gte: todayStart }, status: 'completed' },
+      }),
+      db.workOrder.count({
+        where: { ...plantFilter, createdAt: { gte: todayStart } },
+      }),
+      // Recent activity — also filtered by role
+      db.maintenanceRequest.findMany({
+        where: Object.keys(mrWhere).length > 0 ? mrWhere : plantFilter,
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          requester: { select: { id: true, fullName: true, username: true } },
+        },
+      }),
+      db.workOrder.findMany({
+        where: Object.keys(woWhere).length > 0 ? woWhere : plantFilter,
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          assignee: { select: { id: true, fullName: true } },
+          assigner: { select: { id: true, fullName: true } },
+        },
+      }),
+      // Asset health: poor condition
+      db.asset.count({ where: { condition: 'poor', isActive: true, ...plantFilter } }),
+      // Asset health: critical criticality
+      db.asset.count({ where: { criticality: 'critical', isActive: true, ...plantFilter } }),
+      // Asset total
+      db.asset.count({ where: { isActive: true, ...plantFilter } }),
+      // Asset by condition breakdown
+      db.asset.groupBy({
+        by: ['condition'],
+        _count: { condition: true },
+        where: { isActive: true, ...plantFilter },
+      }),
+      // Safety: open incidents (open + investigating)
+      db.safetyIncident.count({ where: { ...plantFilter, status: { in: ['open', 'investigating'] } } }),
+      // Safety: overdue inspections (scheduled date past, not completed/failed)
+      db.safetyInspection.count({
+        where: {
+          ...plantFilter,
+          scheduledDate: { lt: new Date() },
+          status: { notIn: ['completed', 'failed'] },
+        },
+      }),
+      // Production: active orders (in_progress)
+      db.productionOrder.count({ where: { ...plantFilter, status: 'in_progress' } }),
+      // Production: overdue orders (past scheduled end, not completed/cancelled)
+      db.productionOrder.count({
+        where: {
+          ...plantFilter,
+          scheduledEnd: { lt: new Date() },
+          status: { notIn: ['completed', 'cancelled'] },
+        },
+      }),
+      // Production: completed orders for rate calculation
+      db.productionOrder.count({ where: { ...plantFilter, status: 'completed' } }),
+      // Production: total orders
+      db.productionOrder.count({ where: { ...plantFilter } }),
+      // IoT: total devices
+      db.iotDevice.count({ where: { ...plantFilter } }),
+      // IoT: offline devices
+      db.iotDevice.count({ where: { ...plantFilter, status: 'offline' } }),
+      // IoT: active/new alerts
+      db.iotAlert.count({ where: { ...plantFilter, status: 'active' } }),
+      // Quality: open NCRs (open + investigating + root_cause_found + corrective_action)
+      db.nonConformanceReport.count({ where: { ...plantFilter, status: { in: ['open', 'investigating'] } } }),
+      // Quality: failed inspections
+      db.qualityInspection.count({ where: { ...plantFilter, status: 'failed' } }),
+      // Quality: pending audits (planned + in_progress)
+      db.qualityAudit.count({ where: { ...plantFilter, status: { in: ['planned', 'in_progress'] } } }),
+      // Inventory: low stock items
+      db.inventoryItem.findMany({
+        where: { isActive: true, ...plantFilter },
+        select: { id: true, currentStock: true, minStockLevel: true },
+      }),
+      // Inventory: pending requests
+      db.inventoryRequest.count({ where: { ...plantFilter, status: { in: ['pending', 'partially_fulfilled'] } } }),
+      // Weekly trends: work orders created per day (MySQL-compatible, with plant filter)
+      db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM work_orders WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)${plantSqlFilter} GROUP BY DATE(createdAt) ORDER BY day`),
+      // Weekly trends: maintenance requests created per day (MySQL-compatible, with plant filter)
+      db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM maintenance_requests WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)${plantSqlFilter} GROUP BY DATE(createdAt) ORDER BY day`),
+      // Weekly trends: production orders created per day (MySQL-compatible, with plant filter)
+      db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM production_orders WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)${plantSqlFilter} GROUP BY DATE(createdAt) ORDER BY day`),
+      // ===== Enhanced KPIs =====
+      // Completed WOs with actual hours for MTBF/MTTR
+      db.workOrder.findMany({
+        where: { ...plantFilter, status: { in: ['completed', 'closed'] }, actualEnd: { not: null }, actualStart: { not: null } },
+        select: { id: true, actualStart: true, actualEnd: true, actualHours: true, updatedAt: true, type: true },
+        orderBy: { actualEnd: 'desc' },
+        take: 200,
+      }),
+      // Preventive vs corrective count for planned ratio
+      db.workOrder.count({ where: { ...plantFilter, type: 'preventive' } }),
+      db.workOrder.count({ where: { ...plantFilter, type: { in: ['corrective', 'emergency'] } } }),
+      // PM schedules due (nextDueDate within 7 days)
+      db.pmSchedule.count({
+        where: {
+          ...plantFilter,
+          isActive: true,
+          nextDueDate: { lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+        },
+      }),
+      // PM schedules overdue
+      db.pmSchedule.count({
+        where: {
+          ...plantFilter,
+          isActive: true,
+          nextDueDate: { lt: new Date() },
+        },
+      }),
+      // This month cost
+      db.workOrder.aggregate({
+        where: { ...plantFilter, createdAt: { gte: thisMonthStart }, status: { notIn: ['cancelled'] } },
+        _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
+        _count: true,
+      }),
+      // Last month cost
+      db.workOrder.aggregate({
+        where: { ...plantFilter, createdAt: { gte: lastMonthStart, lte: lastMonthEnd }, status: { notIn: ['cancelled'] } },
+        _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
+        _count: true,
+      }),
+      // Cost by WO type
+      db.workOrder.groupBy({
+        by: ['type'],
+        _sum: { totalCost: true, laborCost: true, partsCost: true },
+        where: { ...plantFilter, status: { notIn: ['cancelled', 'draft'] } },
+      }),
+      // My active WOs (assigned to me, not terminal)
+      db.workOrder.count({
+        where: {
+          ...plantFilter,
+          assignedTo: session.userId,
+          status: { in: ['assigned', 'in_progress', 'waiting_parts', 'on_hold'] },
+        },
+      }),
+      // My pending tasks (MRs I submitted that are pending, or WOs assigned to me in assigned status)
+      db.maintenanceRequest.count({
+        where: { ...plantFilter, requestedBy: session.userId, status: { in: ['pending', 'in_progress', 'approved'] } },
+      }),
+      // My completed this week
+      db.workOrder.count({
+        where: {
+          ...plantFilter,
+          assignedTo: session.userId,
+          status: 'completed',
+          updatedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+      }),
+      // Tools checked out by me
+      db.tool.count({
+        where: { status: 'checked_out', assignedToId: session.userId },
+      }),
+      // Team pending approvals (for supervisors)
+      isAdm || session.roles.includes('maintenance_supervisor')
+        ? db.maintenanceRequest.count({
+            where: { ...plantFilter, status: { in: ['pending', 'in_progress'] } },
+          })
+        : Promise.resolve(0),
+      // Team active WOs (for supervisors)
+      isAdm || session.roles.includes('maintenance_supervisor')
+        ? db.workOrder.count({
+            where: { ...plantFilter, status: { in: ['assigned', 'in_progress', 'waiting_parts'] } },
+          })
+        : Promise.resolve(0),
+      // Planning queue (for planners)
+      isAdm || session.roles.includes('maintenance_planner')
+        ? db.workOrder.count({
+            where: { ...plantFilter, status: { in: ['draft', 'approved', 'requested'] } },
+          })
+        : Promise.resolve(0),
+      // Unread notification count
+      db.notification.count({
+        where: { userId: session.userId, isRead: false },
+      }),
+      // WO type breakdown for donut chart
+      db.workOrder.count({ where: { ...plantFilter, type: 'preventive' } }),
+      db.workOrder.count({ where: { ...plantFilter, type: 'corrective' } }),
+      db.workOrder.count({ where: { ...plantFilter, type: 'emergency' } }),
+      db.workOrder.count({ where: { ...plantFilter, type: 'inspection' } }),
+      db.workOrder.count({ where: { ...plantFilter, type: 'predictive' } }),
+      // Priority breakdown for MR
+      db.maintenanceRequest.count({ where: { ...plantFilter, priority: { in: ['high', 'urgent'] } } }),
+      db.maintenanceRequest.count({ where: { ...plantFilter, priority: 'medium' } }),
+      db.maintenanceRequest.count({ where: { ...plantFilter, priority: 'low' } }),
     ]);
 
     const mrStats: Record<string, number> = {};
@@ -103,322 +403,8 @@ export async function GET(request: NextRequest) {
     // Completed WOs
     const completedWorkOrders = woStats['completed'] || 0;
 
-    // Overdue WOs (past planned end and not completed/closed/cancelled)
-    const overdueWorkOrders = await db.workOrder.count({
-      where: {
-        ...plantFilter,
-        plannedEnd: { lt: new Date() },
-        status: { notIn: ['completed', 'closed', 'cancelled'] },
-      },
-    });
-
-    // Today's counts for trends
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    const createdTodayMR = await db.maintenanceRequest.count({
-      where: { ...plantFilter, createdAt: { gte: todayStart } },
-    });
-
-    const completedTodayWO = await db.workOrder.count({
-      where: { ...plantFilter, updatedAt: { gte: todayStart }, status: 'completed' },
-    });
-
-    const createdTodayWO = await db.workOrder.count({
-      where: { ...plantFilter, createdAt: { gte: todayStart } },
-    });
-
     // Pending requests
     const pendingRequests = mrStats['pending'] || 0;
-
-    // Recent activity — also filtered by role
-    const recentRequests = await db.maintenanceRequest.findMany({
-      where: Object.keys(mrWhere).length > 0 ? mrWhere : plantFilter,
-      take: 5,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        requester: { select: { id: true, fullName: true, username: true } },
-      },
-    });
-
-    const recentWorkOrders = await db.workOrder.findMany({
-      where: Object.keys(woWhere).length > 0 ? woWhere : plantFilter,
-      take: 5,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        assignee: { select: { id: true, fullName: true } },
-        assigner: { select: { id: true, fullName: true } },
-      },
-    });
-
-    // ===== Cross-Module KPI Data =====
-
-    // Helper: generate array of last 7 day dates
-    const last7Days: string[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      last7Days.push(d.toISOString().slice(0, 10));
-    }
-
-    // Helper: fill a day-count map into a 7-element array matching last7Days
-    function fillTrendArray(dayCounts: { day: string; count: number }[]): number[] {
-      const map = new Map(dayCounts.map((r) => [r.day, r.count]));
-      return last7Days.map((d) => map.get(d) || 0);
-    }
-
-    // Date boundaries for this month and last month
-    const now = new Date();
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-
-    const [
-      // Asset health
-      assetPoorCount,
-      assetCriticalCount,
-      assetTotalCount,
-      assetByCondition,
-
-      // Safety alerts
-      safetyOpenIncidents,
-      safetyOverdueInspections,
-
-      // Production
-      productionActiveOrders,
-      productionOverdueOrders,
-      productionTotalCompleted,
-      productionTotalAll,
-
-      // IoT status
-      iotTotalDevices,
-      iotOfflineCount,
-      iotAlertCount,
-
-      // Quality
-      qualityOpenNcrs,
-      qualityFailedInspections,
-      qualityPendingAudits,
-
-      // Inventory alerts
-      inventoryLowStockItems,
-      inventoryPendingRequests,
-
-      // Weekly trends (raw SQL)
-      weeklyWoResult,
-      weeklyMrResult,
-      weeklyProdResult,
-
-      // ===== Enhanced KPIs =====
-
-      // Maintenance KPIs: MTBF, MTTR, planned vs reactive
-      completedWOsForKPI,
-      preventiveWOsForKPI,
-      correctiveWOsForKPI,
-
-      // PM schedules
-      pmSchedulesDue,
-      pmSchedulesOverdue,
-
-      // Cost analysis: this month vs last month
-      thisMonthCostResult,
-      lastMonthCostResult,
-      costByTypeResult,
-
-      // My assigned work orders (for technician/supervisor dashboards)
-      myActiveWOs,
-      myPendingTasks,
-      myCompletedThisWeek,
-
-      // Tools checked out (for technicians)
-      myToolsCheckedOut,
-
-      // Team workload (for supervisors)
-      teamPendingApprovals,
-      teamActiveWOs,
-
-      // Planning queue (for planners)
-      planningQueueWOs,
-
-      // Recent notifications count
-      unreadNotifications,
-    ] = await Promise.all([
-      // Asset health: poor condition
-      db.asset.count({ where: { condition: 'poor', isActive: true, ...plantFilter } }),
-      // Asset health: critical criticality
-      db.asset.count({ where: { criticality: 'critical', isActive: true, ...plantFilter } }),
-      // Asset total
-      db.asset.count({ where: { isActive: true, ...plantFilter } }),
-      // Asset by condition breakdown
-      db.asset.groupBy({
-        by: ['condition'],
-        _count: { condition: true },
-        where: { isActive: true, ...plantFilter },
-      }),
-
-      // Safety: open incidents (open + investigating)
-      db.safetyIncident.count({ where: { ...plantFilter, status: { in: ['open', 'investigating'] } } }),
-      // Safety: overdue inspections (scheduled date past, not completed/failed)
-      db.safetyInspection.count({
-        where: {
-          ...plantFilter,
-          scheduledDate: { lt: new Date() },
-          status: { notIn: ['completed', 'failed'] },
-        },
-      }),
-
-      // Production: active orders (in_progress)
-      db.productionOrder.count({ where: { ...plantFilter, status: 'in_progress' } }),
-      // Production: overdue orders (past scheduled end, not completed/cancelled)
-      db.productionOrder.count({
-        where: {
-          ...plantFilter,
-          scheduledEnd: { lt: new Date() },
-          status: { notIn: ['completed', 'cancelled'] },
-        },
-      }),
-      // Production: completed orders for rate calculation
-      db.productionOrder.count({ where: { ...plantFilter, status: 'completed' } }),
-      // Production: total orders
-      db.productionOrder.count({ where: { ...plantFilter } }),
-
-      // IoT: total devices
-      db.iotDevice.count({ where: { ...plantFilter } }),
-      // IoT: offline devices
-      db.iotDevice.count({ where: { ...plantFilter, status: 'offline' } }),
-      // IoT: active/new alerts
-      db.iotAlert.count({ where: { ...plantFilter, status: 'active' } }),
-
-      // Quality: open NCRs (open + investigating + root_cause_found + corrective_action)
-      db.nonConformanceReport.count({ where: { ...plantFilter, status: { in: ['open', 'investigating'] } } }),
-      // Quality: failed inspections
-      db.qualityInspection.count({ where: { ...plantFilter, status: 'failed' } }),
-      // Quality: pending audits (planned + in_progress)
-      db.qualityAudit.count({ where: { ...plantFilter, status: { in: ['planned', 'in_progress'] } } }),
-
-      // Inventory: low stock items
-      db.inventoryItem.findMany({
-        where: { isActive: true, ...plantFilter },
-        select: { id: true, currentStock: true, minStockLevel: true },
-      }),
-      // Inventory: pending requests
-      db.inventoryRequest.count({ where: { ...plantFilter, status: { in: ['pending', 'partially_fulfilled'] } } }),
-
-      // Weekly trends: work orders created per day (MySQL-compatible)
-      db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM work_orders WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) GROUP BY DATE(createdAt) ORDER BY day`),
-      // Weekly trends: maintenance requests created per day (MySQL-compatible)
-      db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM maintenance_requests WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) GROUP BY DATE(createdAt) ORDER BY day`),
-      // Weekly trends: production orders created per day (MySQL-compatible)
-      db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM production_orders WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) GROUP BY DATE(createdAt) ORDER BY day`),
-
-      // ===== Enhanced KPIs =====
-
-      // Completed WOs with actual hours for MTBF/MTTR
-      db.workOrder.findMany({
-        where: { ...plantFilter, status: { in: ['completed', 'closed'] }, actualEnd: { not: null }, actualStart: { not: null } },
-        select: { id: true, actualStart: true, actualEnd: true, actualHours: true, updatedAt: true, type: true },
-        orderBy: { actualEnd: 'desc' },
-        take: 200,
-      }),
-
-      // Preventive vs corrective count for planned ratio
-      db.workOrder.count({ where: { ...plantFilter, type: 'preventive' } }),
-      db.workOrder.count({ where: { ...plantFilter, type: { in: ['corrective', 'emergency'] } } }),
-
-      // PM schedules due (nextDueDate within 7 days)
-      db.pmSchedule.count({
-        where: {
-          ...plantFilter,
-          isActive: true,
-          nextDueDate: { lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
-        },
-      }),
-
-      // PM schedules overdue
-      db.pmSchedule.count({
-        where: {
-          ...plantFilter,
-          isActive: true,
-          nextDueDate: { lt: new Date() },
-        },
-      }),
-
-      // This month cost
-      db.workOrder.aggregate({
-        where: { ...plantFilter, createdAt: { gte: thisMonthStart }, status: { notIn: ['cancelled'] } },
-        _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
-        _count: true,
-      }),
-
-      // Last month cost
-      db.workOrder.aggregate({
-        where: { ...plantFilter, createdAt: { gte: lastMonthStart, lte: lastMonthEnd }, status: { notIn: ['cancelled'] } },
-        _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
-        _count: true,
-      }),
-
-      // Cost by WO type
-      db.workOrder.groupBy({
-        by: ['type'],
-        _sum: { totalCost: true, laborCost: true, partsCost: true },
-        where: { ...plantFilter, status: { notIn: ['cancelled', 'draft'] } },
-      }),
-
-      // My active WOs (assigned to me, not terminal)
-      db.workOrder.count({
-        where: {
-          ...plantFilter,
-          assignedTo: session.userId,
-          status: { in: ['assigned', 'in_progress', 'waiting_parts', 'on_hold'] },
-        },
-      }),
-
-      // My pending tasks (MRs I submitted that are pending, or WOs assigned to me in assigned status)
-      db.maintenanceRequest.count({
-        where: { ...plantFilter, requestedBy: session.userId, status: { in: ['pending', 'in_progress', 'approved'] } },
-      }),
-
-      // My completed this week
-      db.workOrder.count({
-        where: {
-          ...plantFilter,
-          assignedTo: session.userId,
-          status: 'completed',
-          updatedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-        },
-      }),
-
-      // Tools checked out by me
-      db.tool.count({
-        where: { status: 'checked_out', assignedToId: session.userId },
-      }),
-
-      // Team pending approvals (for supervisors)
-      isAdm || session.roles.includes('maintenance_supervisor')
-        ? db.maintenanceRequest.count({
-            where: { ...plantFilter, status: { in: ['pending', 'in_progress'] } },
-          })
-        : Promise.resolve(0),
-
-      // Team active WOs (for supervisors)
-      isAdm || session.roles.includes('maintenance_supervisor')
-        ? db.workOrder.count({
-            where: { ...plantFilter, status: { in: ['assigned', 'in_progress', 'waiting_parts'] } },
-          })
-        : Promise.resolve(0),
-
-      // Planning queue (for planners)
-      isAdm || session.roles.includes('maintenance_planner')
-        ? db.workOrder.count({
-            where: { ...plantFilter, status: { in: ['draft', 'approved', 'requested'] } },
-          })
-        : Promise.resolve(0),
-
-      // Unread notification count
-      db.notification.count({
-        where: { userId: session.userId, isRead: false },
-      }),
-    ]);
 
     // Calculate low stock from inventory items
     const lowStock = inventoryLowStockItems.filter(
@@ -527,15 +513,15 @@ export async function GET(request: NextRequest) {
         completedWO: woStats['completed'] || 0,
         closedWO: woStats['closed'] || 0,
         // WO type breakdown for donut chart
-        preventiveWO: await db.workOrder.count({ where: { ...plantFilter, type: 'preventive' } }),
-        correctiveWO: await db.workOrder.count({ where: { ...plantFilter, type: 'corrective' } }),
-        emergencyWO: await db.workOrder.count({ where: { ...plantFilter, type: 'emergency' } }),
-        inspectionWO: await db.workOrder.count({ where: { ...plantFilter, type: 'inspection' } }),
-        predictiveWO: await db.workOrder.count({ where: { ...plantFilter, type: 'predictive' } }),
+        preventiveWO,
+        correctiveWO,
+        emergencyWO,
+        inspectionWO,
+        predictiveWO,
         // Priority breakdown for MR
-        highPriorityMR: await db.maintenanceRequest.count({ where: { ...plantFilter, priority: { in: ['high', 'urgent'] } } }),
-        mediumPriorityMR: await db.maintenanceRequest.count({ where: { ...plantFilter, priority: 'medium' } }),
-        lowPriorityMR: await db.maintenanceRequest.count({ where: { ...plantFilter, priority: 'low' } }),
+        highPriorityMR,
+        mediumPriorityMR,
+        lowPriorityMR,
         // Recent items
         recentRequests,
         recentWorkOrders,

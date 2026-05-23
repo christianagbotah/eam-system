@@ -18,6 +18,7 @@ export function createAdapter(config: MariaDbAdapterConfig) {
     password: config.password,
     database: config.database,
     ...(config.ssl ? { ssl: true } : {}),
-    ...(config.connectionLimit ? { connectionLimit: config.connectionLimit } : {}),
+    // Higher default connection limit to handle dashboard stats' parallel queries
+    ...(config.connectionLimit ? { connectionLimit: config.connectionLimit } : { connectionLimit: 20 }),
   })
 }

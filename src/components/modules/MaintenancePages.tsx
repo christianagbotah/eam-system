@@ -4078,7 +4078,7 @@ export function MaintenanceDashboardPage() {
   useEffect(() => {
     let active = true;
     Promise.all([
-      api.get('/api/dashboard/stats'),
+      api.get('/api/dashboard/stats', { timeout: 30_000 }),
       api.get('/api/work-orders/kpi'),
     ]).then(([statsRes, kpiRes]) => {
       if (!active) return;
@@ -4540,14 +4540,20 @@ export function MaintenanceAnalyticsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     Promise.all([
-      api.get<DashboardStats>('/api/dashboard/stats'),
+      api.get<DashboardStats>('/api/dashboard/stats', { timeout: 30_000 }),
       api.get<WorkOrder[]>('/api/work-orders'),
     ]).then(([statsRes, woRes]) => {
+      if (!active) return;
       if (statsRes.success && statsRes.data) setStats(statsRes.data);
       if (woRes.success && woRes.data) setWorkOrders(woRes.data);
-      setLoading(false);
+    }).catch(() => {
+      // Silently handle error
+    }).finally(() => {
+      if (active) setLoading(false);
     });
+    return () => { active = false; };
   }, []);
 
   const completedWOs = workOrders.filter(wo => wo.status === 'completed' || wo.status === 'verified' || wo.status === 'closed');

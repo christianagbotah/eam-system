@@ -894,10 +894,16 @@ export function SettingsModulesPage() {
   const canManage = hasPermission('modules.manage');
 
   useEffect(() => {
+    let active = true;
     api.get<Module[]>('/api/modules').then(res => {
+      if (!active) return;
       if (res.success && res.data) setModules(res.data);
-      setLoading(false);
+    }).catch(() => {
+      // Silently handle error
+    }).finally(() => {
+      if (active) setLoading(false);
     });
+    return () => { active = false; };
   }, []);
 
   // Derived stats

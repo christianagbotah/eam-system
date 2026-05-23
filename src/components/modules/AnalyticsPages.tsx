@@ -335,16 +335,22 @@ export function AnalyticsKpiPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     Promise.all([
-      api.get<DashboardStats>('/api/dashboard/stats'),
+      api.get<DashboardStats>('/api/dashboard/stats', { timeout: 30_000 }),
       api.get<WorkOrder[]>('/api/work-orders'),
       api.get<MaintenanceRequest[]>('/api/maintenance-requests'),
     ]).then(([statsRes, woRes, mrRes]) => {
+      if (!active) return;
       if (statsRes.success && statsRes.data) setStats(statsRes.data);
       if (woRes.success && woRes.data) setWorkOrders(woRes.data);
       if (mrRes.success && mrRes.data) setRequests(mrRes.data);
-      setLoading(false);
+    }).catch(() => {
+      // Silently handle error
+    }).finally(() => {
+      if (active) setLoading(false);
     });
+    return () => { active = false; };
   }, []);
 
   const totalWOs = stats?.totalWorkOrders || 0;

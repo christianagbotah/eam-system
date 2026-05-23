@@ -139,15 +139,23 @@ export function DashboardPage() {
   const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    api.get<DashboardStats>('/api/dashboard/stats').then(res => {
+    let active = true;
+    api.get<DashboardStats>('/api/dashboard/stats', { timeout: 30_000 }).then(res => {
+      if (!active) return;
       if (res.success && res.data) setStats(res.data);
-      setLoading(false);
+    }).catch(() => {
+      // Silently handle error — stats remain null
+    }).finally(() => {
+      if (active) setLoading(false);
     });
+    return () => { active = false; };
   }, []);
 
   // Fetch enabled module codes for cross-module filtering
   useEffect(() => {
+    let active = true;
     api.get('/api/modules').then(res => {
+      if (!active) return;
       if (res.success && res.data) {
         const enabled = new Set<string>();
         (res.data || []).forEach((m: any) => {
@@ -155,7 +163,10 @@ export function DashboardPage() {
         });
         setEnabledModules(enabled);
       }
+    }).catch(() => {
+      // On error, leave enabledModules empty (show all widgets)
     });
+    return () => { active = false; };
   }, []);
 
   // Generate day labels for weekly trend chart (must be before early return for hooks rule)
