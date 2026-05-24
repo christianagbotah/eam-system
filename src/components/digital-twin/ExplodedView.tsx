@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useMemo, useCallback, useState } from 'react';
+import { useRef, useMemo, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -51,6 +51,19 @@ function springStep(
 // ============================================================================
 // Component
 // ============================================================================
+//
+// CRITICAL: No useState is updated directly from useFrame. Label data is
+// accumulated in a ref by useFrame and flushed to React state via a
+// separate requestAnimationFrame loop, completely decoupled from R3F's
+// frame loop. This eliminates React Error #185.
+// ============================================================================
+
+interface LabelData {
+  meshName: string;
+  assetName: string;
+  position: [number, number, number];
+  progress: number;
+}
 
 export function ExplodedView({
   bindings,
@@ -87,34 +100,23 @@ export function ExplodedView({
     return bindings;
   }, [bindings, explodeAssemblyId]);
 
-  // Track active label data for rendering via state
-  const [activeLabels, setActiveLabels] = useState<
-    Array<{
-      meshName: string;
-      assetName: string;
-      position: [number, number, number];
-      progress: number;
-    }>
-  >([]);
-  const frameCounterRef = useRef(0);
-
-  // Throttle counter for store updates (avoid 60fps React re-renders from useFrame)
+  // React state for label rendering — updated from a decoupled rAF loop, NEVER from useFrame
+  const [activeLabels, setActiveLabels] = useState<LabelData[]>([]);
   const storeUpdateCounter = useRef(0);
+
+  // Ref to accumulate labels from useFrame — the rAF sync loop reads from this
+  const pendingLabelsRef = useRef<LabelData[] | null>(null);
 
   // Animate explosion progress — drive the spring
   useFrame(() => {
-    // Use the subscribed selector value instead of getState() to avoid
-    // bypassing React's subscription system (prevents Error #185).
     const storeProgress = explodeProgress;
 
     if (explodeMode && storeProgress < 1) {
-      // Only update the store every ~6 frames to avoid Error #185.
+      // Only update the store every ~6 frames to avoid excessive re-renders.
       // The visual animation is driven by the local spring ref, not the store.
       storeUpdateCounter.current++;
       if (storeUpdateCounter.current % 6 === 0) {
-        React.startTransition(() => {
-          setExplodeProgress(Math.min(storeProgress + animationSpeed * 6, 1));
-        });
+        setExplodeProgress(Math.min(storeProgress + animationSpeed * 6, 1));
       }
     }
 
@@ -126,12 +128,7 @@ export function ExplodedView({
   // Apply spring-based offsets to mesh objects in the scene
   useFrame(({ scene }) => {
     const springValue = springRef.current.current;
-    const labels: Array<{
-      meshName: string;
-      assetName: string;
-      position: [number, number, number];
-      progress: number;
-    }> = [];
+    const labels: LabelData[] = [];
 
     scene.traverse((child) => {
       if (!(child as THREE.Mesh).isMesh) return;
@@ -184,14 +181,9 @@ export function ExplodedView({
       }
     });
 
-    // Update React state every 5 frames, wrapped in startTransition
-    // to avoid Error #185 (setState during another component's render)
-    frameCounterRef.current++;
-    if (frameCounterRef.current % 5 === 0) {
-      React.startTransition(() => {
-        setActiveLabels(labels);
-      });
-    }
+    // Store labels in a ref — the decoupled rAF loop will flush to React state.
+    // This completely avoids setState during R3F's frame loop.
+    pendingLabelsRef.current = labels;
   });
 
   // Reset positions and springs when explode mode is off
@@ -214,15 +206,35 @@ export function ExplodedView({
       }
     });
 
-    // Clear per-mesh springs
+    // Clear per-mesh springs and labels
     meshSpringsRef.current.clear();
-    frameCounterRef.current++;
-    if (frameCounterRef.current % 5 === 0) {
-      React.startTransition(() => {
-        setActiveLabels([]);
-      });
-    }
+    pendingLabelsRef.current = [];
   });
+
+  // Decoupled sync loop: reads from pendingLabelsRef and flushes to React state.
+  // Runs on a separate requestAnimationFrame that is NOT part of R3F's frame loop,
+  // so it never triggers Error #185.
+  useEffect(() => {
+    let animId: number;
+    let lastLabelsJson = '';
+
+    const sync = () => {
+      const pending = pendingLabelsRef.current;
+      if (pending !== null) {
+        // Only update React state if labels actually changed (avoid re-render spam)
+        const json = JSON.stringify(pending);
+        if (json !== lastLabelsJson) {
+          lastLabelsJson = json;
+          setActiveLabels(pending);
+        }
+        pendingLabelsRef.current = null;
+      }
+      animId = requestAnimationFrame(sync);
+    };
+
+    animId = requestAnimationFrame(sync);
+    return () => cancelAnimationFrame(animId);
+  }, []);
 
   // Label renderer — renders HTML labels for exploded components
   const isVisible = explodeMode && showLabels;

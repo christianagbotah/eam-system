@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useMemo, useState, useCallback } from 'react';
+import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -70,6 +70,11 @@ const HOTSPOT_STYLES: Record<
 // ============================================================================
 // Single Hotspot Component with proximity fade
 // ============================================================================
+//
+// CRITICAL: No useState is updated from useFrame. All per-frame visual
+// changes (opacity, visibility) are applied via refs + direct DOM
+// manipulation to completely eliminate React Error #185.
+// ============================================================================
 
 interface HotspotPinProps {
   hotspot: DigitalTwinHotspot;
@@ -81,13 +86,16 @@ interface HotspotPinProps {
 function HotspotPin({ hotspot, isActive, onClick, index }: HotspotPinProps) {
   const style = HOTSPOT_STYLES[hotspot.type] ?? HOTSPOT_STYLES.info;
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isVisible, setIsVisible] = useState(true);
-  const [opacity, setOpacity] = useState(1);
-  const opacityRef = useRef(1);
   const { camera } = useThree();
-  const frameCounterRef = useRef(0);
 
-  // Proximity-based visibility
+  // Ref for the outer container div — opacity and visibility are applied
+  // directly to this DOM element from useFrame, bypassing React state.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const opacityRef = useRef(1);
+  // Track last-applied visibility to avoid redundant DOM writes
+  const lastVisibilityRef = useRef<boolean>(true);
+
+  // Proximity-based opacity — applied directly to DOM, NO React state update
   useFrame(() => {
     const hotspotPos = new THREE.Vector3(...hotspot.position);
     const distance = camera.position.distanceTo(hotspotPos);
@@ -107,22 +115,17 @@ function HotspotPin({ hotspot, isActive, onClick, index }: HotspotPinProps) {
 
     opacityRef.current += (target - opacityRef.current) * 0.06;
 
-    // Toggle visibility when opacity is effectively zero.
-    // Wrapped in startTransition to avoid Error #185 (setState during
-    // another component's render when called from useFrame).
-    if (opacityRef.current < 0.02 && isVisible) {
-      React.startTransition(() => setIsVisible(false));
-    } else if (opacityRef.current >= 0.02 && !isVisible) {
-      React.startTransition(() => setIsVisible(true));
-    }
+    // Apply opacity and visibility directly to the DOM element.
+    // This completely avoids React state updates during the R3F frame loop.
+    const el = containerRef.current;
+    if (!el) return;
 
-    // Update React state every 6 frames, wrapped in startTransition
-    frameCounterRef.current++;
-    if (frameCounterRef.current % 6 === 0) {
-      React.startTransition(() => {
-        setOpacity(opacityRef.current);
-      });
+    const shouldHide = opacityRef.current < 0.02;
+    if (shouldHide !== lastVisibilityRef.current) {
+      el.style.display = shouldHide ? 'none' : '';
+      lastVisibilityRef.current = shouldHide;
     }
+    el.style.opacity = String(opacityRef.current);
   });
 
   const handleClick = useCallback(
@@ -133,8 +136,6 @@ function HotspotPin({ hotspot, isActive, onClick, index }: HotspotPinProps) {
     },
     [hotspot.id, onClick],
   );
-
-  if (!isVisible) return null;
 
   // CSS-driven pulse animation for critical/warning
   const pulseClass = style.pulse ? 'animate-pulse' : '';
@@ -148,8 +149,8 @@ function HotspotPin({ hotspot, isActive, onClick, index }: HotspotPinProps) {
       style={{ pointerEvents: 'auto' }}
     >
       <div
+        ref={containerRef}
         className="flex flex-col items-center cursor-pointer group"
-        style={{ opacity }}
         onClick={handleClick}
       >
         {/* Ping animation for critical types */}

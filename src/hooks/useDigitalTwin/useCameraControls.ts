@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { useDigitalTwinStore, type CameraPreset } from '@/stores/digitalTwinStore';
 
 // ============================================================================
@@ -223,13 +223,14 @@ export function useCameraControls(): UseCameraControlsReturn {
           duration,
         },
         (position, target, done) => {
-          // Wrap in startTransition to avoid Error #185:
-          // rAF callbacks fire outside React's render cycle and can
-          // collide with concurrent rendering of other components.
-          React.startTransition(() => {
-            setCameraPosition(position);
-            setCameraTarget(target);
-          });
+          // Use Zustand setState directly (bypass React) during camera animation.
+          // The Three.js camera is updated by the subscriber, but we don't need
+          // to trigger a React re-render on every frame — the subscriber does that.
+          useDigitalTwinStore.setState(
+            { cameraPosition: position, cameraTarget: target },
+            false, // don't notify subscribers (avoid per-frame React re-renders)
+            'digitalTwin/cameraAnimate:focusOnMesh',
+          );
           if (done) {
             onTransitionComplete();
           }
@@ -271,10 +272,11 @@ export function useCameraControls(): UseCameraControlsReturn {
           duration,
         },
         (position, target, done) => {
-          React.startTransition(() => {
-            setCameraPosition(position);
-            setCameraTarget(target);
-          });
+          useDigitalTwinStore.setState(
+            { cameraPosition: position, cameraTarget: target },
+            false,
+            'digitalTwin/cameraAnimate:goToPreset',
+          );
           if (done) {
             onTransitionComplete();
           }
@@ -312,10 +314,11 @@ export function useCameraControls(): UseCameraControlsReturn {
         duration,
       },
       (position, target, done) => {
-        React.startTransition(() => {
-          setCameraPosition(position);
-          setCameraTarget(target);
-        });
+        useDigitalTwinStore.setState(
+          { cameraPosition: position, cameraTarget: target },
+          false,
+          'digitalTwin/cameraAnimate:resetCamera',
+        );
         if (done) {
           onTransitionComplete();
         }
