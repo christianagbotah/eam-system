@@ -42,3 +42,32 @@ Stage Summary:
 - **FIX 6**: `src/components/modules/SettingsPages.tsx` — Added `.catch()`, `.finally()`, abort-on-unmount guard for modules fetch
 - **FIX 7**: `src/lib/create-mariadb-adapter.ts` — Increased default connection pool from 10 to 20
 - Committed as `4e01a344` and pushed to main
+---
+Task ID: 1
+Agent: main
+Task: Fix all remaining React Error #185 sources in 3D digital twin view
+
+Work Log:
+- Analyzed stack trace from user-reported Error #185 (chunk hash a8c8568417582f33, confirming previous deployment was successful)
+- Performed comprehensive audit of all digital-twin components and hooks for setState-during-render patterns
+- Found 7 HIGH/MEDIUM risk sources across 8 files
+- Fixed HotspotLayer.tsx: Wrapped useFrame setIsVisible/setOpacity in React.startTransition()
+- Fixed useDigitalTwinScene.ts: Wrapped WebSocket iot:reading-update and iot:health-update handlers in React.startTransition()
+- Fixed useCameraControls.ts: Wrapped all 3 rAF callback setState calls (focusOnMesh, goToPreset, resetCamera) in React.startTransition()
+- Fixed ExplodedView.tsx: Replaced getState().explodeProgress with subscribed explodeProgress selector
+- Fixed InteractiveMesh.tsx: Replaced getState().isolationAssetId with subscribed isolationAssetId selector
+- Fixed useMeshInteraction.ts: Replaced all getState() calls with subscribed hoverMesh action and hoveredMeshName selector
+- Fixed DigitalTwinViewer.tsx: Replaced 4 getState() calls with already-subscribed actions
+- Fixed ComponentInfoPanel.tsx: Added selectMesh subscription to BomPartsTab and replaced getState()
+- Resolved merge conflicts during rebase (remote had partial fixes already applied)
+- Verified zero getState() calls remain in any digital-twin component
+- Committed and pushed to main
+
+Stage Summary:
+- 8 files modified, 75 insertions(+), 41 deletions(-)
+- All R3F useFrame setState calls now wrapped in React.startTransition()
+- All requestAnimationFrame setState calls now wrapped in React.startTransition()
+- All WebSocket handler setState calls now wrapped in React.startTransition()
+- All getState() calls in render scope replaced with proper React subscriptions
+- Commit: 6a1b1b07 pushed to main
+
