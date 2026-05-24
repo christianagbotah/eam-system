@@ -97,3 +97,28 @@ Stage Summary:
 - Files verified: digitalTwinStore.ts, ComponentInfoPanel.tsx, navigationStore.ts, ExplodedView.tsx all pass TypeScript type checking
 
 ---
+Task ID: 5
+Agent: Main
+Task: CRITICAL FIX — React.startTransition does NOT prevent Error #185 for Zustand set() calls
+
+Work Log:
+- Discovered the FUNDAMENTAL flaw: React.startTransition only affects React's own setState — it has ZERO effect on Zustand store notifications
+- All previous startTransition wrappers around Zustand actions were DEAD CODE for Error #185 prevention
+- queueMicrotask also insufficient — microtasks fire DURING React's concurrent render phase (between fibers)
+- Implemented structural fixes across 7 files:
+  1. Removed queueMicrotask cascades from store (loadScene/selectMesh → loadAssetData)
+  2. Moved asset data loading to DigitalTwinViewer useEffect (fires AFTER render commit)
+  3. Removed setExplodeProgress from useFrame entirely (spring ref handles animation)
+  4. Replaced all startTransition wrappers with setTimeout(0) (defers to next macrotask)
+  5. Fixed: digitalTwinStore.ts, DigitalTwinViewer.tsx, ExplodedView.tsx, ComponentInfoPanel.tsx, navigationStore.ts, useDigitalTwinScene.ts, SectionPlane.tsx
+
+Stage Summary:
+- **ROOT CAUSE IDENTIFIED**: React.startTransition does NOT wrap Zustand set() calls. Zustand's setState bypasses React's scheduler entirely.
+- **FIX 1 (CRITICAL)**: Removed queueMicrotask(() => loadAssetData()) from loadScene and selectMesh in digitalTwinStore.ts
+- **FIX 2 (CRITICAL)**: Added useEffect in DigitalTwinViewer to load asset data after render commit
+- **FIX 3 (HIGH)**: Removed setExplodeProgress from ExplodedView's useFrame (spring ref handles animation)
+- **FIX 4-7 (MEDIUM)**: Replaced startTransition with setTimeout(0) in ComponentInfoPanel, navigationStore, useDigitalTwinScene, SectionPlane
+- Commit: 10ce5dcb pushed to main
+- 7 files changed, 87 insertions(+), 74 deletions(-)
+
+---
