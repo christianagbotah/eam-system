@@ -1,4 +1,4 @@
-import React, { startTransition } from 'react';
+// No React import needed — startTransition does not affect Zustand set() calls
 import { create } from 'zustand';
 import type { PageName } from '@/types';
 import { api } from '@/lib/api';
@@ -133,17 +133,19 @@ if (typeof window !== 'undefined') {
       return;
     }
 
-    // Normal app navigation — state has our marker and a page
-    // Wrap in startTransition to prevent React Error #185 — popstate fires
-    // outside React's event handler batching context.
+    // Normal app navigation — state has our marker and a page.
+    // CRITICAL: React.startTransition does NOT prevent Error #185 for Zustand
+    // set() calls — it only affects React's own setState. Using setTimeout(0)
+    // defers to the next macrotask, ensuring the store update fires outside
+    // any ongoing React render cycle.
     if (event.state?.[HISTORY_STATE_KEY] && event.state?.page) {
       const { page, params } = event.state;
-      startTransition(() => {
+      setTimeout(() => {
         useNavigationStore.setState({
           currentPage: page as PageName,
           pageParams: params || {},
         });
-      });
+      }, 0);
       return;
     }
 
@@ -151,13 +153,13 @@ if (typeof window !== 'undefined') {
     // Push forward to dashboard to prevent the tab/webview from closing.
     // This is critical for mobile browsers and webviews where pressing back
     // at the root would close the entire tab.
-    // Wrap in startTransition to prevent React Error #185.
-    startTransition(() => {
+    // CRITICAL: Use setTimeout(0) instead of startTransition — see above.
+    setTimeout(() => {
       useNavigationStore.setState({
         currentPage: 'dashboard',
         pageParams: {},
       });
-    });
+    }, 0);
     window.history.pushState(
       { [HISTORY_STATE_KEY]: true, page: 'dashboard', params: {} },
       '',

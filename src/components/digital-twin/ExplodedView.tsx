@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useMemo, useEffect, useState } from 'react';
-import React from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -72,9 +71,7 @@ export function ExplodedView({
   showLabels = true,
 }: ExplodedViewProps) {
   const explodeMode = useDigitalTwinStore((s) => s.explodeMode);
-  const explodeProgress = useDigitalTwinStore((s) => s.explodeProgress);
   const explodeAssemblyId = useDigitalTwinStore((s) => s.explodeAssemblyId);
-  const setExplodeProgress = useDigitalTwinStore((s) => s.setExplodeProgress);
 
   // Spring state for the overall explode progress
   const springRef = useRef<SpringState>({ current: 0, velocity: 0 });
@@ -103,29 +100,15 @@ export function ExplodedView({
 
   // React state for label rendering — updated from a decoupled rAF loop, NEVER from useFrame
   const [activeLabels, setActiveLabels] = useState<LabelData[]>([]);
-  const storeUpdateCounter = useRef(0);
 
   // Ref to accumulate labels from useFrame — the rAF sync loop reads from this
   const pendingLabelsRef = useRef<LabelData[] | null>(null);
 
   // Animate explosion progress — drive the spring
+  // CRITICAL: No store updates from useFrame. React.startTransition does NOT
+  // prevent Error #185 for Zustand set() calls — it only affects React's own
+  // setState. The visual animation is driven entirely by the local spring ref.
   useFrame(() => {
-    const storeProgress = explodeProgress;
-
-    if (explodeMode && storeProgress < 1) {
-      // Only update the store every ~6 frames to avoid excessive re-renders.
-      // The visual animation is driven by the local spring ref, not the store.
-      // Wrap in startTransition to prevent React Error #185 — useFrame runs
-      // inside R3F's frame loop which can interleave with React's render phase.
-      storeUpdateCounter.current++;
-      if (storeUpdateCounter.current % 6 === 0) {
-        React.startTransition(() => {
-          setExplodeProgress(Math.min(storeProgress + animationSpeed * 6, 1));
-        });
-      }
-    }
-
-    // Spring towards target
     const target = explodeMode ? 1 : 0;
     springRef.current = springStep(springRef.current, target);
   });

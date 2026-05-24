@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useDigitalTwinStore, type LiveReading, type MeshHealthEntry } from '@/stores/digitalTwinStore';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { api } from '@/lib/api';
@@ -142,17 +142,22 @@ export function useDigitalTwinScene(
         }
 
         if (mountedRef.current) {
-          // Wrap in startTransition to prevent Error #185 when R3F frame loop
-          // interleaves with React's render phase (e.g., when this is called
-          // from a WebSocket handler during Canvas rendering).
-          React.startTransition(() => {
-            updateHealthMap(healthMap);
-            // Batch update readings
-            for (const [key, reading] of Object.entries(readingsMap)) {
+          // CRITICAL: React.startTransition does NOT prevent Error #185 for
+          // Zustand set() calls. These are async callback completions (fetch
+          // results), so they fire outside React's render phase. However, if
+          // multiple microtasks queue up, they can interleave with renders.
+          // Using setTimeout(0) ensures the store update fires in a fresh
+          // macrotask, completely outside any ongoing React render cycle.
+          const healthMapSnapshot = healthMap;
+          const readingsSnapshot = readingsMap;
+          setTimeout(() => {
+            if (!mountedRef.current) return;
+            updateHealthMap(healthMapSnapshot);
+            for (const [key, reading] of Object.entries(readingsSnapshot)) {
               updateLiveReading(key, reading);
             }
             setRefreshCount((c) => c + 1);
-          });
+          }, 0);
         }
       }
     } catch {
@@ -228,24 +233,28 @@ export function useDigitalTwinScene(
       // Only process updates for our asset
       if (data.assetId && data.assetId !== assetId) return;
 
-      // Wrap in startTransition to prevent Error #185 — WebSocket events
-      // can arrive during React's render phase.
-      React.startTransition(() => {
+      // CRITICAL: React.startTransition does NOT prevent Error #185 for
+      // Zustand set() calls. Use setTimeout(0) to defer outside any
+      // potential React render cycle.
+      setTimeout(() => {
+        if (!mountedRef.current) return;
         updateLiveReading(data.deviceId, {
           value: data.value,
           unit: data.unit,
           timestamp: data.timestamp,
         });
-      });
+      }, 0);
     };
 
     const handleHealthUpdate = (data: { assetId?: string; healthMap: Record<string, MeshHealthEntry> }) => {
       if (data.assetId && data.assetId !== assetId) return;
-      // Wrap in startTransition to prevent Error #185 — WebSocket events
-      // can arrive during React's render phase.
-      React.startTransition(() => {
+      // CRITICAL: React.startTransition does NOT prevent Error #185 for
+      // Zustand set() calls. Use setTimeout(0) to defer outside any
+      // potential React render cycle.
+      setTimeout(() => {
+        if (!mountedRef.current) return;
         updateHealthMap(data.healthMap);
-      });
+      }, 0);
     };
 
     if (connected) {

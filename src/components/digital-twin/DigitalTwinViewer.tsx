@@ -333,12 +333,26 @@ export function DigitalTwinViewer({
   const setInfoPanelOpen = useDigitalTwinStore((s) => s.setInfoPanelOpen);
   const setModelUrl = useDigitalTwinStore((s) => s.setModelUrl);
   const reset = useDigitalTwinStore((s) => s.reset);
+  const loadAssetData = useDigitalTwinStore((s) => s.loadAssetData);
 
   // ── Hooks ────────────────────────────────────────────────────────────────
   const { resetCamera } = useCameraControls();
   const { error: hookError, refresh } = useDigitalTwinScene(sceneId, {
     iotPollInterval,
   });
+
+  // ── Load asset data when scene loads or selection changes ──────────────
+  // CRITICAL: This was previously done via queueMicrotask inside the store's
+  // loadScene() and selectMesh() actions, which caused React Error #185
+  // because the microtask fired during React's concurrent render phase.
+  // Using useEffect ensures loadAssetData fires AFTER the render is committed,
+  // completely eliminating the cascading setState issue.
+  useEffect(() => {
+    const assetId = selectedAssetId ?? currentScene?.assetId;
+    if (assetId) {
+      loadAssetData(assetId);
+    }
+  }, [selectedAssetId, currentScene?.assetId, loadAssetData]);
 
   // ── Local UI state ──────────────────────────────────────────────────────
   const [isTreeOpen, setIsTreeOpen] = useState(showSceneTree);

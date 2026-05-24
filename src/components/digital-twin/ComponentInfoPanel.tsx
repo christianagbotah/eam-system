@@ -1188,15 +1188,19 @@ export function ComponentInfoPanel({
   const attachments = externalAttachments ?? storeAttachments;
 
   // Load failure analysis & prediction alerts when asset is selected.
-  // Wrap in startTransition to prevent React Error #185 — both store actions
-  // call set({ isLoading...: true }) synchronously, and firing two in immediate
-  // succession during an effect can interleave with concurrent re-renders.
+  // CRITICAL: React.startTransition does NOT prevent Error #185 for Zustand
+  // set() calls — it only affects React's own setState. Both loadFailureAnalysis
+  // and loadPredictionAlerts call set({ isLoading...: true }) synchronously.
+  // Using setTimeout(0) defers to the next macrotask, ensuring these fire
+  // after React has finished committing all effects from the current render.
   useEffect(() => {
     if (selectedAssetId) {
-      React.startTransition(() => {
-        loadFailureAnalysis({ assetId: selectedAssetId });
-        loadPredictionAlerts({ assetId: selectedAssetId });
-      });
+      const id = selectedAssetId;
+      const timer = setTimeout(() => {
+        loadFailureAnalysis({ assetId: id });
+        loadPredictionAlerts({ assetId: id });
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [selectedAssetId, loadFailureAnalysis, loadPredictionAlerts]);
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useCallback, useState, useMemo, useEffect } from 'react';
+import { useRef, useCallback, useState, useMemo, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -219,17 +219,20 @@ export function SectionPlane({
 
   // Handle position change from drag
   const planeRef = useRef<THREE.Mesh>(null);
+  const dragThrottleRef = useRef(0);
   const handleDrag = useCallback(() => {
     if (planeRef.current) {
       const worldPos = new THREE.Vector3();
       planeRef.current.getWorldPosition(worldPos);
       const normalizedPos = worldPos[sectionAxis] / (planeSize / 2);
-      // Wrap in startTransition to avoid Error #185:
-      // onAfterRender fires inside Three.js render loop and can
-      // collide with React's concurrent rendering of other components.
-      React.startTransition(() => {
-        setSectionPosition(normalizedPos);
-      });
+      // CRITICAL: React.startTransition does NOT prevent Error #185 for Zustand
+      // set() calls. Throttle store updates to ~100ms and defer with setTimeout
+      // to ensure they fire outside any ongoing React render cycle.
+      const now = Date.now();
+      if (now - dragThrottleRef.current > 100) {
+        dragThrottleRef.current = now;
+        setTimeout(() => setSectionPosition(normalizedPos), 0);
+      }
     }
   }, [sectionAxis, planeSize, setSectionPosition]);
 

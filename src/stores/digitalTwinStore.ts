@@ -345,14 +345,12 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
             'digitalTwin/loadScene:success',
           );
 
-          // Auto-load IoT data for the asset if available.
-          // Defer with queueMicrotask to break the synchronous set() cascade
-          // that causes React Error #185 — the mega-update above triggers
-          // subscriber re-renders, and calling loadAssetData synchronously
-          // fires another set() during those re-renders.
-          if (scene.assetId) {
-            queueMicrotask(() => get().loadAssetData(scene.assetId));
-          }
+          // NOTE: loadAssetData is intentionally NOT called here.
+          // Calling it synchronously (or via queueMicrotask) after the mega-update
+          // above triggers Zustand subscriber notifications that interleave with
+          // React's concurrent rendering, causing Error #185.
+          // Instead, DigitalTwinViewer handles asset data loading via useEffect
+          // which fires AFTER the render is committed.
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : 'Failed to load scene';
           set({ isLoadingScene: false, sceneError: message }, false, 'digitalTwin/loadScene:error');
@@ -386,12 +384,12 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
           'digitalTwin/selectMesh',
         );
 
-        // Load asset data when a new asset is selected.
-        // Defer with queueMicrotask to prevent synchronous set() cascade
-        // that triggers React Error #185 during concurrent rendering.
-        if (meshName && effectiveAssetId && effectiveAssetId !== prevAssetId) {
-          queueMicrotask(() => get().loadAssetData(effectiveAssetId));
-        }
+        // NOTE: loadAssetData is intentionally NOT called here.
+        // Calling it (even via queueMicrotask) after the set() above causes
+        // Zustand subscriber notifications that interleave with React's
+        // concurrent rendering, causing Error #185.
+        // Instead, DigitalTwinViewer handles asset data loading via useEffect
+        // which fires AFTER the render is committed.
       },
 
       hoverMesh: (meshName: string | null) => {
