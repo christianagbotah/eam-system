@@ -168,21 +168,29 @@ if (typeof window !== 'undefined') {
     guardRecoveryPending = true;
   });
 
-  // On initial load, restore from URL hash if present
-  const initial = parseHash();
-  const initPage: PageName = initial?.page || 'dashboard';
-  const initParams = initial?.params || {};
+  // On initial load, restore from URL hash if present.
+  // CRITICAL: This setTimeout(0) defers the setState to the next macrotask,
+  // ensuring it fires OUTSIDE any ongoing React render cycle. Without this
+  // deferral, the synchronous setState during module initialization can
+  // interleave with React's concurrent rendering, causing Error #185.
+  // This is especially important when the store module is first imported
+  // during a render (e.g., during page navigation with dynamic imports).
+  setTimeout(() => {
+    const initial = parseHash();
+    const initPage: PageName = initial?.page || 'dashboard';
+    const initParams = initial?.params || {};
 
-  useNavigationStore.setState({
-    currentPage: initPage,
-    pageParams: initParams,
-  });
+    useNavigationStore.setState({
+      currentPage: initPage,
+      pageParams: initParams,
+    });
 
-  // Replace current history entry with proper app state
-  pushNavState(initPage, initParams, true);
+    // Replace current history entry with proper app state
+    pushNavState(initPage, initParams, true);
 
-  // Push a guard entry so there's always a "previous" entry to go back to.
-  // This prevents the browser/webview from closing when the user presses
-  // the back button while on the first app page (e.g., dashboard).
-  window.history.pushState(null, '', window.location.href);
+    // Push a guard entry so there's always a "previous" entry to go back to.
+    // This prevents the browser/webview from closing when the user presses
+    // the back button while on the first app page (e.g., dashboard).
+    window.history.pushState(null, '', window.location.href);
+  }, 0);
 }
