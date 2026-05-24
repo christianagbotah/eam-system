@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   X,
   Info,
@@ -1187,11 +1187,16 @@ export function ComponentInfoPanel({
   const bomChildren = externalBom ?? storeBomChildren;
   const attachments = externalAttachments ?? storeAttachments;
 
-  // Load failure analysis & prediction alerts when asset is selected
+  // Load failure analysis & prediction alerts when asset is selected.
+  // Wrap in startTransition to prevent React Error #185 — both store actions
+  // call set({ isLoading...: true }) synchronously, and firing two in immediate
+  // succession during an effect can interleave with concurrent re-renders.
   useEffect(() => {
     if (selectedAssetId) {
-      loadFailureAnalysis({ assetId: selectedAssetId });
-      loadPredictionAlerts({ assetId: selectedAssetId });
+      React.startTransition(() => {
+        loadFailureAnalysis({ assetId: selectedAssetId });
+        loadPredictionAlerts({ assetId: selectedAssetId });
+      });
     }
   }, [selectedAssetId, loadFailureAnalysis, loadPredictionAlerts]);
 

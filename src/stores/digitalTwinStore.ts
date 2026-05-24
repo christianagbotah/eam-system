@@ -345,9 +345,13 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
             'digitalTwin/loadScene:success',
           );
 
-          // Auto-load IoT data for the asset if available
+          // Auto-load IoT data for the asset if available.
+          // Defer with queueMicrotask to break the synchronous set() cascade
+          // that causes React Error #185 — the mega-update above triggers
+          // subscriber re-renders, and calling loadAssetData synchronously
+          // fires another set() during those re-renders.
           if (scene.assetId) {
-            get().loadAssetData(scene.assetId);
+            queueMicrotask(() => get().loadAssetData(scene.assetId));
           }
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : 'Failed to load scene';
@@ -382,9 +386,11 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
           'digitalTwin/selectMesh',
         );
 
-        // Load asset data when a new asset is selected
+        // Load asset data when a new asset is selected.
+        // Defer with queueMicrotask to prevent synchronous set() cascade
+        // that triggers React Error #185 during concurrent rendering.
         if (meshName && effectiveAssetId && effectiveAssetId !== prevAssetId) {
-          get().loadAssetData(effectiveAssetId);
+          queueMicrotask(() => get().loadAssetData(effectiveAssetId));
         }
       },
 

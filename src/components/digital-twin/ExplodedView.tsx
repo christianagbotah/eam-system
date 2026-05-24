@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useMemo, useEffect, useState } from 'react';
+import React from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -114,9 +115,13 @@ export function ExplodedView({
     if (explodeMode && storeProgress < 1) {
       // Only update the store every ~6 frames to avoid excessive re-renders.
       // The visual animation is driven by the local spring ref, not the store.
+      // Wrap in startTransition to prevent React Error #185 — useFrame runs
+      // inside R3F's frame loop which can interleave with React's render phase.
       storeUpdateCounter.current++;
       if (storeUpdateCounter.current % 6 === 0) {
-        setExplodeProgress(Math.min(storeProgress + animationSpeed * 6, 1));
+        React.startTransition(() => {
+          setExplodeProgress(Math.min(storeProgress + animationSpeed * 6, 1));
+        });
       }
     }
 

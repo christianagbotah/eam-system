@@ -1,3 +1,4 @@
+import React, { startTransition } from 'react';
 import { create } from 'zustand';
 import type { PageName } from '@/types';
 import { api } from '@/lib/api';
@@ -133,11 +134,15 @@ if (typeof window !== 'undefined') {
     }
 
     // Normal app navigation — state has our marker and a page
+    // Wrap in startTransition to prevent React Error #185 — popstate fires
+    // outside React's event handler batching context.
     if (event.state?.[HISTORY_STATE_KEY] && event.state?.page) {
       const { page, params } = event.state;
-      useNavigationStore.setState({
-        currentPage: page as PageName,
-        pageParams: params || {},
+      startTransition(() => {
+        useNavigationStore.setState({
+          currentPage: page as PageName,
+          pageParams: params || {},
+        });
       });
       return;
     }
@@ -146,9 +151,12 @@ if (typeof window !== 'undefined') {
     // Push forward to dashboard to prevent the tab/webview from closing.
     // This is critical for mobile browsers and webviews where pressing back
     // at the root would close the entire tab.
-    useNavigationStore.setState({
-      currentPage: 'dashboard',
-      pageParams: {},
+    // Wrap in startTransition to prevent React Error #185.
+    startTransition(() => {
+      useNavigationStore.setState({
+        currentPage: 'dashboard',
+        pageParams: {},
+      });
     });
     window.history.pushState(
       { [HISTORY_STATE_KEY]: true, page: 'dashboard', params: {} },

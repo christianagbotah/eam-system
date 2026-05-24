@@ -71,3 +71,29 @@ Stage Summary:
 - All getState() calls in render scope replaced with proper React subscriptions
 - Commit: 6a1b1b07 pushed to main
 
+---
+Task ID: 4
+Agent: Main
+Task: Deep analysis and fix of persistent React Error #185 — cascading Zustand store updates
+
+Work Log:
+- Discovered that previous session's fixes to Sidebar.tsx, searchable-select.tsx, EAMApp.tsx were NOT lost — they were refactored to better patterns (useMemo, useCallback, refs) that eliminated the need for startTransition
+- Comprehensive audit confirmed: ZERO getState() calls during render, ZERO getState() calls in useFrame across entire codebase (19 total getState calls all in safe contexts)
+- Identified the TRUE root cause: **cascading Zustand set() calls** — not individual setState-during-render, but synchronous chains of store updates that trigger subscriber re-renders that interleave with concurrent rendering
+- 6 specific Error #185 trigger patterns found:
+  1. HIGH: loadScene() mega-update (11 fields) + immediate loadAssetData() synchronous cascade
+  2. HIGH: selectMesh() → loadAssetData() synchronous cascade
+  3. MEDIUM: ComponentInfoPanel dual async fire in useEffect (loadFailureAnalysis + loadPredictionAlerts)
+  4. MEDIUM: navigationStore popstate handler setState outside React batching
+  5. LOW: Camera animation per-frame setState (Zustand false=replace not notification suppressor)
+  6. LOW: handleOpenViewer dual setState (mitigated by React 18 batching)
+
+Stage Summary:
+- **FIX 1 (HIGH)**: `src/stores/digitalTwinStore.ts` — loadScene: Deferred `loadAssetData()` with `queueMicrotask()` to break synchronous set() cascade (11-field update → pause → loadAssetData)
+- **FIX 2 (HIGH)**: `src/stores/digitalTwinStore.ts` — selectMesh: Deferred `loadAssetData()` with `queueMicrotask()` to prevent 4-field update → loadAssetData synchronous cascade
+- **FIX 3 (MEDIUM)**: `src/components/digital-twin/ComponentInfoPanel.tsx` — Wrapped dual effect (loadFailureAnalysis + loadPredictionAlerts) in `React.startTransition()` to prevent two synchronous set() calls from interleaving with concurrent renders
+- **FIX 4 (MEDIUM)**: `src/stores/navigationStore.ts` — Wrapped both popstate `setState` calls (normal navigation + guard recovery) in `startTransition()` since popstate fires outside React's batching context
+- **FIX 5 (MEDIUM)**: `src/components/digital-twin/ExplodedView.tsx` — Wrapped `setExplodeProgress()` inside `useFrame` with `React.startTransition()` for safety during explosion animations
+- Files verified: digitalTwinStore.ts, ComponentInfoPanel.tsx, navigationStore.ts, ExplodedView.tsx all pass TypeScript type checking
+
+---
