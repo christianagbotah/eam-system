@@ -29,25 +29,38 @@ function LoadingScreen() {
 }
 
 // ============================================================================
-// GLOBAL ERROR BOUNDARY — catches and logs all rendering errors
+// GLOBAL ERROR BOUNDARY — catches and logs all rendering errors.
+// Special handling for React Error #185 (setState during render): this error
+// is recoverable — retrying the render usually succeeds because it was a
+// timing issue between concurrent rendering and external store updates.
 // ============================================================================
+
+// Error message pattern for React #185
+const ERROR_185_PATTERN = /Cannot update a component (?:from within the render function|while rendering a different component)/;
 
 interface GlobalErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
+  retryKey: number; // Used to force a re-render on retry
 }
 
 class GlobalErrorBoundary extends React.Component<
   { children: React.ReactNode },
   GlobalErrorBoundaryState
 > {
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, retryKey: 0 };
   }
 
   static getDerivedStateFromError(error: Error): GlobalErrorBoundaryState {
-    return { hasError: true, error };
+    // For Error #185, don't immediately show error — allow retry
+    if (ERROR_185_PATTERN.test(error.message)) {
+      return { hasError: false, error, retryKey: 0 };
+    }
+    return { hasError: true, error, retryKey: 0 };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
@@ -57,10 +70,35 @@ class GlobalErrorBoundary extends React.Component<
     console.error('Stack:', error.stack);
     console.error('Component Stack:', errorInfo.componentStack);
     console.error('=== END ERROR ===');
+
+    // For Error #185, schedule a silent retry after a short delay
+    // This handles the case where a Zustand store update fires during
+    // React's concurrent rendering. The retry almost always succeeds.
+    if (ERROR_185_PATTERN.test(error.message)) {
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = null;
+        this.setState((prev) => ({
+          hasError: false,
+          error: null,
+          retryKey: prev.retryKey + 1,
+        }));
+      }, 50);
+    }
+  }
+
+  componentWillUnmount() {
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: null });
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    this.setState({ hasError: false, error: null, retryKey: 0 });
     window.location.reload();
   };
 

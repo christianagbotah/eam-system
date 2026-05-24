@@ -187,7 +187,10 @@ export function useCameraControls(): UseCameraControlsReturn {
   // ──────────────────────────────────────────────────────────────────────
 
   const onTransitionComplete = useCallback(() => {
-    useDigitalTwinStore.setState({ isTransitioning: false }, false, 'digitalTwin/cameraTransitionComplete');
+    // Defer to next frame to avoid interleaving with React's concurrent render.
+    requestAnimationFrame(() => {
+      useDigitalTwinStore.setState({ isTransitioning: false }, false, 'digitalTwin/cameraTransitionComplete');
+    });
   }, []);
 
   // ──────────────────────────────────────────────────────────────────────
@@ -223,16 +226,23 @@ export function useCameraControls(): UseCameraControlsReturn {
           duration,
         },
         (position, target, done) => {
-          // Use Zustand setState directly (bypass React) during camera animation.
-          // The Three.js camera is updated by the subscriber, but we don't need
-          // to trigger a React re-render on every frame — the subscriber does that.
-          useDigitalTwinStore.setState(
-            { cameraPosition: position, cameraTarget: target },
-            false, // don't notify subscribers (avoid per-frame React re-renders)
-            'digitalTwin/cameraAnimate:focusOnMesh',
-          );
+          // CRITICAL: Do NOT call setState on every animation frame.
+          // Per-frame Zustand setState bypasses React's scheduler and triggers
+          // subscriber notifications that interleave with React's concurrent
+          // rendering, causing Error #185.
+          // Only update the store when the animation completes.
           if (done) {
-            onTransitionComplete();
+            requestAnimationFrame(() => {
+              useDigitalTwinStore.setState(
+                {
+                  cameraPosition: position,
+                  cameraTarget: target,
+                  isTransitioning: false,
+                },
+                false,
+                'digitalTwin/cameraAnimate:focusOnMesh:complete',
+              );
+            });
           }
         },
       );
@@ -272,13 +282,20 @@ export function useCameraControls(): UseCameraControlsReturn {
           duration,
         },
         (position, target, done) => {
-          useDigitalTwinStore.setState(
-            { cameraPosition: position, cameraTarget: target },
-            false,
-            'digitalTwin/cameraAnimate:goToPreset',
-          );
+          // CRITICAL: Do NOT call setState on every animation frame.
+          // See focusOnMesh comment above for rationale.
           if (done) {
-            onTransitionComplete();
+            requestAnimationFrame(() => {
+              useDigitalTwinStore.setState(
+                {
+                  cameraPosition: position,
+                  cameraTarget: target,
+                  isTransitioning: false,
+                },
+                false,
+                'digitalTwin/cameraAnimate:goToPreset:complete',
+              );
+            });
           }
         },
       );
@@ -314,13 +331,20 @@ export function useCameraControls(): UseCameraControlsReturn {
         duration,
       },
       (position, target, done) => {
-        useDigitalTwinStore.setState(
-          { cameraPosition: position, cameraTarget: target },
-          false,
-          'digitalTwin/cameraAnimate:resetCamera',
-        );
+        // CRITICAL: Do NOT call setState on every animation frame.
+        // See focusOnMesh comment above for rationale.
         if (done) {
-          onTransitionComplete();
+          requestAnimationFrame(() => {
+            useDigitalTwinStore.setState(
+              {
+                cameraPosition: position,
+                cameraTarget: target,
+                isTransitioning: false,
+              },
+              false,
+              'digitalTwin/cameraAnimate:resetCamera:complete',
+            );
+          });
         }
       },
     );

@@ -201,7 +201,8 @@ export function ExplodedView({
 
   // Decoupled sync loop: reads from pendingLabelsRef and flushes to React state.
   // Runs on a separate requestAnimationFrame that is NOT part of R3F's frame loop,
-  // so it never triggers Error #185.
+  // so it never triggers Error #185. Uses requestAnimationFrame to schedule the
+  // React setState call, ensuring it fires outside any ongoing render cycle.
   useEffect(() => {
     let animId: number;
     let lastLabelsJson = '';
@@ -213,7 +214,13 @@ export function ExplodedView({
         const json = JSON.stringify(pending);
         if (json !== lastLabelsJson) {
           lastLabelsJson = json;
-          setActiveLabels(pending);
+          // CRITICAL: Use requestAnimationFrame to schedule the React setState
+          // call. Even though we're already in a rAF callback, this ensures the
+          // setState fires in the NEXT frame, completely outside any potential
+          // React concurrent render that might be in progress.
+          requestAnimationFrame(() => {
+            setActiveLabels(pending);
+          });
         }
         pendingLabelsRef.current = null;
       }
