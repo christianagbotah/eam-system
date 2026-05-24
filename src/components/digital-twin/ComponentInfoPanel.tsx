@@ -1037,12 +1037,15 @@ function BomPartsTab({
   bomChildren: Record<string, unknown>[];
   componentTree: ComponentRegistryItem[];
 }) {
+  // Subscribe to store action directly instead of using getState()
+  const selectMesh = useDigitalTwinStore((s) => s.selectMesh);
+
   const onSelectChild = useCallback((item: Record<string, unknown>) => {
-    const store = useDigitalTwinStore.getState();
+    // Use the subscribed action instead of getState() to prevent Error #185
     if (item.assetId) {
-      store.selectMesh(String(item.name), String(item.assetId));
+      selectMesh(String(item.name), String(item.assetId));
     }
-  }, []);
+  }, [selectMesh]);
 
   // Use component tree if available, otherwise fallback to bomChildren
   const treeItems = componentTree.length > 0

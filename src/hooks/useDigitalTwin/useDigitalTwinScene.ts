@@ -228,16 +228,24 @@ export function useDigitalTwinScene(
       // Only process updates for our asset
       if (data.assetId && data.assetId !== assetId) return;
 
-      updateLiveReading(data.deviceId, {
-        value: data.value,
-        unit: data.unit,
-        timestamp: data.timestamp,
+      // Wrap in startTransition to prevent Error #185 — WebSocket events
+      // can arrive during React's render phase.
+      React.startTransition(() => {
+        updateLiveReading(data.deviceId, {
+          value: data.value,
+          unit: data.unit,
+          timestamp: data.timestamp,
+        });
       });
     };
 
     const handleHealthUpdate = (data: { assetId?: string; healthMap: Record<string, MeshHealthEntry> }) => {
       if (data.assetId && data.assetId !== assetId) return;
-      updateHealthMap(data.healthMap);
+      // Wrap in startTransition to prevent Error #185 — WebSocket events
+      // can arrive during React's render phase.
+      React.startTransition(() => {
+        updateHealthMap(data.healthMap);
+      });
     };
 
     if (connected) {

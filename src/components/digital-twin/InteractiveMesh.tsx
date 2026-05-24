@@ -86,6 +86,7 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
   const iotOverlayEnabled = useDigitalTwinStore((s) => s.iotOverlayEnabled);
   const iotHealthMap = useDigitalTwinStore((s) => s.iotHealthMap);
   const liveReadings = useDigitalTwinStore((s) => s.liveReadings);
+  const isolationAssetId = useDigitalTwinStore((s) => s.isolationAssetId);
   const isolateAsset = useDigitalTwinStore((s) => s.isolateAsset);
 
   // Outline geometry for selection / hover
@@ -174,9 +175,9 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
     (e: THREE.Event) => {
       e.stopPropagation();
       if (!isClickable) return;
-      // Double-click isolates this component
-      const currentIsolation = useDigitalTwinStore.getState().isolationAssetId;
-      if (currentIsolation === binding.assetId) {
+      // Double-click isolates this component.
+      // Use the subscribed isolationAssetId instead of getState() to prevent Error #185.
+      if (isolationAssetId === binding.assetId) {
         // Already isolated — clear isolation
         isolateAsset(null);
       } else {
@@ -184,7 +185,7 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
         isolateAsset(binding.assetId);
       }
     },
-    [isClickable, binding.assetId, isolateAsset],
+    [isClickable, binding.assetId, isolationAssetId, isolateAsset],
   );
 
   const handlePointerOver = useCallback(

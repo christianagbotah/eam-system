@@ -97,23 +97,21 @@ export function useMeshInteraction(): UseMeshInteractionReturn {
     (mesh: MeshMeta | null) => {
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
 
-      // Read latest hoverMesh action from store to avoid stale closures
-      const storeHoverMesh = useDigitalTwinStore.getState().hoverMesh;
-
       if (!mesh || mesh.visible === false) {
-        storeHoverMesh(null);
+        // Use the subscribed action directly instead of getState()
+        hoverMesh(null);
         return;
       }
 
       // Only update if the hovered mesh changed
-      const currentHovered = useDigitalTwinStore.getState().hoveredMeshName;
-      if (mesh.name !== currentHovered) {
+      if (mesh.name !== hoveredMeshName) {
         hoverTimerRef.current = setTimeout(() => {
-          useDigitalTwinStore.getState().hoverMesh(mesh.name);
+          // Use the subscribed action directly instead of getState()
+          hoverMesh(mesh.name);
         }, 30);
       }
     },
-    [],
+    [hoverMesh, hoveredMeshName],
   );
 
   // ──────────────────────────────────────────────────────────────────────

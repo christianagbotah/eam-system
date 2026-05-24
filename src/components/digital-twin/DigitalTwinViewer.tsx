@@ -329,6 +329,7 @@ export function DigitalTwinViewer({
   const selectedMeshName = useDigitalTwinStore((s) => s.selectedMeshName);
   const selectedAssetId = useDigitalTwinStore((s) => s.selectedAssetId);
   const loadScene = useDigitalTwinStore((s) => s.loadScene);
+  const setModelUrl = useDigitalTwinStore((s) => s.setModelUrl);
   const reset = useDigitalTwinStore((s) => s.reset);
 
   // ── Hooks ────────────────────────────────────────────────────────────────
@@ -418,7 +419,7 @@ export function DigitalTwinViewer({
         // If the scene already has filePath from the list endpoint, use it directly
         if (firstScene.model?.filePath) {
           setResolvedModelUrl(firstScene.model.filePath);
-          useDigitalTwinStore.getState().setModelUrl(firstScene.model.filePath);
+          setModelUrl(firstScene.model.filePath);
           setIsResolvingScene(false);
           return;
         }
@@ -430,7 +431,7 @@ export function DigitalTwinViewer({
 
         if (modelRes.success && modelRes.data?.filePath) {
           setResolvedModelUrl(modelRes.data.filePath);
-          useDigitalTwinStore.getState().setModelUrl(modelRes.data.filePath);
+          setModelUrl(modelRes.data.filePath);
         } else {
           // Model not found or no filePath
           setHasNoScenes(true);
@@ -516,10 +517,11 @@ export function DigitalTwinViewer({
   // ── Mesh select from scene tree ────────────────────────────────────────
   const handleMeshSelectFromTree = useCallback(
     (meshName: string, assetId?: string) => {
-      useDigitalTwinStore.getState().selectMesh(meshName, assetId);
-      useDigitalTwinStore.getState().setInfoPanelOpen(true);
+      // Use the already-subscribed actions instead of getState()
+      selectMesh(meshName, assetId);
+      setInfoPanelOpen(true);
     },
-    [],
+    [selectMesh, setInfoPanelOpen],
   );
 
   // ── Custom error component ─────────────────────────────────────────────
