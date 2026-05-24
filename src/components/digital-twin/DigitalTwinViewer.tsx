@@ -329,6 +329,8 @@ export function DigitalTwinViewer({
   const selectedMeshName = useDigitalTwinStore((s) => s.selectedMeshName);
   const selectedAssetId = useDigitalTwinStore((s) => s.selectedAssetId);
   const loadScene = useDigitalTwinStore((s) => s.loadScene);
+  const selectMesh = useDigitalTwinStore((s) => s.selectMesh);
+  const setInfoPanelOpen = useDigitalTwinStore((s) => s.setInfoPanelOpen);
   const setModelUrl = useDigitalTwinStore((s) => s.setModelUrl);
   const reset = useDigitalTwinStore((s) => s.reset);
 
