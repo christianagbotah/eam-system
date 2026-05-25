@@ -293,13 +293,13 @@ export function DashboardPage() {
     },
     {
       label: 'Pending Requests', value: pendingReqs,
-      sublabel: `${stats?.createdTodayMR || 0} new today`,
+      sublabel: `${stats?.newTodayPending || 0} new today`,
       color: '#f59e0b', bgColor: 'bg-amber-50 dark:bg-amber-950/30',
       borderColor: 'border-amber-100 dark:border-amber-900/40',
       iconBg: 'bg-amber-100 dark:bg-amber-900/50', iconColor: 'text-amber-600 dark:text-amber-400',
       icon: ClipboardList, permission: 'maintenance_requests.view',
       barData: stats?.weeklyTrends?.maintenanceRequests || [0, 0, 0, 0, 0, 0, 0],
-      onClick: () => navigate('maintenance-requests'),
+      onClick: () => navigate('maintenance-requests', { status: 'pending,approved', autoOpen: 'first' }),
     },
   ];
 
@@ -496,7 +496,7 @@ export function DashboardPage() {
       {/* ===== Pending Requests Alert (Supervisor/Admin) ===== */}
       {(isSupervisor || isManager) && pendingReqs > 0 && (
         <button
-          onClick={() => navigate('maintenance-requests')}
+          onClick={() => navigate('maintenance-requests', { status: 'pending,approved', autoOpen: 'first' })}
           className="w-full flex items-center gap-4 px-5 py-4 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 hover:shadow-md hover:border-amber-300 dark:hover:border-amber-800/50 transition-all duration-300 cursor-pointer group"
         >
           <div className="h-11 w-11 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">

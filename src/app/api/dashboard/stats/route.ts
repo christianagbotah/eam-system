@@ -169,6 +169,9 @@ export async function GET(request: NextRequest) {
       highPriorityMR,
       mediumPriorityMR,
       lowPriorityMR,
+      // Role-based actionable requests (pending + approved)
+      roleBasedPending,
+      newTodayPending,
     ] = await Promise.all([
       // MR counts by status
       db.maintenanceRequest.groupBy({
@@ -396,6 +399,14 @@ export async function GET(request: NextRequest) {
       db.maintenanceRequest.count({ where: { ...plantFilter, priority: { in: ['high', 'urgent'] } } }),
       db.maintenanceRequest.count({ where: { ...plantFilter, priority: 'medium' } }),
       db.maintenanceRequest.count({ where: { ...plantFilter, priority: 'low' } }),
+      // Role-based: pending + approved requests (actionable by current user)
+      db.maintenanceRequest.count({
+        where: { ...(Object.keys(mrWhere).length > 0 ? mrWhere : plantFilter), status: { in: ['pending', 'approved'] } },
+      }),
+      // Role-based: new today (pending + approved created today)
+      db.maintenanceRequest.count({
+        where: { ...(Object.keys(mrWhere).length > 0 ? mrWhere : plantFilter), status: { in: ['pending', 'approved'] }, createdAt: { gte: todayStart } },
+      }),
     ]);
 
     const mrStats: Record<string, number> = {};
@@ -415,8 +426,8 @@ export async function GET(request: NextRequest) {
     // Completed WOs
     const completedWorkOrders = woStats['completed'] || 0;
 
-    // Pending requests
-    const pendingRequests = mrStats['pending'] || 0;
+    // Pending requests (pending + approved — actionable items for current user role)
+    const pendingRequests = (mrStats['pending'] || 0) + (mrStats['approved'] || 0);
 
     // Calculate low stock from inventory items
     const lowStock = inventoryLowStockItems.filter(
@@ -505,6 +516,7 @@ export async function GET(request: NextRequest) {
         totalRequests: totalMR,
         // Trends
         createdTodayMR,
+        newTodayPending,
         createdTodayWO,
         completedTodayWO,
         // MR breakdown (aliased for frontend)

@@ -243,3 +243,39 @@ Stage Summary:
 - Dashboard shows a prominent amber alert banner for pending requests when logged in as supervisor/admin
 - Compilation successful (GET / 200 in 4.4s), no errors
 - Pushed to origin/main as commit cfd2f7cd
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Fix pending requests card showing 0 and bell notification navigation
+
+Work Log:
+- Analyzed the root cause: `pendingRequests` in dashboard stats only counted `status: 'pending'` but missed `status: 'approved'` (requests awaiting planner assignment)
+- The dashboard stats API uses `mrByStatus` groupBy filtered by role (`mrWhere`), so `mrStats['pending']` only counts pending — approved requests are separate
+- Fixed `/api/dashboard/stats/route.ts`:
+  - Changed `pendingRequests` from `mrStats['pending']` to `(mrStats['pending'] || 0) + (mrStats['approved'] || 0)` 
+  - Added two new queries: `roleBasedPending` and `newTodayPending` for per-user-role filtered counts
+  - Added `newTodayPending` to response for "X new today" sublabel
+- Fixed `/api/maintenance-requests/pending-count/route.ts`:
+  - Admin: counts `{ in: ['pending', 'approved'] }` instead of just `'pending'`
+  - Supervisor: same scope with department filtering
+  - Planner: keeps `'approved'` (their actionable items)
+  - Others: counts own `{ in: ['pending', 'approved'] }`
+- Fixed `/api/maintenance-requests/route.ts`:
+  - Added support for comma-separated `status` query param (e.g. `status=pending,approved`)
+- Fixed `DashboardPages.tsx`:
+  - Changed sublabel from `createdTodayMR` to `newTodayPending` (role-filtered)
+  - Navigation from pending card/alert now passes `{ status: 'pending,approved', autoOpen: 'first' }`
+- Fixed `NotificationPopover.tsx`:
+  - `handleViewPendingRequests` now navigates with `{ status: 'pending,approved', autoOpen: 'first' }`
+- Fixed `MaintenancePages.tsx`:
+  - Added `useNavigationStore` and `pageParams` reading
+  - On mount, auto-applies status filter from `pageParams.status`
+  - Auto-opens request detail from `pageParams.id` or `pageParams.autoOpen: 'first'`
+
+Stage Summary:
+- Dashboard "Pending Requests" card now shows both `pending` (awaiting approval) AND `approved` (awaiting planner assignment) counts
+- "X new today" sublabel now uses role-filtered count (supervisors see their department's, admins see all)
+- Bell notification "View" button now navigates to maintenance-requests page with auto-filter AND auto-opens the first pending request detail sheet
+- Dashboard pending alert banner also navigates with auto-filter and auto-open
+- All counts are role-aware: supervisors see their departments' requests, admins see all, others see their own

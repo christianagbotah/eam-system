@@ -151,7 +151,7 @@ function NotificationPopover() {
 
   const handleViewPendingRequests = () => {
     setOpen(false);
-    navigate('maintenance-requests');
+    navigate('maintenance-requests' as PageName, { status: 'pending,approved', autoOpen: 'first' });
   };
 
   const handleGoToAction = () => {

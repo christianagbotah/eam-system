@@ -69,6 +69,17 @@ export function MaintenanceRequestsPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const { hasPermission } = useAuthStore();
+  const { pageParams } = useNavigationStore();
+
+  // Auto-apply filter and open detail from navigation params (e.g. from bell/dashboard)
+  useEffect(() => {
+    if (pageParams?.status) {
+      setFilterStatus(pageParams.status);
+    }
+    if (pageParams?.id) {
+      setDetailId(pageParams.id);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredRequests = useMemo(() => {
     if (!searchText.trim()) return requests;
@@ -98,6 +109,10 @@ export function MaintenanceRequestsPage() {
       if (active) {
         if (res.success && res.data) setRequests(res.data);
         setLoading(false);
+        // Auto-open first request if navigated from bell/dashboard with autoOpen param
+        if (pageParams?.autoOpen === 'first' && res.data?.length > 0 && !detailId) {
+          setDetailId(res.data[0].id);
+        }
       }
     });
     return () => { active = false; };

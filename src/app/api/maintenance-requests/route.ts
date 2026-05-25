@@ -50,7 +50,11 @@ export async function GET(request: NextRequest) {
 
     // Build where clause with role-based filtering
     const where: Record<string, unknown> = {};
-    if (status) where.status = status;
+    if (status) {
+      // Support comma-separated status values (e.g. "pending,approved")
+      const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
+      where.status = statuses.length > 1 ? { in: statuses } : statuses[0];
+    }
     if (priority) where.priority = priority;
     if (category) where.category = category;
     if (search) {
