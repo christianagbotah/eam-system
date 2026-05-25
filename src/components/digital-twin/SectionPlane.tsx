@@ -212,7 +212,9 @@ export function SectionPlane({
   // Handle axis change
   const handleAxisChange = useCallback(
     (axis: SectionAxis) => {
-      setSectionAxis(axis);
+      // Defer Zustand setState — this fires inside R3F Html overlay which
+      // runs within the R3F reconciler context during concurrent rendering.
+      setTimeout(() => setSectionAxis(axis), 0);
     },
     [setSectionAxis],
   );

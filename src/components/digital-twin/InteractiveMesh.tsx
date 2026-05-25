@@ -166,7 +166,10 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
         return;
       }
       if (!isClickable) return;
-      selectMesh(binding.meshName, binding.assetId);
+      // Defer Zustand setState via setTimeout(0) to prevent Error #185.
+      // R3F pointer events can fire during React's concurrent render phase,
+      // and Zustand set() bypasses React's scheduler (not wrapped by startTransition).
+      setTimeout(() => selectMesh(binding.meshName, binding.assetId), 0);
     },
     [isClickable, selectMesh, binding.meshName, binding.assetId],
   );
@@ -175,15 +178,14 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
     (e: THREE.Event) => {
       e.stopPropagation();
       if (!isClickable) return;
-      // Double-click isolates this component.
-      // Use the subscribed isolationAssetId instead of getState() to prevent Error #185.
-      if (isolationAssetId === binding.assetId) {
-        // Already isolated — clear isolation
-        isolateAsset(null);
-      } else {
-        // Isolate this component
-        isolateAsset(binding.assetId);
-      }
+      // Defer Zustand setState via setTimeout(0) — see handleClick for rationale.
+      setTimeout(() => {
+        if (isolationAssetId === binding.assetId) {
+          isolateAsset(null);
+        } else {
+          isolateAsset(binding.assetId);
+        }
+      }, 0);
     },
     [isClickable, binding.assetId, isolationAssetId, isolateAsset],
   );
@@ -193,7 +195,8 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
       e.stopPropagation();
       setHovered(true);
       setIsTooltipVisible(true);
-      hoverMesh(binding.meshName);
+      // Defer Zustand setState via setTimeout(0) — see handleClick for rationale.
+      setTimeout(() => hoverMesh(binding.meshName), 0);
       document.body.style.cursor = isClickable ? 'pointer' : 'default';
 
       // Start long-press timer for touch devices
@@ -214,7 +217,8 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
       e.stopPropagation();
       setHovered(false);
       setIsTooltipVisible(false);
-      hoverMesh(null);
+      // Defer Zustand setState via setTimeout(0) — see handleClick for rationale.
+      setTimeout(() => hoverMesh(null), 0);
       document.body.style.cursor = 'default';
       clearLongPress();
     },
