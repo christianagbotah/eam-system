@@ -2189,7 +2189,15 @@ export function NotificationsPage() {
 
   // Go to action URL
   const goToAction = (n: Notification) => {
-    if (n.actionUrl) navigate(n.actionUrl as PageName);
+    if (!n.actionUrl) return;
+    // Parse actionUrl like "mr-detail?id=xxx" or "wo-detail?id=xxx"
+    const [pagePart, queryPart] = n.actionUrl.split('?');
+    const params: Record<string, string> = {};
+    if (queryPart) {
+      const qs = new URLSearchParams(queryPart);
+      qs.forEach((v, k) => { params[k] = v; });
+    }
+    navigate(pagePart as PageName, params);
   };
 
   // Save preferences

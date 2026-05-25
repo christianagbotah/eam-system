@@ -155,10 +155,16 @@ function NotificationPopover() {
   };
 
   const handleGoToAction = () => {
-    if (selectedNotif?.actionUrl) {
-      const url = selectedNotif.actionUrl as string;
-      navigate(url as PageName);
+    if (!selectedNotif?.actionUrl) return;
+    const url = selectedNotif.actionUrl as string;
+    // Parse actionUrl like "mr-detail?id=xxx" or "wo-detail?id=xxx"
+    const [pagePart, queryPart] = url.split('?');
+    const params: Record<string, string> = {};
+    if (queryPart) {
+      const qs = new URLSearchParams(queryPart);
+      qs.forEach((v, k) => { params[k] = v; });
     }
+    navigate(pagePart as PageName, params);
     setDetailOpen(false);
     setOpen(false);
   };

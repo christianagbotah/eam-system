@@ -47,8 +47,20 @@ export async function GET(request: NextRequest) {
           (woWhere as Record<string, unknown>).id = '__none__';
         }
       } else if (session.roles.includes('maintenance_supervisor')) {
-        // Supervisors see their department's requests
-        (mrWhere as Record<string, unknown>).supervisorId = session.userId;
+        // Supervisors see requests from their supervised departments AND explicitly assigned to them
+        const supervisedDepts = await db.department.findMany({
+          where: { supervisorId: session.userId },
+          select: { id: true },
+        });
+        const supervisedDeptIds = supervisedDepts.map(d => d.id);
+        if (supervisedDeptIds.length > 0) {
+          (mrWhere as Record<string, unknown>).OR = [
+            { supervisorId: session.userId },
+            { departmentId: { in: supervisedDeptIds } },
+          ];
+        } else {
+          (mrWhere as Record<string, unknown>).supervisorId = session.userId;
+        }
       }
       // Planners and admins see everything
     }
