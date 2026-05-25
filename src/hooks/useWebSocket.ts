@@ -39,7 +39,9 @@ export function useWebSocket(): UseWebSocketReturn {
 
     socket.on('connect', () => {
       console.log('[WS] Connected:', socket.id);
-      setConnected(true);
+      // Defer setState via setTimeout(0) to avoid Error #185 when
+      // socket.io fires during React's concurrent render phase
+      setTimeout(() => setConnected(true), 0);
       errorCountRef.current = 0;
       socket.emit('auth', { userId: user.id });
       socket.emit('subscribe:notifications', user.id);
@@ -54,7 +56,7 @@ export function useWebSocket(): UseWebSocketReturn {
 
     socket.on('disconnect', (reason) => {
       // Don't log transport-level disconnects — they're noisy
-      setConnected(false);
+      setTimeout(() => setConnected(false), 0);
     });
 
     socket.on('connect_error', (error) => {
@@ -63,7 +65,7 @@ export function useWebSocket(): UseWebSocketReturn {
       if (errorCountRef.current <= 2) {
         console.warn('[WS] Notification service unavailable — real-time features disabled');
       }
-      setConnected(false);
+      setTimeout(() => setConnected(false), 0);
     });
 
     socket.on('auth:success', () => {
