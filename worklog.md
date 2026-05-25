@@ -200,3 +200,24 @@ Stage Summary:
 - Commit: 614f74ec pushed to main
 
 ---
+---
+Task ID: 1
+Agent: Main Agent
+Task: Enable Repairs/Maintenance module for all users (especially operators) to submit maintenance requests
+
+Work Log:
+- Analyzed the permission system: sidebar groups require `work_orders.view` permission, but `production_operator` role only had `maintenance_requests.*` permissions
+- Found that operators already had `maintenance_requests.create` (API-level) but couldn't see the Maintenance sidebar menu
+- Identified that the Mobile Bottom Nav also gates the "Requests" tab on `work_orders.view`
+- Updated `activate-role-permissions.js` to add permissions to multiple roles:
+  - `production_operator`: added `work_orders.view`, `work_orders.view_own`, `dashboard.stats`
+  - `tools_shop_attendant`: added `maintenance_requests.view`, `maintenance_requests.view_own`, `maintenance_requests.create`, `maintenance_requests.update`, `maintenance_requests.my_queue`
+  - `store_keeper`: added `maintenance_requests.create`, `maintenance_requests.my_queue`
+  - `inventory_manager`: added `maintenance_requests.create`, `maintenance_requests.my_queue`
+  - `viewer`: added `maintenance_requests.view_own`, `maintenance_requests.create`, `maintenance_requests.my_queue`
+
+Stage Summary:
+- All roles now have `work_orders.view` (required for Maintenance/Repairs sidebar visibility)
+- All roles now have `maintenance_requests.create` (required for creating maintenance requests)
+- No code changes needed to Sidebar.tsx or MobileBottomNav.tsx — the existing permission-based filtering will automatically show the modules once permissions are granted
+- The `activate-role-permissions.js` script needs to be run on the VPS to apply the database changes
