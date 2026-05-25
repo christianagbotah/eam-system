@@ -221,3 +221,25 @@ Stage Summary:
 - All roles now have `maintenance_requests.create` (required for creating maintenance requests)
 - No code changes needed to Sidebar.tsx or MobileBottomNav.tsx — the existing permission-based filtering will automatically show the modules once permissions are granted
 - The `activate-role-permissions.js` script needs to be run on the VPS to apply the database changes
+---
+Task ID: 2
+Agent: Main Agent
+Task: Equal-height dashboard cards + pending request notifications for supervisors/admins
+
+Work Log:
+- Added `items-stretch` to all grid containers in DashboardPages.tsx
+- Made KPICard component use `h-full flex flex-col` with content pushed to bottom via `mt-auto`
+- Made all chart cards use `h-full flex flex-col` with `flex-1` on CardContent
+- Made Recent Activity panels use `h-full flex flex-col`
+- Created `/api/maintenance-requests/pending-count` endpoint that returns role-appropriate pending count (supervisors see their department's pending, planners see approved-but-unconverted, others see their own)
+- Updated NotificationPopover to fetch pending count and show it:
+  - Bell badge shows combined unread + pending count (amber when pending, green otherwise)
+  - Popover shows a "Pending Requests" banner at top when count > 0, clicking navigates to maintenance-requests
+- Added prominent "Pending Maintenance Requests" alert banner on Dashboard for supervisors/admins (appears above KPI cards when pendingReqs > 0)
+
+Stage Summary:
+- All dashboard cards now have equal heights within their respective grid rows
+- Supervisors/admins now see pending request count in bell icon badge and notification popover
+- Dashboard shows a prominent amber alert banner for pending requests when logged in as supervisor/admin
+- Compilation successful (GET / 200 in 4.4s), no errors
+- Pushed to origin/main as commit cfd2f7cd
