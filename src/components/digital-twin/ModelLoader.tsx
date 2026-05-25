@@ -142,16 +142,29 @@ function useGLTFLoader(
       setScene(cached);
       setError(null);
       setIsLoading(false);
-      onLoadingCompleteRef.current?.();
-      onProgressRef.current?.(100);
+      // CRITICAL: Defer callbacks to the main React reconciler via setTimeout(0).
+      // This component lives inside R3F's Canvas (separate reconciler), and
+      // calling setState on the parent (main reconciler) from R3F's reconciler
+      // context can interleave with React's concurrent rendering, causing Error #185.
+      setTimeout(() => {
+        if (!cancelled) {
+          onLoadingCompleteRef.current?.();
+          onProgressRef.current?.(100);
+        }
+      }, 0);
       return;
     }
 
     // Dynamic import of GLTFLoader to avoid SSR issues
     setIsLoading(true);
     setError(null);
-    onLoadingStartRef.current?.();
-    onProgressRef.current?.(0);
+    // CRITICAL: Defer callbacks — see above for rationale.
+    setTimeout(() => {
+      if (!cancelled) {
+        onLoadingStartRef.current?.();
+        onProgressRef.current?.(0);
+      }
+    }, 0);
 
     let loader: THREE.Loader | null = null;
 
@@ -176,7 +189,10 @@ function useGLTFLoader(
           if (reportedProgress < 90) {
             reportedProgress += Math.random() * 5;
             reportedProgress = Math.min(reportedProgress, 90);
-            onProgressRef.current?.(reportedProgress);
+            // CRITICAL: Defer callbacks — see cache hit path for rationale.
+            setTimeout(() => {
+              if (!cancelled) onProgressRef.current?.(reportedProgress);
+            }, 0);
           }
         }, 200);
 
@@ -186,7 +202,13 @@ function useGLTFLoader(
             if (cancelled) return;
 
             if (progressInterval) clearInterval(progressInterval);
-            onProgressRef.current?.(100);
+            // CRITICAL: Defer callbacks — see cache hit path for rationale.
+            setTimeout(() => {
+              if (!cancelled) {
+                onProgressRef.current?.(100);
+                onLoadingCompleteRef.current?.();
+              }
+            }, 0);
 
             // Store in cache
             gltfCache.set(getCacheKey(modelUrl), {
@@ -197,14 +219,16 @@ function useGLTFLoader(
 
             setScene(gltf.scene.clone(true));
             setIsLoading(false);
-            onLoadingCompleteRef.current?.();
           },
           (event) => {
             if (cancelled) return;
             if (event.lengthComputable && event.total > 0) {
               const pct = Math.round((event.loaded / event.total) * 95);
               reportedProgress = pct;
-              onProgressRef.current?.(pct);
+              // CRITICAL: Defer callbacks — see cache hit path for rationale.
+              setTimeout(() => {
+                if (!cancelled) onProgressRef.current?.(pct);
+              }, 0);
             }
           },
           (err) => {
@@ -216,7 +240,10 @@ function useGLTFLoader(
             );
             setError(errorObj);
             setIsLoading(false);
-            onErrorRef.current?.(errorObj);
+            // CRITICAL: Defer callbacks — see cache hit path for rationale.
+            setTimeout(() => {
+              if (!cancelled) onErrorRef.current?.(errorObj);
+            }, 0);
           },
         );
       } catch (importErr) {
@@ -228,7 +255,10 @@ function useGLTFLoader(
         );
         setError(errorObj);
         setIsLoading(false);
-        onErrorRef.current?.(errorObj);
+        // CRITICAL: Defer callbacks — see cache hit path for rationale.
+        setTimeout(() => {
+          if (!cancelled) onErrorRef.current?.(errorObj);
+        }, 0);
       }
     };
 

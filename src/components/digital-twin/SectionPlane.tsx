@@ -315,7 +315,10 @@ export function SectionPlane({
               value={sectionPosition}
               onChange={(e) => {
                 e.stopPropagation();
-                setSectionPosition(parseFloat(e.target.value));
+                // Defer Zustand setState — this fires inside R3F's Html overlay
+                // (separate reconciler context) and can interleave with React's
+                // concurrent rendering, causing Error #185.
+                setTimeout(() => setSectionPosition(parseFloat(e.target.value)), 0);
               }}
               className="w-24 h-1 accent-cyan-400"
             />

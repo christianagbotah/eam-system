@@ -291,8 +291,13 @@ function BackgroundClickHandler() {
       visible={false}
       position={[0, 0, 0]}
       onClick={() => {
-        selectMesh(null, null);
-        setInfoPanelOpen(false);
+        // Defer Zustand setState — this fires inside R3F's reconciler context
+        // (Canvas), and calling setState on parent components (main reconciler)
+        // can interleave with React's concurrent rendering, causing Error #185.
+        setTimeout(() => {
+          selectMesh(null, null);
+          setInfoPanelOpen(false);
+        }, 0);
       }}
     >
       <sphereGeometry args={[200, 16, 16]} />
