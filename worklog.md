@@ -170,3 +170,33 @@ Stage Summary:
 - Commit: d4605a8c pushed to main
 
 ---
+Task ID: 8
+Agent: Main
+Task: Decode production minified stack + fix R3F pointer event handlers (TRUE root cause of Error #185)
+
+Work Log:
+- User reported Error #185 still occurring with SAME chunk hash bd79a7f5fbf4dab5 — confirmed server never deployed new build
+- Performed production build and used source maps to decode minified component names:
+  - `au` = R3F Canvas (pointer event system / raycasting at line 393:14825)
+  - `n6` = its-fine Provider (R3F error boundary at line 382:57607)
+  - `ui` = DigitalTwinViewer (at line 1089:47629)
+  - `uy` = DigitalTwinMainPage (at line 1089:91600)
+- Error stack trace `eL@393:14825` = R3F pointer event handler (raycasting/intersection)
+- Error stack trace `nB@393:52266` = OrbitControls (theta/phi/azimuth/polar angle)
+- **TRUE ROOT CAUSE IDENTIFIED**: R3F pointer events (onPointerOver/Out/Click/DoubleClick on InteractiveMesh) fire during R3F's internal event processing which can interleave with React's concurrent render phase. When these handlers call Zustand store actions (selectMesh, hoverMesh, isolateAsset), Zustand set() bypasses React's scheduler, triggering synchronous subscriber notifications.
+- Previous sessions fixed: useFrame, requestAnimationFrame, WebSocket, setInterval, setTimeout, popstate, getState() — but MISSED R3F pointer event handlers
+- Fixed InteractiveMesh.tsx: handleClick, handleDoubleClick, handlePointerOver, handlePointerOut — all wrapped in setTimeout(0)
+- Fixed SectionPlane.tsx: handleAxisChange — wrapped in setTimeout(0)
+- Built production bundle — new chunk hash (old bd79a7f5fbf4dab5 is gone)
+
+Stage Summary:
+- **ROOT CAUSE**: R3F Canvas pointer event handlers call Zustand set() during React's concurrent render phase
+- **FIX 1 (CRITICAL)**: `InteractiveMesh.tsx` handleClick — `setTimeout(() => selectMesh(...), 0)`
+- **FIX 2 (CRITICAL)**: `InteractiveMesh.tsx` handleDoubleClick — `setTimeout(() => isolateAsset(...), 0)`
+- **FIX 3 (CRITICAL)**: `InteractiveMesh.tsx` handlePointerOver — `setTimeout(() => hoverMesh(...), 0)`
+- **FIX 4 (CRITICAL)**: `InteractiveMesh.tsx` handlePointerOut — `setTimeout(() => hoverMesh(null), 0)`
+- **FIX 5**: `SectionPlane.tsx` handleAxisChange — `setTimeout(() => setSectionAxis(...), 0)`
+- **DEPLOYMENT NOTE**: The production server must be redeployed with the new build. The old chunk hash bd79a7f5fbf4dab5 confirms the server was never updated.
+- Commit: 614f74ec pushed to main
+
+---
