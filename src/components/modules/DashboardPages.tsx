@@ -22,7 +22,7 @@ import {
   AlertCircle, Wifi, Activity, Clock, ArrowUpRight, ArrowDownRight,
   Target, Gauge, DollarSign, CalendarClock, WrenchIcon,
   Timer, Users, LayoutDashboard, Bell, Settings, FileText,
-  Hammer, HardHat, ClipboardCheck, PieChartIcon,
+  Hammer, HardHat, ClipboardCheck, PieChartIcon, ChevronRight,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, MiniBarChart, ProgressRing, LoadingSkeleton } from '@/components/shared/helpers';
 
@@ -98,9 +98,9 @@ function KPICard({ label, value, sublabel, color, bgColor, borderColor, iconBg, 
 }) {
   const Icon = icon;
   const content = (
-    <Card className={`border ${borderColor} ${bgColor} hover:shadow-lg transition-all duration-300 group overflow-hidden relative ${onClick ? 'cursor-pointer' : ''}`}>
+    <Card className={`border ${borderColor} ${bgColor} hover:shadow-lg transition-all duration-300 group overflow-hidden relative h-full flex flex-col ${onClick ? 'cursor-pointer' : ''}`}>
       <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-white/40 to-transparent dark:from-white/5 dark:to-transparent rounded-bl-full" />
-      <CardContent className="p-5 relative">
+      <CardContent className="p-5 relative flex-1 flex flex-col">
         <div className="flex items-start justify-between mb-4">
           <div className={`h-10 w-10 rounded-xl ${iconBg} flex items-center justify-center group-hover:scale-110 transition-transform duration-300`}>
             <Icon className={`h-5 w-5 ${iconColor}`} />
@@ -111,7 +111,7 @@ function KPICard({ label, value, sublabel, color, bgColor, borderColor, iconBg, 
             <MiniBarChart data={barData} color={color} maxVal={Math.max(...barData, 1)} />
           ) : null}
         </div>
-        <div className="space-y-1">
+        <div className="space-y-1 mt-auto">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
           <p className="text-3xl font-bold tracking-tight" style={{ color: color }}>{value}</p>
           <div className="flex items-center gap-2">
@@ -493,9 +493,31 @@ export function DashboardPage() {
         )}
       </div>
 
+      {/* ===== Pending Requests Alert (Supervisor/Admin) ===== */}
+      {(isSupervisor || isManager) && pendingReqs > 0 && (
+        <button
+          onClick={() => navigate('maintenance-requests')}
+          className="w-full flex items-center gap-4 px-5 py-4 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 hover:shadow-md hover:border-amber-300 dark:hover:border-amber-800/50 transition-all duration-300 cursor-pointer group"
+        >
+          <div className="h-11 w-11 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+            <ClipboardList className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div className="flex-1 min-w-0 text-left">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-bold text-amber-800 dark:text-amber-200">{pendingReqs} Pending Maintenance Request{pendingReqs > 1 ? 's' : ''}</p>
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+            </div>
+            <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-0.5">Click to review and approve requests from your team</p>
+          </div>
+          <div className="h-8 w-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0 group-hover:bg-amber-200 dark:group-hover:bg-amber-900/60 transition-colors">
+            <ChevronRight className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+          </div>
+        </button>
+      )}
+
       {/* ===== Primary KPI Cards Row ===== */}
       {visiblePrimaryKPIs.length > 0 && (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
           {visiblePrimaryKPIs.map((card) => (
             <KPICard key={card.label} {...card} />
           ))}
@@ -524,7 +546,7 @@ export function DashboardPage() {
 
       {/* ===== Enhanced KPIs Row (Manager/Admin only or all) ===== */}
       {(isManager || isPlanner || isSupervisor) && (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
           {/* MTTR Card */}
           <KPICard
             label="MTTR (Avg Repair Time)"
@@ -583,7 +605,7 @@ export function DashboardPage() {
 
       {/* ===== PM Alerts & Compliance Row ===== */}
       {(isManager || isPlanner) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
           {/* PM Overdue */}
           <KPICard
             label="PM Overdue"
@@ -667,9 +689,9 @@ export function DashboardPage() {
       </Card>
 
       {/* ===== Charts Row ===== */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
         {/* WO Status Bar Chart */}
-        <Card className="border lg:col-span-2">
+        <Card className="border lg:col-span-2 h-full flex flex-col">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center">
@@ -681,8 +703,8 @@ export function DashboardPage() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pt-0">
-            <ChartContainer config={woStatusChartConfig} className="h-[280px] w-full">
+          <CardContent className="pt-0 flex-1">
+            <ChartContainer config={woStatusChartConfig} className="h-full min-h-[280px] w-full">
               <BarChart data={woStatusData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/30" />
                 <XAxis dataKey="status" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => v.replace(/_/g, ' ')} className="fill-muted-foreground" />
@@ -699,7 +721,7 @@ export function DashboardPage() {
         </Card>
 
         {/* WO Type Donut Chart */}
-        <Card className="border">
+        <Card className="border h-full flex flex-col">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-lg bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center">
@@ -711,8 +733,8 @@ export function DashboardPage() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="pt-0">
-            <ChartContainer config={woTypeChartConfig} className="h-[280px] w-full">
+          <CardContent className="pt-0 flex-1">
+            <ChartContainer config={woTypeChartConfig} className="h-full min-h-[280px] w-full">
               <PieChart>
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <Pie
@@ -737,9 +759,9 @@ export function DashboardPage() {
       </div>
 
       {/* ===== Second Charts Row ===== */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
         {/* MR Status + Priority */}
-        <Card className="border">
+        <Card className="border h-full flex flex-col">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
@@ -788,7 +810,7 @@ export function DashboardPage() {
         </Card>
 
         {/* Operations Summary + Completion */}
-        <Card className="border">
+        <Card className="border h-full flex flex-col">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
               <div className="h-8 w-8 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center">
@@ -968,9 +990,9 @@ export function DashboardPage() {
       )}
 
       {/* ===== Recent Activity Panels ===== */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-stretch">
         {hasPermission('maintenance_requests.view') && (
-          <Card className="border shadow-sm hover:shadow-md transition-shadow">
+          <Card className="border shadow-sm hover:shadow-md transition-shadow h-full flex flex-col">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -1015,7 +1037,7 @@ export function DashboardPage() {
         )}
 
         {hasPermission('work_orders.view') && (
-          <Card className="border shadow-sm hover:shadow-md transition-shadow">
+          <Card className="border shadow-sm hover:shadow-md transition-shadow h-full flex flex-col">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">

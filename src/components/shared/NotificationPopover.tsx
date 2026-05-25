@@ -27,6 +27,7 @@ import {
   MessageSquare,
   Check,
   ExternalLink,
+  Clock,
 } from 'lucide-react';
 
 function NotificationPopover() {
@@ -37,6 +38,7 @@ function NotificationPopover() {
   const [selectedNotif, setSelectedNotif] = useState<Notification | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [pulseAnimation, setPulseAnimation] = useState(false);
+  const [pendingRequestCount, setPendingRequestCount] = useState(0);
   const { on: wsOn, connected } = useWebSocket();
   const pulseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -77,6 +79,14 @@ function NotificationPopover() {
     }).catch(() => setLoading(false));
   }, []);
 
+  const loadPendingCount = useCallback(() => {
+    api.get('/api/maintenance-requests/pending-count').then(res => {
+      if (res.success && res.data?.count !== undefined) {
+        setPendingRequestCount(res.data.count as number);
+      }
+    }).catch(() => {});
+  }, []);
+
   const handlePopoverChange = (newOpen: boolean) => {
     setOpen(newOpen);
     if (newOpen) loadNotifications();
@@ -85,11 +95,13 @@ function NotificationPopover() {
   // Initial load and polling fallback
   useEffect(() => {
     loadNotifications();
+    loadPendingCount();
     const interval = setInterval(() => {
       loadNotifications();
+      loadPendingCount();
     }, 60000);
     return () => clearInterval(interval);
-  }, [loadNotifications]);
+  }, [loadNotifications, loadPendingCount]);
 
   // WebSocket: listen for real-time notifications
   useEffect(() => {
@@ -102,10 +114,12 @@ function NotificationPopover() {
 
       // Refresh the notification list to show the new notification
       loadNotifications();
+      // Also refresh pending request count
+      loadPendingCount();
     });
 
     return cleanup;
-  }, [wsOn, loadNotifications, triggerPulse]);
+  }, [wsOn, loadNotifications, loadPendingCount, triggerPulse]);
 
   // Cleanup pulse timeout on unmount
   useEffect(() => {
@@ -135,6 +149,11 @@ function NotificationPopover() {
     navigate('notifications');
   };
 
+  const handleViewPendingRequests = () => {
+    setOpen(false);
+    navigate('maintenance-requests');
+  };
+
   const handleGoToAction = () => {
     if (selectedNotif?.actionUrl) {
       const url = selectedNotif.actionUrl as string;
@@ -150,9 +169,9 @@ function NotificationPopover() {
         <PopoverTrigger asChild>
           <Button variant="ghost" size="icon" className="relative h-9 w-9 hover:bg-muted transition-colors">
             <Bell className={`h-4 w-4 text-muted-foreground transition-transform duration-300 ${pulseAnimation ? 'animate-bell-ring text-emerald-500 scale-110' : ''}`} />
-            {unreadCount > 0 && (
-              <span className={`absolute -top-0.5 -right-0.5 min-h-[16px] min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm transition-transform duration-300 ${pulseAnimation ? 'bg-emerald-400 scale-125' : 'bg-emerald-500'}`}>
-                {unreadCount > 9 ? '9+' : unreadCount}
+            {(unreadCount > 0 || pendingRequestCount > 0) && (
+              <span className={`absolute -top-0.5 -right-0.5 min-h-[16px] min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm transition-transform duration-300 ${pendingRequestCount > 0 ? 'bg-amber-500' : pulseAnimation ? 'bg-emerald-400 scale-125' : 'bg-emerald-500'}`}>
+                {unreadCount + pendingRequestCount > 9 ? '9+' : unreadCount + pendingRequestCount}
               </span>
             )}
             {/* WebSocket connected indicator dot */}
@@ -185,6 +204,28 @@ function NotificationPopover() {
               </span>
             </div>
           </div>
+
+          {/* Pending Requests Banner (for supervisors/admins) */}
+          {pendingRequestCount > 0 && (
+            <button
+              onClick={handleViewPendingRequests}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors border-b border-amber-200 dark:border-amber-900/40 bg-amber-50/80 dark:bg-amber-950/20 hover:bg-amber-100/80 dark:hover:bg-amber-950/40"
+            >
+              <div className="h-8 w-8 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0">
+                <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Pending Requests</p>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-200 text-amber-800 font-bold dark:bg-amber-800/60 dark:text-amber-200">
+                    {pendingRequestCount}
+                  </span>
+                </div>
+                <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-0.5">Maintenance requests awaiting your review</p>
+              </div>
+              <ExternalLink className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+            </button>
+          )}
 
           {/* Notification list */}
           <div className="max-h-[340px] overflow-y-auto">
