@@ -297,3 +297,22 @@ Stage Summary:
 - **FIX 2 (HIGH)**: `src/components/shared/NotificationPopover.tsx` — Replaced `handleMarkRead` with `handleNotificationClick` that navigates directly when `actionUrl` exists. Improved empty state to show pending request count.
 - **FIX 3 (MEDIUM)**: `src/components/modules/MaintenancePages.tsx` — Added `autoOpenRef` and `hasAutoOpenedRef` to track autoOpen state across renders, preventing the race condition where the first unfiltered fetch would open the wrong request.
 - Commit: ba891d37 pushed to main
+
+---
+Task ID: 2
+Agent: Main
+Task: Fix dashboard pending requests showing 0 for supervisor/admin — simplify pending count queries
+
+Work Log:
+- User reported after deployment that dashboard still shows "Pending Requests 0" despite actual pending requests existing
+- Notification bell also not working correctly — badge shows but dropdown shows no actionable content
+- Root cause analysis: The `pendingMrWhere` query for supervisors used department-based filtering (`department.supervisorId` matching). If the maintenance request doesn't have a matching `departmentId` or `supervisorId` (e.g., department has no supervisor assigned), the query returns 0.
+- Similarly, the `pending-count` API used the same restrictive department-based filtering
+- Verified notification navigation logic is correct (`mr-detail` page maps to `MaintenanceRequestsPage`, `handleViewPendingRequests` navigates correctly)
+- Verified notification routes (mark read, read-all, etc.) all work correctly
+
+Stage Summary:
+- **FIX 1 (CRITICAL)**: `src/app/api/dashboard/stats/route.ts` — Simplified `pendingMrWhere` for supervisors/managers/admins to `{ status: { in: ['pending', 'approved'] } }` WITHOUT department filtering. Previously used complex OR conditions matching `department.supervisorId` or `departmentId` which could miss requests when the department had no supervisor or the request had no department. Now all supervisor-like roles (admin, supervisor, manager, plant_manager) see ALL pending+approved requests.
+- **FIX 2 (CRITICAL)**: `src/app/api/maintenance-requests/pending-count/route.ts` — Same simplification. Removed the complex department-based filtering for supervisors/managers. Now uses simple `{ status: { in: ['pending', 'approved'] } }` for all supervisor-like roles.
+- **VERIFIED**: NotificationPopover.tsx — Navigation logic confirmed correct: `handleViewPendingRequests` navigates to `maintenance-requests` with `{ status: 'pending,approved', autoOpen: 'first' }`; notification click navigates via `mr-detail?id=xxx` which maps to `MaintenanceRequestsPage` with auto-open detail sheet.
+- Files changed: 2 (dashboard stats + pending-count route)

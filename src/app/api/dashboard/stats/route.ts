@@ -69,25 +69,19 @@ export async function GET(request: NextRequest) {
     }
 
     // Build role-based where clause for pending requests (NO plant filter — matches pending-count API)
+    // Supervisors, managers, and admins see ALL pending+approved requests (they need visibility into all actionable items)
     let pendingMrWhere: Record<string, unknown>;
     const isSupervisorLike = isAdm || session.roles.includes('maintenance_supervisor') || session.roles.includes('maintenance_manager') || session.roles.includes('plant_manager');
     const isPlannerRole = session.roles.includes('maintenance_planner');
 
-    if (isAdm) {
+    if (isAdm || isSupervisorLike) {
+      // Admins, supervisors, managers, plant managers — see ALL pending+approved requests
       pendingMrWhere = { status: { in: ['pending', 'approved'] } };
-    } else if (isSupervisorLike) {
-      pendingMrWhere = { status: { in: ['pending', 'approved'] } };
-      if (supervisedDeptIds.length > 0) {
-        pendingMrWhere.OR = [
-          { supervisorId: session.userId },
-          { departmentId: { in: supervisedDeptIds } },
-        ];
-      } else if (session.roles.includes('maintenance_supervisor') || session.roles.includes('maintenance_manager')) {
-        pendingMrWhere.supervisorId = session.userId;
-      }
     } else if (isPlannerRole) {
+      // Planners only need to see approved (ready for planning/assignment)
       pendingMrWhere = { status: 'approved' };
     } else {
+      // Technicians, operators — only their own requests
       pendingMrWhere = { status: { in: ['pending', 'approved'] }, requestedBy: session.userId };
     }
 
