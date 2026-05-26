@@ -130,13 +130,25 @@ function NotificationPopover() {
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
-  const handleMarkRead = async (n: Notification) => {
+  const handleNotificationClick = async (n: Notification) => {
     if (!n.isRead) {
       await api.put(`/api/notifications/${n.id}`, { read: true }).catch(() => {});
       setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true } : x));
     }
-    setSelectedNotif(n);
-    setDetailOpen(true);
+    // If notification has an action URL, navigate directly instead of opening a dialog
+    if (n.actionUrl) {
+      setOpen(false);
+      const [pagePart, queryPart] = (n.actionUrl as string).split('?');
+      const params: Record<string, string> = {};
+      if (queryPart) {
+        const qs = new URLSearchParams(queryPart);
+        qs.forEach((v, k) => { params[k] = v; });
+      }
+      navigate(pagePart as PageName, params);
+    } else {
+      setSelectedNotif(n);
+      setDetailOpen(true);
+    }
   };
 
   const handleMarkAllRead = async () => {
@@ -248,12 +260,24 @@ function NotificationPopover() {
                 ))}
               </div>
             ) : notifications.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 text-center">
-                <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center mb-3">
-                  <Bell className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <p className="text-sm font-medium text-muted-foreground">No notifications</p>
-                <p className="text-xs text-muted-foreground/60 mt-0.5">You&apos;re all caught up!</p>
+              <div className="flex flex-col items-center justify-center py-10 text-center px-4">
+                {pendingRequestCount > 0 ? (
+                  <>
+                    <div className="h-10 w-10 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center mb-3">
+                      <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <p className="text-sm font-medium text-foreground">No notifications yet</p>
+                    <p className="text-xs text-muted-foreground mt-1">But you have <span className="font-semibold text-amber-600 dark:text-amber-400">{pendingRequestCount} pending request{pendingRequestCount > 1 ? 's' : ''}</span> to review above</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center mb-3">
+                      <Bell className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <p className="text-sm font-medium text-muted-foreground">No notifications</p>
+                    <p className="text-xs text-muted-foreground/60 mt-0.5">You&apos;re all caught up!</p>
+                  </>
+                )}
               </div>
             ) : (
               notifications.slice(0, 10).map(n => {
@@ -263,7 +287,7 @@ function NotificationPopover() {
                   <button
                     key={n.id}
                     className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors border-b border-border/50 last:border-b-0 hover:bg-muted/40 ${!n.isRead ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : ''}`}
-                    onClick={() => handleMarkRead(n)}
+                    onClick={() => handleNotificationClick(n)}
                   >
                     <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${colorClass}`}>
                       <Icon className="h-3.5 w-3.5" />

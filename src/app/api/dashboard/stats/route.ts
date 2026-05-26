@@ -28,6 +28,9 @@ export async function GET(request: NextRequest) {
     const mrWhere: Record<string, unknown> = { ...plantFilter };
     const woWhere: Record<string, unknown> = { ...plantFilter };
 
+    // Track supervised departments for reuse (pending-count and dashboard pending queries)
+    let supervisedDeptIds: string[] = [];
+
     if (session && !isAdm) {
       // Non-admin: show own items or items assigned to them
       if (session.roles.includes('maintenance_technician')) {
@@ -52,7 +55,7 @@ export async function GET(request: NextRequest) {
           where: { supervisorId: session.userId },
           select: { id: true },
         });
-        const supervisedDeptIds = supervisedDepts.map(d => d.id);
+        supervisedDeptIds = supervisedDepts.map(d => d.id);
         if (supervisedDeptIds.length > 0) {
           (mrWhere as Record<string, unknown>).OR = [
             { supervisorId: session.userId },
@@ -63,6 +66,29 @@ export async function GET(request: NextRequest) {
         }
       }
       // Planners and admins see everything
+    }
+
+    // Build role-based where clause for pending requests (NO plant filter — matches pending-count API)
+    let pendingMrWhere: Record<string, unknown>;
+    const isSupervisorLike = isAdm || session.roles.includes('maintenance_supervisor') || session.roles.includes('maintenance_manager') || session.roles.includes('plant_manager');
+    const isPlannerRole = session.roles.includes('maintenance_planner');
+
+    if (isAdm) {
+      pendingMrWhere = { status: { in: ['pending', 'approved'] } };
+    } else if (isSupervisorLike) {
+      pendingMrWhere = { status: { in: ['pending', 'approved'] } };
+      if (supervisedDeptIds.length > 0) {
+        pendingMrWhere.OR = [
+          { supervisorId: session.userId },
+          { departmentId: { in: supervisedDeptIds } },
+        ];
+      } else if (session.roles.includes('maintenance_supervisor') || session.roles.includes('maintenance_manager')) {
+        pendingMrWhere.supervisorId = session.userId;
+      }
+    } else if (isPlannerRole) {
+      pendingMrWhere = { status: 'approved' };
+    } else {
+      pendingMrWhere = { status: { in: ['pending', 'approved'] }, requestedBy: session.userId };
     }
 
     // Today's start for trend queries
@@ -399,14 +425,10 @@ export async function GET(request: NextRequest) {
       db.maintenanceRequest.count({ where: { ...plantFilter, priority: { in: ['high', 'urgent'] } } }),
       db.maintenanceRequest.count({ where: { ...plantFilter, priority: 'medium' } }),
       db.maintenanceRequest.count({ where: { ...plantFilter, priority: 'low' } }),
-      // Role-based: pending + approved requests (actionable by current user)
-      db.maintenanceRequest.count({
-        where: { ...(Object.keys(mrWhere).length > 0 ? mrWhere : plantFilter), status: { in: ['pending', 'approved'] } },
-      }),
-      // Role-based: new today (pending + approved created today)
-      db.maintenanceRequest.count({
-        where: { ...(Object.keys(mrWhere).length > 0 ? mrWhere : plantFilter), status: { in: ['pending', 'approved'] }, createdAt: { gte: todayStart } },
-      }),
+      // Role-based: pending + approved requests (actionable by current user, no plant filter)
+      db.maintenanceRequest.count({ where: pendingMrWhere }),
+      // Role-based: new today (pending + approved created today, no plant filter)
+      db.maintenanceRequest.count({ where: { ...pendingMrWhere, createdAt: { gte: todayStart } } }),
     ]);
 
     const mrStats: Record<string, number> = {};
@@ -511,7 +533,7 @@ export async function GET(request: NextRequest) {
         activeWorkOrders,
         completedWorkOrders,
         overdueWorkOrders,
-        pendingRequests,
+        pendingRequests: roleBasedPending,
         pendingApprovals,
         totalRequests: totalMR,
         // Trends

@@ -71,6 +71,10 @@ export function MaintenanceRequestsPage() {
   const { hasPermission } = useAuthStore();
   const { pageParams } = useNavigationStore();
 
+  // Track autoOpen to avoid race condition between filter effect and fetch effect
+  const autoOpenRef = useRef<string | null>(null);
+  const hasAutoOpenedRef = useRef(false);
+
   // Auto-apply filter and open detail from navigation params (e.g. from bell/dashboard)
   useEffect(() => {
     if (pageParams?.status) {
@@ -78,6 +82,9 @@ export function MaintenanceRequestsPage() {
     }
     if (pageParams?.id) {
       setDetailId(pageParams.id);
+    }
+    if (pageParams?.autoOpen === 'first') {
+      autoOpenRef.current = 'first';
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -110,8 +117,11 @@ export function MaintenanceRequestsPage() {
         if (res.success && res.data) setRequests(res.data);
         setLoading(false);
         // Auto-open first request if navigated from bell/dashboard with autoOpen param
-        if (pageParams?.autoOpen === 'first' && res.data?.length > 0 && !detailId) {
-          setDetailId(res.data[0].id);
+        // Only trigger once and only when no detail is already open
+        if (autoOpenRef.current === 'first' && !hasAutoOpenedRef.current && (res.data?.length ?? 0) > 0 && !detailId) {
+          hasAutoOpenedRef.current = true;
+          autoOpenRef.current = null;
+          setDetailId((res.data as MaintenanceRequest[])[0].id);
         }
       }
     });
