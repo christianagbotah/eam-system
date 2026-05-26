@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { getInitials } from '@/components/shared/helpers';
@@ -95,9 +95,10 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
   const logout = useAuthStore((s) => s.logout);
-  // Manual toggle state — only stores menus the user explicitly toggled open.
-  // Auto-expand menus (when a child page is active) are computed in derivedOpenMenus.
+  // Manual toggle state — stores menus the user explicitly toggled open.
+  // closedMenus tracks menus the user explicitly closed (prevents auto-expand).
   const [manualOpenMenus, setManualOpenMenus] = useState<Set<string>>(new Set());
+  const [closedMenus, setClosedMenus] = useState<Set<string>>(new Set());
 
   // Subscribe to enabled modules from the navigation store.
   // The store fetches on app init and refreshes when modules are toggled,
@@ -308,21 +309,44 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     return null;
   }, [currentPage, menuGroups]);
 
-  // Final open menus = manually opened ∪ auto-expanded
+  // Clear closedMenus when autoExpandLabel changes so auto-expand works
+  // after navigating away and back to a section the user previously closed.
+  useEffect(() => {
+    if (autoExpandLabel && closedMenus.has(autoExpandLabel)) {
+      setClosedMenus(prev => {
+        const next = new Set(prev);
+        next.delete(autoExpandLabel);
+        return next;
+      });
+    }
+  }, [autoExpandLabel]);
+
+  // Final open menus = manually opened ∪ auto-expanded (but NOT manually closed)
   const openMenus = useMemo<string[]>(() => {
     const set = new Set(manualOpenMenus);
-    if (autoExpandLabel) set.add(autoExpandLabel);
+    if (autoExpandLabel && !closedMenus.has(autoExpandLabel)) set.add(autoExpandLabel);
     return Array.from(set);
-  }, [manualOpenMenus, autoExpandLabel]);
+  }, [manualOpenMenus, autoExpandLabel, closedMenus]);
 
   const toggleMenu = useCallback((label: string) => {
+    // Determine actual current open state (manual + auto, minus closed)
+    const isActuallyOpen =
+      manualOpenMenus.has(label) ||
+      (autoExpandLabel === label && !closedMenus.has(label));
+
     setManualOpenMenus(prev => {
       const next = new Set(prev);
-      if (next.has(label)) next.delete(label);
+      if (isActuallyOpen) next.delete(label);
       else next.add(label);
       return next;
     });
-  }, []);
+    setClosedMenus(prev => {
+      const next = new Set(prev);
+      if (isActuallyOpen) next.add(label);
+      else next.delete(label);
+      return next;
+    });
+  }, [manualOpenMenus, autoExpandLabel, closedMenus]);
 
   // Check if a group or its children are active
   const isGroupActive = useCallback((group: NavGroup) => {
