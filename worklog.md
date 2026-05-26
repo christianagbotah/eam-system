@@ -279,3 +279,21 @@ Stage Summary:
 - Bell notification "View" button now navigates to maintenance-requests page with auto-filter AND auto-opens the first pending request detail sheet
 - Dashboard pending alert banner also navigates with auto-filter and auto-open
 - All counts are role-aware: supervisors see their departments' requests, admins see all, others see their own
+
+---
+Task ID: 1
+Agent: Main
+Task: Fix dashboard pending requests showing 0, notification bell UX, and notification navigation
+
+Work Log:
+- Analyzed root cause: dashboard stats API used `mrWhere` (with plant filter) for pending count but pending-count API did NOT use plant filter — causing count mismatch
+- Fixed dashboard stats API to use dedicated `pendingMrWhere` (role-based, no plant filter) matching the pending-count API logic exactly
+- Fixed notification popover: clicking a notification with actionUrl now navigates directly to the target page instead of opening a detail dialog
+- Fixed notification popover: empty state now shows pending request count when there are no notifications but pending requests exist
+- Fixed maintenance page autoOpen race condition: uses refs to ensure autoOpen triggers only once after the correct filter is applied (not on the initial unfiltered fetch)
+
+Stage Summary:
+- **FIX 1 (HIGH)**: `src/app/api/dashboard/stats/route.ts` — `pendingRequests` now uses `roleBasedPending` which is computed with role-based filtering WITHOUT plant filter. This matches the pending-count API logic so supervisors/admins see the correct count.
+- **FIX 2 (HIGH)**: `src/components/shared/NotificationPopover.tsx` — Replaced `handleMarkRead` with `handleNotificationClick` that navigates directly when `actionUrl` exists. Improved empty state to show pending request count.
+- **FIX 3 (MEDIUM)**: `src/components/modules/MaintenancePages.tsx` — Added `autoOpenRef` and `hasAutoOpenedRef` to track autoOpen state across renders, preventing the race condition where the first unfiltered fetch would open the wrong request.
+- Commit: ba891d37 pushed to main
