@@ -215,23 +215,45 @@ fi
 
 echo -e "  ${GREEN}✓${NC} Build successful!"
 
-# Step 5: Copy assets to standalone
+# Step 5: Generate Prisma client & copy assets to standalone
 echo ""
-echo -e "${CYAN}[5/6]${NC} Copying assets to standalone..."
+echo -e "${CYAN}[5/6]${NC} Generating Prisma client & copying assets..."
 
 STANDALONE=".next/standalone"
 
-# Copy Prisma client
-cp -r node_modules/.prisma/client "${STANDALONE}/node_modules/.prisma/client" 2>/dev/null || {
-  mkdir -p "${STANDALONE}/node_modules/.prisma/client"
-  cp -r node_modules/.prisma/client/* "${STANDALONE}/node_modules/.prisma/client/"
-}
+# Regenerate Prisma client (ensures it exists after build)
+echo "  Generating Prisma client..."
+bunx prisma generate 2>&1 | tail -3 || echo -e "  ${YELLOW}!${NC} prisma generate had warnings (may be non-fatal)"
+
+# Copy Prisma client to standalone
+PRISMA_SRC="node_modules/.prisma/client"
+PRISMA_DST="${STANDALONE}/node_modules/.prisma/client"
+
+if [ -d "$PRISMA_SRC" ]; then
+  mkdir -p "$(dirname "$PRISMA_DST")"
+  cp -r "$PRISMA_SRC" "$PRISMA_DST"
+  echo -e "  ${GREEN}✓${NC} Prisma client copied"
+else
+  echo -e "  ${RED}✗${NC} Prisma client not found at $PRISMA_SRC"
+  echo "  Run: bunx prisma generate"
+fi
 
 # Copy MariaDB adapter
-cp -r node_modules/@prisma/adapter-mariadb "${STANDALONE}/node_modules/@prisma/" 2>/dev/null || true
+if [ -d "node_modules/@prisma/adapter-mariadb" ]; then
+  mkdir -p "${STANDALONE}/node_modules/@prisma/"
+  cp -r node_modules/@prisma/adapter-mariadb "${STANDALONE}/node_modules/@prisma/"
+  echo -e "  ${GREEN}✓${NC} MariaDB adapter copied"
+else
+  echo -e "  ${YELLOW}!${NC} MariaDB adapter not found (may be bundled in standalone)"
+fi
 
 # Copy mariadb driver
-cp -r node_modules/mariadb "${STANDALONE}/node_modules/" 2>/dev/null || true
+if [ -d "node_modules/mariadb" ]; then
+  cp -r node_modules/mariadb "${STANDALONE}/node_modules/"
+  echo -e "  ${GREEN}✓${NC} MariaDB driver copied"
+else
+  echo -e "  ${YELLOW}!${NC} MariaDB driver not found (may be bundled in standalone)"
+fi
 
 # Copy static files
 cp -r .next/static "${STANDALONE}/.next/"
