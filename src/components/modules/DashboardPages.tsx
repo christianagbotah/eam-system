@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { format, subDays } from 'date-fns';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
@@ -17,7 +17,7 @@ import {
 } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import {
-  ClipboardList, Wrench, Eye, Plus, CheckCircle2, AlertTriangle,
+  ClipboardList, Wrench, Eye, Plus, CheckCircle2, AlertTriangle, RefreshCw,
   TrendingUp, Factory, Shield, BarChart3, Package, Zap,
   AlertCircle, Wifi, Activity, Clock, ArrowUpRight, ArrowDownRight,
   Target, Gauge, DollarSign, CalendarClock, WrenchIcon,
@@ -131,6 +131,7 @@ function KPICard({ label, value, sublabel, color, bgColor, borderColor, iconBg, 
 export function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const user = useAuthStore((s) => s.user);
   const hasPermission = useAuthStore((s) => s.hasPermission);
   const isAdmin = useAuthStore((s) => s.isAdmin);
@@ -138,18 +139,30 @@ export function DashboardPage() {
 
   const [enabledModules, setEnabledModules] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
+  const fetchStats = useCallback(() => {
     let active = true;
+    setLoading(true);
+    setError(null);
     api.get<DashboardStats>('/api/dashboard/stats', { timeout: 30_000 }).then(res => {
       if (!active) return;
-      if (res.success && res.data) setStats(res.data);
-    }).catch(() => {
-      // Silently handle error — stats remain null
+      if (res.success && res.data) {
+        setStats(res.data);
+      } else {
+        setError(res.error || 'Failed to load dashboard data');
+      }
+    }).catch((err) => {
+      if (!active) return;
+      setError(err?.message || 'Network error — check your connection');
     }).finally(() => {
       if (active) setLoading(false);
     });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    const cleanup = fetchStats();
+    return cleanup;
+  }, [fetchStats]);
 
   // Fetch enabled module codes for cross-module filtering
   useEffect(() => {
@@ -205,6 +218,25 @@ export function DashboardPage() {
   const isOperator = userRoles.includes('production_operator');
 
   if (loading) return <LoadingSkeleton />;
+
+  // Show error state instead of misleading zeros when API fails
+  if (error && !stats) {
+    return (
+      <div className="p-6 lg:p-8 max-w-[1600px] mx-auto">
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="h-14 w-14 rounded-2xl bg-red-50 dark:bg-red-950/30 flex items-center justify-center mb-4">
+            <AlertTriangle className="h-7 w-7 text-red-500" />
+          </div>
+          <h2 className="text-lg font-semibold text-foreground mb-1">Unable to Load Dashboard</h2>
+          <p className="text-sm text-muted-foreground max-w-md mb-5">{error}</p>
+          <Button onClick={fetchStats} variant="outline" className="gap-2">
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const totalWOs = stats?.totalWorkOrders || 0;
   const completedWOs = stats?.completedWorkOrders || 0;
