@@ -114,18 +114,23 @@ export async function checkTransition(
   });
 
   if (!rule) {
+    const hint = `Database table 'status_transitions' may be empty or missing the required row. ` +
+      `Expected: entityType='${entityType}', fromStatus='${fromStatus ?? 'NULL'}', toStatus='${toStatus}'. ` +
+      `Run: bun run prisma/seed.ts`;
+    console.error(`[state-machine] No transition rule: entityType=${entityType}, from=${fromStatus ?? 'NULL'}, to=${toStatus} — ${hint}`);
     return {
       allowed: false,
-      reason: `No transition rule found from "${fromStatus ?? 'initial'}" to "${toStatus}" for ${entityType}.`,
+      reason: `No transition rule found from "${fromStatus ?? 'initial'}" to "${toStatus}" for ${entityType}. ${hint}`,
     };
   }
 
   const allowedRoleSlugs = parseRoleSlugs(rule.allowedRoleSlugs);
 
   if (!hasAllowedRole(session, allowedRoleSlugs)) {
+    console.error(`[state-machine] Role mismatch: userRoles=[${session.roles.join(',')}], required=[${allowedRoleSlugs.join(',')}], entityType=${entityType}, from=${fromStatus}, to=${toStatus}`);
     return {
       allowed: false,
-      reason: `User does not have any of the required roles (${allowedRoleSlugs.join(', ')}) to perform this transition.`,
+      reason: `Your role (${session.roles.join(', ')}) does not allow this transition. Required roles: ${allowedRoleSlugs.join(', ')}.`,
     };
   }
 

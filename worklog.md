@@ -23,3 +23,25 @@ Stage Summary:
 - **Deploy script**: `scripts/deploy-vps.sh` — handles OOM with swap + memory limits
 - **Updated**: `scripts/vm-deploy.sh` — same memory protections
 - **Key insight**: The VPS OOM build failure (exit 137) was blocking ALL previous fixes from being deployed. User needs to run `bash scripts/deploy-vps.sh --swap` first, then `bash scripts/deploy-vps.sh`
+
+---
+Task ID: 2
+Agent: main
+Task: Fix 400 Bad Request on approve maintenance request
+
+Work Log:
+- Investigated the approve endpoint at `src/app/api/maintenance-requests/[id]/approve/route.ts`
+- The 400 comes from `executeTransition` in `src/lib/state-machine.ts` — it queries the `status_transitions` table for a matching rule
+- Most likely root cause: `status_transitions` table is empty on VPS (seed was never run), OR user role mismatch
+- Added diagnostic logging to state machine: logs missing transition rules and role mismatches with actionable hints
+- Added `debug` field to the 400 response body on the approve endpoint (includes mrStatus, userRoles, userId)
+- Improved error messages: now includes hints like "Run: bun run prisma/seed.ts" when transition rules are missing
+- Created diagnostic API endpoint at `/api/diagnostics/status-transitions` — can be curl'd without auth to check if transitions are seeded
+- Created transition auto-seed script at `scripts/seed-transitions.ts` — inserts missing MR/WO transitions without touching other data
+
+Stage Summary:
+- **Approve route**: Now returns `debug` field in 400 response with diagnostic info
+- **State machine**: Improved error messages with actionable hints (seed instructions, required roles)
+- **Diagnostic endpoint**: `GET /api/diagnostics/status-transitions` — checks if transitions exist, reports missing ones
+- **Seed script**: `scripts/seed-transitions.ts` — targeted re-seed of only status_transitions table
+- **VPS fix**: After deploying, user should curl the diagnostic endpoint and/or run the seed script

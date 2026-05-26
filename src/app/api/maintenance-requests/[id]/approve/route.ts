@@ -80,7 +80,19 @@ export async function POST(
     );
 
     if (!result.success) {
-      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+      // Return detailed diagnostic info for debugging
+      console.error(`[approve] Transition failed for MR ${id}: status=${mr.status}, user=${session.userId}, roles=[${session.roles.join(',')}], error=${result.error}`);
+      return NextResponse.json({
+        success: false,
+        error: result.error,
+        debug: {
+          mrId: id,
+          mrStatus: mr.status,
+          targetStatus: 'approved',
+          userRoles: session.roles,
+          userId: session.userId,
+        },
+      }, { status: 400 });
     }
 
     // Notify the requester
