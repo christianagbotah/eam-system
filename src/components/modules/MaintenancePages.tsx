@@ -2968,24 +2968,42 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       <ResponsiveDialog open={editOpen} onOpenChange={setEditOpen} large desktopMaxWidth="sm:max-w-4xl" title={<span className="flex items-center gap-2"><Pencil className="h-5 w-5 text-emerald-600" />Edit Work Order</span>} description="Update work order details." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={handleEditWO}>{actionLoading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Saving...</> : 'Save Changes'}</Button></div>}>
           <div className="grid gap-5 py-2">
 
-            {/* Request Information (only if converted from MR) */}
+            {/* Request Information (only if converted from MR) — immutable readonly */}
             {wo?.maintenanceRequest && (
               <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 sm:p-6">
                 <h3 className="text-sm font-semibold text-blue-800 uppercase tracking-wider flex items-center gap-2 mb-4">
-                  <FileText className="h-4 w-4" />Request Information
+                  <FileText className="h-4 w-4" />Request Information <span className="text-[10px] font-normal normal-case tracking-normal text-blue-500">(read-only)</span>
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
                     <p className="text-[11px] text-blue-600 font-medium uppercase">Request Number</p>
-                    <p className="text-sm font-semibold">{(wo as any).maintenanceRequest?.requestNumber || wo.woNumber}</p>
+                    <p className="text-sm font-semibold">{(wo as any).maintenanceRequest?.requestNumber}</p>
                   </div>
                   <div>
-                    <p className="text-[11px] text-blue-600 font-medium uppercase">Request Title</p>
-                    <p className="text-sm font-semibold">{(wo as any).maintenanceRequest?.title || wo.title}</p>
+                    <p className="text-[11px] text-blue-600 font-medium uppercase">Machine / Asset</p>
+                    <p className="text-sm font-semibold">{(wo as any).maintenanceRequest?.asset?.name || wo.assetName || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-blue-600 font-medium uppercase">Category</p>
+                    <p className="text-sm font-semibold capitalize">{(wo as any).maintenanceRequest?.category || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-blue-600 font-medium uppercase">Breakdown</p>
+                    <Badge variant={(wo as any).maintenanceRequest?.machineDownStatus ? 'destructive' : 'secondary'} className="text-xs">
+                      {(wo as any).maintenanceRequest?.machineDownStatus ? 'Yes' : 'No'}
+                    </Badge>
+                  </div>
+                  <div className="sm:col-span-2 lg:col-span-4">
+                    <p className="text-[11px] text-blue-600 font-medium uppercase">Problem Description</p>
+                    <p className="text-sm text-blue-900 mt-0.5 whitespace-pre-wrap bg-white/60 rounded-lg p-3 border border-blue-100 max-h-28 overflow-y-auto">{(wo as any).maintenanceRequest?.description || 'No description provided.'}</p>
                   </div>
                   <div>
                     <p className="text-[11px] text-blue-600 font-medium uppercase">Requested By</p>
                     <p className="text-sm font-semibold">{(wo as any).maintenanceRequest?.requester?.fullName || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-blue-600 font-medium uppercase">Date Sent</p>
+                    <p className="text-sm font-semibold">{(wo as any).maintenanceRequest?.createdAt ? formatDateTime((wo as any).maintenanceRequest.createdAt) : '-'}</p>
                   </div>
                 </div>
               </div>
@@ -3258,15 +3276,41 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         actionLoading={actionLoading}
         onAction={handleEditWO}
         headerExtra={wo?.maintenanceRequest ? (
-          <div className="bg-blue-50 rounded-xl p-3 mb-3 space-y-2">
-            <div className="grid grid-cols-2 gap-2">
+          <div className="bg-blue-50 rounded-xl p-4 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Request #</p>
-                <p className="text-xs font-bold text-blue-900 mt-0.5">{(wo as any).maintenanceRequest?.requestNumber}</p>
+                <p className="text-sm font-bold text-blue-900 mt-0.5">{(wo as any).maintenanceRequest?.requestNumber}</p>
               </div>
               <div>
-                <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Requested By</p>
-                <p className="text-xs font-bold text-blue-900 mt-0.5">{(wo as any).maintenanceRequest?.requester?.fullName || '-'}</p>
+                <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Machine</p>
+                <p className="text-sm font-bold text-blue-900 mt-0.5 truncate">{(wo as any).maintenanceRequest?.asset?.name || wo.assetName || '-'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Category</p>
+                <p className="text-sm font-bold text-blue-900 mt-0.5 capitalize">{(wo as any).maintenanceRequest?.category || '-'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Breakdown</p>
+                <Badge variant={(wo as any).maintenanceRequest?.machineDownStatus ? 'destructive' : 'secondary'} className="text-xs">
+                  {(wo as any).maintenanceRequest?.machineDownStatus ? 'Yes' : 'No'}
+                </Badge>
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider mb-1.5">Problem Description</p>
+              <div className="bg-muted/50 rounded-xl p-3 text-sm text-foreground whitespace-pre-wrap max-h-32 overflow-y-auto">
+                {(wo as any).maintenanceRequest?.description || 'No description provided.'}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-muted/50 rounded-xl p-3">
+                <p className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">Requested By</p>
+                <p className="text-sm font-medium mt-0.5">{(wo as any).maintenanceRequest?.requester?.fullName || '-'}</p>
+              </div>
+              <div className="bg-muted/50 rounded-xl p-3">
+                <p className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">Date Sent</p>
+                <p className="text-sm font-medium mt-0.5">{(wo as any).maintenanceRequest?.createdAt ? formatDateTime((wo as any).maintenanceRequest.createdAt) : '-'}</p>
               </div>
             </div>
           </div>
