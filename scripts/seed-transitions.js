@@ -90,8 +90,8 @@ async function seedTransitions() {
     for (let i = 0; i < MR_TRANSITIONS.length; i++) {
       const t = MR_TRANSITIONS[i];
       await conn.query(
-        `INSERT INTO status_transitions (id, entity_type, from_status, to_status, allowed_role_slugs, requires_reason, sort_order, created_at, updated_at)
-         VALUES (UUID(), ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        `INSERT INTO status_transitions (id, entityType, fromStatus, toStatus, allowedRoleSlugs, requiresReason, sortOrder, createdAt)
+         VALUES (UUID(), ?, ?, ?, ?, ?, ?, NOW())`,
         [t.entityType, t.fromStatus, t.toStatus, t.allowedRoleSlugs, t.requiresReason ? 1 : 0, i]
       );
     }
@@ -100,8 +100,8 @@ async function seedTransitions() {
     for (let i = 0; i < WO_TRANSITIONS.length; i++) {
       const t = WO_TRANSITIONS[i];
       await conn.query(
-        `INSERT INTO status_transitions (id, entity_type, from_status, to_status, allowed_role_slugs, requires_reason, sort_order, created_at, updated_at)
-         VALUES (UUID(), ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        `INSERT INTO status_transitions (id, entityType, fromStatus, toStatus, allowedRoleSlugs, requiresReason, sortOrder, createdAt)
+         VALUES (UUID(), ?, ?, ?, ?, ?, ?, NOW())`,
         ['work_order', t.fromStatus, t.toStatus, t.allowedRoleSlugs, t.requiresReason ? 1 : 0, i]
       );
     }
@@ -111,7 +111,7 @@ async function seedTransitions() {
     console.log(`\n  Total status transitions in DB: ${rows[0].total}`);
 
     const check = await conn.query(
-      "SELECT COUNT(*) as cnt FROM status_transitions WHERE entity_type='maintenance_request' AND from_status='pending' AND to_status='approved'"
+      "SELECT COUNT(*) as cnt FROM status_transitions WHERE entityType='maintenance_request' AND fromStatus='pending' AND toStatus='approved'"
     );
     if (check[0].cnt > 0) {
       console.log('  Critical check PASSED: pending->approved MR transition exists');
