@@ -50,10 +50,12 @@ import {
 } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
-import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
+import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, formatDateLocal, timeAgo, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
+import { Calendar as CalendarPicker } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useIsMobile } from '@/components/shared/ResponsiveDialog';
 import { FileUpload } from '@/components/shared/FileUpload';
 import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSelector';
@@ -2570,18 +2572,34 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // ── Edit form helpers ──
   const editUpdateField = (field: string, value: any) => setEditForm(f => ({ ...f, [field]: value }));
 
-  // Convert ISO datetime string to local "YYYY-MM-DDTHH:mm" for datetime-local input
+  // Convert ISO datetime string to local "YYYY-MM-DDTHH:mm" for internal state
   function toLocalDatetime(iso: string): string {
     const d = new Date(iso);
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
-  // Convert ISO datetime string to local "YYYY-MM-DD" for date input
+  // Convert ISO datetime string to local "YYYY-MM-DD" for internal state
   function toLocalDate(iso: string): string {
     const d = new Date(iso);
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
+  // Display "YYYY-MM-DD" as "dd/mm/yyyy"
+  function displayDate(ymd: string): string {
+    if (!ymd) return '';
+    const [y, m, d] = ymd.split('T')[0].split('-');
+    return `${d}/${m}/${y}`;
+  }
+
+  // Parse "dd/mm/yyyy" → "YYYY-MM-DD"
+  function parseDateDMY(dmy: string): string {
+    if (!dmy) return '';
+    const parts = dmy.split('/');
+    if (parts.length !== 3) return dmy;
+    const [d, m, y] = parts;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
 
   function editFormatHoursDisplay(hours: number): string {
@@ -3148,21 +3166,69 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Scheduled Date</Label>
-                  <Input
-                    className="min-h-[44px]"
-                    type="datetime-local"
-                    value={editForm.scheduledDate || ''}
-                    onChange={e => editUpdateField('scheduledDate', e.target.value)}
-                  />
+                  <div className="flex gap-2">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className="min-h-[44px] flex-1 justify-start text-left font-normal">
+                          <Calendar className="mr-2 h-4 w-4" />
+                          {displayDate(editForm.scheduledDate) || <span className="text-muted-foreground">dd/mm/yyyy</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarPicker
+                          mode="single"
+                          selected={editForm.scheduledDate ? new Date(editForm.scheduledDate) : undefined}
+                          onSelect={(d) => {
+                            if (d) {
+                              const [datePart] = editForm.scheduledDate?.split('T') || [];
+                              const timePart = editForm.scheduledDate?.split('T')[1] || '08:00';
+                              const pad = (n: number) => String(n).padStart(2, '0');
+                              const ymd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                              editUpdateField('scheduledDate', `${ymd}T${timePart}`);
+                            } else {
+                              editUpdateField('scheduledDate', '');
+                            }
+                          }}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <Input
+                      className="min-h-[44px] w-[110px]"
+                      type="time"
+                      value={editForm.scheduledDate?.split('T')[1] || '08:00'}
+                      onChange={e => {
+                        const datePart = editForm.scheduledDate?.split('T')[0] || '';
+                        editUpdateField('scheduledDate', datePart ? `${datePart}T${e.target.value}` : '');
+                      }}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Delivery Date</Label>
-                  <Input
-                    className="min-h-[44px]"
-                    type="date"
-                    value={editForm.deliveryDate || ''}
-                    onChange={e => editUpdateField('deliveryDate', e.target.value)}
-                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="min-h-[44px] w-full justify-start text-left font-normal">
+                        <Calendar className="mr-2 h-4 w-4" />
+                        {displayDate(editForm.deliveryDate) || <span className="text-muted-foreground">dd/mm/yyyy</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <CalendarPicker
+                        mode="single"
+                        selected={editForm.deliveryDate ? new Date(editForm.deliveryDate) : undefined}
+                        onSelect={(d) => {
+                          if (d) {
+                            const pad = (n: number) => String(n).padStart(2, '0');
+                            editUpdateField('deliveryDate', `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+                          } else {
+                            editUpdateField('deliveryDate', '');
+                          }
+                        }}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
             </div>
@@ -3393,7 +3459,35 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               </div>
               <div className="space-y-1">
                 <Label className="text-[10px]">Scheduled</Label>
-                <Input className="min-h-[44px]" type="datetime-local" value={editForm.scheduledDate || ''} onChange={e => editUpdateField('scheduledDate', e.target.value)} />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="min-h-[44px] w-full justify-start text-left font-normal text-sm">
+                      <Calendar className="mr-2 h-3.5 w-3.5" />
+                      {displayDate(editForm.scheduledDate) || <span className="text-muted-foreground">dd/mm/yyyy</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarPicker
+                      mode="single"
+                      selected={editForm.scheduledDate ? new Date(editForm.scheduledDate) : undefined}
+                      onSelect={(d) => {
+                        if (d) {
+                          const timePart = editForm.scheduledDate?.split('T')[1] || '08:00';
+                          const pad = (n: number) => String(n).padStart(2, '0');
+                          const ymd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+                          editUpdateField('scheduledDate', `${ymd}T${timePart}`);
+                        } else {
+                          editUpdateField('scheduledDate', '');
+                        }
+                      }}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                <Input className="min-h-[44px]" type="time" value={editForm.scheduledDate?.split('T')[1] || '08:00'} onChange={e => {
+                  const datePart = editForm.scheduledDate?.split('T')[0] || '';
+                  editUpdateField('scheduledDate', datePart ? `${datePart}T${e.target.value}` : '');
+                }} />
               </div>
             </div>
             <div className="space-y-2">
