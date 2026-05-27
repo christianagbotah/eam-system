@@ -226,16 +226,29 @@ echo "  Generating Prisma client..."
 bunx prisma generate 2>&1 | tail -3 || echo -e "  ${YELLOW}!${NC} prisma generate had warnings (may be non-fatal)"
 
 # Copy Prisma client to standalone
-PRISMA_SRC="node_modules/.prisma/client"
-PRISMA_DST="${STANDALONE}/node_modules/.prisma/client"
+# Prisma v7+ generates to node_modules/@prisma/client, with redirect at node_modules/.prisma/client
+# We need both: the generated client AND the .prisma redirect directory
+PRISMA_GEN="node_modules/@prisma/client"
+PRISMA_META="node_modules/.prisma"
 
-if [ -d "$PRISMA_SRC" ]; then
-  mkdir -p "$(dirname "$PRISMA_DST")"
-  cp -r "$PRISMA_SRC" "$PRISMA_DST"
-  echo -e "  ${GREEN}✓${NC} Prisma client copied"
+rm -rf "${STANDALONE}/node_modules/.prisma"
+if [ -d "$PRISMA_GEN" ]; then
+  # Copy the generated client
+  mkdir -p "${STANDALONE}/node_modules/@prisma"
+  cp -r "$PRISMA_GEN" "${STANDALONE}/node_modules/@prisma/client"
+  echo -e "  ${GREEN}✓${NC} Prisma client (@prisma/client) copied"
 else
-  echo -e "  ${RED}✗${NC} Prisma client not found at $PRISMA_SRC"
-  echo "  Run: bunx prisma generate"
+  echo -e "  ${RED}✗${NC} Prisma client not found at $PRISMA_GEN"
+fi
+
+if [ -d "$PRISMA_META" ]; then
+  mkdir -p "${STANDALONE}/node_modules/.prisma"
+  # Copy the .prisma metadata (but NOT recursively into itself)
+  for item in "$PRISMA_META"/*; do
+    [ "$(basename "$item")" = "client" ] && continue  # skip, already copied above
+    cp -r "$item" "${STANDALONE}/node_modules/.prisma/"
+  done
+  echo -e "  ${GREEN}✓${NC} Prisma metadata (.prisma) copied"
 fi
 
 # Copy MariaDB adapter
