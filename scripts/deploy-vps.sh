@@ -225,48 +225,20 @@ STANDALONE=".next/standalone"
 echo "  Generating Prisma client..."
 bunx prisma generate 2>&1 | tail -3 || echo -e "  ${YELLOW}!${NC} prisma generate had warnings (may be non-fatal)"
 
-# Copy Prisma client to standalone
+# Copy Prisma client to standalone using SYMLINKS (avoids copy failures and infinite nesting)
 # Prisma v7+ generates to node_modules/@prisma/client, with redirect at node_modules/.prisma/client
-# We need both: the generated client AND the .prisma redirect directory
 PRISMA_GEN="node_modules/@prisma/client"
 PRISMA_META="node_modules/.prisma"
+STANDALONE_NM="${STANDALONE}/node_modules"
 
-rm -rf "${STANDALONE}/node_modules/.prisma"
-if [ -d "$PRISMA_GEN" ]; then
-  # Copy the generated client
-  mkdir -p "${STANDALONE}/node_modules/@prisma"
-  cp -r "$PRISMA_GEN" "${STANDALONE}/node_modules/@prisma/client"
-  echo -e "  ${GREEN}✓${NC} Prisma client (@prisma/client) copied"
-else
-  echo -e "  ${RED}✗${NC} Prisma client not found at $PRISMA_GEN"
-fi
+# Remove old copies/symlinks
+rm -rf "${STANDALONE_NM}/.prisma" "${STANDALONE_NM}/@prisma" "${STANDALONE_NM}/mariadb"
 
-if [ -d "$PRISMA_META" ]; then
-  mkdir -p "${STANDALONE}/node_modules/.prisma"
-  # Copy the .prisma metadata (but NOT recursively into itself)
-  for item in "$PRISMA_META"/*; do
-    [ "$(basename "$item")" = "client" ] && continue  # skip, already copied above
-    cp -r "$item" "${STANDALONE}/node_modules/.prisma/"
-  done
-  echo -e "  ${GREEN}✓${NC} Prisma metadata (.prisma) copied"
-fi
-
-# Copy MariaDB adapter
-if [ -d "node_modules/@prisma/adapter-mariadb" ]; then
-  mkdir -p "${STANDALONE}/node_modules/@prisma/"
-  cp -r node_modules/@prisma/adapter-mariadb "${STANDALONE}/node_modules/@prisma/"
-  echo -e "  ${GREEN}✓${NC} MariaDB adapter copied"
-else
-  echo -e "  ${YELLOW}!${NC} MariaDB adapter not found (may be bundled in standalone)"
-fi
-
-# Copy mariadb driver
-if [ -d "node_modules/mariadb" ]; then
-  cp -r node_modules/mariadb "${STANDALONE}/node_modules/"
-  echo -e "  ${GREEN}✓${NC} MariaDB driver copied"
-else
-  echo -e "  ${YELLOW}!${NC} MariaDB driver not found (may be bundled in standalone)"
-fi
+# Create symlinks (relative paths: standalone/node_modules -> project/node_modules = ../../../)
+ln -s ../../../node_modules/.prisma "${STANDALONE_NM}/.prisma"
+ln -s ../../../node_modules/@prisma "${STANDALONE_NM}/@prisma"
+ln -s ../../../node_modules/mariadb "${STANDALONE_NM}/mariadb"
+echo -e "  ${GREEN}✓${NC} Prisma & mariadb symlinked (3 links)"
 
 # Copy static files
 cp -r .next/static "${STANDALONE}/.next/"
