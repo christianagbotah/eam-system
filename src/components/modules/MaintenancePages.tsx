@@ -2602,6 +2602,75 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
 
+  // Inline scroll-select time picker: two columns (hours 00-23, minutes 00,15,30,45)
+  function TimeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+    const [hour, minute] = value ? value.split(':') : ['08', '00'];
+    const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+    const minutes = ['00', '15', '30', '45'];
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const colRef = useRef<HTMLDivElement>(null);
+    const MINUTE_HEIGHT = 36;
+    const COL_HEIGHT = MINUTE_HEIGHT * 3;
+
+    const scrollToSelected = useCallback(() => {
+      if (colRef.current) {
+        const idx = minutes.indexOf(minute);
+        colRef.current.scrollTop = idx * MINUTE_HEIGHT;
+      }
+      if (scrollRef.current) {
+        const hIdx = parseInt(hour);
+        scrollRef.current.scrollTop = hIdx * MINUTE_HEIGHT;
+      }
+    }, [hour, minute]);
+
+    useEffect(() => { scrollToSelected(); }, [scrollToSelected]);
+
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="min-h-[44px] w-full justify-start text-left font-normal">
+            <Clock className="mr-2 h-4 w-4 shrink-0" />
+            <span className="text-sm font-mono">{hour}:{minute}</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-1" align="start">
+          <div className="flex gap-1">
+            {/* Hour column */}
+            <div className="relative overflow-hidden" style={{ height: COL_HEIGHT }}>
+              <div className="absolute top-0 inset-x-0 h-6 bg-gradient-to-b from-popover to-transparent z-10 pointer-events-none" />
+              <div className="absolute bottom-0 inset-x-0 h-6 bg-gradient-to-t from-popover to-transparent z-10 pointer-events-none" />
+              <div ref={scrollRef} className="overflow-y-auto" style={{ height: COL_HEIGHT, scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                <div style={{ height: MINUTE_HEIGHT }} />
+                {hours.map(h => (
+                  <button key={h} className={`block w-full text-center text-sm py-1 cursor-pointer transition-colors ${h === hour ? 'font-bold text-foreground' : 'text-muted-foreground hover:text-foreground'}`} style={{ height: MINUTE_HEIGHT }} onClick={() => onChange(`${h}:${minute}`)}>
+                    {h}
+                  </button>
+                ))}
+                <div style={{ height: MINUTE_HEIGHT }} />
+              </div>
+            </div>
+            {/* Separator */}
+            <div className="flex items-center text-lg font-bold text-muted-foreground pb-0">:</div>
+            {/* Minute column */}
+            <div className="relative overflow-hidden" style={{ height: COL_HEIGHT }}>
+              <div className="absolute top-0 inset-x-0 h-6 bg-gradient-to-b from-popover to-transparent z-10 pointer-events-none" />
+              <div className="absolute bottom-0 inset-x-0 h-6 bg-gradient-to-t from-popover to-transparent z-10 pointer-events-none" />
+              <div ref={colRef} className="overflow-y-auto" style={{ height: COL_HEIGHT, scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                <div style={{ height: MINUTE_HEIGHT }} />
+                {minutes.map(m => (
+                  <button key={m} className={`block w-full text-center text-sm py-1 cursor-pointer transition-colors ${m === minute ? 'font-bold text-foreground' : 'text-muted-foreground hover:text-foreground'}`} style={{ height: MINUTE_HEIGHT }} onClick={() => onChange(`${hour}:${m}`)}>
+                    {m}
+                  </button>
+                ))}
+                <div style={{ height: MINUTE_HEIGHT }} />
+              </div>
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
   function editFormatHoursDisplay(hours: number): string {
     const h = Math.floor(hours);
     const m = Math.round((hours - h) * 60);
@@ -3180,7 +3249,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                           selected={editForm.scheduledDate ? new Date(editForm.scheduledDate) : undefined}
                           onSelect={(d) => {
                             if (d) {
-                              const [datePart] = editForm.scheduledDate?.split('T') || [];
                               const timePart = editForm.scheduledDate?.split('T')[1] || '08:00';
                               const pad = (n: number) => String(n).padStart(2, '0');
                               const ymd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -3193,13 +3261,11 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         />
                       </PopoverContent>
                     </Popover>
-                    <Input
-                      className="min-h-[44px] w-[110px]"
-                      type="time"
+                    <TimeSelect
                       value={editForm.scheduledDate?.split('T')[1] || '08:00'}
-                      onChange={e => {
+                      onChange={v => {
                         const datePart = editForm.scheduledDate?.split('T')[0] || '';
-                        editUpdateField('scheduledDate', datePart ? `${datePart}T${e.target.value}` : '');
+                        editUpdateField('scheduledDate', datePart ? `${datePart}T${v}` : '');
                       }}
                     />
                   </div>
@@ -3484,10 +3550,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     />
                   </PopoverContent>
                 </Popover>
-                <Input className="min-h-[44px]" type="time" value={editForm.scheduledDate?.split('T')[1] || '08:00'} onChange={e => {
-                  const datePart = editForm.scheduledDate?.split('T')[0] || '';
-                  editUpdateField('scheduledDate', datePart ? `${datePart}T${e.target.value}` : '');
-                }} />
+                <TimeSelect
+                  value={editForm.scheduledDate?.split('T')[1] || '08:00'}
+                  onChange={v => {
+                    const datePart = editForm.scheduledDate?.split('T')[0] || '';
+                    editUpdateField('scheduledDate', datePart ? `${datePart}T${v}` : '');
+                  }}
+                />
               </div>
             </div>
             <div className="space-y-2">
