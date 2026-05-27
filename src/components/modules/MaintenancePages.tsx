@@ -2357,9 +2357,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [completionNotes, setCompletionNotes] = useState('');
   const { hasPermission, user, isAdmin } = useAuthStore();
   const { navigate } = useNavigationStore();
+  const isMobile = useIsMobile();
   // Edit WO
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
+  // Edit form dropdown data
+  const [editDepartments, setEditDepartments] = useState<any[]>([]);
+  const [editInventoryItems, setEditInventoryItems] = useState<any[]>([]);
+  const [editToolsData, setEditToolsData] = useState<any[]>([]);
   // Time log
   const [timeLogOpen, setTimeLogOpen] = useState(false);
   const [tlAction, setTlAction] = useState('start');
@@ -2562,19 +2567,80 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (res.success) { toast.success('Comment added'); setComment(''); fetchWO(); }
   };
 
+  // ── Edit form helpers ──
+  const editUpdateField = (field: string, value: any) => setEditForm(f => ({ ...f, [field]: value }));
+
+  function editFormatHoursDisplay(hours: number): string {
+    const h = Math.floor(hours);
+    const m = Math.round((hours - h) * 60);
+    return m > 0 ? `${h}:${String(m).padStart(2, '0')}` : `${h}`;
+  }
+
+  const editHandleEstHoursChange = (val: string) => {
+    let displayVal = val;
+    let decimalVal = val;
+    if (val.includes(':')) {
+      const [h, m] = val.split(':').map(Number);
+      if (!isNaN(h) && !isNaN(m)) {
+        decimalVal = String(h + m / 60);
+      }
+    }
+    setEditForm(f => ({ ...f, estimatedHours: decimalVal, estimatedHoursDisplay: displayVal }));
+  };
+
+  const editAddToArray = (field: 'requiredParts' | 'requiredTools', id: string) => {
+    setEditForm(f => {
+      const arr = [...f[field]] as string[];
+      if (!arr.includes(id)) arr.push(id);
+      return { ...f, [field]: arr };
+    });
+  };
+
+  const editRemoveFromArray = (field: 'requiredParts' | 'requiredTools', id: string) => {
+    setEditForm(f => ({ ...f, [field]: f[field].filter((x: string) => x !== id) }));
+  };
+
+  // Load dropdown data when edit dialog opens
+  useEffect(() => {
+    if (editOpen) {
+      Promise.all([
+        api.get('/api/departments'),
+        api.get('/api/inventory'),
+        api.get('/api/tools'),
+      ]).then(([deptsRes, invRes, toolsRes]) => {
+        if (deptsRes.success && Array.isArray(deptsRes.data)) setEditDepartments(deptsRes.data);
+        if (invRes.success && Array.isArray(invRes.data)) setEditInventoryItems(invRes.data);
+        if (toolsRes.success && Array.isArray(toolsRes.data)) setEditToolsData(toolsRes.data);
+      }).catch(() => {/* dropdowns will be empty */});
+    }
+  }, [editOpen]);
+
   const openEditWO = () => {
     if (!wo) return;
     setEditForm({
-      title: wo.title, description: wo.description || '', type: wo.type,
-      priority: wo.priority, estimatedHours: wo.estimatedHours?.toString() || '',
-      assetId: (wo as any).assetId || '',
-      departmentId: (wo as any).departmentId || '',
-      assignedToId: (wo as any).assignedToId || '',
-      plannedStart: wo.plannedStart ? wo.plannedStart.slice(0, 16) : '',
-      plannedEnd: wo.plannedEnd ? wo.plannedEnd.slice(0, 16) : '',
-      failureDescription: wo.failureDescription || '',
-      causeDescription: wo.causeDescription || '',
-      actionDescription: wo.actionDescription || '',
+      title: wo.title || '',
+      description: wo.description || '',
+      assetId: wo.assetId || '',
+      departmentId: wo.departmentId || '',
+      // Section 2: WO Details
+      type: wo.type || 'corrective',
+      priority: wo.priority || 'medium',
+      tradeActivity: (wo as any).tradeActivity || 'mechanical',
+      technicalDescription: (wo as any).technicalDescription || '',
+      estimatedHours: wo.estimatedHours?.toString() || '',
+      estimatedHoursDisplay: wo.estimatedHours ? editFormatHoursDisplay(wo.estimatedHours) : '',
+      scheduledDate: wo.plannedStart ? wo.plannedStart.slice(0, 16) : '',
+      deliveryDate: (wo as any).deliveryDateRequired ? (wo as any).deliveryDateRequired.slice(0, 10) : '',
+      // Section 3: Resource Assignment
+      assignType: 'technician' as const,
+      selectedWorkerIds: wo.teamMembers?.map((m: any) => m.userId).filter(Boolean) || [],
+      teamLeaderId: wo.teamLeaderId || '',
+      requiredParts: wo.materials?.map((m: any) => m.itemId).filter(Boolean) || [],
+      requiredTools: [],
+      // Section 4: Safety
+      safetyNotes: (wo as any).safetyNotes || '',
+      ppeRequired: (wo as any).ppeRequired || '',
+      notes: (wo as any).notes || '',
     });
     setEditOpen(true);
   };
@@ -2582,22 +2648,40 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const handleEditWO = async () => {
     if (!editForm.title) { toast.error('Title is required'); return; }
     setActionLoading(true);
-    const payload: any = {};
-    if (editForm.title) payload.title = editForm.title;
-    if (editForm.description !== undefined) payload.description = editForm.description;
-    if (editForm.type) payload.type = editForm.type;
-    if (editForm.priority) payload.priority = editForm.priority;
-    if (editForm.estimatedHours) payload.estimatedHours = parseFloat(editForm.estimatedHours);
-    if (editForm.plannedStart) payload.plannedStart = editForm.plannedStart;
-    if (editForm.plannedEnd) payload.plannedEnd = editForm.plannedEnd;
-    if (editForm.failureDescription !== undefined) payload.failureDescription = editForm.failureDescription;
-    if (editForm.causeDescription !== undefined) payload.causeDescription = editForm.causeDescription;
-    if (editForm.actionDescription !== undefined) payload.actionDescription = editForm.actionDescription;
-    if (editForm.assetId) payload.assetId = editForm.assetId;
-    if (editForm.departmentId) payload.departmentId = editForm.departmentId;
-    if (editForm.assignedToId) payload.assignedToId = editForm.assignedToId;
+    const payload: any = {
+      title: editForm.title,
+      description: editForm.description || undefined,
+      type: editForm.type,
+      priority: editForm.priority,
+      assetId: editForm.assetId || undefined,
+      departmentId: editForm.departmentId || undefined,
+      tradeActivity: editForm.tradeActivity,
+      technicalDescription: editForm.technicalDescription || undefined,
+      assignmentType: editForm.assignType === 'technician' ? 'direct' : 'via_supervisor',
+      estimatedHours: editForm.estimatedHours ? parseFloat(editForm.estimatedHours) : undefined,
+      plannedStart: editForm.scheduledDate || undefined,
+      deliveryDateRequired: editForm.deliveryDate || undefined,
+      safetyNotes: editForm.safetyNotes || undefined,
+      ppeRequired: editForm.ppeRequired || undefined,
+      notes: editForm.notes || undefined,
+      requiredParts: editForm.requiredParts.length > 0 ? editForm.requiredParts : undefined,
+      requiredTools: editForm.requiredTools.length > 0 ? editForm.requiredTools : undefined,
+    };
+    // Build team members from selected workers
+    if (editForm.selectedWorkerIds.length > 0) {
+      const teamMembers = editForm.selectedWorkerIds.map(workerId => ({
+        userId: workerId,
+        role: workerId === editForm.teamLeaderId ? 'team_leader' : 'assistant',
+      }));
+      payload.teamMembers = teamMembers;
+      payload.assignedTo = editForm.selectedWorkerIds[0];
+      payload.teamLeaderId = editForm.teamLeaderId || null;
+    }
+    if (editForm.assignType === 'supervisor' && editForm.teamLeaderId) {
+      payload.assignedSupervisorId = editForm.teamLeaderId;
+    }
     const res = await api.put(`/api/work-orders/${id}`, payload);
-    if (res.success) { toast.success('Work order updated'); setEditOpen(false); fetchWO(); }
+    if (res.success) { toast.success('Work order updated'); setEditOpen(false); fetchWO(); onUpdate(); }
     else { toast.error(res.error || 'Update failed'); }
     setActionLoading(false);
   };
@@ -2865,95 +2949,501 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       </ResponsiveDialog>
 
       {/* Edit WO Dialog */}
-      <ResponsiveDialog open={editOpen} onOpenChange={setEditOpen} large title="Edit Work Order" description="Update work order details." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={handleEditWO} disabled={actionLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">{actionLoading ? 'Saving...' : 'Save Changes'}</Button></div>}>
-          <div className="grid gap-4 py-2">
-            <div className="space-y-1.5"><Label>Title *</Label><Input value={editForm.title || ''} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div>
-            <div className="space-y-1.5"><Label>Description</Label><Textarea value={editForm.description || ''} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Type</Label>
-                <Select value={editForm.type} onValueChange={v => setEditForm(f => ({ ...f, type: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="preventive">Preventive</SelectItem><SelectItem value="corrective">Corrective</SelectItem><SelectItem value="emergency">Emergency</SelectItem><SelectItem value="inspection">Inspection</SelectItem><SelectItem value="predictive">Predictive</SelectItem></SelectContent>
-                </Select>
+      {!isMobile ? (
+      <ResponsiveDialog open={editOpen} onOpenChange={setEditOpen} large desktopMaxWidth="sm:max-w-4xl" title={<span className="flex items-center gap-2"><Pencil className="h-5 w-5 text-emerald-600" />Edit Work Order</span>} description="Update work order details." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={actionLoading} onClick={handleEditWO}>{actionLoading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Saving...</> : 'Save Changes'}</Button></div>}>
+          <div className="grid gap-5 py-2">
+
+            {/* Request Information (only if converted from MR) */}
+            {wo?.maintenanceRequest && (
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 sm:p-6">
+                <h3 className="text-sm font-semibold text-blue-800 uppercase tracking-wider flex items-center gap-2 mb-4">
+                  <FileText className="h-4 w-4" />Request Information
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-[11px] text-blue-600 font-medium uppercase">Request Number</p>
+                    <p className="text-sm font-semibold">{(wo as any).maintenanceRequest?.requestNumber || wo.woNumber}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-blue-600 font-medium uppercase">Request Title</p>
+                    <p className="text-sm font-semibold">{(wo as any).maintenanceRequest?.title || wo.title}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-blue-600 font-medium uppercase">Requested By</p>
+                    <p className="text-sm font-semibold">{(wo as any).maintenanceRequest?.requester?.fullName || '-'}</p>
+                  </div>
+                </div>
               </div>
-              <div className="space-y-1.5"><Label>Priority</Label>
-                <Select value={editForm.priority} onValueChange={v => setEditForm(f => ({ ...f, priority: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem><SelectItem value="emergency">Emergency</SelectItem></SelectContent>
-                </Select>
+            )}
+
+            {/* ── SECTION 1: Basic Info (no colored bg, matches CreateWOForm) ── */}
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Title *</Label>
+                <Input value={editForm.title || ''} onChange={e => editUpdateField('title', e.target.value)} placeholder="Work order title" required />
+              </div>
+              <div className="space-y-2">
+                <Label>Description</Label>
+                <Textarea value={editForm.description || ''} onChange={e => editUpdateField('description', e.target.value)} placeholder="Problem description..." rows={2} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Asset / Machine</Label>
+                  <AsyncSearchableSelect
+                    value={editForm.assetId || ''}
+                    onValueChange={v => editUpdateField('assetId', v)}
+                    fetchOptions={async () => {
+                      const res = await api.get('/api/assets');
+                      if (res.success && res.data) {
+                        return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                          value: a.id,
+                          label: `${a.name} [${a.assetTag}]`,
+                          badge: a.status,
+                        }));
+                      }
+                      return [];
+                    }}
+                    placeholder="Select asset..."
+                    searchPlaceholder="Search assets by name or tag..."
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Department</Label>
+                  <AsyncSearchableSelect
+                    value={editForm.departmentId || ''}
+                    onValueChange={v => editUpdateField('departmentId', v)}
+                    fetchOptions={async () => {
+                      const res = await api.get('/api/departments');
+                      if (res.success && res.data) {
+                        return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
+                          value: d.id,
+                          label: d.name,
+                        }));
+                      }
+                      return [];
+                    }}
+                    placeholder="Select department..."
+                    searchPlaceholder="Search departments..."
+                  />
+                </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Asset / Machine</Label>
-                <AsyncSearchableSelect
-                  value={editForm.assetId || ''}
-                  onValueChange={v => setEditForm(f => ({ ...f, assetId: v }))}
-                  fetchOptions={async () => {
-                    const res = await api.get('/api/assets');
-                    if (res.success && res.data) {
-                      return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
-                        value: a.id,
-                        label: `${a.name} [${a.assetTag}]`,
-                        badge: a.status,
-                      }));
-                    }
-                    return [];
-                  }}
-                  placeholder="Select asset..."
-                  searchPlaceholder="Search assets by name or tag..."
+
+            {/* ── SECTION 2: Work Order Details (purple background) ── */}
+            <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-4 sm:p-6">
+              <h3 className="text-sm font-semibold text-purple-800 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <ClipboardCheck className="h-4 w-4" />Work Order Details
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Work Order Type</Label>
+                  <Select value={editForm.type || 'corrective'} onValueChange={v => editUpdateField('type', v)}>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="breakdown">Breakdown</SelectItem>
+                      <SelectItem value="corrective">Corrective</SelectItem>
+                      <SelectItem value="preventive">Preventive</SelectItem>
+                      <SelectItem value="emergency">Emergency</SelectItem>
+                      <SelectItem value="inspection">Inspection</SelectItem>
+                      <SelectItem value="project">Project</SelectItem>
+                      <SelectItem value="predictive">Predictive</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Priority</Label>
+                  <Select value={editForm.priority || 'medium'} onValueChange={v => editUpdateField('priority', v)}>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="critical">Critical</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                      <SelectItem value="emergency">Emergency</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Trade Activity</Label>
+                  <Select value={editForm.tradeActivity || 'mechanical'} onValueChange={v => editUpdateField('tradeActivity', v)}>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mechanical">Mechanical</SelectItem>
+                      <SelectItem value="electrical">Electrical</SelectItem>
+                      <SelectItem value="civil">Civil</SelectItem>
+                      <SelectItem value="facility">Facility</SelectItem>
+                      <SelectItem value="workshop">Workshop</SelectItem>
+                      <SelectItem value="instrumentation">Instrumentation</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Est. Hours</Label>
+                  <Input
+                    className="min-h-[44px]"
+                    value={editForm.estimatedHoursDisplay || editForm.estimatedHours || ''}
+                    onChange={e => editHandleEstHoursChange(e.target.value)}
+                    placeholder="2.5 or 2:30"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Supports 2.5 or 2:30 format</p>
+                </div>
+                <div className="sm:col-span-2 lg:col-span-4 space-y-1.5">
+                  <Label className="text-xs">Technical Description</Label>
+                  <Textarea
+                    value={editForm.technicalDescription || ''}
+                    onChange={e => editUpdateField('technicalDescription', e.target.value)}
+                    placeholder="Detailed technical description of the work to be performed..."
+                    rows={3}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Scheduled Date</Label>
+                  <Input
+                    className="min-h-[44px]"
+                    type="datetime-local"
+                    value={editForm.scheduledDate || ''}
+                    onChange={e => editUpdateField('scheduledDate', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Delivery Date</Label>
+                  <Input
+                    className="min-h-[44px]"
+                    type="date"
+                    value={editForm.deliveryDate || ''}
+                    onChange={e => editUpdateField('deliveryDate', e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ── SECTION 3: Resource Assignment (green background) ── */}
+            <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 sm:p-6">
+              <div className="grid gap-4">
+                <WorkerAssignmentSelector
+                  selectedWorkerIds={editForm.selectedWorkerIds || []}
+                  teamLeaderId={editForm.teamLeaderId || ''}
+                  onSelectedWorkersChange={(ids) => editUpdateField('selectedWorkerIds', ids)}
+                  onTeamLeaderChange={(id) => editUpdateField('teamLeaderId', id)}
+                  departments={editDepartments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
+                  selectedDepartmentIds={editForm.departmentId ? [editForm.departmentId] : []}
+                  onDepartmentsChange={(ids) => editUpdateField('departmentId', ids[0] || '')}
+                  assignType={editForm.assignType || 'technician'}
+                  onAssignTypeChange={(type) => editUpdateField('assignType', type)}
+                  label="Resource Assignment"
+                  hideDepartmentFilter={true}
                 />
-              </div>
-              <div className="space-y-1.5"><Label>Department</Label>
-                <AsyncSearchableSelect
-                  value={editForm.departmentId || ''}
-                  onValueChange={v => setEditForm(f => ({ ...f, departmentId: v }))}
-                  fetchOptions={async () => {
-                    const res = await api.get('/api/departments');
-                    if (res.success && res.data) {
-                      return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
-                        value: d.id,
-                        label: d.name,
-                      }));
-                    }
-                    return [];
-                  }}
-                  placeholder="Select department..."
-                  searchPlaceholder="Search departments..."
-                />
+
+                {/* Required Spare Parts */}
+                <div className="space-y-2">
+                  <Label className="text-xs flex items-center gap-1"><PackageSearch className="h-3.5 w-3.5" />Required Spare Parts</Label>
+                  <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+                    {(editForm.requiredParts || []).length === 0 && <span className="text-sm text-muted-foreground">Select spare parts from inventory...</span>}
+                    {(editForm.requiredParts || []).map((partId: string) => {
+                      const item = editInventoryItems.find(i => i.id === partId);
+                      return item ? (
+                        <Badge key={partId} variant="secondary" className="gap-1">
+                          {item.itemName || item.name}
+                          <button onClick={() => editRemoveFromArray('requiredParts', partId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                  <Select onValueChange={v => editAddToArray('requiredParts', v)}>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add spare part..." /></SelectTrigger>
+                    <SelectContent>
+                      {editInventoryItems.filter(i => !(editForm.requiredParts || []).includes(i.id)).slice(0, 50).map(i => (
+                        <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Required Tools */}
+                <div className="space-y-2">
+                  <Label className="text-xs flex items-center gap-1"><Hammer className="h-3.5 w-3.5" />Required Tools</Label>
+                  <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+                    {(editForm.requiredTools || []).length === 0 && <span className="text-sm text-muted-foreground">Select tools...</span>}
+                    {(editForm.requiredTools || []).map((toolId: string) => {
+                      const tool = editToolsData.find(t => t.id === toolId);
+                      return tool ? (
+                        <Badge key={toolId} variant="secondary" className="gap-1">
+                          {tool.toolName || tool.name}
+                          <button onClick={() => editRemoveFromArray('requiredTools', toolId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                  <Select onValueChange={v => editAddToArray('requiredTools', v)}>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add tool..." /></SelectTrigger>
+                    <SelectContent>
+                      {editToolsData.filter(t => !(editForm.requiredTools || []).includes(t.id)).slice(0, 50).map(t => (
+                        <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Assigned To</Label>
-                <AsyncSearchableSelect
-                  value={editForm.assignedToId || ''}
-                  onValueChange={v => setEditForm(f => ({ ...f, assignedToId: v }))}
-                  fetchOptions={async () => {
-                    const res = await api.get('/api/users');
-                    if (res.success && res.data) {
-                      return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
-                        value: u.id,
-                        label: `${u.fullName} (${u.username})`,
-                      }));
-                    }
-                    return [];
-                  }}
-                  placeholder="Select technician..."
-                  searchPlaceholder="Search technicians..."
-                />
+
+            {/* ── SECTION 4: Safety Notes (amber background) ── */}
+            <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 sm:p-6">
+              <h3 className="text-sm font-semibold text-amber-800 uppercase tracking-wider flex items-center gap-2 mb-4">
+                <ShieldAlert className="h-4 w-4" />Safety Notes
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2 space-y-1.5">
+                  <Label className="text-xs">Safety Notes</Label>
+                  <Textarea
+                    value={editForm.safetyNotes || ''}
+                    onChange={e => editUpdateField('safetyNotes', e.target.value)}
+                    placeholder="Any safety hazards, precautions, or lockout/tagout requirements..."
+                    rows={3}
+                  />
+                </div>
+                <div className="sm:col-span-2 space-y-1.5">
+                  <Label className="text-xs flex items-center gap-1"><HardHat className="h-3.5 w-3.5" />PPE Required</Label>
+                  <Input
+                    className="min-h-[44px]"
+                    value={editForm.ppeRequired || ''}
+                    onChange={e => editUpdateField('ppeRequired', e.target.value)}
+                    placeholder="e.g. Safety glasses, gloves, helmet, hearing protection"
+                  />
+                </div>
+                <div className="sm:col-span-2 space-y-1.5">
+                  <Label className="text-xs">General Notes</Label>
+                  <Textarea
+                    value={editForm.notes || ''}
+                    onChange={e => editUpdateField('notes', e.target.value)}
+                    placeholder="Any additional notes or special instructions..."
+                    rows={2}
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5"><Label>Est. Hours</Label><Input type="number" value={editForm.estimatedHours || ''} onChange={e => setEditForm(f => ({ ...f, estimatedHours: e.target.value }))} /></div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5"><Label>Planned Start</Label><Input type="datetime-local" value={editForm.plannedStart || ''} onChange={e => setEditForm(f => ({ ...f, plannedStart: e.target.value }))} /></div>
-              <div className="space-y-1.5"><Label>Planned End</Label><Input type="datetime-local" value={editForm.plannedEnd || ''} onChange={e => setEditForm(f => ({ ...f, plannedEnd: e.target.value }))} /></div>
-            </div>
-            <Separator />
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Failure Analysis</p>
-            <div className="space-y-1.5"><Label>Failure Description</Label><Textarea value={editForm.failureDescription || ''} onChange={e => setEditForm(f => ({ ...f, failureDescription: e.target.value }))} rows={2} /></div>
-            <div className="space-y-1.5"><Label>Cause Description</Label><Textarea value={editForm.causeDescription || ''} onChange={e => setEditForm(f => ({ ...f, causeDescription: e.target.value }))} rows={2} /></div>
-            <div className="space-y-1.5"><Label>Action Description</Label><Textarea value={editForm.actionDescription || ''} onChange={e => setEditForm(f => ({ ...f, actionDescription: e.target.value }))} rows={2} /></div>
+
           </div>
       </ResponsiveDialog>
+      ) : (
+      /* ==================== MOBILE: Edit WO Stepper bottom sheet ==================== */
+      <MobileStepperSheet
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        title="Edit Work Order"
+        description="Update work order details."
+        steps={[
+          { key: 'details', label: 'Details', icon: ClipboardCheck },
+          { key: 'resources', label: 'Resources', icon: Users },
+          { key: 'safety', label: 'Safety', icon: ShieldAlert },
+        ]}
+        actionLabel="Save Changes"
+        actionLoading={actionLoading}
+        onAction={handleEditWO}
+        headerExtra={wo?.maintenanceRequest ? (
+          <div className="bg-blue-50 rounded-xl p-3 mb-3 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Request #</p>
+                <p className="text-xs font-bold text-blue-900 mt-0.5">{(wo as any).maintenanceRequest?.requestNumber}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Requested By</p>
+                <p className="text-xs font-bold text-blue-900 mt-0.5">{(wo as any).maintenanceRequest?.requester?.fullName || '-'}</p>
+              </div>
+            </div>
+          </div>
+        ) : undefined}
+      >
+        {(stepKey) => stepKey === 'details' ? (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs">Title *</Label>
+              <Input className="min-h-[44px]" value={editForm.title || ''} onChange={e => editUpdateField('title', e.target.value)} placeholder="Work order title" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Description</Label>
+              <Textarea value={editForm.description || ''} onChange={e => editUpdateField('description', e.target.value)} placeholder="Problem description..." rows={2} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[10px]">Type</Label>
+                <Select value={editForm.type || 'corrective'} onValueChange={v => editUpdateField('type', v)}>
+                  <SelectTrigger className="min-h-[44px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="breakdown">Breakdown</SelectItem>
+                    <SelectItem value="corrective">Corrective</SelectItem>
+                    <SelectItem value="preventive">Preventive</SelectItem>
+                    <SelectItem value="emergency">Emergency</SelectItem>
+                    <SelectItem value="inspection">Inspection</SelectItem>
+                    <SelectItem value="project">Project</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px]">Priority</Label>
+                <Select value={editForm.priority || 'medium'} onValueChange={v => editUpdateField('priority', v)}>
+                  <SelectTrigger className="min-h-[44px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                    <SelectItem value="emergency">Emergency</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">Trade Activity</Label>
+              <Select value={editForm.tradeActivity || 'mechanical'} onValueChange={v => editUpdateField('tradeActivity', v)}>
+                <SelectTrigger className="min-h-[44px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mechanical">Mechanical</SelectItem>
+                  <SelectItem value="electrical">Electrical</SelectItem>
+                  <SelectItem value="civil">Civil</SelectItem>
+                  <SelectItem value="facility">Facility</SelectItem>
+                  <SelectItem value="workshop">Workshop</SelectItem>
+                  <SelectItem value="instrumentation">Instrumentation</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-[10px]">Est. Hours</Label>
+                <Input className="min-h-[44px]" value={editForm.estimatedHoursDisplay || editForm.estimatedHours || ''} onChange={e => editHandleEstHoursChange(e.target.value)} placeholder="2.5 or 2:30" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px]">Scheduled</Label>
+                <Input className="min-h-[44px]" type="datetime-local" value={editForm.scheduledDate || ''} onChange={e => editUpdateField('scheduledDate', e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Technical Description</Label>
+              <Textarea className="rounded-xl min-h-[100px]" value={editForm.technicalDescription || ''} onChange={e => editUpdateField('technicalDescription', e.target.value)} placeholder="Detailed technical description..." rows={3} />
+            </div>
+          </div>
+        ) : stepKey === 'resources' ? (
+          <div className="space-y-4">
+            <WorkerAssignmentSelector
+              selectedWorkerIds={editForm.selectedWorkerIds || []}
+              teamLeaderId={editForm.teamLeaderId || ''}
+              onSelectedWorkersChange={(ids) => editUpdateField('selectedWorkerIds', ids)}
+              onTeamLeaderChange={(id) => editUpdateField('teamLeaderId', id)}
+              departments={editDepartments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
+              selectedDepartmentIds={editForm.departmentId ? [editForm.departmentId] : []}
+              onDepartmentsChange={(ids) => editUpdateField('departmentId', ids[0] || '')}
+              assignType={editForm.assignType || 'technician'}
+              onAssignTypeChange={(type) => editUpdateField('assignType', type)}
+              label="Resource Assignment"
+              hideDepartmentFilter={true}
+            />
+            <Accordion type="multiple" className="space-y-2">
+              <AccordionItem value="parts" className="border rounded-xl px-1">
+                <AccordionTrigger className="text-xs font-medium py-3 px-2">
+                  <span className="flex items-center gap-1.5"><PackageSearch className="h-3.5 w-3.5" />Spare Parts {(editForm.requiredParts || []).length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5">{(editForm.requiredParts || []).length}</Badge>}</span>
+                </AccordionTrigger>
+                <AccordionContent className="px-2 pb-3 space-y-2">
+                  {(editForm.requiredParts || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {(editForm.requiredParts || []).map((partId: string) => {
+                        const item = editInventoryItems.find(i => i.id === partId);
+                        return item ? (
+                          <Badge key={partId} variant="secondary" className="gap-1">
+                            {item.itemName || item.name}
+                            <button onClick={() => editRemoveFromArray('requiredParts', partId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+                  <Select onValueChange={v => editAddToArray('requiredParts', v)}>
+                    <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="+ Add spare part..." /></SelectTrigger>
+                    <SelectContent>
+                      {editInventoryItems.filter(i => !(editForm.requiredParts || []).includes(i.id)).slice(0, 50).map(i => (
+                        <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem value="tools" className="border rounded-xl px-1">
+                <AccordionTrigger className="text-xs font-medium py-3 px-2">
+                  <span className="flex items-center gap-1.5"><Hammer className="h-3.5 w-3.5" />Tools {(editForm.requiredTools || []).length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5">{(editForm.requiredTools || []).length}</Badge>}</span>
+                </AccordionTrigger>
+                <AccordionContent className="px-2 pb-3 space-y-2">
+                  {(editForm.requiredTools || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {(editForm.requiredTools || []).map((toolId: string) => {
+                        const tool = editToolsData.find(t => t.id === toolId);
+                        return tool ? (
+                          <Badge key={toolId} variant="secondary" className="gap-1">
+                            {tool.toolName || tool.name}
+                            <button onClick={() => editRemoveFromArray('requiredTools', toolId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+                  <Select onValueChange={v => editAddToArray('requiredTools', v)}>
+                    <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="+ Add tool..." /></SelectTrigger>
+                    <SelectContent>
+                      {editToolsData.filter(t => !(editForm.requiredTools || []).includes(t.id)).slice(0, 50).map(t => (
+                        <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
+        ) : stepKey === 'safety' ? (
+          <div className="space-y-4">
+            <div className="bg-amber-50 rounded-xl p-4">
+              <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5 mb-3">
+                <ShieldAlert className="h-4 w-4" />Safety Information
+              </p>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Safety Notes</Label>
+                  <Textarea
+                    className="rounded-xl min-h-[100px]"
+                    value={editForm.safetyNotes || ''}
+                    onChange={e => editUpdateField('safetyNotes', e.target.value)}
+                    placeholder="Hazards, precautions, lockout/tagout..."
+                    rows={3}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium flex items-center gap-1"><HardHat className="h-3.5 w-3.5" />PPE Required</Label>
+                  <Input
+                    className="h-12 rounded-xl"
+                    value={editForm.ppeRequired || ''}
+                    onChange={e => editUpdateField('ppeRequired', e.target.value)}
+                    placeholder="Safety glasses, gloves, helmet..."
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">General Notes</Label>
+                  <Textarea
+                    className="rounded-xl min-h-[80px]"
+                    value={editForm.notes || ''}
+                    onChange={e => editUpdateField('notes', e.target.value)}
+                    placeholder="Additional notes or instructions..."
+                    rows={2}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </MobileStepperSheet>
+      )}
 
       {/* Time Log Dialog */}
       <ResponsiveDialog open={timeLogOpen} onOpenChange={setTimeLogOpen} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={handleTimeLog}>{tlLoading ? 'Logging...' : 'Log Time'}</Button>}>

@@ -114,7 +114,8 @@ export async function PUT(
       'estimatedHours', 'plannedStart', 'plannedEnd',
       'totalCost', 'laborCost', 'partsCost', 'contractorCost',
       'failureDescription', 'causeDescription', 'actionDescription',
-      'notes',
+      'tradeActivity', 'technicalDescription', 'safetyNotes', 'ppeRequired',
+      'notes', 'assignedTo', 'teamLeaderId',
     ];
 
     for (const field of allowedFields) {
