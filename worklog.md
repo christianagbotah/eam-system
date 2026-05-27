@@ -95,3 +95,21 @@ Stage Summary:
 - **Tool Approval**: `src/app/api/repairs/tool-requests/[id]/route.ts` — restricted to admin, store_keeper, store_manager
 - **Material Approval**: `src/app/api/repairs/material-requests/[id]/route.ts` — restricted to admin, store_keeper, store_manager
 
+---
+Task ID: 5
+Agent: main
+Task: Fix WO edit form backend gaps + approval role frontend/backend mismatch
+
+Work Log:
+- Found 6 fields sent by handleEditWO() but silently dropped by WO PUT API (not in allowedFields)
+- Added `deliveryDateRequired`, `assignmentType`, `assignedSupervisorId` to WO PUT `allowedFields`
+- Added relational field handling in WO PUT API: teamMembers (delete+recreate), requiredParts (delete+recreate), requiredTools (delete+recreate)
+- Fixed frontend/backend role mismatch: `isSupervisorOrAdmin()` in RepairsPages.tsx was allowing maintenance_supervisor, maintenance_manager, plant_manager to see approve buttons, but backend only allows admin, store_keeper, store_manager → updated to match
+- Fixed `requiredTools` always empty in `openEditWO()`: now populated by matching WO material names (non-itemId materials) against loaded tool data
+- Resolved merge conflicts during git rebase (ExplodedView.tsx, useDigitalTwinScene.ts, worklog.md)
+
+Stage Summary:
+- **WO PUT API** (`src/app/api/work-orders/[id]/route.ts`): Now handles scalar fields + relational updates (team members, parts, tools)
+- **Approval roles** (`src/components/modules/RepairsPages.tsx`): `isSupervisorOrAdmin()` now matches backend — admin, store_keeper, store_manager only
+- **requiredTools**: Populated from existing WO materials in edit dialog
+
