@@ -121,17 +121,22 @@ export async function PUT(
       'failureDescription', 'causeDescription', 'actionDescription',
       'tradeActivity', 'technicalDescription', 'safetyNotes', 'ppeRequired',
       'notes', 'assignedTo', 'teamLeaderId',
-      'deliveryDateRequired', 'assignmentType', 'assignedSupervisorId',
+      'assignmentType', 'assignedSupervisorId',
     ];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
-        if (field === 'plannedStart' || field === 'plannedEnd' || field === 'deliveryDateRequired') {
+        if (field === 'plannedStart' || field === 'plannedEnd') {
           updateData[field] = body[field] ? new Date(body[field]) : null;
         } else {
           updateData[field] = body[field];
         }
       }
+    }
+
+    // Map deliveryDateRequired → plannedEnd (there is no separate deliveryDateRequired column)
+    if (body.deliveryDateRequired !== undefined) {
+      updateData['plannedEnd'] = body.deliveryDateRequired ? new Date(body.deliveryDateRequired) : null;
     }
 
     const updated = await db.workOrder.update({

@@ -2645,7 +2645,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       estimatedHours: wo.estimatedHours?.toString() || '',
       estimatedHoursDisplay: wo.estimatedHours ? editFormatHoursDisplay(wo.estimatedHours) : '',
       scheduledDate: wo.plannedStart ? wo.plannedStart.slice(0, 16) : '',
-      deliveryDate: (wo as any).deliveryDateRequired ? (wo as any).deliveryDateRequired.slice(0, 10) : '',
+      deliveryDate: wo.plannedEnd ? wo.plannedEnd.slice(0, 10) : '',
       // Section 3: Resource Assignment
       assignType: 'technician' as const,
       selectedWorkerIds: wo.teamMembers?.map((m: any) => m.userId).filter(Boolean) || [],
