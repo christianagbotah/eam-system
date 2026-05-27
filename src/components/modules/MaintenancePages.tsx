@@ -2570,6 +2570,20 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // ── Edit form helpers ──
   const editUpdateField = (field: string, value: any) => setEditForm(f => ({ ...f, [field]: value }));
 
+  // Convert ISO datetime string to local "YYYY-MM-DDTHH:mm" for datetime-local input
+  function toLocalDatetime(iso: string): string {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  // Convert ISO datetime string to local "YYYY-MM-DD" for date input
+  function toLocalDate(iso: string): string {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+
   function editFormatHoursDisplay(hours: number): string {
     const h = Math.floor(hours);
     const m = Math.round((hours - h) * 60);
@@ -2644,8 +2658,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       technicalDescription: (wo as any).technicalDescription || '',
       estimatedHours: wo.estimatedHours?.toString() || '',
       estimatedHoursDisplay: wo.estimatedHours ? editFormatHoursDisplay(wo.estimatedHours) : '',
-      scheduledDate: wo.plannedStart ? wo.plannedStart.slice(0, 16) : '',
-      deliveryDate: wo.plannedEnd ? wo.plannedEnd.slice(0, 10) : '',
+      scheduledDate: wo.plannedStart ? toLocalDatetime(wo.plannedStart) : '',
+      deliveryDate: wo.plannedEnd ? toLocalDate(wo.plannedEnd) : '',
       // Section 3: Resource Assignment
       assignType: 'technician' as const,
       selectedWorkerIds: wo.teamMembers?.map((m: any) => m.userId).filter(Boolean) || [],
