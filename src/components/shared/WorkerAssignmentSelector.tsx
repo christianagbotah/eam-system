@@ -329,6 +329,7 @@ export function WorkerAssignmentSelector({
           onSelectedWorkersChange={onSelectedWorkersChange}
           hasSelected={hasSelected}
           hideDepartmentFilter={hideDepartmentFilter}
+          searchText={searchText}
         />
       )}
 
@@ -456,7 +457,7 @@ function MobileAssignToggle({ assignType, onAssignTypeChange }: {
 
 function DesktopWorkerTable({
   workers, loading, selectedWorkerIds, teamLeaderId, toggleWorker,
-  onTeamLeaderChange, onSelectedWorkersChange, hasSelected, hideDepartmentFilter,
+  onTeamLeaderChange, onSelectedWorkersChange, hasSelected, hideDepartmentFilter, searchText,
 }: {
   workers: Worker[];
   loading: boolean;
@@ -467,6 +468,7 @@ function DesktopWorkerTable({
   onSelectedWorkersChange: (ids: string[]) => void;
   hasSelected: boolean;
   hideDepartmentFilter?: boolean;
+  searchText: string;
 }) {
   const allSelected = workers.length > 0 && workers.every(w => selectedWorkerIds.includes(w.id));
 
