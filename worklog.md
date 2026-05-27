@@ -70,3 +70,28 @@ Stage Summary:
 - **Knowledge base**: `docs/VPS-DEPLOYMENT-GUIDE.md` — complete rewrite with 15 documented errors, panic checklist, diagnostic commands
 - **Bug fix**: `src/components/shared/WorkerAssignmentSelector.tsx` — passed `searchText` and `hideDepartmentFilter` as props to `MobileWorkerList`
 - **Pending**: User still needs to run `seed-transitions.js` on VPS to fix approve 400 error
+---
+
+Task ID: 4
+Agent: main
+Task: Unify WO edit form with create form + restrict tool/material approval roles
+
+Work Log:
+- Rewrote WO edit dialog in `MaintenancePages.tsx` to match the CreateWOForm structure with 4 sections:
+  - Request Information (blue bg) — only shown if WO was converted from MR (`wo.maintenanceRequest`)
+  - Work Order Details (purple bg) — type, priority, trade activity, est hours, technical description, scheduled/delivery dates
+  - Resource Assignment (green bg) — WorkerAssignmentSelector, spare parts, tools
+  - Safety Notes (amber bg) — safety notes, PPE required, general notes
+- Mobile version uses MobileStepperSheet with 3 steps + optional request info header
+- Updated `openEditWO()` to populate all new fields from WO data (tradeActivity, safetyNotes, ppeRequired, notes, etc.)
+- Updated `handleEditWO()` to send complete payload matching create form
+- Added `tradeActivity`, `technicalDescription`, `safetyNotes`, `ppeRequired`, `assignedTo`, `teamLeaderId` to WO PUT API `allowedFields`
+- Fixed tool request approval: restricted to admin, store_keeper, store_manager only (removed maintenance_supervisor, maintenance_manager, plant_manager)
+- Fixed material request approval: same restriction — admin, store_keeper, store_manager only
+
+Stage Summary:
+- **WO Edit Form**: Now matches CreateWOForm with 4 colored sections, mobile stepper, and conditional MR info
+- **WO PUT API**: Added tradeActivity, technicalDescription, safetyNotes, ppeRequired, assignedTo, teamLeaderId to allowedFields
+- **Tool Approval**: `src/app/api/repairs/tool-requests/[id]/route.ts` — restricted to admin, store_keeper, store_manager
+- **Material Approval**: `src/app/api/repairs/material-requests/[id]/route.ts` — restricted to admin, store_keeper, store_manager
+

@@ -110,6 +110,7 @@ export function ExplodedView({
   // setState. The visual animation is driven entirely by the local spring ref.
   useFrame(() => {
 
+
     const target = explodeMode ? 1 : 0;
     springRef.current = springStep(springRef.current, target);
   });
