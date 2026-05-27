@@ -2,17 +2,46 @@
  * Seed ONLY the status_transitions table without touching any other data.
  *
  * Run on VPS:
- *   cd ~/git/eam-system && bun run scripts/seed-transitions.ts
+ *   cd /home/ifleetpro/git/eam-system && bun run scripts/seed-transitions.ts
  *
- * This is safe to run multiple times — it upserts by (entityType + fromStatus + toStatus).
+ * This is safe to run multiple times — it deletes and re-inserts.
  * It will NOT delete existing roles, users, permissions, or any other data.
+ *
+ * Uses the mariadb driver directly to avoid PrismaClient adapter issues.
  */
-import { PrismaClient } from '@prisma/client';
 
-const db = new PrismaClient();
+import mariadb from 'mariadb';
+
+// Read DB credentials from environment or DATABASE_URL
+function getDbConfig() {
+  const host = process.env.DB_HOST || process.env.MYSQL_HOST;
+  const port = parseInt(process.env.DB_PORT || process.env.MYSQL_PORT || '3306', 10);
+  const user = process.env.DB_USER || process.env.MYSQL_USER;
+  const password = process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD;
+  const database = process.env.DB_NAME || process.env.MYSQL_DATABASE;
+
+  if (host && user && password && database) {
+    return { host, port, user, password, database };
+  }
+
+  // Try parsing DATABASE_URL
+  const dbUrl = process.env.DATABASE_URL || '';
+  if (dbUrl.startsWith('mysql://')) {
+    const url = new URL(dbUrl);
+    return {
+      host: url.hostname,
+      port: parseInt(url.port || '3306', 10),
+      user: decodeURIComponent(url.username),
+      password: decodeURIComponent(url.password),
+      database: url.pathname.slice(1),
+    };
+  }
+
+  console.error('❌ No database credentials found. Set DB_HOST, DB_USER, DB_PASSWORD, DB_NAME or DATABASE_URL.');
+  process.exit(1);
+}
 
 const MR_TRANSITIONS = [
-  // Initial state: creating a new MR
   {
     entityType: 'maintenance_request',
     fromStatus: null,
@@ -23,7 +52,6 @@ const MR_TRANSITIONS = [
     ]),
     requiresReason: false,
   },
-  // Supervisor starts reviewing
   {
     entityType: 'maintenance_request',
     fromStatus: 'pending',
@@ -33,7 +61,6 @@ const MR_TRANSITIONS = [
     ]),
     requiresReason: false,
   },
-  // Supervisor approves
   {
     entityType: 'maintenance_request',
     fromStatus: 'pending',
@@ -43,7 +70,6 @@ const MR_TRANSITIONS = [
     ]),
     requiresReason: false,
   },
-  // Supervisor rejects
   {
     entityType: 'maintenance_request',
     fromStatus: 'pending',
@@ -53,7 +79,6 @@ const MR_TRANSITIONS = [
     ]),
     requiresReason: true,
   },
-  // Planner converts to work order
   {
     entityType: 'maintenance_request',
     fromStatus: 'approved',
@@ -84,64 +109,68 @@ const WO_TRANSITIONS = [
   { fromStatus: 'assigned', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['planner', 'supervisor', 'admin', 'maintenance_planner', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
   { fromStatus: 'in_progress', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
   { fromStatus: 'waiting_parts', toStatus: 'cancelled', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: true },
-  // Reopen flows
   { fromStatus: 'closed', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'planner', 'admin', 'maintenance_supervisor', 'maintenance_planner', 'maintenance_manager']), requiresReason: true },
-  // Hold/resume
   { fromStatus: 'in_progress', toStatus: 'on_hold', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: false },
   { fromStatus: 'on_hold', toStatus: 'in_progress', allowedRoleSlugs: JSON.stringify(['supervisor', 'admin', 'maintenance_supervisor', 'maintenance_manager']), requiresReason: false },
 ];
 
 async function seedTransitions() {
-  console.log('🔄 Seeding status transitions (safe upsert, no data deletion)...');
+  const config = getDbConfig();
+  console.log(`🔄 Connecting to MariaDB: ${config.host}/${config.database}...`);
 
-  // Clear only the status_transitions table
-  await db.statusTransition.deleteMany();
-  console.log('  ✅ Cleared existing status_transitions');
-
-  // Seed MR transitions
-  for (let i = 0; i < MR_TRANSITIONS.length; i++) {
-    const t = MR_TRANSITIONS[i];
-    await db.statusTransition.create({
-      data: {
-        entityType: t.entityType,
-        fromStatus: t.fromStatus,
-        toStatus: t.toStatus,
-        allowedRoleSlugs: t.allowedRoleSlugs,
-        requiresReason: t.requiresReason,
-        sortOrder: i,
-      },
-    });
-  }
-  console.log(`  ✅ Created ${MR_TRANSITIONS.length} MR transitions`);
-
-  // Seed WO transitions
-  for (let i = 0; i < WO_TRANSITIONS.length; i++) {
-    const t = WO_TRANSITIONS[i];
-    await db.statusTransition.create({
-      data: {
-        entityType: 'work_order',
-        fromStatus: t.fromStatus,
-        toStatus: t.toStatus,
-        allowedRoleSlugs: t.allowedRoleSlugs,
-        requiresReason: t.requiresReason,
-        sortOrder: i,
-      },
-    });
-  }
-  console.log(`  ✅ Created ${WO_TRANSITIONS.length} WO transitions`);
-
-  // Verify
-  const total = await db.statusTransition.count();
-  console.log(`\n  ✅ Total status transitions in DB: ${total}`);
-
-  // Verify critical transitions
-  const criticalCheck = await db.statusTransition.findFirst({
-    where: { entityType: 'maintenance_request', fromStatus: 'pending', toStatus: 'approved' },
+  const conn = await mariadb.createConnection({
+    host: config.host,
+    port: config.port,
+    user: config.user,
+    password: config.password,
+    database: config.database,
+    multipleStatements: true,
   });
-  if (criticalCheck) {
-    console.log('  ✅ Critical check PASSED: pending→approved MR transition exists');
-  } else {
-    console.error('  ❌ Critical check FAILED: pending→approved MR transition NOT found!');
+
+  console.log('✅ Connected! Seeding status_transitions...');
+
+  try {
+    // Clear existing
+    await conn.query('DELETE FROM status_transitions');
+    console.log('  ✅ Cleared existing status_transitions');
+
+    // Seed MR transitions
+    for (let i = 0; i < MR_TRANSITIONS.length; i++) {
+      const t = MR_TRANSITIONS[i];
+      await conn.query(
+        `INSERT INTO status_transitions (id, entity_type, from_status, to_status, allowed_role_slugs, requires_reason, sort_order, created_at, updated_at)
+         VALUES (UUID(), ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        [t.entityType, t.fromStatus, t.toStatus, t.allowedRoleSlugs, t.requiresReason ? 1 : 0, i]
+      );
+    }
+    console.log(`  ✅ Inserted ${MR_TRANSITIONS.length} MR transitions`);
+
+    // Seed WO transitions
+    for (let i = 0; i < WO_TRANSITIONS.length; i++) {
+      const t = WO_TRANSITIONS[i];
+      await conn.query(
+        `INSERT INTO status_transitions (id, entity_type, from_status, to_status, allowed_role_slugs, requires_reason, sort_order, created_at, updated_at)
+         VALUES (UUID(), ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        ['work_order', t.fromStatus, t.toStatus, t.allowedRoleSlugs, t.requiresReason ? 1 : 0, i]
+      );
+    }
+    console.log(`  ✅ Inserted ${WO_TRANSITIONS.length} WO transitions`);
+
+    // Verify
+    const rows = await conn.query('SELECT COUNT(*) as total FROM status_transitions') as any[];
+    console.log(`\n  ✅ Total status transitions in DB: ${rows[0].total}`);
+
+    // Critical check
+    const check = await conn.query(
+      "SELECT COUNT(*) as cnt FROM status_transitions WHERE entity_type='maintenance_request' AND from_status='pending' AND to_status='approved'"
+    ) as any[];
+    if (check[0].cnt > 0) {
+      console.log('  ✅ Critical check PASSED: pending→approved MR transition exists');
+    } else {
+      console.error('  ❌ Critical check FAILED: pending→approved MR transition NOT found!');
+    }
+  } finally {
+    await conn.end();
   }
 }
 
@@ -153,5 +182,4 @@ seedTransitions()
   .catch((err) => {
     console.error('❌ Seed failed:', err.message);
     process.exit(1);
-  })
-  .finally(() => db.$disconnect());
+  });
