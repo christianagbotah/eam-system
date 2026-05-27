@@ -322,7 +322,7 @@ const TRANSFER_STAGES: PipelineStage[] = [
 function isSupervisorOrAdmin(user: any): boolean {
   if (!user?.roles) return false;
   const slugs = (user.roles || []).map((r: any) => r.slug);
-  return slugs.includes('admin') || slugs.includes('maintenance_supervisor') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager');
+  return slugs.includes('admin') || slugs.includes('store_keeper') || slugs.includes('store_manager');
 }
 
 function isStoreOrAdmin(user: any): boolean {

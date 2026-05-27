@@ -116,11 +116,12 @@ export async function PUT(
       'failureDescription', 'causeDescription', 'actionDescription',
       'tradeActivity', 'technicalDescription', 'safetyNotes', 'ppeRequired',
       'notes', 'assignedTo', 'teamLeaderId',
+      'deliveryDateRequired', 'assignmentType', 'assignedSupervisorId',
     ];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
-        if (field === 'plannedStart' || field === 'plannedEnd') {
+        if (field === 'plannedStart' || field === 'plannedEnd' || field === 'deliveryDateRequired') {
           updateData[field] = body[field] ? new Date(body[field]) : null;
         } else {
           updateData[field] = body[field];
@@ -142,8 +143,101 @@ export async function PUT(
           include: { user: { select: { id: true, fullName: true } } },
           orderBy: { assignedAt: 'asc' },
         },
+        materials: {
+          include: {
+            requester: { select: { id: true, fullName: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
+
+    // Handle team members update (relational)
+    if (body.teamMembers && Array.isArray(body.teamMembers)) {
+      // Delete existing team members
+      await db.workOrderTeamMember.deleteMany({ where: { workOrderId: id } });
+      // Create new team members
+      if (body.teamMembers.length > 0) {
+        const now = new Date();
+        const teamMemberData = body.teamMembers.map((member: { userId: string; role: string }) => ({
+          workOrderId: id,
+          userId: member.userId,
+          role: member.role,
+          accessLevel: member.role === 'team_leader' ? 'full' : 'read_only',
+          assignedAt: now,
+        }));
+        await db.workOrderTeamMember.createMany({ data: teamMemberData });
+      }
+      // Reload with updated team members
+      updated.teamMembers = await db.workOrderTeamMember.findMany({
+        where: { workOrderId: id },
+        include: { user: { select: { id: true, fullName: true } } },
+        orderBy: { assignedAt: 'asc' },
+      });
+    }
+
+    // Handle required parts update (relational)
+    if (body.requiredParts && Array.isArray(body.requiredParts)) {
+      // Delete existing materials that are parts (not tools)
+      const existingMaterials = await db.workOrderMaterial.findMany({ where: { workOrderId: id } });
+      const existingPartIds = new Set(
+        (existingMaterials.filter(m => m.itemId).map(m => m.id))
+      );
+      if (existingPartIds.size > 0) {
+        await db.workOrderMaterial.deleteMany({
+          where: { id: { in: Array.from(existingPartIds) } },
+        });
+      }
+      // Create new material records for parts
+      for (const partId of body.requiredParts) {
+        const part = await db.inventoryItem.findUnique({ where: { id: partId } });
+        if (part) {
+          await db.workOrderMaterial.create({
+            data: {
+              workOrderId: id,
+              itemId: part.id,
+              itemName: part.name,
+              quantity: 0,
+              unitCost: part.unitCost || 0,
+              totalCost: 0,
+              status: 'requested',
+              requestedBy: session.userId,
+            },
+          });
+        }
+      }
+    }
+
+    // Handle required tools update (relational)
+    if (body.requiredTools && Array.isArray(body.requiredTools)) {
+      // Delete existing materials that are tools (no itemId, but linked to tools)
+      const existingMaterials = await db.workOrderMaterial.findMany({ where: { workOrderId: id } });
+      const existingToolMaterialIds = new Set(
+        existingMaterials.filter(m => !m.itemId).map(m => m.id)
+      );
+      if (existingToolMaterialIds.size > 0) {
+        await db.workOrderMaterial.deleteMany({
+          where: { id: { in: Array.from(existingToolMaterialIds) } },
+        });
+      }
+      // Create new material records for tools
+      for (const toolId of body.requiredTools) {
+        const tool = await db.tool.findUnique({ where: { id: toolId } });
+        if (tool) {
+          await db.workOrderMaterial.create({
+            data: {
+              workOrderId: id,
+              itemName: tool.name,
+              quantity: 1,
+              unitCost: 0,
+              totalCost: 0,
+              status: 'requested',
+              requestedBy: session.userId,
+            },
+          });
+        }
+      }
+    }
 
     // Create audit log
     await db.auditLog.create({

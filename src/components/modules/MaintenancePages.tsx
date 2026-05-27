@@ -2610,7 +2610,22 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       ]).then(([deptsRes, invRes, toolsRes]) => {
         if (deptsRes.success && Array.isArray(deptsRes.data)) setEditDepartments(deptsRes.data);
         if (invRes.success && Array.isArray(invRes.data)) setEditInventoryItems(invRes.data);
-        if (toolsRes.success && Array.isArray(toolsRes.data)) setEditToolsData(toolsRes.data);
+        if (toolsRes.success && Array.isArray(toolsRes.data)) {
+          setEditToolsData(toolsRes.data);
+          // Populate requiredTools by matching WO material names to tool IDs
+          const toolMaterials = wo?.materials?.filter((m: any) => !m.itemId) || [];
+          if (toolMaterials.length > 0) {
+            const toolIds = toolMaterials
+              .map((m: any) => {
+                const match = toolsRes.data.find((t: any) => (t.toolName || t.name) === m.itemName);
+                return match?.id;
+              })
+              .filter(Boolean);
+            if (toolIds.length > 0) {
+              setEditForm(prev => ({ ...prev, requiredTools: toolIds }));
+            }
+          }
+        }
       }).catch(() => {/* dropdowns will be empty */});
     }
   }, [editOpen]);
@@ -2636,7 +2651,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       selectedWorkerIds: wo.teamMembers?.map((m: any) => m.userId).filter(Boolean) || [],
       teamLeaderId: wo.teamLeaderId || '',
       requiredParts: wo.materials?.map((m: any) => m.itemId).filter(Boolean) || [],
-      requiredTools: [],
+      requiredTools: [], // populated after editToolsData loads (see useEffect below)
       // Section 4: Safety
       safetyNotes: (wo as any).safetyNotes || '',
       ppeRequired: (wo as any).ppeRequired || '',
