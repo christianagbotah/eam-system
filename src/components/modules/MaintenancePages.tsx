@@ -1678,7 +1678,7 @@ export function WorkOrdersPage() {
         {hasPermission('work_orders.create') && (
           <>
           <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-1.5" />New Work Order</Button>
-          <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="Create Work Order" footer={<Button type="submit" form="create-wo-form" className="bg-emerald-600 hover:bg-emerald-700 text-white">Create WO</Button>}>
+          <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} large desktopMaxWidth="sm:max-w-4xl" title="Create Work Order" footer={<Button type="submit" form="create-wo-form" className="bg-emerald-600 hover:bg-emerald-700 text-white">Create WO</Button>}>
             <CreateWOForm onSuccess={() => { setCreateOpen(false); handleRefresh(); }} />
           </ResponsiveDialog>
           </>
