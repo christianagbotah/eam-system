@@ -45,3 +45,28 @@ Stage Summary:
 - **Diagnostic endpoint**: `GET /api/diagnostics/status-transitions` — checks if transitions exist, reports missing ones
 - **Seed script**: `scripts/seed-transitions.ts` — targeted re-seed of only status_transitions table
 - **VPS fix**: After deploying, user should curl the diagnostic endpoint and/or run the seed script
+
+---
+Task ID: 3
+Agent: main
+Task: Comprehensive VPS knowledge base + fix searchText runtime error
+
+Work Log:
+- Rewrote `docs/VPS-DEPLOYMENT-GUIDE.md` into a comprehensive knowledge base with 12 sections:
+  - Panic Checklist (what to do first when site is down)
+  - All 15 errors documented chronologically with symptoms, root causes, and fixes
+  - Complete deployment procedures (quick + manual step-by-step)
+  - Prisma standalone full story (why cp -r fails, why symlinks work)
+  - Status transitions seeding guide with role/transition tables
+  - Database column name reference (camelCase, not snake_case)
+  - Troubleshooting quick reference tables
+  - Diagnostic commands cheat sheet
+  - 12 common mistakes to avoid
+- Fixed `searchText is not defined` runtime error in `WorkerAssignmentSelector.tsx`:
+  - Root cause: `MobileWorkerList` component referenced `searchText` and `hideDepartmentFilter` but they were not passed as props
+  - Fix: Added `searchText: string` and `hideDepartmentFilter?: boolean` to MobileWorkerList props and passed them from parent
+
+Stage Summary:
+- **Knowledge base**: `docs/VPS-DEPLOYMENT-GUIDE.md` — complete rewrite with 15 documented errors, panic checklist, diagnostic commands
+- **Bug fix**: `src/components/shared/WorkerAssignmentSelector.tsx` — passed `searchText` and `hideDepartmentFilter` as props to `MobileWorkerList`
+- **Pending**: User still needs to run `seed-transitions.js` on VPS to fix approve 400 error

@@ -315,6 +315,8 @@ export function WorkerAssignmentSelector({
           toggleWorker={toggleWorker}
           onTeamLeaderChange={onTeamLeaderChange}
           hasSelected={hasSelected}
+          searchText={searchText}
+          hideDepartmentFilter={hideDepartmentFilter}
         />
       ) : (
         <DesktopWorkerTable
@@ -597,7 +599,7 @@ function DesktopWorkerTable({
 
 function MobileWorkerList({
   workers, loading, selectedWorkerIds, teamLeaderId, toggleWorker,
-  onTeamLeaderChange, hasSelected,
+  onTeamLeaderChange, hasSelected, searchText, hideDepartmentFilter,
 }: {
   workers: Worker[];
   loading: boolean;
@@ -606,6 +608,8 @@ function MobileWorkerList({
   toggleWorker: (id: string) => void;
   onTeamLeaderChange: (id: string) => void;
   hasSelected: boolean;
+  searchText: string;
+  hideDepartmentFilter?: boolean;
 }) {
   return (
     <div className="space-y-2 max-h-[400px] overflow-y-auto">
