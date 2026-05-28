@@ -14,59 +14,74 @@ export async function GET(
     }
 
     const { id } = await params;
-    const wo = await db.workOrder.findUnique({
+
+    // Base include — always available
+    const baseInclude = {
+      assignee: { select: { id: true, fullName: true, username: true, department: true } },
+      teamLeader: { select: { id: true, fullName: true, username: true } },
+      assignedSupervisor: { select: { id: true, fullName: true, username: true } },
+      assigner: { select: { id: true, fullName: true, username: true } },
+      planner: { select: { id: true, fullName: true, username: true } },
+      locker: { select: { id: true, fullName: true, username: true } },
+      maintenanceRequest: {
+        select: {
+          id: true,
+          requestNumber: true,
+          title: true,
+          description: true,
+          category: true,
+          machineDownStatus: true,
+          createdAt: true,
+          requester: { select: { id: true, fullName: true, username: true } },
+          asset: { select: { id: true, name: true, assetTag: true, serialNumber: true } },
+        },
+      },
+      pmSchedule: { select: { id: true, title: true, frequencyType: true, frequencyValue: true } },
+      teamMembers: {
+        include: { user: { select: { id: true, fullName: true, username: true } } },
+        orderBy: { assignedAt: 'asc' as const },
+      },
+      timeLogs: {
+        include: { user: { select: { id: true, fullName: true, username: true } } },
+        orderBy: { timestamp: 'desc' as const },
+      },
+      materials: {
+        include: {
+          requester: { select: { id: true, fullName: true } },
+          approver: { select: { id: true, fullName: true } },
+          issuer: { select: { id: true, fullName: true } },
+        },
+        orderBy: { createdAt: 'desc' as const },
+      },
+      comments: {
+        include: { user: { select: { id: true, fullName: true, username: true } } },
+        orderBy: { createdAt: 'desc' as const },
+      },
+    } as const;
+
+    // Try full query with teamMemberRequests; fall back to base if table doesn't exist yet
+    let wo = await db.workOrder.findUnique({
       where: { id },
       include: {
-        assignee: { select: { id: true, fullName: true, username: true, department: true } },
-        teamLeader: { select: { id: true, fullName: true, username: true } },
-        assignedSupervisor: { select: { id: true, fullName: true, username: true } },
-        assigner: { select: { id: true, fullName: true, username: true } },
-        planner: { select: { id: true, fullName: true, username: true } },
-        locker: { select: { id: true, fullName: true, username: true } },
-        maintenanceRequest: {
-          select: {
-            id: true,
-            requestNumber: true,
-            title: true,
-            description: true,
-            category: true,
-            machineDownStatus: true,
-            createdAt: true,
-            requester: { select: { id: true, fullName: true, username: true } },
-            asset: { select: { id: true, name: true, assetTag: true, serialNumber: true } },
-          },
-        },
-        pmSchedule: { select: { id: true, title: true, frequencyType: true, frequencyValue: true } },
-        teamMembers: {
-          include: { user: { select: { id: true, fullName: true, username: true } } },
-          orderBy: { assignedAt: 'asc' },
-        },
-        timeLogs: {
-          include: { user: { select: { id: true, fullName: true, username: true } } },
-          orderBy: { timestamp: 'desc' },
-        },
-        materials: {
-          include: {
-            requester: { select: { id: true, fullName: true } },
-            approver: { select: { id: true, fullName: true } },
-            issuer: { select: { id: true, fullName: true } },
-          },
-          orderBy: { createdAt: 'desc' },
-        },
-        comments: {
-          include: { user: { select: { id: true, fullName: true, username: true } } },
-          orderBy: { createdAt: 'desc' },
-        },
+        ...baseInclude,
         teamMemberRequests: {
           include: {
             requestedByUser: { select: { id: true, fullName: true, username: true } },
             requestedUser: { select: { id: true, fullName: true, username: true } },
             reviewedByUser: { select: { id: true, fullName: true, username: true } },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: 'desc' as const },
         },
       },
-    });
+    }).catch(() => null);
+
+    if (!wo) {
+      // Fallback: try without teamMemberRequests (table may not exist yet on VPS)
+      wo = await db.workOrder.findUnique({
+        where: { id },
+        include: baseInclude,
+      });
+    }
 
     if (!wo) {
       return NextResponse.json(
@@ -81,6 +96,11 @@ export async function GET(
       if (plantScope.isScoped && plantScope.plantId && wo.plantId !== plantScope.plantId) {
         return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
       }
+    }
+
+    // Ensure teamMemberRequests array exists even if table wasn't queried
+    if (!wo.teamMemberRequests) {
+      (wo as Record<string, unknown>).teamMemberRequests = [];
     }
 
     return NextResponse.json({ success: true, data: wo });
