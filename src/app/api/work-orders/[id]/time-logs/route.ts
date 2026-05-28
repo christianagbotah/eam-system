@@ -116,7 +116,7 @@ export async function POST(
       // Validate that the session user is a team leader or admin for this WO
       const isTeamLeader = wo.teamLeaderId === session.userId;
       const isAdmin = session.roles.includes('admin');
-      const isAssignedTo = wo.assignedToId === session.userId;
+      const isAssignedTo = wo.assignedTo === session.userId;
 
       if (!isTeamLeader && !isAdmin && !isAssignedTo) {
         return NextResponse.json(
@@ -127,7 +127,7 @@ export async function POST(
 
       // Verify the target user is a team member or the assignee
       const isMember = wo.teamMembers.some((m) => m.userId === loggedForUserId);
-      const isAssignee = wo.assignedToId === loggedForUserId;
+      const isAssignee = wo.assignedTo === loggedForUserId;
 
       if (!isMember && !isAssignee) {
         return NextResponse.json(

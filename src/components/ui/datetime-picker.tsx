@@ -510,7 +510,7 @@ export function DateTimePicker({
               <div className="flex items-center gap-2">
                 <TimeColumn
                   items={HOURS}
-                  selected={currentHour}
+                  selected={timeStr?.split(':')[0] ?? '00'}
                   onSelect={(h) => {
                     const m = timeStr?.split(':')[1] ?? '00'
                     const t = `${h}:${m}`

@@ -397,3 +397,28 @@ Stage Summary:
 - Admins, planners, and the original assigner can directly add/remove
 - Notification system wired at all steps (request, approve, reject)
 - No new lint errors introduced
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix multiple WO detail page bugs — permissions, errors, UX improvements
+
+Work Log:
+- Fixed `currentHour is not defined` runtime error in DateTimePicker (line 513) — replaced with `timeStr?.split(':')[0] ?? '00'`
+- Fixed time-log POST 500 error — `wo.assignedToId` referenced wrong field, changed to `wo.assignedTo` (2 occurrences)
+- Removed Edit WO from technician action button — `canEdit` now requires `canManageTeamDirectly`
+- Fixed DialogContent accessibility warning — ResponsiveDialog always renders hidden DialogDescription
+- Added POST handler to personal-tools API (was only GET+PUT, causing 405) — any team member can POST
+- Updated Add Material dialog to pick from inventory instead of creating new items (AsyncSearchableSelect with inventory API)
+- Updated materials API to auto-resolve itemName from itemId, relaxed permissions for team members
+- Added per-team-member time logging — "Log For" dropdown in time log dialog for team leaders/managers
+- Updated all repair pages permission guards (10 locations) to include `work_orders.update` + `user` check so technicians see action buttons
+- Added `user` to RepairDowntimePage and RepairCompletionPage auth store destructuring
+
+Stage Summary:
+- 9 bugs/issues fixed in one pass
+- Technicians can no longer edit WO details
+- Technicians can now: add personal tools, request materials from inventory, create repair requests, log time
+- Team leaders can log time on behalf of team members
+- Materials dialog picks from existing inventory (no more manual name/cost entry)
+- No new lint errors

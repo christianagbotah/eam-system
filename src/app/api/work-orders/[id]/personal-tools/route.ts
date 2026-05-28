@@ -47,6 +47,89 @@ export async function GET(
 }
 
 /**
+ * POST /api/work-orders/[id]/personal-tools
+ *
+ * Add a single personal tool to the work order.
+ * Any team member or the assignee can add their own personal tools.
+ */
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const body = await request.json();
+    const { toolName, toolCode, condition, notes } = body;
+
+    if (!toolName) {
+      return NextResponse.json({ success: false, error: 'toolName is required' }, { status: 400 });
+    }
+
+    const wo = await db.workOrder.findUnique({
+      where: { id },
+      select: { id: true, isLocked: true, assignedTo: true, teamMembers: { select: { userId: true } } },
+    });
+
+    if (!wo) {
+      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    if (wo.isLocked) {
+      return NextResponse.json({ success: false, error: 'Work order is permanently locked.' }, { status: 400 });
+    }
+
+    // Any team member, assignee, or user with permission can add personal tools
+    const isTeamMember = wo.teamMembers.some((m) => m.userId === session.userId);
+    const isAssignee = wo.assignedTo === session.userId;
+    const hasPerm = hasAnyPermission(session, ['work_orders.update', 'work_orders.*']);
+
+    if (!isTeamMember && !isAssignee && !hasPerm) {
+      return NextResponse.json(
+        { success: false, error: 'Only team members or the assigned technician can add personal tools.' },
+        { status: 403 }
+      );
+    }
+
+    // Parse existing tools
+    let existingTools: any[] = [];
+    try {
+      const raw = wo.personalTools;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) existingTools = parsed;
+      }
+    } catch { /* ignore */ }
+
+    // Add the new tool
+    const newTool = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      toolName,
+      toolCode: toolCode || null,
+      condition: condition || 'good',
+      notes: notes || '',
+      addedBy: session.userId,
+      addedAt: new Date().toISOString(),
+    };
+    existingTools.push(newTool);
+
+    await db.workOrder.update({
+      where: { id },
+      data: { personalTools: JSON.stringify(existingTools) },
+    });
+
+    return NextResponse.json({ success: true, data: newTool }, { status: 201 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to add personal tool';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+/**
  * PUT /api/work-orders/[id]/personal-tools
  *
  * Accepts { tools: [{ toolName, toolCode, condition, notes }] }

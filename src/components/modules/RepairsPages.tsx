@@ -506,7 +506,7 @@ export function RepairMaterialRequestsPage() {
             <p className="text-sm text-muted-foreground">Request and track materials &amp; spare parts for repair work orders</p>
           </div>
         </div>
-        {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -555,7 +555,7 @@ export function RepairMaterialRequestsPage() {
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : filtered.length === 0 ? (
             <EmptyState icon={Package} title="No material requests found" description="Create a new request to get started">
-              {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+              {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
@@ -956,7 +956,7 @@ export function RepairToolRequestsPage() {
             <p className="text-sm text-muted-foreground">Request and track tools for repair work orders</p>
           </div>
         </div>
-        {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -989,7 +989,7 @@ export function RepairToolRequestsPage() {
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : filtered.length === 0 ? (
             <EmptyState icon={Wrench} title="No tool requests found" description="Create a new tool request to get started">
-              {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+              {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
@@ -1222,7 +1222,7 @@ export function RepairToolTransfersPage() {
             <p className="text-sm text-muted-foreground">Manage tool custody transfers between technicians</p>
           </div>
         </div>
-        {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
+        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -1251,7 +1251,7 @@ export function RepairToolTransfersPage() {
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : filtered.length === 0 ? (
             <EmptyState icon={ArrowRightLeft} title="No transfer requests found" description="Create a new transfer request to get started">
-              {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
+              {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
@@ -1436,7 +1436,7 @@ export function RepairToolTransfersPage() {
 // ============================================================================
 
 export function RepairDowntimePage() {
-  const { hasPermission, isAdmin } = useAuthStore();
+  const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1552,7 +1552,7 @@ export function RepairDowntimePage() {
             <p className="text-sm text-muted-foreground">Track equipment downtime related to repair work orders</p>
           </div>
         </div>
-        {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
+        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -1604,7 +1604,7 @@ export function RepairDowntimePage() {
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : records.length === 0 ? (
             <EmptyState icon={Timer} title="No downtime records" description="Log downtime events for repair work orders">
-              {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
+              {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Log Downtime</Button>}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
@@ -1729,7 +1729,7 @@ export function RepairDowntimePage() {
 // ============================================================================
 
 export function RepairCompletionPage() {
-  const { hasPermission, isAdmin } = useAuthStore();
+  const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
   const [woId, setWoId] = useState('');
   const [completion, setCompletion] = useState<any>(null);
@@ -2673,7 +2673,7 @@ export function SparePartReturnsPage() {
             <p className="text-sm text-muted-foreground">Track reusable parts returned from machines for refurbishment</p>
           </div>
         </div>
-        {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Return</Button>}
+        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Return</Button>}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3035,7 +3035,7 @@ export function DamagedToolReportsPage() {
             <p className="text-sm text-muted-foreground">Report and track damaged tools with repair lifecycle</p>
           </div>
         </div>
-        {(hasPermission('work_orders.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Report Damage</Button>}
+        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Report Damage</Button>}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

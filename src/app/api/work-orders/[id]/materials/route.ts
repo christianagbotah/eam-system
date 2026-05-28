@@ -12,15 +12,37 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const { id } = await params;
+
     if (!hasAnyPermission(session, ['work_orders.update', 'work_orders.*'])) {
-      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+      // Even without explicit permission, allow if the user is a team member or assignee
+      const woCheck = await db.workOrder.findUnique({
+        where: { id },
+        select: { id: true, assignedTo: true, teamMembers: { select: { userId: true } } },
+      });
+      if (!woCheck || (woCheck.assignedTo !== session.userId && !woCheck.teamMembers.some(m => m.userId === session.userId))) {
+        return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+      }
     }
 
-    const { id } = await params;
     const body = await request.json();
     const { itemName, itemId, quantity, unitCost, totalCost: providedTotalCost } = body;
 
-    if (!itemName) {
+    // If itemId provided but no itemName, resolve from inventory
+    let resolvedItemName = itemName;
+    if (!resolvedItemName && itemId) {
+      const invItem = await db.inventoryItem.findUnique({
+        where: { id: itemId },
+        select: { itemName: true, name: true },
+      });
+      if (invItem) {
+        resolvedItemName = invItem.itemName || invItem.name || itemId;
+      } else {
+        resolvedItemName = itemId;
+      }
+    }
+
+    if (!resolvedItemName) {
       return NextResponse.json(
         { success: false, error: 'itemName is required' },
         { status: 400 }
@@ -47,7 +69,7 @@ export async function POST(
     const material = await db.workOrderMaterial.create({
       data: {
         workOrderId: id,
-        itemName,
+        itemName: resolvedItemName,
         itemId: itemId || null,
         quantity: quantity ?? null,
         unitCost: unitCost ?? null,
@@ -71,7 +93,7 @@ export async function POST(
         entityId: material.id,
         newValues: JSON.stringify({
           workOrderId: id,
-          itemName,
+          itemName: resolvedItemName,
           itemId,
           quantity,
           unitCost,

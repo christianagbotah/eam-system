@@ -2344,11 +2344,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [tlHours, setTlHours] = useState('');
   const [tlNotes, setTlNotes] = useState('');
   const [tlLoading, setTlLoading] = useState(false);
+  const [tlLoggedForUserId, setTlLoggedForUserId] = useState('');
   // Material
   const [materialOpen, setMaterialOpen] = useState(false);
-  const [matName, setMatName] = useState('');
+  const [matItemId, setMatItemId] = useState('');
+  const [matItemName, setMatItemName] = useState('');
   const [matQty, setMatQty] = useState('');
-  const [matCost, setMatCost] = useState('');
   const [matUnit, setMatUnit] = useState('each');
   const [matLoading, setMatLoading] = useState(false);
   // Available transitions from state machine
@@ -2751,21 +2752,25 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     const body: any = { action: tlAction };
     if (tlNotes) body.notes = tlNotes;
     if (tlHours && (tlAction === 'start' || tlAction === 'resume')) body.hoursWorked = parseFloat(tlHours);
+    // If logging for a team member
+    if (tlLoggedForUserId) {
+      body.loggedForUserId = tlLoggedForUserId;
+      body.isTeamLog = true;
+    }
     const res = await api.post(`/api/work-orders/${id}/time-logs`, body);
-    if (res.success) { toast.success('Time log recorded'); setTimeLogOpen(false); setTlHours(''); setTlNotes(''); fetchWO(); }
+    if (res.success) { toast.success('Time log recorded'); setTimeLogOpen(false); setTlHours(''); setTlNotes(''); setTlLoggedForUserId(''); fetchWO(); }
     else { toast.error(res.error || 'Failed to log time'); }
     setTlLoading(false);
   };
 
   const handleAddMaterial = async () => {
-    if (!matName) { toast.error('Item name is required'); return; }
+    if (!matItemId) { toast.error('Please select an item'); return; }
     setMatLoading(true);
-    const body: any = { itemName: matName };
+    const body: any = { itemId: matItemId };
     if (matQty) body.quantity = parseFloat(matQty);
-    if (matCost) body.unitCost = parseFloat(matCost);
     if (matUnit) body.unit = matUnit;
     const res = await api.post(`/api/work-orders/${id}/materials`, body);
-    if (res.success) { toast.success('Material added'); setMaterialOpen(false); setMatName(''); setMatQty(''); setMatCost(''); fetchWO(); }
+    if (res.success) { toast.success('Material requested'); setMaterialOpen(false); setMatItemId(''); setMatItemName(''); setMatQty(''); fetchWO(); }
     else { toast.error(res.error || 'Failed to add material'); }
     setMatLoading(false);
   };
@@ -2941,7 +2946,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     'wait-parts': { description: 'Are you sure you want to set this work order to Waiting for Parts?', label: 'Yes, Wait for Parts' },
   };
 
-  const canEdit = !['closed', 'cancelled'].includes(wo.status);
+  const canEdit = !['closed', 'cancelled'].includes(wo.status) && canManageTeamDirectly;
   const readOnlyDisabled = isReadOnly;
 
   // Format session duration
@@ -3598,6 +3603,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       {/* Time Log Dialog */}
       <ResponsiveDialog open={timeLogOpen} onOpenChange={setTimeLogOpen} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={handleTimeLog}>{tlLoading ? 'Logging...' : 'Log Time'}</Button>}>
           <div className="space-y-4">
+            {/* Team member selector — only for team leaders/managers */}
+            {canManageTeamDirectly && wo?.teamMembers && wo.teamMembers.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Log For</Label>
+                <Select value={tlLoggedForUserId} onValueChange={setTlLoggedForUserId}>
+                  <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Self (my own time)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Self (my own time)</SelectItem>
+                    {wo.teamMembers.map((tm: any) => (
+                      <SelectItem key={tm.userId} value={tm.userId}>
+                        {tm.user?.fullName || tm.userName || 'Unknown'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {tlLoggedForUserId && (
+                  <p className="text-xs text-amber-600">This will be logged as team time for the selected member.</p>
+                )}
+              </div>
+            )}
             <div className="space-y-1.5"><Label>Action</Label>
               <Select value={tlAction} onValueChange={setTlAction}>
                 <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
@@ -3609,13 +3634,35 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </div>
       </ResponsiveDialog>
 
-      {/* Add Material Dialog */}
-      <ResponsiveDialog open={materialOpen} onOpenChange={setMaterialOpen} title="Add Material" description="Add a material or part to this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={matLoading} onClick={handleAddMaterial}>{matLoading ? 'Adding...' : 'Add Material'}</Button>}>
+      {/* Add Material Dialog — pick from inventory */}
+      <ResponsiveDialog open={materialOpen} onOpenChange={(open) => { setMaterialOpen(open); if (!open) { setMatItemId(''); setMatItemName(''); setMatQty(''); }}} title="Request Material" description="Select a material or part from inventory to request for this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={matLoading || !matItemId} onClick={handleAddMaterial}>{matLoading ? 'Requesting...' : 'Request Material'}</Button>}>
           <div className="space-y-4">
-            <div className="space-y-1.5"><Label>Item Name *</Label><Input className="min-h-[44px]" value={matName} onChange={e => setMatName(e.target.value)} placeholder="e.g. Bearing 6205" /></div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+              <p className="text-xs text-muted-foreground">Materials are picked from the existing inventory. Select the item you need and specify the quantity.</p>
+            </div>
+            <div className="space-y-1.5"><Label>Item *</Label>
+              <AsyncSearchableSelect
+                value={matItemId}
+                onValueChange={(val) => {
+                  setMatItemId(val);
+                }}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/inventory');
+                  if (res.success && res.data) {
+                    const items = Array.isArray(res.data) ? res.data : (res.data as any).items || [];
+                    return items.map((item: any) => ({
+                      value: item.id,
+                      label: `${item.itemName || item.name}${item.partNumber ? ` (${item.partNumber})` : ''}${item.unit ? ` — ${item.stockQuantity || 0} ${item.unit} in stock` : ''}`,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Search inventory items..."
+                searchPlaceholder="Search by name or part number..."
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Quantity</Label><Input className="min-h-[44px]" type="number" value={matQty} onChange={e => setMatQty(e.target.value)} placeholder="1" /></div>
-              <div className="space-y-1.5"><Label>Unit Cost</Label><Input className="min-h-[44px]" type="number" step="0.01" value={matCost} onChange={e => setMatCost(e.target.value)} placeholder="0.00" /></div>
               <div className="space-y-1.5"><Label>Unit</Label>
                 <Select value={matUnit} onValueChange={setMatUnit}>
                   <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>

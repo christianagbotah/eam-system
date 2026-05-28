@@ -151,7 +151,11 @@ export function ResponsiveDialog({
       <DialogContent className={cn(resolvedMaxWidth, "max-h-[85vh] overflow-y-auto", className)}>
         <DialogHeader className={!(title || description) && "sr-only"}>
           <DialogTitle className={!title ? "sr-only" : undefined}>{title || "Dialog"}</DialogTitle>
-          {description && <DialogDescription>{description}</DialogDescription>}
+          {description ? (
+            <DialogDescription>{description}</DialogDescription>
+          ) : (
+            <DialogDescription className="sr-only">Dialog</DialogDescription>
+          )}
         </DialogHeader>
 
         <div className={cn(!footer && "pb-2")}>
