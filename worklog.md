@@ -422,3 +422,21 @@ Stage Summary:
 - Team leaders can log time on behalf of team members
 - Materials dialog picks from existing inventory (no more manual name/cost entry)
 - No new lint errors
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Fix WO detail "Work order not found" for technicians — teamMemberRequests table missing on VPS
+
+Work Log:
+- Root cause: GET `/api/work-orders/[id]` includes `teamMemberRequests` in Prisma query, but `wo_team_member_requests` table doesn't exist on VPS (prisma db push not run)
+- When the table doesn't exist, the query throws a Prisma/MySQL error → caught by catch block → returns 500 → frontend shows "Work order not found"
+- Fixed GET endpoint with graceful fallback: try full query with `teamMemberRequests`, if it fails (.catch), retry without it
+- Added `baseInclude` constant to avoid duplicating the include object
+- Ensures `teamMemberRequests` property always exists on response (empty array if table not queried)
+- Verified folder names `[materialId]` and `[memberId]` are correct — terminal display was hiding leading `[` bracket
+
+Stage Summary:
+- **File**: `src/app/api/work-orders/[id]/route.ts` — graceful fallback when wo_team_member_requests table doesn't exist
+- **Push**: Commit `4264db05`
+- **VPS action needed**: `npx prisma db push` to create the table (then full query will work)
