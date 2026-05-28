@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasAnyPermission } from '@/lib/auth';
+import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 
+/**
+ * DELETE /api/work-orders/[id]/team-members/[memberId]
+ * Remove a team member from a work order.
+ *
+ * PERMISSION RULES:
+ * - Admin: Always allowed
+ * - Users with work_orders.assign / work_orders.*: Allowed
+ * - The person who assigned the WO (wo.assignedBy): Allowed
+ * - Technicians / regular team members: BLOCKED
+ */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; memberId: string }> }
@@ -12,14 +22,17 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasAnyPermission(session, ['work_orders.assign', 'work_orders.*'])) {
-      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
-    }
-
     const { id, memberId } = await params;
 
     // Validate WO exists
-    const wo = await db.workOrder.findUnique({ where: { id } });
+    const wo = await db.workOrder.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        assignedBy: true,
+        isLocked: true,
+      },
+    });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
@@ -27,6 +40,23 @@ export async function DELETE(
     if (wo.isLocked) {
       return NextResponse.json({ success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' }, { status: 400 });
     }
+
+    // ─── PERMISSION CHECK ────────────────────────────────────────────────
+    const canDirectRemove = isAdmin(session) ||
+      hasAnyPermission(session, ['work_orders.assign', 'work_orders.*']) ||
+      wo.assignedBy === session.userId;
+
+    if (!canDirectRemove) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'You do not have permission to remove team members. Contact the person who assigned this work order.',
+          code: 'USE_REQUEST_FLOW',
+        },
+        { status: 403 }
+      );
+    }
+    // ─── END PERMISSION CHECK ────────────────────────────────────────────
 
     // Validate member belongs to the WO
     const member = await db.workOrderTeamMember.findUnique({

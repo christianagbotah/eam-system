@@ -57,6 +57,14 @@ export async function GET(
           include: { user: { select: { id: true, fullName: true, username: true } } },
           orderBy: { createdAt: 'desc' },
         },
+        teamMemberRequests: {
+          include: {
+            requestedByUser: { select: { id: true, fullName: true, username: true } },
+            requestedUser: { select: { id: true, fullName: true, username: true } },
+            reviewedByUser: { select: { id: true, fullName: true, username: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
 
@@ -156,6 +164,14 @@ export async function PUT(
         materials: {
           include: {
             requester: { select: { id: true, fullName: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+        teamMemberRequests: {
+          include: {
+            requestedByUser: { select: { id: true, fullName: true, username: true } },
+            requestedUser: { select: { id: true, fullName: true, username: true } },
+            reviewedByUser: { select: { id: true, fullName: true, username: true } },
           },
           orderBy: { createdAt: 'desc' },
         },

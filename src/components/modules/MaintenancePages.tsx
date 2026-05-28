@@ -43,6 +43,7 @@ import {
   Crown, Timer, Hourglass, UserPlus, Workflow, ChevronRight, ExternalLink, Hammer,
   Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
   ArrowUpRight, ArrowDownRight, CalendarClock, LayoutDashboard, Bell, DollarSign,
+  UserMinus, UserCheck, UserX,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -2370,6 +2371,15 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [newMemberUserId, setNewMemberUserId] = useState('');
   const [newMemberRole, setNewMemberRole] = useState('assistant');
   const [addMemberLoading, setAddMemberLoading] = useState(false);
+  // Request team member dialog (for technicians)
+  const [requestMemberOpen, setRequestMemberOpen] = useState(false);
+  const [reqMemberUserId, setReqMemberUserId] = useState('');
+  const [reqMemberRole, setReqMemberRole] = useState('assistant');
+  const [reqMemberReason, setReqMemberReason] = useState('');
+  const [reqMemberLoading, setReqMemberLoading] = useState(false);
+  // Team member requests
+  const [teamRequests, setTeamRequests] = useState<any[]>([]);
+  const [reqActionLoading, setReqActionLoading] = useState<string | null>(null);
   // Enhanced complete dialog fields
   const [completeRootCause, setCompleteRootCause] = useState('');
   const [completeFindings, setCompleteFindings] = useState('');
@@ -2404,8 +2414,20 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
   const fetchWO = useCallback(async () => {
     const res = await api.get<WorkOrder>(`/api/work-orders/${id}`);
-    if (res.success && res.data) setWo(res.data);
+    if (res.success && res.data) {
+      setWo(res.data);
+      // Team member requests are now included in the WO response
+      if ((res.data as any).teamMemberRequests) {
+        setTeamRequests((res.data as any).teamMemberRequests);
+      }
+    }
     setLoading(false);
+  }, [id]);
+
+  // Fetch team member requests (separate call for permission-filtered results)
+  const fetchTeamRequests = useCallback(async () => {
+    const res = await api.get(`/api/work-orders/${id}/team-member-requests`);
+    if (res.success && res.data) setTeamRequests(res.data);
   }, [id]);
 
   const fetchPersonalTools = useCallback(async () => {
@@ -2417,7 +2439,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     let active = true;
     api.get<WorkOrder>(`/api/work-orders/${id}`).then(res => {
       if (active) {
-        if (res.success && res.data) setWo(res.data);
+        if (res.success && res.data) {
+          setWo(res.data);
+          // Team member requests from WO response
+          if ((res.data as any).teamMemberRequests) {
+            setTeamRequests((res.data as any).teamMemberRequests);
+          }
+        }
         setLoading(false);
       }
     });
@@ -2445,6 +2473,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         setTaskChecklistLoading(false);
       }
     });
+    // Fetch team member requests (permission-filtered)
+    api.get(`/api/work-orders/${id}/team-member-requests`).then(res => {
+      if (active && res.success && res.data) setTeamRequests(res.data);
+    });
     return () => { active = false; };
   }, [id]);
 
@@ -2455,6 +2487,33 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (wo.teamLeaderId === user.id) return true;
     return false;
   }, [wo, user]);
+
+  // Permission: can directly add/remove team members (admin, planner, or the person who assigned)
+  const canManageTeamDirectly = useMemo(() => {
+    if (!wo || !user) return false;
+    if (isAdmin()) return true;
+    if (hasPermission('work_orders.assign')) return true;
+    if (wo.assignedById === user.id) return true;
+    return false;
+  }, [wo, user, isAdmin, hasPermission]);
+
+  // Permission: can request team members (technician or team member, but not admin/planner — they add directly)
+  const canRequestTeamMember = useMemo(() => {
+    if (!wo || !user) return false;
+    if (canManageTeamDirectly) return false; // managers add directly, don't need to request
+    const isTeamMember = wo.teamMembers?.some(tm => tm.userId === user.id);
+    const isAssignee = wo.assignedToId === user.id;
+    return isTeamMember || isAssignee;
+  }, [wo, user, canManageTeamDirectly]);
+
+  // Permission: can approve/reject team member requests (assigner, admin, planner)
+  const canReviewTeamRequests = useMemo(() => {
+    if (!wo || !user) return false;
+    if (isAdmin()) return true;
+    if (hasPermission('work_orders.assign')) return true;
+    if (wo.assignedById === user.id) return true;
+    return false;
+  }, [wo, user, isAdmin, hasPermission]);
 
   const isReadOnly = useMemo(() => {
     if (!wo || !user) return false;
@@ -2739,6 +2798,62 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (res.success) { toast.success('Team member added'); setAddTeamMemberOpen(false); setNewMemberUserId(''); setNewMemberRole('assistant'); fetchWO(); }
     else { toast.error(res.error || 'Failed to add team member'); }
     setAddMemberLoading(false);
+  };
+
+  // Request team member handler (for technicians)
+  const handleRequestTeamMember = async () => {
+    if (!reqMemberUserId) { toast.error('Please select a user'); return; }
+    setReqMemberLoading(true);
+    const res = await api.post(`/api/work-orders/${id}/team-member-requests`, {
+      requestedUserId: reqMemberUserId,
+      role: reqMemberRole,
+      reason: reqMemberReason || undefined,
+    });
+    if (res.success) {
+      toast.success('Team member request submitted. Waiting for approval.');
+      setRequestMemberOpen(false);
+      setReqMemberUserId('');
+      setReqMemberRole('assistant');
+      setReqMemberReason('');
+      fetchTeamRequests();
+    } else {
+      toast.error(res.error || 'Failed to submit request');
+    }
+    setReqMemberLoading(false);
+  };
+
+  // Review team member request (approve/reject)
+  const handleReviewTeamRequest = async (reqId: string, action: 'approve' | 'reject', reviewNotes?: string) => {
+    setReqActionLoading(reqId);
+    const res = await api.put(`/api/work-orders/${id}/team-member-requests/${reqId}`, { action, reviewNotes });
+    if (res.success) {
+      toast.success(action === 'approve' ? 'Request approved — member added to team' : 'Request rejected');
+      fetchTeamRequests();
+      fetchWO(); // refresh team members
+    } else {
+      toast.error(res.error || `Failed to ${action} request`);
+    }
+    setReqActionLoading(null);
+  };
+
+  // Cancel team member request
+  const handleCancelTeamRequest = async (reqId: string) => {
+    setReqActionLoading(reqId);
+    const res = await api.delete(`/api/work-orders/${id}/team-member-requests/${reqId}`);
+    if (res.success) {
+      toast.success('Request cancelled');
+      fetchTeamRequests();
+    } else {
+      toast.error(res.error || 'Failed to cancel request');
+    }
+    setReqActionLoading(null);
+  };
+
+  // Remove team member
+  const handleRemoveTeamMember = async (memberId: string, memberName: string) => {
+    const res = await api.delete(`/api/work-orders/${id}/team-members/${memberId}`);
+    if (res.success) { toast.success(`${memberName} removed from team`); fetchWO(); }
+    else { toast.error(res.error || 'Failed to remove team member'); }
   };
 
   // --- Task Checklist Handlers ---
@@ -4006,6 +4121,44 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               </div>
           </ResponsiveDialog>
 
+          {/* Request Team Member Dialog (for technicians) */}
+          <ResponsiveDialog open={requestMemberOpen} onOpenChange={setRequestMemberOpen} title="Request Team Member" description="Submit a request to add a team member. The assigner will review and approve your request." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setRequestMemberOpen(false)}>Cancel</Button><Button className="bg-amber-600 hover:bg-amber-700 text-white" disabled={reqMemberLoading || !reqMemberUserId} onClick={handleRequestTeamMember}>{reqMemberLoading ? 'Submitting...' : 'Submit Request'}</Button></div>}>
+              <div className="space-y-4">
+                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+                  <p className="text-xs text-amber-700">
+                    Your request will be sent to the person who assigned this work order for approval. They can approve or reject your request.
+                  </p>
+                </div>
+                <div className="space-y-1.5"><Label>User to Add *</Label>
+                  <AsyncSearchableSelect
+                    value={reqMemberUserId}
+                    onValueChange={setReqMemberUserId}
+                    fetchOptions={async () => {
+                      const res = await api.get('/api/users');
+                      if (res.success && res.data) return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                      return [];
+                    }}
+                    placeholder="Search users..."
+                    searchPlaceholder="Search by name..."
+                  />
+                </div>
+                <div className="space-y-1.5"><Label>Role</Label>
+                  <Select value={reqMemberRole} onValueChange={setReqMemberRole}>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="assistant">Assistant</SelectItem><SelectItem value="specialist">Specialist</SelectItem><SelectItem value="supervisor">Supervisor</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5"><Label>Reason</Label>
+                  <Textarea
+                    value={reqMemberReason}
+                    onChange={e => setReqMemberReason(e.target.value)}
+                    placeholder="Why do you need this team member? (e.g., 'Need electrical specialist for wiring')"
+                    rows={3}
+                  />
+                </div>
+              </div>
+          </ResponsiveDialog>
+
           {/* Timeline */}
           <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Activity Timeline</CardTitle></CardHeader>
@@ -4080,29 +4233,137 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </Card>
           )}
 
-          {/* Team Members — Enhanced */}
+          {/* Team Members — Enhanced with permission-aware controls */}
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Team</CardTitle>
-              {(fullAccess || isAdmin()) && (
-                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTeamMemberOpen(true)}><UserPlus className="h-3.5 w-3.5" />Add Member</Button>
-              )}
+              <div className="flex gap-1.5">
+                {canManageTeamDirectly && (
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTeamMemberOpen(true)}><UserPlus className="h-3.5 w-3.5" />Add Member</Button>
+                )}
+                {canRequestTeamMember && (
+                  <Button size="sm" variant="outline" className="gap-1.5 border-amber-200 text-amber-700 hover:bg-amber-50" onClick={() => setRequestMemberOpen(true)}><UserPlus className="h-3.5 w-3.5" />Request Member</Button>
+                )}
+              </div>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-3">
+              {/* Pending Team Requests (for reviewers) */}
+              {canReviewTeamRequests && (() => {
+                const pendingReqs = teamRequests.filter((r: any) => r.status === 'pending');
+                if (pendingReqs.length === 0) return null;
+                return (
+                  <div className="space-y-2 mb-3">
+                    <p className="text-xs font-medium text-amber-600 uppercase tracking-wider">Pending Requests</p>
+                    {pendingReqs.map((req: any) => (
+                      <div key={req.id} className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/50">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-medium">{req.requestedUser?.fullName || 'Unknown'}</span>
+                              <Badge variant="outline" className="text-[10px]">{req.role?.replace(/_/g, ' ')?.replace(/\b\w/g, (c: string) => c.toUpperCase())}</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Requested by {req.requestedByUser?.fullName} {req.reason && <>— {req.reason}</>}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">{timeAgo(req.createdAt)}</p>
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            <Button
+                              size="sm"
+                              className="h-7 text-[11px] px-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                              disabled={reqActionLoading === req.id}
+                              onClick={() => handleReviewTeamRequest(req.id, 'approve')}
+                            >
+                              {reqActionLoading === req.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserCheck className="h-3 w-3" />}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-[11px] px-2 text-red-600 border-red-200 hover:bg-red-50"
+                              disabled={reqActionLoading === req.id}
+                              onClick={() => handleReviewTeamRequest(req.id, 'reject', '')}
+                            >
+                              <UserX className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* Pending requests (for requester — non-reviewer view) */}
+              {canRequestTeamMember && (() => {
+                const myPendingReqs = teamRequests.filter((r: any) => r.status === 'pending');
+                if (myPendingReqs.length === 0) return null;
+                return (
+                  <div className="space-y-2 mb-3">
+                    <p className="text-xs font-medium text-amber-600 uppercase tracking-wider">My Pending Requests</p>
+                    {myPendingReqs.map((req: any) => (
+                      <div key={req.id} className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/50">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-medium">{req.requestedUser?.fullName || 'Unknown'}</span>
+                              <Badge variant="outline" className="text-[10px]">{req.role?.replace(/_/g, ' ')?.replace(/\b\w/g, (c: string) => c.toUpperCase())}</Badge>
+                            </div>
+                            {req.reason && <p className="text-xs text-muted-foreground mt-0.5">{req.reason}</p>}
+                            <p className="text-[10px] text-muted-foreground mt-0.5">{timeAgo(req.createdAt)} · Awaiting approval</p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-[10px] px-1.5 text-muted-foreground"
+                            disabled={reqActionLoading === req.id}
+                            onClick={() => handleCancelTeamRequest(req.id)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* Resolved requests (brief summary) */}
+              {(() => {
+                const resolvedReqs = teamRequests.filter((r: any) => r.status !== 'pending' && r.status !== 'cancelled');
+                if (resolvedReqs.length === 0) return null;
+                return (
+                  <div className="space-y-1 mb-3">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Request History</p>
+                    {resolvedReqs.slice(0, 3).map((req: any) => (
+                      <div key={req.id} className="flex items-center justify-between text-xs py-1">
+                        <div className="flex items-center gap-1.5">
+                          {req.status === 'approved' ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <XCircle className="h-3 w-3 text-red-400" />}
+                          <span className="text-muted-foreground">{req.requestedUser?.fullName}</span>
+                          {req.reviewNotes && <span className="text-muted-foreground italic">— {req.reviewNotes}</span>}
+                        </div>
+                        <span className="text-muted-foreground">{timeAgo(req.createdAt)}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* Team Members List */}
               {(!wo.teamMembers || wo.teamMembers.length === 0) ? (
                 <p className="text-sm text-muted-foreground">No team members assigned.</p>
               ) : (
                 wo.teamMembers.map(tm => {
                   const isTeamLeader = tm.userId === wo.teamLeaderId;
                   const isReadOnlyMember = tm.accessLevel === 'read_only';
+                  const memberName = tm.userName || tm.user?.fullName || 'Unknown';
                   return (
                     <div key={tm.id} className="flex items-center gap-3 p-2 rounded-lg border bg-muted/30">
                       <Avatar className="h-8 w-8 shrink-0">
-                        <AvatarFallback className="text-[10px]">{getInitials(tm.userName || tm.user?.fullName || 'U')}</AvatarFallback>
+                        <AvatarFallback className="text-[10px]">{getInitials(memberName)}</AvatarFallback>
                       </Avatar>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-medium truncate">{tm.userName || tm.user?.fullName || 'Unknown'}</span>
+                          <span className="text-sm font-medium truncate">{memberName}</span>
                           {isTeamLeader && <Crown className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
@@ -4111,6 +4372,16 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                           {isReadOnlyMember && <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-600 border-slate-200">Read Only</Badge>}
                         </div>
                       </div>
+                      {canManageTeamDirectly && !isTeamLeader && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-muted-foreground hover:text-red-600 shrink-0"
+                          onClick={() => handleRemoveTeamMember(tm.id, memberName)}
+                        >
+                          <UserMinus className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                     </div>
                   );
                 })

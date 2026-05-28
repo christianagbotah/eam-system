@@ -361,3 +361,39 @@ Stage Summary:
 - **WebSocket hook**: `src/hooks/useWebSocket.ts` — silent error handling, no console spam
 - **VPS note**: The notification service must be started on VPS: `cd mini-services/notification-service && bun index.ts &`
 
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Implement WO Team Member permission controls — technicians must request, managers approve
+
+Work Log:
+- Explored current WO team member management: API routes, permissions, UI, DB schema
+- Designed permission model with 4 tiers: Admin/Planner (direct add), Assigner (direct add), Technician (request only), Team Member (request only)
+- Added `WoTeamMemberRequest` model to Prisma schema with fields: workOrderId, requestedBy, requestedUserId, role, reason, status (pending/approved/rejected/cancelled), reviewedBy, reviewedAt, reviewNotes
+- Added `addedById` and `addedVia` fields to `WorkOrderTeamMember` for audit trail
+- Added User model relations: woTeamMembersAdded, woTeamMemberReqsRequested, woTeamMemberReqsAsTarget, woTeamMemberReqsReviewed
+- Pushed schema to production MariaDB
+- Created `POST /api/work-orders/[id]/team-member-requests` — create request (any team member can request)
+- Created `GET /api/work-orders/[id]/team-member-requests` — list requests (filtered by permission)
+- Created `PUT /api/work-orders/[id]/team-member-requests/[reqId]` — approve/reject (assigner/admin/planner only)
+- Created `DELETE /api/work-orders/[id]/team-member-requests/[reqId]` — cancel request
+- Updated `POST /api/work-orders/[id]/team-members` — locked down: only admin/planner/assigner can directly add
+- Updated `DELETE /api/work-orders/[id]/team-members/[memberId]` — locked down: only admin/planner/assigner can remove
+- Updated WO GET API to include teamMemberRequests
+- Added notification flow: request created → notify assigner; approved → notify requester + new member; rejected → notify requester
+- Frontend: Added `canManageTeamDirectly`, `canRequestTeamMember`, `canReviewTeamRequests` permission flags
+- Frontend: "Add Member" button only shows for managers; "Request Member" button shows for technicians (amber style)
+- Frontend: Pending requests card with approve/reject buttons for reviewers
+- Frontend: My Pending Requests card with cancel option for requesters
+- Frontend: Request History section showing resolved requests
+- Frontend: Remove button (UserMinus icon) on each team member for managers (not on team leaders)
+- Frontend: "Request Team Member" dialog with reason field
+
+Stage Summary:
+- Complete team member permission system implemented
+- Technicians can NO LONGER directly add/remove team members
+- Technicians must submit requests to the assigner for approval
+- Admins, planners, and the original assigner can directly add/remove
+- Notification system wired at all steps (request, approve, reject)
+- No new lint errors introduced

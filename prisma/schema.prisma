@@ -99,7 +99,11 @@ model User {
   woLocked     WorkOrder[] @relation("WOLocker")
 
   // Work Order sub-table relations
-  woTeamMembers        WorkOrderTeamMember[]
+  woTeamMembers              WorkOrderTeamMember[]
+  woTeamMembersAdded         WorkOrderTeamMember[] @relation("TMAddedBy")
+  woTeamMemberReqsRequested  WoTeamMemberRequest[] @relation("TMReqRequestedBy") // as requester
+  woTeamMemberReqsAsTarget   WoTeamMemberRequest[] // as requested user (to be added)
+  woTeamMemberReqsReviewed   WoTeamMemberRequest[] @relation("TMReqReviewedBy")
   woTimeLogs           WorkOrderTimeLog[]
   woComments           WorkOrderComment[]
   woMaterialsRequested WorkOrderMaterial[]   @relation("WOMatRequested")
@@ -545,6 +549,7 @@ model WorkOrder {
 
   // Sub-table relations
   teamMembers WorkOrderTeamMember[]
+  teamMemberRequests WoTeamMemberRequest[]
   timeLogs    WorkOrderTimeLog[]
   materials   WorkOrderMaterial[]
   comments    WorkOrderComment[]
@@ -595,12 +600,37 @@ model WorkOrderTeamMember {
   userId      String
   role        String   @default("assistant") // team_leader, assistant, specialist
   accessLevel String   @default("full") // full (team leader), read_only (other members)
+  addedById   String?  // who added this member (direct add or approved request)
+  addedVia    String   @default("direct") // "direct" | "request" — tracks how they were added
   assignedAt  DateTime @default(now())
 
-  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workOrder  WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addedBy    User?     @relation("TMAddedBy", fields: [addedById], references: [id])
 
   @@map("wo_team_members")
+}
+
+model WoTeamMemberRequest {
+  id            String   @id @default(cuid())
+  workOrderId   String
+  requestedBy   String   // user who requested
+  requestedUserId String  // the user they want added
+  role          String   @default("assistant")
+  reason        String?  // why they need this person
+  status        String   @default("pending") // pending, approved, rejected, cancelled
+  reviewedBy    String?  // who approved/rejected
+  reviewedAt    DateTime?
+  reviewNotes   String?  // approver's notes
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workOrder       WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  requestedByUser User      @relation("TMReqRequestedBy", fields: [requestedBy], references: [id])
+  requestedUser   User      @relation(fields: [requestedUserId], references: [id])
+  reviewedByUser  User?     @relation("TMReqReviewedBy", fields: [reviewedBy], references: [id])
+
+  @@map("wo_team_member_requests")
 }
 
 model WorkOrderTimeLog {

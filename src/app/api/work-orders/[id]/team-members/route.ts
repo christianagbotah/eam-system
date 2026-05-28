@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasAnyPermission } from '@/lib/auth';
+import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 
+/**
+ * POST /api/work-orders/[id]/team-members
+ * Directly add a team member to a work order.
+ *
+ * PERMISSION RULES:
+ * - Admin: Always allowed
+ * - Users with work_orders.assign / work_orders.*: Allowed
+ * - The person who assigned the WO (wo.assignedBy): Allowed
+ * - Technicians / regular team members: BLOCKED — must use /team-member-requests instead
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -10,10 +20,6 @@ export async function POST(
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    }
-
-    if (!hasAnyPermission(session, ['work_orders.assign', 'work_orders.*'])) {
-      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const { id } = await params;
@@ -27,7 +33,15 @@ export async function POST(
       );
     }
 
-    const wo = await db.workOrder.findUnique({ where: { id } });
+    // Fetch WO with assigner info for permission check
+    const wo = await db.workOrder.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        assignedBy: true,
+        isLocked: true,
+      },
+    });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
@@ -35,6 +49,24 @@ export async function POST(
     if (wo.isLocked) {
       return NextResponse.json({ success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' }, { status: 400 });
     }
+
+    // ─── PERMISSION CHECK ────────────────────────────────────────────────
+    // Only admins, users with assign permission, or the original assigner can directly add
+    const canDirectAdd = isAdmin(session) ||
+      hasAnyPermission(session, ['work_orders.assign', 'work_orders.*']) ||
+      wo.assignedBy === session.userId;
+
+    if (!canDirectAdd) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'You do not have permission to directly add team members. Please submit a team member request instead.',
+          code: 'USE_REQUEST_FLOW',
+        },
+        { status: 403 }
+      );
+    }
+    // ─── END PERMISSION CHECK ────────────────────────────────────────────
 
     // Verify the user exists
     const user = await db.user.findUnique({
@@ -61,6 +93,8 @@ export async function POST(
         workOrderId: id,
         userId,
         role: role || 'assistant',
+        addedById: session.userId,
+        addedVia: 'direct',
       },
       include: {
         user: { select: { id: true, fullName: true, username: true, department: true } },
@@ -78,6 +112,7 @@ export async function POST(
           workOrderId: id,
           userId: user.fullName,
           role: role || 'assistant',
+          addedVia: 'direct',
         }),
       },
     });
