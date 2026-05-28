@@ -54,8 +54,7 @@ import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, format
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
-import { Calendar as CalendarPicker } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { DatePicker, TimePicker, DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
 import { useIsMobile } from '@/components/shared/ResponsiveDialog';
 import { FileUpload } from '@/components/shared/FileUpload';
 import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSelector';
@@ -1076,21 +1075,11 @@ export function MRDetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Scheduled Date</Label>
-                  <Input
-                    className="min-h-[44px]"
-                    type="datetime-local"
-                    value={convertForm.scheduledDate}
-                    onChange={e => setConvertForm(f => ({ ...f, scheduledDate: e.target.value }))}
-                  />
+                  <DateTimePicker value={convertForm.scheduledDate || undefined} onChange={v => setConvertForm(f => ({ ...f, scheduledDate: v || '' }))} />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Delivery Date</Label>
-                  <Input
-                    className="min-h-[44px]"
-                    type="date"
-                    value={convertForm.deliveryDate}
-                    onChange={e => setConvertForm(f => ({ ...f, deliveryDate: e.target.value }))}
-                  />
+                  <DatePicker value={convertForm.deliveryDate || undefined} onChange={v => setConvertForm(f => ({ ...f, deliveryDate: v || '' }))} />
                 </div>
               </div>
             </div>
@@ -1320,22 +1309,12 @@ export function MRDetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               </div>
               <div className="space-y-2">
                 <Label className="text-xs font-medium">Scheduled</Label>
-                <Input
-                  className="h-12 rounded-xl"
-                  type="datetime-local"
-                  value={convertForm.scheduledDate}
-                  onChange={e => setConvertForm(f => ({ ...f, scheduledDate: e.target.value }))}
-                />
+                <DateTimePicker value={convertForm.scheduledDate || undefined} onChange={v => setConvertForm(f => ({ ...f, scheduledDate: v || '' }))} />
               </div>
             </div>
             <div className="space-y-2">
               <Label className="text-xs font-medium">Delivery Date</Label>
-              <Input
-                className="h-12 rounded-xl"
-                type="date"
-                value={convertForm.deliveryDate}
-                onChange={e => setConvertForm(f => ({ ...f, deliveryDate: e.target.value }))}
-              />
+              <DatePicker value={convertForm.deliveryDate || undefined} onChange={v => setConvertForm(f => ({ ...f, deliveryDate: v || '' }))} />
             </div>
             <div className="space-y-2">
               <Label className="text-xs font-medium">Technical Description</Label>
@@ -2218,21 +2197,11 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Scheduled Date</Label>
-            <Input
-              className="min-h-[44px]"
-              type="datetime-local"
-              value={form.scheduledDate}
-              onChange={e => updateField('scheduledDate', e.target.value)}
-            />
+            <DateTimePicker value={form.scheduledDate || undefined} onChange={v => updateField('scheduledDate', v || '')} />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Delivery Date</Label>
-            <Input
-              className="min-h-[44px]"
-              type="date"
-              value={form.deliveryDate}
-              onChange={e => updateField('deliveryDate', e.target.value)}
-            />
+            <DatePicker value={form.deliveryDate || undefined} onChange={v => updateField('deliveryDate', v || '')} />
           </div>
         </div>
       </div>
@@ -2360,6 +2329,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const { hasPermission, user, isAdmin } = useAuthStore();
   const { navigate } = useNavigationStore();
   const isMobile = useIsMobile();
+  const canApproveMaterials = user?.roles?.some((r: any) => ['admin', 'store_keeper', 'store_manager'].includes(r.slug)) ?? false;
   // Edit WO
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
@@ -2584,91 +2554,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     const d = new Date(iso);
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  }
-
-  // Display "YYYY-MM-DD" as "dd/mm/yyyy"
-  function displayDate(ymd: string): string {
-    if (!ymd) return '';
-    const [y, m, d] = ymd.split('T')[0].split('-');
-    return `${d}/${m}/${y}`;
-  }
-
-  // Parse "dd/mm/yyyy" → "YYYY-MM-DD"
-  function parseDateDMY(dmy: string): string {
-    if (!dmy) return '';
-    const parts = dmy.split('/');
-    if (parts.length !== 3) return dmy;
-    const [d, m, y] = parts;
-    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-  }
-
-  // Inline scroll-select time picker: two columns (hours 00-23, minutes 00,15,30,45)
-  function TimeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-    const [hour, minute] = value ? value.split(':') : ['08', '00'];
-    const hours = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
-    const minutes = ['00', '15', '30', '45'];
-    const scrollRef = useRef<HTMLDivElement>(null);
-    const colRef = useRef<HTMLDivElement>(null);
-    const MINUTE_HEIGHT = 36;
-    const COL_HEIGHT = MINUTE_HEIGHT * 3;
-
-    const scrollToSelected = useCallback(() => {
-      if (colRef.current) {
-        const idx = minutes.indexOf(minute);
-        colRef.current.scrollTop = idx * MINUTE_HEIGHT;
-      }
-      if (scrollRef.current) {
-        const hIdx = parseInt(hour);
-        scrollRef.current.scrollTop = hIdx * MINUTE_HEIGHT;
-      }
-    }, [hour, minute]);
-
-    useEffect(() => { scrollToSelected(); }, [scrollToSelected]);
-
-    return (
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="outline" className="min-h-[44px] w-full justify-start text-left font-normal">
-            <Clock className="mr-2 h-4 w-4 shrink-0" />
-            <span className="text-sm font-mono">{hour}:{minute}</span>
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-1" align="start">
-          <div className="flex gap-1">
-            {/* Hour column */}
-            <div className="relative overflow-hidden" style={{ height: COL_HEIGHT }}>
-              <div className="absolute top-0 inset-x-0 h-6 bg-gradient-to-b from-popover to-transparent z-10 pointer-events-none" />
-              <div className="absolute bottom-0 inset-x-0 h-6 bg-gradient-to-t from-popover to-transparent z-10 pointer-events-none" />
-              <div ref={scrollRef} className="overflow-y-auto" style={{ height: COL_HEIGHT, scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                <div style={{ height: MINUTE_HEIGHT }} />
-                {hours.map(h => (
-                  <button key={h} className={`block w-full text-center text-sm py-1 cursor-pointer transition-colors ${h === hour ? 'font-bold text-foreground' : 'text-muted-foreground hover:text-foreground'}`} style={{ height: MINUTE_HEIGHT }} onClick={() => onChange(`${h}:${minute}`)}>
-                    {h}
-                  </button>
-                ))}
-                <div style={{ height: MINUTE_HEIGHT }} />
-              </div>
-            </div>
-            {/* Separator */}
-            <div className="flex items-center text-lg font-bold text-muted-foreground pb-0">:</div>
-            {/* Minute column */}
-            <div className="relative overflow-hidden" style={{ height: COL_HEIGHT }}>
-              <div className="absolute top-0 inset-x-0 h-6 bg-gradient-to-b from-popover to-transparent z-10 pointer-events-none" />
-              <div className="absolute bottom-0 inset-x-0 h-6 bg-gradient-to-t from-popover to-transparent z-10 pointer-events-none" />
-              <div ref={colRef} className="overflow-y-auto" style={{ height: COL_HEIGHT, scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                <div style={{ height: MINUTE_HEIGHT }} />
-                {minutes.map(m => (
-                  <button key={m} className={`block w-full text-center text-sm py-1 cursor-pointer transition-colors ${m === minute ? 'font-bold text-foreground' : 'text-muted-foreground hover:text-foreground'}`} style={{ height: MINUTE_HEIGHT }} onClick={() => onChange(`${hour}:${m}`)}>
-                    {m}
-                  </button>
-                ))}
-                <div style={{ height: MINUTE_HEIGHT }} />
-              </div>
-            </div>
-          </div>
-        </PopoverContent>
-      </Popover>
-    );
   }
 
   function editFormatHoursDisplay(hours: number): string {
@@ -3235,66 +3120,11 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Scheduled Date</Label>
-                  <div className="flex gap-2">
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="min-h-[44px] flex-1 justify-start text-left font-normal">
-                          <Calendar className="mr-2 h-4 w-4" />
-                          {displayDate(editForm.scheduledDate) || <span className="text-muted-foreground">dd/mm/yyyy</span>}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <CalendarPicker
-                          mode="single"
-                          selected={editForm.scheduledDate ? new Date(editForm.scheduledDate) : undefined}
-                          onSelect={(d) => {
-                            if (d) {
-                              const timePart = editForm.scheduledDate?.split('T')[1] || '08:00';
-                              const pad = (n: number) => String(n).padStart(2, '0');
-                              const ymd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-                              editUpdateField('scheduledDate', `${ymd}T${timePart}`);
-                            } else {
-                              editUpdateField('scheduledDate', '');
-                            }
-                          }}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <TimeSelect
-                      value={editForm.scheduledDate?.split('T')[1] || '08:00'}
-                      onChange={v => {
-                        const datePart = editForm.scheduledDate?.split('T')[0] || '';
-                        editUpdateField('scheduledDate', datePart ? `${datePart}T${v}` : '');
-                      }}
-                    />
-                  </div>
+                  <DateTimePicker value={editForm.scheduledDate || undefined} onChange={v => editUpdateField('scheduledDate', v || '')} />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Delivery Date</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="min-h-[44px] w-full justify-start text-left font-normal">
-                        <Calendar className="mr-2 h-4 w-4" />
-                        {displayDate(editForm.deliveryDate) || <span className="text-muted-foreground">dd/mm/yyyy</span>}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <CalendarPicker
-                        mode="single"
-                        selected={editForm.deliveryDate ? new Date(editForm.deliveryDate) : undefined}
-                        onSelect={(d) => {
-                          if (d) {
-                            const pad = (n: number) => String(n).padStart(2, '0');
-                            editUpdateField('deliveryDate', `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
-                          } else {
-                            editUpdateField('deliveryDate', '');
-                          }
-                        }}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <DatePicker value={editForm.deliveryDate || undefined} onChange={v => editUpdateField('deliveryDate', v || '')} />
                 </div>
               </div>
             </div>
@@ -3525,38 +3355,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               </div>
               <div className="space-y-1">
                 <Label className="text-[10px]">Scheduled</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="min-h-[44px] w-full justify-start text-left font-normal text-sm">
-                      <Calendar className="mr-2 h-3.5 w-3.5" />
-                      {displayDate(editForm.scheduledDate) || <span className="text-muted-foreground">dd/mm/yyyy</span>}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarPicker
-                      mode="single"
-                      selected={editForm.scheduledDate ? new Date(editForm.scheduledDate) : undefined}
-                      onSelect={(d) => {
-                        if (d) {
-                          const timePart = editForm.scheduledDate?.split('T')[1] || '08:00';
-                          const pad = (n: number) => String(n).padStart(2, '0');
-                          const ymd = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-                          editUpdateField('scheduledDate', `${ymd}T${timePart}`);
-                        } else {
-                          editUpdateField('scheduledDate', '');
-                        }
-                      }}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-                <TimeSelect
-                  value={editForm.scheduledDate?.split('T')[1] || '08:00'}
-                  onChange={v => {
-                    const datePart = editForm.scheduledDate?.split('T')[0] || '';
-                    editUpdateField('scheduledDate', datePart ? `${datePart}T${v}` : '');
-                  }}
-                />
+                <DateTimePicker value={editForm.scheduledDate || undefined} onChange={v => editUpdateField('scheduledDate', v || '')} />
               </div>
             </div>
             <div className="space-y-2">
@@ -3862,13 +3661,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                             <TableCell><Badge variant="outline" className={`text-[10px] capitalize ${m.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : m.status === 'issued' ? 'bg-sky-50 text-sky-700 border-sky-200' : m.status === 'returned' ? 'bg-slate-50 text-slate-500 border-slate-200' : ''}`}>{m.status || 'requested'}</Badge></TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1">
-                                {m.status === 'requested' && (
+                                {canApproveMaterials && m.status === 'requested' && (
                                   <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-200" onClick={async () => { const r = await api.put(`/api/work-orders/${id}/materials/${m.id}`, { status: 'approved' }); if (r.success) { toast.success('Material approved'); fetchWO(); } else toast.error(r.error || 'Failed'); }}>Approve</Button>
                                 )}
-                                {m.status === 'approved' && (
+                                {canApproveMaterials && m.status === 'approved' && (
                                   <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-sky-600 hover:text-sky-700 border-sky-200" onClick={async () => { const r = await api.put(`/api/work-orders/${id}/materials/${m.id}`, { status: 'issued' }); if (r.success) { toast.success('Material issued'); fetchWO(); } else toast.error(r.error || 'Failed'); }}>Issue</Button>
                                 )}
-                                {(m.status === 'issued') && (
+                                {canApproveMaterials && (m.status === 'issued') && (
                                   <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-slate-600 hover:text-slate-700" onClick={async () => { const r = await api.put(`/api/work-orders/${id}/materials/${m.id}`, { status: 'returned' }); if (r.success) { toast.success('Material returned'); fetchWO(); } else toast.error(r.error || 'Failed'); }}>Return</Button>
                                 )}
                                 {m.status === 'requested' && (
