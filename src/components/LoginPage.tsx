@@ -47,11 +47,17 @@ export default function LoginPage() {
       return;
     }
     setLoading(true);
-    const ok = await login(username, password);
-    if (ok) {
+    const result = await login(username, password);
+    if (result.ok) {
       toast.success('Welcome to iAssetsPro!');
     } else {
-      toast.error('Invalid credentials');
+      // Show the actual error from the API (not just "Invalid credentials")
+      const errMsg = result.error || 'Invalid credentials';
+      // Clean up internal error messages for user display
+      const displayMsg = errMsg.includes('Database error') || errMsg.includes('Session creation failed')
+        ? 'Service unavailable — please contact IT support'
+        : errMsg;
+      toast.error(displayMsg);
     }
     setLoading(false);
   };

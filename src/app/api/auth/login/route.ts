@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { compare } from 'bcryptjs';
-import { createSession } from '@/lib/auth';
+import { createSession, sessionCache } from '@/lib/auth';
+import { randomUUID } from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,28 +15,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const user = await db.user.findUnique({
-      where: { username },
-      include: {
-        userRoles: {
-          include: {
-            role: {
-              include: {
-                rolePermissions: {
-                  include: { permission: true },
+    // ── Step 1: Find user (with fallback if includes fail due to schema drift) ──
+    let user: any;
+    try {
+      user = await db.user.findUnique({
+        where: { username },
+        include: {
+          userRoles: {
+            include: {
+              role: {
+                include: {
+                  rolePermissions: {
+                    include: { permission: true },
+                  },
                 },
               },
             },
           },
+          directPerms: {
+            include: { permission: true },
+          },
+          plantAccess: {
+            include: { plant: true },
+          },
         },
-        directPerms: {
-          include: { permission: true },
-        },
-        plantAccess: {
-          include: { plant: true },
-        },
-      },
-    });
+      });
+    } catch (queryErr: any) {
+      // Fallback: try without includes (schema may be out of sync on VPS)
+      console.error('[login] Full user query failed, trying minimal query:', queryErr?.message);
+      try {
+        user = await db.user.findUnique({
+          where: { username },
+        });
+      } catch (fallbackErr: any) {
+        console.error('[login] Minimal user query also failed:', fallbackErr?.message);
+        return NextResponse.json(
+          { success: false, error: `Database error: ${fallbackErr?.message || 'User lookup failed'}. Run: npx prisma db push` },
+          { status: 500 }
+        );
+      }
+    }
 
     if (!user) {
       return NextResponse.json(
@@ -59,22 +78,90 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create session (handles role/permission resolution internally)
-    const { token, session } = await createSession(user.id);
+    // ── Step 2: Create session (with fallback) ──
+    let token: string;
+    let permissions: string[] = [];
+    let roles: any[] = [];
+
+    try {
+      const sessionResult = await createSession(user.id);
+      token = sessionResult.token;
+      permissions = sessionResult.session.permissions;
+    } catch (sessionErr: any) {
+      console.error('[login] createSession failed, using lightweight session:', sessionErr?.message);
+      // Fallback: create a minimal session directly
+      try {
+        token = randomUUID();
+        // Try to persist session, but don't fail if sessions table is broken
+        try {
+          await db.session.create({
+            data: {
+              token,
+              userId: user.id,
+              roles: JSON.stringify([]),
+              permissions: JSON.stringify([]),
+              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            },
+          });
+        } catch (dbSessionErr: any) {
+          console.warn('[login] Could not persist session to DB (using in-memory only):', dbSessionErr?.message);
+        }
+        // Build permissions from the user data we already have
+        const roleSlugs: string[] = [];
+        const permSlugs = new Set<string>();
+        for (const ur of (user.userRoles || [])) {
+          roleSlugs.push(ur.role?.slug || ur.roleId);
+          for (const rp of (ur.role?.rolePermissions || [])) {
+            permSlugs.add(rp.permission?.slug || rp.permissionId);
+          }
+        }
+        for (const up of (user.directPerms || [])) {
+          if (up.isGranted) permSlugs.add(up.permission?.slug || up.permissionId);
+        }
+        permissions = [...permSlugs];
+        roles = (user.userRoles || []).map((ur: any) => ({
+          id: ur.role?.id || ur.roleId,
+          name: ur.role?.name || '',
+          slug: ur.role?.slug || '',
+          level: ur.role?.level || 0,
+          isSystem: ur.role?.isSystem || false,
+          description: ur.role?.description || '',
+        }));
+        // Cache session in memory so requireAuth() can find it
+        sessionCache.set(token, {
+          data: {
+            userId: user.id,
+            username: user.username,
+            roles: roleSlugs,
+            permissions,
+            createdAt: new Date(),
+          },
+          cachedAt: Date.now(),
+        });
+      } catch (fallbackErr: any) {
+        console.error('[login] Lightweight session also failed:', fallbackErr?.message);
+        return NextResponse.json(
+          { success: false, error: `Session creation failed: ${fallbackErr?.message}. Run: npx prisma db push` },
+          { status: 500 }
+        );
+      }
+    }
 
     // Get primary plant
-    const primaryPlant = (user.plantAccess || []).find((up) => up.isPrimary);
+    const primaryPlant = (user.plantAccess || []).find((up: any) => up.isPrimary);
 
-    // Build response
+    // Build response (strip password hash)
     const { passwordHash: _, ...safeUser } = user;
-    const roles = (user.userRoles || []).map((ur) => ({
-      id: ur.role.id,
-      name: ur.role.name,
-      slug: ur.role.slug,
-      level: ur.role.level,
-      isSystem: ur.role.isSystem,
-      description: ur.role.description,
-    }));
+    if (!roles.length && (user.userRoles || []).length) {
+      roles = (user.userRoles || []).map((ur: any) => ({
+        id: ur.role?.id || ur.roleId,
+        name: ur.role?.name || '',
+        slug: ur.role?.slug || '',
+        level: ur.role?.level || 0,
+        isSystem: ur.role?.isSystem || false,
+        description: ur.role?.description || '',
+      }));
+    }
 
     return NextResponse.json({
       success: true,
@@ -89,23 +176,24 @@ export async function POST(request: NextRequest) {
           phone: user.phone,
           status: user.status,
           roles,
-          permissions: session.permissions,
+          permissions,
           plantId: primaryPlant?.plantId ?? null,
-          plantAccess: (user.plantAccess || []).map((up) => ({
-            id: up.plant.id,
-            code: up.plant.code,
-            name: up.plant.name,
-            location: up.plant.location,
+          plantAccess: (user.plantAccess || []).map((up: any) => ({
+            id: up.plant?.id || up.plantId,
+            code: up.plant?.code || '',
+            name: up.plant?.name || '',
+            location: up.plant?.location || '',
             accessLevel: up.accessLevel,
             isPrimary: up.isPrimary,
           })),
         },
         token,
-        permissions: session.permissions,
+        permissions,
       },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Login failed';
+    console.error('[login] Unhandled error:', message);
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

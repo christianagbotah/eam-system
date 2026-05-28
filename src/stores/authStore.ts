@@ -32,7 +32,7 @@ interface AuthState {
   permissions: string[];
   role: string | null;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
   fetchMe: () => Promise<void>;
   hasPermission: (slug: string) => boolean;
@@ -47,7 +47,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   role: null,
   isLoading: false,
 
-  login: async (username: string, password: string) => {
+  login: async (username: string, password: string): Promise<{ ok: boolean; error?: string }> => {
     set({ isLoading: true });
     try {
       const res = await api.post<{ user: User; token: string; permissions: string[] }>('/api/auth/login', { username, password });
@@ -61,13 +61,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isAuthenticated: true,
           isLoading: false,
         });
-        return true;
+        return { ok: true };
       }
       set({ isLoading: false });
-      return false;
-    } catch {
+      return { ok: false, error: res.error || 'Invalid credentials' };
+    } catch (err: any) {
       set({ isLoading: false });
-      return false;
+      return { ok: false, error: err?.message || 'Network error' };
     }
   },
 
