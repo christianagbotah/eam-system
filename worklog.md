@@ -440,3 +440,38 @@ Stage Summary:
 - **File**: `src/app/api/work-orders/[id]/route.ts` — graceful fallback when wo_team_member_requests table doesn't exist
 - **Push**: Commit `4264db05`
 - **VPS action needed**: `npx prisma db push` to create the table (then full query will work)
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Fix login "invalid credentials" — make login resilient to VPS schema drift
+
+Work Log:
+- Investigated login flow: LoginPage → authStore.login() → api.post('/api/auth/login') → login route
+- Found root cause: LoginPage always shows "Invalid credentials" for ANY failure (including 500 server errors)
+- Found authStore swallows error messages — returns boolean `false` instead of passing error through
+- Found db.ts Proxy returns no-op function for missing model delegates, causing `db.user.findUnique is not a function`
+- Fixed login route (`src/app/api/auth/login/route.ts`):
+  - Added try/catch around user query — fallback to minimal query if includes fail
+  - Added try/catch around createSession — fallback to lightweight session if sessions table broken
+  - Fallback session persists to in-memory cache only (if DB persist fails)
+  - Added console.error logging at every failure point for VPS debugging
+- Fixed authStore (`src/stores/authStore.ts`):
+  - login() now returns `{ ok: boolean; error?: string }` instead of `boolean`
+  - Passes actual error message from API response
+- Fixed LoginPage (`src/components/LoginPage.tsx`):
+  - Shows actual error message from API
+  - Cleans up internal DB errors into user-friendly "Service unavailable" message
+- Fixed db.ts (`src/lib/db.ts`):
+  - Removed SQLite detection — always uses MariaDB adapter (schema is MySQL-only)
+  - SQLite path was broken because `engineType = "library"` requires driver adapter
+  - Proxy now returns nested Proxy for missing model delegates (prevents `findUnique is not a function`)
+  - Both init-error and model-missing paths return nested Proxies
+- Pushed commit `6b555acf`
+
+Stage Summary:
+- **Login route**: Graceful fallbacks for schema drift (user query + session creation)
+- **Error messages**: Now pass through from API → authStore → LoginPage for actual diagnosis
+- **db.ts**: Always MySQL mode, nested Proxy prevents "is not a function" errors
+- **VPS root cause**: Likely `sessions` table missing `lastSeen` column (or other schema drift)
+- **VPS permanent fix needed**: Run `npx prisma db push && npx prisma generate && pm2 restart all`
