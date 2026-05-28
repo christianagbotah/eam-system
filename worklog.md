@@ -113,3 +113,232 @@ Stage Summary:
 - **Approval roles** (`src/components/modules/RepairsPages.tsx`): `isSupervisorOrAdmin()` now matches backend — admin, store_keeper, store_manager only
 - **requiredTools**: Populated from existing WO materials in edit dialog
 
+---
+Task ID: 3f
+Agent: main
+Task: Replace remaining native date inputs with DatePicker component in MaintenancePages.tsx
+
+Work Log:
+- Verified import of DatePicker already exists at line 57
+- Replaced 4 native `<Input type="date">` inputs with `<DatePicker>` component:
+  1. **PM Schedule form (line ~4589)**: "Next Due Date" — removed `<div className="space-y-2">` + `<Label>` wrapper, replaced with `<DatePicker label="Next Due Date">` using `formNextDueDate`/`setFormNextDueDate` state
+  2. **Calibration form "Last Calibration" (line ~5319)**: removed `<div className="grid gap-2">` + `<Label>` wrapper, replaced with `<DatePicker label="Last Calibration">` using `form.lastCalibration`
+  3. **Calibration form "Next Due" (line ~5320)**: removed `<div className="grid gap-2">` + `<Label>` wrapper, replaced with `<DatePicker label="Next Due">` using `form.nextDue`
+  4. **Risk Assessment edit form (line ~5617)**: removed `<div>` + `<Label>` wrapper, replaced with `<DatePicker label="Assessment Date">` using `editForm.assessmentDate`
+- Confirmed no remaining `<Input type="date">` in the file
+- Did not touch any already-converted forms (WO Create/Edit, Convert MR to WO)
+
+Stage Summary:
+- **File**: `src/components/modules/MaintenancePages.tsx`
+- **Lines changed**: ~4589 (PM Schedule), ~5316 (Calibration - Last Calibration), ~5317 (Calibration - Next Due), ~5614 (Risk Assessment)
+- **Pattern**: Removed wrapper div + Label, passed label as prop to DatePicker, converted `undefined` ↔ `''` between component and state
+- **Import**: Already existed at line 57 — no duplicate added
+
+---
+Task ID: 3a
+Agent: main
+Task: Refactor date/time inputs in SafetyPages.tsx to use DatePicker component
+
+Work Log:
+- Read `src/components/modules/SafetyPages.tsx` to identify all 14 `<Input type="date">` instances across 5 safety page components
+- Added import: `import { DatePicker } from '@/components/ui/datetime-picker'` at line 40
+- Fixed duplicate DatePicker import that was already present (consolidated to single import)
+- Replaced all 14 native date inputs with `<DatePicker>` component:
+
+  **SafetyIncidentsPage** (create form):
+  1. Line ~176: "Date" — `form.date`, simple `e.target.value` pattern → `v || ''`
+
+  **SafetyInspectionsPage** (create form):
+  2. Line ~432: "Scheduled Date" — `form.scheduledDate`, simple `e.target.value` pattern → `v || ''`
+
+  **SafetyInspectionsPage** (edit form):
+  3. Line ~553: "Scheduled Date" — `editForm.scheduledDate` with `.slice(0, 10)` and `|| null`
+  4. Line ~554: "Completed Date" — `editForm.completedDate` with `.slice(0, 10)` and `|| null`
+
+  **SafetyTrainingPage** (create form):
+  5. Line ~676: "Scheduled Date" — `form.scheduledDate`, simple `e.target.value` pattern → `v || ''`
+
+  **SafetyTrainingPage** (edit form):
+  6. Line ~776: "Scheduled Date" — `editForm.scheduledDate` with `.slice(0, 10)` and `|| null`
+  7. Line ~777: "Completed Date" — `editForm.completedDate` with `.slice(0, 10)` and `|| null`
+
+  **SafetyEquipmentPage** (create form):
+  8. Line ~913: "Last Inspection" — `form.lastInspection`, simple `e.target.value` pattern → `v || ''`
+  9. Line ~914: "Next Inspection" — `form.nextInspection`, simple `e.target.value` pattern → `v || ''`
+
+  **SafetyEquipmentPage** (edit form):
+  10. Line ~1007: "Last Inspected" — `editForm.lastInspected` with `.slice(0, 10)` and `|| null`
+  11. Line ~1008: "Next Inspection" — `editForm.nextInspection` with `.slice(0, 10)` and `|| null`
+
+  **SafetyPermitsPage** (create form):
+  12. Line ~1131: "Valid From" — `form.validFrom`, simple `e.target.value` pattern → `v || ''`
+  13. Line ~1132: "Valid Until" — `form.validUntil`, simple `e.target.value` pattern → `v || ''`
+
+  **SafetyPermitsPage** (edit form):
+  14. Line ~1243: "Start Date" — `editForm.startDate` with `.slice(0, 10)` and `|| null`
+  15. Line ~1244: "End Date" — `editForm.endDate` with `.slice(0, 10)` and `|| null`
+
+- Pattern used:
+  - Create forms: `value={form.field || undefined}` with `onChange={v => setForm(p => ({ ...p, field: v || '' }))}`
+  - Edit forms with `.slice(0, 10)`: `value={editForm.field ? String(editForm.field).slice(0, 10) : undefined}` with `onChange={v => setEditForm(p => ({ ...p, field: v || null }))}`
+  - Removed all `<div className="space-y-2">` + `<Label>` wrappers (DatePicker handles these internally)
+  - Preserved grid structures — only replaced innermost wrappers
+- Verified no remaining `<Input type="date"` in the file
+- Dev server compiled successfully with no errors
+
+Stage Summary:
+- **File**: `src/components/modules/SafetyPages.tsx`
+- **Changes**: 15 `<Input type="date">` → `<DatePicker>` across 5 components (SafetyIncidentsPage, SafetyInspectionsPage, SafetyTrainingPage, SafetyEquipmentPage, SafetyPermitsPage)
+- **Import**: Single `DatePicker` import from `@/components/ui/datetime-picker`
+- **Date range pairs kept as individual Pickers**: Last/Next Inspection, Valid From/Until, Scheduled/Completed Date, Start/End Date
+
+---
+Task ID: 3c
+Agent: main
+Task: Refactor date/time inputs across OperationsPages, ProductionPages, AssetPages, and InventoryPages to use DatePicker component
+
+Work Log:
+- Read all 4 target files and identified exact lines containing `<Input type="date">`
+- Added `DatePicker` import from `@/components/ui/datetime-picker` to each file
+- Replaced all 10 native date inputs with `<DatePicker>` component across 4 files:
+
+  **OperationsPages.tsx** (4 replacements):
+  1. Line 192: "Reading Date" in meter readings create form — `form.readingDate`
+  2. Line 221: "Reading Date" in meter readings edit form — `editForm.readingDate`
+  3. Line 438: "Expiry Date" in safety survey create form — `form.expiryDate`
+  4. Line 726: "Handover Date" in shift handover edit form — `editForm.handoverDate`
+
+  **ProductionPages.tsx** (4 replacements):
+  5. Line 371: "Start Date" in production schedule create form — `form.startDate`
+  6. Line 372: "End Date" in production schedule create form — `form.endDate`
+  7. Line 884: "Due Date" in production order create form — `form.scheduledEnd`
+  8. Line 1002: "Start Date" in batch record create form — `form.startDate`
+
+  **AssetPages.tsx** (1 replacement):
+  9. Line 360: "Purchase Date" in asset create/edit form — `form.purchaseDate`
+
+  **InventoryPages.tsx** (1 replacement):
+  10. Line 1578: "Expected Date" in purchase order create form — `form.expectedDate`
+
+- Pattern used for all replacements:
+  - Removed outer `<div>`/`<div className="space-y-*">` wrapper and `<Label>` element
+  - Passed label text as `label` prop to `<DatePicker>`
+  - Converted value: `value={form.field || undefined}`
+  - Converted onChange: `onChange={v => setForm(f => ({ ...f, field: v || '' }))}`
+  - Preserved all grid structures — DatePicker sits directly in grid cells
+- Verified 0 remaining `<Input type="date">` in all 4 files
+- Dev server compiled successfully with no errors
+
+Stage Summary:
+- **OperationsPages.tsx**: 4 date inputs replaced (Reading Date ×2, Expiry Date, Handover Date)
+- **ProductionPages.tsx**: 4 date inputs replaced (Start Date ×2, End Date, Due Date)
+- **AssetPages.tsx**: 1 date input replaced (Purchase Date)
+- **InventoryPages.tsx**: 1 date input replaced (Expected Date)
+- **Total**: 10 `<Input type="date">` → `<DatePicker>` replacements
+
+---
+Task ID: 3d
+Agent: main
+Task: Refactor date/time inputs in RepairsPages.tsx and PlannerWorkbench.tsx
+
+Work Log:
+- Read `src/components/ui/datetime-picker.tsx` to understand component API (DatePicker, TimePicker, DateTimePicker, DateRangePicker)
+- Updated `src/components/modules/RepairsPages.tsx`:
+  - Added import: `import { DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker'`
+  - **Repairs Analytics date filter (line ~1983)**: Replaced two `<Input type="date">` (From/To) with single `<DateRangePicker>` using `dateFrom`/`dateTo` state
+  - **Downtime report filter (line ~3395)**: Replaced two `<div><Label>From Date</Label><Input type="date">` + `<div><Label>To Date</Label><Input type="date">` with single `<DateRangePicker label="Date Range">`
+  - **Downtime create form (line ~1685-1686)**: Replaced two `<Input type="datetime-local">` (Start Time/End Time) with two `<DateTimePicker>` components with labels passed as props
+  - **End Downtime dialog (line ~1714)**: Replaced `<Input type="datetime-local">` with `<DateTimePicker label="End Time *">`
+- Updated `src/components/modules/PlannerWorkbench.tsx`:
+  - Added import: `import { DatePicker, DateRangePicker } from '@/components/ui/datetime-picker'`
+  - **Create WO form (line ~1285)**: Replaced `<Input type="date">` "Planned Start" with `<DatePicker label="Planned Start">`
+  - **Work package form (line ~1319)**: Replaced `<Input type="date">` "Scheduled Date" with `<DatePicker label="Scheduled Date">`
+  - **Create STO form (lines ~1504/1508)**: Replaced two `<Input type="date">` (Planned Start/Planned End) with single `<DateRangePicker label="Planned Period">`
+- Removed all outer wrapper divs and `<Label>` elements since new components render their own label
+- Lint check passed with no new errors in modified files (all pre-existing)
+
+Stage Summary:
+- **RepairsPages.tsx**: 5 replacements — 2× DateRangePicker (analytics filter, downtime report filter), 3× DateTimePicker (create form start/end, end downtime dialog)
+- **PlannerWorkbench.tsx**: 3 replacements — 2× DatePicker (WO planned start, WP scheduled date), 1× DateRangePicker (STO planned period)
+- **No remaining `<Input type="date">` or `<Input type="datetime-local">`** in either file (confirmed via grep)
+
+---
+Task ID: 3e
+Agent: main
+Task: Refactor date/time inputs across ReportPages, EnterpriseReports, ReliabilityEngineeringPage, and SettingsPages
+
+Work Log:
+- Read `src/components/ui/datetime-picker.tsx` to understand shared component APIs (DatePicker, TimePicker, DateTimePicker, DateRangePicker)
+- Updated `src/components/modules/ReportPages.tsx`:
+  - Added import: `import { DateRangePicker } from '@/components/ui/datetime-picker'`
+  - **Removed local DateRangePicker function** (was at lines 51-68) — it was a wrapper around two native `<Input type="date">` inside a Card
+  - **Updated 5 usages** (lines ~269, ~838, ~1007, ~1256, ~1472) from `<DateRangePicker startDate={...} setStartDate={...} endDate={...} setEndDate={...} />` to `<DateRangePicker label="Date Range" from={...} to={...} onChange={(f, t) => { setStartDate(f || ''); setEndDate(t || ''); }} />`
+  - Kept Card/CardContent wrapper around DateRangePicker for visual consistency with original design
+- Updated `src/components/modules/EnterpriseReports.tsx`:
+  - Added import: `import { DateRangePicker } from '@/components/ui/datetime-picker'`
+  - **Replaced date range filter (lines ~254-266)**: Removed Label + two `<Input type="date">` + "to" span, replaced with `<DateRangePicker label="Date Range">` inside existing Card wrapper
+  - Kept Card, flex container, and Generate button alongside the new component
+- Updated `src/components/modules/ReliabilityEngineeringPage.tsx`:
+  - Added import: `import { DatePicker } from '@/components/ui/datetime-picker'`
+  - **Replaced 2 date inputs (lines ~1145, ~1149)**: "Period Start" and "Period End" in MTBF/Reliability compute form — removed `<div>` + `<Label>` wrappers, replaced with individual `<DatePicker>` components with label prop
+  - Kept grid structure intact (3-column grid with Asset ID, Period Start, Period End)
+- Updated `src/components/modules/SettingsPages.tsx`:
+  - Added import: `import { DateRangePicker, TimePicker } from '@/components/ui/datetime-picker'`
+  - **Replaced backup logs date filter (lines ~2374-2378)**: Two `<Input type="date">` with "to" span inside flex container → single `<DateRangePicker>` with `from`/`to`/`onChange` props
+  - **Replaced Notification Preferences quiet hours (lines ~2272-2274)**: Two `<div><Label>Start/End Time</Label><Input type="time">` → two `<TimePicker label="Start/End Time">` components
+  - **Replaced Admin User Settings quiet hours (lines ~3566-3568)**: Same pattern — two `<div><Label>Start/End Time</Label><Input type="time">` → two `<TimePicker label="Start/End Time">` components
+- Lint check: No new errors in modified files (all errors are pre-existing)
+
+Stage Summary:
+- **ReportPages.tsx**: Removed local DateRangePicker function, updated 5 usages to shared component with from/to/onChange API
+- **EnterpriseReports.tsx**: 1 DateRangePicker replacing 2 native date inputs
+- **ReliabilityEngineeringPage.tsx**: 2 DatePickers (Period Start, Period End)
+- **SettingsPages.tsx**: 1 DateRangePicker (backup logs), 4 TimePickers (2× quiet hours in Notification Prefs, 2× quiet hours in Admin User Settings)
+- **Total**: 6 replacements + 1 function removal + 4 import additions
+
+---
+Task ID: 3b
+Agent: main
+Task: Refactor date/time inputs in QualityPages.tsx to use DatePicker component
+
+Work Log:
+- Read `src/components/ui/datetime-picker.tsx` to understand DatePicker API
+- Read `src/components/modules/QualityPages.tsx` — identified 12 `<Input type="date">` instances across 5 quality page components
+- Added import: `import { DatePicker } from '@/components/ui/datetime-picker'`
+- Reformatted 3 minified single-line edit forms (lines 134, 368, 736) into properly indented multi-line JSX AND replaced date inputs within them
+- Replaced all 12 native date inputs with `<DatePicker>` component:
+
+  **QualityInspectionsPage** (3 replacements):
+  1. Line 141: "Scheduled Date" edit form — `editForm.scheduledDate || undefined`
+  2. Line 142: "Completed Date" edit form — `editForm.completedDate || undefined`
+  3. Line 157: "Scheduled Date" create form — `form.scheduledDate || undefined`
+
+  **QualityAuditsPage** (3 replacements):
+  4. Line 388: "Scheduled Date" edit form — `editForm.scheduledDate || undefined`
+  5. Line 389: "Completed Date" edit form — `editForm.completedDate || undefined`
+  6. Line 404: "Scheduled Date *" create form — `form.scheduledDate || undefined`
+
+  **QualityCapaPage** (2 replacements):
+  7. Line 770: "Due Date" edit form — `editForm.dueDate || undefined`
+  8. Line 790: "Due Date" create form — `form.dueDate || undefined`
+
+  **QualityCalibrationsPage** (4 replacements):
+  9. Line 995: "Calibration Date" create form — `form.calibrationDate || undefined`
+  10. Line 996: "Next Due Date" create form — `form.nextDueDate || undefined`
+  11. Line 1027: "Calibration Date" edit form — `editForm.calibrationDate || undefined`
+  12. Line 1028: "Next Due Date" edit form — `editForm.nextDueDate || undefined`
+
+- Minified line reformatting:
+  - Line 134 (Inspections edit): 1 minified line → 14 indented lines with DatePicker
+  - Line 368 (Audits edit): 1 minified line → 16 indented lines with DatePicker
+  - Line 736 (CAPA edit): 1 minified line → 16 indented lines with DatePicker
+- Verified 0 remaining `<Input type="date">` in the file
+- Lint check: No new errors in QualityPages.tsx
+- Dev server compiled successfully
+
+Stage Summary:
+- **File**: `src/components/modules/QualityPages.tsx`
+- **Total**: 12 `<Input type="date">` → `<DatePicker>` replacements
+- **Minified lines reformatted**: 3 (lines 134, 368, 736) into proper multi-line JSX
+- **Components affected**: QualityInspectionsPage, QualityAuditsPage, QualityCapaPage, QualityCalibrationsPage
+

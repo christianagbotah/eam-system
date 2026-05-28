@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { DateRangePicker } from '@/components/ui/datetime-picker';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -254,10 +255,7 @@ export default function EnterpriseReports() {
       <Card className="border border-border/60 shadow-sm">
         <CardContent className="p-4">
           <div className="flex items-center gap-3 flex-wrap">
-            <Label className="text-sm font-medium flex items-center gap-1.5"><Calendar className="h-4 w-4 text-muted-foreground" />Date Range</Label>
-            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-40" />
-            <span className="text-muted-foreground text-sm">to</span>
-            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-40" />
+            <DateRangePicker label="Date Range" from={startDate || undefined} to={endDate || undefined} onChange={(f, t) => { setStartDate(f || ''); setEndDate(t || ''); }} />
             <Button size="sm" onClick={fetchReport} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               Generate
             </Button>

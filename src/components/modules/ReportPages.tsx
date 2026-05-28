@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { DateRangePicker } from '@/components/ui/datetime-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -48,24 +49,7 @@ const useDateRange = () => {
   return { startDate, setStartDate, endDate, setEndDate };
 };
 
-// Shared DateRangePicker sub-component
-function DateRangePicker({ startDate, setStartDate, endDate, setEndDate }: {
-  startDate: string; setStartDate: (v: string) => void;
-  endDate: string; setEndDate: (v: string) => void;
-}) {
-  return (
-    <Card className="border border-border/60 shadow-sm">
-      <CardContent className="p-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Label className="text-sm font-medium flex items-center gap-1.5"><Calendar className="h-4 w-4 text-muted-foreground" />Date Range</Label>
-          <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-40" />
-          <span className="text-muted-foreground text-sm">to</span>
-          <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-40" />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+
 
 // Client-side date range filter helper
 function filterByDateRange<T extends { createdAt?: string | null }>(items: T[], startDate: string, endDate: string): T[] {
@@ -266,7 +250,9 @@ export function ReportsMaintenancePage() {
 
       {/* Date Range + Actions */}
       <div className="flex items-center gap-3 flex-wrap">
-        <DateRangePicker startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate} />
+        <Card className="border border-border/60 shadow-sm"><CardContent className="p-4">
+          <DateRangePicker label="Date Range" from={startDate || undefined} to={endDate || undefined} onChange={(f, t) => { setStartDate(f || ''); setEndDate(t || ''); }} />
+        </CardContent></Card>
         <Button size="sm" onClick={fetchReport} disabled={loading}>
           {loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1.5" />}
           Generate Report
@@ -835,7 +821,9 @@ export function ReportsProductionPage() {
         <div><h1 className="text-2xl font-bold tracking-tight">Production Reports</h1><p className="text-muted-foreground mt-1">Production orders status breakdown, completion rates, on-time delivery, and yield from real production data</p></div>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
-        <DateRangePicker startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate} />
+        <Card className="border border-border/60 shadow-sm"><CardContent className="p-4">
+          <DateRangePicker label="Date Range" from={startDate || undefined} to={endDate || undefined} onChange={(f, t) => { setStartDate(f || ''); setEndDate(t || ''); }} />
+        </CardContent></Card>
         <Button variant="outline" size="sm" onClick={() => exportCSV('production-orders', ['Order Number', 'Product', 'Status', 'Priority', 'Start Date', 'End Date'], orders.map(o => [o.orderNumber || '', o.title || '', o.status || '', o.priority || '', o.scheduledStart ? new Date(o.scheduledStart).toISOString().slice(0, 10) : '', o.scheduledEnd ? new Date(o.scheduledEnd).toISOString().slice(0, 10) : '']))}>
           <Download className="h-4 w-4 mr-1.5" />Export CSV
         </Button>
@@ -1004,7 +992,9 @@ export function ReportsQualityPage() {
         <div><h1 className="text-2xl font-bold tracking-tight">Quality Reports</h1><p className="text-muted-foreground mt-1">Inspection pass/fail rates, NCR status breakdown, and audit completion from real quality data</p></div>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
-        <DateRangePicker startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate} />
+        <Card className="border border-border/60 shadow-sm"><CardContent className="p-4">
+          <DateRangePicker label="Date Range" from={startDate || undefined} to={endDate || undefined} onChange={(f, t) => { setStartDate(f || ''); setEndDate(t || ''); }} />
+        </CardContent></Card>
         <Button variant="outline" size="sm" onClick={() => exportCSV('quality-inspections', ['ID', 'Type', 'Status', 'Result', 'Date', 'Inspector'], inspections.map(i => [i.inspectionNumber || i.id || '', i.type || '', i.status || '', i.result || i.status || '', i.createdAt ? new Date(i.createdAt).toISOString().slice(0, 10) : '', i.inspector || '']))}>
           <Download className="h-4 w-4 mr-1.5" />Export CSV
         </Button>
@@ -1253,7 +1243,9 @@ export function ReportsSafetyPage() {
         <div><h1 className="text-2xl font-bold tracking-tight">Safety Reports</h1><p className="text-muted-foreground mt-1">Incident trends, severity breakdown, inspection completion, and training compliance from real safety data</p></div>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
-        <DateRangePicker startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate} />
+        <Card className="border border-border/60 shadow-sm"><CardContent className="p-4">
+          <DateRangePicker label="Date Range" from={startDate || undefined} to={endDate || undefined} onChange={(f, t) => { setStartDate(f || ''); setEndDate(t || ''); }} />
+        </CardContent></Card>
         <Button variant="outline" size="sm" onClick={() => exportCSV('safety-incidents', ['ID', 'Title', 'Severity', 'Status', 'Date', 'Reported By'], incidents.map(i => [i.incidentNumber || i.id || '', i.title || '', i.severity || '', i.status || '', i.createdAt ? new Date(i.createdAt).toISOString().slice(0, 10) : '', i.reportedBy || '']))}>
           <Download className="h-4 w-4 mr-1.5" />Export CSV
         </Button>
@@ -1469,7 +1461,9 @@ export function ReportsFinancialPage() {
     <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Financial Reports</h1><p className="text-muted-foreground mt-1">Maintenance cost breakdown, inventory value, production value, and budget trends from real financial data</p></div>
       <div className="flex items-center gap-3 flex-wrap">
-        <DateRangePicker startDate={startDate} setStartDate={setStartDate} endDate={endDate} setEndDate={setEndDate} />
+        <Card className="border border-border/60 shadow-sm"><CardContent className="p-4">
+          <DateRangePicker label="Date Range" from={startDate || undefined} to={endDate || undefined} onChange={(f, t) => { setStartDate(f || ''); setEndDate(t || ''); }} />
+        </CardContent></Card>
         <Button variant="outline" size="sm" onClick={() => exportCSV('financial-work-orders', ['WO Number', 'Title', 'Type', 'Priority', 'Cost', 'Status'], workOrders.map(wo => [wo.woNumber || '', wo.title || '', wo.type || '', wo.priority || '', (wo.totalCost || 0).toString(), wo.status || '']))}>
           <Download className="h-4 w-4 mr-1.5" />Export CSV
         </Button>

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { DatePicker } from '@/components/ui/datetime-picker';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -1141,12 +1142,10 @@ function DowntimeTab() {
               <AsyncSearchableSelect value={form.assetId} onValueChange={(v) => setForm({ ...form, assetId: v })} fetchOptions={fetchAssetOptions} placeholder="Search asset..." />
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground">Period Start</Label>
-              <Input type="date" value={form.periodStart} onChange={(e) => setForm({ ...form, periodStart: e.target.value })} />
+              <DatePicker label="Period Start" value={form.periodStart || undefined} onChange={v => setForm({ ...form, periodStart: v || '' })} />
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground">Period End</Label>
-              <Input type="date" value={form.periodEnd} onChange={(e) => setForm({ ...form, periodEnd: e.target.value })} />
+              <DatePicker label="Period End" value={form.periodEnd || undefined} onChange={v => setForm({ ...form, periodEnd: v || '' })} />
             </div>
           </div>
           <Button className="mt-3" onClick={handleCompute} disabled={running || !form.assetId || !form.periodStart || !form.periodEnd}>

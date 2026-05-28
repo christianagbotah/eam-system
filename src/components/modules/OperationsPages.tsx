@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { DatePicker } from '@/components/ui/datetime-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -188,7 +189,7 @@ export function OperationsMeterReadingsPage() {
               <div><Label>Reading Value</Label><Input type="number" placeholder="0" value={form.value} onChange={e => setForm(f => ({ ...f, value: e.target.value }))} /></div>
               <div><Label>Unit</Label><Select value={form.unit} onValueChange={v => setForm(f => ({ ...f, unit: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="kWh">kWh</SelectItem><SelectItem value="m³">m³</SelectItem><SelectItem value="psi">psi</SelectItem><SelectItem value="bar">bar</SelectItem><SelectItem value="CFM">CFM</SelectItem></SelectContent></Select></div>
             </div>
-            <div><Label>Reading Date</Label><Input type="date" value={form.readingDate} onChange={e => setForm(f => ({ ...f, readingDate: e.target.value }))} /></div>
+            <DatePicker label="Reading Date" value={form.readingDate || undefined} onChange={v => setForm(f => ({ ...f, readingDate: v || '' }))} />
             <div><Label>Notes</Label><Textarea placeholder="Optional notes..." value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></div>
           </div>
           <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.meter || !form.value}>{saving ? 'Saving...' : 'Record Reading'}</Button></div>
@@ -217,7 +218,7 @@ export function OperationsMeterReadingsPage() {
               <div><Label>Unit</Label><Select value={editForm.unit} onValueChange={v => setEditForm(f => ({ ...f, unit: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="kWh">kWh</SelectItem><SelectItem value="m³">m³</SelectItem><SelectItem value="psi">psi</SelectItem><SelectItem value="bar">bar</SelectItem><SelectItem value="CFM">CFM</SelectItem></SelectContent></Select></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Reading Date</Label><Input type="date" value={editForm.readingDate} onChange={e => setEditForm(f => ({ ...f, readingDate: e.target.value }))} /></div>
+              <DatePicker label="Reading Date" value={editForm.readingDate || undefined} onChange={v => setEditForm(f => ({ ...f, readingDate: v || '' }))} />
               <div><Label>Reader</Label><Input value={editForm.reader} onChange={e => setEditForm(f => ({ ...f, reader: e.target.value }))} placeholder="Who recorded" /></div>
             </div>
             <div><Label>Notes</Label><Textarea value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} rows={3} /></div>
@@ -434,7 +435,7 @@ export function OperationsSurveysPage() {
             <div><Label>Type</Label><Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="safety">Safety</SelectItem><SelectItem value="compliance">Compliance</SelectItem><SelectItem value="audit">Audit</SelectItem><SelectItem value="feedback">Feedback</SelectItem></SelectContent></Select></div>
             <div><Label>Description</Label><Textarea placeholder="Survey description..." value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></div>
             <div><Label>Questions (one per line)</Label><Textarea placeholder="Are fire extinguishers accessible?&#10;Are emergency exits clear?&#10;Is PPE being worn correctly?" rows={4} value={form.questions} onChange={e => setForm(f => ({ ...f, questions: e.target.value }))} /></div>
-            <div><Label>Expiry Date</Label><Input type="date" value={form.expiryDate} onChange={e => setForm(f => ({ ...f, expiryDate: e.target.value }))} /></div>
+            <DatePicker label="Expiry Date" value={form.expiryDate || undefined} onChange={v => setForm(f => ({ ...f, expiryDate: v || '' }))} />
           </div>
           <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving || !form.title}>{saving ? 'Creating...' : 'Create Survey'}</Button></div>
         
@@ -722,7 +723,7 @@ export function OperationsShiftHandoverPage() {
               <div><Label>To Operator</Label><Input value={editForm.toOperator} onChange={e => setEditForm(f => ({ ...f, toOperator: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Handover Date</Label><Input type="date" value={editForm.handoverDate} onChange={e => setEditForm(f => ({ ...f, handoverDate: e.target.value }))} /></div>
+              <DatePicker label="Handover Date" value={editForm.handoverDate || undefined} onChange={v => setEditForm(f => ({ ...f, handoverDate: v || '' }))} />
               <div><Label>Area</Label><SearchableSelect value={editForm.area} onValueChange={v => setEditForm(f => ({ ...f, area: v }))} options={areaOptions} placeholder="Select area..." clearable={false} /></div>
             </div>
             <div><Label>Tasks Summary</Label><Textarea value={editForm.items} onChange={e => setEditForm(f => ({ ...f, items: e.target.value }))} rows={3} /></div>

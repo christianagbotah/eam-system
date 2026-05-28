@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { DateRangePicker, TimePicker } from '@/components/ui/datetime-picker';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -2270,8 +2271,8 @@ export function NotificationsPage() {
                 {prefs.quietHours.enabled && (
                   <>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2"><Label className="text-xs">Start Time</Label><Input type="time" value={prefs.quietHours.start} onChange={e => setPrefs(p => ({ ...p!, quietHours: { ...p!.quietHours, start: e.target.value } }))} /></div>
-                      <div className="space-y-2"><Label className="text-xs">End Time</Label><Input type="time" value={prefs.quietHours.end} onChange={e => setPrefs(p => ({ ...p!, quietHours: { ...p!.quietHours, end: e.target.value } }))} /></div>
+                      <TimePicker label="Start Time" value={prefs.quietHours.start || undefined} onChange={v => setPrefs(p => ({ ...p!, quietHours: { ...p!.quietHours, start: v } }))} />
+                      <TimePicker label="End Time" value={prefs.quietHours.end || undefined} onChange={v => setPrefs(p => ({ ...p!, quietHours: { ...p!.quietHours, end: v } }))} />
                     </div>
                     <div className="space-y-2">
                       <Label className="text-xs">Timezone</Label>
@@ -2371,11 +2372,7 @@ export function NotificationsPage() {
               </SelectContent>
             </Select>
 
-            <div className="flex items-center gap-1.5">
-              <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-8 text-xs w-[140px]" />
-              <span className="text-xs text-muted-foreground">to</span>
-              <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-8 text-xs w-[140px]" />
-            </div>
+            <DateRangePicker from={startDate || undefined} to={endDate || undefined} onChange={(f, t) => { setStartDate(f || ''); setEndDate(t || ''); }} />
 
             {hasActiveFilters && (
               <Button variant="ghost" size="sm" className="h-8 text-xs gap-1" onClick={clearFilters}>
@@ -3564,8 +3561,8 @@ export function SettingsNotificationsPage() {
             {quietHours.enabled && (
               <>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-xs">Start Time</Label><Input type="time" value={quietHours.start} onChange={e => setQuietHours(q => ({ ...q, start: e.target.value }))} /></div>
-                  <div className="space-y-2"><Label className="text-xs">End Time</Label><Input type="time" value={quietHours.end} onChange={e => setQuietHours(q => ({ ...q, end: e.target.value }))} /></div>
+                  <TimePicker label="Start Time" value={quietHours.start || undefined} onChange={v => setQuietHours(q => ({ ...q, start: v }))} />
+                  <TimePicker label="End Time" value={quietHours.end || undefined} onChange={v => setQuietHours(q => ({ ...q, end: v }))} />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs">Timezone</Label>

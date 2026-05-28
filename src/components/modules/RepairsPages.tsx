@@ -39,6 +39,7 @@ import {
   Handshake, Truck, DollarSign, RefreshCw, X, Info,
 } from 'lucide-react';
 import { EmptyState, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
+import { DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 
 // ============================================================================
@@ -1682,8 +1683,8 @@ export function RepairDowntimePage() {
               <div><Label>Asset Name *</Label><AsyncSearchableSelect value={createForm.assetId} onValueChange={(v) => { const asset = assetsCache.find((a: any) => a.id === v); setCreateForm(f => ({ ...f, assetId: v, assetName: asset ? (asset.name || asset.assetTag) : '' })); }} placeholder="Search assets..." searchPlaceholder="Search by name or tag..." fetchOptions={fetchAssets} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Start Time *</Label><Input type="datetime-local" value={createForm.downtimeStart} onChange={(e) => setCreateForm({ ...createForm, downtimeStart: e.target.value })} /></div>
-              <div><Label>End Time</Label><Input type="datetime-local" value={createForm.downtimeEnd} onChange={(e) => setCreateForm({ ...createForm, downtimeEnd: e.target.value })} /></div>
+              <DateTimePicker label="Start Time *" value={createForm.downtimeStart || undefined} onChange={v => setCreateForm(f => ({ ...f, downtimeStart: v || '' }))} />
+              <DateTimePicker label="End Time" value={createForm.downtimeEnd || undefined} onChange={v => setCreateForm(f => ({ ...f, downtimeEnd: v || '' }))} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Category</Label>
@@ -1711,7 +1712,7 @@ export function RepairDowntimePage() {
         
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">End Downtime</h2><p className="text-sm text-muted-foreground">Set the end time for this downtime event.</p></div>
           <div className="space-y-4">
-            <div className="space-y-1.5"><Label>End Time *</Label><Input type="datetime-local" value={endDowntimeTime} onChange={e => setEndDowntimeTime(e.target.value)} /></div>
+            <DateTimePicker label="End Time *" value={endDowntimeTime || undefined} onChange={v => setEndDowntimeTime(v || '')} />
             <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
               <Button variant="outline" onClick={() => setEndDowntimeTarget(null)}>Cancel</Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleEndDowntimeConfirm}>End Downtime</Button>
@@ -1979,8 +1980,7 @@ export function RepairAnalyticsPage() {
           <p className="text-muted-foreground">Key performance indicators and enterprise reports for the repairs module</p>
         </div>
         <div className="flex items-center gap-2">
-          <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-40 h-9 text-sm" placeholder="From" />
-          <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-40 h-9 text-sm" placeholder="To" />
+          <DateRangePicker from={dateFrom || undefined} to={dateTo || undefined} onChange={(f, t) => { setDateFrom(f || ''); setDateTo(t || ''); }} />
           {(dateFrom || dateTo) && (
             <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); }} className="h-9"><X className="h-3.5 w-3.5" /></Button>
           )}
@@ -3392,14 +3392,7 @@ export function MaintenanceReportsPage() {
       {/* Filters */}
       <Card className="p-4">
         <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs">From Date</Label>
-            <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-40" />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">To Date</Label>
-            <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-40" />
-          </div>
+          <DateRangePicker label="Date Range" from={dateFrom || undefined} to={dateTo || undefined} onChange={(f, t) => { setDateFrom(f || ''); setDateTo(t || ''); }} />
           <Button onClick={generateReport} disabled={loading} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
             {loading ? <Activity className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
             Generate Report

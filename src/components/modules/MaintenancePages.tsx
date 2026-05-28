@@ -1073,7 +1073,7 @@ export function MRDetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     rows={3}
                   />
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 sm:col-span-2">
                   <Label className="text-xs">Scheduled Date</Label>
                   <DateTimePicker value={convertForm.scheduledDate || undefined} onChange={v => setConvertForm(f => ({ ...f, scheduledDate: v || '' }))} />
                 </div>
@@ -2195,7 +2195,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
               rows={3}
             />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 sm:col-span-2">
             <Label className="text-xs">Scheduled Date</Label>
             <DateTimePicker value={form.scheduledDate || undefined} onChange={v => updateField('scheduledDate', v || '')} />
           </div>
@@ -3118,7 +3118,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     rows={3}
                   />
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 sm:col-span-2">
                   <Label className="text-xs">Scheduled Date</Label>
                   <DateTimePicker value={editForm.scheduledDate || undefined} onChange={v => editUpdateField('scheduledDate', v || '')} />
                 </div>
@@ -4586,10 +4586,7 @@ export function PmSchedulesPage() {
                 searchPlaceholder="Search departments..."
               />
             </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Next Due Date</Label>
-              <Input type="date" value={formNextDueDate} onChange={e => setFormNextDueDate(e.target.value)} />
-            </div>
+            <DatePicker label="Next Due Date" value={formNextDueDate || undefined} onChange={v => setFormNextDueDate(v || '')} />
             <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
               <div>
                 <p className="text-sm font-medium">Auto-generate Work Order</p>
@@ -5316,8 +5313,8 @@ export function MaintenanceCalibrationPage() {
                     <div className="grid gap-2"><Label className="text-xs">Type</Label><Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger><SelectContent><SelectItem value="pressure">Pressure</SelectItem><SelectItem value="temperature">Temperature</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="dimensional">Dimensional</SelectItem><SelectItem value="flow">Flow</SelectItem></SelectContent></Select></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="grid gap-2"><Label className="text-xs">Last Calibration</Label><Input type="date" value={form.lastCalibration} onChange={e => setForm({ ...form, lastCalibration: e.target.value })} /></div>
-                    <div className="grid gap-2"><Label className="text-xs">Next Due</Label><Input type="date" value={form.nextDue} onChange={e => setForm({ ...form, nextDue: e.target.value })} /></div>
+                    <DatePicker label="Last Calibration" value={form.lastCalibration || undefined} onChange={v => setForm(f => ({ ...f, lastCalibration: v || '' }))} />
+                    <DatePicker label="Next Due" value={form.nextDue || undefined} onChange={v => setForm(f => ({ ...f, nextDue: v || '' }))} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="grid gap-2"><Label className="text-xs">Technician</Label><AsyncSearchableSelect
@@ -5614,7 +5611,7 @@ export function MaintenanceRiskAssessmentPage() {
               <div><Label>Department</Label><Input value={editForm.department} onChange={e => setEditForm(f => ({ ...f, department: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Assessment Date</Label><Input type="date" value={editForm.assessmentDate} onChange={e => setEditForm(f => ({ ...f, assessmentDate: e.target.value }))} /></div>
+              <DatePicker label="Assessment Date" value={editForm.assessmentDate || undefined} onChange={v => setEditForm(f => ({ ...f, assessmentDate: v || '' }))} />
               <div><Label>Risk Level</Label><Select value={editForm.riskLevel} onValueChange={v => setEditForm(f => ({ ...f, riskLevel: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem><SelectItem value="extreme">Extreme</SelectItem></SelectContent></Select></div>
             </div>
             <div><Label>Description</Label><Textarea value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} rows={3} /></div>

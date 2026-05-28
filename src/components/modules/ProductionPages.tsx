@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { DatePicker } from '@/components/ui/datetime-picker';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
@@ -367,8 +368,8 @@ export function ProductionSchedulingPage() {
               <div className="space-y-2"><Label>Work Center</Label><AsyncSearchableSelect value={form.workCenterId} onValueChange={v => setForm(f => ({ ...f, workCenterId: v }))} placeholder="Select work center..." searchPlaceholder="Search work centers..." fetchOptions={async () => { const res = await api.get('/api/work-centers?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((wc: any) => ({ value: wc.id, label: `${wc.name} (${wc.code})` })); return []; }} /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
-              <div className="space-y-2"><Label>End Date</Label><Input type="date" value={form.endDate} onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))} /></div>
+              <DatePicker label="Start Date" value={form.startDate || undefined} onChange={v => setForm(f => ({ ...f, startDate: v || '' }))} />
+              <DatePicker label="End Date" value={form.endDate || undefined} onChange={v => setForm(f => ({ ...f, endDate: v || '' }))} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Priority</Label><Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent></Select></div>
@@ -880,7 +881,7 @@ export function ProductionOrdersPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Work Center</Label><AsyncSearchableSelect value={form.workCenterId} onValueChange={v => setForm(f => ({ ...f, workCenterId: v }))} placeholder="Select work center..." searchPlaceholder="Search work centers..." fetchOptions={async () => { const res = await api.get('/api/work-centers?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((wc: any) => ({ value: wc.id, label: `${wc.name} (${wc.code})` })); return []; }} /></div>
-              <div className="space-y-2"><Label>Due Date</Label><Input type="date" value={form.scheduledEnd} onChange={e => setForm(f => ({ ...f, scheduledEnd: e.target.value }))} /></div>
+              <DatePicker label="Due Date" value={form.scheduledEnd || undefined} onChange={v => setForm(f => ({ ...f, scheduledEnd: v || '' }))} />
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional notes..." rows={2} /></div>
           </div>
@@ -998,7 +999,7 @@ export function ProductionBatchesPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Quantity *</Label><Input type="number" value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} placeholder="0" /></div>
-              <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} /></div>
+              <DatePicker label="Start Date" value={form.startDate || undefined} onChange={v => setForm(f => ({ ...f, startDate: v || '' }))} />
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Batch notes..." rows={2} /></div>
           </div>

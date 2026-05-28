@@ -30,6 +30,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
+import { DatePicker, DateRangePicker } from '@/components/ui/datetime-picker';
 import { EmptyState, LoadingSkeleton, formatDate, formatCurrency } from '@/components/shared/helpers';
 import {
   LayoutDashboard, GripVertical, ChevronLeft, ChevronRight, Clock, AlertTriangle,
@@ -1280,10 +1281,7 @@ export default function PlannerWorkbench() {
               <Label>Est. Hours</Label>
               <Input type="number" value={createWOForm.estimatedHours} onChange={e => setCreateWOForm(f => ({ ...f, estimatedHours: e.target.value }))} placeholder="4" />
             </div>
-            <div className="space-y-2">
-              <Label>Planned Start</Label>
-              <Input type="date" value={createWOForm.plannedStart} onChange={e => setCreateWOForm(f => ({ ...f, plannedStart: e.target.value }))} />
-            </div>
+            <DatePicker label="Planned Start" value={createWOForm.plannedStart || undefined} onChange={v => setCreateWOForm(f => ({ ...f, plannedStart: v || '' }))} />
           </div>
           <div className="space-y-2">
             <Label>Notes</Label>
@@ -1314,10 +1312,7 @@ export default function PlannerWorkbench() {
             </Select>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Scheduled Date</Label>
-              <Input type="date" value={wpForm.scheduledDate} onChange={e => setWpForm(f => ({ ...f, scheduledDate: e.target.value }))} />
-            </div>
+            <DatePicker label="Scheduled Date" value={wpForm.scheduledDate || undefined} onChange={v => setWpForm(f => ({ ...f, scheduledDate: v || '' }))} />
             <div className="space-y-2">
               <Label>Shift</Label>
               <Select value={wpForm.shift} onValueChange={v => setWpForm(f => ({ ...f, shift: v }))}>
@@ -1498,16 +1493,7 @@ export default function PlannerWorkbench() {
             <Label>Description</Label>
             <Textarea value={createSTOForm.description} onChange={e => setCreateSTOForm(f => ({ ...f, description: e.target.value }))} placeholder="Scope, objectives, etc." rows={3} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Planned Start</Label>
-              <Input type="date" value={createSTOForm.plannedStartDate} onChange={e => setCreateSTOForm(f => ({ ...f, plannedStartDate: e.target.value }))} />
-            </div>
-            <div className="space-y-2">
-              <Label>Planned End</Label>
-              <Input type="date" value={createSTOForm.plannedEndDate} onChange={e => setCreateSTOForm(f => ({ ...f, plannedEndDate: e.target.value }))} />
-            </div>
-          </div>
+          <DateRangePicker label="Planned Period" from={createSTOForm.plannedStartDate || undefined} to={createSTOForm.plannedEndDate || undefined} onChange={(f, t) => setCreateSTOForm(form => ({ ...form, plannedStartDate: f || '', plannedEndDate: t || '' }))} />
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Est. Duration (hours)</Label>

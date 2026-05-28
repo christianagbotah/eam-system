@@ -37,6 +37,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
+import { DatePicker } from '@/components/ui/datetime-picker';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
 
 export function SafetyIncidentsPage() {
@@ -171,7 +172,7 @@ export function SafetyIncidentsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Location</Label><Input placeholder="e.g. Warehouse B" value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))} /></div>
-                  <div className="space-y-2"><Label>Date</Label><Input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} /></div>
+                  <DatePicker label="Date" value={form.date || undefined} onChange={v => setForm(p => ({ ...p, date: v || '' }))} />
                 </div>
               </div>
             </ScrollArea>
@@ -427,7 +428,7 @@ export function SafetyInspectionsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Inspector</Label><AsyncSearchableSelect value={form.inspector} onValueChange={v => setForm(p => ({ ...p, inspector: v }))} placeholder="Select inspector..." fetchOptions={async () => { const res = await api.get('/api/users?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username || ''})` })); return []; }} /></div>
-                  <div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={form.scheduledDate} onChange={e => setForm(p => ({ ...p, scheduledDate: e.target.value }))} /></div>
+                  <DatePicker label="Scheduled Date" value={form.scheduledDate || undefined} onChange={v => setForm(p => ({ ...p, scheduledDate: v || '' }))} />
                 </div>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -549,8 +550,8 @@ export function SafetyInspectionsPage() {
               <div className="space-y-2"><Label>Score</Label><Input type="number" value={editForm.score ?? ''} onChange={e => setEditForm(p => ({ ...p, score: e.target.value ? Number(e.target.value) : null }))} /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={editForm.scheduledDate ? String(editForm.scheduledDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, scheduledDate: e.target.value || null }))} /></div>
-              <div className="space-y-2"><Label>Completed Date</Label><Input type="date" value={editForm.completedDate ? String(editForm.completedDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, completedDate: e.target.value || null }))} /></div>
+              <DatePicker label="Scheduled Date" value={editForm.scheduledDate ? String(editForm.scheduledDate).slice(0, 10) : undefined} onChange={v => setEditForm(p => ({ ...p, scheduledDate: v || null }))} />
+              <DatePicker label="Completed Date" value={editForm.completedDate ? String(editForm.completedDate).slice(0, 10) : undefined} onChange={v => setEditForm(p => ({ ...p, completedDate: v || null }))} />
             </div>
             <div className="space-y-2"><Label>Findings</Label><Textarea rows={2} value={editForm.findings || ''} onChange={e => setEditForm(p => ({ ...p, findings: e.target.value }))} /></div>
           </div>
@@ -672,7 +673,7 @@ export function SafetyTrainingPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Trainer</Label><Input placeholder="Trainer name" value={form.trainer} onChange={e => setForm(p => ({ ...p, trainer: e.target.value }))} /></div>
-                  <div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={form.scheduledDate} onChange={e => setForm(p => ({ ...p, scheduledDate: e.target.value }))} /></div>
+                  <DatePicker label="Scheduled Date" value={form.scheduledDate || undefined} onChange={v => setForm(p => ({ ...p, scheduledDate: v || '' }))} />
                 </div>
                 <div className="space-y-2"><Label>Location</Label><Input placeholder="e.g. Training Room A" value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))} /></div>
               </div>
@@ -772,8 +773,8 @@ export function SafetyTrainingPage() {
               <div className="space-y-2"><Label>Attendees</Label><Input value={editForm.attendees || ''} onChange={e => setEditForm(p => ({ ...p, attendees: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Scheduled Date</Label><Input type="date" value={editForm.scheduledDate ? String(editForm.scheduledDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, scheduledDate: e.target.value || null }))} /></div>
-              <div className="space-y-2"><Label>Completed Date</Label><Input type="date" value={editForm.completedDate ? String(editForm.completedDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, completedDate: e.target.value || null }))} /></div>
+              <DatePicker label="Scheduled Date" value={editForm.scheduledDate ? String(editForm.scheduledDate).slice(0, 10) : undefined} onChange={v => setEditForm(p => ({ ...p, scheduledDate: v || null }))} />
+              <DatePicker label="Completed Date" value={editForm.completedDate ? String(editForm.completedDate).slice(0, 10) : undefined} onChange={v => setEditForm(p => ({ ...p, completedDate: v || null }))} />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-4">
@@ -909,8 +910,8 @@ export function SafetyEquipmentPage() {
                 </div>
                 <div className="space-y-2"><Label>Location</Label><Input placeholder="Storage location" value={form.location} onChange={e => setForm(p => ({ ...p, location: e.target.value }))} /></div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Last Inspection</Label><Input type="date" value={form.lastInspection} onChange={e => setForm(p => ({ ...p, lastInspection: e.target.value }))} /></div>
-                  <div className="space-y-2"><Label>Next Inspection</Label><Input type="date" value={form.nextInspection} onChange={e => setForm(p => ({ ...p, nextInspection: e.target.value }))} /></div>
+                  <DatePicker label="Last Inspection" value={form.lastInspection || undefined} onChange={v => setForm(p => ({ ...p, lastInspection: v || '' }))} />
+                  <DatePicker label="Next Inspection" value={form.nextInspection || undefined} onChange={v => setForm(p => ({ ...p, nextInspection: v || '' }))} />
                 </div>
               </div>
             </ScrollArea>
@@ -1003,8 +1004,8 @@ export function SafetyEquipmentPage() {
               <div className="space-y-2"><Label>Serial Number</Label><Input value={editForm.serialNumber || ''} onChange={e => setEditForm(p => ({ ...p, serialNumber: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Last Inspected</Label><Input type="date" value={editForm.lastInspected ? String(editForm.lastInspected).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, lastInspected: e.target.value || null }))} /></div>
-              <div className="space-y-2"><Label>Next Inspection</Label><Input type="date" value={editForm.nextInspection ? String(editForm.nextInspection).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, nextInspection: e.target.value || null }))} /></div>
+              <DatePicker label="Last Inspected" value={editForm.lastInspected ? String(editForm.lastInspected).slice(0, 10) : undefined} onChange={v => setEditForm(p => ({ ...p, lastInspected: v || null }))} />
+              <DatePicker label="Next Inspection" value={editForm.nextInspection ? String(editForm.nextInspection).slice(0, 10) : undefined} onChange={v => setEditForm(p => ({ ...p, nextInspection: v || null }))} />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-4">
@@ -1127,8 +1128,8 @@ export function SafetyPermitsPage() {
                   <div className="space-y-2"><Label>Area</Label><Input placeholder="Work location" value={form.area} onChange={e => setForm(p => ({ ...p, area: e.target.value }))} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label>Valid From</Label><Input type="date" value={form.validFrom} onChange={e => setForm(p => ({ ...p, validFrom: e.target.value }))} /></div>
-                  <div className="space-y-2"><Label>Valid Until</Label><Input type="date" value={form.validUntil} onChange={e => setForm(p => ({ ...p, validUntil: e.target.value }))} /></div>
+                  <DatePicker label="Valid From" value={form.validFrom || undefined} onChange={v => setForm(p => ({ ...p, validFrom: v || '' }))} />
+                  <DatePicker label="Valid Until" value={form.validUntil || undefined} onChange={v => setForm(p => ({ ...p, validUntil: v || '' }))} />
                 </div>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -1239,8 +1240,8 @@ export function SafetyPermitsPage() {
               <div className="space-y-2"><Label>Hazards</Label><Input value={editForm.hazards || ''} onChange={e => setEditForm(p => ({ ...p, hazards: e.target.value }))} /></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Start Date</Label><Input type="date" value={editForm.startDate ? String(editForm.startDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, startDate: e.target.value || null }))} /></div>
-              <div className="space-y-2"><Label>End Date</Label><Input type="date" value={editForm.endDate ? String(editForm.endDate).slice(0, 10) : ''} onChange={e => setEditForm(p => ({ ...p, endDate: e.target.value || null }))} /></div>
+              <DatePicker label="Start Date" value={editForm.startDate ? String(editForm.startDate).slice(0, 10) : undefined} onChange={v => setEditForm(p => ({ ...p, startDate: v || null }))} />
+              <DatePicker label="End Date" value={editForm.endDate ? String(editForm.endDate).slice(0, 10) : undefined} onChange={v => setEditForm(p => ({ ...p, endDate: v || null }))} />
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-4">
