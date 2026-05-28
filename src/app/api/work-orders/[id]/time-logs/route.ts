@@ -32,21 +32,34 @@ export async function GET(
       where.userId = session.userId;
     }
 
-    const timeLogs = await db.workOrderTimeLog.findMany({
-      where,
-      include: {
-        user: { select: { id: true, fullName: true, username: true, avatar: true } },
-        ...(includeTeamLogs ? {
-          loggedBy: { select: { id: true, fullName: true, username: true } },
-        } : {}),
-      },
-      orderBy: { timestamp: 'asc' },
-    });
+    // Try full query with loggedBy/isTeamLog support; fallback if columns don't exist
+    let timeLogs;
+    try {
+      timeLogs = await db.workOrderTimeLog.findMany({
+        where,
+        include: {
+          user: { select: { id: true, fullName: true, username: true, avatar: true } },
+          ...(includeTeamLogs ? {
+            loggedBy: { select: { id: true, fullName: true, username: true } },
+          } : {}),
+        },
+        orderBy: { timestamp: 'asc' },
+      });
+    } catch {
+      // Fallback: loggedById column may not exist yet
+      timeLogs = await db.workOrderTimeLog.findMany({
+        where,
+        include: {
+          user: { select: { id: true, fullName: true, username: true, avatar: true } },
+        },
+        orderBy: { timestamp: 'asc' },
+      });
+    }
 
-    // Calculate summary
+    // Calculate summary — guard against isTeamLog being undefined
     const totalHours = timeLogs.reduce((sum, log) => sum + (log.duration || 0), 0);
-    const teamLogs = timeLogs.filter((log) => log.isTeamLog);
-    const personalLogs = timeLogs.filter((log) => !log.isTeamLog);
+    const teamLogs = timeLogs.filter((log) => (log as Record<string, unknown>).isTeamLog === true);
+    const personalLogs = timeLogs.filter((log) => (log as Record<string, unknown>).isTeamLog !== true);
 
     return NextResponse.json({
       success: true,
@@ -247,23 +260,41 @@ export async function POST(
       });
     }
 
-    // Create time log entry
-    const timeLog = await db.workOrderTimeLog.create({
-      data: {
-        workOrderId: id,
-        userId: effectiveUserId,
-        action,
-        duration: logDuration,
-        notes: notes || null,
-        timestamp: now,
-        loggedById: effectiveLoggedById,
-        isTeamLog: effectiveIsTeamLog,
-      },
-      include: {
-        user: { select: { id: true, fullName: true, username: true, avatar: true } },
-        loggedBy: { select: { id: true, fullName: true, username: true } },
-      },
-    });
+    // Create time log entry — use raw SQL fallback if loggedById/isTeamLog columns don't exist yet
+    let timeLog;
+    try {
+      timeLog = await db.workOrderTimeLog.create({
+        data: {
+          workOrderId: id,
+          userId: effectiveUserId,
+          action,
+          duration: logDuration,
+          notes: notes || null,
+          timestamp: now,
+          loggedById: effectiveLoggedById,
+          isTeamLog: effectiveIsTeamLog,
+        },
+        include: {
+          user: { select: { id: true, fullName: true, username: true, avatar: true } },
+          loggedBy: { select: { id: true, fullName: true, username: true } },
+        },
+      });
+    } catch {
+      // Fallback: columns loggedById/isTeamLog may not exist on VPS yet
+      timeLog = await db.workOrderTimeLog.create({
+        data: {
+          workOrderId: id,
+          userId: effectiveUserId,
+          action,
+          duration: logDuration,
+          notes: notes || null,
+          timestamp: now,
+        },
+        include: {
+          user: { select: { id: true, fullName: true, username: true, avatar: true } },
+        },
+      });
+    }
 
     // Audit log
     await createAuditLog(session.userId, 'wo_time_log', 'create', timeLog.id, {
