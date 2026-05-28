@@ -13,7 +13,7 @@ interface UseWebSocketReturn {
 
 /**
  * WebSocket hook — connects to the notification service (port 3004) via gateway.
- * Gracefully degrades when the service is unavailable (no noisy console errors).
+ * Gracefully degrades when the service is unavailable.
  */
 export function useWebSocket(): UseWebSocketReturn {
   const user = useAuthStore((s) => s.user);
@@ -28,19 +28,20 @@ export function useWebSocket(): UseWebSocketReturn {
 
     // Connect to WS service via gateway
     const socket = io('/?XTransformPort=3004', {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
+      upgrade: true,
       reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 2000,
+      reconnectionAttempts: 3,
+      reconnectionDelay: 3000,
       reconnectionDelayMax: 10000,
+      timeout: 8000,
+      // Don't let socket.io spam console on transport errors
+      tryAllTransports: false,
     });
 
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      console.log('[WS] Connected:', socket.id);
-      // Defer setState via setTimeout(0) to avoid Error #185 when
-      // socket.io fires during React's concurrent render phase
       setTimeout(() => setConnected(true), 0);
       errorCountRef.current = 0;
       socket.emit('auth', { userId: user.id });
@@ -54,22 +55,14 @@ export function useWebSocket(): UseWebSocketReturn {
       }
     });
 
-    socket.on('disconnect', (reason) => {
-      // Don't log transport-level disconnects — they're noisy
+    socket.on('disconnect', () => {
       setTimeout(() => setConnected(false), 0);
     });
 
-    socket.on('connect_error', (error) => {
+    socket.on('connect_error', () => {
       errorCountRef.current++;
-      // Only log first 2 errors to avoid spamming console during reconnection attempts
-      if (errorCountRef.current <= 2) {
-        console.warn('[WS] Notification service unavailable — real-time features disabled');
-      }
+      // Silent — no console noise. Real-time features simply won't work.
       setTimeout(() => setConnected(false), 0);
-    });
-
-    socket.on('auth:success', () => {
-      console.log('[WS] Authenticated');
     });
 
     return () => {
@@ -87,16 +80,11 @@ export function useWebSocket(): UseWebSocketReturn {
   }, [isAuthenticated, user?.id]);
 
   const on = useCallback((event: string, handler: (...args: unknown[]) => void) => {
-    // Store the handler for re-registration on reconnect
     if (!handlersRef.current.has(event)) {
       handlersRef.current.set(event, new Set());
     }
     handlersRef.current.get(event)!.add(handler);
-
-    // Register immediately if socket is connected
     socketRef.current?.on(event, handler);
-
-    // Return cleanup function
     return () => {
       handlersRef.current.get(event)?.delete(handler);
       if (handlersRef.current.get(event)?.size === 0) {
