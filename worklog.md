@@ -342,3 +342,22 @@ Stage Summary:
 - **Minified lines reformatted**: 3 (lines 134, 368, 736) into proper multi-line JSX
 - **Components affected**: QualityInspectionsPage, QualityAuditsPage, QualityCapaPage, QualityCalibrationsPage
 
+---
+Task ID: 6
+Agent: main
+Task: Fix WebSocket notification service connection errors
+
+Work Log:
+- Investigated WSS connection failure to port 3004
+- Found notification mini-service was not running
+- Fixed socket.io path from "/" to "/socket.io/" (correct default)
+- Removed all console.warn/console.log from useWebSocket hook
+- Changed transports to ["polling", "websocket"] with upgrade for reverse proxy compatibility
+- Reduced reconnection attempts to 3 to fail fast
+- Started notification service on port 3004 (verified health endpoint returns OK)
+
+Stage Summary:
+- **Notification service**: `mini-services/notification-service/index.ts` — fixed path, service running on port 3004
+- **WebSocket hook**: `src/hooks/useWebSocket.ts` — silent error handling, no console spam
+- **VPS note**: The notification service must be started on VPS: `cd mini-services/notification-service && bun index.ts &`
+
