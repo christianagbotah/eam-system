@@ -17,9 +17,7 @@ import { cn } from '@/lib/utils'
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Convert a YYYY-MM-DD string to dd/mm/yyyy display format.
- */
+/** Convert a YYYY-MM-DD string to dd/mm/yyyy display format. */
 function displayDate(value: string | undefined): string {
   if (!value) return ''
   const [year, month, day] = value.split('-')
@@ -27,9 +25,7 @@ function displayDate(value: string | undefined): string {
   return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year}`
 }
 
-/**
- * Parse a YYYY-MM-DD string into a Date object at midnight UTC.
- */
+/** Parse a YYYY-MM-DD string into a Date object at midnight local. */
 function parseDate(value: string | undefined): Date | undefined {
   if (!value) return undefined
   const [year, month, day] = value.split('-')
@@ -37,14 +33,18 @@ function parseDate(value: string | undefined): Date | undefined {
   return new Date(Number(year), Number(month) - 1, Number(day))
 }
 
-/**
- * Format a Date object to YYYY-MM-DD string.
- */
+/** Format a Date object to YYYY-MM-DD string. */
 function formatDate(date: Date): string {
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')
   return `${y}-${m}-${d}`
+}
+
+/** Display HH:MM time nicely, e.g. "14:30" */
+function displayTime(value: string | undefined): string {
+  if (!value) return ''
+  return value
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +75,9 @@ function FieldWrapper({
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
 const MINUTES = ['00', '15', '30', '45']
-const ITEM_HEIGHT = 36
+const COL_ITEM_HEIGHT = 36 // px per item
+const COL_VISIBLE_ITEMS = 3
+const COL_HEIGHT = COL_ITEM_HEIGHT * COL_VISIBLE_ITEMS // 108px
 
 function TimeColumn({
   items,
@@ -97,7 +99,7 @@ function TimeColumn({
 
     const containerHeight = container.clientHeight
     const elTop = el.offsetTop
-    const scrollTarget = elTop - containerHeight / 2 + ITEM_HEIGHT / 2
+    const scrollTarget = elTop - containerHeight / 2 + COL_ITEM_HEIGHT / 2
 
     container.scrollTo({ top: scrollTarget, behavior: isInitialScroll.current ? 'instant' : 'smooth' })
     isInitialScroll.current = false
@@ -110,13 +112,19 @@ function TimeColumn({
   }, [scrollToSelected])
 
   return (
-    <div className="relative h-[3*36px] w-[56px] overflow-hidden rounded-md border bg-background">
+    <div
+      className="relative overflow-hidden rounded-lg border bg-background"
+      style={{ height: `${COL_HEIGHT}px`, width: '64px' }}
+    >
       {/* Fade masks */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-10 bg-gradient-to-b from-background to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-10 bg-gradient-to-t from-background to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-8 bg-gradient-to-b from-background to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-8 bg-gradient-to-t from-background to-transparent" />
 
-      {/* Center highlight line */}
-      <div className="pointer-events-none absolute inset-x-1 top-1/2 z-0 h-9 -translate-y-1/2 rounded-md border bg-accent/40" />
+      {/* Center highlight row */}
+      <div
+        className="pointer-events-none absolute inset-x-1.5 z-0 rounded-md border bg-accent/50"
+        style={{ height: `${COL_ITEM_HEIGHT}px`, top: `${COL_ITEM_HEIGHT}px` }}
+      />
 
       <div
         ref={containerRef}
@@ -124,7 +132,7 @@ function TimeColumn({
         style={{ scrollbarWidth: 'none' }}
       >
         {/* Spacer to center first item */}
-        <div style={{ height: ITEM_HEIGHT }} />
+        <div style={{ height: `${COL_ITEM_HEIGHT}px` }} />
 
         {items.map((item) => (
           <div
@@ -134,18 +142,19 @@ function TimeColumn({
             }}
             onClick={() => onSelect(item)}
             className={cn(
-              'flex h-9 cursor-pointer snap-center items-center justify-center text-sm transition-colors hover:bg-accent/60',
+              'flex cursor-pointer snap-center items-center justify-center transition-colors',
               item === selected
                 ? 'font-bold text-foreground'
-                : 'font-normal text-muted-foreground'
+                : 'font-normal text-muted-foreground hover:bg-accent/60'
             )}
+            style={{ height: `${COL_ITEM_HEIGHT}px` }}
           >
-            {item}
+            <span className="text-sm">{item}</span>
           </div>
         ))}
 
         {/* Spacer to center last item */}
-        <div style={{ height: ITEM_HEIGHT }} />
+        <div style={{ height: `${COL_ITEM_HEIGHT}px` }} />
       </div>
     </div>
   )
@@ -191,7 +200,6 @@ export function DatePicker({
             className={cn(
               'h-11 w-full rounded-md border bg-background pl-10 pr-3 text-sm shadow-xs outline-none transition-colors',
               'focus:border-ring focus:ring-ring/50 focus:ring-[3px]',
-              'file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground',
               'placeholder:text-muted-foreground',
               'disabled:cursor-not-allowed disabled:opacity-50',
               'dark:bg-input/30 dark:border-input dark:text-foreground'
@@ -289,7 +297,6 @@ export function TimePicker({
             className={cn(
               'h-11 w-full rounded-md border bg-background pl-10 pr-3 text-sm shadow-xs outline-none transition-colors',
               'focus:border-ring focus:ring-ring/50 focus:ring-[3px]',
-              'file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground',
               'placeholder:text-muted-foreground',
               'disabled:cursor-not-allowed disabled:opacity-50',
               'dark:bg-input/30 dark:border-input dark:text-foreground'
@@ -312,17 +319,20 @@ export function TimePicker({
             )}
           >
             <Clock className="size-4 shrink-0" />
-            {value ?? placeholder}
+            {value ? displayTime(value) : placeholder}
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-auto p-4" align="start">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <TimeColumn
               items={HOURS}
               selected={currentHour}
               onSelect={handleHourSelect}
             />
-            <span className="mt-[-72px] text-lg font-semibold text-muted-foreground">
+            <span
+              className="flex shrink-0 items-center justify-center text-xl font-bold text-muted-foreground"
+              style={{ height: `${COL_HEIGHT}px` }}
+            >
               :
             </span>
             <TimeColumn
@@ -447,28 +457,87 @@ export function DateTimePicker({
     )
   }
 
-  // Desktop: two side-by-side buttons
+  // Desktop: date and time side by side with clear layout
   return (
     <FieldWrapper label={label} className={className}>
-      <div className="flex items-center gap-2">
-        {/* DatePicker portion */}
-        <DatePicker
-          value={dateStr || undefined}
-          onChange={(d) => {
-            setDateStr(d ?? '')
-            emitChange(d ?? '', timeStr)
-          }}
-          placeholder="dd/mm/yyyy"
-        />
-        {/* TimePicker portion */}
-        <TimePicker
-          value={timeStr || undefined}
-          onChange={(t) => {
-            setTimeStr(t)
-            emitChange(dateStr, t)
-          }}
-          placeholder="HH:MM"
-        />
+      <div className="flex items-start gap-2">
+        {/* Date portion — takes ~60% width */}
+        <div className="flex-1 min-w-0">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                  'h-11 w-full justify-start gap-2 text-left font-normal',
+                  !dateStr && 'text-muted-foreground'
+                )}
+              >
+                <Calendar className="size-4 shrink-0" />
+                {dateStr ? displayDate(dateStr) : 'dd/mm/yyyy'}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <CalendarPicker
+                mode="single"
+                selected={parseDate(dateStr)}
+                onSelect={(date) => {
+                  const d = date ? formatDate(date) : ''
+                  setDateStr(d)
+                  emitChange(d, timeStr)
+                }}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {/* Time portion — takes ~40% width */}
+        <div className="w-[140px] shrink-0">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                  'h-11 w-full justify-start gap-2 text-left font-normal',
+                  !timeStr && 'text-muted-foreground'
+                )}
+              >
+                <Clock className="size-4 shrink-0" />
+                {timeStr || 'HH:MM'}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-4" align="start">
+              <div className="flex items-center gap-2">
+                <TimeColumn
+                  items={HOURS}
+                  selected={currentHour}
+                  onSelect={(h) => {
+                    const m = timeStr?.split(':')[1] ?? '00'
+                    const t = `${h}:${m}`
+                    setTimeStr(t)
+                    emitChange(dateStr, t)
+                  }}
+                />
+                <span
+                  className="flex shrink-0 items-center justify-center text-xl font-bold text-muted-foreground"
+                  style={{ height: `${COL_HEIGHT}px` }}
+                >
+                  :
+                </span>
+                <TimeColumn
+                  items={MINUTES}
+                  selected={timeStr?.split(':')[1] ?? '00'}
+                  onSelect={(m) => {
+                    const h = timeStr?.split(':')[0] ?? '00'
+                    const t = `${h}:${m}`
+                    setTimeStr(t)
+                    emitChange(dateStr, t)
+                  }}
+                />
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
     </FieldWrapper>
   )
