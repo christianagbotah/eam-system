@@ -1600,7 +1600,7 @@ export function WorkOrdersPage() {
       wo.title.toLowerCase().includes(q) ||
       wo.woNumber.toLowerCase().includes(q) ||
       (wo.assetName || '').toLowerCase().includes(q) ||
-      (wo.assignedToName || '').toLowerCase().includes(q)
+      (wo.assignee?.fullName || '').toLowerCase().includes(q)
     );
   }, [workOrders, searchText]);
 
@@ -1794,7 +1794,7 @@ export function WorkOrdersPage() {
                   <TableCell className="text-xs capitalize hidden md:table-cell">{wo.type.replace('_', ' ')}</TableCell>
                   <TableCell className="hidden sm:table-cell"><PriorityBadge priority={wo.priority} /></TableCell>
                   <TableCell><StatusBadge status={wo.status} /></TableCell>
-                  <TableCell className="text-sm hidden lg:table-cell">{wo.assignedToName || <span className="text-muted-foreground">Unassigned</span>}</TableCell>
+                  <TableCell className="text-sm hidden lg:table-cell">{wo.assignee?.fullName || (wo.teamMembers?.length > 0 ? <span className="text-muted-foreground">Team ({wo.teamMembers.length})</span> : <span className="text-muted-foreground">Unassigned</span>)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{formatDate(wo.createdAt)}</TableCell>
                 </TableRow>
               ))}
@@ -4039,7 +4039,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               <Separator />
               <div className="flex justify-between"><span className="text-muted-foreground">Asset</span><span className="font-medium">{wo.assetName || '-'}</span></div>
               <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Assigned To</span><span className="font-medium">{wo.assignedToName || 'Unassigned'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Assigned To</span><span className="font-medium">{wo.assignee?.fullName || (wo.teamMembers?.length > 0 ? `Team (${wo.teamMembers.length} member${wo.teamMembers.length !== 1 ? 's' : ''})` : 'Unassigned')}</span></div>
               <Separator />
               <div className="flex justify-between"><span className="text-muted-foreground">Est. Hours</span><span className="font-medium">{wo.estimatedHours || '-'}</span></div>
               <Separator />
