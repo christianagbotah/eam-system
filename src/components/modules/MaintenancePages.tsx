@@ -4106,7 +4106,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                           {isTeamLeader && <Crown className="h-3.5 w-3.5 text-amber-500 shrink-0" />}
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
-                          <Badge variant="outline" className="text-[10px] capitalize">{tm.role}</Badge>
+                          <Badge variant="outline" className="text-[10px]">{tm.role?.replace(/_/g, ' ')?.replace(/\b\w/g, c => c.toUpperCase())}</Badge>
                           {isTeamLeader && <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-200">Full Access</Badge>}
                           {isReadOnlyMember && <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-600 border-slate-200">Read Only</Badge>}
                         </div>

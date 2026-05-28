@@ -1226,7 +1226,7 @@ export default function PlannerWorkbench() {
                             {tm.user?.fullName?.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
                           </div>
                           <span>{tm.user?.fullName}</span>
-                          <Badge variant="outline" className="text-[10px]">{tm.role?.replace(/_/g, ' ')}</Badge>
+                          <Badge variant="outline" className="text-[10px]">{tm.role?.replace(/_/g, ' ')?.replace(/\b\w/g, c => c.toUpperCase())}</Badge>
                         </div>
                       ))}
                     </div>
