@@ -505,3 +505,35 @@ Stage Summary:
 - All data is idempotent (checks for existing records before creating)
 - Designed for GTP Ghana Tema Factory context
 - User must run on VPS with DATABASE_URL pointing to MariaDB
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: AI-powered asset generation — create complete machine from just a name
+
+Work Log:
+- Invoked LLM skill to understand z-ai-web-dev-sdk usage patterns
+- Created backend API route `POST /api/assets/ai-generate` (912 lines):
+  - Auth via getSession(), permission check for assets.create
+  - Calls LLM with detailed system prompt to generate structured machine data JSON
+  - Parses and validates LLM response (strips markdown fences, checks required fields)
+  - Creates 9 types of DB records: Asset hierarchy, BOM, ComponentRegistry, InventoryItem, PmTemplate+Task, PmSchedule, DigitalTwin, SystemDiagram
+  - Unique tag format: AI-{SHORTNAME}-001 for main, sequential for children
+  - Unique item codes: SP-AI-{NNNN} for inventory items
+  - Graceful error handling (LLM failures, JSON parse errors, DB errors)
+  - Returns summary with counts of all generated records
+- Created frontend `AIAssetGenerator` component (300+ lines):
+  - 3-step dialog flow: Input → Generating (animated) → Result
+  - Step 1: Machine name input + optional context, plant, category selectors
+  - Step 2: Animated progress with 9 status updates
+  - Step 3: Result card showing asset info + 10-item summary grid
+  - Badges showing what AI generates (7 item types)
+  - Success screen with "what you can do now" guidance
+- Integrated into AssetsPage: "AI Generate" button with Sparkles icon next to "Add Asset"
+
+Stage Summary:
+- File: `src/app/api/assets/ai-generate/route.ts` (912 lines) — AI generation endpoint
+- File: `src/components/shared/AIAssetGenerator.tsx` (300+ lines) — Frontend dialog
+- File: `src/components/modules/AssetPages.tsx` — Added AI Generate button + dialog
+- Commit: `095c2573`
+- User can now type any machine name and get a complete EAM asset with hierarchy, BOM, spare parts, PM schedules, digital twin, and system diagram generated automatically
