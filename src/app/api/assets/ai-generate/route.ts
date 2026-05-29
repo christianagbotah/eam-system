@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 import ZAI from 'z-ai-web-dev-sdk';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin, getUserPlantId } from '@/lib/auth';
@@ -288,6 +290,91 @@ async function getOrCreateDefaultCategory(): Promise<string> {
   });
 
   return category.id;
+}
+
+// ============================================================================
+// HELPER — Map component name to ReactFlow node type
+// ============================================================================
+
+function inferDiagramNodeType(componentName: string): string {
+  const name = componentName.toLowerCase();
+  
+  // Motor/drive mapping
+  if (/\b(motor|drive|servo|stepper|rotary|actuator)\b/.test(name)) return 'motorNode';
+  // Pump/compressor mapping
+  if (/\b(pump|compressor|blower|fan|turbine|impeller)\b/.test(name)) return 'pumpNode';
+  // Valve mapping
+  if (/\b(valve|solenoid|gate|check|relief|regulator)\b/.test(name)) return 'valveNode';
+  // Sensor mapping
+  if (/\b(sensor|encoder|thermocouple|transducer|detector|probe|lvdt|rtd|pt100)\b/.test(name)) return 'sensorNode';
+  // Pipe/duct mapping
+  if (/\b(pipe|duct|hose|manifold|header|conduit|fitting|flange)\b/.test(name)) return 'pipeNode';
+  // Tank/vessel mapping
+  if (/\b(tank|reservoir|hopper|silo|bin|receiver|accumulator|drum)\b/.test(name)) return 'tankNode';
+  // PLC/controller mapping
+  if (/\b(plc|dcs|scada|hmi|controller|logic|scs|sis|ecpu|cpu)\b/.test(name)) return 'controlNode';
+  // Electrical mapping
+  if (/\b(electri|switchgear|transformer|vfd|inverter|breaker|fuse|contactor|relay|busbar|mcc|panel|power supply|ups)\b/.test(name)) return 'electricalNode';
+  // Heat exchanger mapping
+  if (/\b(heat exchanger|condenser|evaporator|cooler|chiller|radiator|heater|dryer|oven|furnace|boiler|calender)\b/.test(name)) return 'heatExchangerNode';
+  // Vessel mapping
+  if (/\b(vessel|reactor|separator|distillation|absorber|flash|column|scrubber|filter press)\b/.test(name)) return 'vesselNode';
+  // Instrument mapping
+  if (/\b(gauge|transmitter|indicator|recorder|pressure gauge|flow meter|temp indicator|level indicator)\b/.test(name)) return 'instrumentNode';
+  
+  return 'assetNode';
+}
+
+// ============================================================================
+// HELPER — Generate machine image with AI
+// ============================================================================
+
+async function generateMachineImage(
+  machineName: string,
+  description: string,
+  assetId: string,
+): Promise<string | null> {
+  try {
+    const zai = await ZAI.create();
+    
+    const prompt = `Professional industrial technical illustration of a ${machineName}. 
+${description}
+Style: Clean technical diagram style with isometric 3D perspective, labeled parts visible, 
+industrial equipment on white/light gray background, engineering blueprint quality, 
+detailed mechanical components visible, professional CAD rendering style, 
+no text overlays, no watermarks, high quality technical illustration.`;
+
+    logger.info('Generating AI machine image', { machineName });
+
+    const response = await zai.images.generations.create({
+      prompt,
+      size: '1344x768', // Landscape for equipment
+    });
+
+    const imageBase64 = response.data?.[0]?.base64;
+    if (!imageBase64) {
+      logger.warn('No image data returned from AI');
+      return null;
+    }
+
+    // Save to public/generated-assets/
+    const outputDir = path.join(process.cwd(), 'public', 'generated-assets');
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    const filename = `${assetId}.png`;
+    const filepath = path.join(outputDir, filename);
+    const buffer = Buffer.from(imageBase64, 'base64');
+    fs.writeFileSync(filepath, buffer);
+
+    logger.info('Machine image saved', { filepath, fileSize: buffer.length });
+    return `/generated-assets/${filename}`;
+  } catch (imgError) {
+    const imgErr = imgError instanceof Error ? imgError : new Error(String(imgError));
+    logger.warn('Failed to generate machine image (non-fatal)', { message: imgErr.message });
+    return null;
+  }
 }
 
 // ============================================================================
@@ -765,68 +852,230 @@ export async function POST(request: NextRequest) {
     }
 
     // ================================================================
-    // 8. CREATE SYSTEM DIAGRAM
+    // 8. CREATE ENHANCED SYSTEM DIAGRAM (with all components)
     // ================================================================
     try {
-      // Build diagram nodes from subsystems
-      const diagramNodes = [
+      // Layout constants
+      const SS_Y_START = 220;       // Subsystem row Y
+      const COMP_Y_START = 460;     // Component row Y
+      const SS_GAP = 320;           // Gap between subsystem columns
+      const COMP_GAP = 220;         // Gap between components within a subsystem
+      const CENTER_X = 600;         // Center of diagram
+
+      // Main machine node
+      const diagramNodes: Array<Record<string, unknown>> = [
         {
           id: 'node-main',
-          type: 'processNode',
-          position: { x: 400, y: 50 },
+          type: 'assetNode',
+          position: { x: CENTER_X - 90, y: 30 },
           data: {
             label: machineData.name,
+            assetType: 'default',
             assetId: mainAsset.id,
             assetTag: mainAssetTag,
+            status: 'operational',
             criticality: machineData.criticality,
+            health: 100,
+            parameters: [
+              { name: 'Subsystems', value: String(machineData.subsystems.length), unit: '' },
+              { name: 'Components', value: String(summary.components), unit: '' },
+              { name: 'PM Templates', value: String(machineData.pmTemplates.length), unit: '' },
+              { name: 'Spare Parts', value: String(inventoryItemsToCreate.length), unit: '' },
+            ],
           },
         },
-        ...machineData.subsystems.map((ss, idx) => ({
-          id: `node-ss-${idx}`,
-          type: 'processNode',
-          position: {
-            x: 100 + (idx % 4) * 250,
-            y: 200 + Math.floor(idx / 4) * 200,
-          },
-          data: {
-            label: ss.name,
-            criticality: ss.criticality,
-            componentCount: ss.components?.length || 0,
-          },
-        })),
       ];
 
-      // Build edges: main -> each subsystem
-      const diagramEdges = machineData.subsystems.map((ss, idx) => ({
-        id: `edge-${idx}`,
-        source: 'node-main',
-        target: `node-ss-${idx}`,
-        type: 'smoothstep',
-        animated: ss.criticality === 'critical',
-        data: { label: 'contains' },
-      }));
+      const diagramEdges: Array<Record<string, unknown>> = [];
+
+      // Calculate total width needed for subsystems
+      const ssCount = machineData.subsystems.length;
+      const totalWidth = ssCount * SS_GAP;
+      const startX = CENTER_X - totalWidth / 2 + SS_GAP / 2 - 90;
+
+      // Add subsystem nodes and their components
+      for (let ssIdx = 0; ssIdx < machineData.subsystems.length; ssIdx++) {
+        const subsystem = machineData.subsystems[ssIdx];
+        const ssNodeId = `node-ss-${ssIdx}`;
+        const ssX = startX + ssIdx * SS_GAP;
+
+        // Subsystem node
+        diagramNodes.push({
+          id: ssNodeId,
+          type: 'assetNode',
+          position: { x: ssX, y: SS_Y_START },
+          data: {
+            label: subsystem.name,
+            assetType: 'default',
+            status: 'operational',
+            criticality: subsystem.criticality,
+            health: 100,
+            parameters: [
+              { name: 'Components', value: String(subsystem.components?.length || 0), unit: '' },
+            ],
+          },
+        });
+
+        // Edge: main → subsystem
+        diagramEdges.push({
+          id: `edge-main-ss-${ssIdx}`,
+          source: 'node-main',
+          target: ssNodeId,
+          type: 'smoothstep',
+          animated: subsystem.criticality === 'critical',
+          style: { stroke: subsystem.criticality === 'critical' ? '#ef4444' : '#475569', strokeWidth: 2 },
+          data: { label: 'contains' },
+        });
+
+        // Add component nodes under this subsystem
+        const components = subsystem.components || [];
+        const compStartX = ssX - (components.length * COMP_GAP) / 2 + COMP_GAP / 2 - 90;
+
+        for (let compIdx = 0; compIdx < components.length; compIdx++) {
+          const component = components[compIdx];
+          const compNodeId = `node-comp-${ssIdx}-${compIdx}`;
+          const compX = compStartX + compIdx * COMP_GAP;
+          const nodeType = inferDiagramNodeType(component.name);
+
+          // Build node data based on type
+          const nodeData: Record<string, unknown> = {
+            label: component.name,
+            criticality: component.criticality,
+          };
+
+          // Add type-specific data
+          switch (nodeType) {
+            case 'motorNode':
+              nodeData.status = 'stopped';
+              nodeData.powerRating = 15;
+              nodeData.rpm = 1500;
+              break;
+            case 'pumpNode':
+              nodeData.pumpType = 'centrifugal';
+              nodeData.status = 'stopped';
+              break;
+            case 'valveNode':
+              nodeData.state = 'closed';
+              nodeData.valveType = 'isolation';
+              break;
+            case 'sensorNode':
+              nodeData.parameter = component.description?.slice(0, 40) || 'Measurement';
+              nodeData.value = 0;
+              nodeData.unit = '';
+              nodeData.min = 0;
+              nodeData.max = 100;
+              nodeData.status = 'normal';
+              break;
+            case 'pipeNode':
+              nodeData.diameter = '100';
+              nodeData.material = 'CS';
+              nodeData.flowDirection = 'forward';
+              break;
+            case 'tankNode':
+              nodeData.fillLevel = 0;
+              nodeData.capacity = 500;
+              nodeData.levelStatus = 'normal';
+              break;
+            case 'controlNode':
+              nodeData.controllerType = 'PLC';
+              nodeData.ioCount = { in: 8, out: 4 };
+              nodeData.scanRate = 100;
+              nodeData.status = 'running';
+              break;
+            case 'electricalNode':
+              nodeData.equipType = 'switchgear';
+              nodeData.status = 'energized';
+              break;
+            case 'heatExchangerNode':
+              nodeData.exchangerType = 'shell_tube';
+              nodeData.status = 'operational';
+              break;
+            case 'vesselNode':
+              nodeData.vesselType = 'separator';
+              nodeData.status = 'operational';
+              break;
+            case 'instrumentNode':
+              nodeData.tag = `IT-${String(ssIdx + 1).padStart(2, '0')}${String(compIdx + 1).padStart(2, '0')}`;
+              nodeData.measureType = 'Process';
+              nodeData.value = null;
+              nodeData.unit = '';
+              nodeData.status = 'normal';
+              break;
+            default: // assetNode
+              nodeData.assetType = 'default';
+              nodeData.status = 'operational';
+              nodeData.health = 100;
+              break;
+          }
+
+          diagramNodes.push({
+            id: compNodeId,
+            type: nodeType,
+            position: { x: compX, y: COMP_Y_START + Math.floor(compIdx / 3) * 180 },
+            data: nodeData,
+          });
+
+          // Edge: subsystem → component
+          diagramEdges.push({
+            id: `edge-ss-${ssIdx}-comp-${compIdx}`,
+            source: ssNodeId,
+            target: compNodeId,
+            type: 'smoothstep',
+            animated: component.criticality === 'critical',
+            style: { stroke: component.criticality === 'critical' ? '#ef4444' : '#334155', strokeWidth: 1.5 },
+          });
+        }
+      }
+
+      // Calculate viewport to fit all nodes
+      const maxX = Math.max(...diagramNodes.map((n: any) => n.position.x + 200));
+      const maxY = Math.max(...diagramNodes.map((n: any) => n.position.y + 150));
+      const zoom = Math.min(1, 1200 / maxX);
 
       await db.systemDiagram.create({
         data: {
           plantId,
           name: `System Diagram - ${machineData.name}`,
-          description: `AI-generated system diagram showing the hierarchy and relationships for ${machineData.name}`,
+          description: `AI-generated comprehensive system diagram for ${machineData.name}. Shows ${diagramNodes.length} nodes (1 machine + ${ssCount} subsystems + ${summary.components} components) with ${diagramEdges.length} connections. Each node is labeled and zoomable. Components use specialized node types (motors, pumps, valves, sensors, etc.) for visual clarity.`,
           type: 'process',
           nodes: JSON.stringify(diagramNodes),
           edges: JSON.stringify(diagramEdges),
-          viewport: JSON.stringify({ x: 0, y: 0, zoom: 0.8 }),
+          viewport: JSON.stringify({ x: 0, y: 0, zoom }),
           isActive: true,
           createdById: session.userId,
         },
       });
-      summary.systemDiagram = 1;
+      summary.systemDiagram = diagramNodes.length;
     } catch (diagramError) {
       const diagramErr = diagramError instanceof Error ? diagramError : new Error(String(diagramError));
       logger.warn('Failed to create system diagram (non-fatal)', { message: diagramErr.message });
     }
 
     // ================================================================
-    // 9. CREATE AUDIT LOG
+    // 9. GENERATE AI MACHINE IMAGE
+    // ================================================================
+    let generatedImageUrl: string | null = null;
+    try {
+      generatedImageUrl = await generateMachineImage(
+        machineData.name,
+        machineData.description,
+        mainAsset.id,
+      );
+
+      if (generatedImageUrl) {
+        // Update the asset with the image URL
+        await db.asset.update({
+          where: { id: mainAsset.id },
+          data: { imageUrl: generatedImageUrl },
+        });
+        logger.info('Asset image URL updated', { assetId: mainAsset.id, imageUrl: generatedImageUrl });
+      }
+    } catch {
+      // Non-fatal - image generation is a nice-to-have
+    }
+
+    // ================================================================
+    // 10. CREATE AUDIT LOG
     // ================================================================
     try {
       await db.auditLog.create({
@@ -878,6 +1127,7 @@ export async function POST(request: NextRequest) {
             plantId: mainAsset.plantId,
             categoryId: mainAsset.categoryId,
             specification: mainAsset.specification,
+            imageUrl: generatedImageUrl,
             createdAt: mainAsset.createdAt,
           },
           summary,

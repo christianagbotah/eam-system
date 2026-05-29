@@ -18,7 +18,7 @@ import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import {
   Sparkles, Loader2, CheckCircle2, Building2, Wrench, Package,
   ClipboardList, Activity, Cpu, AlertTriangle, Layers, GitBranch,
-  ChevronDown, ChevronRight, Box,
+  ChevronDown, ChevronRight, Box, Image,
 } from 'lucide-react';
 
 interface GenerateSummary {
@@ -43,6 +43,7 @@ interface GenerateResult {
     manufacturer: string;
     model: string;
     criticality: string;
+    imageUrl?: string | null;
   };
   summary: GenerateSummary;
 }
@@ -99,15 +100,16 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
 
     // Simulate progress updates
     const progressSteps = [
-      { at: 10, label: 'AI is identifying sub-systems and components...' },
-      { at: 25, label: 'Generating Bill of Materials...' },
-      { at: 40, label: 'Creating component registry entries...' },
-      { at: 55, label: 'Adding spare parts to inventory...' },
-      { at: 65, label: 'Building preventive maintenance templates...' },
-      { at: 75, label: 'Setting up PM schedules...' },
-      { at: 85, label: 'Configuring digital twin...' },
-      { at: 92, label: 'Creating system diagram...' },
-      { at: 96, label: 'Finalizing asset record...' },
+      { at: 8, label: 'AI is identifying sub-systems and components...' },
+      { at: 18, label: 'Generating Bill of Materials...' },
+      { at: 28, label: 'Creating component registry entries...' },
+      { at: 38, label: 'Adding spare parts to inventory...' },
+      { at: 48, label: 'Building preventive maintenance templates...' },
+      { at: 58, label: 'Setting up PM schedules...' },
+      { at: 68, label: 'Configuring digital twin...' },
+      { at: 78, label: 'Building detailed system diagram with all components...' },
+      { at: 88, label: 'Generating AI machine illustration...' },
+      { at: 95, label: 'Finalizing asset record...' },
     ];
 
     const timers = progressSteps.map(s =>
@@ -254,7 +256,8 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
                 { icon: Package, label: 'Spare Parts Inventory' },
                 { icon: ClipboardList, label: 'PM Templates & Schedules' },
                 { icon: Activity, label: 'Digital Twin' },
-                { icon: Box, label: 'System Diagram' },
+                { icon: Box, label: 'Interactive System Diagram' },
+                { icon: Image, label: 'AI Machine Illustration' },
               ].map(item => (
                 <Badge key={item.label} variant="secondary" className="text-[10px] gap-1 py-0.5">
                   <item.icon className="h-2.5 w-2.5" />
@@ -333,6 +336,15 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
               {/* Asset info card */}
               <Card className="border-0 shadow-sm bg-gradient-to-br from-violet-50 to-emerald-50 dark:from-violet-950/20 dark:to-emerald-950/20">
                 <CardContent className="p-4">
+                  {result.asset.imageUrl && (
+                    <div className="mb-3 rounded-xl overflow-hidden border bg-white dark:bg-card">
+                      <img 
+                        src={result.asset.imageUrl} 
+                        alt={result.asset.name}
+                        className="w-full h-auto max-h-64 object-contain"
+                      />
+                    </div>
+                  )}
                   <div className="flex items-start gap-3">
                     <div className="h-12 w-12 rounded-xl bg-white dark:bg-card shadow-sm flex items-center justify-center shrink-0">
                       <Building2 className="h-6 w-6 text-violet-600" />
@@ -393,7 +405,8 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
               <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
                 <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400 mb-1.5">What you can do now:</p>
                 <ul className="text-xs text-emerald-600 dark:text-emerald-500 space-y-0.5">
-                  <li>• View the asset hierarchy in the Assets section</li>
+                  <li>• View the AI-generated machine illustration on the asset card</li>
+                  <li>• Explore the interactive system diagram with all labeled components</li>
                   <li>• Check the Bill of Materials and spare parts inventory</li>
                   <li>• Review and run preventive maintenance schedules</li>
                   <li>• Explore the digital twin configuration</li>
