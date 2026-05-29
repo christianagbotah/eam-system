@@ -1676,8 +1676,8 @@ export default function SystemDiagramPage({ twinId, twinName }: { twinId?: strin
         name: `${diagram.name} (Copy)`,
         description: diagram.description,
         type: diagram.type,
-        nodes: (() => { try { return JSON.parse(diagram.nodes); } catch { return []; } })(),
-        edges: (() => { try { return JSON.parse(diagram.edges); } catch { return []; } })(),
+        nodes: parseNodes(diagram),
+        edges: parseEdges(diagram),
       });
       if (res.success && res.data) {
         toast.success('Diagram duplicated');
@@ -1738,11 +1738,35 @@ export default function SystemDiagramPage({ twinId, twinName }: { twinId?: strin
     }
   };
 
-  // Parse nodes/edges from stored JSON
+  // Parse nodes/edges from stored JSON, normalizing flat format to ReactFlow format
   const parseNodes = (diagram: SystemDiagram): Node[] => {
     try {
       const parsed = JSON.parse(diagram.nodes);
-      return Array.isArray(parsed) ? parsed : [];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((n: Record<string, unknown>) => {
+        // Already in ReactFlow format (has position object)
+        if (n.position && typeof n.position === 'object') {
+          return n as unknown as Node;
+        }
+        // Flat format: { id, label, x, y, type } → ReactFlow format
+        const x = typeof n.x === 'number' ? n.x : 0;
+        const y = typeof n.y === 'number' ? n.y : 0;
+        const nodeType = (n.type as string) || 'assetNode';
+        return {
+          id: String(n.id),
+          type: nodeType,
+          position: { x, y },
+          data: {
+            label: String(n.label || n.id || ''),
+            assetType: n.assetType || null,
+            status: n.status || 'operational',
+            criticality: n.criticality || 'medium',
+            health: n.health || 100,
+            parameters: n.parameters || [],
+            assetId: n.assetId || null,
+          },
+        } as Node;
+      });
     } catch {
       return [];
     }
@@ -1751,7 +1775,23 @@ export default function SystemDiagramPage({ twinId, twinName }: { twinId?: strin
   const parseEdges = (diagram: SystemDiagram): Edge[] => {
     try {
       const parsed = JSON.parse(diagram.edges);
-      return Array.isArray(parsed) ? parsed : [];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((e: Record<string, unknown>) => {
+        // Already in ReactFlow format (has source property)
+        if (e.source) {
+          return e as unknown as Edge;
+        }
+        // Flat format: { id, from, to, label?, type? } → ReactFlow format
+        return {
+          id: String(e.id),
+          source: String(e.from || ''),
+          target: String(e.to || ''),
+          ...(e.label ? { label: String(e.label) } : {}),
+          type: (e.type as string) === 'dashed' ? 'default' : ((e.type as string) || 'default'),
+          ...(e.data ? { data: e.data } : {}),
+          ...(e.style ? { style: e.style } : {}),
+        } as Edge;
+      });
     } catch {
       return [];
     }
