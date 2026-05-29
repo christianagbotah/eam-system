@@ -1627,14 +1627,43 @@ async function seed() {
   console.log('  ✅ Company profile created (Ghana — Accra, Greater Accra)\n');
 
   // ══════════════════════════════════════════════════════════════════════════
+  // FINAL VERIFICATION — Confirm data was actually written
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log('🔍 Verifying seeded data...');
+  try {
+    const finalPermCount = await db.permission.count();
+    const finalRoleCount = await db.role.count();
+    const finalRolePermCount = await db.rolePermission.count();
+    const finalUserCount = await db.user.count();
+    const finalPlantCount = await db.plant.count();
+    const finalDeptCount = await db.department.count();
+    const finalAssetCount = await db.asset.count();
+    const finalInvCount = await db.inventoryItem.count();
+    const finalModuleCount = await db.systemModule.count();
+    const finalWOCunt = await db.workOrder.count();
+
+    if (finalPermCount === 0) {
+      console.error('  ❌ CRITICAL: No permissions found! Database may be empty.');
+    } else {
+      console.log(`  ✅ Permissions:     ${finalPermCount}`);
+      console.log(`  ✅ Roles:           ${finalRoleCount}`);
+      console.log(`  ✅ Role-Perms:      ${finalRolePermCount}`);
+      console.log(`  ✅ Users:           ${finalUserCount}`);
+      console.log(`  ✅ Plants:          ${finalPlantCount}`);
+      console.log(`  ✅ Departments:     ${finalDeptCount}`);
+      console.log(`  ✅ Assets:          ${finalAssetCount}`);
+      console.log(`  ✅ Inventory:       ${finalInvCount}`);
+      console.log(`  ✅ Modules:         ${finalModuleCount}`);
+      console.log(`  ✅ Work Orders:     ${finalWOCunt}`);
+    }
+  } catch (verifyErr) {
+    console.error('  ❌ Verification query failed:', (verifyErr as Error).message);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // FINAL SUMMARY
   // ══════════════════════════════════════════════════════════════════════════
-  const finalPermCount = await db.permission.count();
-  const finalRoleCount = await db.role.count();
-  const finalRolePermCount = await db.rolePermission.count();
-  const finalUserCount = await db.user.count();
-
-  console.log('═════════════════════════════════════════════════════════════');
+  console.log('\n═════════════════════════════════════════════════════════════');
   console.log(`  🎉 iAssetsPro seeding complete! (Ghana Enterprise Edition)`);
   console.log('═════════════════════════════════════════════════════════════');
   console.log(`  📋 Permissions:     ${finalPermCount}`);
@@ -1688,8 +1717,24 @@ function formatActionName(action: string): string {
 // ============================================================================
 
 seed()
+  .then(() => {
+    console.log('\n✅ Seed completed successfully!');
+    process.exit(0);
+  })
   .catch((e) => {
-    console.error('❌ Seeding failed:', e);
+    console.error('\n❌ ═══════════════════════════════════════════════════════════');
+    console.error('   SEED FAILED — Full error details:');
+    console.error('════════════════════════════════════════════════════════════');
+    console.error('  Message:', (e as Error).message);
+    if ((e as any).code) console.error('  Prisma Code:', (e as any).code);
+    if ((e as any).meta) console.error('  Meta:', JSON.stringify((e as any).meta, null, 2));
+    console.error('  Stack:', (e as Error).stack?.split('\n').slice(0, 8).join('\n'));
+    console.error('════════════════════════════════════════════════════════════\n');
+    console.error('TROUBLESHOOTING:');
+    console.error('  1. Make sure you ran: npx prisma generate');
+    console.error('  2. Make sure DATABASE_URL is set correctly');
+    console.error('  3. Make sure the database server is accessible');
+    console.error('  4. Make sure the database exists');
     process.exit(1);
   })
   .finally(() => {

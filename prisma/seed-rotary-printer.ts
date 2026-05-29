@@ -543,6 +543,7 @@ async function seedRotaryPrinter() {
       currentValue: MACHINE_SPECS.purchaseCost * 0.82,
       depreciationRate: 0.09,
       specification: MACHINE_SPECS.specification,
+      categoryId: category.id,
       createdById: admin.id,
       assignedToId: admin.id,
       imageUrl: '/assets/images/rspm-001.jpg',
@@ -568,6 +569,7 @@ async function seedRotaryPrinter() {
         plantId: plant.id,
         departmentId: dept?.id,
         parentId: mainAsset.id,
+        categoryId: category.id,
         createdById: admin.id,
         categoryId: category.id,
         specification: '{}',
@@ -591,6 +593,7 @@ async function seedRotaryPrinter() {
             plantId: plant.id,
             departmentId: dept?.id,
             parentId: ssAsset.id,
+            categoryId: category.id,
             createdById: admin.id,
             categoryId: category.id,
             specification: '{}',
@@ -1118,6 +1121,38 @@ async function seedRotaryPrinter() {
   }
   console.log(`  ✅ Created ${failCount} sample failure records`);
 
+  // ── VERIFICATION: Confirm data was actually written ──
+  console.log('\n🔍 Verifying seeded data...');
+  try {
+    const assetCount = await db.asset.count({ where: { assetTag: { startsWith: 'RSPM' } } });
+    const bomCount2 = await db.billOfMaterial.count();
+    const compRegCount = await db.componentRegistry.count();
+    const pmTplCount = await db.pmTemplate.count();
+    const pmSchCount = await db.pmSchedule.count();
+    const invCount2 = await db.inventoryItem.count({ where: { itemCode: { startsWith: 'SP-RSPM' } } });
+    const twinCount = await db.digitalTwin.count({ where: { assetId: mainAsset.id } });
+    const diagCount = await db.systemDiagram.count({ where: { name: { contains: 'Rotary' } } });
+    const wiCount2 = await db.workInstruction.count();
+    const failCount2 = await db.failureRecord.count();
+
+    console.log(`  ✅ Assets (RSPM):       ${assetCount}`);
+    console.log(`  ✅ BOM entries:          ${bomCount2}`);
+    console.log(`  ✅ Component Registry:   ${compRegCount}`);
+    console.log(`  ✅ PM Templates:         ${pmTplCount}`);
+    console.log(`  ✅ PM Schedules:         ${pmSchCount}`);
+    console.log(`  ✅ Inventory (RSPM):     ${invCount2}`);
+    console.log(`  ✅ Digital Twins:        ${twinCount}`);
+    console.log(`  ✅ System Diagrams:      ${diagCount}`);
+    console.log(`  ✅ Work Instructions:    ${wiCount2}`);
+    console.log(`  ✅ Failure Records:      ${failCount2}`);
+
+    if (assetCount === 0) {
+      console.error('\n  ❌ WARNING: No RSPM assets found in database! Data may not have been committed.');
+    }
+  } catch (verifyErr) {
+    console.error('  ❌ Verification query failed:', (verifyErr as Error).message);
+  }
+
   // ── Summary ──
   console.log('\n════════════════════════════════════════════════════════════════');
   console.log('  ✅ ROTARY SCREEN PRINTING MACHINE SEED COMPLETE');
@@ -1140,7 +1175,14 @@ async function seedRotaryPrinter() {
 // ── Run ──
 seedRotaryPrinter()
   .catch((e) => {
-    console.error('❌ Seed failed:', e);
+    console.error('\n❌ ═══════════════════════════════════════════════════════════');
+    console.error('   SEED FAILED — Full error details:');
+    console.error('════════════════════════════════════════════════════════════');
+    console.error('  Message:', (e as Error).message);
+    if ((e as any).code) console.error('  Prisma Code:', (e as any).code);
+    if ((e as any).meta) console.error('  Meta:', JSON.stringify((e as any).meta, null, 2));
+    console.error('  Stack:', (e as Error).stack?.split('\n').slice(0, 5).join('\n'));
+    console.error('════════════════════════════════════════════════════════════\n');
     process.exit(1);
   })
   .finally(async () => {

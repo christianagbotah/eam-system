@@ -537,3 +537,24 @@ Stage Summary:
 - File: `src/components/modules/AssetPages.tsx` — Added AI Generate button + dialog
 - Commit: `095c2573`
 - User can now type any machine name and get a complete EAM asset with hierarchy, BOM, spare parts, PM schedules, digital twin, and system diagram generated automatically
+---
+Task ID: 1
+Agent: Main Agent
+Task: Diagnose and fix seed scripts not inserting data into database
+
+Work Log:
+- Read prisma/seed.ts (1739 lines) — base seed with permissions, roles, plants, departments, users, assets, inventory, work orders
+- Read prisma/seed-rotary-printer.ts (1183 lines) — rotary printer seed with assets, BOM, components, PM templates, digital twin, system diagram
+- Read prisma/schema.prisma — verified all model definitions
+- Identified CRITICAL BUG: seed-rotary-printer.ts was missing `categoryId` field on ALL db.asset.create() calls (lines 521, 558, 579). Asset model requires categoryId as mandatory field. This caused Prisma to throw a validation error immediately at Step 3 (main asset creation).
+- Fixed: Added `categoryId: category.id` to 3 asset creation locations in seed-rotary-printer.ts
+- Added verification queries at the end of both seed scripts to confirm data was written
+- Added detailed error reporting with Prisma error codes, meta info, and stack traces
+- Added troubleshooting tips in the catch blocks
+
+Stage Summary:
+- Root cause: Missing required `categoryId` field in rotary printer seed's asset.create() calls
+- Fixed files: prisma/seed-rotary-printer.ts, prisma/seed.ts
+- Key change: Added `categoryId: category.id` to main asset, sub-system assets, and component assets
+- Added data verification queries to both scripts
+- Added detailed error reporting to catch blocks
