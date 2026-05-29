@@ -676,43 +676,42 @@ const rolePermissionBundles: Record<string, string[]> = {
 async function seed() {
   console.log('🌱 Seeding iAssetsPro database...\n');
 
-  // ── Clear existing data for clean re-seed (reverse dependency order) ──
+  // ── Clear existing data for clean re-seed (disable FK checks to avoid order issues) ──
   console.log('🗑️  Clearing existing data...');
-  const tablesToClear = [
-    db.rolePermission.deleteMany(),
-    db.userPermission.deleteMany(),
-    db.workOrderStatusHistory.deleteMany(),
-    db.workOrderComment.deleteMany(),
-    db.workOrderTimeLog.deleteMany(),
-    db.workOrderMaterial.deleteMany(),
-    db.workOrderTeamMember.deleteMany(),
-    db.workOrder.deleteMany(),
-    db.pmTrigger.deleteMany(),
-    db.pmTemplateTask.deleteMany(),
-    db.pmTemplate.deleteMany(),
-    db.pmSchedule.deleteMany(),
-    db.maintenanceRequestComment.deleteMany(),
-    db.maintenanceRequest.deleteMany(),
-    db.inventoryItem.deleteMany(),
-    db.asset.deleteMany(),
-    db.assetCategory.deleteMany(),
-    db.notification.deleteMany(),
-    db.userPlant.deleteMany(),
-    db.userRole.deleteMany(),
-    db.userSkill.deleteMany(),
-    db.user.deleteMany(),
-    db.statusTransition.deleteMany(),
-    db.companyModule.deleteMany(),
-    db.systemModule.deleteMany(),
-    db.role.deleteMany(),
-    db.permission.deleteMany(),
-    db.department.deleteMany(),
-    db.plant.deleteMany(),
-    db.companyProfile.deleteMany(),
-  ];
-  // Run deletes sequentially to avoid batch transaction timeout with MariaDB adapter
-  for (const op of tablesToClear) {
-    await op;
+  try {
+    // Get all table names from the database
+    const tables = await db.$queryRawUnsafe(
+      `SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME != '_prisma_migrations'`
+    );
+    const tableNames = (tables as Array<{ TABLE_NAME: string }>).map(t => t.TABLE_NAME);
+    if (tableNames.length > 0) {
+      // Disable FK checks, truncate all tables, re-enable
+      await db.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
+      for (const t of tableNames) {
+        await db.$executeRawUnsafe(`TRUNCATE TABLE \`${t}\``);
+      }
+      await db.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
+      console.log(`  ✅ Truncated ${tableNames.length} tables`);
+    }
+  } catch (e) {
+    console.warn('  ⚠️  Truncate failed, falling back to Prisma deleteMany...');
+    // Fallback: try individual deletes in a broad order
+    const tablesToClear = [
+      'chatMessage', 'conversationParticipant', 'conversation',
+      'workOrderStatusHistory', 'workOrderComment', 'workOrderTimeLog',
+      'workOrderMaterial', 'workOrderTeamMember', 'woTeamMemberRequest',
+      'workOrder', 'pmTrigger', 'pmTemplateTask', 'pmTemplate', 'pmSchedule',
+      'maintenanceRequestComment', 'maintenanceRequest',
+      'inventoryItem', 'asset', 'assetCategory',
+      'notification', 'userPlant', 'userRole', 'userSkill', 'user',
+      'statusTransition', 'companyModule', 'systemModule',
+      'role', 'permission', 'department', 'plant', 'companyProfile',
+    ];
+    for (const table of tablesToClear) {
+      try {
+        await (db as any)[table]?.deleteMany();
+      } catch { /* skip tables that don't exist or fail */ }
+    }
   }
   console.log('✅ Existing data cleared\n');
 
