@@ -1803,15 +1803,26 @@ export default function SystemDiagramPage({ twinId, twinName }: { twinId?: strin
           return e as unknown as Edge;
         }
         // Flat format: { id, from, to, label?, type? } → ReactFlow format
+        // Default to processFlowEdge for animated flow visualization
+        const rawType = e.type as string | undefined;
         return {
           id: String(e.id),
           source: String(e.from || ''),
           target: String(e.to || ''),
           ...(e.label ? { label: String(e.label) } : {}),
-          type: (e.type as string) === 'dashed' ? 'default' : ((e.type as string) || 'default'),
-          ...(e.type === 'dashed' ? { style: { strokeDasharray: '5 5' } } : {}),
-          ...(e.data ? { data: e.data } : {}),
+          // Map flat format types to custom edge types with animation
+          type: rawType === 'pipe' ? 'pipeEdge'
+              : rawType === 'signal' ? 'signalEdge'
+              : rawType === 'cable' ? 'cableEdge'
+              : rawType === 'dashed' ? 'processFlowEdge'
+              : 'processFlowEdge',
+          data: {
+            ...(e.data as Record<string, unknown> || {}),
+            // Ensure flowStatus is set for animation
+            flowStatus: ((e.data as Record<string, unknown>)?.flowStatus as string) || 'normal',
+          },
           ...(e.style ? { style: e.style } : {}),
+          markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: '#10b981' },
         } as Edge;
       });
     } catch {

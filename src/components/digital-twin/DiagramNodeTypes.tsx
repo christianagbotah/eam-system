@@ -1240,10 +1240,11 @@ export const VesselNode = memo(VesselNodeComponent);
 // CUSTOM EDGE TYPES
 // ============================================================================
 
-// --- Process Flow Edge (animated dots) ---
+// --- Process Flow Edge (animated dots + flowing dashes) ---
 
 export interface ProcessFlowEdgeData {
   flowStatus?: 'normal' | 'warning' | 'alarm' | 'inactive';
+  flowDirection?: 'forward' | 'reverse';
   label?: string;
   [key: string]: unknown;
 }
@@ -1261,6 +1262,7 @@ function ProcessFlowEdge({
 }: EdgeProps) {
   const edgeData = data as ProcessFlowEdgeData | undefined;
   const flowStatus = edgeData?.flowStatus || 'normal';
+  const flowDirection = edgeData?.flowDirection || 'forward';
   const isActive = flowStatus !== 'inactive';
 
   const colorMap: Record<string, string> = {
@@ -1276,8 +1278,12 @@ function ProcessFlowEdge({
     sourcePosition, targetPosition,
   });
 
+  const animDur = flowStatus === 'alarm' ? '1s' : flowStatus === 'warning' ? '2s' : '3s';
+  const animDurDash = flowStatus === 'alarm' ? '0.5s' : flowStatus === 'warning' ? '1s' : '1.5s';
+
   return (
     <>
+      {/* Glow layer */}
       {isActive && (
         <path
           d={edgePath}
@@ -1288,6 +1294,21 @@ function ProcessFlowEdge({
           style={{ filter: 'blur(3px)' }}
         />
       )}
+      {/* Flowing dashed layer (animated) */}
+      {isActive && (
+        <path
+          d={edgePath}
+          fill="none"
+          stroke={edgeColor}
+          strokeWidth={2}
+          strokeDasharray="6 4"
+          strokeOpacity={0.25}
+          style={{
+            animation: `${flowDirection === 'reverse' ? 'edge-flow-reverse' : 'edge-flow'} ${animDurDash} linear infinite`,
+          }}
+        />
+      )}
+      {/* Main solid path */}
       <path
         d={edgePath}
         fill="none"
@@ -1296,15 +1317,19 @@ function ProcessFlowEdge({
         strokeOpacity={isActive ? 0.7 : 0.3}
         strokeDasharray={isActive ? undefined : '6 4'}
       />
+      {/* Animated traveling dot */}
       {isActive && (
         <circle r="4" fill={edgeColor} filter={`drop-shadow(0 0 3px ${edgeColor})`}>
-          <animateMotion
-            dur={`${flowStatus === 'alarm' ? '1s' : flowStatus === 'warning' ? '2s' : '3s'}`}
-            repeatCount="indefinite"
-            path={edgePath}
-          />
+          <animateMotion dur={animDur} repeatCount="indefinite" path={edgePath} />
         </circle>
       )}
+      {/* Second trailing dot for richer animation */}
+      {isActive && flowStatus === 'normal' && (
+        <circle r="2.5" fill={edgeColor} opacity={0.4}>
+          <animateMotion dur={animDur} repeatCount="indefinite" path={edgePath} begin="1.5s" />
+        </circle>
+      )}
+      {/* Selection highlight */}
       {selected && (
         <path
           d={edgePath}
@@ -1314,6 +1339,7 @@ function ProcessFlowEdge({
           strokeOpacity={0.15}
         />
       )}
+      {/* Label */}
       {edgeData?.label && (
         <text
           x={(sourceX + targetX) / 2}
@@ -1332,9 +1358,10 @@ function ProcessFlowEdge({
   );
 }
 
-// --- Signal Edge (dashed) ---
+// --- Signal Edge (animated flowing dashes) ---
 
 function SignalEdge({
+  id,
   sourceX,
   sourceY,
   targetX,
@@ -1348,8 +1375,29 @@ function SignalEdge({
     sourcePosition, targetPosition,
   });
 
+  const edgeId = `signal-${id || Math.random().toString(36).substr(2, 9)}`;
+
   return (
     <>
+      {/* Glow layer */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="#8b5cf6"
+        strokeWidth={4}
+        strokeOpacity={0.08}
+        style={{ filter: 'blur(2px)' }}
+      />
+      {/* Static background path */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="#8b5cf6"
+        strokeWidth={1.5}
+        strokeDasharray="6 3"
+        strokeOpacity={0.25}
+      />
+      {/* Animated flowing dash layer */}
       <path
         d={edgePath}
         fill="none"
@@ -1357,7 +1405,12 @@ function SignalEdge({
         strokeWidth={1.5}
         strokeDasharray="6 3"
         strokeOpacity={0.6}
+        style={{ animation: 'edge-flow 1.2s linear infinite' }}
       />
+      {/* Animated traveling dot */}
+      <circle r="2" fill="#8b5cf6" opacity={0.5}>
+        <animateMotion dur="2.5s" repeatCount="indefinite" path={edgePath} />
+      </circle>
       {selected && (
         <path
           d={edgePath}
@@ -1371,52 +1424,102 @@ function SignalEdge({
   );
 }
 
-// --- Pipe Edge (thick with gradient) ---
+// --- Pipe Edge (thick with gradient + animated flow) ---
+
+interface PipeEdgeData {
+  flowStatus?: 'normal' | 'warning' | 'alarm' | 'inactive';
+  label?: string;
+  [key: string]: unknown;
+}
 
 function PipeEdge({
+  id,
   sourceX,
   sourceY,
   targetX,
   targetY,
   sourcePosition,
   targetPosition,
+  data,
   selected,
 }: EdgeProps) {
+  const pipeData = data as PipeEdgeData | undefined;
+  const flowStatus = pipeData?.flowStatus || 'normal';
+  const isActive = flowStatus !== 'inactive';
+
+  const colorMap: Record<string, string> = {
+    normal: '#06b6d4',
+    warning: '#f59e0b',
+    alarm: '#ef4444',
+    inactive: '#475569',
+  };
+  const pipeColor = colorMap[flowStatus] || '#06b6d4';
+
   const [edgePath] = getBezierPath({
     sourceX, sourceY, targetX, targetY,
     sourcePosition, targetPosition,
   });
 
-  const edgeId = `pipe-${Math.random().toString(36).substr(2, 9)}`;
+  const edgeId = `pipe-${id || Math.random().toString(36).substr(2, 9)}`;
+  const animDur = flowStatus === 'alarm' ? '1.2s' : flowStatus === 'warning' ? '2s' : '3s';
 
   return (
     <>
       <defs>
         <linearGradient id={edgeId} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.4} />
-          <stop offset="50%" stopColor="#06b6d4" stopOpacity={0.8} />
-          <stop offset="100%" stopColor="#06b6d4" stopOpacity={0.4} />
+          <stop offset="0%" stopColor={pipeColor} stopOpacity={0.3} />
+          <stop offset="50%" stopColor={pipeColor} stopOpacity={isActive ? 0.9 : 0.3} />
+          <stop offset="100%" stopColor={pipeColor} stopOpacity={0.3} />
         </linearGradient>
       </defs>
+      {/* Outer glow */}
       <path
         d={edgePath}
         fill="none"
-        stroke="rgba(6,182,212,0.15)"
+        stroke={isActive ? `${pipeColor}26` : `${pipeColor}10`}
         strokeWidth={8}
         strokeLinecap="round"
       />
+      {/* Main pipe body */}
       <path
         d={edgePath}
         fill="none"
         stroke={`url(#${edgeId})`}
         strokeWidth={4}
         strokeLinecap="round"
+        strokeDasharray={isActive ? undefined : '8 4'}
       />
+      {/* Animated flowing overlay for active pipes */}
+      {isActive && (
+        <path
+          d={edgePath}
+          fill="none"
+          stroke={pipeColor}
+          strokeWidth={3}
+          strokeDasharray="8 12"
+          strokeLinecap="round"
+          strokeOpacity={0.35}
+          style={{ animation: `edge-flow ${animDur} linear infinite` }}
+        />
+      )}
+      {/* Animated traveling dot */}
+      {isActive && (
+        <circle r="3.5" fill={pipeColor} filter={`drop-shadow(0 0 4px ${pipeColor})`} opacity={0.8}>
+          <animateMotion dur={animDur} repeatCount="indefinite" path={edgePath} />
+        </circle>
+      )}
+      {/* Second trailing dot for normal flow */}
+      {isActive && flowStatus === 'normal' && (
+        <circle r="2" fill={pipeColor} opacity={0.3}>
+          <animateMotion dur={animDur} repeatCount="indefinite" path={edgePath} begin={`${parseFloat(animDur) / 2}s`} />
+        </circle>
+      )}
+      {/* Selection highlight */}
       {selected && (
         <path
           d={edgePath}
           fill="none"
-          stroke="#06b6d4"
+          stroke={pipeColor}
           strokeWidth={10}
           strokeOpacity={0.12}
         />
@@ -1425,7 +1528,7 @@ function PipeEdge({
   );
 }
 
-// --- Cable Edge (electrical wire) ---
+// --- Cable Edge (electrical wire with animated flow) ---
 
 function CableEdge({
   id,
@@ -1437,6 +1540,7 @@ function CableEdge({
   targetPosition,
   style = {},
   markerEnd,
+  selected,
 }: EdgeProps) {
   const [edgePath] = getSmoothStepPath({
     sourceX,
@@ -1450,6 +1554,25 @@ function CableEdge({
 
   return (
     <>
+      {/* Glow layer */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="#f59e0b"
+        strokeWidth={5}
+        strokeOpacity={0.08}
+        style={{ filter: 'blur(2px)' }}
+      />
+      {/* Static background dashes */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="#f59e0b"
+        strokeWidth={2}
+        strokeDasharray="6 3"
+        strokeOpacity={0.2}
+      />
+      {/* Animated flowing dashes */}
       <path
         id={id}
         className="react-flow__edge-path"
@@ -1457,12 +1580,28 @@ function CableEdge({
         stroke="#f59e0b"
         strokeWidth={2}
         strokeDasharray="6 3"
-        style={style}
+        strokeOpacity={0.7}
+        style={{ ...style, animation: 'edge-flow 1s linear infinite' }}
         markerEnd={markerEnd}
       />
-      <circle r="3" fill="#f59e0b" opacity={0.6}>
+      {/* Primary animated dot */}
+      <circle r="3" fill="#f59e0b" filter="drop-shadow(0 0 3px #f59e0b)" opacity={0.8}>
         <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} />
       </circle>
+      {/* Secondary trailing dot */}
+      <circle r="2" fill="#f59e0b" opacity={0.3}>
+        <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} begin="1s" />
+      </circle>
+      {/* Selection highlight */}
+      {selected && (
+        <path
+          d={edgePath}
+          fill="none"
+          stroke="#f59e0b"
+          strokeWidth={6}
+          strokeOpacity={0.15}
+        />
+      )}
     </>
   );
 }

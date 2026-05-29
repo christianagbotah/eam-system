@@ -514,6 +514,26 @@ main[class*="flex-1"] {
   100% { background-position: 200% 0; }
 }
 
+@keyframes edge-flow {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+
+@keyframes edge-flow-reverse {
+  0% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 24; }
+}
+
+@keyframes edge-flow-fast {
+  0% { stroke-dashoffset: 18; }
+  100% { stroke-dashoffset: 0; }
+}
+
+@keyframes edge-pulse {
+  0%, 100% { stroke-opacity: 0.3; }
+  50% { stroke-opacity: 0.7; }
+}
+
 .animate-fade-in {
   animation: fade-in 0.2s ease-out;
 }
