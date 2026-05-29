@@ -908,8 +908,10 @@ async function seed() {
 
   // Admin user (password: admin123) — assigned to Tema Factory, Maintenance
   const adminPassword = await hash('admin123', 10);
-  const admin = await db.user.create({
-    data: {
+  const admin = await db.user.upsert({
+    where: { username: 'admin' },
+    update: {},
+    create: {
       username: 'admin',
       email: 'admin@iassetspro.com',
       passwordHash: adminPassword,
@@ -972,8 +974,10 @@ async function seed() {
   const demoPassword = await hash('password123', 10);
 
   for (const u of [...originalDemoUsers, ...newDemoUsers]) {
-    await db.user.create({
-      data: {
+    await db.user.upsert({
+      where: { username: u.username },
+      update: {},
+      create: {
         username: u.username,
         email: u.email,
         passwordHash: demoPassword,

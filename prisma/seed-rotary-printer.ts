@@ -76,7 +76,7 @@ const MACHINE_SPECS = {
   manufacturer: 'Stork Prints (-now SPGPrints)',
   model: 'RD-I Plus 1850',
   year: 2021,
-  description: 'Rotary screen printing machine for textile fabric printing. 8-color configuration with infrared drying, automatic registration, and paste circulation system. Primary production machine at GTP Ghana Tema Factory.',
+  description: 'Rotary screen printing machine for textile fabric printing. 8-color IR drying, auto registration, paste circulation. Primary production at GTP Ghana Tema.',
   criticality: 'critical',
   location: 'Printing Hall A',
   building: 'Main Production Building',
@@ -545,6 +545,7 @@ async function seedRotaryPrinter() {
       area: MACHINE_SPECS.area,
       plantId: plant.id,
       departmentId: dept?.id,
+      categoryId: category.id,
       purchaseDate: new Date(MACHINE_SPECS.purchaseDate),
       purchaseCost: MACHINE_SPECS.purchaseCost,
       warrantyExpiry: new Date(MACHINE_SPECS.warrantyExpiry),
@@ -578,6 +579,8 @@ async function seedRotaryPrinter() {
         departmentId: dept?.id,
         parentId: mainAsset.id,
         createdById: admin.id,
+        categoryId: category.id,
+        specification: '{}',
       },
     });
     subsystemAssets[subsystem.tag] = ssAsset;
@@ -599,6 +602,8 @@ async function seedRotaryPrinter() {
             departmentId: dept?.id,
             parentId: ssAsset.id,
             createdById: admin.id,
+            categoryId: category.id,
+            specification: '{}',
           },
         });
         subsystemAssets[child.tag] = childAsset;
@@ -667,8 +672,10 @@ async function seedRotaryPrinter() {
       if (!asset) continue;
 
       const componentCode = child.tag.replace(/[^A-Z0-9]/gi, '_').toUpperCase();
-      const regEntry = await db.componentRegistry.create({
-        data: {
+      const regEntry = await db.componentRegistry.upsert({
+        where: { componentCode },
+        update: {},
+        create: {
           componentCode,
           name: child.name,
           description: child.description,
@@ -823,6 +830,7 @@ async function seedRotaryPrinter() {
         location: item.location,
         plantId: plant.id,
         specification: item.specification,
+        imageUrls: '[]',
         createdById: admin.id,
         isActive: true,
       },
