@@ -558,3 +558,34 @@ Stage Summary:
 - Key change: Added `categoryId: category.id` to main asset, sub-system assets, and component assets
 - Added data verification queries to both scripts
 - Added detailed error reporting to catch blocks
+
+---
+Task ID: 1b
+Agent: Main Agent
+Task: Fix seed scripts - upsert for idempotency, missing required fields, description length
+
+Work Log:
+- Fixed prisma/seed.ts: Changed admin user creation from db.user.create() to db.user.upsert() to handle existing records
+- Fixed prisma/seed.ts: Changed demo user loop from db.user.create() to db.user.upsert() with where: { username: u.username }
+- Fixed prisma/seed-rotary-printer.ts: Added categoryId: category.id to main asset, sub-system assets, and child assets
+- Fixed prisma/seed-rotary-printer.ts: Added specification: '{}' to sub-system and child asset creation
+- Fixed prisma/seed-rotary-printer.ts: Added imageUrls: '[]' to inventory item creation
+- Fixed prisma/seed-rotary-printer.ts: Changed componentRegistry.create() to componentRegistry.upsert()
+- Fixed prisma/seed-rotary-printer.ts: Shortened description from 211 to 155 chars (VARCHAR(191) limit)
+- All fixes applied via sed on VPS (shell/heredoc escaping issues prevented Python scripts)
+- Both seeds now run successfully end-to-end
+- DATABASE_URL saved to .env file on VPS
+
+Stage Summary:
+- Both seeds complete successfully: 22 users, 16 roles, 343 permissions, 3 plants, 47 assets, 34 inventory items
+- Git push completed via: https://github.com/christianagbotah/eam-system.git
+- GitHub token saved for future use (ghp_NNVr3...)
+
+---
+Project Info:
+- GitHub: https://github.com/christianagbotah/eam-system.git
+- VPS Path: /home/ifleetpro/git/eam-system
+- DB: mysql://ifleetpro_user:myjesus4mE2018@vps.lightworldtech.com:3306/ifleetpro_eam_system
+- Port: 3001
+- Domain: iassetspro.lightworldtech.com
+- Admin: admin / admin123
