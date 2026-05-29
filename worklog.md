@@ -475,3 +475,33 @@ Stage Summary:
 - **db.ts**: Always MySQL mode, nested Proxy prevents "is not a function" errors
 - **VPS root cause**: Likely `sessions` table missing `lastSeen` column (or other schema drift)
 - **VPS permanent fix needed**: Run `npx prisma db push && npx prisma generate && pm2 restart all`
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Create comprehensive seed script for Rotary Screen Printing Machine
+
+Work Log:
+- Read and analyzed full Prisma schema: Asset, AssetCategory, BillOfMaterial, DigitalTwin, DigitalTwinScene, SystemDiagram, PmTemplate, PmTemplateTask, PmSchedule, ComponentRegistry, ComponentSparePart, FailureRecord, InventoryItem, WorkInstruction models
+- Created `prisma/seed-rotary-printer.ts` - comprehensive seed script (1150 lines) with:
+  - Main asset RSPM-001 (Stork RD-I Plus 1850, 8-color, $850K, critical)
+  - 6 sub-systems: Unwind/Feed, Printing Section, IR Drying, Wind-Up/Output, Drive/Power, Pneumatic/Auxiliary
+  - 25 child components with detailed descriptions and criticality ratings
+  - 35 BOM entries (sub-system → main + component → sub-system)
+  - 25 component registry entries with health scores, operating hours, expected life
+  - 6 PM templates: daily inspection (10 tasks), weekly (10 tasks), monthly (12 tasks), quarterly (10 tasks), annual overhaul (10 tasks), predictive condition monitoring (10 tasks) = 62 total PM tasks
+  - 6 PM schedules auto-generated with correct frequencies
+  - 22 inventory items: blankets, screens, squeegee rods, pump tubes, IR lamps, VFD, servo motors, PLC modules, gear oils, grease, seals, fans, bearings, etc.
+  - Digital twin with 18 monitoring parameters and 7 connections
+  - System diagram (process flow) with 24 nodes and 25 edges
+  - 3 work instructions with full steps, safety notes, tools, and parts
+  - 5 historical failure records (squeegee wear, IR emitter failure, edge guide contamination, gear reducer bearing, pump tube burst)
+- Fixed WorkInstruction model fields to match schema (componentId required, steps JSON, maintenanceType enum)
+- Verified TypeScript compilation succeeds
+
+Stage Summary:
+- File: `prisma/seed-rotary-printer.ts` (1150 lines)
+- Commit: `72642de8`
+- All data is idempotent (checks for existing records before creating)
+- Designed for GTP Ghana Tema Factory context
+- User must run on VPS with DATABASE_URL pointing to MariaDB
