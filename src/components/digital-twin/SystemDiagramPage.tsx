@@ -1738,6 +1738,26 @@ export default function SystemDiagramPage({ twinId, twinName }: { twinId?: strin
     }
   };
 
+  // Map flat seed types to ReactFlow custom node types
+  const flatTypeToReactFlow: Record<string, string> = {
+    process: 'assetNode',
+    equipment: 'assetNode',
+    instrument: 'instrumentNode',
+    tank: 'tankNode',
+    utility: 'assetNode',
+    sensor: 'sensorNode',
+    valve: 'valveNode',
+    pump: 'pumpNode',
+    motor: 'motorNode',
+    pipe: 'pipeNode',
+    junction: 'junctionNode',
+    electrical: 'electricalNode',
+    control: 'controlNode',
+    heatExchanger: 'heatExchangerNode',
+    vessel: 'vesselNode',
+    dryer: 'heatExchangerNode',
+  };
+
   // Parse nodes/edges from stored JSON, normalizing flat format to ReactFlow format
   const parseNodes = (diagram: SystemDiagram): Node[] => {
     try {
@@ -1751,7 +1771,8 @@ export default function SystemDiagramPage({ twinId, twinName }: { twinId?: strin
         // Flat format: { id, label, x, y, type } → ReactFlow format
         const x = typeof n.x === 'number' ? n.x : 0;
         const y = typeof n.y === 'number' ? n.y : 0;
-        const nodeType = (n.type as string) || 'assetNode';
+        const rawType = (n.type as string) || 'assetNode';
+        const nodeType = flatTypeToReactFlow[rawType] || rawType;
         return {
           id: String(n.id),
           type: nodeType,
@@ -1788,6 +1809,7 @@ export default function SystemDiagramPage({ twinId, twinName }: { twinId?: strin
           target: String(e.to || ''),
           ...(e.label ? { label: String(e.label) } : {}),
           type: (e.type as string) === 'dashed' ? 'default' : ((e.type as string) || 'default'),
+          ...(e.type === 'dashed' ? { style: { strokeDasharray: '5 5' } } : {}),
           ...(e.data ? { data: e.data } : {}),
           ...(e.style ? { style: e.style } : {}),
         } as Edge;
