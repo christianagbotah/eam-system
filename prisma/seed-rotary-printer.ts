@@ -22,35 +22,25 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 
-// ── Database Connection ──
-let dbUrl = process.env.DATABASE_URL || '';
-if (dbUrl.startsWith('file:') || !dbUrl.includes('mysql://')) {
-  const host = process.env.DB_HOST;
+// ── Database Connection (adapter-free, more reliable for seed scripts) ──
+console.log('🔧 Connecting to database...');
+
+if (!process.env.DATABASE_URL || !process.env.DATABASE_URL.includes('mysql://')) {
+  const host = process.env.DB_HOST || 'localhost';
   const port = process.env.DB_PORT || '3306';
-  const user = process.env.DB_USER;
-  const password = process.env.DB_PASSWORD;
-  const database = process.env.DB_NAME;
-  if (host && user && password && database) {
-    dbUrl = `mysql://${user}:${password}@${host}:${port}/${database}`;
-  }
+  const user = process.env.DB_USER || 'root';
+  const password = process.env.DB_PASSWORD || '';
+  const database = process.env.DB_NAME || 'ifleetpro_eam_system';
+  process.env.DATABASE_URL = `mysql://${user}:${password}@${host}:${port}/${database}`;
+  console.log(`  📡 Built DATABASE_URL from individual env vars -> ${host}/${database}`);
+} else {
+  console.log(`  📡 Using DATABASE_URL -> ${process.env.DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
 }
 
-const urlMatch = dbUrl.match(/mysql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/);
-if (!urlMatch) {
-  throw new Error('Invalid DATABASE_URL. Must be mysql://user:password@host:port/database');
-}
-
-const adapter = new PrismaMariaDb({
-  host: urlMatch[3],
-  port: parseInt(urlMatch[4]),
-  user: urlMatch[1],
-  password: urlMatch[2],
-  database: urlMatch[5],
+const db = new PrismaClient({
+  log: ['warn', 'error'],
 });
-
-const db = new PrismaClient({ adapter });
 
 // ══════════════════════════════════════════════════════════════════════════
 // MACHINE DATA DEFINITIONS

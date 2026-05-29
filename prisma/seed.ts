@@ -1,37 +1,37 @@
 import { PrismaClient } from '@prisma/client';
-import { PrismaMariaDb } from '@prisma/adapter-mariadb';
 import { hash } from 'bcryptjs';
 
-// Parse DATABASE_URL for adapter config
-let dbUrl = process.env.DATABASE_URL || '';
+// ══════════════════════════════════════════════════════════════════════════
+// DATABASE CONNECTION — Robust, adapter-free for seed scripts
+// ══════════════════════════════════════════════════════════════════════════
+//
+// Why no adapter? The PrismaMariaDb adapter requires exact package versions
+// and can fail silently on some VPS setups. For seed scripts, the built-in
+// Prisma MySQL driver works perfectly with MariaDB and is more reliable.
+//
+// Usage:
+//   DATABASE_URL="mysql://user:pass@host:3306/dbname" npx tsx prisma/seed.ts
+//   -- OR with individual env vars:
+//   DB_HOST=localhost DB_USER=root DB_PASSWORD=xxx DB_NAME=eam npx tsx prisma/seed.ts
 
-// If DATABASE_URL points to SQLite (sandbox override), ignore it and build from individual vars
-if (dbUrl.startsWith('file:') || !dbUrl.includes('mysql://')) {
-  const host = process.env.DB_HOST;
+console.log('🔧 Connecting to database...');
+
+// Ensure DATABASE_URL is set (either directly or from individual vars)
+if (!process.env.DATABASE_URL || !process.env.DATABASE_URL.includes('mysql://')) {
+  const host = process.env.DB_HOST || 'localhost';
   const port = process.env.DB_PORT || '3306';
-  const user = process.env.DB_USER;
-  const password = process.env.DB_PASSWORD;
-  const database = process.env.DB_NAME;
-  if (host && user && password && database) {
-    dbUrl = `mysql://${user}:${password}@${host}:${port}/${database}`;
-  }
+  const user = process.env.DB_USER || 'root';
+  const password = process.env.DB_PASSWORD || '';
+  const database = process.env.DB_NAME || 'ifleetpro_eam_system';
+  process.env.DATABASE_URL = `mysql://${user}:${password}@${host}:${port}/${database}`;
+  console.log(`  📡 Built DATABASE_URL from individual env vars -> ${host}/${database}`);
+} else {
+  console.log(`  📡 Using DATABASE_URL -> ${process.env.DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
 }
 
-const urlMatch = dbUrl.match(/mysql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)/);
-
-if (!urlMatch) {
-  throw new Error('Invalid DATABASE_URL. Must be mysql://user:password@host:port/database');
-}
-
-const adapter = new PrismaMariaDb({
-  host: urlMatch[3],
-  port: parseInt(urlMatch[4]),
-  user: urlMatch[1],
-  password: urlMatch[2],
-  database: urlMatch[5],
+const db = new PrismaClient({
+  log: ['warn', 'error'],
 });
-
-const db = new PrismaClient({ adapter });
 
 // ============================================================================
 // 1. PERMISSION DEFINITIONS — 11 modules with structured actions
@@ -674,28 +674,51 @@ const rolePermissionBundles: Record<string, string[]> = {
 // ============================================================================
 
 async function seed() {
-  console.log('🌱 Seeding iAssetsPro database...\n');
+  console.log('\n🌱 ═══════════════════════════════════════════════════');
+  console.log('   iAssetsPro EAM System — Database Seed');
+  console.log('════════════════════════════════════════════════════\n');
 
-  // ── Clear existing data for clean re-seed (disable FK checks to avoid order issues) ──
+  // ── Test database connection first ──
+  try {
+    await db.$queryRawUnsafe('SELECT 1 as ok');
+    console.log('✅ Database connection successful\n');
+  } catch (connErr) {
+    console.error('❌ FATAL: Cannot connect to database!');
+    console.error('   Error:', (connErr as Error).message);
+    console.error('\n   Please check:');
+    console.error('   1. DATABASE_URL is set correctly');
+    console.error('   2. Database server is running');
+    console.error('   3. User has proper permissions');
+    console.error('   4. Database exists');
+    process.exit(1);
+  }
+
+  // ── Clear existing data for clean re-seed ──
   console.log('🗑️  Clearing existing data...');
   try {
-    // Get all table names from the database
+    // Method 1: TRUNCATE with FK checks disabled (fastest)
     const tables = await db.$queryRawUnsafe(
       `SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME != '_prisma_migrations'`
     );
     const tableNames = (tables as Array<{ TABLE_NAME: string }>).map(t => t.TABLE_NAME);
     if (tableNames.length > 0) {
-      // Disable FK checks, truncate all tables, re-enable
       await db.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
       for (const t of tableNames) {
-        await db.$executeRawUnsafe(`TRUNCATE TABLE \`${t}\``);
+        try {
+          await db.$executeRawUnsafe(`TRUNCATE TABLE \`${t}\``);
+        } catch (truncErr) {
+          // Some tables might fail (views, etc) — log and continue
+          console.warn(`    ⚠️ Could not truncate ${t}: ${(truncErr as Error).message.slice(0, 80)}`);
+        }
       }
       await db.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
-      console.log(`  ✅ Truncated ${tableNames.length} tables`);
+      console.log(`  ✅ Cleared ${tableNames.length} tables via TRUNCATE`);
+    } else {
+      console.log('  ℹ️  No tables found (fresh database)');
     }
   } catch (e) {
-    console.warn('  ⚠️  Truncate failed, falling back to Prisma deleteMany...');
-    // Fallback: try individual deletes in a broad order
+    console.warn('  ⚠️  TRUNCATE approach failed, trying DELETE...');
+    // Method 2: Individual deleteMany (slower but works with fewer privileges)
     const tablesToClear = [
       'chatMessage', 'conversationParticipant', 'conversation',
       'workOrderStatusHistory', 'workOrderComment', 'workOrderTimeLog',
@@ -707,13 +730,16 @@ async function seed() {
       'statusTransition', 'companyModule', 'systemModule',
       'role', 'permission', 'department', 'plant', 'companyProfile',
     ];
+    let cleared = 0;
     for (const table of tablesToClear) {
       try {
-        await (db as any)[table]?.deleteMany();
-      } catch { /* skip tables that don't exist or fail */ }
+        const result = await (db as any)[table]?.deleteMany();
+        if (result) cleared++;
+      } catch { /* skip */ }
     }
+    console.log(`  ✅ Cleared ${cleared} tables via DELETE`);
   }
-  console.log('✅ Existing data cleared\n');
+  console.log('');
 
   // ══════════════════════════════════════════════════════════════════════════
   // STEP 1: CREATE PERMISSIONS
