@@ -39,13 +39,14 @@ import {
   GitBranch, Layers, ListChecks, Box, HeartPulse, Settings, Monitor, Thermometer,
   ChevronRight,
   Droplets, Cpu, Zap, MapPin, Shield, BarChart3, Target, RefreshCw, Loader2, Play,
-  FolderOpen,
+  FolderOpen, Sparkles,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer,
 } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
+import { AIAssetGenerator } from '@/components/shared/AIAssetGenerator';
 
 export function AssetsPage() {
   const [assets, setAssets] = useState<any[]>([]);
@@ -63,6 +64,7 @@ export function AssetsPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   // Delete
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [aiGeneratorOpen, setAiGeneratorOpen] = useState(false);
   const { navigate, pageParams } = useNavigationStore();
   const { hasPermission, isAdmin } = useAuthStore();
 
@@ -133,7 +135,12 @@ export function AssetsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Asset Register</h1>
           <p className="text-muted-foreground text-sm mt-1">Manage all physical assets and equipment</p>
         </div>
-        {(hasPermission('assets.create') || isAdmin()) && <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Asset</Button>}
+        {(hasPermission('assets.create') || isAdmin()) && (
+          <div className='flex gap-2'>
+            <Button onClick={openCreate} className='bg-emerald-600 hover:bg-emerald-700 text-white'><Plus className='h-4 w-4 mr-1.5' />Add Asset</Button>
+            <Button onClick={() => setAiGeneratorOpen(true)} variant='outline' className='border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950/30 gap-1.5'><Sparkles className='h-4 w-4' />AI Generate</Button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -386,6 +393,9 @@ export function AssetsPage() {
           {detailId && <AssetDetailPage id={detailId} />}
         </SheetContent>
       </Sheet>
+
+      {/* AI Asset Generator Dialog */}
+      <AIAssetGenerator open={aiGeneratorOpen} onOpenChange={setAiGeneratorOpen} onSuccess={loadData} />
     </div>
   );
 }
