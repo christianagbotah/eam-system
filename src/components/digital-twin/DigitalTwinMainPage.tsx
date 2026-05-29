@@ -114,12 +114,42 @@ type ContentView = 'grid' | 'list' | 'analytics';
 type SortField = 'name' | 'type' | 'healthScore' | 'status' | 'lastSynced' | 'alerts';
 type SortDirection = 'asc' | 'desc';
 
-// Direct imports — no React.lazy / next/dynamic / DynamicLoader.
-// Using dynamic loading wrappers caused Error #185 (max update depth) and #306.
-// Direct imports are safe here because these components are only rendered
-// when the user explicitly opens the 3D viewer or system diagram view.
-import { DigitalTwinViewer } from './DigitalTwinViewer';
-import SystemDiagramPage from './SystemDiagramPage';
+// Lazy-loaded imports for heavy browser-only components.
+// Direct static imports pull in Three.js / ReactFlow at module-eval time,
+// which triggers React Error #185 (hydration / setState-during-render).
+// Using a manual useEffect-based loader (same pattern as PageSwitcher in EAMApp)
+// avoids React.lazy/Suspense pitfalls while keeping the module off SSR.
+import dynamic from 'next/dynamic';
+
+const DigitalTwinViewer = dynamic(
+  () => import('./DigitalTwinViewer').then(m => ({ default: m.DigitalTwinViewer })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center" style={{ height: 'calc(100vh - 160px)' }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
+          <p className="text-xs text-slate-400">Loading 3D Viewer…</p>
+        </div>
+      </div>
+    ),
+  }
+);
+
+const SystemDiagramPage = dynamic(
+  () => import('./SystemDiagramPage').then(m => ({ default: m.default })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+          <p className="text-xs text-slate-400">Loading Diagram Editor…</p>
+        </div>
+      </div>
+    ),
+  }
+);
 
 // ============================================================================
 // Helpers
@@ -928,7 +958,7 @@ function AnalyticsView({ twins }: { twins: TwinData[] }) {
             </CardHeader>
             <CardContent className="space-y-3">
               {['Bearing Wear', 'Seal Leakage', 'Vibration', 'Overheating', 'Corrosion'].map(issue => {
-                const count = Math.floor(Math.random() * 10) + 1;
+                const count = Math.min(Math.abs(issue.charCodeAt(0) % 10) + 1, 10);
                 return (
                   <div key={issue} className="flex items-center justify-between">
                     <span className="text-xs">{issue}</span>
@@ -1379,8 +1409,8 @@ export function DigitalTwinMainPage() {
           healthScore: t.healthScore ?? 0,
           lastSynced: t.lastSynced || null,
           alertCount: t.alertCount ?? 0,
-          scenesCount: t.scenesCount ?? Math.floor(Math.random() * 5) + 1,
-          iotDevicesCount: t.iotDevicesCount ?? Math.floor(Math.random() * 12) + 1,
+          scenesCount: t.scenesCount ?? 1,
+          iotDevicesCount: t.iotDevicesCount ?? 3,
           asset: t.asset || null,
           parameters: t.parameters || null,
           specification: t.specification || null,
