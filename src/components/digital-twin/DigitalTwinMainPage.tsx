@@ -134,12 +134,14 @@ function useViewerComponent(): { Component: LazyComponent | null } {
       return;
     }
     let cancelled = false;
-    // BINARY SEARCH STEP 3: Loading MinimalR3FTest with OrbitControls
-    import('./MinimalR3FTest')
+    // BINARY SEARCH STEP 3: Testing Zustand hooks + bare Canvas
+    // If this works → R3F children are the culprit
+    // If this crashes → Zustand hooks are the culprit
+    import('./DiagnosticStep3')
       .then((mod) => {
-        if (!cancelled && mod.MinimalR3FTest) {
-          viewerCache.set('viewer', mod.MinimalR3FTest);
-          setComponent(() => mod.MinimalR3FTest);
+        if (!cancelled && mod.DiagnosticStep3) {
+          viewerCache.set('viewer', mod.DiagnosticStep3);
+          setComponent(() => mod.DiagnosticStep3);
         }
       })
       .catch((err) => {
@@ -1483,9 +1485,9 @@ class ViewerErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 // ============================================================================
 
 function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId: string; twinName: string }) {
-  // BINARY SEARCH STEP 3: MinimalR3FTest WITH OrbitControls.
-  // If THIS crashes → OrbitControls is the culprit.
-  // If THIS works → culprit is elsewhere in DigitalTwinViewer.
+  // BINARY SEARCH STEP 3: DiagnosticStep3 — Zustand hooks + bare Canvas
+  // If THIS crashes → 30+ Zustand selectors/hooks are the culprit
+  // If THIS works → R3F children (AdaptiveDpr, AdaptiveEvents, etc.) are the culprit
   const { Component } = useViewerComponent();
 
   if (!Component) {
