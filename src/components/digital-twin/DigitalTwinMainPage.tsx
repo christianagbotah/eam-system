@@ -3,6 +3,7 @@
 import React, { Component, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
+import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1412,8 +1413,23 @@ class ViewerErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('[ViewerErrorBoundary]', error.message, info.componentStack);
+    // Log full diagnostic info to console for debugging
+    console.error('[ViewerErrorBoundary] Error:', error.message);
+    console.error('[ViewerErrorBoundary] Component Stack:', info.componentStack);
+    console.error('[ViewerErrorBoundary] Full Error:', error);
   }
+
+  handleCopyError = () => {
+    const { error } = this.state;
+    const text = [
+      `Error: ${error?.message}`,
+      `Stack: ${error?.stack}`,
+      '',
+      'Component Stack from React:',
+      '(See browser console for full details)',
+    ].join('\n');
+    navigator.clipboard.writeText(text).catch(() => {});
+  };
 
   render() {
     if (this.state.hasError) {
@@ -1431,15 +1447,28 @@ class ViewerErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
                 {this.state.error?.message || 'An unexpected error occurred while loading the 3D viewer.'}
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => this.setState({ hasError: false, error: null })}
-              className="border-slate-600 text-slate-300 hover:bg-white/5"
-            >
-              <RefreshCw className="h-3.5 w-3.5 mr-2" />
-              Retry
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => this.setState({ hasError: false, error: null })}
+                className="border-slate-600 text-slate-300 hover:bg-white/5"
+              >
+                <RefreshCw className="h-3.5 w-3.5 mr-2" />
+                Retry
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={this.handleCopyError}
+                className="border-slate-600 text-slate-300 hover:bg-white/5"
+              >
+                Copy Error
+              </Button>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              Check browser console (F12 → Console) for full component stack
+            </p>
           </div>
         </div>
       );
@@ -1453,46 +1482,59 @@ class ViewerErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 // ============================================================================
 
 function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId: string; twinName: string }) {
-  const { Component } = useViewerComponent();
-  const [ready, setReady] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<any>(null);
+  const [viewerModule, setViewerModule] = useState<React.ComponentType<any> | null>(null);
 
-  // CRITICAL FIX: Defer viewer mount by THREE animation frames to let React's
-  // concurrent scheduler fully settle before mounting 28+ Zustand subscriptions
-  // and the R3F dual reconciler. Without this delay, the scheduler is still
-  // processing the viewMode change when the viewer mounts, causing nested
-  // dispatches that trigger Error #185.
+  // Lazy-load the viewer module
   useEffect(() => {
-    if (!Component) return;
     let cancelled = false;
-    // First RAF: let current render phase complete
+    import('./DigitalTwinViewer')
+      .then((mod) => {
+        if (!cancelled) setViewerModule(() => mod.DigitalTwinViewer);
+      })
+      .catch((err) => console.error('[ViewerLoader] Failed to load:', err));
+    return () => { cancelled = true; };
+  }, []);
+
+  // Render in a completely SEPARATE React root to eliminate reconciler conflicts.
+  // R3F's <Canvas> creates a second reconciler via react-reconciler. By rendering
+  // the viewer in its own React root (via createRoot), the two reconcilers operate
+  // in independent React scheduler contexts, preventing Error #185.
+  useEffect(() => {
+    if (!viewerModule || !containerRef.current) return;
+    let cancelled = false;
+
+    // Defer root creation to next animation frame to ensure the parent
+    // scheduler has fully committed the current render cycle.
     requestAnimationFrame(() => {
-      if (cancelled) return;
-      // Second RAF: let paint phase complete and scheduler go idle
-      requestAnimationFrame(() => {
-        if (cancelled) return;
-        // Third RAF: extra safety margin for React 18/19 concurrent features
-        requestAnimationFrame(() => {
-          if (!cancelled) setReady(true);
-        });
+      if (cancelled || !containerRef.current) return;
+
+      import('react-dom/client').then(({ createRoot }) => {
+        if (cancelled || !containerRef.current) return;
+
+        const root = createRoot(containerRef.current);
+        rootRef.current = root;
+        root.render(
+          <viewerModule assetId={assetId} twinId={twinId} twinName={twinName} enableRealtime={false} />
+        );
       });
     });
-    return () => { cancelled = true; };
-  }, [Component]);
 
-  if (!Component || !ready) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
-          <p className="text-xs text-slate-400">Loading 3D Viewer…</p>
-        </div>
-      </div>
-    );
-  }
+    return () => {
+      cancelled = true;
+      // Cleanup: unmount the separate root
+      if (rootRef.current) {
+        rootRef.current.unmount();
+        rootRef.current = null;
+      }
+    };
+  }, [viewerModule, assetId, twinId, twinName]);
+
   return (
-    <ViewerErrorBoundary>
-      <Component assetId={assetId} twinId={twinId} twinName={twinName} enableRealtime={false} />
-    </ViewerErrorBoundary>
+    <div className="w-full h-full">
+      <div ref={containerRef} className="w-full h-full" />
+    </div>
   );
 }
 
@@ -1685,6 +1727,10 @@ export function DigitalTwinMainPage() {
   }, [sortField]);
 
   const handleOpenViewer = (twin: TwinData) => {
+    // Reset the Zustand store to clear stale state from previous viewer sessions.
+    // Stale state (selectedMeshName, selectedAssetId, isInfoPanelOpen, etc.)
+    // can trigger cascading useEffect calls that cause Error #185.
+    useDigitalTwinStore.getState().reset();
     React.startTransition(() => {
       setSelectedTwin(twin);
       setViewMode('viewer');
@@ -1692,6 +1738,7 @@ export function DigitalTwinMainPage() {
   };
 
   const handleOpenDiagram = (twin: TwinData) => {
+    useDigitalTwinStore.getState().reset();
     React.startTransition(() => {
       setSelectedTwin(twin);
       setViewMode('diagram');

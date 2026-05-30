@@ -12,8 +12,6 @@ import { Canvas } from '@react-three/fiber';
 import {
   OrbitControls,
   PerspectiveCamera,
-  AdaptiveDpr,
-  AdaptiveEvents,
   Preload,
   Stats,
 } from '@react-three/drei';
@@ -131,6 +129,7 @@ function NoSceneOverlay({
     </div>
   );
 }
+NoSceneOverlay.displayName = 'NoSceneOverlay';
 
 // ============================================================================
 // Loading State (shown inside Canvas)
@@ -144,6 +143,7 @@ function ViewerLoadingState() {
     </mesh>
   );
 }
+ViewerLoadingState.displayName = 'ViewerLoadingState';
 
 // ============================================================================
 // Empty State (no model loaded)
@@ -185,6 +185,7 @@ function EmptyStateOverlay({ onUpload }: { onUpload?: () => void }) {
     </div>
   );
 }
+EmptyStateOverlay.displayName = 'EmptyStateOverlay';
 
 // ============================================================================
 // Error State
@@ -229,6 +230,7 @@ function ErrorStateOverlay({
     </div>
   );
 }
+ErrorStateOverlay.displayName = 'ErrorStateOverlay';
 
 // ============================================================================
 // Camera Controller (R3F component inside Canvas)
@@ -279,6 +281,7 @@ function CameraController() {
     />
   );
 }
+CameraController.displayName = 'CameraController';
 
 // ============================================================================
 // Click handler for deselecting
@@ -307,10 +310,14 @@ function BackgroundClickHandler() {
     </mesh>
   );
 }
+BackgroundClickHandler.displayName = 'BackgroundClickHandler';
 
 // ============================================================================
 // Main DigitalTwinViewer Component
 // ============================================================================
+
+// CRITICAL: Set displayName on ALL components so React's error boundaries
+// show real names in production builds (instead of minified rA, nm, etc.)
 
 export function DigitalTwinViewer({
   sceneId = null,
@@ -370,7 +377,6 @@ export function DigitalTwinViewer({
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
-  const [canvasReady, setCanvasReady] = useState(false);
 
   // Scene resolution state (when twinId is used without sceneId)
   const [isResolvingScene, setIsResolvingScene] = useState(false);
@@ -418,8 +424,6 @@ export function DigitalTwinViewer({
     canvasRef.current = gl.domElement;
     gl.setClearColor('#0a0a12');
     gl.localClippingEnabled = true;
-    // Signal that Canvas is fully initialized — safe to enable AdaptiveDpr/Events
-    requestAnimationFrame(() => setCanvasReady(true));
   }, []);
 
   // ── Resolve scene from twinId when sceneId is not provided ─────────────
@@ -582,26 +586,6 @@ export function DigitalTwinViewer({
   // ── Bindings for exploded view ─────────────────────────────────────────
   const effectiveBindings = propBindings.length > 0 ? propBindings : [];
 
-  // ── CRITICAL FIX for React 19 + R3F v9 Error #185 ──────────────────────
-  // R3F's <Canvas> uses react-reconciler which calls flushSync() internally.
-  // In React 19, flushSync has stricter nesting detection. When Canvas mounts
-  // with children, R3F's reconciler initializes while React 19's concurrent
-  // scheduler is still processing the parent render, causing nested dispatches
-  // that trigger Error #185 (Maximum update depth exceeded).
-  //
-  // Fix: Mount Canvas EMPTY first, let R3F's reconciler fully initialize
-  // with zero subscribers, then add children after React 19's scheduler is
-  // completely idle. This eliminates the nested dispatch entirely.
-  const [canvasChildrenReady, setCanvasChildrenReady] = useState(false);
-
-  // CRITICAL FIX: Increase delay to 500ms to ensure React's concurrent scheduler
-  // has fully settled before mounting R3F children. The R3F reconciler creates a
-  // second React root that can conflict with React 18/19's concurrent rendering.
-  useEffect(() => {
-    const timer = setTimeout(() => setCanvasChildrenReady(true), 500);
-    return () => clearTimeout(timer);
-  }, []);
-
   return (
     <div
       className="relative w-full overflow-hidden"
@@ -618,7 +602,6 @@ export function DigitalTwinViewer({
         style={{ background: '#0a0a12' }}
         onCreated={handleCreated}
       >
-        {canvasChildrenReady && (
           <>
             <Suspense fallback={<ViewerLoadingState />}>
               {/* Camera */}
@@ -666,11 +649,7 @@ export function DigitalTwinViewer({
               <Preload all />
             </Suspense>
 
-            {/* AdaptiveDpr/AdaptiveEvents — only after Canvas is stable */}
-            {canvasReady && <AdaptiveDpr pixelated />}
-            {canvasReady && <AdaptiveEvents />}
           </>
-        )}
       </Canvas>
 
       {/* ── Loading overlay ──────────────────────────────────────────────── */}
@@ -777,5 +756,7 @@ export function DigitalTwinViewer({
     </div>
   );
 }
+
+DigitalTwinViewer.displayName = 'DigitalTwinViewer';
 
 export default DigitalTwinViewer;
