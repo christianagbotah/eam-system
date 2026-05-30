@@ -578,6 +578,23 @@ export function DigitalTwinViewer({
   // ── Bindings for exploded view ─────────────────────────────────────────
   const effectiveBindings = propBindings.length > 0 ? propBindings : [];
 
+  // ── CRITICAL FIX for React 19 + R3F v9 Error #185 ──────────────────────
+  // R3F's <Canvas> uses react-reconciler which calls flushSync() internally.
+  // In React 19, flushSync has stricter nesting detection. When Canvas mounts
+  // with children, R3F's reconciler initializes while React 19's concurrent
+  // scheduler is still processing the parent render, causing nested dispatches
+  // that trigger Error #185 (Maximum update depth exceeded).
+  //
+  // Fix: Mount Canvas EMPTY first, let R3F's reconciler fully initialize
+  // with zero subscribers, then add children after React 19's scheduler is
+  // completely idle. This eliminates the nested dispatch entirely.
+  const [canvasChildrenReady, setCanvasChildrenReady] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setCanvasChildrenReady(true), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <div
       className="relative w-full overflow-hidden"
@@ -586,7 +603,7 @@ export function DigitalTwinViewer({
         background: 'linear-gradient(135deg, #0a0a12 0%, #0d0d1a 50%, #0a0f14 100%)',
       }}
     >
-      {/* ── 3D Canvas ──────────────────────────────────────────────────────── */}
+      {/* ── 3D Canvas (mounts empty, children added after delay) ────────── */}
       <Canvas
         shadows
         dpr={dprValue}
@@ -594,59 +611,59 @@ export function DigitalTwinViewer({
         style={{ background: '#0a0a12' }}
         onCreated={handleCreated}
       >
-        <Suspense fallback={<ViewerLoadingState />}>
-          {/* Camera */}
-          <PerspectiveCamera makeDefault fov={50} position={[10, 8, 10]} near={0.1} far={1000} />
+        {canvasChildrenReady && (
+          <>
+            <Suspense fallback={<ViewerLoadingState />}>
+              {/* Camera */}
+              <PerspectiveCamera makeDefault fov={50} position={[10, 8, 10]} near={0.1} far={1000} />
 
-          {/* Camera controls */}
-          <CameraController />
+              {/* Camera controls */}
+              <CameraController />
 
-          {/* Lighting */}
-          <SceneLighting />
+              {/* Lighting */}
+              <SceneLighting />
 
-          {/* Ground plane */}
-          <GroundPlane />
+              {/* Ground plane */}
+              <GroundPlane />
 
-          {/* Model */}
-          {effectiveModelUrl && (
-            <ModelLoader
-              modelUrl={effectiveModelUrl}
-              bindings={effectiveBindings}
-              onLoadingStart={handleModelLoadingStart}
-              onLoadingComplete={handleModelLoadingComplete}
-              onError={handleModelError}
-              onProgress={handleProgress}
-            />
-          )}
+              {/* Model */}
+              {effectiveModelUrl && (
+                <ModelLoader
+                  modelUrl={effectiveModelUrl}
+                  bindings={effectiveBindings}
+                  onLoadingStart={handleModelLoadingStart}
+                  onLoadingComplete={handleModelLoadingComplete}
+                  onError={handleModelError}
+                  onProgress={handleProgress}
+                />
+              )}
 
-          {/* Exploded view */}
-          <ExplodedView bindings={effectiveBindings} />
+              {/* Exploded view */}
+              <ExplodedView bindings={effectiveBindings} />
 
-          {/* Section plane */}
-          <SectionPlane />
+              {/* Section plane */}
+              <SectionPlane />
 
-          {/* IoT overlay */}
-          <IoTOverlayLayer />
+              {/* IoT overlay */}
+              <IoTOverlayLayer />
 
-          {/* Hotspots */}
-          <HotspotLayer />
+              {/* Hotspots */}
+              <HotspotLayer />
 
-          {/* Annotations */}
-          <AnnotationLayer />
+              {/* Annotations */}
+              <AnnotationLayer />
 
-          {/* Background click handler (deselect) */}
-          <BackgroundClickHandler />
+              {/* Background click handler (deselect) */}
+              <BackgroundClickHandler />
 
-          <Preload all />
-        </Suspense>
+              <Preload all />
+            </Suspense>
 
-        {/* CRITICAL: AdaptiveDpr/AdaptiveEvents are gated behind canvasReady.
-        During initial Canvas mount, these drei components rapidly adjust
-        DPR/events based on low FPS (context creation, shader compilation),
-        triggering R3F store updates that interleave with React renders
-        and cause Error #185. They're enabled after Canvas is stable. */}
-        {canvasReady && <AdaptiveDpr pixelated />}
-        {canvasReady && <AdaptiveEvents />}
+            {/* AdaptiveDpr/AdaptiveEvents — only after Canvas is stable */}
+            {canvasReady && <AdaptiveDpr pixelated />}
+            {canvasReady && <AdaptiveEvents />}
+          </>
+        )}
       </Canvas>
 
       {/* ── Loading overlay ──────────────────────────────────────────────── */}

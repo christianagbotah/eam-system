@@ -1397,43 +1397,6 @@ function UploadModelDialog({
 
 function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId: string; twinName: string }) {
   const { Component } = useViewerComponent();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const rootRef = useRef<any>(null);
-  const mountedRef = useRef(false);
-
-  // CRITICAL: Render the 3D viewer in a SEPARATE React root.
-  // R3F's <Canvas> creates its own React reconciler. When mounted inside the
-  // SAME React root as the parent, the two reconcilers interfere during React
-  // 18's concurrent rendering, causing Error #185 (Maximum update depth exceeded).
-  // By using a separate React root, the Canvas reconciler is completely isolated
-  // from the parent's render cycle. The shared Zustand store still works because
-  // Zustand stores are global (not React context-based).
-  useEffect(() => {
-    if (!Component || !containerRef.current) return;
-
-    mountedRef.current = true;
-
-    // Dynamic import to get createRoot (avoids SSR issues with react-dom/client)
-    let cancelled = false;
-    import('react-dom/client').then(({ createRoot }) => {
-      if (cancelled || !containerRef.current || !mountedRef.current) return;
-      const root = createRoot(containerRef.current);
-      rootRef.current = root;
-      root.render(
-        React.createElement(Component, { assetId, twinId, twinName }),
-      );
-    });
-
-    return () => {
-      cancelled = true;
-      mountedRef.current = false;
-      if (rootRef.current) {
-        rootRef.current.unmount();
-        rootRef.current = null;
-      }
-    };
-  }, [Component, assetId, twinId, twinName]);
-
   if (!Component) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -1444,10 +1407,7 @@ function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId:
       </div>
     );
   }
-
-  return (
-    <div ref={containerRef} className="h-full w-full" />
-  );
+  return <Component assetId={assetId} twinId={twinId} twinName={twinName} />;
 }
 
 function DiagramLoader({ twinId, twinName }: { twinId: string; twinName: string }) {
