@@ -462,3 +462,23 @@ Stage Summary:
 - Increased Canvas children delay from 100ms to 500ms
 - Applied same deferred mount pattern to DiagramLoader
 - Commit: 79308f1 pushed to main
+---
+Task ID: 5
+Agent: main
+Task: Error #185 attempt 5 - separate React root + diagnostic displayNames
+
+Work Log:
+- Enhanced ErrorBoundary with Copy Error button, console logging of component stack
+- Added displayName to all 7 components in DigitalTwinViewer.tsx for unminified error traces
+- Replaced triple-RAF ViewerLoader with separate React root via createRoot()
+- Added Zustand store reset() when switching to viewer/diagram mode
+- Removed AdaptiveDpr/AdaptiveEvents from Canvas (simplify setup)
+- Removed canvasChildrenReady gating (mount children immediately, no deferred setup)
+- Removed canvasReady state (no longer needed without AdaptiveDpr/Events)
+- Pushed commit 9f74029 to main
+
+Stage Summary:
+- Key approach change: Viewer now renders in a COMPLETELY SEPARATE React root via createRoot()
+- Diagnostic improvements: displayName on all components + enhanced ErrorBoundary
+- If error persists: browser console (F12) will show full unminified component stack
+- User needs to: git pull, bun run build, pm2 restart, then test and check console if error occurs
