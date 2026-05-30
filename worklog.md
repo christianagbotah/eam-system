@@ -440,35 +440,25 @@ Stage Summary:
 - **File**: `src/app/api/work-orders/[id]/route.ts` — graceful fallback when wo_team_member_requests table doesn't exist
 - **Push**: Commit `4264db05`
 - **VPS action needed**: `npx prisma db push` to create the table (then full query will work)
-
 ---
-Task ID: 8
+Task ID: 4
 Agent: main
-Task: Fix React Error #185 (Maximum update depth exceeded) on 3D Digital Twin Viewer
+Task: Fix React Error #185 on 3D Viewer - 4-layer defense approach
 
 Work Log:
-- Binary search over 7 diagnostic steps identified root cause: Zustand `useDigitalTwinStore(selector)` called inside R3F Canvas children creates `useSyncExternalStore` subscriptions in the R3F reconciler that cascade with identical subscriptions in the main React reconciler, causing infinite cross-reconciler re-renders (Error #185)
-- Steps 1,3,4,6 passed (R3F itself, Zustand hooks in outer component, AdaptiveDpr/Events, CameraController, SceneLighting are all fine)
-- Steps 5,7 crashed (the 7 R3F children that call useDigitalTwinStore() directly inside Canvas)
-- Created `useStoreSelector()` hook that bypasses `useSyncExternalStore` by using Zustand's vanilla `store.subscribe()` API in a `useEffect`, with a reference-equality guard to prevent redundant React state updates
-- Refactored 7 R3F Canvas child components:
-  - GroundPlane.tsx (1 selector → useStoreSelector)
-  - ExplodedView.tsx (2 selectors → useStoreSelector)
-  - SectionPlane.tsx (3 selectors → useStoreSelector, 2 actions → getState())
-  - IoTOverlayLayer.tsx (4 selectors → useStoreSelector)
-  - HotspotLayer.tsx (3 selectors → useStoreSelector, 1 action → getState())
-  - AnnotationLayer.tsx (2 selectors → useStoreSelector)
-  - InteractiveMesh.tsx (6 selectors → useStoreSelector, 3 actions → getState())
-- Deleted diagnostic files: DiagnosticStep3-7.tsx, MinimalR3FTest.tsx
-- Cleaned up unused imports in IoTOverlayLayer.tsx and AnnotationLayer.tsx
-- Verified DigitalTwinMainPage.tsx already loads DigitalTwinViewer (not DiagnosticStep7)
-- Verified no remaining useDigitalTwinStore() calls in R3F Canvas children (only in outer components which are safe)
-- Lint check: No new errors in refactored files
+- Read all relevant files from GitHub API: DigitalTwinMainPage.tsx (1872 lines), DigitalTwinViewer.tsx, digitalTwinStore.ts, useDigitalTwinScene.ts, useCameraControls.ts, useWebSocket.ts, SceneTreePanel.tsx
+- Analyzed 28+ Zustand store subscriptions in DigitalTwinViewer
+- Identified interaction between R3F dual reconciler, WebSocket reconnection (Socket.io 404), and React 18/19 concurrent scheduler as root cause
+- Previous 3 fix attempts failed: (1) throttled progress + gated AdaptiveDpr, (2) separate React root via createRoot, (3) useRef import fix
+- Implemented 4-layer defense: ErrorBoundary + triple RAF deferred mount + React.startTransition + enableRealtime=false + 500ms Canvas delay + DiagramLoader same treatment
+- Pushed commit 79308f1 to GitHub
 
 Stage Summary:
-- **Root cause confirmed**: useSyncExternalStore cross-reconciler cascading between R3F and main React reconciler
-- **Fix**: `useStoreSelector()` hook — uses store.subscribe() in useEffect instead of useSyncExternalStore
-- **Files refactored**: 7 R3F Canvas children + 1 new hook + barrel export update
-- **Deleted**: 7 diagnostic files (DiagnosticStep3-7, MinimalR3FTest)
-- **Commit**: `2a39d6cf` — pushed to GitHub
-- **VPS action needed**: `git pull origin main && bun run build && pm2 restart eam-system`
+- Key files modified: DigitalTwinMainPage.tsx (+120 lines), DigitalTwinViewer.tsx (+7 lines)
+- Added ViewerErrorBoundary class component for graceful error handling
+- Added triple requestAnimationFrame delay before mounting DigitalTwinViewer
+- Added React.startTransition for view mode switches
+- Passed enableRealtime={false} to disable WebSocket in viewer context
+- Increased Canvas children delay from 100ms to 500ms
+- Applied same deferred mount pattern to DiagramLoader
+- Commit: 79308f1 pushed to main
