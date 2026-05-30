@@ -114,42 +114,64 @@ type ContentView = 'grid' | 'list' | 'analytics';
 type SortField = 'name' | 'type' | 'healthScore' | 'status' | 'lastSynced' | 'alerts';
 type SortDirection = 'asc' | 'desc';
 
-// Lazy-loaded imports for heavy browser-only components.
-// Direct static imports pull in Three.js / ReactFlow at module-eval time,
-// which triggers React Error #185 (hydration / setState-during-render).
-// Using a manual useEffect-based loader (same pattern as PageSwitcher in EAMApp)
-// avoids React.lazy/Suspense pitfalls while keeping the module off SSR.
-import dynamic from 'next/dynamic';
+// Lazy-loaded component types — loaded client-side only via useEffect (no React.lazy/Suspense).
+// React.lazy + next/dynamic + Suspense causes Error #185 (max update depth) with
+// Three.js / ReactFlow because their Canvas/ReactFlow components fire setState
+// during the Suspense resolve phase, creating an infinite loop.
+// This manual loader matches the PageSwitcher pattern used in EAMApp.tsx.
+type LazyComponent = React.ComponentType<any>;
+const viewerCache = new Map<string, LazyComponent>();
+const diagramCache = new Map<string, LazyComponent>();
 
-const DigitalTwinViewer = dynamic(
-  () => import('./DigitalTwinViewer').then(m => ({ default: m.DigitalTwinViewer })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center" style={{ height: 'calc(100vh - 160px)' }}>
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
-          <p className="text-xs text-slate-400">Loading 3D Viewer…</p>
-        </div>
-      </div>
-    ),
-  }
-);
+function useViewerComponent(): { Component: LazyComponent | null } {
+  const [Component, setComponent] = useState<LazyComponent | null>(
+    () => viewerCache.get('viewer') || null
+  );
+  useEffect(() => {
+    if (viewerCache.has('viewer')) {
+      setComponent(() => viewerCache.get('viewer')!);
+      return;
+    }
+    let cancelled = false;
+    import('./DigitalTwinViewer')
+      .then((mod) => {
+        if (!cancelled && mod.DigitalTwinViewer) {
+          viewerCache.set('viewer', mod.DigitalTwinViewer);
+          setComponent(() => mod.DigitalTwinViewer);
+        }
+      })
+      .catch((err) => {
+        console.error('[useViewerComponent] Failed to load:', err);
+      });
+    return () => { cancelled = true; };
+  }, []);
+  return { Component };
+}
 
-const SystemDiagramPage = dynamic(
-  () => import('./SystemDiagramPage').then(m => ({ default: m.default })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
-          <p className="text-xs text-slate-400">Loading Diagram Editor…</p>
-        </div>
-      </div>
-    ),
-  }
-);
+function useDiagramComponent(): { Component: LazyComponent | null } {
+  const [Component, setComponent] = useState<LazyComponent | null>(
+    () => diagramCache.get('diagram') || null
+  );
+  useEffect(() => {
+    if (diagramCache.has('diagram')) {
+      setComponent(() => diagramCache.get('diagram')!);
+      return;
+    }
+    let cancelled = false;
+    import('./SystemDiagramPage')
+      .then((mod) => {
+        if (!cancelled && mod.default) {
+          diagramCache.set('diagram', mod.default);
+          setComponent(() => mod.default);
+        }
+      })
+      .catch((err) => {
+        console.error('[useDiagramComponent] Failed to load:', err);
+      });
+    return () => { cancelled = true; };
+  }, []);
+  return { Component };
+}
 
 // ============================================================================
 // Helpers
@@ -1370,6 +1392,40 @@ function UploadModelDialog({
 }
 
 // ============================================================================
+// Inline lazy loaders — avoid React.lazy/Suspense to prevent Error #185
+// ============================================================================
+
+function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId: string; twinName: string }) {
+  const { Component } = useViewerComponent();
+  if (!Component) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
+          <p className="text-xs text-slate-400">Loading 3D Viewer…</p>
+        </div>
+      </div>
+    );
+  }
+  return <Component assetId={assetId} twinId={twinId} twinName={twinName} />;
+}
+
+function DiagramLoader({ twinId, twinName }: { twinId: string; twinName: string }) {
+  const { Component } = useDiagramComponent();
+  if (!Component) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+          <p className="text-xs text-slate-400">Loading Diagram Editor…</p>
+        </div>
+      </div>
+    );
+  }
+  return <Component twinId={twinId} twinName={twinName} />;
+}
+
+// ============================================================================
 // Main Page Component
 // ============================================================================
 
@@ -1591,11 +1647,7 @@ export function DigitalTwinMainPage() {
             </Badge>
           </div>
           <div className="relative" style={{ height: 'calc(100vh - 160px)' }}>
-            <DigitalTwinViewer
-              assetId={selectedTwin.asset?.id}
-              twinId={selectedTwin.id}
-              twinName={selectedTwin.name}
-            />
+            <ViewerLoader assetId={selectedTwin.asset?.id} twinId={selectedTwin.id} twinName={selectedTwin.name} />
           </div>
         </div>
       )}
@@ -1619,7 +1671,7 @@ export function DigitalTwinMainPage() {
             </Badge>
           </div>
           <div className="relative" style={{ height: 'calc(100vh - 160px)' }}>
-            <SystemDiagramPage twinId={selectedTwin.id} twinName={selectedTwin.name} />
+            <DiagramLoader twinId={selectedTwin.id} twinName={selectedTwin.name} />
           </div>
         </div>
       )}
