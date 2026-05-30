@@ -202,10 +202,20 @@ export function ExplodedView({
   });
 
   // Decoupled sync loop: reads from pendingLabelsRef and flushes to React state.
-  // Runs on a separate requestAnimationFrame that is NOT part of R3F's frame loop,
-  // so it never triggers Error #185. Uses requestAnimationFrame to schedule the
-  // React setState call, ensuring it fires outside any ongoing render cycle.
+  // CRITICAL FIX: The loop now STOPS when explode mode is off AND there are no
+  // pending labels. Previously it ran unconditionally via requestAnimationFrame,
+  // scheduling setActiveLabels on every frame even when pendingLabelsRef was null.
+  // While it had a JSON comparison guard, the continuous rAF scheduling could
+  // interleave with React concurrent rendering during Canvas init, contributing
+  // to Error #185. Now it self-terminates and is restarted by a lightweight
+  // useEffect when explode mode changes.
   useEffect(() => {
+    // Only run the rAF loop when explode mode is active
+    if (!explodeMode) {
+      setActiveLabels([]);
+      return;
+    }
+
     let animId: number;
     let lastLabelsJson = '';
 
@@ -216,10 +226,6 @@ export function ExplodedView({
         const json = JSON.stringify(pending);
         if (json !== lastLabelsJson) {
           lastLabelsJson = json;
-          // CRITICAL: Use requestAnimationFrame to schedule the React setState
-          // call. Even though we're already in a rAF callback, this ensures the
-          // setState fires in the NEXT frame, completely outside any potential
-          // React concurrent render that might be in progress.
           requestAnimationFrame(() => {
             setActiveLabels(pending);
           });
@@ -231,7 +237,7 @@ export function ExplodedView({
 
     animId = requestAnimationFrame(sync);
     return () => cancelAnimationFrame(animId);
-  }, []);
+  }, [explodeMode]);
 
   // Label renderer — renders HTML labels for exploded components
   const isVisible = explodeMode && showLabels;

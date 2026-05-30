@@ -634,12 +634,10 @@ export function ModelLoader({
     }
   }, [loadError]);
 
-  // Report loading start via callback
-  useEffect(() => {
-    if (modelUrl && isLoading) {
-      onLoadingStart?.();
-    }
-  }, [modelUrl, isLoading, onLoadingStart]);
+  // CRITICAL: Removed redundant useEffect that called onLoadingStart directly.
+  // Loading start is already handled via the onLoadingStartRef in useGLTFLoader.
+  // That ref-based path uses setTimeout(0) to defer to main reconciler, while
+  // this useEffect was firing inside R3F's reconciler, risking Error #185.
 
   // ── Empty state when no model URL ─────────────────────────────────────────
 

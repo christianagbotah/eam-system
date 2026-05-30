@@ -366,11 +366,32 @@ export function DigitalTwinViewer({
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [canvasReady, setCanvasReady] = useState(false);
 
   // Scene resolution state (when twinId is used without sceneId)
   const [isResolvingScene, setIsResolvingScene] = useState(false);
   const [resolvedModelUrl, setResolvedModelUrl] = useState<string | null>(null);
   const [hasNoScenes, setHasNoScenes] = useState(false);
+
+  // CRITICAL: Throttled progress handler — prevents Error #185 by limiting
+  // how often setLoadingProgress fires during Canvas initialization.
+  // ModelLoader calls onProgress every ~200ms via setInterval; each call
+  // triggers a full re-render that can interleave with R3F Canvas setup.
+  const lastProgressTimeRef = useRef(0);
+  const handleProgress = useCallback((pct: number) => {
+    const now = Date.now();
+    // Always allow 0% and 100% through immediately for UX
+    if (pct === 0 || pct === 100) {
+      lastProgressTimeRef.current = now;
+      setLoadingProgress(pct);
+      return;
+    }
+    // Throttle to max once per 500ms to avoid overwhelming React during Canvas init
+    if (now - lastProgressTimeRef.current >= 500) {
+      lastProgressTimeRef.current = now;
+      setLoadingProgress(pct);
+    }
+  }, []);
 
   // Canvas ref for screenshots
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -393,6 +414,8 @@ export function DigitalTwinViewer({
     canvasRef.current = gl.domElement;
     gl.setClearColor('#0a0a12');
     gl.localClippingEnabled = true;
+    // Signal that Canvas is fully initialized — safe to enable AdaptiveDpr/Events
+    requestAnimationFrame(() => setCanvasReady(true));
   }, []);
 
   // ── Resolve scene from twinId when sceneId is not provided ─────────────
@@ -592,7 +615,7 @@ export function DigitalTwinViewer({
               onLoadingStart={handleModelLoadingStart}
               onLoadingComplete={handleModelLoadingComplete}
               onError={handleModelError}
-              onProgress={setLoadingProgress}
+              onProgress={handleProgress}
             />
           )}
 
@@ -617,8 +640,13 @@ export function DigitalTwinViewer({
           <Preload all />
         </Suspense>
 
-        <AdaptiveDpr pixelated />
-        <AdaptiveEvents />
+        {/* CRITICAL: AdaptiveDpr/AdaptiveEvents are gated behind canvasReady.
+        During initial Canvas mount, these drei components rapidly adjust
+        DPR/events based on low FPS (context creation, shader compilation),
+        triggering R3F store updates that interleave with React renders
+        and cause Error #185. They're enabled after Canvas is stable. */}
+        {canvasReady && <AdaptiveDpr pixelated />}
+        {canvasReady && <AdaptiveEvents />}
       </Canvas>
 
       {/* ── Loading overlay ──────────────────────────────────────────────── */}

@@ -514,7 +514,20 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
 
       updateHealthMap: (map: Record<string, MeshHealthEntry>) => {
         set(
-          (state) => ({ iotHealthMap: { ...state.iotHealthMap, ...map } }),
+          (state) => {
+            // CRITICAL: Only create a new object reference if entries actually changed.
+            // Previously, this always created { ...state.iotHealthMap, ...map } even if
+            // the map was empty or unchanged, causing unnecessary re-renders in
+            // IoTOverlayLayer and SceneTreePanel that amplify Error #185 cascading.
+            const keys = Object.keys(map);
+            if (keys.length === 0) return state;
+            const hasChanges = keys.some(
+              (key) => map[key] && state.iotHealthMap[key]?.score !== map[key].score,
+            );
+            return hasChanges
+              ? { iotHealthMap: { ...state.iotHealthMap, ...map } }
+              : state;
+          },
           false,
           'digitalTwin/updateHealthMap',
         );
@@ -522,9 +535,11 @@ export const useDigitalTwinStore = create<DigitalTwinState>()(
 
       updateLiveReading: (meshName: string, reading: LiveReading) => {
         set(
-          (state) => ({
-            liveReadings: { ...state.liveReadings, [meshName]: reading },
-          }),
+          (state) => {
+            const existing = state.liveReadings[meshName];
+            if (existing && existing.value === reading.value) return state;
+            return { liveReadings: { ...state.liveReadings, [meshName]: reading } };
+          },
           false,
           'digitalTwin/updateLiveReading',
         );
