@@ -134,14 +134,14 @@ function useViewerComponent(): { Component: LazyComponent | null } {
       return;
     }
     let cancelled = false;
-    // BINARY SEARCH STEP 3: Testing Zustand hooks + bare Canvas
-    // If this works → R3F children are the culprit
-    // If this crashes → Zustand hooks are the culprit
-    import('./DiagnosticStep3')
+    // BINARY SEARCH STEP 4: Testing AdaptiveDpr + AdaptiveEvents
+    // If this crashes → AdaptiveDpr/AdaptiveEvents are the culprit
+    // If this works → other R3F children are the culprit
+    import('./DiagnosticStep4')
       .then((mod) => {
-        if (!cancelled && mod.DiagnosticStep3) {
-          viewerCache.set('viewer', mod.DiagnosticStep3);
-          setComponent(() => mod.DiagnosticStep3);
+        if (!cancelled && mod.DiagnosticStep4) {
+          viewerCache.set('viewer', mod.DiagnosticStep4);
+          setComponent(() => mod.DiagnosticStep4);
         }
       })
       .catch((err) => {
@@ -1485,9 +1485,9 @@ class ViewerErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 // ============================================================================
 
 function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId: string; twinName: string }) {
-  // BINARY SEARCH STEP 3: DiagnosticStep3 — Zustand hooks + bare Canvas
-  // If THIS crashes → 30+ Zustand selectors/hooks are the culprit
-  // If THIS works → R3F children (AdaptiveDpr, AdaptiveEvents, etc.) are the culprit
+  // BINARY SEARCH STEP 4: DiagnosticStep4 — AdaptiveDpr + AdaptiveEvents added
+  // If THIS crashes → AdaptiveDpr/AdaptiveEvents are the culprit
+  // If THIS works → other R3F children are the culprit
   const { Component } = useViewerComponent();
 
   if (!Component) {
