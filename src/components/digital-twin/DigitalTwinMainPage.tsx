@@ -124,7 +124,7 @@ type LazyComponent = React.ComponentType<any>;
 const viewerCache = new Map<string, LazyComponent>();
 const diagramCache = new Map<string, LazyComponent>();
 
-function useViewerComponent(): { MinimalR3FTest: LazyComponent | null } {
+function useViewerComponent(): { Component: LazyComponent | null } {
   const [Component, setComponent] = useState<LazyComponent | null>(
     () => viewerCache.get('viewer') || null
   );
@@ -134,12 +134,11 @@ function useViewerComponent(): { MinimalR3FTest: LazyComponent | null } {
       return;
     }
     let cancelled = false;
-    // DIAGNOSTIC: Loading MinimalR3FTest instead of DigitalTwinViewer
-    import('./MinimalR3FTest')
+    import('./DigitalTwinViewer')
       .then((mod) => {
-        if (!cancelled && mod.MinimalR3FTest) {
-          viewerCache.set('viewer', mod.MinimalR3FTest);
-          setComponent(() => mod.MinimalR3FTest);
+        if (!cancelled && mod.DigitalTwinViewer) {
+          viewerCache.set('viewer', mod.DigitalTwinViewer);
+          setComponent(() => mod.DigitalTwinViewer);
         }
       })
       .catch((err) => {
@@ -147,7 +146,7 @@ function useViewerComponent(): { MinimalR3FTest: LazyComponent | null } {
       });
     return () => { cancelled = true; };
   }, []);
-  return { MinimalR3FTest: Component };
+  return { Component };
 }
 
 function useDiagramComponent(): { Component: LazyComponent | null } {
@@ -1483,13 +1482,15 @@ class ViewerErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 // ============================================================================
 
 function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId: string; twinName: string }) {
-  // DIAGNOSTIC MODE: Using minimal R3F test to determine if
-  // R3F v9 + React 19 is fundamentally broken.
-  // If this ALSO crashes with Error #185 → R3F + React 19 incompatibility.
-  // If this WORKS → the bug is in our DigitalTwinViewer code.
-  const { MinimalR3FTest } = useViewerComponent();
+  // BINARY SEARCH STEP 2: Real DigitalTwinViewer but with NO props.
+  // This tests: Canvas + all R3F children + useCameraControls + useDigitalTwinScene
+  // WITHOUT: scene resolution API calls, ModelLoader, model URL.
+  //
+  // If THIS crashes → bug is in hooks/R3F children (OrbitControls, etc.)
+  // If THIS works → bug is in scene resolution or ModelLoader
+  const { Component } = useViewerComponent();
 
-  if (!MinimalR3FTest) {
+  if (!Component) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-3">
@@ -1501,7 +1502,7 @@ function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId:
   }
   return (
     <ViewerErrorBoundary>
-      <MinimalR3FTest />
+      <Component enableRealtime={false} />
     </ViewerErrorBoundary>
   );
 }
