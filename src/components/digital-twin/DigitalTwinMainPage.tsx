@@ -124,7 +124,7 @@ type LazyComponent = React.ComponentType<any>;
 const viewerCache = new Map<string, LazyComponent>();
 const diagramCache = new Map<string, LazyComponent>();
 
-function useViewerComponent(): { Component: LazyComponent | null } {
+function useViewerComponent(): { MinimalR3FTest: LazyComponent | null } {
   const [Component, setComponent] = useState<LazyComponent | null>(
     () => viewerCache.get('viewer') || null
   );
@@ -134,11 +134,12 @@ function useViewerComponent(): { Component: LazyComponent | null } {
       return;
     }
     let cancelled = false;
-    import('./DigitalTwinViewer')
+    // DIAGNOSTIC: Loading MinimalR3FTest instead of DigitalTwinViewer
+    import('./MinimalR3FTest')
       .then((mod) => {
-        if (!cancelled && mod.DigitalTwinViewer) {
-          viewerCache.set('viewer', mod.DigitalTwinViewer);
-          setComponent(() => mod.DigitalTwinViewer);
+        if (!cancelled && mod.MinimalR3FTest) {
+          viewerCache.set('viewer', mod.MinimalR3FTest);
+          setComponent(() => mod.MinimalR3FTest);
         }
       })
       .catch((err) => {
@@ -146,7 +147,7 @@ function useViewerComponent(): { Component: LazyComponent | null } {
       });
     return () => { cancelled = true; };
   }, []);
-  return { Component };
+  return { MinimalR3FTest: Component };
 }
 
 function useDiagramComponent(): { Component: LazyComponent | null } {
@@ -1482,34 +1483,13 @@ class ViewerErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 // ============================================================================
 
 function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId: string; twinName: string }) {
-  const { Component } = useViewerComponent();
-  const [ready, setReady] = useState(false);
+  // DIAGNOSTIC MODE: Using minimal R3F test to determine if
+  // R3F v9 + React 19 is fundamentally broken.
+  // If this ALSO crashes with Error #185 → R3F + React 19 incompatibility.
+  // If this WORKS → the bug is in our DigitalTwinViewer code.
+  const { MinimalR3FTest } = useViewerComponent();
 
-  // CRITICAL FIX: Defer mount by 3 animation frames + 300ms timeout.
-  // This gives React's concurrent scheduler time to fully settle before
-  // the viewer mounts 28+ Zustand subscriptions and R3F's <Canvas>.
-  useEffect(() => {
-    if (!Component) return;
-    let cancelled = false;
-    requestAnimationFrame(() => {
-      if (cancelled) return;
-      requestAnimationFrame(() => {
-        if (cancelled) return;
-        requestAnimationFrame(() => {
-          if (cancelled) return;
-          // Extra 300ms safety margin after scheduler settles
-          const timer = setTimeout(() => {
-            if (!cancelled) setReady(true);
-          }, 300);
-          // Cleanup timer if component unmounts during delay
-          return () => clearTimeout(timer);
-        });
-      });
-    });
-    return () => { cancelled = true; };
-  }, [Component]);
-
-  if (!Component || !ready) {
+  if (!MinimalR3FTest) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-3">
@@ -1521,7 +1501,7 @@ function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId:
   }
   return (
     <ViewerErrorBoundary>
-      <Component assetId={assetId} twinId={twinId} twinName={twinName} enableRealtime={false} />
+      <MinimalR3FTest />
     </ViewerErrorBoundary>
   );
 }
