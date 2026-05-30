@@ -134,14 +134,14 @@ function useViewerComponent(): { Component: LazyComponent | null } {
       return;
     }
     let cancelled = false;
-    // BINARY SEARCH STEP 4: Testing AdaptiveDpr + AdaptiveEvents
-    // If this crashes → AdaptiveDpr/AdaptiveEvents are the culprit
-    // If this works → other R3F children are the culprit
-    import('./DiagnosticStep4')
+    // BINARY SEARCH STEP 5: ALL Canvas children (CameraController, SceneLighting, etc.)
+    // If this crashes → one of the Canvas children is the culprit
+    // If this works → the culprit is in outer JSX (TwinToolbar, SceneTreePanel, etc.)
+    import('./DiagnosticStep5')
       .then((mod) => {
-        if (!cancelled && mod.DiagnosticStep4) {
-          viewerCache.set('viewer', mod.DiagnosticStep4);
-          setComponent(() => mod.DiagnosticStep4);
+        if (!cancelled && mod.DiagnosticStep5) {
+          viewerCache.set('viewer', mod.DiagnosticStep5);
+          setComponent(() => mod.DiagnosticStep5);
         }
       })
       .catch((err) => {
@@ -1485,9 +1485,9 @@ class ViewerErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 // ============================================================================
 
 function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId: string; twinName: string }) {
-  // BINARY SEARCH STEP 4: DiagnosticStep4 — AdaptiveDpr + AdaptiveEvents added
-  // If THIS crashes → AdaptiveDpr/AdaptiveEvents are the culprit
-  // If THIS works → other R3F children are the culprit
+  // BINARY SEARCH STEP 5: DiagnosticStep5 — ALL Canvas children
+  // If THIS crashes → one of the Canvas children is the culprit
+  // If THIS works → culprit is in outer JSX or structural issue
   const { Component } = useViewerComponent();
 
   if (!Component) {
