@@ -1482,68 +1482,12 @@ class ViewerErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 // ============================================================================
 
 function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId: string; twinName: string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const rootRef = useRef<any>(null);
-  const [viewerModule, setViewerModule] = useState<React.ComponentType<any> | null>(null);
-
-  // Lazy-load the viewer module
-  useEffect(() => {
-    let cancelled = false;
-    import('./DigitalTwinViewer')
-      .then((mod) => {
-        if (!cancelled) setViewerModule(() => mod.DigitalTwinViewer);
-      })
-      .catch((err) => console.error('[ViewerLoader] Failed to load:', err));
-    return () => { cancelled = true; };
-  }, []);
-
-  // Render in a completely SEPARATE React root to eliminate reconciler conflicts.
-  // R3F's <Canvas> creates a second reconciler via react-reconciler. By rendering
-  // the viewer in its own React root (via createRoot), the two reconcilers operate
-  // in independent React scheduler contexts, preventing Error #185.
-  useEffect(() => {
-    if (!viewerModule || !containerRef.current) return;
-    let cancelled = false;
-
-    // Defer root creation to next animation frame to ensure the parent
-    // scheduler has fully committed the current render cycle.
-    requestAnimationFrame(() => {
-      if (cancelled || !containerRef.current) return;
-
-      import('react-dom/client').then(({ createRoot }) => {
-        if (cancelled || !containerRef.current) return;
-
-        const root = createRoot(containerRef.current);
-        rootRef.current = root;
-        root.render(
-          <viewerModule assetId={assetId} twinId={twinId} twinName={twinName} enableRealtime={false} />
-        );
-      });
-    });
-
-    return () => {
-      cancelled = true;
-      // Cleanup: unmount the separate root
-      if (rootRef.current) {
-        rootRef.current.unmount();
-        rootRef.current = null;
-      }
-    };
-  }, [viewerModule, assetId, twinId, twinName]);
-
-  return (
-    <div className="w-full h-full">
-      <div ref={containerRef} className="w-full h-full" />
-    </div>
-  );
-}
-
-function DiagramLoader({ twinId, twinName }: { twinId: string; twinName: string }) {
-  const { Component } = useDiagramComponent();
+  const { Component } = useViewerComponent();
   const [ready, setReady] = useState(false);
 
-  // CRITICAL FIX: Same deferred mount as ViewerLoader — prevents Error #185
-  // when ReactFlow's reconciler conflicts with React's concurrent scheduler.
+  // CRITICAL FIX: Defer mount by 3 animation frames + 300ms timeout.
+  // This gives React's concurrent scheduler time to fully settle before
+  // the viewer mounts 28+ Zustand subscriptions and R3F's <Canvas>.
   useEffect(() => {
     if (!Component) return;
     let cancelled = false;
@@ -1552,7 +1496,13 @@ function DiagramLoader({ twinId, twinName }: { twinId: string; twinName: string 
       requestAnimationFrame(() => {
         if (cancelled) return;
         requestAnimationFrame(() => {
-          if (!cancelled) setReady(true);
+          if (cancelled) return;
+          // Extra 300ms safety margin after scheduler settles
+          const timer = setTimeout(() => {
+            if (!cancelled) setReady(true);
+          }, 300);
+          // Cleanup timer if component unmounts during delay
+          return () => clearTimeout(timer);
         });
       });
     });
@@ -1560,6 +1510,25 @@ function DiagramLoader({ twinId, twinName }: { twinId: string; twinName: string 
   }, [Component]);
 
   if (!Component || !ready) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
+          <p className="text-xs text-slate-400">Loading 3D Viewer…</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <ViewerErrorBoundary>
+      <Component assetId={assetId} twinId={twinId} twinName={twinName} enableRealtime={false} />
+    </ViewerErrorBoundary>
+  );
+}
+
+function DiagramLoader({ twinId, twinName }: { twinId: string; twinName: string }) {
+  const { Component } = useDiagramComponent();
+  if (!Component) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-3">
