@@ -134,11 +134,12 @@ function useViewerComponent(): { Component: LazyComponent | null } {
       return;
     }
     let cancelled = false;
-    import('./DigitalTwinViewer')
+    // BINARY SEARCH STEP 3: Loading MinimalR3FTest with OrbitControls
+    import('./MinimalR3FTest')
       .then((mod) => {
-        if (!cancelled && mod.DigitalTwinViewer) {
-          viewerCache.set('viewer', mod.DigitalTwinViewer);
-          setComponent(() => mod.DigitalTwinViewer);
+        if (!cancelled && mod.MinimalR3FTest) {
+          viewerCache.set('viewer', mod.MinimalR3FTest);
+          setComponent(() => mod.MinimalR3FTest);
         }
       })
       .catch((err) => {
@@ -1482,12 +1483,9 @@ class ViewerErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 // ============================================================================
 
 function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId: string; twinName: string }) {
-  // BINARY SEARCH STEP 2: Real DigitalTwinViewer but with NO props.
-  // This tests: Canvas + all R3F children + useCameraControls + useDigitalTwinScene
-  // WITHOUT: scene resolution API calls, ModelLoader, model URL.
-  //
-  // If THIS crashes → bug is in hooks/R3F children (OrbitControls, etc.)
-  // If THIS works → bug is in scene resolution or ModelLoader
+  // BINARY SEARCH STEP 3: MinimalR3FTest WITH OrbitControls.
+  // If THIS crashes → OrbitControls is the culprit.
+  // If THIS works → culprit is elsewhere in DigitalTwinViewer.
   const { Component } = useViewerComponent();
 
   if (!Component) {
@@ -1502,7 +1500,7 @@ function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId:
   }
   return (
     <ViewerErrorBoundary>
-      <Component enableRealtime={false} />
+      <Component />
     </ViewerErrorBoundary>
   );
 }

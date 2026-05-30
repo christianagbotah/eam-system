@@ -1,15 +1,19 @@
 'use client';
 
 /**
- * MinimalR3FTest — Diagnostic component to determine if R3F v9 + React 19
- * works at all. If THIS crashes with Error #185, the issue is R3F + React 19
- * incompatibility, not our component code.
+ * MinimalR3FTest — Binary Search Step 3
  *
- * Usage: Swap DigitalTwinViewer with MinimalR3FTest in ViewerLoader.
+ * Step 1: Canvas + box only → WORKED ✅
+ * Step 2: Full DigitalTwinViewer (no props) → CRASHED ❌
+ * Step 3: Canvas + OrbitControls + box → Testing now
+ *
+ * If THIS crashes → OrbitControls is the culprit
+ * If THIS works → the culprit is elsewhere in DigitalTwinViewer (useCameraControls, Zustand, etc.)
  */
 
 import { useState } from 'react';
 import { Canvas } from '@react-three/fiber';
+import { OrbitControls } from '@react-three/drei';
 
 MinimalR3FTest.displayName = 'MinimalR3FTest';
 
@@ -35,9 +39,10 @@ export function MinimalR3FTest() {
       <Canvas camera={{ position: [5, 5, 5], fov: 50 }}>
         <ambientLight intensity={0.5} />
         <pointLight position={[10, 10, 10]} />
+        {/* STEP 3: Added OrbitControls — most complex drei child */}
+        <OrbitControls makeDefault enableDamping />
         <SpinningBox />
       </Canvas>
-      {/* Diagnostic label */}
       <div
         className="absolute bottom-4 left-4 px-3 py-2 rounded-lg text-xs font-mono z-10"
         style={{
@@ -46,7 +51,7 @@ export function MinimalR3FTest() {
           color: '#22d3ee',
         }}
       >
-        Minimal R3F Test — hover the box
+        Step 3: Canvas + OrbitControls — drag to rotate
       </div>
     </div>
   );
