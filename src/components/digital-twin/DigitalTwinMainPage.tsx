@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { Component, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
@@ -1392,12 +1392,94 @@ function UploadModelDialog({
 }
 
 // ============================================================================
+// ErrorBoundary — catches React Error #185 and other render errors gracefully
+// ============================================================================
+
+type ErrorBoundaryProps = {
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+};
+type ErrorBoundaryState = { hasError: boolean; error: Error | null };
+
+class ViewerErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[ViewerErrorBoundary]', error.message, info.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      if (this.props.fallback) return this.props.fallback;
+      return (
+        <div className="flex items-center justify-center h-full">
+          <div className="flex flex-col items-center gap-4 p-8 rounded-xl max-w-md text-center"
+            style={{ background: 'rgba(10,10,18,0.95)', border: '1px solid rgba(239,68,68,0.2)' }}>
+            <div className="h-12 w-12 rounded-full bg-red-500/10 flex items-center justify-center">
+              <AlertTriangle className="h-6 w-6 text-red-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-200 mb-1">Viewer Error</h3>
+              <p className="text-xs text-slate-400 leading-relaxed max-w-sm">
+                {this.state.error?.message || 'An unexpected error occurred while loading the 3D viewer.'}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="border-slate-600 text-slate-300 hover:bg-white/5"
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-2" />
+              Retry
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ============================================================================
 // Inline lazy loaders — avoid React.lazy/Suspense to prevent Error #185
 // ============================================================================
 
 function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId: string; twinName: string }) {
   const { Component } = useViewerComponent();
-  if (!Component) {
+  const [ready, setReady] = useState(false);
+
+  // CRITICAL FIX: Defer viewer mount by THREE animation frames to let React's
+  // concurrent scheduler fully settle before mounting 28+ Zustand subscriptions
+  // and the R3F dual reconciler. Without this delay, the scheduler is still
+  // processing the viewMode change when the viewer mounts, causing nested
+  // dispatches that trigger Error #185.
+  useEffect(() => {
+    if (!Component) return;
+    let cancelled = false;
+    // First RAF: let current render phase complete
+    requestAnimationFrame(() => {
+      if (cancelled) return;
+      // Second RAF: let paint phase complete and scheduler go idle
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        // Third RAF: extra safety margin for React 18/19 concurrent features
+        requestAnimationFrame(() => {
+          if (!cancelled) setReady(true);
+        });
+      });
+    });
+    return () => { cancelled = true; };
+  }, [Component]);
+
+  if (!Component || !ready) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-3">
@@ -1407,12 +1489,35 @@ function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId:
       </div>
     );
   }
-  return <Component assetId={assetId} twinId={twinId} twinName={twinName} />;
+  return (
+    <ViewerErrorBoundary>
+      <Component assetId={assetId} twinId={twinId} twinName={twinName} enableRealtime={false} />
+    </ViewerErrorBoundary>
+  );
 }
 
 function DiagramLoader({ twinId, twinName }: { twinId: string; twinName: string }) {
   const { Component } = useDiagramComponent();
-  if (!Component) {
+  const [ready, setReady] = useState(false);
+
+  // CRITICAL FIX: Same deferred mount as ViewerLoader — prevents Error #185
+  // when ReactFlow's reconciler conflicts with React's concurrent scheduler.
+  useEffect(() => {
+    if (!Component) return;
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      if (cancelled) return;
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        requestAnimationFrame(() => {
+          if (!cancelled) setReady(true);
+        });
+      });
+    });
+    return () => { cancelled = true; };
+  }, [Component]);
+
+  if (!Component || !ready) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-3">
@@ -1422,7 +1527,11 @@ function DiagramLoader({ twinId, twinName }: { twinId: string; twinName: string 
       </div>
     );
   }
-  return <Component twinId={twinId} twinName={twinName} />;
+  return (
+    <ViewerErrorBoundary>
+      <Component twinId={twinId} twinName={twinName} />
+    </ViewerErrorBoundary>
+  );
 }
 
 // ============================================================================
@@ -1576,13 +1685,17 @@ export function DigitalTwinMainPage() {
   }, [sortField]);
 
   const handleOpenViewer = (twin: TwinData) => {
-    setSelectedTwin(twin);
-    setViewMode('viewer');
+    React.startTransition(() => {
+      setSelectedTwin(twin);
+      setViewMode('viewer');
+    });
   };
 
   const handleOpenDiagram = (twin: TwinData) => {
-    setSelectedTwin(twin);
-    setViewMode('diagram');
+    React.startTransition(() => {
+      setSelectedTwin(twin);
+      setViewMode('diagram');
+    });
   };
 
   const handleBackToGrid = () => {

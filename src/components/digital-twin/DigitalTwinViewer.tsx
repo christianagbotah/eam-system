@@ -73,6 +73,8 @@ export interface DigitalTwinViewerProps {
   showSceneTree?: boolean;
   /** Whether to show the component info panel */
   showInfoPanel?: boolean;
+  /** Whether to enable WebSocket real-time updates (default: true) */
+  enableRealtime?: boolean;
   /** Whether to show the toolbar */
   showToolbar?: boolean;
   /** Custom loading component */
@@ -319,6 +321,7 @@ export function DigitalTwinViewer({
   twinName = null,
   height = 'calc(100vh - 120px)',
   iotPollInterval = 15000,
+  enableRealtime = true,
   showSceneTree = true,
   showInfoPanel = true,
   showToolbar = true,
@@ -344,6 +347,7 @@ export function DigitalTwinViewer({
   const { resetCamera } = useCameraControls();
   const { error: hookError, refresh } = useDigitalTwinScene(sceneId, {
     iotPollInterval,
+    enableRealtime,
   });
 
   // ── Load asset data when scene loads or selection changes ──────────────
@@ -590,8 +594,11 @@ export function DigitalTwinViewer({
   // completely idle. This eliminates the nested dispatch entirely.
   const [canvasChildrenReady, setCanvasChildrenReady] = useState(false);
 
+  // CRITICAL FIX: Increase delay to 500ms to ensure React's concurrent scheduler
+  // has fully settled before mounting R3F children. The R3F reconciler creates a
+  // second React root that can conflict with React 18/19's concurrent rendering.
   useEffect(() => {
-    const timer = setTimeout(() => setCanvasChildrenReady(true), 100);
+    const timer = setTimeout(() => setCanvasChildrenReady(true), 500);
     return () => clearTimeout(timer);
   }, []);
 
