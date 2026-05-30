@@ -3606,7 +3606,10 @@ export function SettingsNotificationsPage() {
 export function SettingsIntegrationsPage() {
   const [configOpen, setConfigOpen] = useState(false);
   const [selected, setSelected] = useState<any>(null);
-  const [configForm, setConfigForm] = useState({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' });
+  const [configForm, setConfigForm] = useState({ url: '', apiKey: '', username: '', password: '', webhookUrl: '', clientId: '', clientSecret: '', senderName: '' });
+  const [testSmsPhone, setTestSmsPhone] = useState('');
+  const [testSmsLoading, setTestSmsLoading] = useState(false);
+  const [testSmsResult, setTestSmsResult] = useState<{ success: boolean; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [serverConfigs, setServerConfigs] = useState<Record<string, any>>({});
@@ -3615,7 +3618,7 @@ export function SettingsIntegrationsPage() {
     { id: 'erp', name: 'ERP Integration', description: 'Connect to your enterprise resource planning system for data synchronization', icon: Server, connected: false, fields: ['url', 'apiKey', 'username', 'password'] },
     { id: 'iot', name: 'IoT Platform', description: 'Stream sensor data from IoT devices and gateways into iAssetsPro', icon: Cpu, connected: false, fields: ['url', 'apiKey'] },
     { id: 'email', name: 'Email Server', description: 'Configure SMTP settings for email notifications and reports delivery', icon: Mail, connected: false, fields: ['url', 'username', 'password'] },
-    { id: 'sms', name: 'SMS Gateway', description: 'Set up SMS delivery for critical alerts via your preferred gateway', icon: Smartphone, connected: false, fields: ['url', 'apiKey'] },
+    { id: 'sms', name: 'SMS Gateway (Hubtel)', description: 'Send critical alerts via SMS using Hubtel\'s Programmable SMS API', icon: Smartphone, connected: false, fields: ['clientId', 'clientSecret', 'senderName'], provider: 'hubtel' },
     { id: 'webhooks', name: 'Webhooks', description: 'Send real-time event notifications to external systems via webhooks', icon: Globe, connected: false, fields: ['webhookUrl'] },
     { id: 'ldap', name: 'LDAP / Active Directory', description: 'Sync users and authenticate via your organization\'s directory service', icon: Shield, connected: false, fields: ['url', 'username', 'password'] },
   ];
@@ -3636,10 +3639,12 @@ export function SettingsIntegrationsPage() {
     setSelected(integ);
     const stored = serverConfigs[integ.id];
     if (stored) {
-      setConfigForm({ url: stored.url || '', apiKey: stored.apiKey || '', username: stored.username || '', password: stored.password || '', webhookUrl: stored.webhookUrl || '' });
+      setConfigForm({ url: stored.url || '', apiKey: stored.apiKey || '', username: stored.username || '', password: stored.password || '', webhookUrl: stored.webhookUrl || '', clientId: stored.clientId || '', clientSecret: stored.clientSecret || '', senderName: stored.senderName || '' });
     } else {
-      setConfigForm({ url: '', apiKey: '', username: '', password: '', webhookUrl: '' });
+      setConfigForm({ url: '', apiKey: '', username: '', password: '', webhookUrl: '', clientId: '', clientSecret: '', senderName: '' });
     }
+    setTestSmsPhone('');
+    setTestSmsResult(null);
     setConfigOpen(true);
   };
 
@@ -3728,6 +3733,50 @@ export function SettingsIntegrationsPage() {
             )}
             {selected?.fields?.includes('webhookUrl') && (
               <div className="space-y-2"><Label>Webhook URL</Label><Input value={configForm.webhookUrl} onChange={e => setConfigForm(f => ({ ...f, webhookUrl: e.target.value }))} placeholder="https://your-server.com/webhook" /></div>
+            )}
+            {/* Hubtel SMS-specific fields */}
+            {selected?.fields?.includes('clientId') && (
+              <div className="space-y-2">
+                <Label>Hubtel Client ID</Label>
+                <Input value={configForm.clientId} onChange={e => setConfigForm(f => ({ ...f, clientId: e.target.value }))} placeholder="e.g. abcd1234" />
+                <p className="text-[11px] text-muted-foreground">Found in Hubtel → Messaging → Manage → Programmable SMS → API Keys</p>
+              </div>
+            )}
+            {selected?.fields?.includes('clientSecret') && (
+              <div className="space-y-2">
+                <Label>Hubtel Client Secret</Label>
+                <Input type="password" value={configForm.clientSecret} onChange={e => setConfigForm(f => ({ ...f, clientSecret: e.target.value }))} placeholder="Your Hubtel Client Secret" />
+              </div>
+            )}
+            {selected?.fields?.includes('senderName') && (
+              <div className="space-y-2">
+                <Label>Sender Name</Label>
+                <Input value={configForm.senderName} onChange={e => setConfigForm(f => ({ ...f, senderName: e.target.value }))} placeholder="e.g. iAssetsPro (max 11 chars)" maxLength={11} />
+                <p className="text-[11px] text-muted-foreground">Alphanumeric name registered on your Hubtel account. This is what recipients see as the sender.</p>
+              </div>
+            )}
+            {/* Test SMS button (only for SMS integration when connected) */}
+            {selected?.id === 'sms' && selected?.connected && (
+              <div className="pt-2 border-t space-y-3">
+                <p className="text-sm font-medium">Send Test SMS</p>
+                <div className="flex gap-2">
+                  <Input value={testSmsPhone} onChange={e => { setTestSmsPhone(e.target.value); setTestSmsResult(null); }} placeholder="233XXXXXXXXX" className="flex-1" />
+                  <Button variant="outline" size="sm" disabled={testSmsLoading || !testSmsPhone} onClick={async () => {
+                    setTestSmsLoading(true);
+                    setTestSmsResult(null);
+                    try {
+                      const res = await api.post('/api/settings/test-sms', { to: testSmsPhone });
+                      setTestSmsResult({ success: !!res.success, message: res.success ? `SMS sent! Message ID: ${res.data?.messageId}` : (res.error || 'Failed') });
+                    } catch { setTestSmsResult({ success: false, message: 'Request failed' }); }
+                    setTestSmsLoading(false);
+                  }}>
+                    {testSmsLoading ? 'Sending...' : 'Test'}
+                  </Button>
+                </div>
+                {testSmsResult && (
+                  <p className={`text-xs ${testSmsResult.success ? 'text-emerald-600' : 'text-red-500'}`}>{testSmsResult.message}</p>
+                )}
+              </div>
             )}
           </div>
           <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
