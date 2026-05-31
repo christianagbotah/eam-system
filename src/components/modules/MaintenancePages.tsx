@@ -2985,7 +2985,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   };
 
   return (
-    <ScrollArea className="h-full">
+    <>
       {/* Sheet Header */}
       <SheetHeader className="pt-4 pb-4">
         <SheetTitle className="flex items-center gap-2 flex-wrap">
@@ -4456,7 +4456,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </Card>
         </div>
       </div>
-    </ScrollArea>
+    </>
   );
 }
 // --- PmSchedulesPage separator ---
