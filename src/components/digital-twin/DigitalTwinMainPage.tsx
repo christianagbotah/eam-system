@@ -134,14 +134,14 @@ function useViewerComponent(): { Component: LazyComponent | null } {
       return;
     }
     let cancelled = false;
-    // BINARY SEARCH STEP 5: ALL Canvas children (CameraController, SceneLighting, etc.)
-    // If this crashes → one of the Canvas children is the culprit
-    // If this works → the culprit is in outer JSX (TwinToolbar, SceneTreePanel, etc.)
-    import('./DiagnosticStep5')
+    // BINARY SEARCH STEP 6: CameraController + SceneLighting
+    // If this crashes → one of these two is the culprit
+    // If this works → culprit is among other Canvas children
+    import('./DiagnosticStep6')
       .then((mod) => {
-        if (!cancelled && mod.DiagnosticStep5) {
-          viewerCache.set('viewer', mod.DiagnosticStep5);
-          setComponent(() => mod.DiagnosticStep5);
+        if (!cancelled && mod.DiagnosticStep6) {
+          viewerCache.set('viewer', mod.DiagnosticStep6);
+          setComponent(() => mod.DiagnosticStep6);
         }
       })
       .catch((err) => {
@@ -1485,9 +1485,9 @@ class ViewerErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 // ============================================================================
 
 function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId: string; twinName: string }) {
-  // BINARY SEARCH STEP 5: DiagnosticStep5 — ALL Canvas children
-  // If THIS crashes → one of the Canvas children is the culprit
-  // If THIS works → culprit is in outer JSX or structural issue
+  // BINARY SEARCH STEP 6: DiagnosticStep6 — CameraController + SceneLighting
+  // If THIS crashes → one of these two children is the culprit
+  // If THIS works → culprit is among other Canvas children
   const { Component } = useViewerComponent();
 
   if (!Component) {
