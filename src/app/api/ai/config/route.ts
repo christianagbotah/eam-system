@@ -36,6 +36,7 @@ interface AiConfigRecord {
   llmMaxTokens: number;
   imageModel: string;
   imageApiKey: string;
+  meshyApiKey: string;
   generationSettings: GenerationSettings;
   isActive: boolean;
   createdById: string;
@@ -67,6 +68,7 @@ const DEFAULT_CONFIG: Omit<AiConfigRecord, 'id' | 'createdById' | 'createdAt' | 
   llmMaxTokens: 8000,
   imageModel: 'default',
   imageApiKey: '',
+  meshyApiKey: '',
   generationSettings: DEFAULT_GENERATION_SETTINGS,
   isActive: true,
 };
@@ -114,6 +116,7 @@ function maskConfigSecrets(config: AiConfigRecord): AiConfigRecord {
     ...config,
     llmApiKey: maskApiKey(config.llmApiKey),
     imageApiKey: maskApiKey(config.imageApiKey),
+    meshyApiKey: maskApiKey(config.meshyApiKey),
   };
 }
 
@@ -163,6 +166,10 @@ function validateConfigBody(body: Record<string, unknown>): { valid: boolean; er
 
   if (body.imageApiKey !== undefined && typeof body.imageApiKey !== 'string') {
     return { valid: false, error: 'imageApiKey must be a string' };
+  }
+
+  if (body.meshyApiKey !== undefined && typeof body.meshyApiKey !== 'string') {
+    return { valid: false, error: 'meshyApiKey must be a string' };
   }
 
   return { valid: true };
@@ -280,6 +287,7 @@ export async function POST(request: NextRequest) {
       llmMaxTokens: body.llmMaxTokens !== undefined ? Number(body.llmMaxTokens) : DEFAULT_CONFIG.llmMaxTokens,
       imageModel: body.imageModel as string || DEFAULT_CONFIG.imageModel,
       imageApiKey: body.imageApiKey as string || '',
+      meshyApiKey: body.meshyApiKey as string || '',
       generationSettings: {
         ...DEFAULT_GENERATION_SETTINGS,
         ...(body.generationSettings || {}),

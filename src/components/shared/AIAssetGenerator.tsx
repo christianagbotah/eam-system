@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { useNavigationStore } from '@/stores/navigationStore';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -67,6 +68,11 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
   const [progressLabel, setProgressLabel] = useState('');
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState('');
+  const [threeDStatus, setThreeDStatus] = useState<'idle' | 'generating' | 'completed' | 'failed'>('idle');
+  const [threeDProgress, setThreeDProgress] = useState(0);
+  const [threeDMessage, setThreeDMessage] = useState('');
+  const [threeDError, setThreeDError] = useState('');
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const reset = () => {
     setStep('input');
@@ -79,12 +85,92 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
     setProgressLabel('');
     setResult(null);
     setError('');
+    setThreeDStatus('idle');
+    setThreeDProgress(0);
+    setThreeDMessage('');
+    setThreeDError('');
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
   };
 
   const handleClose = (open: boolean) => {
     if (!open) reset();
     onOpenChange(open);
   };
+
+  const { navigate } = useNavigationStore();
+
+  const start3DGeneration = useCallback(async () => {
+    if (!result) return;
+    setThreeDStatus('generating');
+    setThreeDProgress(10);
+    setThreeDMessage('Starting 3D model generation...');
+    setThreeDError('');
+
+    try {
+      const res = await api.post<{ taskId: string }>('/api/ai/generate-3d', {
+        machineName: result.asset.name,
+        description: result.asset.description,
+        assetId: result.asset.id,
+      });
+
+      if (!res.success || !res.data?.taskId) {
+        setThreeDStatus('failed');
+        setThreeDError(res.error || 'Failed to start 3D generation');
+        return;
+      }
+
+      const taskId = res.data.taskId;
+      setThreeDProgress(20);
+      setThreeDMessage('3D model generation in progress...');
+
+      pollingRef.current = setInterval(async () => {
+        try {
+          const statusRes = await api.get<{ status: string; progress: number; message: string; modelUrl?: string }>(
+            `/api/ai/generate-3d/status?taskId=${taskId}&assetId=${result.asset.id}`
+          );
+
+          if (statusRes.success && statusRes.data) {
+            const { status, progress, message } = statusRes.data;
+            setThreeDProgress(progress);
+            setThreeDMessage(message);
+
+            if (status === 'succeeded') {
+              setThreeDStatus('completed');
+              setThreeDProgress(100);
+              if (pollingRef.current) {
+                clearInterval(pollingRef.current);
+                pollingRef.current = null;
+              }
+            } else if (status === 'failed') {
+              setThreeDStatus('failed');
+              setThreeDError(message || '3D model generation failed');
+              if (pollingRef.current) {
+                clearInterval(pollingRef.current);
+                pollingRef.current = null;
+              }
+            }
+          }
+        } catch {
+          // Continue polling on transient errors
+        }
+      }, 5000);
+    } catch (err: any) {
+      setThreeDStatus('failed');
+      setThreeDError(err.message || 'Failed to start 3D generation');
+    }
+  }, [result]);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, []);
 
   const handleGenerate = async () => {
     if (!machineName.trim()) {
@@ -400,6 +486,67 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
                   </div>
                 ))}
               </div>
+
+              {/* 3D Model Generation Status */}
+              {result && (
+                <Card className="border-0 shadow-sm py-0">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Box className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+                      <h4 className="text-sm font-semibold">3D Model Generation</h4>
+                      <Badge variant="outline" className="text-[10px]">Optional</Badge>
+                    </div>
+
+                    {threeDStatus === 'idle' && (
+                      <>
+                        <p className="text-xs text-muted-foreground">
+                          Generate a 3D model of &quot;{result.asset.name}&quot; for the Digital Twin viewer using AI text-to-3D technology.
+                        </p>
+                        <Button onClick={start3DGeneration} className="gap-2" variant="outline">
+                          <Sparkles className="h-4 w-4" /> Generate 3D Model
+                        </Button>
+                      </>
+                    )}
+
+                    {threeDStatus === 'generating' && (
+                      <div className="space-y-2">
+                        <Progress value={threeDProgress} className="h-2" />
+                        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                          <Loader2 className="h-3 w-3 animate-spin" /> {threeDMessage}
+                        </p>
+                      </div>
+                    )}
+
+                    {threeDStatus === 'completed' && (
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                          <CheckCircle2 className="h-4 w-4" />
+                          <span className="text-xs font-medium">3D model generated! View it in the Digital Twin viewer.</span>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() => navigate('assets-digital-twin', { id: result.asset.id })}
+                        >
+                          Open Digital Twin
+                        </Button>
+                      </div>
+                    )}
+
+                    {threeDStatus === 'failed' && (
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5 text-red-500">
+                          <AlertTriangle className="h-4 w-4" />
+                          <span className="text-xs">{threeDError}</span>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={start3DGeneration} className="gap-1.5">
+                          Retry
+                        </Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
 
               {/* What you can do now */}
               <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">

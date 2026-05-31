@@ -36,7 +36,15 @@ import {
   Plug,
   Server,
   Shield,
+  Box,
 } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 // ============================================================================
 // TYPES
@@ -68,6 +76,10 @@ interface AiConfig {
   generateSpareParts: boolean;
   generateBom: boolean;
   autoComponentCount: boolean;
+  meshyApiKey: string;
+  meshyArtStyle: string;
+  enable3dGeneration: boolean;
+  autoLinkDigitalTwin: boolean;
 }
 
 interface TestResult {
@@ -141,6 +153,10 @@ const DEFAULT_CONFIG: AiConfig = {
   generateSpareParts: true,
   generateBom: true,
   autoComponentCount: true,
+  meshyApiKey: '',
+  meshyArtStyle: 'realistic',
+  enable3dGeneration: true,
+  autoLinkDigitalTwin: true,
 };
 
 // ============================================================================
@@ -182,6 +198,7 @@ export function AIConfigPage() {
   const [testing, setTesting] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [showImageApiKey, setShowImageApiKey] = useState(false);
+  const [showMeshyApiKey, setShowMeshyApiKey] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   // ── Fetch existing config ──
@@ -532,6 +549,93 @@ export function AIConfigPage() {
               )}
             </CardContent>
           </Card>
+          {/* ── 3D Model Generation (Text-to-3D) ── */}
+          <Card className="border-0 shadow-sm py-0">
+            <CardContent className="p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <Box className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+                <h2 className="text-sm font-semibold">3D Model Generation (Text-to-3D)</h2>
+                <Badge variant="outline" className="text-[10px]">Optional</Badge>
+              </div>
+
+              {/* Meshy.ai API Key */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Meshy.ai API Key</Label>
+                <div className="relative">
+                  <Input
+                    type={showMeshyApiKey ? 'text' : 'password'}
+                    value={config.meshyApiKey}
+                    onChange={(e) => updateConfig('meshyApiKey', e.target.value)}
+                    placeholder="Enter your Meshy.ai API key from meshy.ai/api"
+                    className="h-9 text-sm pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowMeshyApiKey(!showMeshyApiKey)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showMeshyApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {config.meshyApiKey && (
+                  <p className="text-[10px] text-muted-foreground">
+                    Currently set: {config.meshyApiKey.substring(0, 6)}{'•'.repeat(12)}{config.meshyApiKey.length > 18 ? config.meshyApiKey.slice(-4) : ''}
+                  </p>
+                )}
+                <p className="text-[10px] text-muted-foreground">
+                  Powered by Meshy.ai — generates GLTF/GLB 3D models from text descriptions. Get your API key at meshy.ai
+                </p>
+              </div>
+
+              <Separator className="my-1" />
+
+              {/* Model Art Style */}
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Model Art Style</Label>
+                <Select value={config.meshyArtStyle} onValueChange={(v) => updateConfig('meshyArtStyle', v)}>
+                  <SelectTrigger className="h-9 text-sm w-full">
+                    <SelectValue placeholder="Select art style..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="realistic">Realistic</SelectItem>
+                    <SelectItem value="pbr">PBR</SelectItem>
+                    <SelectItem value="low_poly">Low Poly</SelectItem>
+                    <SelectItem value="stylized">Stylized</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Separator className="my-1" />
+
+              {/* Enable 3D Generation toggle */}
+              <div className="flex items-center justify-between rounded-lg border p-3 gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium">Enable 3D Generation</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Allow AI to generate 3D models using text-to-3D technology
+                  </p>
+                </div>
+                <Switch
+                  checked={config.enable3dGeneration}
+                  onCheckedChange={(checked) => updateConfig('enable3dGeneration', checked)}
+                />
+              </div>
+
+              {/* Auto-link to Digital Twin toggle */}
+              <div className="flex items-center justify-between rounded-lg border p-3 gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium">Auto-link to Digital Twin</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Automatically create a DigitalTwinScene linked to the generated 3D model
+                  </p>
+                </div>
+                <Switch
+                  checked={config.autoLinkDigitalTwin}
+                  onCheckedChange={(checked) => updateConfig('autoLinkDigitalTwin', checked)}
+                />
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* ── RIGHT COLUMN ── */}
@@ -555,6 +659,7 @@ export function AIConfigPage() {
                   { key: 'generateMachineImage' as const, label: 'Machine Image', desc: 'AI-generated illustration of the machine' },
                   { key: 'generateSpareParts' as const, label: 'Spare Parts', desc: 'Inventory items with reorder levels and suppliers' },
                   { key: 'generateBom' as const, label: 'Bill of Materials', desc: 'Detailed BOM with part numbers and quantities' },
+                  { key: 'enable3dGeneration' as const, label: '3D Model', desc: 'AI-generated 3D model via text-to-3D' },
                 ].map((item) => (
                   <div
                     key={item.key}
