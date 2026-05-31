@@ -55,6 +55,10 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   'digital-twin-viewer': () => import('./digital-twin/DigitalTwinMainPage').then(m => m.DigitalTwinMainPage),
   'system-diagrams': () => import('./digital-twin/SystemDiagramPage').then(m => m.default),
   'assets-health': () => import('./modules/AssetPages').then(m => m.AssetHealthPage),
+  // AI Intelligence
+  'ai-hub': () => import('./modules/AIHubPage').then(m => m.AIHubPage),
+  'ai-config': () => import('./modules/AIConfigPage').then(m => m.AIConfigPage),
+  'ai-history': () => import('./modules/AIHistoryPage').then(m => m.AIHistoryPage),
   // Maintenance
   'maintenance-work-orders': () => import('./modules/MaintenancePages').then(m => m.MaintenanceWorkOrdersPage),
   'wo-detail': () => import('./modules/MaintenancePages').then(m => m.MaintenanceWorkOrdersPage),
@@ -296,6 +300,10 @@ function AppShell() {
     'digital-twin-viewer': 'Digital Twin Viewer',
     'system-diagrams': 'System Diagrams',
     'assets-health': 'Asset Health',
+    // AI Intelligence
+    'ai-hub': 'AI Intelligence Hub',
+    'ai-config': 'AI Configuration',
+    'ai-history': 'AI Generation History',
     // Maintenance
     'maintenance-work-orders': 'Work Orders',
     'wo-detail': 'Work Order Details',

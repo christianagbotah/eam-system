@@ -77,6 +77,9 @@ import {
   ClipboardCheck,
   Timer,
   Recycle,
+  BrainCircuit,
+  Settings2,
+  History,
 } from 'lucide-react';
 
 // ============================================================================
@@ -135,6 +138,14 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'system-diagrams', label: 'System Diagrams', icon: GitBranch },
         { page: 'asset-categories', label: 'Categories', icon: FolderOpen },
         { page: 'assets-health', label: 'Asset Health', icon: HeartPulse },
+      ],
+    },
+    {
+      label: 'AI Intelligence', icon: BrainCircuit, perm: 'assets.create', moduleCode: 'assets',
+      children: [
+        { page: 'ai-hub', label: 'AI Hub', icon: BrainCircuit },
+        { page: 'ai-config', label: 'AI Configuration', icon: Settings2 },
+        { page: 'ai-history', label: 'Generation History', icon: History },
       ],
     },
     {

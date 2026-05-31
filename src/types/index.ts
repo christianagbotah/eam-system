@@ -557,6 +557,10 @@ export type PageName =
   | 'digital-twin-viewer'
   | 'system-diagrams'
   | 'assets-health'
+  // AI Intelligence
+  | 'ai-hub'
+  | 'ai-config'
+  | 'ai-history'
   // Maintenance (8 subpages)
   | 'maintenance-work-orders'
   | 'wo-detail'
