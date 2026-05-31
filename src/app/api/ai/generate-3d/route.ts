@@ -4,6 +4,7 @@ import { join } from 'path';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
+import { generateProgrammatic3DModel } from '@/lib/generate-3d/programmatic-generator';
 
 const logger = createLogger('api:ai:generate-3d');
 
@@ -24,11 +25,13 @@ const POLL_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 // TYPES
 // ============================================================================
 
-interface MeshyTextTo3dRequest {
+interface Generate3dRequest {
   machineName: string;
   description?: string;
   assetId: string;
   meshyApiKey?: string;
+  /** Override the 3D provider: 'programmatic' or 'meshy'. Default from ai-config.json or 'programmatic'. */
+  provider3d?: 'programmatic' | 'meshy';
 }
 
 interface MeshyTaskResponse {
@@ -49,6 +52,36 @@ interface MeshyTaskResponse {
     };
     error?: string;
   };
+}
+
+// ============================================================================
+// HELPERS — Resolve 3D provider from AI config
+// ============================================================================
+
+async function resolveProvider3d(override?: string): Promise<'programmatic' | 'meshy'> {
+  // 1. Request-level override
+  if (override && (override === 'programmatic' || override === 'meshy')) {
+    return override;
+  }
+
+  // 2. AI config file
+  try {
+    const raw = await readFile(AI_CONFIG_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    const configs = Array.isArray(parsed) ? parsed : parsed.configs ?? [];
+    const activeConfig = configs.find((c: Record<string, unknown>) => c.isActive === true);
+    if (activeConfig?.provider3d && typeof activeConfig.provider3d === 'string') {
+      const val = activeConfig.provider3d.trim().toLowerCase();
+      if (val === 'meshy' || val === 'programmatic') {
+        return val;
+      }
+    }
+  } catch {
+    // Config file not found or unparseable — use default
+  }
+
+  // 3. Default: programmatic (free, no API key needed)
+  return 'programmatic';
 }
 
 // ============================================================================
@@ -344,7 +377,7 @@ function startBackgroundPoller(
 }
 
 // ============================================================================
-// POST — Start 3D model generation
+// POST — Start 3D model generation (dual-mode: programmatic or meshy)
 // ============================================================================
 
 export async function POST(request: NextRequest) {
@@ -368,7 +401,7 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Parse body ---
-    let body: MeshyTextTo3dRequest;
+    let body: Generate3dRequest;
     try {
       body = await request.json();
     } catch {
@@ -378,7 +411,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { machineName, description, assetId, meshyApiKey } = body;
+    const { machineName, description, assetId, meshyApiKey, provider3d: providerOverride } = body;
 
     // --- Validate required fields ---
     if (!machineName || typeof machineName !== 'string' || machineName.trim().length === 0) {
@@ -403,6 +436,51 @@ export async function POST(request: NextRequest) {
         { status: 404 },
       );
     }
+
+    // --- Resolve provider ---
+    const provider = await resolveProvider3d(providerOverride);
+    logger.info('Resolved 3D provider', { provider, override: providerOverride, assetId });
+
+    // ════════════════════════════════════════════════════════════════════════
+    // PROGRAMMATIC PATH — Free, immediate generation via LLM + GLB builder
+    // ════════════════════════════════════════════════════════════════════════
+    if (provider === 'programmatic') {
+      logger.info('Using programmatic 3D generation', { machineName, assetId });
+
+      const result = await generateProgrammatic3DModel(
+        machineName.trim(),
+        description ? description.trim() : undefined,
+        assetId.trim(),
+        session.userId,
+      );
+
+      if (!result.success) {
+        logger.error('Programmatic 3D generation failed', { error: result.error });
+        return NextResponse.json(
+          { success: false, error: `3D model generation failed: ${result.error}` },
+          { status: 502 },
+        );
+      }
+
+      timer.end();
+
+      // Return immediately with the model — no polling needed
+      return NextResponse.json({
+        success: true,
+        data: {
+          status: 'succeeded',
+          model: {
+            id: result.modelId,
+            filePath: result.filePath,
+          },
+          message: '3D model generated successfully via programmatic geometry.',
+        },
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // MESHY PATH — External API with async polling
+    // ════════════════════════════════════════════════════════════════════════
 
     // --- Resolve Meshy API key ---
     let apiKey: string;
@@ -444,7 +522,8 @@ export async function POST(request: NextRequest) {
       data: {
         taskId,
         status: 'pending',
-        message: '3D model generation started. Poll /api/ai/generate-3d/status?taskId=xxx for updates.',
+        provider: 'meshy',
+        message: '3D model generation started (Meshy.ai). Poll /api/ai/generate-3d/status?taskId=xxx for updates.',
       },
     });
   } catch (error: unknown) {

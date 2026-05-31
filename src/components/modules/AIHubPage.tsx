@@ -140,6 +140,14 @@ const CAPABILITIES: CapabilityCard[] = [
     bgColor: 'bg-orange-50 dark:bg-orange-950/30',
     borderColor: 'border-orange-200 dark:border-orange-800',
   },
+  {
+    icon: Zap,
+    title: '3D Model (Free)',
+    description: 'Builds a 3D model from geometric primitives using AI — no external API needed',
+    color: 'text-emerald-600 dark:text-emerald-400',
+    bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
+    borderColor: 'border-emerald-200 dark:border-emerald-800',
+  },
 ];
 
 // ============================================================================

@@ -78,6 +78,9 @@ interface AiConfig {
   autoComponentCount: boolean;
   meshyApiKey: string;
   meshyArtStyle: string;
+  provider3d: string;
+  tripo3dApiKey: string;
+  tripo3dModelQuality: string;
   enable3dGeneration: boolean;
   autoLinkDigitalTwin: boolean;
 }
@@ -155,6 +158,9 @@ const DEFAULT_CONFIG: AiConfig = {
   autoComponentCount: true,
   meshyApiKey: '',
   meshyArtStyle: 'realistic',
+  provider3d: 'programmatic',
+  tripo3dApiKey: '',
+  tripo3dModelQuality: 'preview',
   enable3dGeneration: true,
   autoLinkDigitalTwin: true,
 };
@@ -199,6 +205,7 @@ export function AIConfigPage() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [showImageApiKey, setShowImageApiKey] = useState(false);
   const [showMeshyApiKey, setShowMeshyApiKey] = useState(false);
+  const [showTripo3dApiKey, setShowTripo3dApiKey] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   // ── Fetch existing config ──
@@ -558,52 +565,176 @@ export function AIConfigPage() {
                 <Badge variant="outline" className="text-[10px]">Optional</Badge>
               </div>
 
-              {/* Meshy.ai API Key */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Meshy.ai API Key</Label>
-                <div className="relative">
-                  <Input
-                    type={showMeshyApiKey ? 'text' : 'password'}
-                    value={config.meshyApiKey}
-                    onChange={(e) => updateConfig('meshyApiKey', e.target.value)}
-                    placeholder="Enter your Meshy.ai API key from meshy.ai/api"
-                    className="h-9 text-sm pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowMeshyApiKey(!showMeshyApiKey)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {showMeshyApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-                {config.meshyApiKey && (
-                  <p className="text-[10px] text-muted-foreground">
-                    Currently set: {config.meshyApiKey.substring(0, 6)}{'•'.repeat(12)}{config.meshyApiKey.length > 18 ? config.meshyApiKey.slice(-4) : ''}
+              {/* 3D Provider Selection */}
+              <RadioGroup
+                value={config.provider3d}
+                onValueChange={(v) => updateConfig('provider3d', v)}
+                className="grid grid-cols-1 sm:grid-cols-3 gap-2"
+              >
+                {[
+                  {
+                    id: 'programmatic' as const,
+                    label: 'Programmatic (Free)',
+                    description: 'LLM generates 3D geometry from machine name. No API key needed. Good quality parametric shapes.',
+                    icon: Zap,
+                    color: 'text-emerald-600 dark:text-emerald-400',
+                    bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
+                  },
+                  {
+                    id: 'meshy' as const,
+                    label: 'Meshy.ai (Premium)',
+                    description: 'AI-powered text-to-3D. Requires subscription. Higher quality, photorealistic models.',
+                    icon: Box,
+                    color: 'text-cyan-600 dark:text-cyan-400',
+                    bgColor: 'bg-cyan-50 dark:bg-cyan-950/30',
+                  },
+                  {
+                    id: 'tripo3d' as const,
+                    label: 'Tripo3D (Premium)',
+                    description: 'Fast text-to-3D generation. Requires subscription. Good for industrial equipment.',
+                    icon: Cpu,
+                    color: 'text-amber-600 dark:text-amber-400',
+                    bgColor: 'bg-amber-50 dark:bg-amber-950/30',
+                  },
+                ].map((p) => {
+                  const Icon = p.icon;
+                  return (
+                    <label
+                      key={p.id}
+                      className={`flex items-start gap-2 rounded-lg border-2 p-3 cursor-pointer transition-all ${
+                        config.provider3d === p.id
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border hover:border-primary/30'
+                      }`}
+                    >
+                      <RadioGroupItem value={p.id} className="mt-0.5" />
+                      <div className="flex items-start gap-2 flex-1 min-w-0">
+                        <div className={`h-7 w-7 rounded-md ${p.bgColor} flex items-center justify-center shrink-0`}>
+                          <Icon className={`h-3.5 w-3.5 ${p.color}`} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold">{p.label}</p>
+                          <p className="text-[9px] text-muted-foreground mt-0.5 leading-tight">{p.description}</p>
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </RadioGroup>
+
+              {/* Conditional fields based on 3D provider */}
+              {config.provider3d === 'programmatic' && (
+                <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20 p-3">
+                  <div className="flex items-center gap-2">
+                    <Zap className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <p className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">No Additional Cost</p>
+                  </div>
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-500 mt-1 ml-5.5">
+                    Uses your configured LLM to generate parametric 3D shapes. No additional API key or subscription needed.
                   </p>
-                )}
-                <p className="text-[10px] text-muted-foreground">
-                  Powered by Meshy.ai — generates GLTF/GLB 3D models from text descriptions. Get your API key at meshy.ai
-                </p>
-              </div>
+                </div>
+              )}
 
-              <Separator className="my-1" />
+              {config.provider3d === 'meshy' && (
+                <>
+                  {/* Meshy.ai API Key */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">Meshy.ai API Key</Label>
+                    <div className="relative">
+                      <Input
+                        type={showMeshyApiKey ? 'text' : 'password'}
+                        value={config.meshyApiKey}
+                        onChange={(e) => updateConfig('meshyApiKey', e.target.value)}
+                        placeholder="Enter your Meshy.ai API key from meshy.ai/api"
+                        className="h-9 text-sm pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowMeshyApiKey(!showMeshyApiKey)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showMeshyApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {config.meshyApiKey && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Currently set: {config.meshyApiKey.substring(0, 6)}{'•'.repeat(12)}{config.meshyApiKey.length > 18 ? config.meshyApiKey.slice(-4) : ''}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-muted-foreground">
+                      Powered by Meshy.ai — generates GLTF/GLB 3D models from text descriptions. Get your API key at meshy.ai
+                    </p>
+                  </div>
 
-              {/* Model Art Style */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Model Art Style</Label>
-                <Select value={config.meshyArtStyle} onValueChange={(v) => updateConfig('meshyArtStyle', v)}>
-                  <SelectTrigger className="h-9 text-sm w-full">
-                    <SelectValue placeholder="Select art style..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="realistic">Realistic</SelectItem>
-                    <SelectItem value="pbr">PBR</SelectItem>
-                    <SelectItem value="low_poly">Low Poly</SelectItem>
-                    <SelectItem value="stylized">Stylized</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                  <Separator className="my-1" />
+
+                  {/* Model Art Style */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">Model Art Style</Label>
+                    <Select value={config.meshyArtStyle} onValueChange={(v) => updateConfig('meshyArtStyle', v)}>
+                      <SelectTrigger className="h-9 text-sm w-full">
+                        <SelectValue placeholder="Select art style..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="realistic">Realistic</SelectItem>
+                        <SelectItem value="pbr">PBR</SelectItem>
+                        <SelectItem value="low_poly">Low Poly</SelectItem>
+                        <SelectItem value="stylized">Stylized</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+
+              {config.provider3d === 'tripo3d' && (
+                <>
+                  {/* Tripo3D API Key */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">Tripo3D API Key</Label>
+                    <div className="relative">
+                      <Input
+                        type={showTripo3dApiKey ? 'text' : 'password'}
+                        value={config.tripo3dApiKey}
+                        onChange={(e) => updateConfig('tripo3dApiKey', e.target.value)}
+                        placeholder="Enter your Tripo3D API key from platform.tripo3d.ai"
+                        className="h-9 text-sm pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowTripo3dApiKey(!showTripo3dApiKey)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showTripo3dApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {config.tripo3dApiKey && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Currently set: {config.tripo3dApiKey.substring(0, 6)}{'•'.repeat(12)}{config.tripo3dApiKey.length > 18 ? config.tripo3dApiKey.slice(-4) : ''}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-muted-foreground">
+                      Powered by Tripo3D — fast text-to-3D generation optimized for industrial equipment. Get your API key at platform.tripo3d.ai
+                    </p>
+                  </div>
+
+                  <Separator className="my-1" />
+
+                  {/* Model Quality */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">Model Quality</Label>
+                    <Select value={config.tripo3dModelQuality} onValueChange={(v) => updateConfig('tripo3dModelQuality', v)}>
+                      <SelectTrigger className="h-9 text-sm w-full">
+                        <SelectValue placeholder="Select model quality..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="draft">Draft (Fastest)</SelectItem>
+                        <SelectItem value="preview">Preview (Balanced)</SelectItem>
+                        <SelectItem value="refined">Refined (Highest Quality)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
 
               <Separator className="my-1" />
 

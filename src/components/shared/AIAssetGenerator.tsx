@@ -19,7 +19,7 @@ import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import {
   Sparkles, Loader2, CheckCircle2, Building2, Wrench, Package,
   ClipboardList, Activity, Cpu, AlertTriangle, Layers, GitBranch,
-  ChevronDown, ChevronRight, Box, Image,
+  ChevronDown, ChevronRight, Box, Image, Zap, Crown,
 } from 'lucide-react';
 
 interface GenerateSummary {
@@ -72,6 +72,7 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
   const [threeDProgress, setThreeDProgress] = useState(0);
   const [threeDMessage, setThreeDMessage] = useState('');
   const [threeDError, setThreeDError] = useState('');
+  const [threeDProvider, setThreeDProvider] = useState<'programmatic' | 'meshy'>('programmatic');
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const reset = () => {
@@ -106,62 +107,84 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
     if (!result) return;
     setThreeDStatus('generating');
     setThreeDProgress(10);
-    setThreeDMessage('Starting 3D model generation...');
     setThreeDError('');
 
+    const isProgrammatic = threeDProvider === 'programmatic';
+    setThreeDMessage(isProgrammatic
+      ? 'AI is generating 3D geometry from machine description...'
+      : 'Starting premium 3D model generation...'
+    );
+
     try {
-      const res = await api.post<{ taskId: string }>('/api/ai/generate-3d', {
+      const res = await api.post<any>('/api/ai/generate-3d', {
         machineName: result.asset.name,
         description: result.asset.description,
         assetId: result.asset.id,
+        provider3d: threeDProvider,
       });
 
-      if (!res.success || !res.data?.taskId) {
+      if (!res.success) {
         setThreeDStatus('failed');
         setThreeDError(res.error || 'Failed to start 3D generation');
         return;
       }
 
-      const taskId = res.data.taskId;
-      setThreeDProgress(20);
-      setThreeDMessage('3D model generation in progress...');
+      // ── Programmatic: immediate result (status: 'succeeded') ──
+      if (res.data?.status === 'succeeded' || res.data?.model) {
+        setThreeDStatus('completed');
+        setThreeDProgress(100);
+        setThreeDMessage('3D model generated successfully!');
+        toast.success('3D model generated and linked to Digital Twin');
+        return;
+      }
 
-      pollingRef.current = setInterval(async () => {
-        try {
-          const statusRes = await api.get<{ status: string; progress: number; message: string; modelUrl?: string }>(
-            `/api/ai/generate-3d/status?taskId=${taskId}&assetId=${result.asset.id}`
-          );
+      // ── Meshy/Premium: async polling needed ──
+      if (res.data?.taskId) {
+        const taskId = res.data.taskId;
+        setThreeDProgress(20);
+        setThreeDMessage('3D model generation in progress...');
 
-          if (statusRes.success && statusRes.data) {
-            const { status, progress, message } = statusRes.data;
-            setThreeDProgress(progress);
-            setThreeDMessage(message);
+        pollingRef.current = setInterval(async () => {
+          try {
+            const statusRes = await api.get<{ status: string; progress: number; message: string }>(
+              `/api/ai/generate-3d/status?taskId=${taskId}&assetId=${result.asset.id}&provider3d=${threeDProvider}`
+            );
 
-            if (status === 'succeeded') {
-              setThreeDStatus('completed');
-              setThreeDProgress(100);
-              if (pollingRef.current) {
-                clearInterval(pollingRef.current);
-                pollingRef.current = null;
-              }
-            } else if (status === 'failed') {
-              setThreeDStatus('failed');
-              setThreeDError(message || '3D model generation failed');
-              if (pollingRef.current) {
-                clearInterval(pollingRef.current);
-                pollingRef.current = null;
+            if (statusRes.success && statusRes.data) {
+              const { status, progress, message } = statusRes.data;
+              setThreeDProgress(progress);
+              setThreeDMessage(message);
+
+              if (status === 'succeeded') {
+                setThreeDStatus('completed');
+                setThreeDProgress(100);
+                if (pollingRef.current) {
+                  clearInterval(pollingRef.current);
+                  pollingRef.current = null;
+                }
+              } else if (status === 'failed') {
+                setThreeDStatus('failed');
+                setThreeDError(message || '3D model generation failed');
+                if (pollingRef.current) {
+                  clearInterval(pollingRef.current);
+                  pollingRef.current = null;
+                }
               }
             }
+          } catch {
+            // Continue polling on transient errors
           }
-        } catch {
-          // Continue polling on transient errors
-        }
-      }, 5000);
+        }, 5000);
+      } else {
+        // No taskId and no immediate success — edge case
+        setThreeDStatus('failed');
+        setThreeDError('Unexpected response from 3D generation API');
+      }
     } catch (err: any) {
       setThreeDStatus('failed');
       setThreeDError(err.message || 'Failed to start 3D generation');
     }
-  }, [result]);
+  }, [result, threeDProvider]);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -344,6 +367,7 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
                 { icon: Activity, label: 'Digital Twin' },
                 { icon: Box, label: 'Interactive System Diagram' },
                 { icon: Image, label: 'AI Machine Illustration' },
+                { icon: Zap, label: '3D Model (Free)' },
               ].map(item => (
                 <Badge key={item.label} variant="secondary" className="text-[10px] gap-1 py-0.5">
                   <item.icon className="h-2.5 w-2.5" />
@@ -491,21 +515,43 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
               {result && (
                 <Card className="border-0 shadow-sm py-0">
                   <CardContent className="p-4 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <Box className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
-                      <h4 className="text-sm font-semibold">3D Model Generation</h4>
-                      <Badge variant="outline" className="text-[10px]">Optional</Badge>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Box className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
+                        <h4 className="text-sm font-semibold">3D Model Generation</h4>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className={`text-[10px] gap-1 ${threeDProvider === 'programmatic' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400' : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400'}`}>
+                          {threeDProvider === 'programmatic' ? <Zap className="h-2.5 w-2.5" /> : <Crown className="h-2.5 w-2.5" />}
+                          {threeDProvider === 'programmatic' ? 'Free' : 'Premium'}
+                        </Badge>
+                        {threeDStatus === 'idle' && (
+                          <button
+                            type="button"
+                            onClick={() => setThreeDProvider(p => p === 'programmatic' ? 'meshy' : 'programmatic')}
+                            className="px-2 py-0.5 rounded text-[10px] font-medium border border-border bg-muted hover:bg-muted/80 transition-colors"
+                          >
+                            Switch to {threeDProvider === 'programmatic' ? 'Premium' : 'Free'}
+                          </button>
+                        )}
+                      </div>
                     </div>
 
+                    {threeDProvider === 'programmatic' && threeDStatus === 'idle' && (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 rounded-md px-2.5 py-1.5">
+                        Uses your configured AI to build a 3D model from geometric shapes — no API key needed.
+                      </p>
+                    )}
+                    {threeDProvider === 'meshy' && threeDStatus === 'idle' && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 rounded-md px-2.5 py-1.5">
+                        Uses Meshy.ai for photorealistic 3D models. Requires an active Meshy.ai subscription and API key configured in AI Settings.
+                      </p>
+                    )}
+
                     {threeDStatus === 'idle' && (
-                      <>
-                        <p className="text-xs text-muted-foreground">
-                          Generate a 3D model of &quot;{result.asset.name}&quot; for the Digital Twin viewer using AI text-to-3D technology.
-                        </p>
-                        <Button onClick={start3DGeneration} className="gap-2" variant="outline">
-                          <Sparkles className="h-4 w-4" /> Generate 3D Model
-                        </Button>
-                      </>
+                      <Button onClick={start3DGeneration} className="gap-2" variant="outline">
+                        <Sparkles className="h-4 w-4" /> Generate 3D Model
+                      </Button>
                     )}
 
                     {threeDStatus === 'generating' && (

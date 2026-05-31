@@ -42,6 +42,33 @@ interface MeshyTaskResponse {
 type GenerationStatus = 'pending' | 'processing' | 'succeeded' | 'failed';
 
 // ============================================================================
+// HELPERS — Resolve 3D provider from AI config
+// ============================================================================
+
+async function resolveProvider3d(override?: string): Promise<'programmatic' | 'meshy'> {
+  if (override && (override === 'programmatic' || override === 'meshy')) {
+    return override;
+  }
+
+  try {
+    const raw = await readFile(AI_CONFIG_PATH, 'utf-8');
+    const parsed = JSON.parse(raw);
+    const configs = Array.isArray(parsed) ? parsed : parsed.configs ?? [];
+    const activeConfig = configs.find((c: Record<string, unknown>) => c.isActive === true);
+    if (activeConfig?.provider3d && typeof activeConfig.provider3d === 'string') {
+      const val = activeConfig.provider3d.trim().toLowerCase();
+      if (val === 'meshy' || val === 'programmatic') {
+        return val;
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  return 'programmatic';
+}
+
+// ============================================================================
 // HELPERS — Resolve Meshy API key
 // ============================================================================
 
@@ -101,6 +128,71 @@ function mapStatus(meshyStatus?: string): GenerationStatus {
 }
 
 // ============================================================================
+// HELPERS — Check if model exists in DB (shared by both paths)
+// ============================================================================
+
+async function checkExistingModel(
+  taskId: string,
+  assetId: string | null,
+): Promise<NextResponse<Record<string, unknown>> | null> {
+  if (!assetId) return null;
+
+  try {
+    const existingModel = await db.assetModel.findFirst({
+      where: {
+        assetId,
+        isActive: true,
+        filePath: { startsWith: '/uploads/models/' },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existingModel) {
+      // Verify the file actually exists on disk
+      const onDisk = await fileExistsOnDisk(existingModel.filePath);
+      if (onDisk) {
+        logger.info('Model already exists, returning completed status', {
+          assetId,
+          modelId: existingModel.id,
+        });
+
+        // Check if there's a twin scene too
+        const scenes = await db.digitalTwinScene.findMany({
+          where: { modelId: existingModel.id, isActive: true },
+          take: 1,
+        });
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            taskId,
+            status: 'succeeded' as GenerationStatus,
+            progress: 100,
+            model: {
+              id: existingModel.id,
+              name: existingModel.name,
+              format: existingModel.format,
+              filePath: existingModel.filePath,
+              fileSize: existingModel.fileSize,
+              thumbnailUrl: existingModel.thumbnailUrl,
+            },
+            sceneCreated: scenes.length > 0,
+            sceneId: scenes[0]?.id ?? null,
+            message: '3D model has already been generated and is available.',
+          },
+        });
+      }
+    }
+  } catch (dbErr) {
+    logger.warn('DB check for existing model failed (falling through)', {
+      message: dbErr instanceof Error ? dbErr.message : String(dbErr),
+    });
+  }
+
+  return null;
+}
+
+// ============================================================================
 // GET — Check generation status
 // ============================================================================
 
@@ -119,6 +211,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const taskId = searchParams.get('taskId');
     const assetId = searchParams.get('assetId');
+    const provider3dParam = searchParams.get('provider3d');
 
     if (!taskId) {
       return NextResponse.json(
@@ -127,59 +220,42 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // --- Fast path: check if model already exists in DB for this asset ---
-    if (assetId) {
-      try {
-        const existingModel = await db.assetModel.findFirst({
-          where: {
-            assetId,
-            isActive: true,
-            filePath: { startsWith: '/uploads/models/' },
-          },
-          orderBy: { createdAt: 'desc' },
-        });
+    // --- Resolve provider ---
+    const provider = await resolveProvider3d(provider3dParam ?? undefined);
 
-        if (existingModel) {
-          // Verify the file actually exists on disk
-          const onDisk = await fileExistsOnDisk(existingModel.filePath);
-          if (onDisk) {
-            logger.info('Model already exists, returning completed status', {
-              assetId,
-              modelId: existingModel.id,
-            });
+    // ════════════════════════════════════════════════════════════════════════
+    // PROGRAMMATIC PATH — Check if model exists in DB (synchronous generation)
+    // ════════════════════════════════════════════════════════════════════════
+    if (provider === 'programmatic') {
+      // For programmatic generation, the model should already exist immediately
+      // after the POST returns. Just check the DB.
+      const existing = await checkExistingModel(taskId, assetId);
 
-            // Check if there's a twin scene too
-            const scenes = await db.digitalTwinScene.findMany({
-              where: { modelId: existingModel.id, isActive: true },
-              take: 1,
-            });
-
-            return NextResponse.json({
-              success: true,
-              data: {
-                taskId,
-                status: 'succeeded' as GenerationStatus,
-                progress: 100,
-                model: {
-                  id: existingModel.id,
-                  name: existingModel.name,
-                  format: existingModel.format,
-                  filePath: existingModel.filePath,
-                  fileSize: existingModel.fileSize,
-                  thumbnailUrl: existingModel.thumbnailUrl,
-                },
-                sceneCreated: scenes.length > 0,
-                sceneId: scenes[0]?.id ?? null,
-                message: '3D model has already been generated and is available.',
-              },
-            });
-          }
-        }
-      } catch (dbErr) {
-        logger.warn('DB check for existing model failed (falling through to Meshy poll)', {
-          message: dbErr instanceof Error ? dbErr.message : String(dbErr),
-        });
+      if (existing) {
+        return existing;
       }
+
+      // No model found — programmatic generation must have failed or not been started
+      logger.info('Programmatic model not found in DB', { taskId, assetId });
+      return NextResponse.json({
+        success: true,
+        data: {
+          taskId,
+          status: 'failed' as GenerationStatus,
+          progress: 0,
+          message: 'Programmatic 3D model not found. The generation may have failed.',
+        },
+      });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // MESHY PATH — Check if model already exists first, then poll Meshy
+    // ════════════════════════════════════════════════════════════════════════
+
+    // --- Fast path: check if model already exists in DB for this asset ---
+    const existing = await checkExistingModel(taskId, assetId);
+    if (existing) {
+      return existing;
     }
 
     // --- Poll Meshy API for current task status ---

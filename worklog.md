@@ -482,3 +482,80 @@ Stage Summary:
 - Diagnostic improvements: displayName on all components + enhanced ErrorBoundary
 - If error persists: browser console (F12) will show full unminified component stack
 - User needs to: git pull, bun run build, pm2 restart, then test and check console if error occurs
+
+---
+Task ID: 6
+Agent: sub-agent
+Task: Update AI Config with 3D generation provider selection
+
+Work Log:
+- Updated `src/app/api/ai/config/route.ts`:
+  - Added `provider3d?: string` to `AiConfigRecord` interface
+  - Added `provider3d: 'programmatic'` to `DEFAULT_CONFIG`
+  - Added validation in `validateConfigBody` — must be one of `'programmatic' | 'meshy' | 'tripo3d'`
+  - Added `provider3d` to POST handler `newConfig` construction
+  - Added `provider3d` to audit log `newValues`
+- Updated `src/components/modules/AIConfigPage.tsx`:
+  - Added `provider3d: string`, `tripo3dApiKey: string`, `tripo3dModelQuality: string` to `AiConfig` interface
+  - Added defaults: `provider3d: 'programmatic'`, `tripo3dApiKey: ''`, `tripo3dModelQuality: 'preview'`
+  - Added `showTripo3dApiKey` state for password toggle
+  - Replaced 3D card section with enhanced version:
+    - **RadioGroup provider selection** with 3 compact card options: Programmatic (Free/Zap/emerald), Meshy.ai (Premium/Box/cyan), Tripo3D (Premium/Cpu/amber)
+    - **Conditional rendering**: programmatic shows "No Additional Cost" notice; meshy shows API key + art style selector; tripo3d shows API key + model quality selector (draft/preview/refined)
+    - **Kept existing toggles**: Enable 3D Generation, Auto-link to Digital Twin
+- All TS errors in modified files are pre-existing (confirmed via git stash comparison)
+
+Stage Summary:
+- **API route**: `src/app/api/ai/config/route.ts` — `provider3d` field added to interface, defaults, validation, POST handler, and audit log
+- **Frontend**: `src/components/modules/AIConfigPage.tsx` — 3D provider radio cards with conditional fields per provider
+- **New fields**: `provider3d`, `tripo3dApiKey`, `tripo3dModelQuality` on both frontend and backend
+- **No new TS errors introduced**
+
+---
+Task ID: 7
+Agent: sub-agent
+Task: Build programmatic 3D geometry generator with GLB binary builder
+
+Work Log:
+- Created `src/lib/generate-3d/programmatic-generator.ts` — the core module (~930 lines)
+- **LLM Integration**: Uses `z-ai-web-dev-sdk` (same pattern as ai-generate route) to ask the LLM to describe a machine as geometric primitives
+- **System Prompt**: Instructs LLM to return JSON with 8-20 parts using box, cylinder, sphere, cone, and torus primitives, with industrial-appropriate colors, metalness, and roughness
+- **Geometry Generators**: Full vertex/normal/index generation for all 5 primitive types:
+  - Box: 6 faces, 24 vertices, 12 triangles
+  - Cylinder: configurable radiusTop/radiusBottom/height/radialSegments, with top/bottom caps, proper tapered normals
+  - Sphere: UV sphere with configurable width/height segments
+  - Cone: special case of cylinder (radiusTop=0)
+  - Torus: configurable torusRadius/tube/radialSegments/tubularSegments
+- **Transform Pipeline**: Each part's vertices are rotated (Euler XYZ) and translated before assembly
+- **GLB Binary Builder**: Full glTF 2.0 → GLB compiler:
+  - Builds glTF JSON with asset, scene, nodes, meshes, accessors, bufferViews, buffers, materials
+  - Packs all geometry into a single BIN buffer with proper alignment padding
+  - PBR materials with baseColorFactor, metallicFactor, roughnessFactor
+  - WRaps in GLB container: 12-byte header + JSON chunk (padded) + BIN chunk (padded)
+  - Uses Uint32 indices for large meshes (>65535 vertices), Uint16 otherwise
+- **DB Integration**: Creates AssetModel record, optionally creates DigitalTwinScene if twin exists
+- **Exports**: `generateProgrammatic3DModel()` (full pipeline) and `generateGeometrySpec()` (LLM-only)
+
+- Updated `src/app/api/ai/generate-3d/route.ts` — dual-mode support:
+  - Added `resolveProvider3d()` helper: reads `provider3d` from ai-config.json (default: 'programmatic')
+  - Added `provider3d` field to request body type for frontend override
+  - If provider is `'programmatic'`: calls `generateProgrammatic3DModel()` synchronously, returns `status: 'succeeded'` immediately with model info
+  - If provider is `'meshy'`: uses existing Meshy.ai flow with background polling
+  - Existing Meshy flow preserved exactly as-is
+
+- Updated `src/app/api/ai/generate-3d/status/route.ts` — dual-mode support:
+  - Added `resolveProvider3d()` helper and `provider3d` query param
+  - Extracted `checkExistingModel()` shared helper (used by both paths)
+  - For programmatic provider: checks if model exists in DB, returns succeeded/failed immediately (no Meshy polling)
+  - For meshy provider: existing Meshy polling flow (unchanged)
+
+- TypeScript compilation: `✓ Compiled successfully` — no new errors
+- Type check: 0 errors in our 3 files (pre-existing errors in node_modules only)
+
+Stage Summary:
+- **New file**: `src/lib/generate-3d/programmatic-generator.ts` — programmatic 3D generator with full GLB binary builder
+- **Updated**: `src/app/api/ai/generate-3d/route.ts` — dual-mode (programmatic/meshy) with `provider3d` field
+- **Updated**: `src/app/api/ai/generate-3d/status/route.ts` — dual-mode status check with shared DB lookup
+- **Architecture**: LLM → geometry JSON → vertex generation → GLB binary → file save → DB record
+- **Default provider**: `'programmatic'` (free, no external API key needed)
+- **Config field**: `provider3d` in `data/ai-config.json` or per-request override

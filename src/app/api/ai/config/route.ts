@@ -37,6 +37,7 @@ interface AiConfigRecord {
   imageModel: string;
   imageApiKey: string;
   meshyApiKey: string;
+  provider3d?: string;
   generationSettings: GenerationSettings;
   isActive: boolean;
   createdById: string;
@@ -69,6 +70,7 @@ const DEFAULT_CONFIG: Omit<AiConfigRecord, 'id' | 'createdById' | 'createdAt' | 
   imageModel: 'default',
   imageApiKey: '',
   meshyApiKey: '',
+  provider3d: 'programmatic',
   generationSettings: DEFAULT_GENERATION_SETTINGS,
   isActive: true,
 };
@@ -170,6 +172,13 @@ function validateConfigBody(body: Record<string, unknown>): { valid: boolean; er
 
   if (body.meshyApiKey !== undefined && typeof body.meshyApiKey !== 'string') {
     return { valid: false, error: 'meshyApiKey must be a string' };
+  }
+
+  if (body.provider3d !== undefined) {
+    const valid3dProviders = ['programmatic', 'meshy', 'tripo3d'];
+    if (typeof body.provider3d !== 'string' || !valid3dProviders.includes(body.provider3d)) {
+      return { valid: false, error: `provider3d must be one of: ${valid3dProviders.join(', ')}` };
+    }
   }
 
   return { valid: true };
@@ -288,6 +297,7 @@ export async function POST(request: NextRequest) {
       imageModel: body.imageModel as string || DEFAULT_CONFIG.imageModel,
       imageApiKey: body.imageApiKey as string || '',
       meshyApiKey: body.meshyApiKey as string || '',
+      provider3d: (body.provider3d as string) || 'programmatic',
       generationSettings: {
         ...DEFAULT_GENERATION_SETTINGS,
         ...(body.generationSettings || {}),
@@ -310,6 +320,7 @@ export async function POST(request: NextRequest) {
         llmTemperature: newConfig.llmTemperature,
         llmMaxTokens: newConfig.llmMaxTokens,
         imageModel: newConfig.imageModel,
+        provider3d: newConfig.provider3d,
       },
     });
 
