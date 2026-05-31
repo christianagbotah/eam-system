@@ -126,6 +126,7 @@ export function SearchableSelect({
         className="w-[--radix-popover-trigger-width] p-0"
         align="start"
         onWheel={handleWheel}
+        onOpenAutoFocus={(e: React.FocusEvent) => e.preventDefault()}
       >
         <Command shouldFilter={false} loop>
           <CommandInput
@@ -337,13 +338,14 @@ export function MultiSearchableSelect({
               <span>{placeholder}</span>
             )}
           </div>
-          <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0 ml-1" />
+          <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
         className="w-[--radix-popover-trigger-width] p-0"
         align="start"
         onWheel={handleWheel}
+        onOpenAutoFocus={(e: React.FocusEvent) => e.preventDefault()}
       >
         <Command shouldFilter={false} loop>
           <CommandInput
