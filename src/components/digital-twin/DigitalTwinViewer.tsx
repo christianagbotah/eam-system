@@ -88,12 +88,14 @@ export interface DigitalTwinViewerProps {
 function NoSceneOverlay({
   twinName,
   onCreateScene,
+  isTreeOpen = false,
 }: {
   twinName?: string | null;
   onCreateScene?: () => void;
+  isTreeOpen?: boolean;
 }) {
   return (
-    <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+    <div className={`absolute top-0 right-0 bottom-0 flex items-center justify-center z-10 pointer-events-none transition-all duration-300 ${isTreeOpen ? 'left-[280px]' : 'left-0'}`}>
       <div className="flex flex-col items-center gap-4 text-slate-400 pointer-events-auto">
         <div
           className="h-20 w-20 rounded-2xl flex items-center justify-center"
@@ -149,9 +151,9 @@ ViewerLoadingState.displayName = 'ViewerLoadingState';
 // Empty State (no model loaded)
 // ============================================================================
 
-function EmptyStateOverlay({ onUpload }: { onUpload?: () => void }) {
+function EmptyStateOverlay({ onUpload, isTreeOpen = false }: { onUpload?: () => void; isTreeOpen?: boolean }) {
   return (
-    <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+    <div className={`absolute top-0 right-0 bottom-0 flex items-center justify-center z-10 pointer-events-none transition-all duration-300 ${isTreeOpen ? 'left-[280px]' : 'left-0'}`}>
       <div className="flex flex-col items-center gap-4 text-slate-400 pointer-events-auto">
         <div
           className="h-20 w-20 rounded-2xl flex items-center justify-center"
@@ -687,12 +689,12 @@ export function DigitalTwinViewer({
 
       {/* ── Empty state overlay (no model) ───────────────────────────────── */}
       {!effectiveModelUrl && !isLoadingScene && !isResolvingScene && !effectiveError && !hasNoScenes && !twinId && (
-        <EmptyStateOverlay />
+        <EmptyStateOverlay isTreeOpen={isTreeOpen} />
       )}
 
       {/* ── No scene state (twin has no scenes) ──────────────────────────── */}
       {!effectiveModelUrl && !isLoadingScene && !isResolvingScene && !effectiveError && hasNoScenes && (
-        <NoSceneOverlay twinName={twinName} />
+        <NoSceneOverlay twinName={twinName} isTreeOpen={isTreeOpen} />
       )}
 
       {/* ── Status bar (bottom) ──────────────────────────────────────────── */}
