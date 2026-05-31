@@ -1137,13 +1137,9 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
                   teamLeaderId={convertForm.teamLeaderId}
                   onSelectedWorkersChange={(ids) => setConvertForm(f => ({ ...f, selectedWorkerIds: ids }))}
                   onTeamLeaderChange={(id) => setConvertForm(f => ({ ...f, teamLeaderId: id }))}
-                  departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-                  selectedDepartmentIds={convertForm.departmentIds}
-                  onDepartmentsChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
                   assignType={convertForm.assignType}
                   onAssignTypeChange={(type) => setConvertForm(f => ({ ...f, assignType: type }))}
                   label="Resource Assignment"
-                  hideDepartmentFilter={true}
                 />
 
                 {/* Required Spare Parts */}
@@ -1379,13 +1375,9 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
               teamLeaderId={convertForm.teamLeaderId}
               onSelectedWorkersChange={(ids) => setConvertForm(f => ({ ...f, selectedWorkerIds: ids }))}
               onTeamLeaderChange={(id) => setConvertForm(f => ({ ...f, teamLeaderId: id }))}
-              departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-              selectedDepartmentIds={convertForm.departmentIds}
-              onDepartmentsChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
               assignType={convertForm.assignType}
               onAssignTypeChange={(type) => setConvertForm(f => ({ ...f, assignType: type }))}
               label="Resource Assignment"
-              hideDepartmentFilter={true}
             />
 
             {/* Parts & Tools in collapsible sections */}
@@ -2078,13 +2070,9 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
               teamLeaderId={form.teamLeaderId}
               onSelectedWorkersChange={(ids) => updateField('selectedWorkerIds', ids)}
               onTeamLeaderChange={(id) => updateField('teamLeaderId', id)}
-              departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-              selectedDepartmentIds={form.departmentId ? [form.departmentId] : []}
-              onDepartmentsChange={(ids) => updateField('departmentId', ids[0] || '')}
               assignType={form.assignType}
               onAssignTypeChange={(type) => updateField('assignType', type)}
               label="Resource Assignment"
-              hideDepartmentFilter={true}
             />
           </div>
         ) : (
@@ -2258,13 +2246,9 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
             teamLeaderId={form.teamLeaderId}
             onSelectedWorkersChange={(ids) => updateField('selectedWorkerIds', ids)}
             onTeamLeaderChange={(id) => updateField('teamLeaderId', id)}
-            departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-            selectedDepartmentIds={form.departmentId ? [form.departmentId] : []}
-            onDepartmentsChange={(ids) => updateField('departmentId', ids[0] || '')}
             assignType={form.assignType}
             onAssignTypeChange={(type) => updateField('assignType', type)}
             label="Resource Assignment"
-            hideDepartmentFilter={true}
           />
 
           {/* Required Spare Parts */}
@@ -3300,13 +3284,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   teamLeaderId={editForm.teamLeaderId || ''}
                   onSelectedWorkersChange={(ids) => editUpdateField('selectedWorkerIds', ids)}
                   onTeamLeaderChange={(id) => editUpdateField('teamLeaderId', id)}
-                  departments={editDepartments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-                  selectedDepartmentIds={editForm.departmentId ? [editForm.departmentId] : []}
-                  onDepartmentsChange={(ids) => editUpdateField('departmentId', ids[0] || '')}
                   assignType={editForm.assignType || 'technician'}
                   onAssignTypeChange={(type) => editUpdateField('assignType', type)}
                   label="Resource Assignment"
-                  hideDepartmentFilter={true}
                 />
 
                 {/* Required Spare Parts */}
@@ -3533,13 +3513,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               teamLeaderId={editForm.teamLeaderId || ''}
               onSelectedWorkersChange={(ids) => editUpdateField('selectedWorkerIds', ids)}
               onTeamLeaderChange={(id) => editUpdateField('teamLeaderId', id)}
-              departments={editDepartments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-              selectedDepartmentIds={editForm.departmentId ? [editForm.departmentId] : []}
-              onDepartmentsChange={(ids) => editUpdateField('departmentId', ids[0] || '')}
               assignType={editForm.assignType || 'technician'}
               onAssignTypeChange={(type) => editUpdateField('assignType', type)}
               label="Resource Assignment"
-              hideDepartmentFilter={true}
             />
             <Accordion type="multiple" className="space-y-2">
               <AccordionItem value="parts" className="border rounded-xl px-1">
