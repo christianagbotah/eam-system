@@ -312,6 +312,15 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         reason: reason ?? toolReq.reason,
         notes: notes !== undefined ? (notes || null) : toolReq.notes,
       },
+      include: {
+        requestedBy: { select: { id: true, fullName: true, username: true } },
+        supervisorApprovedBy: { select: { id: true, fullName: true } },
+        storekeeperApprovedBy: { select: { id: true, fullName: true } },
+        issuedByUser: { select: { id: true, fullName: true } },
+        returnedByUser: { select: { id: true, fullName: true } },
+        workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
+        tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true } },
+      },
     });
 
     await db.auditLog.create({

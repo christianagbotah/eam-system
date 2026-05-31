@@ -971,7 +971,9 @@ export function RepairToolRequestsPage() {
     if (res.success) {
       toast.success('Tool request updated');
       setEditOpen(false);
-      setDetailItem(res.data);
+      // Re-fetch the full detail (with relations) to keep the side sheet in sync
+      const detailRes = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
+      if (detailRes.success) setDetailItem(detailRes.data);
       fetchRequests();
     } else {
       toast.error(res.error || 'Failed to update');
