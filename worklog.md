@@ -606,3 +606,23 @@ Stage Summary:
 - Fix: Added DismissableLayer.Branch wrapper inside PopoverContent in searchable-select.tsx
 - This is a universal fix - applies to all 18+ pages using SearchableSelect
 - Previous onPointerDownOutside handler in ResponsiveDialog kept as secondary defense
+
+---
+Task ID: 28
+Agent: main
+Task: Fix tool selection not working on New Tool Request form
+
+Work Log:
+- Investigated `RepairsPages.tsx` for the New Tool Request form (line ~1127)
+- Compared working Work Order AsyncSearchableSelect vs broken Tool AsyncSearchableSelect
+- Found root cause: `toolsCache` is a `useRef<any[]>([])` but the `onValueChange` handler used `toolsCache.find(...)` instead of `toolsCache.current.find(...)`
+- This caused a `TypeError: toolsCache.find is not a function` which prevented the form state from updating
+- Same bug existed for `inventoryItemsCache.find` (material requests) and `assetsCache.find` (damaged tool reports)
+- Fixed all 3 instances by adding `.current` to access the ref's array
+
+Stage Summary:
+- Fixed: Tool selection on New Tool Request form (`/#/repairs-tool-requests`)
+- Fixed: Item selection on New Material Request form (`/#/repairs-material-requests`)
+- Fixed: Asset selection on Damaged Tool Reports (`/#/repairs-damaged-tools`)
+- Root cause: Missing `.current` on useRef objects in onValueChange callbacks
+- The work order selector worked because it didn't use a ref cache — it did inline data mapping
