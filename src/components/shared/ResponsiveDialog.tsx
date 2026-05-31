@@ -86,6 +86,15 @@ export function ResponsiveDialog({
   const resolvedMaxWidth = desktopMaxWidth
     ?? (extraLarge ? "sm:max-w-4xl" : large ? "sm:max-w-2xl" : "sm:max-w-lg");
 
+  // Prevent dialog/sheet from dismissing when clicking inside a Popover (e.g. SearchableSelect)
+  const handlePointerDownOutside = React.useCallback((e: React.PointerEvent) => {
+    const target = e.target as HTMLElement;
+    // Don't dismiss when clicking inside a Radix Popover content
+    if (target.closest('[data-slot="popover-content"]')) {
+      e.preventDefault();
+    }
+  }, []);
+
   // ---- Mobile: Bottom Sheet ------------------------------------------------
   if (isMobile) {
     return (
@@ -99,6 +108,7 @@ export function ResponsiveDialog({
             className,
           )}
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          onPointerDownOutside={handlePointerDownOutside}
         >
           {/* Drag handle indicator */}
           <div className="mx-auto mt-3 h-1.5 w-10 shrink-0 rounded-full bg-muted-foreground/30" />
@@ -148,7 +158,7 @@ export function ResponsiveDialog({
   // ---- Desktop: Centered Dialog --------------------------------------------
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn(resolvedMaxWidth, "max-h-[85vh] overflow-y-auto", className)}>
+      <DialogContent className={cn(resolvedMaxWidth, "max-h-[85vh] overflow-y-auto", className)} onPointerDownOutside={handlePointerDownOutside}>
         <DialogHeader className={!(title || description) && "sr-only"}>
           <DialogTitle className={!title ? "sr-only" : undefined}>{title || "Dialog"}</DialogTitle>
           {description ? (
