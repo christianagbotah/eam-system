@@ -13,8 +13,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    // Only store_keeper, store_manager, tools_shop_attendant, or admin can pick items
-    if (!isAdmin(session) && !hasRole(session, 'store_keeper') && !hasRole(session, 'store_manager') && !hasRole(session, 'tools_shop_attendant')) {
+    // Only store_keeper, inventory_manager, tools_shop_attendant, or admin can pick items
+    if (!isAdmin(session) && !hasRole(session, 'store_keeper') && !hasRole(session, 'inventory_manager') && !hasRole(session, 'tools_shop_attendant')) {
       return NextResponse.json(
         { success: false, error: 'Only store keeper, store manager, or admin can pick materials' },
         { status: 403 },

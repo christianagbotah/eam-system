@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { createAuditLog } from '@/lib/audit';
 
@@ -50,6 +50,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { workOrderId } = await params;
     const body = await request.json();
     const { action, completionNotes, findings, rootCause, correctiveAction, materialsUsedSummary, toolsUsedSummary, totalLaborHours, totalMaterialCost, totalToolCost, totalDowntimeMinutes, supervisorReviewNotes, reworkReason, closureNotes } = body;
+
+    // Role-based access for workflow actions
+    if (action === 'supervisor_approve' || action === 'supervisor_request_rework') {
+      if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'maintenance_planner')) {
+        return NextResponse.json({ success: false, error: 'Only supervisors, managers, or planners can perform this action' }, { status: 403 });
+      }
+    }
+    if (action === 'planner_close') {
+      if (!isAdmin(session) && !hasRole(session, 'maintenance_planner') && !hasRole(session, 'maintenance_manager')) {
+        return NextResponse.json({ success: false, error: 'Only planners or managers can close work orders' }, { status: 403 });
+      }
+    }
 
     const wo = await db.workOrder.findUnique({
       where: { id: workOrderId },

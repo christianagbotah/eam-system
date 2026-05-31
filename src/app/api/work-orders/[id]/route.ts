@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope } from '@/lib/plant-scope';
 
 export async function GET(
@@ -118,6 +118,10 @@ export async function PUT(
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!hasPermission(session, 'work_orders.update') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions to update work orders' }, { status: 403 });
     }
 
     const { id } = await params;

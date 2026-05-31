@@ -323,13 +323,13 @@ const TRANSFER_STAGES: PipelineStage[] = [
 function isSupervisorOrAdmin(user: any): boolean {
   if (!user?.roles) return false;
   const slugs = (user.roles || []).map((r: any) => r.slug);
-  return slugs.includes('admin') || slugs.includes('store_keeper') || slugs.includes('store_manager') || slugs.includes('tools_shop_attendant');
+  return slugs.includes('admin') || slugs.includes('store_keeper') || slugs.includes('inventory_manager') || slugs.includes('tools_shop_attendant');
 }
 
 function isStoreOrAdmin(user: any): boolean {
   if (!user?.roles) return false;
   const slugs = (user.roles || []).map((r: any) => r.slug);
-  return slugs.includes('admin') || slugs.includes('store_keeper') || slugs.includes('store_manager') || slugs.includes('tools_shop_attendant');
+  return slugs.includes('admin') || slugs.includes('store_keeper') || slugs.includes('inventory_manager') || slugs.includes('tools_shop_attendant');
 }
 
 // ============================================================================

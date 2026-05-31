@@ -149,12 +149,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!matReq) return NextResponse.json({ success: false, error: 'Material request not found' }, { status: 404 });
 
     // ── Role-based access control for workflow actions ──
-    // Only admin, store_keeper, store_manager, tools_shop_attendant can approve/reject material requests
+    // Only admin, store_keeper, inventory_manager, tools_shop_attendant can approve/reject material requests
     if (action === 'supervisor_approve' || action === 'supervisor_reject' ||
         action === 'storekeeper_approve' || action === 'storekeeper_reject') {
       if (!isAdmin(session) &&
           !hasRole(session, 'store_keeper') &&
-          !hasRole(session, 'store_manager') &&
+          !hasRole(session, 'inventory_manager') &&
           !hasRole(session, 'tools_shop_attendant')) {
         return NextResponse.json({ success: false, error: 'Only admin, store keeper, store manager, or tools shop attendant can approve/reject material requests' }, { status: 403 });
       }

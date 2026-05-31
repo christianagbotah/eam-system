@@ -2357,7 +2357,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const { hasPermission, user, isAdmin } = useAuthStore();
   const { navigate } = useNavigationStore();
   const isMobile = useIsMobile();
-  const canApproveMaterials = user?.roles?.some((r: any) => ['admin', 'store_keeper', 'store_manager'].includes(r.slug)) ?? false;
+  const canApproveMaterials = user?.roles?.some((r: any) => ['admin', 'store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(r.slug)) ?? false;
   // Edit WO
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
