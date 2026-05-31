@@ -559,3 +559,28 @@ Stage Summary:
 - **Architecture**: LLM → geometry JSON → vertex generation → GLB binary → file save → DB record
 - **Default provider**: `'programmatic'` (free, no external API key needed)
 - **Config field**: `provider3d` in `data/ai-config.json` or per-request override
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix tool selection not working in New Tool Request modal (and all ResponsiveDialog forms)
+
+Work Log:
+- Investigated the `SearchableSelect` component (cmdk + Radix Popover pattern)
+- Traced the issue through cmdk source code: CommandItem uses onClick to fire onSelect
+- Discovered root cause by reading Radix UI source code:
+  - `PopoverContent` uses `DismissableLayer` (NOT `DismissableLayer.Branch`)
+  - When Popover is non-modal (default), `disableOutsidePointerEvents=false`
+  - Dialog/Sheet's `DismissableLayer` has a document-level pointerdown listener
+  - Clicking inside Popover → Dialog sees target as "outside" → fires onPointerDownOutside → dismisses dialog
+  - The click event on CommandItem fires AFTER pointerdown, but dialog is already closing/unmounted
+- Fixed by adding `onPointerDownOutside` handler to both SheetContent (mobile) and DialogContent (desktop) in `ResponsiveDialog`
+- Handler checks if click target is inside `[data-slot="popover-content"]` and calls `e.preventDefault()` to prevent dismissal
+- This fix applies to ALL forms using ResponsiveDialog with SearchableSelect (tool requests, material requests, tool transfers, damaged tools, etc.)
+- Committed as 1aac49e8 and pushed
+
+Stage Summary:
+- Fixed: Tool selection in New Tool Request modal (and all ResponsiveDialog forms)
+- Root cause: Radix PopoverContent uses DismissableLayer instead of DismissableLayer.Branch
+- Fix location: `/src/components/shared/ResponsiveDialog.tsx`
+- Commit: 1aac49e8
