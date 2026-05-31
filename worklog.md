@@ -440,3 +440,35 @@ Stage Summary:
 - **File**: `src/app/api/work-orders/[id]/route.ts` — graceful fallback when wo_team_member_requests table doesn't exist
 - **Push**: Commit `4264db05`
 - **VPS action needed**: `npx prisma db push` to create the table (then full query will work)
+
+---
+Task ID: 8
+Agent: main
+Task: Fix React Error #185 (Maximum update depth exceeded) on 3D Digital Twin Viewer
+
+Work Log:
+- Binary search over 7 diagnostic steps identified root cause: Zustand `useDigitalTwinStore(selector)` called inside R3F Canvas children creates `useSyncExternalStore` subscriptions in the R3F reconciler that cascade with identical subscriptions in the main React reconciler, causing infinite cross-reconciler re-renders (Error #185)
+- Steps 1,3,4,6 passed (R3F itself, Zustand hooks in outer component, AdaptiveDpr/Events, CameraController, SceneLighting are all fine)
+- Steps 5,7 crashed (the 7 R3F children that call useDigitalTwinStore() directly inside Canvas)
+- Created `useStoreSelector()` hook that bypasses `useSyncExternalStore` by using Zustand's vanilla `store.subscribe()` API in a `useEffect`, with a reference-equality guard to prevent redundant React state updates
+- Refactored 7 R3F Canvas child components:
+  - GroundPlane.tsx (1 selector → useStoreSelector)
+  - ExplodedView.tsx (2 selectors → useStoreSelector)
+  - SectionPlane.tsx (3 selectors → useStoreSelector, 2 actions → getState())
+  - IoTOverlayLayer.tsx (4 selectors → useStoreSelector)
+  - HotspotLayer.tsx (3 selectors → useStoreSelector, 1 action → getState())
+  - AnnotationLayer.tsx (2 selectors → useStoreSelector)
+  - InteractiveMesh.tsx (6 selectors → useStoreSelector, 3 actions → getState())
+- Deleted diagnostic files: DiagnosticStep3-7.tsx, MinimalR3FTest.tsx
+- Cleaned up unused imports in IoTOverlayLayer.tsx and AnnotationLayer.tsx
+- Verified DigitalTwinMainPage.tsx already loads DigitalTwinViewer (not DiagnosticStep7)
+- Verified no remaining useDigitalTwinStore() calls in R3F Canvas children (only in outer components which are safe)
+- Lint check: No new errors in refactored files
+
+Stage Summary:
+- **Root cause confirmed**: useSyncExternalStore cross-reconciler cascading between R3F and main React reconciler
+- **Fix**: `useStoreSelector()` hook — uses store.subscribe() in useEffect instead of useSyncExternalStore
+- **Files refactored**: 7 R3F Canvas children + 1 new hook + barrel export update
+- **Deleted**: 7 diagnostic files (DiagnosticStep3-7, MinimalR3FTest)
+- **Commit**: `2a39d6cf` — pushed to GitHub
+- **VPS action needed**: `git pull origin main && bun run build && pm2 restart eam-system`
