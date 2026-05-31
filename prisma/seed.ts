@@ -330,7 +330,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'work_orders.bulk_update', 'work_orders.cancel',
     'work_order_templates.view', 'work_order_templates.create', 'work_order_templates.update',
     'recurring_work_orders.view', 'recurring_work_orders.create', 'recurring_work_orders.update',
-    'approvals.view', 'approvals.approve', 'approvals.reject',
+    'approvals.view',
     'verifications.view',
     'sla.view', 'sla.manage',
     'failure_codes.view', 'failure_codes.manage',

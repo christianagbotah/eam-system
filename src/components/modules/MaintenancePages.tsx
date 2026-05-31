@@ -69,8 +69,9 @@ export function MaintenanceRequestsPage() {
   const [searchText, setSearchText] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [autoConvertId, setAutoConvertId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, user, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
 
   // Track autoOpen to avoid race condition between filter effect and fetch effect
@@ -131,6 +132,35 @@ export function MaintenanceRequestsPage() {
   }, [filterStatus, filterPriority, refreshKey]);
 
   const handleRefresh = useCallback(() => setRefreshKey(k => k + 1), []);
+
+  // Helper: check if user can convert a specific MR to WO
+  const canConvertMR = useCallback((mr: MaintenanceRequest) => {
+    return mr.status === 'approved'
+      && hasPermission('maintenance_requests.convert_to_wo')
+      && (mr.assignedPlannerId === user?.id || isAdmin() || !mr.assignedPlannerId);
+  }, [hasPermission, user, isAdmin]);
+
+  // Render action buttons for a request row
+  const renderRowActions = useCallback((mr: MaintenanceRequest) => {
+    const convertable = canConvertMR(mr);
+    if (!convertable) return null;
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 px-2 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
+        onClick={(e) => {
+          e.stopPropagation();
+          setAutoConvertId(mr.id);
+          setDetailId(mr.id);
+        }}
+        title="Convert to Work Order"
+      >
+        <RefreshCw className="h-3.5 w-3.5 mr-1" />
+        <span className="hidden sm:inline">Convert</span>
+      </Button>
+    );
+  }, [canConvertMR]);
 
   return (
     <div className="page-content">
@@ -228,7 +258,10 @@ export function MaintenanceRequestsPage() {
                   <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate hidden xl:table-cell">{(mr as any).asset?.name || mr.assetName || '-'}</TableCell>
                   <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{formatDate(mr.createdAt)}</TableCell>
                   <TableCell>
-                    {mr.machineDownStatus && <Badge variant="destructive" className="text-[10px]">DOWN</Badge>}
+                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                      {mr.machineDownStatus && <Badge variant="destructive" className="text-[10px]">DOWN</Badge>}
+                      {renderRowActions(mr)}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -238,9 +271,9 @@ export function MaintenanceRequestsPage() {
       )}
 
       {/* Detail Side Sheet */}
-      <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
+      <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) { setDetailId(null); setAutoConvertId(null); } }}>
         <SheetContent side="right" className="sm:max-w-xl overflow-y-auto p-6 pt-0">
-          {detailId && <MRDetailPage id={detailId} onUpdate={handleRefresh} />}
+          {detailId && <MRDetailPage id={detailId} onUpdate={handleRefresh} autoOpenConvert={autoConvertId === detailId} />}
         </SheetContent>
       </Sheet>
     </div>
@@ -599,7 +632,7 @@ function MRWorkflowTimeline({ mr }: { mr: MaintenanceRequest }) {
   );
 }
 
-export function MRDetailPage({ id, onUpdate }: { id: string; onUpdate: () => void }) {
+export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; onUpdate: () => void; autoOpenConvert?: boolean }) {
   const [mr, setMr] = useState<MaintenanceRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -748,6 +781,15 @@ export function MRDetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     setConvertOpen(true);
   };
 
+  // Auto-open convert dialog when triggered from the list view
+  const autoConvertTriggered = useRef(false);
+  useEffect(() => {
+    if (autoOpenConvert && mr && !loading && !autoConvertTriggered.current && mr.status === 'approved') {
+      autoConvertTriggered.current = true;
+      openConvertDialog();
+    }
+  }, [autoOpenConvert, mr, loading]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleConvert = async () => {
     if (!mr) return;
     setConvertLoading(true);
@@ -848,7 +890,7 @@ export function MRDetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const canApprove = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
   const canReject = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
   const canAssignPlanner = mr.status === 'approved' && (isAdminUser || isDeptSupervisor) && !mr.assignedPlannerId;
-  const canConvert = mr.status === 'approved' && hasPermission('maintenance_requests.convert_to_wo') && (mr.assignedPlannerId === user?.id || !mr.assignedPlannerId);
+  const canConvert = mr.status === 'approved' && hasPermission('maintenance_requests.convert_to_wo') && (mr.assignedPlannerId === user?.id || isAdminUser || !mr.assignedPlannerId);
 
   return (
     <>
