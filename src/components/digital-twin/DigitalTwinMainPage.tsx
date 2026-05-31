@@ -134,14 +134,13 @@ function useViewerComponent(): { Component: LazyComponent | null } {
       return;
     }
     let cancelled = false;
-    // BINARY SEARCH STEP 7: + GroundPlane, ExplodedView, SectionPlane,
-    // IoTOverlay, Hotspot, Annotation, BackgroundClickHandler
-    // If this crashes → cross-reconciler Zustand subscriptions are the culprit
-    import('./DiagnosticStep7')
+    // Load the real DigitalTwinViewer (fixed: stable empty array refs in
+    // HotspotLayer + AnnotationLayer + BackgroundClickHandler uses getState())
+    import('./DigitalTwinViewer')
       .then((mod) => {
-        if (!cancelled && mod.DiagnosticStep7) {
-          viewerCache.set('viewer', mod.DiagnosticStep7);
-          setComponent(() => mod.DiagnosticStep7);
+        if (!cancelled && mod.DigitalTwinViewer) {
+          viewerCache.set('viewer', mod.DigitalTwinViewer);
+          setComponent(() => mod.DigitalTwinViewer);
         }
       })
       .catch((err) => {
@@ -1485,8 +1484,7 @@ class ViewerErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 // ============================================================================
 
 function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId: string; twinName: string }) {
-  // BINARY SEARCH STEP 7: remaining R3F children with Zustand subscriptions
-  // If THIS crashes → cross-reconciler Zustand subscriptions are the root cause
+  // Real DigitalTwinViewer — Error #185 fixed via stable empty array refs
   const { Component } = useViewerComponent();
 
   if (!Component) {

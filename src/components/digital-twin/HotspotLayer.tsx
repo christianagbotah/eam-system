@@ -251,12 +251,16 @@ function HotspotPin({ hotspot, isActive, onClick, index }: HotspotPinProps) {
 // Main HotspotLayer Component
 // ============================================================================
 
+// Stable empty array constant — prevents new reference on every selector call
+// which would cause infinite re-renders in R3F reconciler (Error #185)
+const EMPTY_HOTSPOTS: DigitalTwinHotspot[] = [];
+
 export function HotspotLayer({
   hotspots: externalHotspots,
 }: HotspotLayerProps) {
   const hotspotsVisible = useDigitalTwinStore((s) => s.hotspotsVisible);
   const storeHotspots = useDigitalTwinStore(
-    (s) => s.currentScene?.hotspots ?? [],
+    (s) => s.currentScene?.hotspots || EMPTY_HOTSPOTS,
   );
   const activeHotspotId = useDigitalTwinStore((s) => s.activeHotspotId);
   const selectMesh = useDigitalTwinStore((s) => s.selectMesh);

@@ -219,12 +219,16 @@ function AnnotationPin({ annotation, index }: AnnotationPinProps) {
 // Main AnnotationLayer Component
 // ============================================================================
 
+// Stable empty array constant — prevents new reference on every selector call
+// which would cause infinite re-renders in R3F reconciler (Error #185)
+const EMPTY_ANNOTATIONS: DigitalTwinAnnotation[] = [];
+
 export function AnnotationLayer({
   annotations: externalAnnotations,
 }: AnnotationLayerProps) {
   const annotationsVisible = useDigitalTwinStore((s) => s.annotationsVisible);
   const storeAnnotations = useDigitalTwinStore(
-    (s) => s.currentScene?.annotations ?? [],
+    (s) => s.currentScene?.annotations || EMPTY_ANNOTATIONS,
   );
 
   const annotations = externalAnnotations ?? storeAnnotations;

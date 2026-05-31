@@ -288,20 +288,17 @@ CameraController.displayName = 'CameraController';
 // ============================================================================
 
 function BackgroundClickHandler() {
-  const selectMesh = useDigitalTwinStore((s) => s.selectMesh);
-  const setInfoPanelOpen = useDigitalTwinStore((s) => s.setInfoPanelOpen);
-
+  // Use getState() for actions — no React subscription needed (stable refs).
+  // Avoids cross-reconciler Zustand subscription (Error #185).
   return (
     <mesh
       visible={false}
       position={[0, 0, 0]}
       onClick={() => {
-        // Defer Zustand setState — this fires inside R3F's reconciler context
-        // (Canvas), and calling setState on parent components (main reconciler)
-        // can interleave with React's concurrent rendering, causing Error #185.
         setTimeout(() => {
-          selectMesh(null, null);
-          setInfoPanelOpen(false);
+          const store = useDigitalTwinStore.getState();
+          store.selectMesh(null, null);
+          store.setInfoPanelOpen(false);
         }, 0);
       }}
     >
