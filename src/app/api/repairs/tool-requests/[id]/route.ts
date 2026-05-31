@@ -55,13 +55,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
 
     // ── Role-based access control for workflow actions ──
-    // Only admin, store_keeper, store_manager can approve/reject tool requests
+    // Only admin, store_keeper, store_manager, tools_shop_attendant can approve/reject tool requests
     if (action === 'supervisor_approve' || action === 'supervisor_reject' ||
         action === 'storekeeper_approve' || action === 'storekeeper_reject') {
       if (!isAdmin(session) &&
           !hasRole(session, 'store_keeper') &&
-          !hasRole(session, 'store_manager')) {
-        return NextResponse.json({ success: false, error: 'Only admin, store keeper, or store manager can approve/reject tool requests' }, { status: 403 });
+          !hasRole(session, 'store_manager') &&
+          !hasRole(session, 'tools_shop_attendant')) {
+        return NextResponse.json({ success: false, error: 'Only admin, store keeper, store manager, or tools shop attendant can approve/reject tool requests' }, { status: 403 });
       }
     }
 
@@ -90,7 +91,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           data: { status: 'supervisor_approved', supervisorApprovedById: session.userId, supervisorApprovedAt: now },
         });
 
-        const storeKeepers = await db.user.findMany({ where: { userRoles: { some: { role: { slug: 'store_keeper' } } }, status: 'active' }, select: { id: true } });
+        const storeKeepers = await db.user.findMany({ where: { userRoles: { some: { OR: [{ role: { slug: 'store_keeper' } }, { role: { slug: 'tools_shop_attendant' } }] } }, status: 'active' }, select: { id: true } });
         for (const sk of storeKeepers) {
           await notifyUser(sk.id, 'repair_tool_request', 'Tool Request Awaiting Store Approval',
               `"${toolReq.toolName}" approved by supervisor for WO ${toolReq.workOrder.woNumber}${toolReq.urgency !== 'normal' ? ` [${toolReq.urgency.toUpperCase()}]` : ''}`,

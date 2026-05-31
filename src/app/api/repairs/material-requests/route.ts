@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     if (urgency && VALID_URGENCIES.includes(urgency)) where.urgency = urgency;
 
     // Technicians see only their own requests (unless admin/supervisor)
-    if (session && !isAdmin(session) && !session.roles.includes('maintenance_supervisor') && !session.roles.includes('maintenance_planner') && !session.roles.includes('store_keeper')) {
+    if (session && !isAdmin(session) && !session.roles.includes('maintenance_supervisor') && !session.roles.includes('maintenance_planner') && !session.roles.includes('store_keeper') && !session.roles.includes('tools_shop_attendant')) {
       where.requestedById = session.userId;
     }
 

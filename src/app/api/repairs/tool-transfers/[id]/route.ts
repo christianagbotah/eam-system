@@ -137,7 +137,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       case 'from_user_accept': {
         if (transfer.status !== 'awaiting_handover') return NextResponse.json({ success: false, error: `Cannot accept handover: status is ${transfer.status}` }, { status: 400 });
-        if (session.userId !== transfer.fromUserId && !session.roles.includes('admin') && !session.roles.includes('store_keeper')) {
+        if (session.userId !== transfer.fromUserId && !session.roles.includes('admin') && !session.roles.includes('store_keeper') && !session.roles.includes('tools_shop_attendant')) {
           return NextResponse.json({ success: false, error: 'Only the fromUser can confirm handover' }, { status: 403 });
         }
 
@@ -181,7 +181,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       case 'to_user_accept': {
         if (transfer.status !== 'awaiting_handover') return NextResponse.json({ success: false, error: `Cannot accept receipt: status is ${transfer.status}` }, { status: 400 });
-        if (session.userId !== transfer.toUserId && !session.roles.includes('admin') && !session.roles.includes('store_keeper')) {
+        if (session.userId !== transfer.toUserId && !session.roles.includes('admin') && !session.roles.includes('store_keeper') && !session.roles.includes('tools_shop_attendant')) {
           return NextResponse.json({ success: false, error: 'Only the toUser can confirm receipt' }, { status: 403 });
         }
 
