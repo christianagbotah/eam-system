@@ -272,7 +272,7 @@ export function MaintenanceRequestsPage() {
 
       {/* Detail Side Sheet */}
       <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) { setDetailId(null); setAutoConvertId(null); } }}>
-        <SheetContent side="right" className="sm:max-w-xl overflow-y-auto p-6 pt-0">
+        <SheetContent side="right" className="overflow-y-auto p-6 pt-0">
           {detailId && <MRDetailPage id={detailId} onUpdate={handleRefresh} autoOpenConvert={autoConvertId === detailId} />}
         </SheetContent>
       </Sheet>
@@ -1848,7 +1848,7 @@ export function WorkOrdersPage() {
 
       {/* WO Detail Side Sheet */}
       <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
-        <SheetContent className="sm:max-w-xl overflow-y-auto p-6 pt-0">
+        <SheetContent className="overflow-y-auto p-6 pt-0">
           {detailId && <WODetailPage id={detailId} onUpdate={handleRefresh} />}
         </SheetContent>
       </Sheet>
