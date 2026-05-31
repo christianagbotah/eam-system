@@ -584,3 +584,25 @@ Stage Summary:
 - Root cause: Radix PopoverContent uses DismissableLayer instead of DismissableLayer.Branch
 - Fix location: `/src/components/shared/ResponsiveDialog.tsx`
 - Commit: 1aac49e8
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix tool selection in SearchableSelect inside ResponsiveDialog (proper fix)
+
+Work Log:
+- Previous fix (onPointerDownOutside) was the right concept but not robust enough
+- Deep-dived into Radix UI source code: DismissableLayer, Popover, Dialog, cmdk
+- Found the exact mechanism: DismissableLayer checks `context.branches` set for pointer targets
+- Popover uses DismissableLayer (not Branch), so clicks inside Popover are treated as "outside" by parent Dialog
+- The proper solution is to wrap PopoverContent's inner content with DismissableLayer.Branch
+- This registers the Popover as a branch, so DismissableLayer skips dismissal for pointer events inside it
+- Applied to both SearchableSelect and MultiSearchableSelect in searchable-select.tsx
+- Committed as 9592ac16 and pushed
+
+Stage Summary:
+- Fixed: Tool selection in ALL SearchableSelect dropdowns inside Dialogs/Sheets
+- Root cause: Popover uses DismissableLayer instead of DismissableLayer.Branch
+- Fix: Added DismissableLayer.Branch wrapper inside PopoverContent in searchable-select.tsx
+- This is a universal fix - applies to all 18+ pages using SearchableSelect
+- Previous onPointerDownOutside handler in ResponsiveDialog kept as secondary defense
