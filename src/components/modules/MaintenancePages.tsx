@@ -1385,6 +1385,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
               assignType={convertForm.assignType}
               onAssignTypeChange={(type) => setConvertForm(f => ({ ...f, assignType: type }))}
               label="Resource Assignment"
+              hideDepartmentFilter={true}
             />
 
             {/* Parts & Tools in collapsible sections */}
