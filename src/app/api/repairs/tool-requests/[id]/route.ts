@@ -278,3 +278,89 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
+
+// PUT /api/repairs/tool-requests/[id]
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
+    const { id } = await params;
+    const body = await request.json();
+    const { toolId, toolName, urgency, reason, notes } = body;
+
+    const toolReq = await db.repairToolRequest.findUnique({ where: { id } });
+    if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
+
+    if (toolReq.status !== 'pending') {
+      return NextResponse.json({ success: false, error: 'Cannot edit: request is no longer pending' }, { status: 400 });
+    }
+
+    if (toolReq.requestedById !== session.userId && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Only the requester or admin can edit' }, { status: 403 });
+    }
+
+    const VALID_URGENCIES = ['low', 'normal', 'medium', 'high', 'critical'];
+    const resolvedUrgency = VALID_URGENCIES.includes(urgency) ? urgency : toolReq.urgency;
+
+    const updated = await db.repairToolRequest.update({
+      where: { id },
+      data: {
+        toolId: toolId !== undefined ? (toolId || null) : toolReq.toolId,
+        toolName: toolName ?? toolReq.toolName,
+        urgency: resolvedUrgency,
+        reason: reason ?? toolReq.reason,
+        notes: notes !== undefined ? (notes || null) : toolReq.notes,
+      },
+    });
+
+    await db.auditLog.create({
+      data: { userId: session.userId, action: 'tool_request_update', entityType: 'repair_tool_request', entityId: id, newValues: JSON.stringify({ toolName, urgency, reason }) },
+    });
+
+    return NextResponse.json({ success: true, data: updated });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to update tool request';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+// DELETE /api/repairs/tool-requests/[id]
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
+    const { id } = await params;
+
+    const toolReq = await db.repairToolRequest.findUnique({
+      where: { id },
+      include: { tool: true },
+    });
+    if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
+
+    if (toolReq.status !== 'pending') {
+      return NextResponse.json({ success: false, error: 'Cannot delete: request is no longer pending' }, { status: 400 });
+    }
+
+    if (toolReq.requestedById !== session.userId && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Only the requester or admin can delete' }, { status: 403 });
+    }
+
+    // Release tool if it was reserved
+    if (toolReq.toolId && toolReq.tool && toolReq.tool.status === 'in_repair') {
+      await db.tool.update({ where: { id: toolReq.toolId }, data: { status: 'available' } });
+    }
+
+    await db.repairToolRequest.delete({ where: { id } });
+
+    await db.auditLog.create({
+      data: { userId: session.userId, action: 'delete', entityType: 'repair_tool_request', entityId: id, newValues: JSON.stringify({ toolName: toolReq.toolName, workOrderId: toolReq.workOrderId }) },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to delete tool request';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}

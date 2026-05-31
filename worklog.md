@@ -626,3 +626,33 @@ Stage Summary:
 - Fixed: Asset selection on Damaged Tool Reports (`/#/repairs-damaged-tools`)
 - Root cause: Missing `.current` on useRef objects in onValueChange callbacks
 - The work order selector worked because it didn't use a ref cache — it did inline data mapping
+
+---
+Task ID: 2-a
+Agent: full-stack-developer
+Task: Add edit/delete for pending tool requests, lock approved records, fix sheet padding
+
+Work Log:
+- Added PUT handler to `/api/repairs/tool-requests/[id]/route.ts`: allows updating toolId, toolName, urgency, reason, notes only when status is 'pending' and user is requester or admin. Includes audit log entry.
+- Added DELETE handler to `/api/repairs/tool-requests/[id]/route.ts`: allows deleting only when status is 'pending' and user is requester or admin. Releases tool back to 'available' if it was 'in_repair'. Includes audit log entry.
+- Fixed padding on ALL 5 detail side sheets in RepairsPages.tsx: wrapped Tabs sections in `<div className="px-4 pb-4">` so content below SheetHeader has proper left/right padding. Affected sheets: Material Requests (line 674), Tool Requests (line 1144), Tool Transfers (line 1351), Downtime detail (line 2899), Damaged Tool Reports (line 3266).
+- Added Pencil and Trash2 icons import from lucide-react.
+- Added edit/delete state variables to RepairToolRequestsPage: editOpen, deleteOpen, editForm.
+- Added openEditForm() handler that pre-fills edit form from detailItem data.
+- Added handleEdit() handler that validates (toolName required, reason min 5 chars) and calls PUT API.
+- Added handleDelete() handler that calls DELETE API and closes detail sheet.
+- Added edit/delete buttons in tool request detail sheet (visible only when status='pending' AND user is requester or admin).
+- Added edit/delete items to table row dropdown menu (visible only for pending requests where user is requester or admin).
+- Added Edit Tool Request ResponsiveDialog with AsyncSearchableSelect for tool, urgency selector, reason textarea, notes textarea.
+- Added Delete Confirmation Dialog (Dialog component) with warning message and confirm/cancel buttons.
+- Restricted existing approve/reject buttons to show only for authorized roles (isSupervisorOrAdmin/isStoreOrAdmin).
+- Verified no TypeScript or lint errors from modified files.
+
+Stage Summary:
+- **API**: `src/app/api/repairs/tool-requests/[id]/route.ts` — PUT (edit pending) + DELETE (delete pending, release tool)
+- **Frontend**: `src/components/modules/RepairsPages.tsx` — edit/delete UI in detail sheet + table dropdown, padding fix on all 5 sheets
+- **Padding fix**: Wrapped Tabs content in `<div className="px-4 pb-4">` in 5 Sheet instances
+- **Edit dialog**: ResponsiveDialog with tool search, urgency selector, reason/notes fields
+- **Delete dialog**: Confirmation dialog with warning about tool release
+- **Permission model**: Edit/delete only for pending status + (requester or admin); approve buttons restricted to supervisor/storekeeper roles
+- **No new compilation errors**

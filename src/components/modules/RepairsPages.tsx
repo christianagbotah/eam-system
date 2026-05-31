@@ -36,7 +36,7 @@ import {
   Search, Filter, Eye, RotateCcw, Send, ShieldCheck, Warehouse,
   Timer, Activity, Ban, ChevronDown, ClipboardList, BarChart3,
   ArrowLeftRight, PackageCheck, PackageOpen, User, CircleDot,
-  Handshake, Truck, DollarSign, RefreshCw, X, Info,
+  Handshake, Truck, DollarSign, RefreshCw, X, Info, Pencil, Trash2,
 } from 'lucide-react';
 import { EmptyState, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
@@ -671,6 +671,7 @@ export function RepairMaterialRequestsPage() {
                 <SheetTitle className="flex items-center gap-2"><Package className="h-5 w-5 text-amber-600" /> {detailItem.itemName}</SheetTitle>
                 <SheetDescription>Material Request — {detailItem.workOrder?.woNumber}</SheetDescription>
               </SheetHeader>
+              <div className="px-4 pb-4">
               <Tabs defaultValue="details">
                 <TabsList className="w-full"><TabsTrigger value="details" className="flex-1">Details</TabsTrigger><TabsTrigger value="timeline" className="flex-1">Timeline</TabsTrigger></TabsList>
                 <TabsContent value="details" className="mt-4 space-y-4">
@@ -761,6 +762,7 @@ export function RepairMaterialRequestsPage() {
                   ].filter(e => e.date || e.status === 'active' || e.notes)} />
                 </TabsContent>
               </Tabs>
+              </div>
             </>
           )}
         </SheetContent>
@@ -871,6 +873,9 @@ export function RepairToolRequestsPage() {
   const [rejectTarget, setRejectTarget] = useState<{ id: string; action: string } | null>(null);
   const [conditionOpen, setConditionOpen] = useState(false);
   const [conditionTarget, setConditionTarget] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ toolId: '', toolName: '', urgency: 'medium', reason: '', notes: '' });
   const [page, setPage] = useState(1);
   const [workOrderIdFilter, setWorkOrderIdFilter] = useState('');
   const [pagination, setPagination] = useState<any>(null);
@@ -935,6 +940,57 @@ export function RepairToolRequestsPage() {
     const res = await api.post(`/api/repairs/tool-requests/${id}`, { action, ...extra });
     if (res.success) { toast.success('Action completed'); fetchRequests(); if (detailOpen && detailItem?.id === id) setDetailOpen(false); }
     else toast.error(res.error || 'Failed');
+    setSubmitting(false);
+  };
+
+  const openEditForm = () => {
+    if (!detailItem) return;
+    setEditForm({
+      toolId: detailItem.toolId || '',
+      toolName: detailItem.toolName || '',
+      urgency: detailItem.urgency || 'medium',
+      reason: detailItem.reason || '',
+      notes: detailItem.notes || '',
+    });
+    setEditOpen(true);
+  };
+
+  const handleEdit = async () => {
+    if (!editForm.toolName || !editForm.reason || editForm.reason.length < 5) {
+      toast.error('Tool Name and Reason (min 5 chars) are required');
+      return;
+    }
+    setSubmitting(true);
+    const res = await api.put(`/api/repairs/tool-requests/${detailItem.id}`, {
+      toolId: editForm.toolId || undefined,
+      toolName: editForm.toolName,
+      urgency: editForm.urgency,
+      reason: editForm.reason,
+      notes: editForm.notes,
+    });
+    if (res.success) {
+      toast.success('Tool request updated');
+      setEditOpen(false);
+      setDetailItem(res.data);
+      fetchRequests();
+    } else {
+      toast.error(res.error || 'Failed to update');
+    }
+    setSubmitting(false);
+  };
+
+  const handleDelete = async () => {
+    setSubmitting(true);
+    const res = await api.delete(`/api/repairs/tool-requests/${detailItem.id}`);
+    if (res.success) {
+      toast.success('Tool request deleted');
+      setDeleteOpen(false);
+      setDetailOpen(false);
+      setDetailItem(null);
+      fetchRequests();
+    } else {
+      toast.error(res.error || 'Failed to delete');
+    }
     setSubmitting(false);
   };
 
@@ -1046,6 +1102,13 @@ export function RepairToolRequestsPage() {
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setDetailItem(r); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View Details</DropdownMenuItem>
+                              {r.status === 'pending' && (r.requestedById === user?.id || isAdmin()) && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setDetailItem(r); openEditForm(); }}><Pencil className="h-4 w-4 mr-2" /> Edit Request</DropdownMenuItem>
+                                  <DropdownMenuItem className="text-red-600" onClick={(e) => { e.stopPropagation(); setDetailItem(r); setDeleteOpen(true); }}><Trash2 className="h-4 w-4 mr-2" /> Delete Request</DropdownMenuItem>
+                                </>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -1078,6 +1141,7 @@ export function RepairToolRequestsPage() {
               <SheetTitle className="flex items-center gap-2"><Wrench className="h-5 w-5 text-orange-600" /> {detailItem.toolName}</SheetTitle>
               <SheetDescription>Tool Request — {detailItem.workOrder?.woNumber}</SheetDescription>
             </SheetHeader>
+            <div className="px-4 pb-4">
             <Tabs defaultValue="details">
               <TabsList className="w-full"><TabsTrigger value="details" className="flex-1">Details</TabsTrigger><TabsTrigger value="timeline" className="flex-1">Timeline</TabsTrigger></TabsList>
               <TabsContent value="details" className="mt-4 space-y-4">
@@ -1097,10 +1161,17 @@ export function RepairToolRequestsPage() {
                 {((detailItem.status === 'pending' && isSupervisorOrAdmin(user)) || (detailItem.status === 'supervisor_approved' && isStoreOrAdmin(user)) || (detailItem.status === 'storekeeper_approved' && isStoreOrAdmin(user)) || detailItem.status === 'issued') && (<>
                   <Separator />
                   <div className="flex flex-wrap gap-2">
-                    {detailItem.status === 'pending' && (<><Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'supervisor_approve')} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button><Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'supervisor_reject' }); setRejectOpen(true); }} disabled={submitting}>Reject</Button></>)}
-                    {detailItem.status === 'supervisor_approved' && (<><Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => handleAction(detailItem.id, 'storekeeper_approve')} disabled={submitting}><Warehouse className="h-3.5 w-3.5" /> Store Approve</Button><Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'storekeeper_reject' }); setRejectOpen(true); }} disabled={submitting}>Reject</Button></>)}
-                    {detailItem.status === 'storekeeper_approved' && (<Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'issue')} disabled={submitting}><Wrench className="h-3.5 w-3.5" /> Issue Tool</Button>)}
+                    {detailItem.status === 'pending' && isSupervisorOrAdmin(user) && (<><Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'supervisor_approve')} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button><Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'supervisor_reject' }); setRejectOpen(true); }} disabled={submitting}>Reject</Button></>)}
+                    {detailItem.status === 'supervisor_approved' && isStoreOrAdmin(user) && (<><Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => handleAction(detailItem.id, 'storekeeper_approve')} disabled={submitting}><Warehouse className="h-3.5 w-3.5" /> Store Approve</Button><Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'storekeeper_reject' }); setRejectOpen(true); }} disabled={submitting}>Reject</Button></>)}
+                    {detailItem.status === 'storekeeper_approved' && isStoreOrAdmin(user) && (<Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'issue')} disabled={submitting}><Wrench className="h-3.5 w-3.5" /> Issue Tool</Button>)}
                     {detailItem.status === 'issued' && (<Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setConditionTarget(detailItem.id); setConditionOpen(true); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tool</Button>)}
+                  </div>
+                </>)}
+                {detailItem.status === 'pending' && (detailItem.requestedById === user?.id || isAdmin()) && (<>
+                  <Separator />
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" className="gap-1 border-sky-400 text-sky-700 hover:bg-sky-50" onClick={openEditForm} disabled={submitting}><Pencil className="h-3.5 w-3.5" /> Edit Request</Button>
+                    <Button size="sm" variant="outline" className="gap-1 border-red-400 text-red-600 hover:bg-red-50" onClick={() => setDeleteOpen(true)} disabled={submitting}><Trash2 className="h-3.5 w-3.5" /> Delete Request</Button>
                   </div>
                 </>)}
               </TabsContent>
@@ -1114,6 +1185,7 @@ export function RepairToolRequestsPage() {
                 ].filter(e => e.date || e.status === 'active')} />
               </TabsContent>
             </Tabs>
+            </div>
           </>)}
         </SheetContent>
       </Sheet>
@@ -1135,6 +1207,36 @@ export function RepairToolRequestsPage() {
 
       <RejectDialog open={rejectOpen} onClose={() => { setRejectOpen(false); setRejectTarget(null); }} onConfirm={(reason) => { if (rejectTarget) handleAction(rejectTarget.id, rejectTarget.action, { notes: reason }); }} title="Reject Tool Request" />
       <ConditionSelectDialog open={conditionOpen} onClose={() => { setConditionOpen(false); setConditionTarget(null); }} onConfirm={(condition) => { if (conditionTarget) handleAction(conditionTarget, 'return', { toolConditionAtReturn: condition }); }} />
+
+      {/* Edit Dialog */}
+      <ResponsiveDialog open={editOpen} onOpenChange={(v) => { if (!v) setEditOpen(false); }}>
+        
+          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Edit Tool Request</h2><p className="text-sm text-muted-foreground">Modify your pending tool request</p></div>
+          <div className="space-y-4">
+            <div><Label>Tool Name *</Label><AsyncSearchableSelect value={editForm.toolId} onValueChange={(v) => { const tool = toolsCache.current.find((t: any) => t.id === v); setEditForm(f => ({ ...f, toolId: v, toolName: tool ? (tool.name + (tool.serialNumber ? ` (${tool.serialNumber})` : '')) : '' })); }} placeholder="Search tools..." searchPlaceholder="Search by name or serial number..." fetchOptions={fetchTools} /></div>
+            <div><Label>Urgency</Label><div className="flex gap-2 mt-1">{Object.entries(URGENCY_CONFIG).map(([key, cfg]) => (<button key={key} onClick={() => setEditForm(f => ({ ...f, urgency: key }))} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 text-xs font-medium transition-all ${editForm.urgency === key ? cfg.color + ' ring-2 ring-offset-1 ring-gray-300' : 'border-gray-200 text-muted-foreground hover:border-gray-300'}`}><span className={`h-2 w-2 rounded-full ${cfg.dotColor}`} />{cfg.label}</button>))}</div></div>
+            <div><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label><Textarea value={editForm.reason} onChange={(e) => setEditForm({ ...editForm, reason: e.target.value })} placeholder="Why is this tool needed?" rows={3} /></div>
+            <div><Label>Notes</Label><Textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Additional information..." rows={2} /></div>
+          </div>
+          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={handleEdit} disabled={submitting} className="gap-2"><Send className="h-4 w-4" /> Save Changes</Button></div>
+        
+      </ResponsiveDialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Tool Request</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this tool request for "{detailItem?.toolName}"? This action cannot be undone. The tool will be released back to available if it was reserved.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={submitting} className="gap-2"><Trash2 className="h-4 w-4" /> Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1344,6 +1446,7 @@ export function RepairToolTransfersPage() {
               <SheetTitle className="flex items-center gap-2"><ArrowRightLeft className="h-5 w-5 text-teal-600" /> Transfer: {detailItem.tool?.name}</SheetTitle>
               <SheetDescription>{detailItem.tool?.toolCode || ''}</SheetDescription>
             </SheetHeader>
+            <div className="px-4 pb-4">
             <Tabs defaultValue="details">
               <TabsList className="w-full"><TabsTrigger value="details" className="flex-1">Details</TabsTrigger><TabsTrigger value="timeline" className="flex-1">Timeline</TabsTrigger></TabsList>
               <TabsContent value="details" className="mt-4 space-y-4">
@@ -1399,6 +1502,7 @@ export function RepairToolTransfersPage() {
                 ].filter(e => e.date || e.status === 'active')} />
               </TabsContent>
             </Tabs>
+            </div>
           </>)}
         </SheetContent>
       </Sheet>
@@ -2890,6 +2994,7 @@ export function SparePartReturnsPage() {
                 <SheetTitle className="flex items-center gap-2"><RefreshCw className="h-5 w-5 text-teal-600" /> {detailItem.returnNumber}</SheetTitle>
                 <SheetDescription>{detailItem.itemName}</SheetDescription>
               </SheetHeader>
+              <div className="px-4 pb-4">
               <Tabs defaultValue="details">
                 <TabsList className="w-full"><TabsTrigger value="details" className="flex-1">Details</TabsTrigger><TabsTrigger value="timeline" className="flex-1">Timeline</TabsTrigger></TabsList>
                 <TabsContent value="details" className="mt-4 space-y-4">
@@ -2935,6 +3040,7 @@ export function SparePartReturnsPage() {
                   ].filter(e => e.date)} />
                 </TabsContent>
               </Tabs>
+              </div>
             </>
           )}
         </SheetContent>
@@ -3255,6 +3361,7 @@ export function DamagedToolReportsPage() {
                 <SheetTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-red-600" /> {detailItem.reportNumber}</SheetTitle>
                 <SheetDescription>{detailItem.tool?.name} — {detailItem.tool?.toolCode}</SheetDescription>
               </SheetHeader>
+              <div className="px-4 pb-4">
               <Tabs defaultValue="details">
                 <TabsList className="w-full"><TabsTrigger value="details" className="flex-1">Details</TabsTrigger><TabsTrigger value="timeline" className="flex-1">Timeline</TabsTrigger></TabsList>
                 <TabsContent value="details" className="mt-4 space-y-4">
@@ -3286,6 +3393,7 @@ export function DamagedToolReportsPage() {
                   ].filter(e => e.date)} />
                 </TabsContent>
               </Tabs>
+              </div>
             </>
           )}
         </SheetContent>
