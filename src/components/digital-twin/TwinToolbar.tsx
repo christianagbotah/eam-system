@@ -62,6 +62,8 @@ export interface TwinToolbarProps {
   onToggleFullscreen?: () => void;
   /** Available camera presets */
   cameraPresets?: { name: string; label: string }[];
+  /** Whether the left scene tree panel is open (shifts toolbar right) */
+  isTreeOpen?: boolean;
 }
 
 // ============================================================================
@@ -295,6 +297,7 @@ export function TwinToolbar({
   isFullscreen = false,
   onToggleFullscreen,
   cameraPresets,
+  isTreeOpen = false,
 }: TwinToolbarProps) {
   const explodeMode = useDigitalTwinStore(s => s.explodeMode);
   const sectionMode = useDigitalTwinStore(s => s.sectionMode);
@@ -324,7 +327,9 @@ export function TwinToolbar({
   }, [isolationAssetId, isolateAsset]);
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30">
+    <div
+      className={`absolute top-3 z-30 transition-all duration-300 ${isTreeOpen ? 'left-[calc(50%+140px)]' : 'left-1/2'} -translate-x-1/2`}
+    >
       <div
         className="flex items-center gap-0.5 px-2 py-1.5 rounded-xl shadow-2xl"
         style={{

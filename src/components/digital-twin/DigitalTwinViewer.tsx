@@ -736,6 +736,7 @@ export function DigitalTwinViewer({
           onScreenshot={handleScreenshot}
           isFullscreen={isFullscreen}
           onToggleFullscreen={handleToggleFullscreen}
+          isTreeOpen={isTreeOpen}
         />
       )}
 

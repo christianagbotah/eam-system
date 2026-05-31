@@ -1499,7 +1499,7 @@ function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId:
   }
   return (
     <ViewerErrorBoundary>
-      <Component />
+      <Component height="100%" />
     </ViewerErrorBoundary>
   );
 }
@@ -1753,7 +1753,7 @@ export function DigitalTwinMainPage() {
               {selectedTwin.healthScore}% Health
             </Badge>
           </div>
-          <div className="relative" style={{ height: 'calc(100vh - 160px)' }}>
+          <div className="relative overflow-hidden" style={{ height: 'calc(100vh - 160px)' }}>
             <ViewerLoader assetId={selectedTwin.asset?.id} twinId={selectedTwin.id} twinName={selectedTwin.name} />
           </div>
         </div>
