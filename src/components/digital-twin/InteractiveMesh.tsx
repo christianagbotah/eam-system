@@ -5,6 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
+import { useStoreSelector } from '@/hooks/useDigitalTwin';
 
 // ============================================================================
 // Types
@@ -78,16 +79,15 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
   const emissiveIntensityVelocity = useRef(0);
   const outlineOpacityVelocity = useRef(0);
 
-  // Store bindings
-  const selectedMeshName = useDigitalTwinStore((s) => s.selectedMeshName);
-  const hoveredMeshName = useDigitalTwinStore((s) => s.hoveredMeshName);
-  const selectMesh = useDigitalTwinStore((s) => s.selectMesh);
-  const hoverMesh = useDigitalTwinStore((s) => s.hoverMesh);
-  const iotOverlayEnabled = useDigitalTwinStore((s) => s.iotOverlayEnabled);
-  const iotHealthMap = useDigitalTwinStore((s) => s.iotHealthMap);
-  const liveReadings = useDigitalTwinStore((s) => s.liveReadings);
-  const isolationAssetId = useDigitalTwinStore((s) => s.isolationAssetId);
-  const isolateAsset = useDigitalTwinStore((s) => s.isolateAsset);
+  // useStoreSelector: Safe alternative to useDigitalTwinStore() inside R3F Canvas.
+  // Avoids useSyncExternalStore cross-reconciler cascading (Error #185).
+  // Action functions (selectMesh, hoverMesh, isolateAsset) use getState() at call time.
+  const selectedMeshName = useStoreSelector((s) => s.selectedMeshName);
+  const hoveredMeshName = useStoreSelector((s) => s.hoveredMeshName);
+  const iotOverlayEnabled = useStoreSelector((s) => s.iotOverlayEnabled);
+  const iotHealthMap = useStoreSelector((s) => s.iotHealthMap);
+  const liveReadings = useStoreSelector((s) => s.liveReadings);
+  const isolationAssetId = useStoreSelector((s) => s.isolationAssetId);
 
   // Outline geometry for selection / hover
   const [lineSegmentsObj, setLineSegmentsObj] = useState<
@@ -169,9 +169,9 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
       // Defer Zustand setState via setTimeout(0) to prevent Error #185.
       // R3F pointer events can fire during React's concurrent render phase,
       // and Zustand set() bypasses React's scheduler (not wrapped by startTransition).
-      setTimeout(() => selectMesh(binding.meshName, binding.assetId), 0);
+      setTimeout(() => useDigitalTwinStore.getState().selectMesh(binding.meshName, binding.assetId), 0);
     },
-    [isClickable, selectMesh, binding.meshName, binding.assetId],
+    [isClickable, binding.meshName, binding.assetId],
   );
 
   const handleDoubleClick = useCallback(
@@ -181,13 +181,13 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
       // Defer Zustand setState via setTimeout(0) — see handleClick for rationale.
       setTimeout(() => {
         if (isolationAssetId === binding.assetId) {
-          isolateAsset(null);
+          useDigitalTwinStore.getState().isolateAsset(null);
         } else {
-          isolateAsset(binding.assetId);
+          useDigitalTwinStore.getState().isolateAsset(binding.assetId);
         }
       }, 0);
     },
-    [isClickable, binding.assetId, isolationAssetId, isolateAsset],
+    [isClickable, binding.assetId, isolationAssetId],
   );
 
   const handlePointerOver = useCallback(
@@ -196,7 +196,7 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
       setHovered(true);
       setIsTooltipVisible(true);
       // Defer Zustand setState via setTimeout(0) — see handleClick for rationale.
-      setTimeout(() => hoverMesh(binding.meshName), 0);
+      setTimeout(() => useDigitalTwinStore.getState().hoverMesh(binding.meshName), 0);
       document.body.style.cursor = isClickable ? 'pointer' : 'default';
 
       // Start long-press timer for touch devices
@@ -209,7 +209,7 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
         );
       }, 500);
     },
-    [isClickable, hoverMesh, binding.meshName, binding.assetName, clearLongPress],
+    [isClickable, binding.meshName, binding.assetName, clearLongPress],
   );
 
   const handlePointerOut = useCallback(
@@ -218,11 +218,11 @@ export function InteractiveMesh({ mesh, binding }: InteractiveMeshProps) {
       setHovered(false);
       setIsTooltipVisible(false);
       // Defer Zustand setState via setTimeout(0) — see handleClick for rationale.
-      setTimeout(() => hoverMesh(null), 0);
+      setTimeout(() => useDigitalTwinStore.getState().hoverMesh(null), 0);
       document.body.style.cursor = 'default';
       clearLongPress();
     },
-    [hoverMesh, clearLongPress],
+    [clearLongPress],
   );
 
   const handleContextMenu = useCallback(

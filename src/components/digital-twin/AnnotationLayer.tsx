@@ -4,10 +4,10 @@ import { useRef, useState, useMemo, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Html, Line } from '@react-three/drei';
 import * as THREE from 'three';
-import {
-  useDigitalTwinStore,
-  type DigitalTwinAnnotation,
+import type {
+  DigitalTwinAnnotation,
 } from '@/stores/digitalTwinStore';
+import { useStoreSelector } from '@/hooks/useDigitalTwin';
 
 // ============================================================================
 // Types
@@ -226,8 +226,10 @@ const EMPTY_ANNOTATIONS: DigitalTwinAnnotation[] = [];
 export function AnnotationLayer({
   annotations: externalAnnotations,
 }: AnnotationLayerProps) {
-  const annotationsVisible = useDigitalTwinStore((s) => s.annotationsVisible);
-  const storeAnnotations = useDigitalTwinStore(
+  // useStoreSelector: Safe alternative to useDigitalTwinStore() inside R3F Canvas.
+  // Avoids useSyncExternalStore cross-reconciler cascading (Error #185).
+  const annotationsVisible = useStoreSelector((s) => s.annotationsVisible);
+  const storeAnnotations = useStoreSelector(
     (s) => s.currentScene?.annotations || EMPTY_ANNOTATIONS,
   );
 

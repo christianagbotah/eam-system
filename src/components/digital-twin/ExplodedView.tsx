@@ -4,7 +4,7 @@ import { useRef, useMemo, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
+import { useStoreSelector } from '@/hooks/useDigitalTwin';
 import type { AssetMeshBinding } from './InteractiveMesh';
 
 // ============================================================================
@@ -70,8 +70,10 @@ export function ExplodedView({
   animationSpeed = 0.05,
   showLabels = true,
 }: ExplodedViewProps) {
-  const explodeMode = useDigitalTwinStore((s) => s.explodeMode);
-  const explodeAssemblyId = useDigitalTwinStore((s) => s.explodeAssemblyId);
+  // useStoreSelector: Safe alternative to useDigitalTwinStore() inside R3F Canvas.
+  // Avoids useSyncExternalStore cross-reconciler cascading (Error #185).
+  const explodeMode = useStoreSelector((s) => s.explodeMode);
+  const explodeAssemblyId = useStoreSelector((s) => s.explodeAssemblyId);
 
   // Spring state for the overall explode progress
   const springRef = useRef<SpringState>({ current: 0, velocity: 0 });

@@ -20,3 +20,5 @@ export {
   useCameraControls,
   type UseCameraControlsReturn,
 } from './useCameraControls';
+
+export { useStoreSelector } from './useStoreSelector';

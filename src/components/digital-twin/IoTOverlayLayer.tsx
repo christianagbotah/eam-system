@@ -4,11 +4,11 @@ import { useRef, useMemo, useState, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
-import {
-  useDigitalTwinStore,
-  type MeshHealthEntry,
-  type LiveReading,
+import type {
+  MeshHealthEntry,
+  LiveReading,
 } from '@/stores/digitalTwinStore';
+import { useStoreSelector } from '@/hooks/useDigitalTwin';
 
 // ============================================================================
 // Types
@@ -257,10 +257,12 @@ export function IoTOverlayLayer({
   healthMapOverride,
   readingsOverride,
 }: IoTOverlayLayerProps) {
-  const iotOverlayEnabled = useDigitalTwinStore((s) => s.iotOverlayEnabled);
-  const storeHealthMap = useDigitalTwinStore((s) => s.iotHealthMap);
-  const storeLiveReadings = useDigitalTwinStore((s) => s.liveReadings);
-  const selectedMeshName = useDigitalTwinStore((s) => s.selectedMeshName);
+  // useStoreSelector: Safe alternative to useDigitalTwinStore() inside R3F Canvas.
+  // Avoids useSyncExternalStore cross-reconciler cascading (Error #185).
+  const iotOverlayEnabled = useStoreSelector((s) => s.iotOverlayEnabled);
+  const storeHealthMap = useStoreSelector((s) => s.iotHealthMap);
+  const storeLiveReadings = useStoreSelector((s) => s.liveReadings);
+  const selectedMeshName = useStoreSelector((s) => s.selectedMeshName);
 
   const healthMap = healthMapOverride ?? storeHealthMap;
   const liveReadings = readingsOverride ?? storeLiveReadings;

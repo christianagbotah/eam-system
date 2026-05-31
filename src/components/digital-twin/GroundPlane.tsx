@@ -4,7 +4,7 @@ import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Grid, ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
-import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
+import { useStoreSelector } from '@/hooks/useDigitalTwin';
 
 // ============================================================================
 // Types
@@ -102,7 +102,9 @@ export function GroundPlane({
   groundColor = '#0a0a12',
   groundOpacity = 0.4,
 }: GroundPlaneProps) {
-  const gridEnabled = useDigitalTwinStore((s) => s.currentScene !== null);
+  // useStoreSelector: Safe alternative to useDigitalTwinStore() inside R3F Canvas.
+  // Avoids useSyncExternalStore cross-reconciler cascading (Error #185).
+  const gridEnabled = useStoreSelector((s) => s.currentScene !== null);
 
   if (!gridEnabled) return null;
 

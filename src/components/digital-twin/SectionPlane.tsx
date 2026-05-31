@@ -5,6 +5,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useDigitalTwinStore, type SectionAxis } from '@/stores/digitalTwinStore';
+import { useStoreSelector } from '@/hooks/useDigitalTwin';
 
 // ============================================================================
 // Types
@@ -133,11 +134,12 @@ export function SectionPlane({
   planeColor = '#22d3ee',
   draggable = true,
 }: SectionPlaneProps) {
-  const sectionMode = useDigitalTwinStore((s) => s.sectionMode);
-  const sectionAxis = useDigitalTwinStore((s) => s.sectionAxis);
-  const sectionPosition = useDigitalTwinStore((s) => s.sectionPosition);
-  const setSectionPosition = useDigitalTwinStore((s) => s.setSectionPosition);
-  const setSectionAxis = useDigitalTwinStore((s) => s.setSectionAxis);
+  // useStoreSelector: Safe alternative to useDigitalTwinStore() inside R3F Canvas.
+  // Avoids useSyncExternalStore cross-reconciler cascading (Error #185).
+  // Action functions use getState() at call time — they are stable references.
+  const sectionMode = useStoreSelector((s) => s.sectionMode);
+  const sectionAxis = useStoreSelector((s) => s.sectionAxis);
+  const sectionPosition = useStoreSelector((s) => s.sectionPosition);
 
   const { scene } = useThree();
 
@@ -209,14 +211,14 @@ export function SectionPlane({
     });
   });
 
-  // Handle axis change
+  // Handle axis change — use getState() for actions (stable references, no subscription needed)
   const handleAxisChange = useCallback(
     (axis: SectionAxis) => {
       // Defer Zustand setState — this fires inside R3F Html overlay which
       // runs within the R3F reconciler context during concurrent rendering.
-      setTimeout(() => setSectionAxis(axis), 0);
+      setTimeout(() => useDigitalTwinStore.getState().setSectionAxis(axis), 0);
     },
-    [setSectionAxis],
+    [],
   );
 
   // Handle position change from drag
@@ -226,17 +228,18 @@ export function SectionPlane({
     if (planeRef.current) {
       const worldPos = new THREE.Vector3();
       planeRef.current.getWorldPosition(worldPos);
-      const normalizedPos = worldPos[sectionAxis] / (planeSize / 2);
+      const axis = sectionAxis; // capture current value from useStoreSelector
+      const normalizedPos = worldPos[axis] / (planeSize / 2);
       // CRITICAL: React.startTransition does NOT prevent Error #185 for Zustand
       // set() calls. Throttle store updates to ~100ms and defer with setTimeout
       // to ensure they fire outside any ongoing React render cycle.
       const now = Date.now();
       if (now - dragThrottleRef.current > 100) {
         dragThrottleRef.current = now;
-        setTimeout(() => setSectionPosition(normalizedPos), 0);
+        setTimeout(() => useDigitalTwinStore.getState().setSectionPosition(normalizedPos), 0);
       }
     }
-  }, [sectionAxis, planeSize, setSectionPosition]);
+  }, [sectionAxis, planeSize]);
 
   if (!sectionMode) {
     return null;
@@ -315,10 +318,8 @@ export function SectionPlane({
               value={sectionPosition}
               onChange={(e) => {
                 e.stopPropagation();
-                // Defer Zustand setState — this fires inside R3F's Html overlay
-                // (separate reconciler context) and can interleave with React's
-                // concurrent rendering, causing Error #185.
-                setTimeout(() => setSectionPosition(parseFloat(e.target.value)), 0);
+                // Defer Zustand setState — use getState() for action (stable reference).
+                setTimeout(() => useDigitalTwinStore.getState().setSectionPosition(parseFloat(e.target.value)), 0);
               }}
               className="w-24 h-1 accent-cyan-400"
             />

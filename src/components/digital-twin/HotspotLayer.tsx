@@ -8,6 +8,7 @@ import {
   useDigitalTwinStore,
   type DigitalTwinHotspot,
 } from '@/stores/digitalTwinStore';
+import { useStoreSelector } from '@/hooks/useDigitalTwin';
 
 // ============================================================================
 // Types
@@ -258,12 +259,14 @@ const EMPTY_HOTSPOTS: DigitalTwinHotspot[] = [];
 export function HotspotLayer({
   hotspots: externalHotspots,
 }: HotspotLayerProps) {
-  const hotspotsVisible = useDigitalTwinStore((s) => s.hotspotsVisible);
-  const storeHotspots = useDigitalTwinStore(
+  // useStoreSelector: Safe alternative to useDigitalTwinStore() inside R3F Canvas.
+  // Avoids useSyncExternalStore cross-reconciler cascading (Error #185).
+  // Action function selectMesh uses getState() at call time.
+  const hotspotsVisible = useStoreSelector((s) => s.hotspotsVisible);
+  const storeHotspots = useStoreSelector(
     (s) => s.currentScene?.hotspots || EMPTY_HOTSPOTS,
   );
-  const activeHotspotId = useDigitalTwinStore((s) => s.activeHotspotId);
-  const selectMesh = useDigitalTwinStore((s) => s.selectMesh);
+  const activeHotspotId = useStoreSelector((s) => s.activeHotspotId);
 
   const hotspots = externalHotspots ?? storeHotspots;
 
@@ -271,10 +274,10 @@ export function HotspotLayer({
     (id: string) => {
       const hotspot = hotspots.find((h) => h.id === id);
       if (hotspot?.meshName) {
-        selectMesh(hotspot.meshName);
+        useDigitalTwinStore.getState().selectMesh(hotspot.meshName);
       }
     },
-    [hotspots, selectMesh],
+    [hotspots],
   );
 
   if (!hotspotsVisible || hotspots.length === 0) return null;
