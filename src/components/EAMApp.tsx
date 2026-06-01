@@ -87,6 +87,7 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   'repairs-spare-part-returns': () => import('./modules/RepairsPages').then(m => m.SparePartReturnsPage),
   'repairs-damaged-tools': () => import('./modules/RepairsPages').then(m => m.DamagedToolReportsPage),
   'repairs-reports': () => import('./modules/RepairsPages').then(m => m.MaintenanceReportsPage),
+  'wo-reports': () => import('./modules/WOReportsPage').then(m => m.WOReportsPage),
   // IoT
   'iot-devices': () => import('./modules/IoTPages').then(m => m.IotDevicesPage),
   'iot-monitoring': () => import('./modules/IoTPages').then(m => m.IotMonitoringPage),

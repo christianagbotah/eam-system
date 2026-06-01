@@ -7,6 +7,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import * as DismissableLayerPrimitive from '@radix-ui/react-dismissable-layer';
+
+// Re-export DismissableLayer.Branch so Popovers nested inside Dialogs/Sheets
+// register as "branches" — preventing accidental dialog dismissal on item click.
+const DismissableLayerBranch = DismissableLayerPrimitive.Branch;
 
 // ============================================================================
 // SEARCHABLE SELECT — Combobox pattern (Command + Popover)
@@ -126,7 +131,9 @@ export function SearchableSelect({
         className="w-[--radix-popover-trigger-width] p-0"
         align="start"
         onWheel={handleWheel}
+        onOpenAutoFocus={(e: React.FocusEvent) => e.preventDefault()}
       >
+        <DismissableLayerBranch>
         <Command shouldFilter={false} loop>
           <CommandInput
             placeholder={searchPlaceholder}
@@ -175,6 +182,7 @@ export function SearchableSelect({
             })}
           </CommandList>
         </Command>
+        </DismissableLayerBranch>
       </PopoverContent>
     </Popover>
   );
@@ -337,14 +345,16 @@ export function MultiSearchableSelect({
               <span>{placeholder}</span>
             )}
           </div>
-          <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0 ml-1" />
+          <ChevronsUpDown className="h-4 w-4 opacity-50 shrink-0" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
         className="w-[--radix-popover-trigger-width] p-0"
         align="start"
         onWheel={handleWheel}
+        onOpenAutoFocus={(e: React.FocusEvent) => e.preventDefault()}
       >
+        <DismissableLayerBranch>
         <Command shouldFilter={false} loop>
           <CommandInput
             placeholder={searchPlaceholder}
@@ -376,6 +386,7 @@ export function MultiSearchableSelect({
             ))}
           </CommandList>
         </Command>
+        </DismissableLayerBranch>
       </PopoverContent>
     </Popover>
   );

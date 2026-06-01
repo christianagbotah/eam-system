@@ -130,8 +130,8 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!session.roles.includes('admin')) {
-      return NextResponse.json({ success: false, error: 'Admin access required' }, { status: 403 });
+    if (!hasPermission(session, 'inventory.delete') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const { id } = await params;

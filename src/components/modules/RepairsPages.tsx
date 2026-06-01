@@ -36,7 +36,7 @@ import {
   Search, Filter, Eye, RotateCcw, Send, ShieldCheck, Warehouse,
   Timer, Activity, Ban, ChevronDown, ClipboardList, BarChart3,
   ArrowLeftRight, PackageCheck, PackageOpen, User, CircleDot,
-  Handshake, Truck, DollarSign, RefreshCw, X, Info,
+  Handshake, Truck, DollarSign, RefreshCw, X, Info, Pencil, Trash2,
 } from 'lucide-react';
 import { EmptyState, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
@@ -323,13 +323,13 @@ const TRANSFER_STAGES: PipelineStage[] = [
 function isSupervisorOrAdmin(user: any): boolean {
   if (!user?.roles) return false;
   const slugs = (user.roles || []).map((r: any) => r.slug);
-  return slugs.includes('admin') || slugs.includes('store_keeper') || slugs.includes('store_manager');
+  return slugs.includes('admin') || slugs.includes('maintenance_supervisor') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager');
 }
 
 function isStoreOrAdmin(user: any): boolean {
   if (!user?.roles) return false;
   const slugs = (user.roles || []).map((r: any) => r.slug);
-  return slugs.includes('admin') || slugs.includes('store_keeper') || slugs.includes('store_manager');
+  return slugs.includes('admin') || slugs.includes('store_keeper') || slugs.includes('inventory_manager') || slugs.includes('tools_shop_attendant');
 }
 
 // ============================================================================
@@ -671,6 +671,7 @@ export function RepairMaterialRequestsPage() {
                 <SheetTitle className="flex items-center gap-2"><Package className="h-5 w-5 text-amber-600" /> {detailItem.itemName}</SheetTitle>
                 <SheetDescription>Material Request — {detailItem.workOrder?.woNumber}</SheetDescription>
               </SheetHeader>
+              <div className="px-4 pb-4">
               <Tabs defaultValue="details">
                 <TabsList className="w-full"><TabsTrigger value="details" className="flex-1">Details</TabsTrigger><TabsTrigger value="timeline" className="flex-1">Timeline</TabsTrigger></TabsList>
                 <TabsContent value="details" className="mt-4 space-y-4">
@@ -761,6 +762,7 @@ export function RepairMaterialRequestsPage() {
                   ].filter(e => e.date || e.status === 'active' || e.notes)} />
                 </TabsContent>
               </Tabs>
+              </div>
             </>
           )}
         </SheetContent>
@@ -772,7 +774,7 @@ export function RepairMaterialRequestsPage() {
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Material Request</h2><p className="text-sm text-muted-foreground">Request materials/spare parts for a work order</p></div>
           <div className="space-y-4">
             <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v }))} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
-            <div><Label>Item Name *</Label><AsyncSearchableSelect value={createForm.itemId} onValueChange={(v) => { const item = inventoryItemsCache.find((i: any) => i.id === v); setCreateForm(f => ({ ...f, itemId: v, itemName: item ? (item.name + (item.itemCode ? ` (${item.itemCode})` : '')) : '' })); }} placeholder="Search inventory items..." searchPlaceholder="Search by name or code..." fetchOptions={fetchInventoryItems} /></div>
+            <div><Label>Item Name *</Label><AsyncSearchableSelect value={createForm.itemId} onValueChange={(v) => { const item = inventoryItemsCache.current.find((i: any) => i.id === v); setCreateForm(f => ({ ...f, itemId: v, itemName: item ? (item.name + (item.itemCode ? ` (${item.itemCode})` : '')) : '' })); }} placeholder="Search inventory items..." searchPlaceholder="Search by name or code..." fetchOptions={fetchInventoryItems} /></div>
             <div className="grid grid-cols-3 gap-3">
               <div><Label>Quantity *</Label><Input type="number" value={createForm.quantityRequested} onChange={(e) => setCreateForm({ ...createForm, quantityRequested: e.target.value })} /></div>
               <div><Label>Unit</Label><Select value={createForm.unit} onValueChange={(v) => setCreateForm({ ...createForm, unit: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="each">Each</SelectItem><SelectItem value="kg">Kg</SelectItem><SelectItem value="meter">Meter</SelectItem><SelectItem value="set">Set</SelectItem><SelectItem value="liter">Liter</SelectItem></SelectContent></Select></div>
@@ -851,8 +853,17 @@ export function RepairMaterialRequestsPage() {
 }
 
 // ============================================================================
-// PAGE 2: REPAIR TOOL REQUESTS
+// PAGE 2: REPAIR TOOL REQUESTS (Multi-tool with quantity tracking)
 // ============================================================================
+
+type ToolItemRow = {
+  toolId: string;
+  toolName: string;
+  toolCode: string;
+  category: string;
+  quantityRequested: number;
+  availableQty: number;
+};
 
 export function RepairToolRequestsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
@@ -869,11 +880,17 @@ export function RepairToolRequestsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<{ id: string; action: string } | null>(null);
-  const [conditionOpen, setConditionOpen] = useState(false);
-  const [conditionTarget, setConditionTarget] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [workOrderIdFilter, setWorkOrderIdFilter] = useState('');
   const [pagination, setPagination] = useState<any>(null);
+
+  // Issue / Return dialog state
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [issueForm, setIssueForm] = useState<any[]>([]);
+  const [returnItemsOpen, setReturnItemsOpen] = useState(false);
+  const [returnItemsForm, setReturnItemsForm] = useState<any[]>([]);
 
   // Cache for tool lookup (used by AsyncSearchableSelect)
   const toolsCache = useRef<any[]>([]);
@@ -881,12 +898,29 @@ export function RepairToolRequestsPage() {
     const res = await api.get('/api/tools?limit=500');
     if (res.success && Array.isArray(res.data)) {
       toolsCache.current = res.data;
-      return res.data.map((t: any) => ({ value: t.id, label: t.name + (t.serialNumber ? ` (${t.serialNumber})` : '') }));
+      return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}${t.serialNumber ? ` [${t.serialNumber}]` : ''}` }));
     }
     return [];
   }, []);
 
-  const [createForm, setCreateForm] = useState({ workOrderId: '', toolId: '', toolName: '', reason: '', notes: '', urgency: 'medium' });
+  // ── Create form state (multi-tool) ──
+  const [createForm, setCreateForm] = useState({
+    workOrderId: '',
+    reason: '',
+    notes: '',
+    urgency: 'medium',
+    items: [] as ToolItemRow[],
+  });
+
+  // ── Edit form state (multi-tool) ──
+  const [editForm, setEditForm] = useState({
+    reason: '',
+    notes: '',
+    urgency: 'medium',
+    items: [] as ToolItemRow[],
+  });
+
+  const emptyItemRow = (): ToolItemRow => ({ toolId: '', toolName: '', toolCode: '', category: '', quantityRequested: 1, availableQty: 999 });
 
   useEffect(() => {
     if (pageParams?.workOrderId) {
@@ -919,28 +953,367 @@ export function RepairToolRequestsPage() {
 
   useEffect(() => { fetchRequests(); }, [fetchRequests]);
 
+  // ── Helper: get display items for a request (handles virtual items for old data) ──
+  const getRequestItems = (r: any) => {
+    if (r.items && r.items.length > 0) return r.items;
+    if (r._virtualItem) return [r._virtualItem];
+    return [];
+  };
+
+  const getToolNamesSummary = (r: any) => {
+    const items = getRequestItems(r);
+    if (items.length === 0) return r.toolName || '—';
+    const names = items.map((i: any) => i.toolName).filter(Boolean);
+    if (names.length <= 2) return names.join(', ');
+    return `${names.length} tools: ${names.slice(0, 2).join(', ')}, +${names.length - 2} more`;
+  };
+
+  const getTotalRequested = (r: any) => {
+    const items = getRequestItems(r);
+    return items.reduce((sum: number, i: any) => sum + (i.quantityRequested || 1), 0);
+  };
+
+  const getFulfillmentRatio = (r: any) => {
+    const items = getRequestItems(r);
+    const totalRequested = items.reduce((sum: number, i: any) => sum + (i.quantityRequested || 1), 0);
+    const totalIssued = items.reduce((sum: number, i: any) => sum + (i.quantityIssued || 0), 0);
+    return { issued: totalIssued, requested: totalRequested };
+  };
+
+  // ── Create handlers ──
+  const addCreateItem = () => {
+    setCreateForm(f => ({ ...f, items: [...f.items, emptyItemRow()] }));
+  };
+
+  const removeCreateItem = (idx: number) => {
+    setCreateForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
+  };
+
+  const updateCreateItem = (idx: number, patch: Partial<ToolItemRow>) => {
+    setCreateForm(f => ({
+      ...f,
+      items: f.items.map((item, i) => i === idx ? { ...item, ...patch } : item),
+    }));
+  };
+
   const handleCreate = async () => {
-    if (!createForm.workOrderId || !createForm.toolName || !createForm.reason || createForm.reason.length < 5) {
-      toast.error('Work Order, Tool Name, and Reason (min 5 chars) are required'); return;
+    if (!createForm.workOrderId || !createForm.reason || createForm.reason.length < 5) {
+      toast.error('Work Order and Reason (min 5 chars) are required'); return;
+    }
+    const validItems = createForm.items.filter(i => i.toolName.trim());
+    if (validItems.length === 0) {
+      toast.error('At least one tool item is required'); return;
     }
     setSubmitting(true);
-    const res = await api.post('/api/repairs/tool-requests', { ...createForm, toolId: createForm.toolId || undefined });
-    if (res.success) { toast.success('Tool request created'); setCreateOpen(false); setCreateForm({ workOrderId: '', toolId: '', toolName: '', reason: '', notes: '', urgency: 'medium' }); fetchRequests(); }
-    else toast.error(res.error || 'Failed');
+    const res = await api.post('/api/repairs/tool-requests', {
+      workOrderId: createForm.workOrderId,
+      items: validItems.map(i => ({
+        toolId: i.toolId || undefined,
+        toolName: i.toolName,
+        toolCode: i.toolCode || undefined,
+        category: i.category || undefined,
+        quantityRequested: i.quantityRequested,
+      })),
+      reason: createForm.reason,
+      notes: createForm.notes || undefined,
+      urgency: createForm.urgency,
+    });
+    if (res.success) {
+      toast.success('Tool request created');
+      if (res.warnings) res.warnings.forEach((w: string) => toast.warning(w));
+      setCreateOpen(false);
+      setCreateForm({ workOrderId: '', reason: '', notes: '', urgency: 'medium', items: [] });
+      fetchRequests();
+    } else {
+      toast.error(res.error || 'Failed');
+    }
     setSubmitting(false);
   };
 
+  // ── Action handler ──
   const handleAction = async (id: string, action: string, extra?: Record<string, any>) => {
     setSubmitting(true);
     const res = await api.post(`/api/repairs/tool-requests/${id}`, { action, ...extra });
-    if (res.success) { toast.success('Action completed'); fetchRequests(); if (detailOpen && detailItem?.id === id) setDetailOpen(false); }
-    else toast.error(res.error || 'Failed');
+    if (res.success) {
+      toast.success('Action completed');
+      if (res.warnings) res.warnings.forEach((w: string) => toast.warning(w));
+      fetchRequests();
+      // Re-fetch detail if open
+      if (detailOpen && detailItem?.id === id) {
+        const detailRes = await api.get(`/api/repairs/tool-requests/${id}`);
+        if (detailRes.success) setDetailItem(detailRes.data);
+        else setDetailOpen(false);
+      }
+    } else {
+      toast.error(res.error || 'Failed');
+    }
+    setSubmitting(false);
+  };
+
+  // ── Edit form ──
+  const openEditForm = async () => {
+    if (!detailItem) return;
+    // Fetch full detail to get items
+    let fullDetail = detailItem;
+    if (!detailItem.items || detailItem.items.length === 0) {
+      const res = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
+      if (res.success) fullDetail = res.data;
+    }
+
+    const existingItems = getRequestItems(fullDetail);
+    const editItems: ToolItemRow[] = existingItems.length > 0
+      ? existingItems.map((i: any) => ({
+          toolId: i.toolId || '',
+          toolName: i.toolName || '',
+          toolCode: i.toolCode || '',
+          category: i.category || '',
+          quantityRequested: i.quantityRequested || 1,
+          availableQty: i.tool?.quantity ?? 999,
+        }))
+      : [emptyItemRow()];
+
+    setEditForm({
+      reason: fullDetail.reason || '',
+      notes: fullDetail.notes || '',
+      urgency: fullDetail.urgency || 'medium',
+      items: editItems,
+    });
+    setEditOpen(true);
+  };
+
+  const addEditItem = () => {
+    setEditForm(f => ({ ...f, items: [...f.items, emptyItemRow()] }));
+  };
+
+  const removeEditItem = (idx: number) => {
+    setEditForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
+  };
+
+  const updateEditItem = (idx: number, patch: Partial<ToolItemRow>) => {
+    setEditForm(f => ({
+      ...f,
+      items: f.items.map((item, i) => i === idx ? { ...item, ...patch } : item),
+    }));
+  };
+
+  const handleEdit = async () => {
+    if (!editForm.reason || editForm.reason.length < 5) {
+      toast.error('Reason (min 5 chars) is required');
+      return;
+    }
+    const validItems = editForm.items.filter(i => i.toolName.trim());
+    if (validItems.length === 0) {
+      toast.error('At least one tool item is required');
+      return;
+    }
+    setSubmitting(true);
+    const res = await api.put(`/api/repairs/tool-requests/${detailItem.id}`, {
+      reason: editForm.reason,
+      notes: editForm.notes || undefined,
+      urgency: editForm.urgency,
+      items: validItems.map(i => ({
+        toolId: i.toolId || undefined,
+        toolName: i.toolName,
+        toolCode: i.toolCode || undefined,
+        category: i.category || undefined,
+        quantityRequested: i.quantityRequested,
+      })),
+    });
+    if (res.success) {
+      toast.success('Tool request updated');
+      if (res.warnings) res.warnings.forEach((w: string) => toast.warning(w));
+      setEditOpen(false);
+      const detailRes = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
+      if (detailRes.success) setDetailItem(detailRes.data);
+      fetchRequests();
+    } else {
+      toast.error(res.error || 'Failed to update');
+    }
+    setSubmitting(false);
+  };
+
+  const handleDelete = async () => {
+    setSubmitting(true);
+    const res = await api.delete(`/api/repairs/tool-requests/${detailItem.id}`);
+    if (res.success) {
+      toast.success('Tool request deleted');
+      setDeleteOpen(false);
+      setDetailOpen(false);
+      setDetailItem(null);
+      fetchRequests();
+    } else {
+      toast.error(res.error || 'Failed to delete');
+    }
+    setSubmitting(false);
+  };
+
+  // ── Issue dialog ──
+  const openIssueDialog = async () => {
+    if (!detailItem) return;
+    let fullDetail = detailItem;
+    if (!detailItem.items || detailItem.items.length === 0) {
+      const res = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
+      if (res.success) fullDetail = res.data;
+    }
+    const items = getRequestItems(fullDetail);
+    const form = items.map((i: any) => ({
+      itemId: i.id,
+      toolName: i.toolName || '',
+      toolCode: i.toolCode || '',
+      quantityRequested: i.quantityRequested || 1,
+      quantityApproved: i.quantityApproved ?? i.quantityRequested ?? 1,
+      quantityIssued: i.quantityApproved ?? i.quantityRequested ?? 1,
+      availableQty: i.tool?.quantity ?? 0,
+      issueNotes: '',
+    }));
+    setIssueForm(form);
+    setIssueOpen(true);
+  };
+
+  const handleIssue = async () => {
+    if (!detailItem) return;
+    const issuedItems = issueForm.map(f => ({
+      itemId: f.itemId,
+      quantityIssued: Math.max(0, Math.min(f.quantityIssued, f.availableQty)),
+      issueNotes: f.issueNotes || undefined,
+    }));
+    setSubmitting(true);
+    const res = await api.post(`/api/repairs/tool-requests/${detailItem.id}`, {
+      action: 'issue',
+      issuedItems,
+    });
+    if (res.success) {
+      toast.success('Tools issued successfully');
+      if (res.warnings) res.warnings.forEach((w: string) => toast.warning(w));
+      setIssueOpen(false);
+      const detailRes = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
+      if (detailRes.success) setDetailItem(detailRes.data);
+      fetchRequests();
+    } else {
+      toast.error(res.error || 'Failed to issue');
+    }
+    setSubmitting(false);
+  };
+
+  // ── Return dialog ──
+  const openReturnDialog = async () => {
+    if (!detailItem) return;
+    let fullDetail = detailItem;
+    if (!detailItem.items || detailItem.items.length === 0) {
+      const res = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
+      if (res.success) fullDetail = res.data;
+    }
+    const items = getRequestItems(fullDetail);
+    const form = items.map((i: any) => ({
+      itemId: i.id,
+      toolName: i.toolName || '',
+      toolCode: i.toolCode || '',
+      quantityIssued: i.quantityIssued || 0,
+      quantityReturned: i.quantityIssued || 0,
+      conditionAtReturn: i.conditionAtIssue || 'good',
+    }));
+    setReturnItemsForm(form);
+    setReturnItemsOpen(true);
+  };
+
+  const handleReturn = async () => {
+    if (!detailItem) return;
+    const returnedItems = returnItemsForm.map(f => ({
+      itemId: f.itemId,
+      quantityReturned: Math.max(0, Math.min(f.quantityReturned, f.quantityIssued)),
+      conditionAtReturn: f.conditionAtReturn,
+    }));
+    setSubmitting(true);
+    const res = await api.post(`/api/repairs/tool-requests/${detailItem.id}`, {
+      action: 'return',
+      returnedItems,
+    });
+    if (res.success) {
+      toast.success('Tools returned successfully');
+      if (res.warnings) res.warnings.forEach((w: string) => toast.warning(w));
+      setReturnItemsOpen(false);
+      const detailRes = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
+      if (detailRes.success) setDetailItem(detailRes.data);
+      fetchRequests();
+    } else {
+      toast.error(res.error || 'Failed to return');
+    }
     setSubmitting(false);
   };
 
   const filtered = useMemo(() => requests.filter(r =>
-    !searchText || r.toolName?.toLowerCase().includes(searchText.toLowerCase()) || r.workOrder?.woNumber?.toLowerCase().includes(searchText.toLowerCase())
+    !searchText || r.toolName?.toLowerCase().includes(searchText.toLowerCase()) || r.workOrder?.woNumber?.toLowerCase().includes(searchText.toLowerCase()) || r.requestNumber?.toLowerCase().includes(searchText.toLowerCase())
   ), [requests, searchText]);
+
+  // ── Availability badge helper ──
+  const AvailabilityBadge = ({ status }: { status?: string | null }) => {
+    if (!status || status === 'available') return <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">Available</Badge>;
+    if (status === 'limited') return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-xs">Limited</Badge>;
+    return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-xs">Unavailable</Badge>;
+  };
+
+  // ── Tool item selector row (used in create & edit forms) ──
+  const ToolItemRowEditor = ({ item, index, onUpdate, onRemove, canRemove }: {
+    item: ToolItemRow; index: number;
+    onUpdate: (idx: number, patch: Partial<ToolItemRow>) => void;
+    onRemove: (idx: number) => void;
+    canRemove: boolean;
+  }) => (
+    <div className="flex flex-col sm:flex-row gap-2 p-3 bg-muted/30 rounded-lg border">
+      <div className="flex-1 min-w-0">
+        <AsyncSearchableSelect
+          value={item.toolId}
+          onValueChange={(v) => {
+            const tool = toolsCache.current.find((t: any) => t.id === v);
+            if (tool) {
+              onUpdate(index, {
+                toolId: v,
+                toolName: tool.name,
+                toolCode: tool.toolCode || '',
+                category: tool.category || '',
+                availableQty: tool.quantity ?? 0,
+              });
+            }
+          }}
+          placeholder="Search tools..."
+          searchPlaceholder="Search by name or code..."
+          fetchOptions={fetchTools}
+        />
+      </div>
+      <div className="w-full sm:w-20">
+        <Label className="text-xs text-muted-foreground">Qty</Label>
+        <Input type="number" min={1} max={item.availableQty || 999} value={item.quantityRequested}
+          onChange={e => onUpdate(index, { quantityRequested: Math.max(1, parseInt(e.target.value) || 1) })}
+          className="h-9 mt-0.5" />
+      </div>
+      <div className="flex items-end gap-1">
+        {item.toolId && (
+          <div className="flex items-center gap-1 pb-1">
+            {item.availableQty > 0 && item.availableQty < item.quantityRequested && (
+              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] h-5">
+                {item.availableQty} in stock
+              </Badge>
+            )}
+            {item.availableQty <= 0 && (
+              <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-[10px] h-5">
+                Out of stock
+              </Badge>
+            )}
+            {item.availableQty >= item.quantityRequested && item.toolId && (
+              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] h-5">
+                In stock
+              </Badge>
+            )}
+          </div>
+        )}
+        {canRemove && (
+          <Button variant="ghost" size="icon" className="h-9 w-9 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => onRemove(index)}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="page-content">
@@ -956,7 +1329,7 @@ export function RepairToolRequestsPage() {
             <p className="text-sm text-muted-foreground">Request and track tools for repair work orders</p>
           </div>
         </div>
-        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => { setCreateForm({ workOrderId: '', reason: '', notes: '', urgency: 'medium', items: [emptyItemRow()] }); setCreateOpen(true); }} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -971,7 +1344,7 @@ export function RepairToolRequestsPage() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search tools or WO#..." value={searchText} onChange={(e) => setSearchText(e.target.value)} className="pl-9" />
+          <Input placeholder="Search tools, WO#, or request#..." value={searchText} onChange={(e) => setSearchText(e.target.value)} className="pl-9" />
         </div>
         <Select value={filterStatus} onValueChange={setFilterStatus}>
           <SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger>
@@ -989,69 +1362,92 @@ export function RepairToolRequestsPage() {
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : filtered.length === 0 ? (
             <EmptyState icon={Wrench} title="No tool requests found" description="Create a new tool request to get started">
-              {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+              {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => { setCreateForm({ workOrderId: '', reason: '', notes: '', urgency: 'medium', items: [emptyItemRow()] }); setCreateOpen(true); }} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader><TableRow className="bg-muted/50">
-                  <TableHead className="w-[200px]">Tool</TableHead>
-                  <TableHead className="w-[90px]">WO #</TableHead>
-                  <TableHead className="w-[70px]">Urgency</TableHead>
-                  <TableHead className="w-[170px]">Status</TableHead>
-                  <TableHead className="w-[130px]">Requested By</TableHead>
-                  <TableHead className="w-[110px]">Time</TableHead>
-                  <TableHead className="w-[130px] text-right">Actions</TableHead>
+                  <TableHead className="w-[120px]">Request #</TableHead>
+                  <TableHead className="min-w-[180px]">Tools</TableHead>
+                  <TableHead className="w-[80px]">WO #</TableHead>
+                  <TableHead className="w-[70px]">Total Qty</TableHead>
+                  <TableHead className="w-[100px]">Fulfillment</TableHead>
+                  <TableHead className="w-[150px]">Status</TableHead>
+                  <TableHead className="w-[110px]">Age</TableHead>
+                  <TableHead className="w-[100px] text-right">Actions</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
-                  {filtered.map((r, idx) => (
+                  {filtered.map((r, idx) => {
+                    const ratio = getFulfillmentRatio(r);
+                    const pct = ratio.requested > 0 ? Math.round((ratio.issued / ratio.requested) * 100) : 0;
+                    return (
                     <TableRow key={r.id} className={`cursor-pointer hover:bg-muted/30 transition-colors ${idx % 2 === 0 ? '' : 'bg-muted/20'}`}
                       onClick={() => { setDetailItem(r); setDetailOpen(true); }}>
                       <TableCell>
-                        <div className="font-medium text-sm">{r.toolName}</div>
-                        <div className="text-xs text-muted-foreground">{r.tool?.toolCode || ''}{r.tool?.category ? ` · ${r.tool.category}` : ''}</div>
+                        <div className="font-mono text-xs font-medium">{r.requestNumber || '—'}</div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium text-sm truncate max-w-[220px]">{getToolNamesSummary(r)}</div>
+                        <div className="text-xs text-muted-foreground">{getRequestItems(r).length} item{getRequestItems(r).length !== 1 ? 's' : ''}</div>
                       </TableCell>
                       <TableCell><Badge variant="outline" className="font-mono text-xs">{r.workOrder?.woNumber}</Badge></TableCell>
-                      <TableCell>{r.urgency && <UrgencyBadge urgency={r.urgency} />}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1">
-                          <StatusBadge status={r.status} />
-                          <MiniPipeline stages={TOOL_STAGES} currentStatus={r.status} rejected={r.status === 'rejected'} />
-                        </div>
+                      <TableCell className="text-center">
+                        <span className="text-sm font-medium">{ratio.requested}</span>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <AvatarPlaceholder name={r.requestedBy?.fullName || ''} />
-                          <span className="text-sm truncate max-w-[80px]">{r.requestedBy?.fullName}</span>
+                          <Progress value={pct} className="h-2 w-16" />
+                          <span className="text-xs text-muted-foreground">{ratio.issued}/{ratio.requested}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <StatusBadge status={r.status} />
+                          {r.urgency && <UrgencyBadge urgency={r.urgency} />}
                         </div>
                       </TableCell>
                       <TableCell><OverduePulse isOverdue={r.isOverdue} date={r.createdAt} /></TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                          {r.status === 'pending' && isSupervisorOrAdmin(user) && (<>
-                            <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => handleAction(r.id, 'supervisor_approve')}><CheckCircle2 className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Approve</TooltipContent></Tooltip></TooltipProvider>
-                            <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => { setRejectTarget({ id: r.id, action: 'supervisor_reject' }); setRejectOpen(true); }}><XCircle className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reject</TooltipContent></Tooltip></TooltipProvider>
-                          </>)}
-                          {r.status === 'supervisor_approved' && isStoreOrAdmin(user) && (<>
-                            <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-teal-600 hover:text-teal-700 hover:bg-teal-50" onClick={() => handleAction(r.id, 'storekeeper_approve')}><Warehouse className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Store Approve</TooltipContent></Tooltip></TooltipProvider>
-                            <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => { setRejectTarget({ id: r.id, action: 'storekeeper_reject' }); setRejectOpen(true); }}><XCircle className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reject</TooltipContent></Tooltip></TooltipProvider>
-                          </>)}
-                          {r.status === 'storekeeper_approved' && isStoreOrAdmin(user) && (
-                            <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(r.id, 'issue')}><Wrench className="h-3.5 w-3.5" /> Issue</Button>
-                          )}
-                          {r.status === 'issued' && (
-                            <Button size="sm" variant="outline" className="h-7 gap-1 border-amber-400 text-amber-700 hover:bg-amber-50" onClick={() => { setConditionTarget(r.id); setConditionOpen(true); }}><RotateCcw className="h-3.5 w-3.5" /> Return</Button>
-                          )}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setDetailItem(r); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View Details</DropdownMenuItem>
+                              {r.status === 'pending' && isSupervisorOrAdmin(user) && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => handleAction(r.id, 'supervisor_approve')}><CheckCircle2 className="h-4 w-4 mr-2 text-emerald-600" /> Approve</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => { setRejectTarget({ id: r.id, action: 'supervisor_reject' }); setRejectOpen(true); }}><XCircle className="h-4 w-4 mr-2 text-red-500" /> Reject</DropdownMenuItem>
+                                </>
+                              )}
+                              {r.status === 'supervisor_approved' && isStoreOrAdmin(user) && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => handleAction(r.id, 'storekeeper_approve')}><Warehouse className="h-4 w-4 mr-2 text-teal-600" /> Store Approve</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => { setRejectTarget({ id: r.id, action: 'storekeeper_reject' }); setRejectOpen(true); }}><XCircle className="h-4 w-4 mr-2 text-red-500" /> Reject</DropdownMenuItem>
+                                </>
+                              )}
+                              {r.status === 'storekeeper_approved' && isStoreOrAdmin(user) && (
+                                <DropdownMenuItem onClick={() => { setDetailItem(r); openIssueDialog(); }}><Wrench className="h-4 w-4 mr-2 text-emerald-600" /> Issue Tools</DropdownMenuItem>
+                              )}
+                              {r.status === 'issued' && (
+                                <DropdownMenuItem onClick={() => { setDetailItem(r); openReturnDialog(); }}><RotateCcw className="h-4 w-4 mr-2 text-amber-600" /> Return Tools</DropdownMenuItem>
+                              )}
+                              {r.status === 'pending' && (r.requestedById === user?.id || isAdmin()) && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setDetailItem(r); openEditForm(); }}><Pencil className="h-4 w-4 mr-2" /> Edit Request</DropdownMenuItem>
+                                  <DropdownMenuItem className="text-red-600" onClick={(e) => { e.stopPropagation(); setDetailItem(r); setDeleteOpen(true); }}><Trash2 className="h-4 w-4 mr-2" /> Delete Request</DropdownMenuItem>
+                                </>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -1070,71 +1466,369 @@ export function RepairToolRequestsPage() {
         </div>
       )}
 
-      {/* Detail Sheet */}
+      {/* ═══════ Detail Sheet ═══════ */}
       <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
-        <SheetContent className="sm:max-w-lg w-full overflow-y-auto">
+        <SheetContent className="sm:max-w-xl w-full overflow-y-auto">
           {detailItem && (<>
             <SheetHeader className="mb-4">
-              <SheetTitle className="flex items-center gap-2"><Wrench className="h-5 w-5 text-orange-600" /> {detailItem.toolName}</SheetTitle>
-              <SheetDescription>Tool Request — {detailItem.workOrder?.woNumber}</SheetDescription>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Wrench className="h-5 w-5 text-orange-600" />
+                <SheetTitle>{detailItem.toolName}</SheetTitle>
+                {detailItem.requestNumber && <Badge variant="outline" className="font-mono text-xs">{detailItem.requestNumber}</Badge>}
+              </div>
+              <SheetDescription className="flex items-center gap-2 flex-wrap">
+                <span>WO: {detailItem.workOrder?.woNumber}</span>
+                <StatusBadge status={detailItem.status} />
+                {detailItem.urgency && <UrgencyBadge urgency={detailItem.urgency} />}
+              </SheetDescription>
             </SheetHeader>
-            <Tabs defaultValue="details">
-              <TabsList className="w-full"><TabsTrigger value="details" className="flex-1">Details</TabsTrigger><TabsTrigger value="timeline" className="flex-1">Timeline</TabsTrigger></TabsList>
-              <TabsContent value="details" className="mt-4 space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div><Label className="text-xs text-muted-foreground">Status</Label><div className="mt-1"><StatusBadge status={detailItem.status} /></div></div>
-                  <div><Label className="text-xs text-muted-foreground">Urgency</Label><div className="mt-1">{detailItem.urgency ? <UrgencyBadge urgency={detailItem.urgency} /> : '—'}</div></div>
-                  {detailItem.tool?.toolCode && <div><Label className="text-xs text-muted-foreground">Tool Code</Label><p className="text-sm mt-1 font-mono">{detailItem.tool.toolCode}</p></div>}
-                  {detailItem.tool?.category && <div><Label className="text-xs text-muted-foreground">Category</Label><p className="text-sm mt-1">{detailItem.tool.category}</p></div>}
-                </div>
-                <Separator />
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">Requested By</Label>
-                  <div className="flex items-center gap-2"><AvatarPlaceholder name={detailItem.requestedBy?.fullName || ''} /><span className="text-sm">{detailItem.requestedBy?.fullName}</span></div>
-                </div>
-                <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
-                {detailItem.toolConditionAtReturn && <div><Label className="text-xs text-muted-foreground">Return Condition</Label><p className="text-sm mt-1"><StatusBadge status={detailItem.toolConditionAtReturn} /></p></div>}
-                {((detailItem.status === 'pending' && isSupervisorOrAdmin(user)) || (detailItem.status === 'supervisor_approved' && isStoreOrAdmin(user)) || (detailItem.status === 'storekeeper_approved' && isStoreOrAdmin(user)) || detailItem.status === 'issued') && (<>
+            <div className="px-4 pb-4">
+              <Tabs defaultValue="details">
+                <TabsList className="w-full"><TabsTrigger value="details" className="flex-1">Details</TabsTrigger><TabsTrigger value="timeline" className="flex-1">Timeline</TabsTrigger></TabsList>
+                <TabsContent value="details" className="mt-4 space-y-4">
+
+                  {/* ── Tool Items Section ── */}
+                  <Card>
+                    <CardHeader className="pb-2 pt-3 px-4">
+                      <CardTitle className="text-sm font-medium">Tool Items ({getRequestItems(detailItem).length})</CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3">
+                      <div className="space-y-2 max-h-64 overflow-y-auto">
+                        {getRequestItems(detailItem).map((item: any, idx: number) => (
+                          <div key={item.id || idx} className="flex flex-col gap-1 p-2 bg-muted/30 rounded-lg text-sm">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-medium truncate">{item.toolName}</span>
+                                {item.toolCode && <span className="text-xs text-muted-foreground font-mono">{item.toolCode}</span>}
+                              </div>
+                              <AvailabilityBadge status={item.availabilityStatus} />
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                              <span>Requested: <strong className="text-foreground">{item.quantityRequested}</strong></span>
+                              {item.quantityApproved != null && <span>Approved: <strong className="text-foreground">{item.quantityApproved}</strong></span>}
+                              <span>Issued: <strong className="text-foreground">{item.quantityIssued}</strong></span>
+                              {item.quantityReturned > 0 && <span>Returned: <strong className="text-foreground">{item.quantityReturned}</strong></span>}
+                            </div>
+                            {item.issueNotes && (
+                              <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1">
+                                <Info className="h-3 w-3 inline mr-1" />{item.issueNotes}
+                              </div>
+                            )}
+                            {(item.conditionAtIssue || item.conditionAtReturn) && (
+                              <div className="flex gap-3 text-xs mt-1">
+                                {item.conditionAtIssue && <span>Condition at issue: <StatusBadge status={item.conditionAtIssue} /></span>}
+                                {item.conditionAtReturn && <span>Condition at return: <StatusBadge status={item.conditionAtReturn} /></span>}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
                   <Separator />
-                  <div className="flex flex-wrap gap-2">
-                    {detailItem.status === 'pending' && (<><Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'supervisor_approve')} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button><Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'supervisor_reject' }); setRejectOpen(true); }} disabled={submitting}>Reject</Button></>)}
-                    {detailItem.status === 'supervisor_approved' && (<><Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => handleAction(detailItem.id, 'storekeeper_approve')} disabled={submitting}><Warehouse className="h-3.5 w-3.5" /> Store Approve</Button><Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'storekeeper_reject' }); setRejectOpen(true); }} disabled={submitting}>Reject</Button></>)}
-                    {detailItem.status === 'storekeeper_approved' && (<Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'issue')} disabled={submitting}><Wrench className="h-3.5 w-3.5" /> Issue Tool</Button>)}
-                    {detailItem.status === 'issued' && (<Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setConditionTarget(detailItem.id); setConditionOpen(true); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tool</Button>)}
+
+                  {/* Request info */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><Label className="text-xs text-muted-foreground">Requested By</Label>
+                      <div className="flex items-center gap-2 mt-1"><AvatarPlaceholder name={detailItem.requestedBy?.fullName || ''} /><span className="text-sm">{detailItem.requestedBy?.fullName}</span></div>
+                    </div>
+                    <div><Label className="text-xs text-muted-foreground">Created</Label><p className="text-sm mt-1">{format(new Date(detailItem.createdAt), 'MMM d, yyyy h:mm a')}</p></div>
                   </div>
-                </>)}
-              </TabsContent>
-              <TabsContent value="timeline" className="mt-4">
-                <DetailTimeline events={[
-                  { label: 'Request Created', date: detailItem.createdAt, user: detailItem.requestedBy?.fullName, status: 'active' },
-                  { label: 'Supervisor Approval', date: detailItem.supervisorApprovedAt, user: detailItem.supervisorApprovedBy?.fullName, status: detailItem.status },
-                  { label: 'Store Approval', date: detailItem.storekeeperApprovedAt, user: detailItem.storekeeperApprovedBy?.fullName, status: detailItem.status },
-                  { label: 'Tool Issued', date: detailItem.issuedAt, user: detailItem.issuedBy?.fullName },
-                  { label: 'Tool Returned', date: detailItem.returnedAt, user: detailItem.returnedBy?.fullName },
-                ].filter(e => e.date || e.status === 'active')} />
-              </TabsContent>
-            </Tabs>
+                  <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
+                  {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
+                  {detailItem.rejectionReason && (
+                    <div><Label className="text-xs text-muted-foreground">Rejection Reason</Label><p className="text-sm mt-1 bg-red-50 text-red-700 rounded-lg p-3">{detailItem.rejectionReason}</p></div>
+                  )}
+
+                  {/* ── Workflow Actions ── */}
+                  {((detailItem.status === 'pending' && isSupervisorOrAdmin(user)) ||
+                    (detailItem.status === 'supervisor_approved' && isStoreOrAdmin(user)) ||
+                    (detailItem.status === 'storekeeper_approved' && isStoreOrAdmin(user)) ||
+                    detailItem.status === 'issued') && (<>
+                    <Separator />
+                    <div className="flex flex-wrap gap-2">
+                      {detailItem.status === 'pending' && isSupervisorOrAdmin(user) && (<>
+                        <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'supervisor_approve')} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button>
+                        <Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'supervisor_reject' }); setRejectOpen(true); }} disabled={submitting}>Reject</Button>
+                      </>)}
+                      {detailItem.status === 'supervisor_approved' && isStoreOrAdmin(user) && (<>
+                        <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => handleAction(detailItem.id, 'storekeeper_approve')} disabled={submitting}><Warehouse className="h-3.5 w-3.5" /> Store Approve</Button>
+                        <Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'storekeeper_reject' }); setRejectOpen(true); }} disabled={submitting}>Reject</Button>
+                      </>)}
+                      {detailItem.status === 'storekeeper_approved' && isStoreOrAdmin(user) && (
+                        <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setDetailItem(detailItem); openIssueDialog(); }} disabled={submitting}><Wrench className="h-3.5 w-3.5" /> Issue Tools</Button>
+                      )}
+                      {detailItem.status === 'issued' && (
+                        <Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setDetailItem(detailItem); openReturnDialog(); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tools</Button>
+                      )}
+                    </div>
+                  </>)}
+
+                  {/* Edit/Delete for owner */}
+                  {detailItem.status === 'pending' && (detailItem.requestedById === user?.id || isAdmin()) && (<>
+                    <Separator />
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" className="gap-1 border-sky-400 text-sky-700 hover:bg-sky-50" onClick={openEditForm} disabled={submitting}><Pencil className="h-3.5 w-3.5" /> Edit Request</Button>
+                      <Button size="sm" variant="outline" className="gap-1 border-red-400 text-red-600 hover:bg-red-50" onClick={() => setDeleteOpen(true)} disabled={submitting}><Trash2 className="h-3.5 w-3.5" /> Delete Request</Button>
+                    </div>
+                  </>)}
+                </TabsContent>
+                <TabsContent value="timeline" className="mt-4">
+                  <DetailTimeline events={[
+                    { label: 'Request Created', date: detailItem.createdAt, user: detailItem.requestedBy?.fullName, status: 'active' },
+                    { label: 'Supervisor Approval', date: detailItem.supervisorApprovedAt, user: detailItem.supervisorApprovedBy?.fullName, status: detailItem.status },
+                    { label: 'Store Approval', date: detailItem.storekeeperApprovedAt, user: detailItem.storekeeperApprovedBy?.fullName, status: detailItem.status },
+                    { label: 'Tools Issued', date: detailItem.issuedAt, user: detailItem.issuedBy?.fullName },
+                    { label: 'Tools Returned', date: detailItem.returnedAt, user: detailItem.returnedBy?.fullName },
+                  ].filter(e => e.date || e.status === 'active')} />
+                </TabsContent>
+              </Tabs>
+            </div>
           </>)}
         </SheetContent>
       </Sheet>
 
-      {/* Create Dialog */}
+      {/* ═══════ Create Dialog ═══════ */}
       <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
-        
-          <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Tool Request</h2><p className="text-sm text-muted-foreground">Request tools for a repair work order</p></div>
-          <div className="space-y-4">
-            <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v }))} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
-            <div><Label>Tool Name *</Label><AsyncSearchableSelect value={createForm.toolId} onValueChange={(v) => { const tool = toolsCache.find((t: any) => t.id === v); setCreateForm(f => ({ ...f, toolId: v, toolName: tool ? (tool.name + (tool.serialNumber ? ` (${tool.serialNumber})` : '')) : '' })); }} placeholder="Search tools..." searchPlaceholder="Search by name or serial number..." fetchOptions={fetchTools} /></div>
-            <div><Label>Urgency</Label><div className="flex gap-2 mt-1">{Object.entries(URGENCY_CONFIG).map(([key, cfg]) => (<button key={key} onClick={() => setCreateForm(f => ({ ...f, urgency: key }))} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 text-xs font-medium transition-all ${createForm.urgency === key ? cfg.color + ' ring-2 ring-offset-1 ring-gray-300' : 'border-gray-200 text-muted-foreground hover:border-gray-300'}`}><span className={`h-2 w-2 rounded-full ${cfg.dotColor}`} />{cfg.label}</button>))}</div></div>
-            <div><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label><Textarea value={createForm.reason} onChange={(e) => setCreateForm({ ...createForm, reason: e.target.value })} placeholder="Why is this tool needed?" rows={3} /></div>
-            <div><Label>Notes</Label><Textarea value={createForm.notes} onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })} placeholder="Additional information..." rows={2} /></div>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">New Tool Request</h2>
+          <p className="text-sm text-muted-foreground">Request tools for a repair work order</p>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <Label>Work Order *</Label>
+            <AsyncSearchableSelect
+              value={createForm.workOrderId}
+              onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v }))}
+              placeholder="Select work order..."
+              searchPlaceholder="Search work orders..."
+              fetchOptions={async () => {
+                const res = await api.get('/api/work-orders?limit=999');
+                if (res.success && Array.isArray(res.data)) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` }));
+                return [];
+              }}
+            />
           </div>
-          <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={submitting} className="gap-2"><Send className="h-4 w-4" /> Submit</Button></div>
-        
+
+          {/* Tool Items */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Tool Items *</Label>
+              <Button type="button" variant="outline" size="sm" className="h-7 gap-1" onClick={addCreateItem}>
+                <Plus className="h-3 w-3" /> Add Another Tool
+              </Button>
+            </div>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {createForm.items.map((item, idx) => (
+                <ToolItemRowEditor key={idx} item={item} index={idx} onUpdate={updateCreateItem} onRemove={removeCreateItem} canRemove={createForm.items.length > 1} />
+              ))}
+            </div>
+            {createForm.items.filter(i => !i.toolName.trim()).length > 0 && (
+              <p className="text-xs text-red-500">Please select a tool for each item</p>
+            )}
+          </div>
+
+          <div>
+            <Label>Urgency</Label>
+            <div className="flex gap-2 mt-1">
+              {Object.entries(URGENCY_CONFIG).map(([key, cfg]) => (
+                <button key={key} onClick={() => setCreateForm(f => ({ ...f, urgency: key }))}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 text-xs font-medium transition-all ${createForm.urgency === key ? cfg.color + ' ring-2 ring-offset-1 ring-gray-300' : 'border-gray-200 text-muted-foreground hover:border-gray-300'}`}>
+                  <span className={`h-2 w-2 rounded-full ${cfg.dotColor}`} />{cfg.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label>
+            <Textarea value={createForm.reason} onChange={(e) => setCreateForm(f => ({ ...f, reason: e.target.value }))} placeholder="Why are these tools needed?" rows={3} />
+          </div>
+          <div>
+            <Label>Notes</Label>
+            <Textarea value={createForm.notes} onChange={(e) => setCreateForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional information..." rows={2} />
+          </div>
+        </div>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+          <Button onClick={handleCreate} disabled={submitting} className="gap-2"><Send className="h-4 w-4" /> Submit Request</Button>
+        </div>
+      </ResponsiveDialog>
+
+      {/* ═══════ Issue Tools Dialog ═══════ */}
+      <ResponsiveDialog open={issueOpen} onOpenChange={setIssueOpen}>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">Issue Tools</h2>
+          <p className="text-sm text-muted-foreground">Specify quantity to issue for each tool item</p>
+        </div>
+        <div className="space-y-3 max-h-72 overflow-y-auto">
+          {issueForm.map((item: any, idx: number) => (
+            <div key={item.itemId} className="space-y-2 p-3 bg-muted/30 rounded-lg border">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-medium text-sm truncate">{item.toolName}</span>
+                  {item.toolCode && <span className="text-xs text-muted-foreground font-mono">{item.toolCode}</span>}
+                </div>
+                <AvailabilityBadge status={item.availableQty >= item.quantityApproved ? 'available' : item.availableQty > 0 ? 'limited' : 'unavailable'} />
+              </div>
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span>Requested: {item.quantityRequested}</span>
+                <span>Approved: {item.quantityApproved}</span>
+                <span>In stock: {item.availableQty}</span>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="flex-1">
+                  <Label className="text-xs">Qty to Issue</Label>
+                  <Input type="number" min={0} max={Math.min(item.quantityApproved, item.availableQty)} value={item.quantityIssued}
+                    onChange={e => {
+                      const val = Math.max(0, Math.min(parseInt(e.target.value) || 0, item.quantityApproved, item.availableQty));
+                      const newForm = [...issueForm];
+                      newForm[idx] = { ...newForm[idx], quantityIssued: val };
+                      setIssueForm(newForm);
+                    }}
+                    className="h-8" />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-xs">Notes (partial issue reason)</Label>
+                  <Input value={item.issueNotes} placeholder="e.g. only 2 available..."
+                    onChange={e => {
+                      const newForm = [...issueForm];
+                      newForm[idx] = { ...newForm[idx], issueNotes: e.target.value };
+                      setIssueForm(newForm);
+                    }}
+                    className="h-8" />
+                </div>
+              </div>
+              {item.quantityIssued < item.quantityApproved && item.quantityIssued > 0 && (
+                <p className="text-xs text-amber-600">⚠ Partial issue: {item.quantityApproved - item.quantityIssued} will remain unissued</p>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setIssueOpen(false)}>Cancel</Button>
+          <Button onClick={handleIssue} disabled={submitting} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"><Wrench className="h-4 w-4" /> Issue Tools</Button>
+        </div>
+      </ResponsiveDialog>
+
+      {/* ═══════ Return Tools Dialog ═══════ */}
+      <ResponsiveDialog open={returnItemsOpen} onOpenChange={setReturnItemsOpen}>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">Return Tools</h2>
+          <p className="text-sm text-muted-foreground">Specify quantity and condition for each tool</p>
+        </div>
+        <div className="space-y-3 max-h-72 overflow-y-auto">
+          {returnItemsForm.map((item: any, idx: number) => (
+            <div key={item.itemId} className="space-y-2 p-3 bg-muted/30 rounded-lg border">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-sm truncate">{item.toolName}</span>
+                {item.toolCode && <span className="text-xs text-muted-foreground font-mono">{item.toolCode}</span>}
+                <span className="text-xs text-muted-foreground ml-auto">Issued: {item.quantityIssued}</span>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="w-full sm:w-28">
+                  <Label className="text-xs">Qty to Return</Label>
+                  <Input type="number" min={0} max={item.quantityIssued} value={item.quantityReturned}
+                    onChange={e => {
+                      const val = Math.max(0, Math.min(parseInt(e.target.value) || 0, item.quantityIssued));
+                      const newForm = [...returnItemsForm];
+                      newForm[idx] = { ...newForm[idx], quantityReturned: val };
+                      setReturnItemsForm(newForm);
+                    }}
+                    className="h-8" />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-xs">Condition</Label>
+                  <Select value={item.conditionAtReturn} onValueChange={v => {
+                    const newForm = [...returnItemsForm];
+                    newForm[idx] = { ...newForm[idx], conditionAtReturn: v };
+                    setReturnItemsForm(newForm);
+                  }}>
+                    <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new">New/Excellent</SelectItem>
+                      <SelectItem value="good">Good</SelectItem>
+                      <SelectItem value="fair">Fair</SelectItem>
+                      <SelectItem value="poor">Poor</SelectItem>
+                      <SelectItem value="damaged">Damaged</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setReturnItemsOpen(false)}>Cancel</Button>
+          <Button onClick={handleReturn} disabled={submitting} className="gap-2 border-amber-400 text-amber-700 hover:bg-amber-50"><RotateCcw className="h-4 w-4" /> Return Tools</Button>
+        </div>
       </ResponsiveDialog>
 
       <RejectDialog open={rejectOpen} onClose={() => { setRejectOpen(false); setRejectTarget(null); }} onConfirm={(reason) => { if (rejectTarget) handleAction(rejectTarget.id, rejectTarget.action, { notes: reason }); }} title="Reject Tool Request" />
-      <ConditionSelectDialog open={conditionOpen} onClose={() => { setConditionOpen(false); setConditionTarget(null); }} onConfirm={(condition) => { if (conditionTarget) handleAction(conditionTarget, 'return', { toolConditionAtReturn: condition }); }} />
+
+      {/* ═══════ Edit Dialog ═══════ */}
+      <ResponsiveDialog open={editOpen} onOpenChange={(v) => { if (!v) setEditOpen(false); }}>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">Edit Tool Request</h2>
+          <p className="text-sm text-muted-foreground">Modify your pending tool request</p>
+        </div>
+        <div className="space-y-4">
+          {/* Tool Items */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Tool Items *</Label>
+              <Button type="button" variant="outline" size="sm" className="h-7 gap-1" onClick={addEditItem}>
+                <Plus className="h-3 w-3" /> Add Another Tool
+              </Button>
+            </div>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {editForm.items.map((item, idx) => (
+                <ToolItemRowEditor key={idx} item={item} index={idx} onUpdate={updateEditItem} onRemove={removeEditItem} canRemove={editForm.items.length > 1} />
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <Label>Urgency</Label>
+            <div className="flex gap-2 mt-1">
+              {Object.entries(URGENCY_CONFIG).map(([key, cfg]) => (
+                <button key={key} onClick={() => setEditForm(f => ({ ...f, urgency: key }))}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 text-xs font-medium transition-all ${editForm.urgency === key ? cfg.color + ' ring-2 ring-offset-1 ring-gray-300' : 'border-gray-200 text-muted-foreground hover:border-gray-300'}`}>
+                  <span className={`h-2 w-2 rounded-full ${cfg.dotColor}`} />{cfg.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label>
+            <Textarea value={editForm.reason} onChange={(e) => setEditForm(f => ({ ...f, reason: e.target.value }))} placeholder="Why are these tools needed?" rows={3} />
+          </div>
+          <div>
+            <Label>Notes</Label>
+            <Textarea value={editForm.notes} onChange={(e) => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional information..." rows={2} />
+          </div>
+        </div>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+          <Button onClick={handleEdit} disabled={submitting} className="gap-2"><Send className="h-4 w-4" /> Save Changes</Button>
+        </div>
+      </ResponsiveDialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Tool Request</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this tool request? This will also remove all tool items. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={submitting} className="gap-2"><Trash2 className="h-4 w-4" /> Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1344,6 +2038,7 @@ export function RepairToolTransfersPage() {
               <SheetTitle className="flex items-center gap-2"><ArrowRightLeft className="h-5 w-5 text-teal-600" /> Transfer: {detailItem.tool?.name}</SheetTitle>
               <SheetDescription>{detailItem.tool?.toolCode || ''}</SheetDescription>
             </SheetHeader>
+            <div className="px-4 pb-4">
             <Tabs defaultValue="details">
               <TabsList className="w-full"><TabsTrigger value="details" className="flex-1">Details</TabsTrigger><TabsTrigger value="timeline" className="flex-1">Timeline</TabsTrigger></TabsList>
               <TabsContent value="details" className="mt-4 space-y-4">
@@ -1399,6 +2094,7 @@ export function RepairToolTransfersPage() {
                 ].filter(e => e.date || e.status === 'active')} />
               </TabsContent>
             </Tabs>
+            </div>
           </>)}
         </SheetContent>
       </Sheet>
@@ -1680,7 +2376,7 @@ export function RepairDowntimePage() {
                 }}
               /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label>Asset Name *</Label><AsyncSearchableSelect value={createForm.assetId} onValueChange={(v) => { const asset = assetsCache.find((a: any) => a.id === v); setCreateForm(f => ({ ...f, assetId: v, assetName: asset ? (asset.name || asset.assetTag) : '' })); }} placeholder="Search assets..." searchPlaceholder="Search by name or tag..." fetchOptions={fetchAssets} /></div>
+              <div><Label>Asset Name *</Label><AsyncSearchableSelect value={createForm.assetId} onValueChange={(v) => { const asset = assetsCache.current.find((a: any) => a.id === v); setCreateForm(f => ({ ...f, assetId: v, assetName: asset ? (asset.name || asset.assetTag) : '' })); }} placeholder="Search assets..." searchPlaceholder="Search by name or tag..." fetchOptions={fetchAssets} /></div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <DateTimePicker label="Start Time *" value={createForm.downtimeStart || undefined} onChange={v => setCreateForm(f => ({ ...f, downtimeStart: v || '' }))} />
@@ -2890,6 +3586,7 @@ export function SparePartReturnsPage() {
                 <SheetTitle className="flex items-center gap-2"><RefreshCw className="h-5 w-5 text-teal-600" /> {detailItem.returnNumber}</SheetTitle>
                 <SheetDescription>{detailItem.itemName}</SheetDescription>
               </SheetHeader>
+              <div className="px-4 pb-4">
               <Tabs defaultValue="details">
                 <TabsList className="w-full"><TabsTrigger value="details" className="flex-1">Details</TabsTrigger><TabsTrigger value="timeline" className="flex-1">Timeline</TabsTrigger></TabsList>
                 <TabsContent value="details" className="mt-4 space-y-4">
@@ -2935,6 +3632,7 @@ export function SparePartReturnsPage() {
                   ].filter(e => e.date)} />
                 </TabsContent>
               </Tabs>
+              </div>
             </>
           )}
         </SheetContent>
@@ -3255,6 +3953,7 @@ export function DamagedToolReportsPage() {
                 <SheetTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-red-600" /> {detailItem.reportNumber}</SheetTitle>
                 <SheetDescription>{detailItem.tool?.name} — {detailItem.tool?.toolCode}</SheetDescription>
               </SheetHeader>
+              <div className="px-4 pb-4">
               <Tabs defaultValue="details">
                 <TabsList className="w-full"><TabsTrigger value="details" className="flex-1">Details</TabsTrigger><TabsTrigger value="timeline" className="flex-1">Timeline</TabsTrigger></TabsList>
                 <TabsContent value="details" className="mt-4 space-y-4">
@@ -3286,6 +3985,7 @@ export function DamagedToolReportsPage() {
                   ].filter(e => e.date)} />
                 </TabsContent>
               </Tabs>
+              </div>
             </>
           )}
         </SheetContent>
@@ -3451,7 +4151,7 @@ export function MaintenanceReportsPage() {
                 <StatsCard icon={Timer} count={`${reportData.avgActualHours ?? 0}h`} label="Avg Actual Hours" color="text-teal-600" bgColor="bg-teal-50" />
                 <StatsCard icon={AlertTriangle} count={`${reportData.reworkRate ?? 0}%`} label="Rework Rate" color="text-red-600" bgColor="bg-red-50" />
               </div>
-              {reportData.byType && (
+              {Array.isArray(reportData.byType) && reportData.byType.length > 0 && (
                 <Card><CardHeader><CardTitle className="text-base">By Work Order Type</CardTitle></CardHeader><CardContent>
                   <div className="space-y-3">
                     {reportData.byType.map((t: any) => (

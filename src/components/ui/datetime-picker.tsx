@@ -111,10 +111,26 @@ function TimeColumn({
     return () => cancelAnimationFrame(timer)
   }, [scrollToSelected])
 
+  // Mouse wheel scroll handler
+  const handleWheel = React.useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      const container = containerRef.current
+      if (!container) return
+      const currentIndex = items.indexOf(selected)
+      const direction = e.deltaY > 0 ? 1 : -1
+      const nextIndex = Math.max(0, Math.min(items.length - 1, currentIndex + direction))
+      if (nextIndex !== currentIndex) {
+        onSelect(items[nextIndex])
+      }
+    },
+    [items, selected, onSelect]
+  )
+
   return (
     <div
       className="relative overflow-hidden rounded-lg border bg-background"
-      style={{ height: `${COL_HEIGHT}px`, width: '64px' }}
+      style={{ height: `${COL_HEIGHT}px`, width: '56px' }}
     >
       {/* Fade masks */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-8 bg-gradient-to-b from-background to-transparent" />
@@ -130,6 +146,7 @@ function TimeColumn({
         ref={containerRef}
         className="scrollbar-none h-full snap-y snap-mandatory overflow-y-auto"
         style={{ scrollbarWidth: 'none' }}
+        onWheel={handleWheel}
       >
         {/* Spacer to center first item */}
         <div style={{ height: `${COL_ITEM_HEIGHT}px` }} />
@@ -358,6 +375,14 @@ export interface DateTimePickerProps {
   placeholder?: string
   className?: string
   label?: string
+  /** Minimum selectable date (YYYY-MM-DD). Prevents picking dates before this. */
+  minDate?: string
+  /** Maximum selectable date (YYYY-MM-DD). Prevents picking dates after this. */
+  maxDate?: string
+  /** Minimum selectable time (HH:MM). Only enforced when date matches minDate. */
+  minTime?: string
+  /** Error message to display below the picker */
+  error?: string
 }
 
 export function DateTimePicker({
@@ -366,6 +391,10 @@ export function DateTimePicker({
   placeholder = 'Select date & time',
   className,
   label,
+  minDate,
+  maxDate,
+  minTime,
+  error,
 }: DateTimePickerProps) {
   const isMobile = useIsMobile()
 
@@ -410,6 +439,24 @@ export function DateTimePicker({
     [onChange]
   )
 
+  // Clamp and validate date on change
+  const handleDateChange = React.useCallback((newDate: string) => {
+    let clamped = newDate
+    if (minDate && clamped && clamped < minDate) clamped = minDate
+    if (maxDate && clamped && clamped > maxDate) clamped = maxDate
+    setDateStr(clamped)
+    emitChange(clamped, timeStr)
+  }, [minDate, maxDate, timeStr, emitChange])
+
+  // Clamp and validate time on change
+  const handleTimeChange = React.useCallback((newTime: string) => {
+    let clamped = newTime
+    // Enforce minTime only when date equals minDate
+    if (minTime && minDate && dateStr === minDate && clamped && clamped < minTime) clamped = minTime
+    setTimeStr(clamped)
+    emitChange(dateStr, clamped)
+  }, [minTime, minDate, dateStr, emitChange])
+
   if (isMobile) {
     return (
       <FieldWrapper label={label} className={className}>
@@ -420,15 +467,14 @@ export function DateTimePicker({
             <input
               type="date"
               value={dateStr}
-              onChange={(e) => {
-                const v = e.target.value
-                setDateStr(v)
-                emitChange(v, timeStr)
-              }}
+              min={minDate}
+              max={maxDate}
+              onChange={(e) => handleDateChange(e.target.value)}
               className={cn(
                 'h-11 w-full rounded-md border bg-background pl-10 pr-3 text-sm shadow-xs outline-none transition-colors',
                 'focus:border-ring focus:ring-ring/50 focus:ring-[3px]',
                 'placeholder:text-muted-foreground',
+                error && 'border-red-500 dark:border-red-500',
                 'dark:bg-input/30 dark:border-input dark:text-foreground'
               )}
             />
@@ -439,19 +485,18 @@ export function DateTimePicker({
             <input
               type="time"
               value={timeStr}
-              onChange={(e) => {
-                const v = e.target.value
-                setTimeStr(v)
-                emitChange(dateStr, v)
-              }}
+              min={minTime && minDate && dateStr === minDate ? minTime : undefined}
+              onChange={(e) => handleTimeChange(e.target.value)}
               className={cn(
                 'h-11 w-full rounded-md border bg-background pl-10 pr-3 text-sm shadow-xs outline-none transition-colors',
                 'focus:border-ring focus:ring-ring/50 focus:ring-[3px]',
                 'placeholder:text-muted-foreground',
+                error && 'border-red-500 dark:border-red-500',
                 'dark:bg-input/30 dark:border-input dark:text-foreground'
               )}
             />
           </div>
+          {error && <p className="text-xs text-red-500">{error}</p>}
         </div>
       </FieldWrapper>
     )
@@ -469,7 +514,8 @@ export function DateTimePicker({
                 variant="outline"
                 className={cn(
                   'h-11 w-full justify-start gap-2 text-left font-normal',
-                  !dateStr && 'text-muted-foreground'
+                  !dateStr && 'text-muted-foreground',
+                  error && 'border-red-500 dark:border-red-500'
                 )}
               >
                 <Calendar className="size-4 shrink-0" />
@@ -480,10 +526,15 @@ export function DateTimePicker({
               <CalendarPicker
                 mode="single"
                 selected={parseDate(dateStr)}
+                disabled={(date) => {
+                  const d = formatDate(date)
+                  if (minDate && d < minDate) return true
+                  if (maxDate && d > maxDate) return true
+                  return false
+                }}
                 onSelect={(date) => {
                   const d = date ? formatDate(date) : ''
-                  setDateStr(d)
-                  emitChange(d, timeStr)
+                  handleDateChange(d)
                 }}
                 initialFocus
               />
@@ -491,15 +542,16 @@ export function DateTimePicker({
           </Popover>
         </div>
 
-        {/* Time portion — takes ~40% width */}
-        <div className="w-[140px] shrink-0">
+        {/* Time portion — compact */}
+        <div className="w-[100px] shrink-0">
           <Popover>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
                 className={cn(
                   'h-11 w-full justify-start gap-2 text-left font-normal',
-                  !timeStr && 'text-muted-foreground'
+                  !timeStr && 'text-muted-foreground',
+                  error && 'border-red-500 dark:border-red-500'
                 )}
               >
                 <Clock className="size-4 shrink-0" />
@@ -513,9 +565,7 @@ export function DateTimePicker({
                   selected={timeStr?.split(':')[0] ?? '00'}
                   onSelect={(h) => {
                     const m = timeStr?.split(':')[1] ?? '00'
-                    const t = `${h}:${m}`
-                    setTimeStr(t)
-                    emitChange(dateStr, t)
+                    handleTimeChange(`${h}:${m}`)
                   }}
                 />
                 <span
@@ -529,9 +579,7 @@ export function DateTimePicker({
                   selected={timeStr?.split(':')[1] ?? '00'}
                   onSelect={(m) => {
                     const h = timeStr?.split(':')[0] ?? '00'
-                    const t = `${h}:${m}`
-                    setTimeStr(t)
-                    emitChange(dateStr, t)
+                    handleTimeChange(`${h}:${m}`)
                   }}
                 />
               </div>
@@ -539,6 +587,7 @@ export function DateTimePicker({
           </Popover>
         </div>
       </div>
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
     </FieldWrapper>
   )
 }

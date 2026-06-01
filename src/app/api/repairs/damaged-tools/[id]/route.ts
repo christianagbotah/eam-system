@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
 import { notifyUser } from '@/lib/notifications';
 
@@ -122,6 +122,26 @@ export async function POST(
     const { id } = await params;
     const body = await request.json();
     const { action } = body;
+
+    // Role-based access for workflow actions
+    const isStoreRole = isAdmin(session) || hasRole(session, 'inventory_manager') || hasRole(session, 'store_keeper') || hasRole(session, 'tools_shop_attendant');
+    const isMaintRole = isAdmin(session) || hasRole(session, 'maintenance_manager') || hasRole(session, 'maintenance_supervisor') || hasRole(session, 'maintenance_planner');
+
+    if (action === 'assess') {
+      if (!isStoreRole && !isMaintRole) {
+        return NextResponse.json({ success: false, error: 'Only maintenance or store roles can assess damage' }, { status: 403 });
+      }
+    }
+    if (action === 'quote_repair' || action === 'write_off' || action === 'replace') {
+      if (!isStoreRole) {
+        return NextResponse.json({ success: false, error: 'Only store/inventory roles can manage repair costs and tool replacement' }, { status: 403 });
+      }
+    }
+    if (action === 'start_repair' || action === 'complete_repair') {
+      if (!isStoreRole && !isMaintRole) {
+        return NextResponse.json({ success: false, error: 'Only maintenance or store roles can manage repairs' }, { status: 403 });
+      }
+    }
 
     const existing = await db.damagedToolReport.findUnique({
       where: { id },

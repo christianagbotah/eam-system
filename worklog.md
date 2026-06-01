@@ -559,3 +559,340 @@ Stage Summary:
 - **Architecture**: LLM → geometry JSON → vertex generation → GLB binary → file save → DB record
 - **Default provider**: `'programmatic'` (free, no external API key needed)
 - **Config field**: `provider3d` in `data/ai-config.json` or per-request override
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix tool selection not working in New Tool Request modal (and all ResponsiveDialog forms)
+
+Work Log:
+- Investigated the `SearchableSelect` component (cmdk + Radix Popover pattern)
+- Traced the issue through cmdk source code: CommandItem uses onClick to fire onSelect
+- Discovered root cause by reading Radix UI source code:
+  - `PopoverContent` uses `DismissableLayer` (NOT `DismissableLayer.Branch`)
+  - When Popover is non-modal (default), `disableOutsidePointerEvents=false`
+  - Dialog/Sheet's `DismissableLayer` has a document-level pointerdown listener
+  - Clicking inside Popover → Dialog sees target as "outside" → fires onPointerDownOutside → dismisses dialog
+  - The click event on CommandItem fires AFTER pointerdown, but dialog is already closing/unmounted
+- Fixed by adding `onPointerDownOutside` handler to both SheetContent (mobile) and DialogContent (desktop) in `ResponsiveDialog`
+- Handler checks if click target is inside `[data-slot="popover-content"]` and calls `e.preventDefault()` to prevent dismissal
+- This fix applies to ALL forms using ResponsiveDialog with SearchableSelect (tool requests, material requests, tool transfers, damaged tools, etc.)
+- Committed as 1aac49e8 and pushed
+
+Stage Summary:
+- Fixed: Tool selection in New Tool Request modal (and all ResponsiveDialog forms)
+- Root cause: Radix PopoverContent uses DismissableLayer instead of DismissableLayer.Branch
+- Fix location: `/src/components/shared/ResponsiveDialog.tsx`
+- Commit: 1aac49e8
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix tool selection in SearchableSelect inside ResponsiveDialog (proper fix)
+
+Work Log:
+- Previous fix (onPointerDownOutside) was the right concept but not robust enough
+- Deep-dived into Radix UI source code: DismissableLayer, Popover, Dialog, cmdk
+- Found the exact mechanism: DismissableLayer checks `context.branches` set for pointer targets
+- Popover uses DismissableLayer (not Branch), so clicks inside Popover are treated as "outside" by parent Dialog
+- The proper solution is to wrap PopoverContent's inner content with DismissableLayer.Branch
+- This registers the Popover as a branch, so DismissableLayer skips dismissal for pointer events inside it
+- Applied to both SearchableSelect and MultiSearchableSelect in searchable-select.tsx
+- Committed as 9592ac16 and pushed
+
+Stage Summary:
+- Fixed: Tool selection in ALL SearchableSelect dropdowns inside Dialogs/Sheets
+- Root cause: Popover uses DismissableLayer instead of DismissableLayer.Branch
+- Fix: Added DismissableLayer.Branch wrapper inside PopoverContent in searchable-select.tsx
+- This is a universal fix - applies to all 18+ pages using SearchableSelect
+- Previous onPointerDownOutside handler in ResponsiveDialog kept as secondary defense
+
+---
+Task ID: 28
+Agent: main
+Task: Fix tool selection not working on New Tool Request form
+
+Work Log:
+- Investigated `RepairsPages.tsx` for the New Tool Request form (line ~1127)
+- Compared working Work Order AsyncSearchableSelect vs broken Tool AsyncSearchableSelect
+- Found root cause: `toolsCache` is a `useRef<any[]>([])` but the `onValueChange` handler used `toolsCache.find(...)` instead of `toolsCache.current.find(...)`
+- This caused a `TypeError: toolsCache.find is not a function` which prevented the form state from updating
+- Same bug existed for `inventoryItemsCache.find` (material requests) and `assetsCache.find` (damaged tool reports)
+- Fixed all 3 instances by adding `.current` to access the ref's array
+
+Stage Summary:
+- Fixed: Tool selection on New Tool Request form (`/#/repairs-tool-requests`)
+- Fixed: Item selection on New Material Request form (`/#/repairs-material-requests`)
+- Fixed: Asset selection on Damaged Tool Reports (`/#/repairs-damaged-tools`)
+- Root cause: Missing `.current` on useRef objects in onValueChange callbacks
+- The work order selector worked because it didn't use a ref cache — it did inline data mapping
+
+---
+Task ID: 2-a
+Agent: full-stack-developer
+Task: Add edit/delete for pending tool requests, lock approved records, fix sheet padding
+
+Work Log:
+- Added PUT handler to `/api/repairs/tool-requests/[id]/route.ts`: allows updating toolId, toolName, urgency, reason, notes only when status is 'pending' and user is requester or admin. Includes audit log entry.
+- Added DELETE handler to `/api/repairs/tool-requests/[id]/route.ts`: allows deleting only when status is 'pending' and user is requester or admin. Releases tool back to 'available' if it was 'in_repair'. Includes audit log entry.
+- Fixed padding on ALL 5 detail side sheets in RepairsPages.tsx: wrapped Tabs sections in `<div className="px-4 pb-4">` so content below SheetHeader has proper left/right padding. Affected sheets: Material Requests (line 674), Tool Requests (line 1144), Tool Transfers (line 1351), Downtime detail (line 2899), Damaged Tool Reports (line 3266).
+- Added Pencil and Trash2 icons import from lucide-react.
+- Added edit/delete state variables to RepairToolRequestsPage: editOpen, deleteOpen, editForm.
+- Added openEditForm() handler that pre-fills edit form from detailItem data.
+- Added handleEdit() handler that validates (toolName required, reason min 5 chars) and calls PUT API.
+- Added handleDelete() handler that calls DELETE API and closes detail sheet.
+- Added edit/delete buttons in tool request detail sheet (visible only when status='pending' AND user is requester or admin).
+- Added edit/delete items to table row dropdown menu (visible only for pending requests where user is requester or admin).
+- Added Edit Tool Request ResponsiveDialog with AsyncSearchableSelect for tool, urgency selector, reason textarea, notes textarea.
+- Added Delete Confirmation Dialog (Dialog component) with warning message and confirm/cancel buttons.
+- Restricted existing approve/reject buttons to show only for authorized roles (isSupervisorOrAdmin/isStoreOrAdmin).
+- Verified no TypeScript or lint errors from modified files.
+
+Stage Summary:
+- **API**: `src/app/api/repairs/tool-requests/[id]/route.ts` — PUT (edit pending) + DELETE (delete pending, release tool)
+- **Frontend**: `src/components/modules/RepairsPages.tsx` — edit/delete UI in detail sheet + table dropdown, padding fix on all 5 sheets
+- **Padding fix**: Wrapped Tabs content in `<div className="px-4 pb-4">` in 5 Sheet instances
+- **Edit dialog**: ResponsiveDialog with tool search, urgency selector, reason/notes fields
+- **Delete dialog**: Confirmation dialog with warning about tool release
+- **Permission model**: Edit/delete only for pending status + (requester or admin); approve buttons restricted to supervisor/storekeeper roles
+- **No new compilation errors**
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: Clarify multi-tool request architecture — requestNumber on header, not items
+
+Work Log:
+- User asked: "requestNumber is unique but we have multiple tools, how would that be?"
+- Explained the header-item architecture: requestNumber is on RepairToolRequest (header, 1 row per request), not on RepairToolRequestItem (line items, many rows per request)
+- Confirmed schema already has requestNumber as String? (nullable, commit b0f864e2) for backward compatibility with existing rows
+- Verified API: POST creates header with requestNumber + items in transaction, GET returns items with relations, detail view shows "Tool Items (N)" card
+- Verified frontend: Table shows Request #, Tools summary, Total Qty, Fulfillment progress; Detail shows items with per-item quantity tracking
+- No code changes needed — architecture already correct
+
+Stage Summary:
+- **Architecture confirmed**: requestNumber is unique per REQUEST (header), not per tool. Like a purchase order number grouping multiple line items.
+- **Schema**: requestNumber String? @unique on RepairToolRequest (already nullable, commit b0f864e2)
+- **VPS action needed**: Run `npx prisma db push` to add requestNumber column and repair_tool_request_items table
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Fix 'string is not defined' error when technician logs time on WO
+
+Work Log:
+- User reported "string is not defined" error when technician tries to log time on maintenance-work-orders page
+- Traced through: handleTimeLog → POST /api/work-orders/[id]/time-logs → line 110
+- Root cause: `teamMembers: { select: { userId: true, role: string } }` — `string` used as a Prisma select value instead of `true`
+- In Prisma select, each field maps to `true | { nestedSelect }`. Using `string` as a value causes JS to evaluate it as a variable reference → `ReferenceError: string is not defined`
+- Fixed: `role: string` → `role: true`
+- Also fixed 3 frontend field mismatches in time log display:
+  - `tl.userName` → `tl.user?.fullName` (Prisma relation, not flat field)
+  - `tl.createdAt` → `tl.timestamp || tl.createdAt` (WorkOrderTimeLog uses `timestamp`)
+  - `tl.note` → `tl.notes` (model field is plural)
+  - Session timer sort: `a.createdAt` → `a.timestamp || a.createdAt`
+  - Session timer elapsed: `lastStart.startTime` → `lastStart.timestamp`
+- Scanned all route.ts files for similar `role: string` pattern in Prisma selects — none found
+- Pushed commit bd0a1c68
+
+Stage Summary:
+- **Bug**: `role: string` in Prisma select treated as runtime JS variable → ReferenceError
+- **Fix**: `src/app/api/work-orders/[id]/time-logs/route.ts` — `role: true`
+- **Frontend fixes**: `src/components/modules/MaintenancePages.tsx` — 4 field name corrections for time log display
+- **Commit**: bd0a1c68
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Enterprise-grade time logging system — full redesign
+
+Work Log:
+- Analyzed current system: simple action-based (start/pause/resume/complete) with optional manual hours input
+- Identified gaps: no start/end time recording, no activity categorization, no break tracking, no delete capability, no duration preview
+- Updated Prisma schema: added startTime, endTime, activityType, breakMinutes to WorkOrderTimeLog model
+- Rewrote POST /api/work-orders/[id]/time-logs with 3-tier duration calculation:
+  1. Auto-calc from start/end times minus break (highest priority)
+  2. Manual hours override (middle priority)
+  3. Legacy action-based elapsed time calculation (lowest priority, backward compat)
+- Added DELETE /api/work-orders/[id]/time-logs?logId=X endpoint (creator/team leader/admin only)
+- Added audit log entries for all time log operations
+- Updated GET to include loggedBy relation and per-user breakdown in summary
+- Rebuilt frontend dialog: DateTimePicker for start/end, activity type with icons, break minutes input, manual hours override, live duration preview (green box shows "Xh Ym")
+- Rebuilt frontend display: colored activity icons (Wrench=green/Maintenance, Search=blue/Inspection, FlaskConical=violet/Testing, MapPin=amber/Travel, Hourglass=gray/Standby), time ranges in "Start → End" format, break badges, team log indicators, per-entry "Xh Ym" duration, hover-reveal delete button, loggedBy attribution
+- Added delete confirmation dialog
+- Added FlaskConical icon import
+
+Stage Summary:
+- **Schema**: WorkOrderTimeLog — +startTime, +endTime, +activityType, +breakMinutes
+- **API**: Full rewrite with auto-duration, DELETE endpoint, per-user summary
+- **Frontend**: Enterprise time log dialog + rich timeline display
+- **Commit**: ae027c4b
+- **VPS**: Must run `npx prisma db push` to add new columns
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Enterprise-grade time logging with pause/resume, break tracking, single active WO enforcement
+
+Work Log:
+- Added `pauseReason` field to `WorkOrderTimeLog` model in Prisma schema (break, switch_wo, waiting_parts, other)
+- Created `GET /api/work-orders/active-session` API route — checks if current user has an active (unpaused) time session across ALL work orders
+- Updated `POST /api/work-orders/[id]/time-logs` with single-active-WO enforcement:
+  - Before creating `start` or `resume` entries, checks if user has active session on another WO
+  - Returns 409 Conflict with conflict details if active session exists elsewhere
+  - Added `pauseReason` to create data (only when action is "pause")
+  - Added `pauseReason` to audit log
+- Rebuilt frontend time log UI in WODetailPage with:
+  - Context-aware action buttons: Start Work / Pause / Resume / Complete
+  - Active session detection via `fetchActiveSession()` callback
+  - `isActiveOnThisWO` / `isActiveOnOtherWO` / `hasPausedSession` derived states
+  - Green "Active Session" banner with live running timer when working on current WO
+  - Amber warning banner when user has active session on another WO with clickable link
+  - Amber "Paused" indicator with Resume prompt
+  - "Busy on WO #XXX" disabled button when active on other WO
+  - Pause Reason dialog with 4 visual options: Break, Switch WO, Waiting Parts, Other
+  - Manual time entry still available via ghost clock button
+  - Time log entries now show action-based icons (Started/Paused/Resumed/Completed) and pause reason badges
+  - Delete and manual log both refresh active session state
+
+Stage Summary:
+- **Schema**: `prisma/schema.prisma` — added `pauseReason String?` to `WorkOrderTimeLog`
+- **New API**: `src/app/api/work-orders/active-session/route.ts` — cross-WO active session detection
+- **Updated API**: `src/app/api/work-orders/[id]/time-logs/route.ts` — single-active-WO enforcement (409), pauseReason support
+- **Frontend**: `src/components/modules/MaintenancePages.tsx` — enterprise time log UI with Start/Pause/Resume/Complete controls, session banners, pause reason dialog
+- **Key rule**: A technician can only have ONE active work order at a time. Must pause before switching.
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: Fix DialogContent accessibility warning + resize date/time fields on Log Time form
+
+Work Log:
+- Investigated DialogContent accessibility warning across entire codebase
+- Found all dialogs use ResponsiveDialog or ConfirmDialog, which always include DialogTitle
+- Discovered root cause: `CommandDialog` in `src/components/ui/command.tsx` had `DialogHeader` with `DialogTitle` placed OUTSIDE `DialogContent` (as sibling, not child)
+- Fixed by moving `DialogHeader` inside `DialogContent` so Radix UI can detect the title
+- Resized date/time fields in Log Time form: reduced time portion from `w-[120px]` to `w-[100px]` in DateTimePicker desktop layout, giving date field more space
+- Verified no compilation errors after both changes
+
+Stage Summary:
+- **command.tsx**: Moved DialogHeader inside DialogContent to fix accessibility warning
+- **datetime-picker.tsx**: Reduced time field width from 120px to 100px for better date field proportion
+
+---
+Task ID: 9
+Agent: Main Agent
+Task: Fix tool requests not showing on WO detail view
+
+Work Log:
+- Investigated WO detail view — found that RepairToolRequest and RepairMaterialRequest are separate tables linked to WorkOrder via workOrderId
+- The WO GET API did NOT include repairToolRequests or repairMaterialRequests in its Prisma include
+- Added repairToolRequests (with tool, requestedBy, supervisorApprovedBy, storekeeperApprovedBy, issuedByUser) to baseInclude
+- Added repairMaterialRequests (with item, requestedBy, supervisorApprovedBy, storekeeperApprovedBy, issuedByUser) to baseInclude
+- Added fallback empty arrays for both relations when tables don't exist on VPS
+- Added "Tool Requests" card to WO detail view — shows tool name, code, requester, urgency, status badge, "View All" button
+- Added "Material Requests" card to WO detail view — shows item name, quantity, requester, urgency, status badge, "View All" button
+- Both cards are conditionally rendered only when requests exist
+- Both cards have max-h-64 with scroll for long lists (shows first 10, then "+N more")
+
+Stage Summary:
+- **API**: `src/app/api/work-orders/[id]/route.ts` — added repairToolRequests + repairMaterialRequests to include
+- **Frontend**: `src/components/modules/MaintenancePages.tsx` — added 2 new cards between "Materials & Parts" and "Repair Resources"
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix material request approval workflow visibility for supervisor/admin/store-attendant roles
+
+Work Log:
+- Investigated the codebase and discovered TWO separate material systems: (a) WO Materials (simple flow in `work_order_materials` table) and (b) Repair Material Requests (full approval pipeline in `repair_material_requests` table)
+- Found that when a planner/technician adds a material on the WO detail page, it only creates a `WorkOrderMaterial` — which does NOT appear in the Repairs → Material Requests page where supervisors and storekeepers approve
+- The disconnect means supervisors/storekeepers can't see or approve materials requested from work orders
+
+Stage Summary:
+- Root cause identified: `work_order_materials` (simple model) vs `repair_material_requests` (approval pipeline model) are disconnected
+---
+Task ID: 2
+Agent: Main Agent
+Task: Implement material request approval pipeline integration
+
+Work Log:
+- Modified POST `/api/work-orders/[id]/materials/route.ts` to create BOTH a `WorkOrderMaterial` (for cost tracking) AND a `RepairMaterialRequest` (for the approval pipeline) when a material is added on a work order
+- Added `reason`, `notes`, `urgency`, and `unit` fields to the WO materials POST endpoint
+- Added supervisor and planner notifications when a material request is created
+- Added VPS-compatible try/catch fallback for the repair material request creation
+- Changed WO material status from 'requested' to 'pending_approval'
+
+Stage Summary:
+- Backend now creates dual records: WO material for cost tracking + RepairMaterialRequest for approval pipeline
+- Supervisor/planner get notified when material requests are submitted
+---
+Task ID: 3
+Agent: Main Agent
+Task: Update WO detail page UI with approval pipeline and action buttons
+
+Work Log:
+- Replaced the old "Materials & Parts" card on WO detail with an enhanced version showing RepairMaterialRequests with:
+  - Visual pipeline progress dots (Pending → Supervisor → Store → Picking → Issued → Done)
+  - Status badges with color coding
+  - Action buttons per role: Supervisor Approve/Reject, Store Approve/Reject, Pick, Issue, Return
+  - Context-aware highlighting (pending requests glow amber for supervisors, etc.)
+- Enhanced "Add Material" dialog with: Approval workflow description, Urgency selector, Reason field (required)
+- Added missing imports: Tooltip components, Warehouse/PackageOpen/PackageCheck icons
+- Created local UrgencyBadge component in MaintenancePages.tsx
+- Added role-checking helpers (isSupervisorOrAdminLocal, isStoreOrAdminLocal) and material request action handlers
+- Removed duplicate "Repair Material Requests" card (consolidated into the new Materials card)
+- Updated "Repair Resources" quick access card (removed duplicate Material Requests button, changed to 4-col grid)
+
+Stage Summary:
+- Materials card now shows full approval pipeline with role-based action buttons
+- Add Material dialog explains the approval workflow and collects urgency/reason
+- Supervisors and storekeepers can now see and approve material requests directly on the WO detail page AND on the Repairs → Material Requests page
+---
+Task ID: 1
+Agent: Main Agent
+Task: Implement WO lock after supervisor review + planner approval — disable all action buttons
+
+Work Log:
+- Analyzed WO status flow: completed → verified (supervisor) → closed (planner) 
+- Added backend status check to PUT /api/work-orders/[id] — blocks edits when status is 'verified' or 'closed'
+- Added backend status checks to sub-resource POST routes: time-logs, materials, tasks, personal-tools
+- Added backend status check to time-logs DELETE and personal-tools PUT
+- Frontend: Added `isWOFinalized`, `isWOPermanentlyLocked`, `actionDisabled` flags in WODetailPage
+- Frontend: Added 'verified' to canEdit exclusion list
+- Frontend: Replaced all `readOnlyDisabled` with `actionDisabled` for inline action buttons
+- Frontend: Actions dropdown hidden entirely when permanently locked
+- Frontend: Added "Under Review" badge + "Supervisor reviewed — awaiting planner closure" banner for verified status
+- Frontend: Added "Permanently Locked" badge + banner for closed/locked status
+- Comments section left intentionally enabled for verified/closed WOs (supervisors/planners need to add notes)
+
+Stage Summary:
+- Files modified:
+  - src/app/api/work-orders/[id]/route.ts (PUT: added verified/closed status check)
+  - src/app/api/work-orders/[id]/time-logs/route.ts (POST + DELETE: added status check)
+  - src/app/api/work-orders/[id]/materials/route.ts (POST: added status check)
+  - src/app/api/work-orders/[id]/tasks/route.ts (POST: added status check)
+  - src/app/api/work-orders/[id]/personal-tools/route.ts (POST + PUT: added status check)
+  - src/components/modules/MaintenancePages.tsx (frontend lock UI)
+- Workflow: completed (editable) → verified (locked, pending planner) → closed (permanently locked)
+
+---
+Task ID: 2
+Agent: main
+Task: Requester edit/delete for pending maintenance requests
+
+Work Log:
+- Explored current maintenance request system: statuses (pending/approved/rejected/converted), API routes, frontend MRDetailPage
+- Added DELETE API endpoint at /api/maintenance-requests/[id] with requester-only + pending-only guard
+- Updated PUT API endpoint with requester-only guard for pending status
+- Added canModifyPendingRequest helper for consistent backend validation
+- Built Edit dialog in MRDetailPage with pre-populated form (title, description, priority, category, asset, machine-down)
+- Built Delete confirmation dialog in MRDetailPage with destructive variant
+- Added canEdit/canDelete flags — visible only when status=pending AND (user is requester OR admin)
+- Added list view dropdown menu (⋮) with View/Edit and Delete actions for pending own requests
+- Added list view delete confirmation dialog with handleDeleteFromList
+- Detail sheet auto-closes after delete via onDelete callback prop
+
+Stage Summary:
+- Backend: DELETE + updated PUT at /api/maintenance-requests/[id] with requester ownership + pending-only validation
+- Frontend: Edit dialog, Delete dialog in MRDetailPage; dropdown actions + delete confirm in list view
+- Committed and pushed: 21233a98

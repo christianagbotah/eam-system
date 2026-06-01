@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { Prisma } from '@prisma/client';
 
@@ -68,6 +68,11 @@ export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
+    const canCreate = isAdmin(session) || hasRole(session, 'maintenance_technician') || hasRole(session, 'maintenance_supervisor') || hasRole(session, 'maintenance_planner') || hasRole(session, 'maintenance_manager') || hasRole(session, 'production_operator') || hasRole(session, 'production_manager');
+    if (!canCreate) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions to create downtime records' }, { status: 403 });
+    }
 
     const body = await request.json();
     const { workOrderId, assetId, assetName, downtimeStart, downtimeEnd, reason, category, impactLevel, productionLoss, notes } = body;

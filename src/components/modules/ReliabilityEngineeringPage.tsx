@@ -31,6 +31,7 @@ import {
   ChevronDown, ChevronUp, Info, Zap, HeartPulse, Target,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
+import { cn } from '@/lib/utils';
 
 // ── API HELPER ──────────────────────────────────────────────────────────────
 
@@ -649,18 +650,22 @@ function FailureModesTab() {
       {/* Detail Dialog */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-lg">
+          <DialogHeader className={!selectedMode ? 'sr-only' : undefined}>
+            <DialogTitle className={cn("flex items-center gap-2", !selectedMode && "sr-only")}>{selectedMode ? (
+              <>
+                {selectedMode.code && <span className="font-mono text-sm text-muted-foreground">[{selectedMode.code}]</span>}
+                {selectedMode.name}
+              </>
+            ) : 'Failure Mode Details'}</DialogTitle>
+            <DialogDescription className={!selectedMode ? 'sr-only' : undefined}>{selectedMode ? (
+              <>
+                <Badge variant="secondary" className={severityColors[selectedMode.severity]}>{selectedMode.severity}</Badge>
+                <span className="ml-2 capitalize text-xs">{selectedMode.category.replace('_', ' ')}</span>
+              </>
+            ) : 'Details'}</DialogDescription>
+          </DialogHeader>
           {selectedMode && (
             <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  {selectedMode.code && <span className="font-mono text-sm text-muted-foreground">[{selectedMode.code}]</span>}
-                  {selectedMode.name}
-                </DialogTitle>
-                <DialogDescription>
-                  <Badge variant="secondary" className={severityColors[selectedMode.severity]}>{selectedMode.severity}</Badge>
-                  <span className="ml-2 capitalize text-xs">{selectedMode.category.replace('_', ' ')}</span>
-                </DialogDescription>
-              </DialogHeader>
               <div className="space-y-3 text-sm">
                 {selectedMode.description && (
                   <div><p className="font-medium mb-1">Description</p><p className="text-muted-foreground">{selectedMode.description}</p></div>
@@ -1002,12 +1007,12 @@ function WeibullTab() {
       {/* Detail Dialog */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-lg">
+          <DialogHeader className={!selectedAnalysis ? 'sr-only' : undefined}>
+            <DialogTitle className={cn("text-sm", !selectedAnalysis && "sr-only")}>{selectedAnalysis ? selectedAnalysis.name : 'RCM Analysis Details'}</DialogTitle>
+            <DialogDescription className={!selectedAnalysis ? 'sr-only' : undefined}>{selectedAnalysis ? `${selectedAnalysis.component.name} (${selectedAnalysis.component.componentCode})` : 'Details'}</DialogDescription>
+          </DialogHeader>
           {selectedAnalysis && (
             <>
-              <DialogHeader>
-                <DialogTitle className="text-sm">{selectedAnalysis.name}</DialogTitle>
-                <DialogDescription>{selectedAnalysis.component.name} ({selectedAnalysis.component.componentCode})</DialogDescription>
-              </DialogHeader>
               {(() => {
                 const result = parseResultSummary(selectedAnalysis.resultSummary);
                 return result ? (

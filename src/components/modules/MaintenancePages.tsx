@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   ClipboardList, Wrench, Plus, Search, ArrowLeft, CheckCircle2, XCircle,
   Clock, AlertTriangle, RefreshCw, Play, Pause, Check, Lock, Eye, Pencil,
@@ -42,6 +43,7 @@ import {
   PieChart as PieChartIcon, Gauge, ListChecks, Shield, ShieldCheck, HardHat, MapPin,
   Crown, Timer, Hourglass, UserPlus, Workflow, ChevronRight, ExternalLink, Hammer,
   Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
+  FlaskConical, Warehouse, PackageOpen, PackageCheck,
   ArrowUpRight, ArrowDownRight, CalendarClock, LayoutDashboard, Bell, DollarSign,
   UserMinus, UserCheck, UserX,
 } from 'lucide-react';
@@ -61,6 +63,26 @@ import { FileUpload } from '@/components/shared/FileUpload';
 import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSelector';
 // WorkerAssignmentPicker still used by WO Detail page
 import { WorkerAssignmentPicker, type SelectedWorker } from '@/components/shared/WorkerAssignmentPicker';
+// Local UrgencyBadge for WO detail page (same as RepairsPages)
+const URGENCY_CFG: Record<string, { label: string; color: string; dotColor: string }> = {
+  low: { label: 'Low', color: 'bg-slate-100 text-slate-700 border-slate-300', dotColor: 'bg-slate-400' },
+  normal: { label: 'Normal', color: 'bg-amber-50 text-amber-700 border-amber-300', dotColor: 'bg-amber-500' },
+  medium: { label: 'Medium', color: 'bg-amber-50 text-amber-700 border-amber-300', dotColor: 'bg-amber-500' },
+  high: { label: 'High', color: 'bg-orange-50 text-orange-700 border-orange-300', dotColor: 'bg-orange-500' },
+  critical: { label: 'Critical', color: 'bg-red-50 text-red-700 border-red-300', dotColor: 'bg-red-500' },
+};
+
+function UrgencyBadge({ urgency }: { urgency: string }) {
+  const cfg = URGENCY_CFG[urgency];
+  if (!cfg) return null;
+  return (
+    <Badge variant="outline" className={`${cfg.color} gap-1.5 text-xs font-medium`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${cfg.dotColor}`} />
+      {cfg.label}
+    </Badge>
+  );
+}
+
 export function MaintenanceRequestsPage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,6 +93,8 @@ export function MaintenanceRequestsPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [autoConvertId, setAutoConvertId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const { hasPermission, user, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
 
@@ -133,6 +157,20 @@ export function MaintenanceRequestsPage() {
 
   const handleRefresh = useCallback(() => setRefreshKey(k => k + 1), []);
 
+  const handleDeleteFromList = async () => {
+    if (!deleteId) return;
+    setDeleteLoading(true);
+    const res = await api.delete(`/api/maintenance-requests/${deleteId}`);
+    if (res.success) {
+      toast.success('Request deleted');
+      setDeleteId(null);
+      handleRefresh();
+    } else {
+      toast.error(res.error || 'Failed to delete request');
+    }
+    setDeleteLoading(false);
+  };
+
   // Helper: check if user can convert a specific MR to WO
   const canConvertMR = useCallback((mr: MaintenanceRequest) => {
     return mr.status === 'approved'
@@ -142,25 +180,50 @@ export function MaintenanceRequestsPage() {
 
   // Render action buttons for a request row
   const renderRowActions = useCallback((mr: MaintenanceRequest) => {
+    const isRequester = mr.requestedBy === user?.id;
+    const canEditRow = mr.status === 'pending' && (isRequester || isAdmin());
+    const canDeleteRow = mr.status === 'pending' && (isRequester || isAdmin());
     const convertable = canConvertMR(mr);
-    if (!convertable) return null;
+    if (!canEditRow && !canDeleteRow && !convertable) return null;
     return (
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-7 px-2 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
-        onClick={(e) => {
-          e.stopPropagation();
-          setAutoConvertId(mr.id);
-          setDetailId(mr.id);
-        }}
-        title="Convert to Work Order"
-      >
-        <RefreshCw className="h-3.5 w-3.5 mr-1" />
-        <span className="hidden sm:inline">Convert</span>
-      </Button>
+      <div className="flex items-center gap-0.5">
+        {canEditRow && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem className="text-blue-600 focus:text-blue-600 focus:bg-blue-50" onClick={(e) => { e.stopPropagation(); setDetailId(mr.id); }}>
+                <Pencil className="h-4 w-4 mr-2" />View / Edit
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50" onClick={(e) => { e.stopPropagation(); setDeleteId(mr.id); }}>
+                <Trash2 className="h-4 w-4 mr-2" />Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        {!canEditRow && convertable && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
+            onClick={(e) => {
+              e.stopPropagation();
+              setAutoConvertId(mr.id);
+              setDetailId(mr.id);
+            }}
+            title="Convert to Work Order"
+          >
+            <RefreshCw className="h-3.5 w-3.5 mr-1" />
+            <span className="hidden sm:inline">Convert</span>
+          </Button>
+        )}
+      </div>
     );
-  }, [canConvertMR]);
+  }, [canConvertMR, user, isAdmin]);
 
   return (
     <div className="page-content">
@@ -272,10 +335,22 @@ export function MaintenanceRequestsPage() {
 
       {/* Detail Side Sheet */}
       <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) { setDetailId(null); setAutoConvertId(null); } }}>
-        <SheetContent side="right" className="sm:max-w-xl overflow-y-auto p-6 pt-0">
-          {detailId && <MRDetailPage id={detailId} onUpdate={handleRefresh} autoOpenConvert={autoConvertId === detailId} />}
+        <SheetContent side="right" className="overflow-y-auto overflow-x-hidden p-6 pt-0 min-w-0">
+          {detailId && <MRDetailPage id={detailId} onUpdate={handleRefresh} autoOpenConvert={autoConvertId === detailId} onDelete={() => { setDetailId(null); }} />}
         </SheetContent>
       </Sheet>
+
+      {/* Delete Confirmation Dialog (from list) */}
+      <ConfirmDialog
+        open={!!deleteId}
+        onOpenChange={(open) => { if (!open) setDeleteId(null); }}
+        title="Delete Maintenance Request"
+        description="Are you sure you want to delete this maintenance request? This action cannot be undone."
+        confirmLabel="Yes, Delete"
+        variant="destructive"
+        loading={deleteLoading}
+        onConfirm={handleDeleteFromList}
+      />
     </div>
   );
 }
@@ -632,7 +707,7 @@ function MRWorkflowTimeline({ mr }: { mr: MaintenanceRequest }) {
   );
 }
 
-export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; onUpdate: () => void; autoOpenConvert?: boolean }) {
+export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: string; onUpdate: () => void; autoOpenConvert?: boolean; onDelete?: () => void }) {
   const [mr, setMr] = useState<MaintenanceRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -643,6 +718,18 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
   const { hasPermission, user, isAdmin } = useAuthStore();
   const isMobile = useIsMobile();
+
+  // Edit dialog state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: '', description: '', priority: 'medium', category: '',
+    assetId: '', assetName: '', location: '', departmentId: '', machineDownStatus: false,
+  });
+
+  // Delete dialog state
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Assign to Planner dialog
   const [assignPlannerOpen, setAssignPlannerOpen] = useState(false);
@@ -875,6 +962,63 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
     }
   };
 
+  // --- Edit handlers ---
+  const openEditDialog = () => {
+    if (!mr) return;
+    setEditForm({
+      title: mr.title,
+      description: mr.description || '',
+      priority: mr.priority,
+      category: mr.category || '',
+      assetId: mr.assetId || '',
+      assetName: mr.assetName || '',
+      location: mr.location || '',
+      departmentId: mr.departmentId || '',
+      machineDownStatus: mr.machineDownStatus || false,
+    });
+    setEditOpen(true);
+  };
+
+  const handleEdit = async () => {
+    if (!editForm.title.trim()) { toast.error('Title is required'); return; }
+    setEditLoading(true);
+    const res = await api.put(`/api/maintenance-requests/${id}`, {
+      title: editForm.title,
+      description: editForm.description,
+      priority: editForm.priority,
+      category: editForm.category,
+      assetId: editForm.assetId || null,
+      assetName: editForm.assetName || null,
+      location: editForm.location || null,
+      departmentId: editForm.departmentId || null,
+      machineDownStatus: editForm.machineDownStatus,
+    });
+    if (res.success) {
+      toast.success('Request updated');
+      setEditOpen(false);
+      handleRefresh();
+      onUpdate();
+    } else {
+      toast.error(res.error || 'Failed to update request');
+    }
+    setEditLoading(false);
+  };
+
+  // --- Delete handler ---
+  const handleDelete = async () => {
+    setDeleteLoading(true);
+    const res = await api.delete(`/api/maintenance-requests/${id}`);
+    if (res.success) {
+      toast.success('Request deleted');
+      setDeleteOpen(false);
+      onUpdate(); // refresh list
+      onDelete?.(); // close detail sheet
+    } else {
+      toast.error(res.error || 'Failed to delete request');
+    }
+    setDeleteLoading(false);
+  };
+
   if (loading) return <LoadingSkeleton />;
   if (!mr) return <div className="p-6">Request not found</div>;
 
@@ -891,6 +1035,10 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
   const canReject = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
   const canAssignPlanner = mr.status === 'approved' && (isAdminUser || isDeptSupervisor) && !mr.assignedPlannerId;
   const canConvert = mr.status === 'approved' && hasPermission('maintenance_requests.convert_to_wo') && (mr.assignedPlannerId === user?.id || isAdminUser || !mr.assignedPlannerId);
+  // Requester can edit/delete their own pending requests
+  const isRequester = mr.requestedBy === user?.id;
+  const canEdit = mr.status === 'pending' && (isRequester || isAdminUser);
+  const canDelete = mr.status === 'pending' && (isRequester || isAdminUser);
 
   return (
     <>
@@ -905,6 +1053,16 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
         <SheetDescription className="text-sm font-medium text-foreground mt-0.5 line-clamp-2">{mr.title}</SheetDescription>
         {/* Action buttons in header */}
         <div className="flex items-center gap-2 flex-wrap mt-2">
+          {canEdit && (
+            <Button size="sm" variant="outline" className="border-blue-200 text-blue-700 hover:bg-blue-50" onClick={openEditDialog}>
+              <Pencil className="h-4 w-4 mr-1" />Edit
+            </Button>
+          )}
+          {canDelete && (
+            <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setDeleteOpen(true)}>
+              <Trash2 className="h-4 w-4 mr-1" />Delete
+            </Button>
+          )}
           {canReject && (
             <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectDialogOpen(true)}>
               <XCircle className="h-4 w-4 mr-1" />Reject
@@ -942,6 +1100,109 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
         confirmLabel="Yes, Approve"
         loading={actionLoading}
         onConfirm={() => handleAction('approve', '')}
+      />
+
+      {/* Edit Request Dialog */}
+      <ResponsiveDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        title="Edit Maintenance Request"
+        description="Update the details of your pending request."
+        footer={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white" disabled={editLoading} onClick={handleEdit}>
+              {editLoading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Saving...</> : <><Pencil className="h-4 w-4 mr-1" />Save Changes</>}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Title *</Label>
+            <Input value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} placeholder="Brief description of the issue" />
+          </div>
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Textarea value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} placeholder="Detailed description..." rows={3} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Priority</Label>
+              <Select value={editForm.priority} onValueChange={v => setEditForm(f => ({ ...f, priority: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="urgent">Urgent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={editForm.category} onValueChange={v => setEditForm(f => ({ ...f, category: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mechanical">Mechanical</SelectItem>
+                  <SelectItem value="electrical">Electrical</SelectItem>
+                  <SelectItem value="hydraulic">Hydraulic</SelectItem>
+                  <SelectItem value="pneumatic">Pneumatic</SelectItem>
+                  <SelectItem value="instrumentation">Instrumentation</SelectItem>
+                  <SelectItem value="structural">Structural</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Machine / Asset</Label>
+              <AsyncSearchableSelect
+                value={editForm.assetId}
+                onValueChange={v => setEditForm(f => ({ ...f, assetId: v }))}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/assets');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                      value: a.id,
+                      label: `${a.name} [${a.assetTag}]`,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select machine..."
+                searchPlaceholder="Search machines..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Input value={editForm.location} onChange={e => setEditForm(f => ({ ...f, location: e.target.value }))} placeholder="Location of the item" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Machine Down?</Label>
+            <Select value={editForm.machineDownStatus ? 'Yes' : 'No'} onValueChange={v => setEditForm(f => ({ ...f, machineDownStatus: v === 'Yes' }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="No">No — Machine Running</SelectItem>
+                <SelectItem value="Yes">Yes — Machine Down</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </ResponsiveDialog>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete Maintenance Request"
+        description={`Are you sure you want to delete "${mr?.title}"? This action cannot be undone. All comments and attachments will be permanently removed.`}
+        confirmLabel="Yes, Delete"
+        variant="destructive"
+        loading={deleteLoading}
+        onConfirm={handleDelete}
       />
 
       {/* Assign to Planner Dialog */}
@@ -1137,13 +1398,9 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
                   teamLeaderId={convertForm.teamLeaderId}
                   onSelectedWorkersChange={(ids) => setConvertForm(f => ({ ...f, selectedWorkerIds: ids }))}
                   onTeamLeaderChange={(id) => setConvertForm(f => ({ ...f, teamLeaderId: id }))}
-                  departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-                  selectedDepartmentIds={convertForm.departmentIds}
-                  onDepartmentsChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
                   assignType={convertForm.assignType}
                   onAssignTypeChange={(type) => setConvertForm(f => ({ ...f, assignType: type }))}
                   label="Resource Assignment"
-                  hideDepartmentFilter={true}
                 />
 
                 {/* Required Spare Parts */}
@@ -1379,9 +1636,6 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
               teamLeaderId={convertForm.teamLeaderId}
               onSelectedWorkersChange={(ids) => setConvertForm(f => ({ ...f, selectedWorkerIds: ids }))}
               onTeamLeaderChange={(id) => setConvertForm(f => ({ ...f, teamLeaderId: id }))}
-              departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-              selectedDepartmentIds={convertForm.departmentIds}
-              onDepartmentsChange={(ids) => setConvertForm(f => ({ ...f, departmentIds: ids }))}
               assignType={convertForm.assignType}
               onAssignTypeChange={(type) => setConvertForm(f => ({ ...f, assignType: type }))}
               label="Resource Assignment"
@@ -1848,7 +2102,7 @@ export function WorkOrdersPage() {
 
       {/* WO Detail Side Sheet */}
       <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
-        <SheetContent className="sm:max-w-xl overflow-y-auto p-6 pt-0">
+        <SheetContent className="overflow-y-auto overflow-x-hidden p-6 pt-0 min-w-0">
           {detailId && <WODetailPage id={detailId} onUpdate={handleRefresh} />}
         </SheetContent>
       </Sheet>
@@ -2077,13 +2331,9 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
               teamLeaderId={form.teamLeaderId}
               onSelectedWorkersChange={(ids) => updateField('selectedWorkerIds', ids)}
               onTeamLeaderChange={(id) => updateField('teamLeaderId', id)}
-              departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-              selectedDepartmentIds={form.departmentId ? [form.departmentId] : []}
-              onDepartmentsChange={(ids) => updateField('departmentId', ids[0] || '')}
               assignType={form.assignType}
               onAssignTypeChange={(type) => updateField('assignType', type)}
               label="Resource Assignment"
-              hideDepartmentFilter={true}
             />
           </div>
         ) : (
@@ -2257,13 +2507,9 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
             teamLeaderId={form.teamLeaderId}
             onSelectedWorkersChange={(ids) => updateField('selectedWorkerIds', ids)}
             onTeamLeaderChange={(id) => updateField('teamLeaderId', id)}
-            departments={departments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-            selectedDepartmentIds={form.departmentId ? [form.departmentId] : []}
-            onDepartmentsChange={(ids) => updateField('departmentId', ids[0] || '')}
             assignType={form.assignType}
             onAssignTypeChange={(type) => updateField('assignType', type)}
             label="Resource Assignment"
-            hideDepartmentFilter={true}
           />
 
           {/* Required Spare Parts */}
@@ -2372,7 +2618,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const { hasPermission, user, isAdmin } = useAuthStore();
   const { navigate } = useNavigationStore();
   const isMobile = useIsMobile();
-  const canApproveMaterials = user?.roles?.some((r: any) => ['admin', 'store_keeper', 'store_manager'].includes(r.slug)) ?? false;
+  const canApproveMaterials = user?.roles?.some((r: any) => ['admin', 'store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(r.slug)) ?? false;
   // Edit WO
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
@@ -2380,19 +2626,55 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [editDepartments, setEditDepartments] = useState<any[]>([]);
   const [editInventoryItems, setEditInventoryItems] = useState<any[]>([]);
   const [editToolsData, setEditToolsData] = useState<any[]>([]);
-  // Time log
+  // Time log — enterprise fields
   const [timeLogOpen, setTimeLogOpen] = useState(false);
   const [tlAction, setTlAction] = useState('start');
-  const [tlHours, setTlHours] = useState('');
+  const [tlStartTime, setTlStartTime] = useState('');
+  const [tlEndTime, setTlEndTime] = useState('');
+  const [tlActivityType, setTlActivityType] = useState('maintenance');
+  const [tlBreakMinutes, setTlBreakMinutes] = useState('');
   const [tlNotes, setTlNotes] = useState('');
   const [tlLoading, setTlLoading] = useState(false);
   const [tlLoggedForUserId, setTlLoggedForUserId] = useState('');
+  const [tlError, setTlError] = useState('');
+
+  // Compute minimum date/time constraints from WO schedule
+  const tlConstraints = useMemo(() => {
+    // Priority: actualStart > plannedStart > createdAt
+    const refDate = wo?.actualStart || wo?.plannedStart || wo?.createdAt;
+    if (!refDate) return { minDate: undefined as string | undefined, minTime: undefined as string | undefined };
+    const d = new Date(refDate);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return {
+      minDate: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      minTime: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    };
+  }, [wo?.actualStart, wo?.plannedStart, wo?.createdAt]);
+  const [deleteTlId, setDeleteTlId] = useState<string | null>(null);
+  // Enterprise time session — active session tracking across all WOs
+  const [globalActiveSession, setGlobalActiveSession] = useState<{
+    workOrderId: string;
+    workOrderNumber: string;
+    workOrderTitle: string;
+    workOrderStatus: string;
+    action: string;
+    startedAt: string;
+    elapsedSeconds: number;
+    logId: string;
+    activityType: string;
+  } | null>(null);
+  const [pauseDialogOpen, setPauseDialogOpen] = useState(false);
+  const [pauseReason, setPauseReason] = useState('');
+  const [pauseNotes, setPauseNotes] = useState('');
+  const [pauseLoading, setPauseLoading] = useState(false);
   // Material
   const [materialOpen, setMaterialOpen] = useState(false);
   const [matItemId, setMatItemId] = useState('');
   const [matItemName, setMatItemName] = useState('');
   const [matQty, setMatQty] = useState('');
   const [matUnit, setMatUnit] = useState('each');
+  const [matReason, setMatReason] = useState('');
+  const [matUrgency, setMatUrgency] = useState('normal');
   const [matLoading, setMatLoading] = useState(false);
   // Available transitions from state machine
   const [availableTransitions, setAvailableTransitions] = useState<Array<{
@@ -2558,11 +2840,28 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return false;
   }, [wo, user, isAdmin, hasPermission]);
 
+  // Permission: can log time for other team members (only team leader or admin)
+  const canLogForOthers = useMemo(() => {
+    if (!wo || !user) return false;
+    if (isAdmin()) return true;
+    return wo.teamLeaderId === user.id;
+  }, [wo, user, isAdmin]);
+
   const isReadOnly = useMemo(() => {
     if (!wo || !user) return false;
     if (fullAccess) return false;
     return wo.teamMembers?.some(tm => tm.userId === user.id && tm.accessLevel === 'read_only') || false;
   }, [wo, user, fullAccess]);
+
+  // Fetch global active session and set up live timer
+  const fetchActiveSession = useCallback(async () => {
+    try {
+      const res = await api.get('/api/work-orders/active-session');
+      if (res.success) {
+        setGlobalActiveSession(res.data.session);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   // Live session timer: find unmatched start/resume without pause
   useEffect(() => {
@@ -2571,15 +2870,66 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
       return;
     }
-    const sorted = [...wo.timeLogs].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const sorted = [...wo.timeLogs].sort((a, b) => new Date(a.timestamp || a.createdAt).getTime() - new Date(b.timestamp || b.createdAt).getTime());
     const lastStart = [...sorted].reverse().find(t => t.action === 'start' || t.action === 'resume');
-    if (!lastStart?.startTime) { setSessionDuration(null); return; }
-    const startTime = new Date(lastStart.startTime).getTime();
+    if (!lastStart?.timestamp) { setSessionDuration(null); return; }
+    const startTime = new Date(lastStart.timestamp).getTime();
     const calc = () => setSessionDuration((Date.now() - startTime) / 1000);
     calc();
     sessionTimerRef.current = setInterval(calc, 1000);
     return () => { if (sessionTimerRef.current) clearInterval(sessionTimerRef.current); };
   }, [wo?.timeLogs]);
+
+  // Check global active session on mount and after actions
+  useEffect(() => {
+    fetchActiveSession();
+  }, [fetchActiveSession]);
+
+  // Derived session state for THIS work order
+  const isActiveOnThisWO = useMemo(() => {
+    return globalActiveSession && globalActiveSession.workOrderId === id;
+  }, [globalActiveSession, id]);
+
+  const isActiveOnOtherWO = useMemo(() => {
+    return globalActiveSession && globalActiveSession.workOrderId !== id;
+  }, [globalActiveSession, id]);
+
+  // Is there a paused session on THIS WO that can be resumed?
+  const hasPausedSession = useMemo(() => {
+    if (!wo?.timeLogs || wo.timeLogs.length === 0) return false;
+    if (isActiveOnThisWO) return false; // currently running, not paused
+    const sorted = [...wo.timeLogs].sort((a, b) => new Date(a.timestamp || a.createdAt).getTime() - new Date(b.timestamp || b.createdAt).getTime());
+    const lastAction = sorted[sorted.length - 1];
+    return lastAction?.action === 'pause';
+  }, [wo?.timeLogs, isActiveOnThisWO]);
+
+  // Quick action handlers for start/pause/resume/complete
+  const handleQuickTimeAction = async (action: string, reason?: string) => {
+    setTlLoading(true);
+    const body: any = {
+      action,
+      activityType: 'maintenance',
+    };
+    if (reason) body.pauseReason = reason;
+    if (pauseNotes) { body.notes = pauseNotes; setPauseNotes(''); }
+    const res = await api.post(`/api/work-orders/${id}/time-logs`, body);
+    if (res.success) {
+      const msgs: Record<string, string> = {
+        start: 'Work started — timer is running',
+        pause: reason === 'break' ? 'Paused for break' : reason === 'switch_wo' ? 'Paused — you can now work on another WO' : 'Work paused',
+        resume: 'Work resumed — timer is running',
+        complete: 'Work completed on this WO',
+      };
+      toast.success(msgs[action] || `Time ${action} recorded`);
+      setPauseDialogOpen(false);
+      setPauseReason('');
+      fetchActiveSession();
+      fetchWO();
+    } else {
+      toast.error(res.error || `Failed to ${action}`);
+    }
+    setTlLoading(false);
+  };
 
   const handleAction = async (action: string, extra?: Record<string, unknown>) => {
     setActionLoading(true);
@@ -2790,19 +3140,73 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   };
 
   const handleTimeLog = async () => {
+    setTlError('');
+
+    // Validation: end time must be after start time
+    if (tlStartTime && tlEndTime) {
+      const startMs = new Date(tlStartTime).getTime();
+      const endMs = new Date(tlEndTime).getTime();
+      if (endMs <= startMs) {
+        setTlError('End time must be after start time.');
+        return;
+      }
+    }
+
+    // Validation: start time must be on or after WO schedule date
+    if (tlStartTime && tlConstraints.minDate) {
+      const startDate = tlStartTime.slice(0, 10);
+      if (startDate < tlConstraints.minDate) {
+        setTlError(`Start date cannot be before the work order schedule date (${tlConstraints.minDate}).`);
+        return;
+      }
+      // Same date: check time
+      if (startDate === tlConstraints.minDate && tlConstraints.minTime) {
+        const startTime = tlStartTime.slice(11, 16);
+        if (startTime && startTime < tlConstraints.minTime) {
+          setTlError(`Start time cannot be before ${tlConstraints.minTime} on the schedule date.`);
+          return;
+        }
+      }
+    }
+
     setTlLoading(true);
     const body: any = { action: tlAction };
     if (tlNotes) body.notes = tlNotes;
-    if (tlHours && (tlAction === 'start' || tlAction === 'resume')) body.hoursWorked = parseFloat(tlHours);
-    // If logging for a team member
+    if (tlStartTime) body.startTime = tlStartTime;
+    if (tlEndTime) body.endTime = tlEndTime;
+    body.activityType = tlActivityType;
+    if (tlBreakMinutes) body.breakMinutes = parseInt(tlBreakMinutes, 10) || 0;
     if (tlLoggedForUserId) {
       body.loggedForUserId = tlLoggedForUserId;
       body.isTeamLog = true;
     }
     const res = await api.post(`/api/work-orders/${id}/time-logs`, body);
-    if (res.success) { toast.success('Time log recorded'); setTimeLogOpen(false); setTlHours(''); setTlNotes(''); setTlLoggedForUserId(''); fetchWO(); }
-    else { toast.error(res.error || 'Failed to log time'); }
+    if (res.success) {
+      toast.success('Time log recorded');
+      setTimeLogOpen(false);
+      setTlStartTime('');
+      setTlEndTime('');
+      setTlActivityType('maintenance');
+      setTlBreakMinutes('');
+      setTlNotes('');
+      setTlLoggedForUserId('');
+      setTlError('');
+      fetchActiveSession();
+      fetchWO();
+    } else {
+      if (res.conflict) {
+        toast.error(`${res.error} Go to WO #${res.conflict.workOrderNumber} and pause it first.`);
+      } else {
+        toast.error(res.error || 'Failed to log time');
+      }
+    }
     setTlLoading(false);
+  };
+
+  const handleDeleteTimeLog = async (logId: string) => {
+    const res = await api.delete(`/api/work-orders/${id}/time-logs?logId=${logId}`);
+    if (res.success) { toast.success('Time log deleted'); setDeleteTlId(null); fetchActiveSession(); fetchWO(); }
+    else { toast.error(res.error || 'Failed to delete time log'); }
   };
 
   const handleAddMaterial = async () => {
@@ -2811,10 +3215,51 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     const body: any = { itemId: matItemId };
     if (matQty) body.quantity = parseFloat(matQty);
     if (matUnit) body.unit = matUnit;
+    if (matReason) body.reason = matReason;
+    if (matUrgency) body.urgency = matUrgency;
     const res = await api.post(`/api/work-orders/${id}/materials`, body);
-    if (res.success) { toast.success('Material requested'); setMaterialOpen(false); setMatItemId(''); setMatItemName(''); setMatQty(''); fetchWO(); }
-    else { toast.error(res.error || 'Failed to add material'); }
+    if (res.success) {
+      toast.success('Material requested — sent for supervisor approval');
+      setMaterialOpen(false); setMatItemId(''); setMatItemName(''); setMatQty('');
+      setMatReason(''); setMatUrgency('normal');
+      fetchWO();
+      if (res.data?.repairMaterialRequest) {
+        toast.info('Material request is pending supervisor approval');
+      }
+    } else { toast.error(res.error || 'Failed to add material'); }
     setMatLoading(false);
+  };
+
+  // Repair Material Request action handlers (approval workflow from WO detail)
+  const handleMatRequestAction = async (mrId: string, action: string, extra?: Record<string, any>) => {
+    const res = await api.post(`/api/repairs/material-requests/${mrId}`, { action, ...extra });
+    if (res.success) {
+      const actionLabels: Record<string, string> = {
+        supervisor_approve: 'Supervisor approved',
+        supervisor_reject: 'Supervisor rejected',
+        storekeeper_approve: 'Store approved',
+        storekeeper_reject: 'Store rejected',
+        record_return: 'Return recorded',
+      };
+      toast.success(actionLabels[action] || 'Action completed');
+      fetchWO();
+    } else toast.error(res.error || 'Failed');
+  };
+
+  const handleMatRequestPick = async (mrId: string) => {
+    const res = await api.post('/api/repairs/material-requests/pick', { id: mrId });
+    if (res.success) { toast.success('Items being picked'); fetchWO(); }
+    else toast.error(res.error || 'Failed to pick');
+  };
+
+  const isSupervisorOrAdminLocal = () => {
+    const slugs = (user?.roles || []).map((r: any) => r.slug);
+    return slugs.includes('admin') || slugs.includes('maintenance_supervisor') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager');
+  };
+
+  const isStoreOrAdminLocal = () => {
+    const slugs = (user?.roles || []).map((r: any) => r.slug);
+    return slugs.includes('admin') || slugs.includes('store_keeper') || slugs.includes('inventory_manager') || slugs.includes('tools_shop_attendant');
   };
 
   // Personal tools handlers
@@ -2988,8 +3433,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     'wait-parts': { description: 'Are you sure you want to set this work order to Waiting for Parts?', label: 'Yes, Wait for Parts' },
   };
 
-  const canEdit = !['closed', 'cancelled'].includes(wo.status) && canManageTeamDirectly;
-  const readOnlyDisabled = isReadOnly;
+  // WO is finalized when supervisor has verified (awaiting planner closure) or permanently locked/closed
+  const isWOFinalized = wo.status === 'verified' || wo.status === 'closed' || wo.status === 'cancelled' || wo.isLocked;
+  const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
+  const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && canManageTeamDirectly;
+  // Disable all inline action buttons (time, materials, tools, tasks) when WO is finalized
+  const actionDisabled = isReadOnly || isWOFinalized;
 
   // Format session duration
   const formatSessionDuration = (seconds: number) => {
@@ -3000,7 +3449,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   };
 
   return (
-    <ScrollArea className="h-full">
+    <>
       {/* Sheet Header */}
       <SheetHeader className="pt-4 pb-4">
         <SheetTitle className="flex items-center gap-2 flex-wrap">
@@ -3008,7 +3457,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           <StatusBadge status={wo.status} />
           <PriorityBadge priority={wo.priority} />
           <Badge variant="outline" className="capitalize">{wo.type.replace('_', ' ')}</Badge>
-          {wo.isLocked && <Badge variant="secondary"><Lock className="h-3 w-3 mr-1" />Locked</Badge>}
+          {wo.status === 'verified' && !wo.isLocked && <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200"><ShieldCheck className="h-3 w-3 mr-1" />Under Review</Badge>}
+          {(wo.isLocked || wo.status === 'closed') && <Badge variant="secondary"><Lock className="h-3 w-3 mr-1" />Permanently Locked</Badge>}
           {wo.slaBreached && <Badge variant="destructive" className="text-[10px]"><AlertTriangle className="h-3 w-3 mr-1" />SLA BREACHED</Badge>}
         </SheetTitle>
         <SheetDescription className="mt-1">
@@ -3018,41 +3468,56 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
       {/* Actions Bar */}
       <div className="pb-4 flex items-center gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={readOnlyDisabled}><CheckCircle2 className="h-4 w-4 mr-1" />Actions</Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {canEdit && !isReadOnly && <DropdownMenuItem onClick={openEditWO}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}
-            {canEdit && !isReadOnly && <DropdownMenuSeparator />}
-            {transitionActions.map(ta => (
-              <DropdownMenuItem key={ta.toStatus} disabled={isReadOnly} onClick={() => {
-                if (needsDialog.has(ta.actionName)) {
-                  setActionDialog(ta.actionName);
-                } else if (ta.requiresReason) {
-                  setActionDialog(`reason:${ta.actionName}`);
-                } else if (woActionDescriptions[ta.actionName]) {
-                  const desc = woActionDescriptions[ta.actionName];
-                  setWoConfirmAction({
-                    action: ta.actionName,
-                    label: desc.label,
-                    variant: desc.variant || 'default',
-                    description: desc.description,
-                  });
-                } else {
-                  handleAction(ta.actionName);
-                }
-              }}>{ta.label}</DropdownMenuItem>
-            ))}
-            {transitionActions.length === 0 && canEdit && (
-              <DropdownMenuItem disabled>No transitions available</DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* When permanently locked, hide the entire Actions dropdown */}
+        {!isWOPermanentlyLocked && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isReadOnly}><CheckCircle2 className="h-4 w-4 mr-1" />Actions</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {canEdit && !isReadOnly && <DropdownMenuItem onClick={openEditWO}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}
+              {canEdit && !isReadOnly && <DropdownMenuSeparator />}
+              {transitionActions.map(ta => (
+                <DropdownMenuItem key={ta.toStatus} disabled={isReadOnly} onClick={() => {
+                  if (needsDialog.has(ta.actionName)) {
+                    setActionDialog(ta.actionName);
+                  } else if (ta.requiresReason) {
+                    setActionDialog(`reason:${ta.actionName}`);
+                  } else if (woActionDescriptions[ta.actionName]) {
+                    const desc = woActionDescriptions[ta.actionName];
+                    setWoConfirmAction({
+                      action: ta.actionName,
+                      label: desc.label,
+                      variant: desc.variant || 'default',
+                      description: desc.description,
+                    });
+                  } else {
+                    handleAction(ta.actionName);
+                  }
+                }}>{ta.label}</DropdownMenuItem>
+              ))}
+              {transitionActions.length === 0 && canEdit && (
+                <DropdownMenuItem disabled>No transitions available</DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         {isReadOnly && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
             <Eye className="h-3.5 w-3.5 shrink-0" />
             Read-Only Access
+          </div>
+        )}
+        {wo.status === 'verified' && !wo.isLocked && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-700">
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+            Supervisor reviewed — awaiting planner closure
+          </div>
+        )}
+        {(wo.isLocked || wo.status === 'closed') && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+            <Lock className="h-3.5 w-3.5 shrink-0" />
+            Permanently locked — no modifications allowed
           </div>
         )}
       </div>
@@ -3299,13 +3764,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   teamLeaderId={editForm.teamLeaderId || ''}
                   onSelectedWorkersChange={(ids) => editUpdateField('selectedWorkerIds', ids)}
                   onTeamLeaderChange={(id) => editUpdateField('teamLeaderId', id)}
-                  departments={editDepartments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-                  selectedDepartmentIds={editForm.departmentId ? [editForm.departmentId] : []}
-                  onDepartmentsChange={(ids) => editUpdateField('departmentId', ids[0] || '')}
                   assignType={editForm.assignType || 'technician'}
                   onAssignTypeChange={(type) => editUpdateField('assignType', type)}
                   label="Resource Assignment"
-                  hideDepartmentFilter={true}
                 />
 
                 {/* Required Spare Parts */}
@@ -3532,13 +3993,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               teamLeaderId={editForm.teamLeaderId || ''}
               onSelectedWorkersChange={(ids) => editUpdateField('selectedWorkerIds', ids)}
               onTeamLeaderChange={(id) => editUpdateField('teamLeaderId', id)}
-              departments={editDepartments.map(d => ({ id: d.id, name: d.name, code: d.code }))}
-              selectedDepartmentIds={editForm.departmentId ? [editForm.departmentId] : []}
-              onDepartmentsChange={(ids) => editUpdateField('departmentId', ids[0] || '')}
               assignType={editForm.assignType || 'technician'}
               onAssignTypeChange={(type) => editUpdateField('assignType', type)}
               label="Resource Assignment"
-              hideDepartmentFilter={true}
             />
             <Accordion type="multiple" className="space-y-2">
               <AccordionItem value="parts" className="border rounded-xl px-1">
@@ -3642,22 +4099,29 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       </MobileStepperSheet>
       )}
 
-      {/* Time Log Dialog */}
-      <ResponsiveDialog open={timeLogOpen} onOpenChange={setTimeLogOpen} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={handleTimeLog}>{tlLoading ? 'Logging...' : 'Log Time'}</Button>}>
+      {/* Time Log Dialog — Enterprise */}
+      <ResponsiveDialog open={timeLogOpen} onOpenChange={(open) => { setTimeLogOpen(open); if (!open) setTlError(''); }} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading || !!tlError} onClick={handleTimeLog}>{tlLoading ? 'Saving...' : 'Save Time Log'}</Button>}>
           <div className="space-y-4">
-            {/* Team member selector — only for team leaders/managers */}
-            {canManageTeamDirectly && wo?.teamMembers && wo.teamMembers.length > 0 && (
+            {/* Team member selector — only team leader or admin */}
+            {canLogForOthers && (wo?.teamMembers?.length > 0 || wo?.assignedToId) && (
               <div className="space-y-1.5">
                 <Label>Log For</Label>
-                <Select value={tlLoggedForUserId} onValueChange={setTlLoggedForUserId}>
+                <Select value={tlLoggedForUserId || undefined} onValueChange={(v) => setTlLoggedForUserId(v === '__self__' ? '' : v)}>
                   <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Self (my own time)" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Self (my own time)</SelectItem>
-                    {wo.teamMembers.map((tm: any) => (
-                      <SelectItem key={tm.userId} value={tm.userId}>
-                        {tm.user?.fullName || tm.userName || 'Unknown'}
-                      </SelectItem>
+                    <SelectItem value="__self__">Self (my own time)</SelectItem>
+                    {wo.teamMembers?.map((tm: any) => (
+                      tm.userId !== user?.id && (
+                        <SelectItem key={tm.userId} value={tm.userId}>
+                          {tm.user?.fullName || tm.userName || 'Unknown'}
+                        </SelectItem>
+                      )
                     ))}
+                    {wo.assignedToId && wo.assignedToId !== user?.id && !wo.teamMembers?.some((tm: any) => tm.userId === wo.assignedToId) && (
+                      <SelectItem key={wo.assignedToId} value={wo.assignedToId}>
+                        {wo.assignee?.fullName || 'Assignee'}
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
                 {tlLoggedForUserId && (
@@ -3665,22 +4129,128 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 )}
               </div>
             )}
-            <div className="space-y-1.5"><Label>Action</Label>
-              <Select value={tlAction} onValueChange={setTlAction}>
+            <div className="space-y-1.5">
+              <Label>Activity Type</Label>
+              <Select value={tlActivityType} onValueChange={setTlActivityType}>
                 <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="start">Start</SelectItem><SelectItem value="pause">Pause</SelectItem><SelectItem value="resume">Resume</SelectItem><SelectItem value="complete">Complete</SelectItem></SelectContent>
+                <SelectContent>
+                  <SelectItem value="maintenance"><span className="flex items-center gap-2"><Wrench className="h-3.5 w-3.5" /> Maintenance</span></SelectItem>
+                  <SelectItem value="inspection"><span className="flex items-center gap-2"><Search className="h-3.5 w-3.5" /> Inspection</span></SelectItem>
+                  <SelectItem value="testing"><span className="flex items-center gap-2"><FlaskConical className="h-3.5 w-3.5" /> Testing</span></SelectItem>
+                  <SelectItem value="travel"><span className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5" /> Travel</span></SelectItem>
+                  <SelectItem value="standby"><span className="flex items-center gap-2"><Hourglass className="h-3.5 w-3.5" /> Standby</span></SelectItem>
+                  <SelectItem value="other"><span className="flex items-center gap-2"><MoreHorizontal className="h-3.5 w-3.5" /> Other</span></SelectItem>
+                </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5"><Label>Hours Worked</Label><Input className="min-h-[44px]" type="number" step="0.25" value={tlHours} onChange={e => setTlHours(e.target.value)} placeholder="e.g. 2.5" /></div>
-            <div className="space-y-1.5"><Label>Notes</Label><Textarea value={tlNotes} onChange={e => setTlNotes(e.target.value)} placeholder="Optional notes..." rows={2} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Start Time <span className="text-red-500">*</span></Label>
+                <DateTimePicker
+                  value={tlStartTime || undefined}
+                  onChange={v => { setTlStartTime(v || ''); setTlError(''); }}
+                  minDate={tlConstraints.minDate}
+                  minTime={tlConstraints.minTime}
+                  error={!tlStartTime ? undefined : tlError?.includes('Start date') || tlError?.includes('Start time') ? tlError : undefined}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  {tlConstraints.minDate && <>Min: {tlConstraints.minDate}{tlConstraints.minTime ? ` ${tlConstraints.minTime}` : ''}</>}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>End Time</Label>
+                <DateTimePicker
+                  value={tlEndTime || undefined}
+                  onChange={v => { setTlEndTime(v || ''); setTlError(''); }}
+                  minDate={tlStartTime ? tlStartTime.slice(0, 10) : tlConstraints.minDate}
+                  minTime={tlStartTime && tlStartTime.slice(0, 10) === tlConstraints.minDate ? tlConstraints.minTime : tlStartTime ? tlStartTime.slice(11, 16) : undefined}
+                  error={tlError?.includes('End time') ? tlError : undefined}
+                />
+                <p className="text-[10px] text-muted-foreground">Leave blank if ongoing</p>
+              </div>
+            </div>
+            {/* Auto-calculated duration preview */}
+            {tlStartTime && tlEndTime && (
+              <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-emerald-600" />
+                  <span className="text-sm font-medium text-emerald-800">
+                    Duration: {
+                      (() => {
+                        const ms = new Date(tlEndTime).getTime() - new Date(tlStartTime).getTime();
+                        const totalMin = ms / 60000 - (parseInt(tlBreakMinutes) || 0);
+                        const h = Math.floor(Math.max(0, totalMin) / 60);
+                        const m = Math.floor(Math.max(0, totalMin) % 60);
+                        return `${h}h ${m}m`;
+                      })()
+                    }
+                  </span>
+                </div>
+                <p className="text-[10px] text-emerald-600 mt-0.5">Auto-calculated from start/end times</p>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>Break (minutes)</Label>
+              <Input className="min-h-[44px]" type="number" min="0" max="480" value={tlBreakMinutes} onChange={e => setTlBreakMinutes(e.target.value)} placeholder="0" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea value={tlNotes} onChange={e => setTlNotes(e.target.value)} placeholder="What was done during this time..." rows={2} />
+            </div>
+            {/* Error display */}
+            {tlError && (
+              <div className="p-2.5 rounded-lg bg-red-50 border border-red-200">
+                <p className="text-sm text-red-600">{tlError}</p>
+              </div>
+            )}
+            <div className="p-2.5 rounded-lg bg-muted/50">
+              <p className="text-[11px] text-muted-foreground">
+                <strong>Tip:</strong> Set start &amp; end times for auto-calculation. Leave end blank for ongoing work.
+              </p>
+            </div>
+          </div>
+      </ResponsiveDialog>
+
+      {/* Delete Time Log Confirm */}
+      <ResponsiveDialog open={!!deleteTlId} onOpenChange={(open) => { if (!open) setDeleteTlId(null); }} title="Delete Time Log" description="Are you sure? This will reduce the work order's total hours." footer={<div className="flex gap-2"><Button variant="outline" className="flex-1" onClick={() => setDeleteTlId(null)}>Cancel</Button><Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" onClick={() => deleteTlId && handleDeleteTimeLog(deleteTlId)}>Delete</Button></div>}>
+          <p className="text-sm text-muted-foreground">This action cannot be undone. The work order's actual hours will be recalculated.</p>
+      </ResponsiveDialog>
+
+      {/* Pause Reason Dialog */}
+      <ResponsiveDialog open={pauseDialogOpen} onOpenChange={(open) => { if (!open) { setPauseDialogOpen(false); setPauseReason(''); setPauseNotes(''); } }} title="Pause Work" description="Select a reason for pausing. You can resume or switch to another work order after." footer={<div className="flex gap-2"><Button variant="outline" className="flex-1" onClick={() => { setPauseDialogOpen(false); setPauseReason(''); setPauseNotes(''); }}>Cancel</Button><Button className="flex-1 bg-amber-600 hover:bg-amber-700 text-white" disabled={pauseLoading || !pauseReason} onClick={() => handleQuickTimeAction('pause', pauseReason)}>{pauseLoading ? 'Pausing...' : 'Pause'}</Button></div>}>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { value: 'break', label: 'Take a Break', icon: <Hourglass className="h-5 w-5" />, desc: 'Lunch, rest, personal', color: 'border-amber-200 bg-amber-50 hover:border-amber-400' },
+                { value: 'switch_wo', label: 'Switch WO', icon: <ArrowRightLeft className="h-5 w-5" />, desc: 'Work on another order', color: 'border-sky-200 bg-sky-50 hover:border-sky-400' },
+                { value: 'waiting_parts', label: 'Waiting Parts', icon: <Package className="h-5 w-5" />, desc: 'Awaiting materials/tools', color: 'border-violet-200 bg-violet-50 hover:border-violet-400' },
+                { value: 'other', label: 'Other', icon: <MoreHorizontal className="h-5 w-5" />, desc: 'Different reason', color: 'border-gray-200 bg-gray-50 hover:border-gray-400' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setPauseReason(opt.value)}
+                  className={`p-3 rounded-lg border-2 text-left transition-all ${pauseReason === opt.value ? `${opt.color} ring-2 ring-offset-1 ring-current` : 'border-muted bg-background hover:bg-muted/50'}`}
+                >
+                  <div className={`mb-1 ${pauseReason === opt.value ? 'text-amber-700' : 'text-muted-foreground'}`}>{opt.icon}</div>
+                  <p className="text-sm font-medium">{opt.label}</p>
+                  <p className="text-[10px] text-muted-foreground">{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes (optional)</Label>
+              <Textarea value={pauseNotes} onChange={e => setPauseNotes(e.target.value)} placeholder="Any additional details..." rows={2} />
+            </div>
           </div>
       </ResponsiveDialog>
 
       {/* Add Material Dialog — pick from inventory */}
-      <ResponsiveDialog open={materialOpen} onOpenChange={(open) => { setMaterialOpen(open); if (!open) { setMatItemId(''); setMatItemName(''); setMatQty(''); }}} title="Request Material" description="Select a material or part from inventory to request for this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={matLoading || !matItemId} onClick={handleAddMaterial}>{matLoading ? 'Requesting...' : 'Request Material'}</Button>}>
+      <ResponsiveDialog open={materialOpen} onOpenChange={(open) => { setMaterialOpen(open); if (!open) { setMatItemId(''); setMatItemName(''); setMatQty(''); setMatReason(''); setMatUrgency('normal'); }}} title="Request Material" description="Select a material or part from inventory. It will go through supervisor and store approval." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={matLoading || !matItemId} onClick={handleAddMaterial}>{matLoading ? 'Requesting...' : 'Submit Request'}</Button>}>
           <div className="space-y-4">
-            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
-              <p className="text-xs text-muted-foreground">Materials are picked from the existing inventory. Select the item you need and specify the quantity.</p>
+            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+              <p className="text-xs text-amber-800 font-medium">📋 Approval Workflow</p>
+              <p className="text-xs text-amber-700 mt-1">Your request will be reviewed by a <strong>Supervisor</strong>, then <strong>Store/Shop</strong> before materials are issued.</p>
             </div>
             <div className="space-y-1.5"><Label>Item *</Label>
               <AsyncSearchableSelect
@@ -3711,6 +4281,24 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   <SelectContent><SelectItem value="each">Each</SelectItem><SelectItem value="kg">Kg</SelectItem><SelectItem value="meter">Meter</SelectItem><SelectItem value="set">Set</SelectItem><SelectItem value="box">Box</SelectItem></SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Urgency</Label>
+                <Select value={matUrgency} onValueChange={setMatUrgency}>
+                  <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div></div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Reason *</Label>
+              <Textarea value={matReason} onChange={e => setMatReason(e.target.value)} placeholder="Why is this material needed? (e.g., replacing worn bearing, spare part for pump repair)" rows={2} />
             </div>
           </div>
       </ResponsiveDialog>
@@ -3782,130 +4370,377 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           {/* Attachments */}
           <FileUpload entityType="work_order" entityId={id} />
 
-          {/* Time Logs — Enhanced with Summary Bar */}
+          {/* Time Logs — Enterprise with Session Controls */}
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {wo.actualHours || 0}h total</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => { setTlAction('start'); setTlHours(''); setTlNotes(''); setTimeLogOpen(true); }}><Clock className="h-3.5 w-3.5" />Log Time</Button>
+              <div className="flex items-center gap-2">
+                {/* Context-aware action buttons */}
+                {isActiveOnThisWO && !actionDisabled && (
+                  <>
+                    <Button size="sm" variant="outline" className="gap-1.5 text-amber-600 border-amber-300 hover:bg-amber-50" disabled={tlLoading} onClick={() => { setPauseReason(''); setPauseNotes(''); setPauseDialogOpen(true); }}>
+                      {tlLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pause className="h-3.5 w-3.5" />}
+                      Pause
+                    </Button>
+                    <Button size="sm" variant="outline" className="gap-1.5 text-emerald-600 border-emerald-300 hover:bg-emerald-50" disabled={tlLoading} onClick={() => handleQuickTimeAction('complete')}>
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Complete
+                    </Button>
+                  </>
+                )}
+                {!isActiveOnThisWO && !isActiveOnOtherWO && !actionDisabled && (
+                  <>
+                    {hasPausedSession && (
+                      <Button size="sm" variant="outline" className="gap-1.5 text-emerald-600 border-emerald-300 hover:bg-emerald-50" disabled={tlLoading} onClick={() => handleQuickTimeAction('resume')}>
+                        {tlLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                        Resume
+                      </Button>
+                    )}
+                    <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={() => handleQuickTimeAction('start')}>
+                      {tlLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                      Start Work
+                    </Button>
+                  </>
+                )}
+                {isActiveOnOtherWO && !actionDisabled && (
+                  <Button size="sm" variant="outline" className="gap-1.5 text-red-600 border-red-300" disabled>
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    Busy on WO #{globalActiveSession?.workOrderNumber}
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" className="gap-1.5" disabled={actionDisabled} onClick={() => { setTlStartTime(''); setTlEndTime(''); setTlActivityType('maintenance'); setTlBreakMinutes(''); setTlNotes(''); setTlLoggedForUserId(''); setTlAction('start'); setTlError(''); setTimeLogOpen(true); }} title="Log time"><Clock className="h-3.5 w-3.5" /></Button>
+              </div>
             </CardHeader>
             <CardContent>
-              {/* Time Summary Bar */}
+              {/* Active Session Banner — running on THIS WO */}
+              {isActiveOnThisWO && (
+                <div className="mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-9 w-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center animate-pulse">
+                      <Timer className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">Active Session</p>
+                      <p className="text-lg font-bold font-mono text-emerald-700">{sessionDuration !== null ? formatSessionDuration(sessionDuration) : '...'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs font-medium text-emerald-700">Recording</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Active on OTHER WO — warning banner */}
+              {isActiveOnOtherWO && (
+                <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-amber-800">Active Session on Another Work Order</p>
+                      <p className="text-xs text-amber-700 mt-0.5">
+                        You are currently working on <button onClick={() => navigate('wo-detail', { id: globalActiveSession?.workOrderId })} className="underline font-medium hover:text-amber-900">WO #{globalActiveSession?.workOrderNumber}</button> since {globalActiveSession?.startedAt ? formatDateTime(globalActiveSession?.startedAt) : 'unknown'}.
+                        Pause that work order first before starting work here.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Paused session indicator */}
+              {hasPausedSession && !isActiveOnThisWO && (
+                <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-2">
+                  <Pause className="h-4 w-4 text-amber-600" />
+                  <div>
+                    <p className="text-xs font-semibold text-amber-800">Paused</p>
+                    <p className="text-xs text-amber-700">Click "Resume" to continue working on this WO.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Summary Bar */}
               <div className="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-lg bg-muted/50">
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center"><Clock className="h-4 w-4" /></div>
-                  <div><p className="text-[10px] text-muted-foreground uppercase">Total Logged</p><p className="text-sm font-bold">{wo.actualHours || 0}h</p></div>
+                  <div><p className="text-[10px] text-muted-foreground uppercase">Total</p><p className="text-sm font-bold">{wo.actualHours || 0}h</p></div>
                 </div>
                 {wo.actualStart && (
                   <div className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><Play className="h-4 w-4" /></div>
-                    <div><p className="text-[10px] text-muted-foreground uppercase">Started At</p><p className="text-sm font-bold">{formatDateTime(wo.actualStart)}</p></div>
-                  </div>
-                )}
-                {sessionDuration !== null && (
-                  <div className="flex items-center gap-2 ml-auto">
-                    <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center animate-pulse"><Timer className="h-4 w-4" /></div>
-                    <div><p className="text-[10px] text-muted-foreground uppercase">Current Session</p><p className="text-sm font-bold font-mono text-amber-700">{formatSessionDuration(sessionDuration)}</p></div>
+                    <div><p className="text-[10px] text-muted-foreground uppercase">Started</p><p className="text-xs font-bold">{formatDateTime(wo.actualStart)}</p></div>
                   </div>
                 )}
               </div>
               {(!wo.timeLogs || wo.timeLogs.length === 0) ? (
-                <p className="text-sm text-muted-foreground">No time logs recorded yet.</p>
+                <div className="text-center py-6">
+                  <Clock className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No time logs recorded yet.</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">Click "Start Work" to begin tracking your time.</p>
+                </div>
               ) : (
-                <div className="space-y-2">
-                  {wo.timeLogs.map(tl => (
-                    <div key={tl.id} className="flex items-center gap-3 text-sm py-2 border-b last:border-0">
-                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${tl.action === 'start' ? 'bg-emerald-100 text-emerald-700' : tl.action === 'pause' ? 'bg-amber-100 text-amber-700' : tl.action === 'resume' ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700'}`}>
-                        {tl.action === 'start' ? <Play className="h-3.5 w-3.5" /> : tl.action === 'pause' ? <Pause className="h-3.5 w-3.5" /> : tl.action === 'resume' ? <Play className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {wo.timeLogs.map((tl: any) => {
+                    const actType = tl.activityType || 'maintenance';
+                    const actColors: Record<string, string> = {
+                      maintenance: 'bg-emerald-100 text-emerald-700',
+                      inspection: 'bg-blue-100 text-blue-700',
+                      testing: 'bg-violet-100 text-violet-700',
+                      travel: 'bg-amber-100 text-amber-700',
+                      standby: 'bg-slate-100 text-slate-700',
+                      other: 'bg-gray-100 text-gray-700',
+                    };
+                    const actIcons: Record<string, React.ElementType> = {
+                      maintenance: Wrench, inspection: Search, testing: FlaskConical,
+                      travel: MapPin, standby: Hourglass, other: MoreHorizontal,
+                    };
+                    const ActIcon = actIcons[actType] || MoreHorizontal;
+
+                    // Action icon + color for session state
+                    const actionStyles: Record<string, { icon: React.ElementType; color: string; label: string }> = {
+                      start: { icon: Play, color: 'bg-emerald-100 text-emerald-700', label: 'Started' },
+                      pause: { icon: Pause, color: 'bg-amber-100 text-amber-700', label: 'Paused' },
+                      resume: { icon: Play, color: 'bg-sky-100 text-sky-700', label: 'Resumed' },
+                      complete: { icon: CheckCircle2, color: 'bg-emerald-100 text-emerald-700', label: 'Completed' },
+                    };
+                    const actionStyle = actionStyles[tl.action] || actionStyles.start;
+                    const ActionIcon = actionStyle.icon;
+                    const durationMin = tl.duration ? Math.round(tl.duration * 60) : 0;
+                    const durH = Math.floor(durationMin / 60);
+                    const durM = durationMin % 60;
+                    const durStr = durH > 0 ? `${durH}h ${durM}m` : `${durM}m`;
+
+                    return (
+                      <div key={tl.id} className="flex items-start gap-3 text-sm py-2.5 border-b last:border-0 group">
+                        {/* Session action icon */}
+                        <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${actionStyle.color}`}>
+                          <ActionIcon className="h-3.5 w-3.5" />
+                        </div>
+                        {/* Details */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium capitalize text-xs">{actionStyle.label}</p>
+                            <Badge variant="secondary" className="text-[9px] px-1 py-0 gap-0.5">
+                              <ActIcon className="h-2.5 w-2.5" />
+                              {actType}
+                            </Badge>
+                            {tl.pauseReason && (
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 text-amber-600 border-amber-300">
+                                {tl.pauseReason === 'break' ? 'Break' : tl.pauseReason === 'switch_wo' ? 'Switch WO' : tl.pauseReason === 'waiting_parts' ? 'Waiting Parts' : 'Other'}
+                              </Badge>
+                            )}
+                            {tl.breakMinutes > 0 && (
+                              <Badge variant="secondary" className="text-[9px] px-1 py-0">-{tl.breakMinutes}m break</Badge>
+                            )}
+                            {(tl as any).isTeamLog && (
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 text-amber-600 border-amber-300">team</Badge>
+                            )}
+                          </div>
+                          {/* Time range */}
+                          <p className="text-xs text-muted-foreground">
+                            {tl.startTime ? formatDateTime(tl.startTime) : formatDateTime(tl.timestamp || tl.createdAt)}
+                            {tl.endTime && tl.startTime && (
+                              <> → {formatDateTime(tl.endTime)}</>
+                            )}
+                          </p>
+                          {/* Worker */}
+                          <p className="text-xs text-muted-foreground">
+                            {tl.user?.fullName || tl.userName || 'Unknown'}
+                            {(tl as any).loggedBy && (
+                              <span className="text-amber-600"> (by {tl.loggedBy.fullName})</span>
+                            )}
+                          </p>
+                          {/* Notes */}
+                          {tl.notes && <p className="text-xs text-muted-foreground mt-0.5 italic">{tl.notes}</p>}
+                        </div>
+                        {/* Duration + delete */}
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          {tl.duration != null && tl.duration > 0 && (
+                            <Badge variant="outline" className="text-[10px] font-mono">{durStr}</Badge>
+                          )}
+                          {!actionDisabled && (
+                            <button
+                              onClick={() => setDeleteTlId(tl.id)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600 p-0.5"
+                              title="Delete time log"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium capitalize">{tl.action}</p>
-                        <p className="text-xs text-muted-foreground">{tl.userName || 'Unknown'} · {formatDateTime(tl.createdAt)}</p>
-                        {tl.note && <p className="text-xs text-muted-foreground mt-0.5">{tl.note}</p>}
-                      </div>
-                      {tl.duration != null && tl.duration > 0 && (
-                        <Badge variant="outline" className="text-[10px] shrink-0">{tl.duration}h</Badge>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Materials */}
+          {/* Materials — with approval pipeline */}
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
-              <div><CardTitle className="text-base">Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.materials?.length || 0} items</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => { setMatName(''); setMatQty(''); setMatCost(''); setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" />Add Material</Button>
+              <div><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests?.length || 0} requests</CardDescription></div>
+              <div className="flex items-center gap-2">
+                {(wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0) && (
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" />View All</Button>
+                )}
+                <Button size="sm" variant="outline" className="gap-1.5" disabled={actionDisabled} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" />Request Material</Button>
+              </div>
             </CardHeader>
             <CardContent>
-              {(!wo.materials || wo.materials.length === 0) ? (
-                <p className="text-sm text-muted-foreground">No materials added yet.</p>
-              ) : (
-                <>
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Item</TableHead>
-                          <TableHead className="text-right">Qty</TableHead>
-                          <TableHead className="text-right hidden sm:table-cell">Unit Cost</TableHead>
-                          <TableHead className="text-right hidden sm:table-cell">Total</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="w-[120px]">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {wo.materials.map(m => (
-                          <TableRow key={m.id}>
-                            <TableCell className="font-medium text-sm">{m.itemName || '-'}</TableCell>
-                            <TableCell className="text-right text-sm">{m.quantity || 0} {m.unit || ''}</TableCell>
-                            <TableCell className="text-right text-sm hidden sm:table-cell">{formatCurrency(m.unitCost)}</TableCell>
-                            <TableCell className="text-right text-sm hidden sm:table-cell font-medium">{formatCurrency(m.totalCost || (m.quantity || 0) * (m.unitCost || 0))}</TableCell>
-                            <TableCell><Badge variant="outline" className={`text-[10px] capitalize ${m.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : m.status === 'issued' ? 'bg-sky-50 text-sky-700 border-sky-200' : m.status === 'returned' ? 'bg-slate-50 text-slate-500 border-slate-200' : ''}`}>{m.status || 'requested'}</Badge></TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1">
-                                {canApproveMaterials && m.status === 'requested' && (
-                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-200" onClick={async () => { const r = await api.put(`/api/work-orders/${id}/materials/${m.id}`, { status: 'approved' }); if (r.success) { toast.success('Material approved'); fetchWO(); } else toast.error(r.error || 'Failed'); }}>Approve</Button>
-                                )}
-                                {canApproveMaterials && m.status === 'approved' && (
-                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-sky-600 hover:text-sky-700 border-sky-200" onClick={async () => { const r = await api.put(`/api/work-orders/${id}/materials/${m.id}`, { status: 'issued' }); if (r.success) { toast.success('Material issued'); fetchWO(); } else toast.error(r.error || 'Failed'); }}>Issue</Button>
-                                )}
-                                {canApproveMaterials && (m.status === 'issued') && (
-                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-slate-600 hover:text-slate-700" onClick={async () => { const r = await api.put(`/api/work-orders/${id}/materials/${m.id}`, { status: 'returned' }); if (r.success) { toast.success('Material returned'); fetchWO(); } else toast.error(r.error || 'Failed'); }}>Return</Button>
-                                )}
-                                {m.status === 'requested' && (
-                                  <Button size="sm" variant="ghost" className="h-7 text-[10px] px-1.5 text-red-500 hover:text-red-600" onClick={async () => { if (!confirm('Delete this material?')) return; const r = await api.delete(`/api/work-orders/${id}/materials/${m.id}`); if (r.success) { toast.success('Material removed'); fetchWO(); } else toast.error(r.error || 'Failed'); }}><Trash2 className="h-3 w-3" /></Button>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                  <div className="flex justify-end mt-3 pt-3 border-t">
-                    <div className="text-sm font-semibold">
-                      Total: {formatCurrency(wo.materials.reduce((sum, m) => sum + (m.totalCost || (m.quantity || 0) * (m.unitCost || 0)), 0))}
+              {/* Repair Material Requests — full approval pipeline */}
+              {wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-lg bg-muted/50 border">
+                    <div className="flex items-center gap-4 text-[10px] text-muted-foreground mb-1">
+                      {['Pending', 'Supervisor', 'Store', 'Picking', 'Issued', 'Done'].map(stage => (
+                        <div key={stage} className="flex items-center gap-1 flex-1 justify-center">
+                          <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
+                          <span className="hidden lg:inline">{stage}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </>
+                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                    {wo.repairMaterialRequests.map((mr: any) => (
+                      <div key={mr.id} className={`p-3 rounded-lg border ${mr.status === 'pending' && isSupervisorOrAdminLocal() ? 'border-amber-200 bg-amber-50/50' : mr.status === 'supervisor_approved' && isStoreOrAdminLocal() ? 'border-indigo-200 bg-indigo-50/50' : mr.status === 'storekeeper_approved' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : mr.status === 'picking' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : 'bg-muted/30'}`}>
+                        <div className="flex items-start gap-3">
+                          <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5"><Package className="h-3.5 w-3.5" /></div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-medium truncate">{mr.itemName}</p>
+                              {mr.urgency && mr.urgency !== 'normal' && <UrgencyBadge urgency={mr.urgency} />}
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                              <span>Qty: <strong>{mr.quantityRequested}</strong></span>
+                              {mr.quantityApproved > 0 && <span>Approved: <strong className="text-sky-600">{mr.quantityApproved}</strong></span>}
+                              {mr.quantityIssued > 0 && <span>Issued: <strong className="text-emerald-600">{mr.quantityIssued}</strong></span>}
+                              {mr.unit && <span>{mr.unit}</span>}
+                            </div>
+                            {/* Pipeline dots */}
+                            <div className="flex items-center gap-1 mt-2">
+                              {[
+                                { key: 'pending', label: 'Pending' },
+                                { key: 'supervisor_approved', label: 'Sup.' },
+                                { key: 'storekeeper_approved', label: 'Store' },
+                                { key: 'picking', label: 'Pick' },
+                                { key: 'issued', label: 'Issued' },
+                                { key: 'closed', label: 'Done' },
+                              ].map((stage, idx) => {
+                                const statusOrder = ['pending', 'supervisor_approved', 'storekeeper_approved', 'picking', 'issued', 'closed', 'rejected'];
+                                const currentIdx = statusOrder.indexOf(mr.status);
+                                const stageIdx = statusOrder.indexOf(stage.key);
+                                const isCompleted = stageIdx < currentIdx;
+                                const isCurrent = stage.key === mr.status;
+                                const isRejected = mr.status === 'rejected';
+                                return (
+                                  <div key={stage.key} className="flex items-center gap-1">
+                                    {idx > 0 && <div className={`h-0.5 w-3 ${isCompleted ? 'bg-emerald-400' : 'bg-muted-foreground/20'}`} />}
+                                    <TooltipProvider><Tooltip><TooltipTrigger asChild>
+                                      <div className={`h-3 w-3 rounded-full border-2 ${isRejected ? 'bg-red-500 border-red-500' : isCompleted ? 'bg-emerald-500 border-emerald-500' : isCurrent ? 'bg-white border-amber-500 animate-pulse' : 'bg-muted border-muted-foreground/20'}`} />
+                                    </TooltipTrigger><TooltipContent className="text-[10px]">{stage.label}</TooltipContent></Tooltip></TooltipProvider>
+                                  </div>
+                                );
+                              })}
+                              <Badge variant="outline" className={`text-[9px] ml-1 ${
+                                mr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                mr.status === 'rejected' ? 'bg-red-50 text-red-700 border-red-200' :
+                                mr.status === 'supervisor_approved' ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                                mr.status === 'storekeeper_approved' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                mr.status === 'picking' ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                                mr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                mr.status === 'closed' ? 'bg-gray-50 text-gray-600 border-gray-200' :
+                                'bg-gray-50 border-gray-200'
+                              }`}>{mr.status.replace(/_/g, ' ')}</Badge>
+                            </div>
+                            {/* Action buttons */}
+                            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                              {mr.status === 'pending' && isSupervisorOrAdminLocal() && (
+                                <>
+                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'supervisor_approve')}><CheckCircle2 className="h-3 w-3 mr-1" />Approve</Button>
+                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-red-500 hover:text-red-600 border-red-200" onClick={() => { if (!confirm('Reject this material request?')) return; handleMatRequestAction(mr.id, 'supervisor_reject', { notes: 'Rejected by supervisor' }); }}><XCircle className="h-3 w-3 mr-1" />Reject</Button>
+                                </>
+                              )}
+                              {mr.status === 'supervisor_approved' && isStoreOrAdminLocal() && (
+                                <>
+                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-teal-600 hover:text-teal-700 border-teal-300 bg-teal-50" onClick={() => handleMatRequestAction(mr.id, 'storekeeper_approve')}><Warehouse className="h-3 w-3 mr-1" />Store Approve</Button>
+                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-red-500 hover:text-red-600 border-red-200" onClick={() => { if (!confirm('Reject this material request?')) return; handleMatRequestAction(mr.id, 'storekeeper_reject', { notes: 'Rejected by store' }); }}><XCircle className="h-3 w-3 mr-1" />Reject</Button>
+                                </>
+                              )}
+                              {mr.status === 'storekeeper_approved' && isStoreOrAdminLocal() && (
+                                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-violet-600 hover:text-violet-700 border-violet-300 bg-violet-50" onClick={() => handleMatRequestPick(mr.id)}><PackageOpen className="h-3 w-3 mr-1" />Pick</Button>
+                              )}
+                              {mr.status === 'picking' && isStoreOrAdminLocal() && (
+                                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'issue', { quantityToIssue: mr.quantityApproved || mr.quantityRequested })}><PackageCheck className="h-3 w-3 mr-1" />Issue</Button>
+                              )}
+                              {mr.status === 'issued' && (
+                                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-amber-600 hover:text-amber-700 border-amber-300 bg-amber-50" onClick={() => handleMatRequestAction(mr.id, 'record_return', { quantityToReturn: mr.quantityIssued })}><RotateCcw className="h-3 w-3 mr-1" />Return</Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <Package className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No material requests yet.</p>
+                  <p className="text-xs text-muted-foreground mt-1">Click "Request Material" to add items that need supervisor and store approval.</p>
+                </div>
               )}
             </CardContent>
           </Card>
+
+          {/* Tool Requests (from Repair module) */}
+          {wo.repairToolRequests && wo.repairToolRequests.length > 0 && (
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4 text-orange-600" />Tool Requests</CardTitle><CardDescription className="text-xs">{wo.repairToolRequests.length} requests</CardDescription></div>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" />View All</Button>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {wo.repairToolRequests.slice(0, 10).map((tr: any) => (
+                  <div key={tr.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/30">
+                    <div className="h-8 w-8 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center shrink-0"><Wrench className="h-3.5 w-3.5" /></div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium truncate">{tr.toolName || tr.tool?.name || 'Tool'}</p>
+                        {tr.tool?.toolCode && <span className="text-[10px] font-mono text-muted-foreground">{tr.tool.toolCode}</span>}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{tr.requestedBy?.fullName || 'Unknown'}</span>
+                        {tr.urgency && tr.urgency !== 'normal' && (
+                          <Badge variant="outline" className={`text-[10px] ${tr.urgency === 'high' ? 'bg-amber-50 text-amber-700 border-amber-200' : tr.urgency === 'critical' ? 'bg-red-50 text-red-700 border-red-200' : ''}`}>{tr.urgency}</Badge>
+                        )}
+                      </div>
+                    </div>
+                    <Badge variant="outline" className={`text-[10px] shrink-0 ${
+                      tr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                      tr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                      tr.status === 'returned' ? 'bg-slate-50 text-slate-500 border-slate-200' :
+                      tr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
+                      tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : ''
+                    }`}>{tr.status?.replace(/_/g, ' ') || 'pending'}</Badge>
+                  </div>
+                ))}
+                {wo.repairToolRequests.length > 10 && (
+                  <p className="text-xs text-muted-foreground text-center">+{wo.repairToolRequests.length - 10} more tool requests</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+          )}
 
           {/* Repairs Quick Access */}
           <Card className="border-0 shadow-sm">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2"><ClipboardList className="h-4 w-4 text-teal-600" />Repair Resources</CardTitle>
-              <CardDescription className="text-xs">Material requests, tool requests & transfers for this work order</CardDescription>
+              <CardDescription className="text-xs">Tool requests, transfers & other resources for this work order</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                <button onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
-                  <div className="h-9 w-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center"><Package className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">Material Requests</span>
-                </button>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <button onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Tool Requests</span>
@@ -3930,7 +4765,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base flex items-center gap-2"><Hammer className="h-4 w-4 text-orange-600" />Personal Tools On-Site</CardTitle><CardDescription className="text-xs">{personalTools.length} tools</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => setPtOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
+              <Button size="sm" variant="outline" className="gap-1.5" disabled={actionDisabled} onClick={() => setPtOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
             </CardHeader>
             <CardContent>
               {personalTools.length === 0 ? (
@@ -3948,7 +4783,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         </div>
                         {tool.notes && <p className="text-xs text-muted-foreground mt-0.5">{tool.notes}</p>}
                       </div>
-                      {!readOnlyDisabled && (
+                      {!actionDisabled && (
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-600 shrink-0" disabled={ptLoading} onClick={() => handleRemovePersonalTool(idx)}><Trash2 className="h-3.5 w-3.5" /></Button>
                       )}
                     </div>
@@ -3973,7 +4808,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
-                  {!readOnlyDisabled && (
+                  {!actionDisabled && (
                     <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTaskDialog(true)}>
                       <Plus className="h-3.5 w-3.5" />Add Task
                     </Button>
@@ -4056,7 +4891,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                             </p>
                           )}
                         </div>
-                        {!readOnlyDisabled && (
+                        {!actionDisabled && (
                           <div className="flex items-center gap-1 shrink-0">
                             {isPending && (
                               <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'in_progress')}>
@@ -4094,7 +4929,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   </CardTitle>
                   <CardDescription className="text-xs">Add tasks to track work progress step by step</CardDescription>
                 </div>
-                {!readOnlyDisabled && (
+                {!actionDisabled && (
                   <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTaskDialog(true)}>
                     <Plus className="h-3.5 w-3.5" />Add Task
                   </Button>
@@ -4479,7 +5314,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </Card>
         </div>
       </div>
-    </ScrollArea>
+    </>
   );
 }
 // --- PmSchedulesPage separator ---

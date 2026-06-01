@@ -9,14 +9,9 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/ui/table';
-import {
-  Search, X, Users, Wrench, Shield, Crown, Filter,
+  Search, X, Users, Wrench, Shield, Crown,
   UserPlus, UserMinus,
 } from 'lucide-react';
 import { getInitials } from '@/components/shared/helpers';
@@ -40,25 +35,14 @@ interface Worker {
   skills?: Array<{ name: string; code: string; category: string; proficiency: string }>;
 }
 
-interface DepartmentInfo {
-  id: string;
-  name: string;
-  code: string;
-}
-
 interface WorkerAssignmentSelectorProps {
   selectedWorkerIds: string[];
   teamLeaderId: string;
   onSelectedWorkersChange: (workerIds: string[]) => void;
   onTeamLeaderChange: (workerId: string) => void;
-  departments: DepartmentInfo[];
-  selectedDepartmentIds: string[];
-  onDepartmentsChange: (deptIds: string[]) => void;
   assignType: 'technician' | 'supervisor';
   onAssignTypeChange: (type: 'technician' | 'supervisor') => void;
   label?: string;
-  /** When true, hides the department filter and shows a name-based search instead */
-  hideDepartmentFilter?: boolean;
 }
 
 // ============================================================================
@@ -83,71 +67,6 @@ function getTradeColor(trade: string | null): { bg: string; text: string; border
 }
 
 // ============================================================================
-// Department Selector
-// ============================================================================
-
-function DepartmentSelector({
-  departments,
-  selectedDepartmentIds,
-  removeDepartment,
-  addDepartment,
-  mobile,
-}: {
-  departments: DepartmentInfo[];
-  selectedDepartmentIds: string[];
-  removeDepartment: (id: string) => void;
-  addDepartment: (id: string) => void;
-  mobile?: boolean;
-}) {
-  const selectedDepts = departments.filter(d => selectedDepartmentIds.includes(d.id));
-  const availableDepts = departments.filter(d => !selectedDepartmentIds.includes(d.id));
-
-  return (
-    <div className="space-y-2">
-      {!mobile && <Label className="text-xs flex items-center gap-1"><Filter className="h-3 w-3" />Department(s)</Label>}
-      <div className={`flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white ${mobile ? 'rounded-xl !p-3 bg-muted/30' : ''}`}>
-        {selectedDepts.length === 0 && (
-          <span className="text-sm text-muted-foreground">
-            {mobile ? 'Tap below to add...' : 'Select departments to filter workers...'}
-          </span>
-        )}
-        {selectedDepts.map(dept => (
-          <Badge
-            key={dept.id}
-            variant="secondary"
-            className={`gap-1 bg-green-100 text-green-800 border-green-200 ${mobile ? 'px-2.5 py-1 rounded-lg' : ''}`}
-          >
-            {dept.name}
-            <button
-              onClick={(e) => { e.stopPropagation(); removeDepartment(dept.id); }}
-              className={`ml-0.5 flex items-center justify-center hover:text-red-600 ${
-                mobile ? 'h-6 w-6 rounded-full hover:bg-red-100' : 'min-h-[44px] min-w-[44px]'
-              }`}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </Badge>
-        ))}
-      </div>
-      {availableDepts.length > 0 && (
-        <Select onValueChange={v => addDepartment(v)}>
-          <SelectTrigger className={`min-h-[44px] ${mobile ? 'h-12 rounded-xl' : ''}`}>
-            <SelectValue placeholder={mobile ? '+ Add department...' : 'Add department...'} />
-          </SelectTrigger>
-          <SelectContent>
-            {availableDepts.map(d => (
-              <SelectItem key={d.id} value={d.id}>
-                {d.name}{d.code ? ` (${d.code})` : ''}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
-    </div>
-  );
-}
-
-// ============================================================================
 // Main Component
 // ============================================================================
 
@@ -156,13 +75,9 @@ export function WorkerAssignmentSelector({
   teamLeaderId,
   onSelectedWorkersChange,
   onTeamLeaderChange,
-  departments,
-  selectedDepartmentIds,
-  onDepartmentsChange,
   assignType,
   onAssignTypeChange,
   label,
-  hideDepartmentFilter = false,
 }: WorkerAssignmentSelectorProps) {
   const isMobile = useIsMobile();
   const [workers, setWorkers] = useState<Worker[]>([]);
@@ -176,14 +91,11 @@ export function WorkerAssignmentSelector({
     return () => clearTimeout(timer);
   }, [searchText]);
 
-  // Fetch workers
+  // Fetch workers — no department filter
   const fetchWorkers = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (!hideDepartmentFilter && selectedDepartmentIds.length > 0) {
-        params.set('departmentIds', selectedDepartmentIds.join(','));
-      }
       if (debouncedSearch) {
         params.set('search', debouncedSearch);
       }
@@ -196,7 +108,7 @@ export function WorkerAssignmentSelector({
       setWorkers([]);
     }
     setLoading(false);
-  }, [selectedDepartmentIds, debouncedSearch, assignType, hideDepartmentFilter]);
+  }, [debouncedSearch, assignType]);
 
   useEffect(() => {
     fetchWorkers();
@@ -219,18 +131,6 @@ export function WorkerAssignmentSelector({
     }
   }, [selectedWorkerIds, teamLeaderId, onSelectedWorkersChange, onTeamLeaderChange]);
 
-  // Add department
-  const addDepartment = useCallback((deptId: string) => {
-    if (!selectedDepartmentIds.includes(deptId)) {
-      onDepartmentsChange([...selectedDepartmentIds, deptId]);
-    }
-  }, [selectedDepartmentIds, onDepartmentsChange]);
-
-  // Remove department
-  const removeDepartment = useCallback((deptId: string) => {
-    onDepartmentsChange(selectedDepartmentIds.filter(id => id !== deptId));
-  }, [selectedDepartmentIds, onDepartmentsChange]);
-
   // Derived
   const selectedWorkers = useMemo(
     () => workers.filter(w => selectedWorkerIds.includes(w.id)),
@@ -239,15 +139,6 @@ export function WorkerAssignmentSelector({
   const hasSelected = selectedWorkerIds.length > 0;
   const hasTeamLeader = !!teamLeaderId && selectedWorkerIds.includes(teamLeaderId);
 
-  // Shared props for both layouts
-  const sharedProps = {
-    workers, loading, searchText, setSearchText,
-    selectedWorkerIds, teamLeaderId, toggleWorker, onTeamLeaderChange,
-    departments, selectedDepartmentIds, removeDepartment, addDepartment,
-    assignType, onAssignTypeChange,
-    selectedWorkers, hasSelected, hasTeamLeader,
-  };
-
   return (
     <div className="space-y-4">
       {label && (
@@ -255,17 +146,6 @@ export function WorkerAssignmentSelector({
           <Users className={isMobile ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
           {label}
         </h3>
-      )}
-
-      {/* Department Selector — hidden when hideDepartmentFilter is true */}
-      {!hideDepartmentFilter && (
-        <DepartmentSelector
-          departments={departments}
-          selectedDepartmentIds={selectedDepartmentIds}
-          removeDepartment={removeDepartment}
-          addDepartment={addDepartment}
-          mobile={isMobile}
-        />
       )}
 
       {/* Assign Type Toggle */}
@@ -279,9 +159,7 @@ export function WorkerAssignmentSelector({
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder={hideDepartmentFilter
-            ? (isMobile ? 'Search by name, staff ID...' : 'Search by technician name, staff ID, or username...')
-            : (isMobile ? 'Search workers...' : 'Search workers by name, staff ID, or username...')}
+          placeholder={isMobile ? 'Search by name, staff ID...' : 'Search by name, staff ID, or username...'}
           className={`pl-9 ${isMobile ? 'h-12 rounded-xl' : 'min-h-[44px]'}`}
           value={searchText}
           onChange={e => setSearchText(e.target.value)}
@@ -296,7 +174,7 @@ export function WorkerAssignmentSelector({
             <X className="h-4 w-4" />
           </button>
         )}
-        {hideDepartmentFilter && !searchText && (
+        {!searchText && (
           <div className="absolute right-3 top-1/2 -translate-y-1/2">
             <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded hidden sm:inline-block">
               Results show Trade, Dept &amp; Emp. Code
@@ -316,7 +194,6 @@ export function WorkerAssignmentSelector({
           onTeamLeaderChange={onTeamLeaderChange}
           hasSelected={hasSelected}
           searchText={searchText}
-          hideDepartmentFilter={hideDepartmentFilter}
         />
       ) : (
         <DesktopWorkerTable
@@ -328,7 +205,6 @@ export function WorkerAssignmentSelector({
           onTeamLeaderChange={onTeamLeaderChange}
           onSelectedWorkersChange={onSelectedWorkersChange}
           hasSelected={hasSelected}
-          hideDepartmentFilter={hideDepartmentFilter}
           searchText={searchText}
         />
       )}
@@ -457,7 +333,7 @@ function MobileAssignToggle({ assignType, onAssignTypeChange }: {
 
 function DesktopWorkerTable({
   workers, loading, selectedWorkerIds, teamLeaderId, toggleWorker,
-  onTeamLeaderChange, onSelectedWorkersChange, hasSelected, hideDepartmentFilter, searchText,
+  onTeamLeaderChange, onSelectedWorkersChange, hasSelected, searchText,
 }: {
   workers: Worker[];
   loading: boolean;
@@ -467,7 +343,6 @@ function DesktopWorkerTable({
   onTeamLeaderChange: (id: string) => void;
   onSelectedWorkersChange: (ids: string[]) => void;
   hasSelected: boolean;
-  hideDepartmentFilter?: boolean;
   searchText: string;
 }) {
   const allSelected = workers.length > 0 && workers.every(w => selectedWorkerIds.includes(w.id));
@@ -488,9 +363,7 @@ function DesktopWorkerTable({
         </div>
       ) : workers.length === 0 ? (
         <div className="p-6 text-center text-sm text-muted-foreground">
-          {hideDepartmentFilter
-            ? (searchText ? 'No workers found matching your search.' : 'Type a name to search for technicians.')
-            : 'No workers found. Select departments to filter.'}
+          {searchText ? 'No workers found matching your search.' : 'Type a name to search for workers.'}
         </div>
       ) : (
         <Table>
@@ -517,7 +390,7 @@ function DesktopWorkerTable({
                 <span className="sr-only">Team Leader</span>
                 <Crown className="h-3.5 w-3.5 text-amber-500" />
               </TableHead>
-              <TableHead className="px-3">Name &amp; {hideDepartmentFilter ? 'Emp. Code' : 'Staff ID'}</TableHead>
+              <TableHead className="px-3">Name &amp; Emp. Code</TableHead>
               <TableHead className="px-3">Trade / Skill</TableHead>
               <TableHead className="px-3">Department</TableHead>
             </TableRow>
@@ -562,9 +435,8 @@ function DesktopWorkerTable({
                         <div className="text-sm font-medium leading-tight truncate">{worker.fullName}</div>
                         <div className="text-xs text-muted-foreground">
                           {worker.staffId && (
-                            <span className={hideDepartmentFilter ? 'font-mono bg-gray-100 px-1 rounded' : 'mr-1.5'}>{worker.staffId}</span>
+                            <span className="font-mono bg-gray-100 px-1 rounded">{worker.staffId}</span>
                           )}
-                          {!hideDepartmentFilter && worker.primaryRole && <span className="text-gray-400">{worker.primaryRole}</span>}
                         </div>
                       </div>
                     </div>
@@ -601,7 +473,7 @@ function DesktopWorkerTable({
 
 function MobileWorkerList({
   workers, loading, selectedWorkerIds, teamLeaderId, toggleWorker,
-  onTeamLeaderChange, hasSelected, searchText, hideDepartmentFilter,
+  onTeamLeaderChange, hasSelected, searchText,
 }: {
   workers: Worker[];
   loading: boolean;
@@ -611,7 +483,6 @@ function MobileWorkerList({
   onTeamLeaderChange: (id: string) => void;
   hasSelected: boolean;
   searchText: string;
-  hideDepartmentFilter?: boolean;
 }) {
   return (
     <div className="space-y-2 max-h-[400px] overflow-y-auto">
@@ -630,9 +501,7 @@ function MobileWorkerList({
         </div>
       ) : workers.length === 0 ? (
         <div className="py-8 text-center text-sm text-muted-foreground">
-          {hideDepartmentFilter
-            ? (searchText ? 'No workers found matching your search.' : 'Type a name to search for technicians.')
-            : 'No workers found. Select departments to filter.'}
+          {searchText ? 'No workers found matching your search.' : 'Type a name to search for workers.'}
         </div>
       ) : (
         workers.map(worker => {

@@ -586,6 +586,10 @@ export type PageName =
   | 'repairs-downtime'
   | 'repairs-completion'
   | 'repairs-analytics'
+  | 'repairs-spare-part-returns'
+  | 'repairs-damaged-tools'
+  | 'repairs-reports'
+  | 'wo-reports'
   // IoT (3 subpages)
   | 'iot-devices'
   | 'iot-monitoring'

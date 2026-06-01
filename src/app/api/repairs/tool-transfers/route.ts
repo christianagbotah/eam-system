@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Store keepers and admins see all; technicians see their own
-    if (session && !session.roles.includes('admin') && !session.roles.includes('store_keeper') && !session.roles.includes('maintenance_supervisor') && !session.roles.includes('maintenance_planner')) {
+    if (session && !session.roles.includes('admin') && !session.roles.includes('store_keeper') && !session.roles.includes('tools_shop_attendant') && !session.roles.includes('maintenance_supervisor') && !session.roles.includes('maintenance_planner')) {
       const userFilter = { OR: [{ fromUserId: session.userId }, { toUserId: session.userId }, { requestedById: session.userId }] };
       if (where.OR && search) {
         // Merge search OR with user filter
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
     const tool = await db.tool.findUnique({ where: { id: toolId } });
     if (!tool) return NextResponse.json({ success: false, error: 'Tool not found' }, { status: 404 });
 
-    if (tool.assignedToId !== fromUserId && !session.roles.includes('admin') && !session.roles.includes('store_keeper')) {
+    if (tool.assignedToId !== fromUserId && !session.roles.includes('admin') && !session.roles.includes('store_keeper') && !session.roles.includes('tools_shop_attendant')) {
       return NextResponse.json({ success: false, error: 'Tool is not currently assigned to the specified user' }, { status: 400 });
     }
 
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Notify store keepers
-    const storeKeepers = await db.user.findMany({ where: { userRoles: { some: { role: { slug: 'store_keeper' } } }, status: 'active' }, select: { id: true } });
+    const storeKeepers = await db.user.findMany({ where: { userRoles: { some: { OR: [{ role: { slug: 'store_keeper' } }, { role: { slug: 'tools_shop_attendant' } }] } }, status: 'active' }, select: { id: true } });
     for (const sk of storeKeepers) {
       await notifyUser(
         sk.id, 'tool_transfer_request',

@@ -18,7 +18,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         issuedByUser: { select: { id: true, fullName: true } },
         returnedByUser: { select: { id: true, fullName: true } },
         workOrder: { select: { id: true, woNumber: true, title: true, status: true, assignedSupervisorId: true, plannerId: true, assignedSupervisor: { select: { id: true, fullName: true } } } },
-        tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, location: true, condition: true } },
+        tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, location: true, condition: true, quantity: true } },
+        items: {
+          include: {
+            tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
     if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
@@ -27,7 +33,21 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const overdueThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const isOverdue = toolReq.status === 'pending' && toolReq.createdAt < overdueThreshold;
 
-    return NextResponse.json({ success: true, data: { ...toolReq, isOverdue } });
+    // For old requests with no line items, create a virtual item from flat fields
+    const result: any = { ...toolReq, isOverdue };
+    if (toolReq.items.length === 0 && toolReq.toolId) {
+      result._virtualItem = {
+        toolId: toolReq.toolId,
+        toolName: toolReq.toolName,
+        quantityRequested: 1,
+        quantityApproved: undefined,
+        quantityIssued: toolReq.status === 'issued' ? 1 : 0,
+        quantityReturned: toolReq.status === 'returned' ? 1 : 0,
+        tool: toolReq.tool,
+      };
+    }
+
+    return NextResponse.json({ success: true, data: result });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load tool request';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -42,7 +62,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const { id } = await params;
     const body = await request.json();
-    const { action, notes, toolConditionAtReturn } = body;
+    const { action, notes, toolConditionAtReturn, issuedItems, returnedItems } = body;
 
     const toolReq = await db.repairToolRequest.findUnique({
       where: { id },
@@ -50,18 +70,30 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         workOrder: { select: { id: true, woNumber: true, title: true, assignedSupervisorId: true, plannerId: true } },
         requestedBy: { select: { id: true, fullName: true } },
         tool: true,
+        items: {
+          include: {
+            tool: true,
+          },
+        },
       },
     });
     if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
 
     // ── Role-based access control for workflow actions ──
-    // Only admin, store_keeper, store_manager can approve/reject tool requests
-    if (action === 'supervisor_approve' || action === 'supervisor_reject' ||
-        action === 'storekeeper_approve' || action === 'storekeeper_reject') {
+    if (action === 'supervisor_approve' || action === 'supervisor_reject') {
+      if (!isAdmin(session) &&
+          !hasRole(session, 'maintenance_supervisor') &&
+          !hasRole(session, 'maintenance_manager') &&
+          !hasRole(session, 'plant_manager')) {
+        return NextResponse.json({ success: false, error: 'Only admin, maintenance supervisor, maintenance manager, or plant manager can supervisor-approve tool requests' }, { status: 403 });
+      }
+    }
+    if (action === 'storekeeper_approve' || action === 'storekeeper_reject') {
       if (!isAdmin(session) &&
           !hasRole(session, 'store_keeper') &&
-          !hasRole(session, 'store_manager')) {
-        return NextResponse.json({ success: false, error: 'Only admin, store keeper, or store manager can approve/reject tool requests' }, { status: 403 });
+          !hasRole(session, 'inventory_manager') &&
+          !hasRole(session, 'tools_shop_attendant')) {
+        return NextResponse.json({ success: false, error: 'Only admin, store keeper, store manager, or tools shop attendant can store-approve tool requests' }, { status: 403 });
       }
     }
 
@@ -73,12 +105,27 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       case 'supervisor_approve': {
         if (toolReq.status !== 'pending') return NextResponse.json({ success: false, error: `Cannot approve: status is ${toolReq.status}` }, { status: 400 });
 
-        // Check tool availability if toolId exists
-        if (toolReq.toolId && toolReq.tool) {
+        // For multi-item requests: set quantityApproved on each item
+        if (toolReq.items.length > 0) {
+          for (const item of toolReq.items) {
+            let approveQty = item.quantityRequested;
+            // If tool exists, check current available quantity
+            if (item.toolId && item.tool) {
+              approveQty = Math.min(item.quantityRequested, item.tool.quantity);
+            }
+            await db.repairToolRequestItem.update({
+              where: { id: item.id },
+              data: { quantityApproved: approveQty },
+            });
+            if (item.toolId && item.tool && item.tool.quantity < item.quantityRequested) {
+              warnings.push(`"${item.toolName}": only ${item.tool.quantity} of ${item.quantityRequested} requested can be approved (limited stock)`);
+            }
+          }
+        } else if (toolReq.toolId && toolReq.tool) {
+          // Legacy single-tool request
           if (toolReq.tool.status !== 'available') {
             return NextResponse.json({ success: false, error: `Tool "${toolReq.tool.name}" is not available (status: ${toolReq.tool.status}). Cannot approve.` }, { status: 400 });
           }
-          // Capture tool condition at approval time
           await db.repairToolRequest.update({
             where: { id },
             data: { toolConditionAtIssue: toolReq.tool.condition },
@@ -90,14 +137,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           data: { status: 'supervisor_approved', supervisorApprovedById: session.userId, supervisorApprovedAt: now },
         });
 
-        const storeKeepers = await db.user.findMany({ where: { userRoles: { some: { role: { slug: 'store_keeper' } } }, status: 'active' }, select: { id: true } });
+        const storeKeepers = await db.user.findMany({ where: { userRoles: { some: { OR: [{ role: { slug: 'store_keeper' } }, { role: { slug: 'tools_shop_attendant' } }] } }, status: 'active' }, select: { id: true } });
+        const itemCount = toolReq.items.length > 0 ? toolReq.items.length : 1;
+        const toolLabel = toolReq.items.length > 0
+          ? `${itemCount} tool${itemCount > 1 ? 's' : ''}`
+          : `"${toolReq.toolName}"`;
         for (const sk of storeKeepers) {
           await notifyUser(sk.id, 'repair_tool_request', 'Tool Request Awaiting Store Approval',
-              `"${toolReq.toolName}" approved by supervisor for WO ${toolReq.workOrder.woNumber}${toolReq.urgency !== 'normal' ? ` [${toolReq.urgency.toUpperCase()}]` : ''}`,
+              `${toolLabel} approved by supervisor for WO ${toolReq.workOrder.woNumber}${toolReq.urgency !== 'normal' ? ` [${toolReq.urgency.toUpperCase()}]` : ''}`,
               'repair_tool_request', id);
         }
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Request Approved',
-            `Your request for "${toolReq.toolName}" was approved by supervisor`,
+            `Your request for ${toolLabel} was approved by supervisor`,
             'repair_tool_request', id);
         break;
       }
@@ -118,8 +169,37 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       case 'storekeeper_approve': {
         if (toolReq.status !== 'supervisor_approved') return NextResponse.json({ success: false, error: `Cannot approve: status is ${toolReq.status}` }, { status: 400 });
 
-        // Reserve the tool temporarily: set status to 'in_repair'
-        if (toolReq.toolId && toolReq.tool) {
+        // For multi-item requests: check each item's tool availability
+        if (toolReq.items.length > 0) {
+          for (const item of toolReq.items) {
+            if (item.toolId && item.tool) {
+              // Check actual stock at approval time
+              const refreshTool = await db.tool.findUnique({ where: { id: item.toolId } });
+              if (!refreshTool) {
+                warnings.push(`Tool "${item.toolName}" not found in inventory`);
+                await db.repairToolRequestItem.update({
+                  where: { id: item.id },
+                  data: { availabilityStatus: 'unavailable' },
+                });
+                continue;
+              }
+
+              let newStatus: string = 'available';
+              if (refreshTool.quantity <= 0) {
+                newStatus = 'unavailable';
+                warnings.push(`"${item.toolName}" is out of stock`);
+              } else if (refreshTool.quantity < (item.quantityApproved ?? item.quantityRequested)) {
+                newStatus = 'limited';
+                warnings.push(`"${item.toolName}": only ${refreshTool.quantity} available (requested: ${item.quantityApproved ?? item.quantityRequested})`);
+              }
+              await db.repairToolRequestItem.update({
+                where: { id: item.id },
+                data: { availabilityStatus: newStatus },
+              });
+            }
+          }
+        } else if (toolReq.toolId && toolReq.tool) {
+          // Legacy single-tool request: reserve the tool
           if (toolReq.tool.status !== 'available') {
             return NextResponse.json({ success: false, error: `Tool "${toolReq.tool.name}" is no longer available (status: ${toolReq.tool.status})` }, { status: 400 });
           }
@@ -134,9 +214,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           data: { status: 'storekeeper_approved', storekeeperApprovedById: session.userId, storekeeperApprovedAt: now },
         });
 
-        // Notify requester
+        const itemCount = toolReq.items.length > 0 ? toolReq.items.length : 1;
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Ready for Pickup',
-            `"${toolReq.toolName}" is approved and ready for issuance`,
+            `${itemCount} tool${itemCount > 1 ? 's' : ''} approved and ready for issuance`,
             'repair_tool_request', id);
         break;
       }
@@ -145,8 +225,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (toolReq.status !== 'supervisor_approved') return NextResponse.json({ success: false, error: `Cannot reject: status is ${toolReq.status}` }, { status: 400 });
         const rejectionReason = typeof notes === 'string' && notes.trim() ? notes.trim() : null;
 
-        // Release the tool if it was reserved
-        if (toolReq.toolId && toolReq.tool && toolReq.tool.status === 'in_repair') {
+        // Release reserved tools (legacy single-tool)
+        if (toolReq.items.length === 0 && toolReq.toolId && toolReq.tool && toolReq.tool.status === 'in_repair') {
           await db.tool.update({ where: { id: toolReq.toolId }, data: { status: 'available' } });
         }
 
@@ -163,14 +243,97 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       case 'issue': {
         if (toolReq.status !== 'storekeeper_approved') return NextResponse.json({ success: false, error: `Cannot issue: status is ${toolReq.status}` }, { status: 400 });
 
-        // Set tool status to checked_out, assign to requester
-        if (toolReq.toolId) {
+        // Multi-item issue: requires issuedItems array
+        if (toolReq.items.length > 0) {
+          if (!Array.isArray(issuedItems) || issuedItems.length === 0) {
+            return NextResponse.json({ success: false, error: 'issuedItems array is required for multi-tool requests' }, { status: 400 });
+          }
+
+          for (const issuedItem of issuedItems) {
+            const lineItem = toolReq.items.find((i: any) => i.id === issuedItem.itemId);
+            if (!lineItem) {
+              warnings.push(`Item ${issuedItem.itemId} not found in this request, skipping`);
+              continue;
+            }
+
+            const qtyToIssue = Math.max(0, Math.min(
+              parseInt(issuedItem.quantityIssued, 10) || 0,
+              lineItem.quantityApproved ?? lineItem.quantityRequested,
+            ));
+
+            if (qtyToIssue === 0) {
+              await db.repairToolRequestItem.update({
+                where: { id: lineItem.id },
+                data: { availabilityStatus: 'unavailable', issueNotes: issuedItem.issueNotes || 'No quantity issued' },
+              });
+              continue;
+            }
+
+            // Determine availability status
+            const availStatus = qtyToIssue >= lineItem.quantityRequested ? 'available' : 'limited';
+
+            // Deduct from tool quantity
+            if (lineItem.toolId) {
+              const refreshTool = await db.tool.findUnique({ where: { id: lineItem.toolId } });
+              if (!refreshTool) {
+                warnings.push(`Tool "${lineItem.toolName}" not found`);
+                continue;
+              }
+
+              if (refreshTool.quantity < qtyToIssue) {
+                warnings.push(`"${lineItem.toolName}": only ${refreshTool.quantity} available, issuing all available`);
+              }
+
+              const actualIssued = Math.min(qtyToIssue, refreshTool.quantity);
+              const conditionAtIssue = refreshTool.condition;
+
+              await db.tool.update({
+                where: { id: lineItem.toolId },
+                data: {
+                  quantity: { decrement: actualIssued },
+                  status: refreshTool.quantity - actualIssued <= 0 ? 'checked_out' : refreshTool.status,
+                  ...(refreshTool.quantity - actualIssued <= 0 && !refreshTool.assignedToId ? { assignedToId: toolReq.requestedById, checkedOutAt: now } : {}),
+                },
+              });
+
+              await db.toolTransaction.create({
+                data: {
+                  toolId: lineItem.toolId,
+                  type: 'checkout',
+                  toUserId: toolReq.requestedById,
+                  notes: `Issued ${actualIssued}x for WO ${toolReq.workOrder.woNumber} (condition: ${conditionAtIssue})${qtyToIssue < lineItem.quantityRequested ? ' [PARTIAL]' : ''}`,
+                  performedById: session.userId,
+                },
+              });
+
+              await db.repairToolRequestItem.update({
+                where: { id: lineItem.id },
+                data: {
+                  quantityIssued: actualIssued,
+                  conditionAtIssue,
+                  availabilityStatus: actualIssued >= lineItem.quantityRequested ? 'available' : 'limited',
+                  issueNotes: issuedItem.issueNotes || (actualIssued < qtyToIssue ? `Only ${actualIssued} available in stock` : null),
+                },
+              });
+            } else {
+              // No toolId — just update the line item
+              await db.repairToolRequestItem.update({
+                where: { id: lineItem.id },
+                data: {
+                  quantityIssued: qtyToIssue,
+                  availabilityStatus: availStatus,
+                  issueNotes: issuedItem.issueNotes || null,
+                },
+              });
+            }
+          }
+        } else if (toolReq.toolId) {
+          // Legacy single-tool request
           const tool = toolReq.tool;
           if (!tool || (tool.status !== 'in_repair' && tool.status !== 'available')) {
             return NextResponse.json({ success: false, error: `Tool is not available for issue (current status: ${tool?.status})` }, { status: 400 });
           }
 
-          // Store tool condition at issue if not already captured
           const conditionAtIssue = toolReq.toolConditionAtIssue || tool.condition;
 
           await db.tool.update({
@@ -191,7 +354,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             },
           });
 
-          // Update condition at issue on the request
           await db.repairToolRequest.update({
             where: { id },
             data: { toolConditionAtIssue: conditionAtIssue },
@@ -205,13 +367,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
         // Notify requester
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Issued',
-            `"${toolReq.toolName}" has been issued to you for WO ${toolReq.workOrder.woNumber}`,
+            `${toolReq.items.length > 0 ? `${toolReq.items.length} tool${toolReq.items.length > 1 ? 's' : ''}` : `"${toolReq.toolName}"`} has been issued to you for WO ${toolReq.workOrder.woNumber}`,
             'repair_tool_request', id);
 
         // Notify WO planner on issue
         if (toolReq.workOrder.plannerId && toolReq.workOrder.plannerId !== toolReq.requestedById) {
           await notifyUser(toolReq.workOrder.plannerId, 'repair_tool_request', 'Tool Issued for WO',
-              `"${toolReq.toolName}" issued to ${toolReq.requestedBy.fullName} for WO ${toolReq.workOrder.woNumber}`,
+              `${toolReq.items.length > 0 ? 'Tools' : `"${toolReq.toolName}"`} issued to ${toolReq.requestedBy.fullName} for WO ${toolReq.workOrder.woNumber}`,
               'repair_tool_request', id, 'maintenance-work-orders');
         }
         break;
@@ -220,10 +382,73 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       case 'return': {
         if (toolReq.status !== 'issued') return NextResponse.json({ success: false, error: `Cannot return: status is ${toolReq.status}` }, { status: 400 });
 
-        const resolvedReturnCondition = VALID_CONDITIONS.includes(toolConditionAtReturn) ? toolConditionAtReturn : (toolReq.tool?.condition || 'good');
+        // Multi-item return: requires returnedItems array
+        if (toolReq.items.length > 0) {
+          if (!Array.isArray(returnedItems) || returnedItems.length === 0) {
+            return NextResponse.json({ success: false, error: 'returnedItems array is required for multi-tool requests' }, { status: 400 });
+          }
 
-        if (toolReq.toolId) {
-          // Determine target tool status based on return condition
+          for (const retItem of returnedItems) {
+            const lineItem = toolReq.items.find((i: any) => i.id === retItem.itemId);
+            if (!lineItem) {
+              warnings.push(`Item ${retItem.itemId} not found in this request, skipping`);
+              continue;
+            }
+
+            const qtyToReturn = Math.max(0, Math.min(
+              parseInt(retItem.quantityReturned, 10) || 0,
+              lineItem.quantityIssued,
+            ));
+
+            if (qtyToReturn === 0) continue;
+
+            const condition = VALID_CONDITIONS.includes(retItem.conditionAtReturn) ? retItem.conditionAtReturn : 'good';
+
+            // Add back to tool quantity
+            if (lineItem.toolId) {
+              const refreshTool = await db.tool.findUnique({ where: { id: lineItem.toolId } });
+              if (refreshTool) {
+                const toolStatus = (condition === 'poor' || condition === 'damaged') ? 'in_repair' :
+                  (refreshTool.quantity + qtyToReturn > 0 ? 'available' : refreshTool.status);
+
+                await db.tool.update({
+                  where: { id: lineItem.toolId },
+                  data: {
+                    quantity: { increment: qtyToReturn },
+                    status: toolStatus,
+                    condition: condition,
+                    ...(toolStatus === 'available' ? { assignedToId: null, checkedOutAt: null } : {}),
+                  },
+                });
+
+                await db.toolTransaction.create({
+                  data: {
+                    toolId: lineItem.toolId,
+                    type: 'return',
+                    fromUserId: toolReq.requestedById,
+                    notes: `Returned ${qtyToReturn}x from WO ${toolReq.workOrder.woNumber} (condition: ${condition})`,
+                    performedById: session.userId,
+                  },
+                });
+              }
+            }
+
+            await db.repairToolRequestItem.update({
+              where: { id: lineItem.id },
+              data: {
+                quantityReturned: { increment: qtyToReturn },
+                conditionAtReturn: condition,
+              },
+            });
+
+            if (condition === 'poor' || condition === 'damaged') {
+              warnings.push(`"${lineItem.toolName}" returned in "${condition}" condition — flagged for repair`);
+            }
+          }
+        } else if (toolReq.toolId) {
+          // Legacy single-tool request
+          const resolvedReturnCondition = VALID_CONDITIONS.includes(toolConditionAtReturn) ? toolConditionAtReturn : (toolReq.tool?.condition || 'good');
+
           const previousCondition = toolReq.toolConditionAtIssue || toolReq.tool?.condition || 'good';
           if (resolvedReturnCondition === 'poor' || resolvedReturnCondition === 'damaged') {
             warnings.push(`Tool condition is "${resolvedReturnCondition}". Tool has been automatically flagged for repair.`);
@@ -248,17 +473,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               performedById: session.userId,
             },
           });
+
+          await db.repairToolRequest.update({
+            where: { id },
+            data: { toolConditionAtReturn: resolvedReturnCondition },
+          });
         }
 
         updated = await db.repairToolRequest.update({
           where: { id },
-          data: { status: 'returned', returnedById: session.userId, returnedAt: now, toolConditionAtReturn: resolvedReturnCondition },
+          data: { status: 'returned', returnedById: session.userId, returnedAt: now },
         });
 
         // Notify WO planner on return
         if (toolReq.workOrder.plannerId && toolReq.workOrder.plannerId !== toolReq.requestedById) {
           await notifyUser(toolReq.workOrder.plannerId, 'repair_tool_request', 'Tool Returned from WO',
-              `"${toolReq.toolName}" returned by ${toolReq.requestedBy.fullName} from WO ${toolReq.workOrder.woNumber} (condition: ${resolvedReturnCondition})`,
+              `${toolReq.items.length > 0 ? 'Tools' : `"${toolReq.toolName}"`} returned by ${toolReq.requestedBy.fullName} from WO ${toolReq.workOrder.woNumber}`,
               'repair_tool_request', id, 'maintenance-work-orders');
         }
         break;
@@ -275,6 +505,215 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ success: true, data: updated, warnings: warnings.length > 0 ? warnings : undefined });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to process action';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+// PUT /api/repairs/tool-requests/[id]
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
+    const { id } = await params;
+    const body = await request.json();
+    const { toolName, urgency, reason, notes, items } = body;
+
+    const toolReq = await db.repairToolRequest.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+    if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
+
+    if (toolReq.status !== 'pending') {
+      return NextResponse.json({ success: false, error: 'Cannot edit: request is no longer pending' }, { status: 400 });
+    }
+
+    if (toolReq.requestedById !== session.userId && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Only the requester or admin can edit' }, { status: 403 });
+    }
+
+    const VALID_URGENCIES = ['low', 'normal', 'medium', 'high', 'critical'];
+    const resolvedUrgency = VALID_URGENCIES.includes(urgency) ? urgency : toolReq.urgency;
+
+    // If items are provided, update line items
+    if (Array.isArray(items) && items.length > 0) {
+      // Delete existing items
+      await db.repairToolRequestItem.deleteMany({ where: { repairToolRequestId: id } });
+
+      // Validate and create new items
+      const warnings: string[] = [];
+      const newItems: Array<{
+        toolId: string | null;
+        toolName: string;
+        toolCode: string | null;
+        category: string | null;
+        quantityRequested: number;
+        unitCost: number | null;
+        availabilityStatus: string;
+      }> = [];
+
+      for (const item of items) {
+        const qty = Math.max(1, parseInt(item.quantityRequested, 10) || 1);
+        const itemToolId = item.toolId || null;
+        const itemToolName = item.toolName?.trim();
+        if (!itemToolName) continue;
+
+        let toolCode: string | null = item.toolCode || null;
+        let category: string | null = item.category || null;
+        let unitCost: number | null = null;
+        let availabilityStatus = 'available';
+
+        if (itemToolId) {
+          const tool = await db.tool.findUnique({ where: { id: itemToolId } });
+          if (tool) {
+            toolCode = tool.toolCode;
+            category = tool.category;
+            unitCost = tool.currentValue ?? tool.purchaseCost ?? null;
+            if (tool.quantity < qty) {
+              availabilityStatus = 'limited';
+              warnings.push(`Tool "${tool.name}": requested ${qty} but only ${tool.quantity} available`);
+            }
+            if (tool.quantity <= 0) {
+              availabilityStatus = 'unavailable';
+            }
+          }
+        }
+
+        newItems.push({
+          toolId: itemToolId,
+          toolName: itemToolName,
+          toolCode,
+          category,
+          quantityRequested: qty,
+          unitCost,
+          availabilityStatus,
+        });
+      }
+
+      if (newItems.length === 0) {
+        return NextResponse.json({ success: false, error: 'At least one tool item is required' }, { status: 400 });
+      }
+
+      // Update header toolName to first item
+      const primaryToolName = newItems[0].toolName;
+
+      const updated = await db.repairToolRequest.update({
+        where: { id },
+        data: {
+          toolName: primaryToolName,
+          urgency: resolvedUrgency,
+          reason: reason ?? toolReq.reason,
+          notes: notes !== undefined ? (notes || null) : toolReq.notes,
+          items: {
+            create: newItems.map(item => ({
+              toolId: item.toolId,
+              toolName: item.toolName,
+              toolCode: item.toolCode,
+              category: item.category,
+              quantityRequested: item.quantityRequested,
+              unitCost: item.unitCost,
+              availabilityStatus: item.availabilityStatus,
+            })),
+          },
+        },
+        include: {
+          requestedBy: { select: { id: true, fullName: true, username: true } },
+          supervisorApprovedBy: { select: { id: true, fullName: true } },
+          storekeeperApprovedBy: { select: { id: true, fullName: true } },
+          issuedByUser: { select: { id: true, fullName: true } },
+          returnedByUser: { select: { id: true, fullName: true } },
+          workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
+          tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } },
+          items: {
+            include: {
+              tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } },
+            },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      });
+
+      await db.auditLog.create({
+        data: { userId: session.userId, action: 'tool_request_update', entityType: 'repair_tool_request', entityId: id, newValues: JSON.stringify({ itemCount: newItems.length, urgency, reason }) },
+      });
+
+      return NextResponse.json({ success: true, data: updated, warnings: warnings.length > 0 ? warnings : undefined });
+    }
+
+    // No items provided — just update header fields (backward compat)
+    const updated = await db.repairToolRequest.update({
+      where: { id },
+      data: {
+        toolName: toolName ?? toolReq.toolName,
+        urgency: resolvedUrgency,
+        reason: reason ?? toolReq.reason,
+        notes: notes !== undefined ? (notes || null) : toolReq.notes,
+      },
+      include: {
+        requestedBy: { select: { id: true, fullName: true, username: true } },
+        supervisorApprovedBy: { select: { id: true, fullName: true } },
+        storekeeperApprovedBy: { select: { id: true, fullName: true } },
+        issuedByUser: { select: { id: true, fullName: true } },
+        returnedByUser: { select: { id: true, fullName: true } },
+        workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
+        tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } },
+        items: {
+          include: {
+            tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, condition: true, quantity: true } },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    await db.auditLog.create({
+      data: { userId: session.userId, action: 'tool_request_update', entityType: 'repair_tool_request', entityId: id, newValues: JSON.stringify({ toolName, urgency, reason }) },
+    });
+
+    return NextResponse.json({ success: true, data: updated });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to update tool request';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+// DELETE /api/repairs/tool-requests/[id]
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
+    const { id } = await params;
+
+    const toolReq = await db.repairToolRequest.findUnique({
+      where: { id },
+      include: { tool: true },
+    });
+    if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
+
+    if (toolReq.status !== 'pending') {
+      return NextResponse.json({ success: false, error: 'Cannot delete: request is no longer pending' }, { status: 400 });
+    }
+
+    if (toolReq.requestedById !== session.userId && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Only the requester or admin can delete' }, { status: 403 });
+    }
+
+    // Release tool if it was reserved (legacy single-tool)
+    if (toolReq.items.length === 0 && toolReq.toolId && toolReq.tool && toolReq.tool.status === 'in_repair') {
+      await db.tool.update({ where: { id: toolReq.toolId }, data: { status: 'available' } });
+    }
+
+    await db.repairToolRequest.delete({ where: { id } });
+
+    await db.auditLog.create({
+      data: { userId: session.userId, action: 'delete', entityType: 'repair_tool_request', entityId: id, newValues: JSON.stringify({ toolName: toolReq.toolName, workOrderId: toolReq.workOrderId }) },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to delete tool request';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

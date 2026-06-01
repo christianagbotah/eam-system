@@ -183,6 +183,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'repairs-damaged-tools', label: 'Damaged Tools', icon: TriangleAlert },
         { page: 'repairs-analytics', label: 'Analytics', icon: BarChart3 },
         { page: 'repairs-reports', label: 'Reports', icon: FileText },
+        { page: 'wo-reports', label: 'WO Reports', icon: BarChart3 },
       ],
     },
     {

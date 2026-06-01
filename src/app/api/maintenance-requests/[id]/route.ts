@@ -3,6 +3,17 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope } from '@/lib/plant-scope';
 
+// Helper: check if user can edit/delete a pending request (must be requester or admin)
+async function canModifyPendingRequest(id: string, session: any) {
+  const existing = await db.maintenanceRequest.findUnique({ where: { id } });
+  if (!existing) return { error: 'Maintenance request not found', status: 404 };
+  if (existing.status !== 'pending') return { error: 'Can only modify requests with status "pending"', status: 400 };
+  if (existing.requestedBy !== session.userId && !isAdmin(session)) {
+    return { error: 'Only the requester can modify this request', status: 403 };
+  }
+  return { mr: existing };
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -89,9 +100,19 @@ export async function PUT(
       );
     }
 
+    // If request is pending, only the requester (or admin) can edit it
+    if (existing.status === 'pending') {
+      if (existing.requestedBy !== session.userId && !isAdmin(session)) {
+        return NextResponse.json(
+          { success: false, error: 'Only the requester can edit a pending request' },
+          { status: 403 }
+        );
+      }
+    }
+
     // Only allow updates if not already approved/rejected/converted
     if (['approved', 'rejected', 'converted'].includes(existing.status)) {
-      // Only allow updating notes
+      // Only allow updating notes (by admin or supervisor)
       if (body.notes !== undefined) {
         const updated = await db.maintenanceRequest.update({
           where: { id },
@@ -113,7 +134,7 @@ export async function PUT(
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
       'title', 'description', 'priority', 'category',
-      'assetId', 'departmentId', 'plantId', 'machineDownStatus',
+      'assetId', 'assetName', 'location', 'departmentId', 'plantId', 'machineDownStatus',
       'estimatedHours', 'slaHours', 'plannedStart', 'plannedEnd', 'notes',
     ];
 
@@ -143,6 +164,37 @@ export async function PUT(
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to update maintenance request';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    }
+
+    const { id } = await params;
+
+    // Check: only pending requests, and only by requester or admin
+    const check = await canModifyPendingRequest(id, session);
+    if ('error' in check) {
+      return NextResponse.json({ success: false, error: check.error }, { status: check.status });
+    }
+
+    // Delete associated comments first (cascade)
+    await db.maintenanceRequestComment.deleteMany({ where: { maintenanceRequestId: id } });
+
+    // Delete the request
+    await db.maintenanceRequest.delete({ where: { id } });
+
+    return NextResponse.json({ success: true, message: 'Maintenance request deleted' });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to delete maintenance request';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

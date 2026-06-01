@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope } from '@/lib/plant-scope';
 
 export async function GET(
@@ -42,7 +42,10 @@ export async function GET(
         orderBy: { assignedAt: 'asc' as const },
       },
       timeLogs: {
-        include: { user: { select: { id: true, fullName: true, username: true } } },
+        include: {
+          user: { select: { id: true, fullName: true, username: true } },
+          loggedBy: { select: { id: true, fullName: true } },
+        },
         orderBy: { timestamp: 'desc' as const },
       },
       materials: {
@@ -55,6 +58,26 @@ export async function GET(
       },
       comments: {
         include: { user: { select: { id: true, fullName: true, username: true } } },
+        orderBy: { createdAt: 'desc' as const },
+      },
+      repairToolRequests: {
+        include: {
+          tool: { select: { id: true, name: true, toolCode: true, category: true } },
+          requestedBy: { select: { id: true, fullName: true } },
+          supervisorApprovedBy: { select: { id: true, fullName: true } },
+          storekeeperApprovedBy: { select: { id: true, fullName: true } },
+          issuedByUser: { select: { id: true, fullName: true } },
+        },
+        orderBy: { createdAt: 'desc' as const },
+      },
+      repairMaterialRequests: {
+        include: {
+          item: { select: { id: true, name: true, itemCode: true, category: true } },
+          requestedBy: { select: { id: true, fullName: true } },
+          supervisorApprovedBy: { select: { id: true, fullName: true } },
+          storekeeperApprovedBy: { select: { id: true, fullName: true } },
+          issuedByUser: { select: { id: true, fullName: true } },
+        },
         orderBy: { createdAt: 'desc' as const },
       },
     } as const;
@@ -98,9 +121,15 @@ export async function GET(
       }
     }
 
-    // Ensure teamMemberRequests array exists even if table wasn't queried
+    // Ensure relations arrays exist even if tables weren't queried
     if (!wo.teamMemberRequests) {
       (wo as Record<string, unknown>).teamMemberRequests = [];
+    }
+    if (!wo.repairToolRequests) {
+      (wo as Record<string, unknown>).repairToolRequests = [];
+    }
+    if (!wo.repairMaterialRequests) {
+      (wo as Record<string, unknown>).repairMaterialRequests = [];
     }
 
     return NextResponse.json({ success: true, data: wo });
@@ -120,6 +149,10 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    if (!hasPermission(session, 'work_orders.update') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions to update work orders' }, { status: 403 });
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -135,6 +168,14 @@ export async function PUT(
     if (existing.isLocked) {
       return NextResponse.json(
         { success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' },
+        { status: 400 }
+      );
+    }
+
+    // Don't allow edits once supervisor has verified the work (awaiting planner closure)
+    if (existing.status === 'verified' || existing.status === 'closed') {
+      return NextResponse.json(
+        { success: false, error: 'Work order has been reviewed and cannot be edited. Status: ' + existing.status + '. Contact supervisor or planner if changes are needed.' },
         { status: 400 }
       );
     }
