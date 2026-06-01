@@ -2394,10 +2394,23 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [tlEndTime, setTlEndTime] = useState('');
   const [tlActivityType, setTlActivityType] = useState('maintenance');
   const [tlBreakMinutes, setTlBreakMinutes] = useState('');
-  const [tlManualHours, setTlManualHours] = useState('');
   const [tlNotes, setTlNotes] = useState('');
   const [tlLoading, setTlLoading] = useState(false);
   const [tlLoggedForUserId, setTlLoggedForUserId] = useState('');
+  const [tlError, setTlError] = useState('');
+
+  // Compute minimum date/time constraints from WO schedule
+  const tlConstraints = useMemo(() => {
+    // Priority: actualStart > plannedStart > createdAt
+    const refDate = wo?.actualStart || wo?.plannedStart || wo?.createdAt;
+    if (!refDate) return { minDate: undefined as string | undefined, minTime: undefined as string | undefined };
+    const d = new Date(refDate);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return {
+      minDate: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      minTime: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+    };
+  }, [wo?.actualStart, wo?.plannedStart, wo?.createdAt]);
   const [deleteTlId, setDeleteTlId] = useState<string | null>(null);
   // Enterprise time session — active session tracking across all WOs
   const [globalActiveSession, setGlobalActiveSession] = useState<{
@@ -2888,6 +2901,35 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   };
 
   const handleTimeLog = async () => {
+    setTlError('');
+
+    // Validation: end time must be after start time
+    if (tlStartTime && tlEndTime) {
+      const startMs = new Date(tlStartTime).getTime();
+      const endMs = new Date(tlEndTime).getTime();
+      if (endMs <= startMs) {
+        setTlError('End time must be after start time.');
+        return;
+      }
+    }
+
+    // Validation: start time must be on or after WO schedule date
+    if (tlStartTime && tlConstraints.minDate) {
+      const startDate = tlStartTime.slice(0, 10);
+      if (startDate < tlConstraints.minDate) {
+        setTlError(`Start date cannot be before the work order schedule date (${tlConstraints.minDate}).`);
+        return;
+      }
+      // Same date: check time
+      if (startDate === tlConstraints.minDate && tlConstraints.minTime) {
+        const startTime = tlStartTime.slice(11, 16);
+        if (startTime && startTime < tlConstraints.minTime) {
+          setTlError(`Start time cannot be before ${tlConstraints.minTime} on the schedule date.`);
+          return;
+        }
+      }
+    }
+
     setTlLoading(true);
     const body: any = { action: tlAction };
     if (tlNotes) body.notes = tlNotes;
@@ -2895,7 +2937,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (tlEndTime) body.endTime = tlEndTime;
     body.activityType = tlActivityType;
     if (tlBreakMinutes) body.breakMinutes = parseInt(tlBreakMinutes, 10) || 0;
-    if (tlManualHours) body.manualHours = parseFloat(tlManualHours);
     if (tlLoggedForUserId) {
       body.loggedForUserId = tlLoggedForUserId;
       body.isTeamLog = true;
@@ -2908,9 +2949,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       setTlEndTime('');
       setTlActivityType('maintenance');
       setTlBreakMinutes('');
-      setTlManualHours('');
       setTlNotes('');
       setTlLoggedForUserId('');
+      setTlError('');
       fetchActiveSession();
       fetchWO();
     } else {
@@ -3820,7 +3861,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       )}
 
       {/* Time Log Dialog — Enterprise */}
-      <ResponsiveDialog open={timeLogOpen} onOpenChange={setTimeLogOpen} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={handleTimeLog}>{tlLoading ? 'Saving...' : 'Save Time Log'}</Button>}>
+      <ResponsiveDialog open={timeLogOpen} onOpenChange={(open) => { setTimeLogOpen(open); if (!open) setTlError(''); }} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading || !!tlError} onClick={handleTimeLog}>{tlLoading ? 'Saving...' : 'Save Time Log'}</Button>}>
           <div className="space-y-4">
             {/* Team member selector — only team leader or admin */}
             {canLogForOthers && (wo?.teamMembers?.length > 0 || wo?.assignedToId) && (
@@ -3865,20 +3906,28 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Start Time</Label>
+                <Label>Start Time <span className="text-red-500">*</span></Label>
                 <DateTimePicker
                   value={tlStartTime || undefined}
-                  onChange={v => setTlStartTime(v || '')}
-                  placeholder="Now (auto)"
+                  onChange={v => { setTlStartTime(v || ''); setTlError(''); }}
+                  minDate={tlConstraints.minDate}
+                  minTime={tlConstraints.minTime}
+                  error={!tlStartTime ? undefined : tlError?.includes('Start date') || tlError?.includes('Start time') ? tlError : undefined}
                 />
+                <p className="text-[10px] text-muted-foreground">
+                  {tlConstraints.minDate && <>Min: {tlConstraints.minDate}{tlConstraints.minTime ? ` ${tlConstraints.minTime}` : ''}</>}
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label>End Time</Label>
                 <DateTimePicker
                   value={tlEndTime || undefined}
-                  onChange={v => setTlEndTime(v || '')}
-                  placeholder="Leave blank if ongoing"
+                  onChange={v => { setTlEndTime(v || ''); setTlError(''); }}
+                  minDate={tlStartTime ? tlStartTime.slice(0, 10) : tlConstraints.minDate}
+                  minTime={tlStartTime && tlStartTime.slice(0, 10) === tlConstraints.minDate ? tlConstraints.minTime : tlStartTime ? tlStartTime.slice(11, 16) : undefined}
+                  error={tlError?.includes('End time') ? tlError : undefined}
                 />
+                <p className="text-[10px] text-muted-foreground">Leave blank if ongoing</p>
               </div>
             </div>
             {/* Auto-calculated duration preview */}
@@ -3901,23 +3950,23 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 <p className="text-[10px] text-emerald-600 mt-0.5">Auto-calculated from start/end times</p>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Break (minutes)</Label>
-                <Input className="min-h-[44px]" type="number" min="0" max="480" value={tlBreakMinutes} onChange={e => setTlBreakMinutes(e.target.value)} placeholder="0" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Manual Hours (optional)</Label>
-                <Input className="min-h-[44px]" type="number" step="0.25" min="0" value={tlManualHours} onChange={e => setTlManualHours(e.target.value)} placeholder="e.g. 2.5" />
-              </div>
+            <div className="space-y-1.5">
+              <Label>Break (minutes)</Label>
+              <Input className="min-h-[44px]" type="number" min="0" max="480" value={tlBreakMinutes} onChange={e => setTlBreakMinutes(e.target.value)} placeholder="0" />
             </div>
             <div className="space-y-1.5">
               <Label>Notes</Label>
               <Textarea value={tlNotes} onChange={e => setTlNotes(e.target.value)} placeholder="What was done during this time..." rows={2} />
             </div>
+            {/* Error display */}
+            {tlError && (
+              <div className="p-2.5 rounded-lg bg-red-50 border border-red-200">
+                <p className="text-sm text-red-600">{tlError}</p>
+              </div>
+            )}
             <div className="p-2.5 rounded-lg bg-muted/50">
               <p className="text-[11px] text-muted-foreground">
-                <strong>Tip:</strong> Set start &amp; end times for auto-calculation. Leave end blank for ongoing work. Use manual hours to override.
+                <strong>Tip:</strong> Set start &amp; end times for auto-calculation. Leave end blank for ongoing work.
               </p>
             </div>
           </div>
@@ -4120,7 +4169,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     Busy on WO #{globalActiveSession?.workOrderNumber}
                   </Button>
                 )}
-                <Button size="sm" variant="ghost" className="gap-1.5" disabled={actionDisabled} onClick={() => { setTlStartTime(''); setTlEndTime(''); setTlActivityType('maintenance'); setTlBreakMinutes(''); setTlManualHours(''); setTlNotes(''); setTlLoggedForUserId(''); setTlAction('start'); setTimeLogOpen(true); }} title="Manual time entry"><Clock className="h-3.5 w-3.5" /></Button>
+                <Button size="sm" variant="ghost" className="gap-1.5" disabled={actionDisabled} onClick={() => { setTlStartTime(''); setTlEndTime(''); setTlActivityType('maintenance'); setTlBreakMinutes(''); setTlNotes(''); setTlLoggedForUserId(''); setTlAction('start'); setTlError(''); setTimeLogOpen(true); }} title="Log time"><Clock className="h-3.5 w-3.5" /></Button>
               </div>
             </CardHeader>
             <CardContent>
