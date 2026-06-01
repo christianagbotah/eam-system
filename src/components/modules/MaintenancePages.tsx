@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   ClipboardList, Wrench, Plus, Search, ArrowLeft, CheckCircle2, XCircle,
   Clock, AlertTriangle, RefreshCw, Play, Pause, Check, Lock, Eye, Pencil,
@@ -42,7 +43,7 @@ import {
   PieChart as PieChartIcon, Gauge, ListChecks, Shield, ShieldCheck, HardHat, MapPin,
   Crown, Timer, Hourglass, UserPlus, Workflow, ChevronRight, ExternalLink, Hammer,
   Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
-  FlaskConical,
+  FlaskConical, Warehouse, PackageOpen, PackageCheck,
   ArrowUpRight, ArrowDownRight, CalendarClock, LayoutDashboard, Bell, DollarSign,
   UserMinus, UserCheck, UserX,
 } from 'lucide-react';
@@ -62,6 +63,26 @@ import { FileUpload } from '@/components/shared/FileUpload';
 import { WorkerAssignmentSelector } from '@/components/shared/WorkerAssignmentSelector';
 // WorkerAssignmentPicker still used by WO Detail page
 import { WorkerAssignmentPicker, type SelectedWorker } from '@/components/shared/WorkerAssignmentPicker';
+// Local UrgencyBadge for WO detail page (same as RepairsPages)
+const URGENCY_CFG: Record<string, { label: string; color: string; dotColor: string }> = {
+  low: { label: 'Low', color: 'bg-slate-100 text-slate-700 border-slate-300', dotColor: 'bg-slate-400' },
+  normal: { label: 'Normal', color: 'bg-amber-50 text-amber-700 border-amber-300', dotColor: 'bg-amber-500' },
+  medium: { label: 'Medium', color: 'bg-amber-50 text-amber-700 border-amber-300', dotColor: 'bg-amber-500' },
+  high: { label: 'High', color: 'bg-orange-50 text-orange-700 border-orange-300', dotColor: 'bg-orange-500' },
+  critical: { label: 'Critical', color: 'bg-red-50 text-red-700 border-red-300', dotColor: 'bg-red-500' },
+};
+
+function UrgencyBadge({ urgency }: { urgency: string }) {
+  const cfg = URGENCY_CFG[urgency];
+  if (!cfg) return null;
+  return (
+    <Badge variant="outline" className={`${cfg.color} gap-1.5 text-xs font-medium`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${cfg.dotColor}`} />
+      {cfg.label}
+    </Badge>
+  );
+}
+
 export function MaintenanceRequestsPage() {
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2400,6 +2421,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [matItemName, setMatItemName] = useState('');
   const [matQty, setMatQty] = useState('');
   const [matUnit, setMatUnit] = useState('each');
+  const [matReason, setMatReason] = useState('');
+  const [matUrgency, setMatUrgency] = useState('normal');
   const [matLoading, setMatLoading] = useState(false);
   // Available transitions from state machine
   const [availableTransitions, setAvailableTransitions] = useState<Array<{
@@ -2912,10 +2935,51 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     const body: any = { itemId: matItemId };
     if (matQty) body.quantity = parseFloat(matQty);
     if (matUnit) body.unit = matUnit;
+    if (matReason) body.reason = matReason;
+    if (matUrgency) body.urgency = matUrgency;
     const res = await api.post(`/api/work-orders/${id}/materials`, body);
-    if (res.success) { toast.success('Material requested'); setMaterialOpen(false); setMatItemId(''); setMatItemName(''); setMatQty(''); fetchWO(); }
-    else { toast.error(res.error || 'Failed to add material'); }
+    if (res.success) {
+      toast.success('Material requested — sent for supervisor approval');
+      setMaterialOpen(false); setMatItemId(''); setMatItemName(''); setMatQty('');
+      setMatReason(''); setMatUrgency('normal');
+      fetchWO();
+      if (res.data?.repairMaterialRequest) {
+        toast.info('Material request is pending supervisor approval');
+      }
+    } else { toast.error(res.error || 'Failed to add material'); }
     setMatLoading(false);
+  };
+
+  // Repair Material Request action handlers (approval workflow from WO detail)
+  const handleMatRequestAction = async (mrId: string, action: string, extra?: Record<string, any>) => {
+    const res = await api.post(`/api/repairs/material-requests/${mrId}`, { action, ...extra });
+    if (res.success) {
+      const actionLabels: Record<string, string> = {
+        supervisor_approve: 'Supervisor approved',
+        supervisor_reject: 'Supervisor rejected',
+        storekeeper_approve: 'Store approved',
+        storekeeper_reject: 'Store rejected',
+        record_return: 'Return recorded',
+      };
+      toast.success(actionLabels[action] || 'Action completed');
+      fetchWO();
+    } else toast.error(res.error || 'Failed');
+  };
+
+  const handleMatRequestPick = async (mrId: string) => {
+    const res = await api.post('/api/repairs/material-requests/pick', { id: mrId });
+    if (res.success) { toast.success('Items being picked'); fetchWO(); }
+    else toast.error(res.error || 'Failed to pick');
+  };
+
+  const isSupervisorOrAdminLocal = () => {
+    const slugs = (user?.roles || []).map((r: any) => r.slug);
+    return slugs.includes('admin') || slugs.includes('maintenance_supervisor') || slugs.includes('maintenance_manager') || slugs.includes('plant_manager');
+  };
+
+  const isStoreOrAdminLocal = () => {
+    const slugs = (user?.roles || []).map((r: any) => r.slug);
+    return slugs.includes('admin') || slugs.includes('store_keeper') || slugs.includes('inventory_manager') || slugs.includes('tools_shop_attendant');
   };
 
   // Personal tools handlers
@@ -3874,10 +3938,11 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       </ResponsiveDialog>
 
       {/* Add Material Dialog — pick from inventory */}
-      <ResponsiveDialog open={materialOpen} onOpenChange={(open) => { setMaterialOpen(open); if (!open) { setMatItemId(''); setMatItemName(''); setMatQty(''); }}} title="Request Material" description="Select a material or part from inventory to request for this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={matLoading || !matItemId} onClick={handleAddMaterial}>{matLoading ? 'Requesting...' : 'Request Material'}</Button>}>
+      <ResponsiveDialog open={materialOpen} onOpenChange={(open) => { setMaterialOpen(open); if (!open) { setMatItemId(''); setMatItemName(''); setMatQty(''); setMatReason(''); setMatUrgency('normal'); }}} title="Request Material" description="Select a material or part from inventory. It will go through supervisor and store approval." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={matLoading || !matItemId} onClick={handleAddMaterial}>{matLoading ? 'Requesting...' : 'Submit Request'}</Button>}>
           <div className="space-y-4">
-            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
-              <p className="text-xs text-muted-foreground">Materials are picked from the existing inventory. Select the item you need and specify the quantity.</p>
+            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+              <p className="text-xs text-amber-800 font-medium">📋 Approval Workflow</p>
+              <p className="text-xs text-amber-700 mt-1">Your request will be reviewed by a <strong>Supervisor</strong>, then <strong>Store/Shop</strong> before materials are issued.</p>
             </div>
             <div className="space-y-1.5"><Label>Item *</Label>
               <AsyncSearchableSelect
@@ -3908,6 +3973,24 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   <SelectContent><SelectItem value="each">Each</SelectItem><SelectItem value="kg">Kg</SelectItem><SelectItem value="meter">Meter</SelectItem><SelectItem value="set">Set</SelectItem><SelectItem value="box">Box</SelectItem></SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5"><Label>Urgency</Label>
+                <Select value={matUrgency} onValueChange={setMatUrgency}>
+                  <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div></div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Reason *</Label>
+              <Textarea value={matReason} onChange={e => setMatReason(e.target.value)} placeholder="Why is this material needed? (e.g., replacing worn bearing, spare part for pump repair)" rows={2} />
             </div>
           </div>
       </ResponsiveDialog>
@@ -4184,64 +4267,119 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </CardContent>
           </Card>
 
-          {/* Materials */}
+          {/* Materials — with approval pipeline */}
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
-              <div><CardTitle className="text-base">Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.materials?.length || 0} items</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => { setMatName(''); setMatQty(''); setMatCost(''); setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" />Add Material</Button>
+              <div><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests?.length || 0} requests</CardDescription></div>
+              <div className="flex items-center gap-2">
+                {(wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0) && (
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" />View All</Button>
+                )}
+                <Button size="sm" variant="outline" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" />Request Material</Button>
+              </div>
             </CardHeader>
             <CardContent>
-              {(!wo.materials || wo.materials.length === 0) ? (
-                <p className="text-sm text-muted-foreground">No materials added yet.</p>
-              ) : (
-                <>
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Item</TableHead>
-                          <TableHead className="text-right">Qty</TableHead>
-                          <TableHead className="text-right hidden sm:table-cell">Unit Cost</TableHead>
-                          <TableHead className="text-right hidden sm:table-cell">Total</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="w-[120px]">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {wo.materials.map(m => (
-                          <TableRow key={m.id}>
-                            <TableCell className="font-medium text-sm">{m.itemName || '-'}</TableCell>
-                            <TableCell className="text-right text-sm">{m.quantity || 0} {m.unit || ''}</TableCell>
-                            <TableCell className="text-right text-sm hidden sm:table-cell">{formatCurrency(m.unitCost)}</TableCell>
-                            <TableCell className="text-right text-sm hidden sm:table-cell font-medium">{formatCurrency(m.totalCost || (m.quantity || 0) * (m.unitCost || 0))}</TableCell>
-                            <TableCell><Badge variant="outline" className={`text-[10px] capitalize ${m.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : m.status === 'issued' ? 'bg-sky-50 text-sky-700 border-sky-200' : m.status === 'returned' ? 'bg-slate-50 text-slate-500 border-slate-200' : ''}`}>{m.status || 'requested'}</Badge></TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1">
-                                {canApproveMaterials && m.status === 'requested' && (
-                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-200" onClick={async () => { const r = await api.put(`/api/work-orders/${id}/materials/${m.id}`, { status: 'approved' }); if (r.success) { toast.success('Material approved'); fetchWO(); } else toast.error(r.error || 'Failed'); }}>Approve</Button>
-                                )}
-                                {canApproveMaterials && m.status === 'approved' && (
-                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-sky-600 hover:text-sky-700 border-sky-200" onClick={async () => { const r = await api.put(`/api/work-orders/${id}/materials/${m.id}`, { status: 'issued' }); if (r.success) { toast.success('Material issued'); fetchWO(); } else toast.error(r.error || 'Failed'); }}>Issue</Button>
-                                )}
-                                {canApproveMaterials && (m.status === 'issued') && (
-                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-slate-600 hover:text-slate-700" onClick={async () => { const r = await api.put(`/api/work-orders/${id}/materials/${m.id}`, { status: 'returned' }); if (r.success) { toast.success('Material returned'); fetchWO(); } else toast.error(r.error || 'Failed'); }}>Return</Button>
-                                )}
-                                {m.status === 'requested' && (
-                                  <Button size="sm" variant="ghost" className="h-7 text-[10px] px-1.5 text-red-500 hover:text-red-600" onClick={async () => { if (!confirm('Delete this material?')) return; const r = await api.delete(`/api/work-orders/${id}/materials/${m.id}`); if (r.success) { toast.success('Material removed'); fetchWO(); } else toast.error(r.error || 'Failed'); }}><Trash2 className="h-3 w-3" /></Button>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                  <div className="flex justify-end mt-3 pt-3 border-t">
-                    <div className="text-sm font-semibold">
-                      Total: {formatCurrency(wo.materials.reduce((sum, m) => sum + (m.totalCost || (m.quantity || 0) * (m.unitCost || 0)), 0))}
+              {/* Repair Material Requests — full approval pipeline */}
+              {wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0 ? (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-lg bg-muted/50 border">
+                    <div className="flex items-center gap-4 text-[10px] text-muted-foreground mb-1">
+                      {['Pending', 'Supervisor', 'Store', 'Picking', 'Issued', 'Done'].map(stage => (
+                        <div key={stage} className="flex items-center gap-1 flex-1 justify-center">
+                          <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
+                          <span className="hidden lg:inline">{stage}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </>
+                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                    {wo.repairMaterialRequests.map((mr: any) => (
+                      <div key={mr.id} className={`p-3 rounded-lg border ${mr.status === 'pending' && isSupervisorOrAdminLocal() ? 'border-amber-200 bg-amber-50/50' : mr.status === 'supervisor_approved' && isStoreOrAdminLocal() ? 'border-indigo-200 bg-indigo-50/50' : mr.status === 'storekeeper_approved' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : mr.status === 'picking' && isStoreOrAdminLocal() ? 'border-violet-200 bg-violet-50/50' : 'bg-muted/30'}`}>
+                        <div className="flex items-start gap-3">
+                          <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5"><Package className="h-3.5 w-3.5" /></div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-medium truncate">{mr.itemName}</p>
+                              {mr.urgency && mr.urgency !== 'normal' && <UrgencyBadge urgency={mr.urgency} />}
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                              <span>Qty: <strong>{mr.quantityRequested}</strong></span>
+                              {mr.quantityApproved > 0 && <span>Approved: <strong className="text-sky-600">{mr.quantityApproved}</strong></span>}
+                              {mr.quantityIssued > 0 && <span>Issued: <strong className="text-emerald-600">{mr.quantityIssued}</strong></span>}
+                              {mr.unit && <span>{mr.unit}</span>}
+                            </div>
+                            {/* Pipeline dots */}
+                            <div className="flex items-center gap-1 mt-2">
+                              {[
+                                { key: 'pending', label: 'Pending' },
+                                { key: 'supervisor_approved', label: 'Sup.' },
+                                { key: 'storekeeper_approved', label: 'Store' },
+                                { key: 'picking', label: 'Pick' },
+                                { key: 'issued', label: 'Issued' },
+                                { key: 'closed', label: 'Done' },
+                              ].map((stage, idx) => {
+                                const statusOrder = ['pending', 'supervisor_approved', 'storekeeper_approved', 'picking', 'issued', 'closed', 'rejected'];
+                                const currentIdx = statusOrder.indexOf(mr.status);
+                                const stageIdx = statusOrder.indexOf(stage.key);
+                                const isCompleted = stageIdx < currentIdx;
+                                const isCurrent = stage.key === mr.status;
+                                const isRejected = mr.status === 'rejected';
+                                return (
+                                  <div key={stage.key} className="flex items-center gap-1">
+                                    {idx > 0 && <div className={`h-0.5 w-3 ${isCompleted ? 'bg-emerald-400' : 'bg-muted-foreground/20'}`} />}
+                                    <TooltipProvider><Tooltip><TooltipTrigger asChild>
+                                      <div className={`h-3 w-3 rounded-full border-2 ${isRejected ? 'bg-red-500 border-red-500' : isCompleted ? 'bg-emerald-500 border-emerald-500' : isCurrent ? 'bg-white border-amber-500 animate-pulse' : 'bg-muted border-muted-foreground/20'}`} />
+                                    </TooltipTrigger><TooltipContent className="text-[10px]">{stage.label}</TooltipContent></Tooltip></TooltipProvider>
+                                  </div>
+                                );
+                              })}
+                              <Badge variant="outline" className={`text-[9px] ml-1 ${
+                                mr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                mr.status === 'rejected' ? 'bg-red-50 text-red-700 border-red-200' :
+                                mr.status === 'supervisor_approved' ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                                mr.status === 'storekeeper_approved' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                mr.status === 'picking' ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                                mr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                mr.status === 'closed' ? 'bg-gray-50 text-gray-600 border-gray-200' :
+                                'bg-gray-50 border-gray-200'
+                              }`}>{mr.status.replace(/_/g, ' ')}</Badge>
+                            </div>
+                            {/* Action buttons */}
+                            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                              {mr.status === 'pending' && isSupervisorOrAdminLocal() && (
+                                <>
+                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'supervisor_approve')}><CheckCircle2 className="h-3 w-3 mr-1" />Approve</Button>
+                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-red-500 hover:text-red-600 border-red-200" onClick={() => { if (!confirm('Reject this material request?')) return; handleMatRequestAction(mr.id, 'supervisor_reject', { notes: 'Rejected by supervisor' }); }}><XCircle className="h-3 w-3 mr-1" />Reject</Button>
+                                </>
+                              )}
+                              {mr.status === 'supervisor_approved' && isStoreOrAdminLocal() && (
+                                <>
+                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-teal-600 hover:text-teal-700 border-teal-300 bg-teal-50" onClick={() => handleMatRequestAction(mr.id, 'storekeeper_approve')}><Warehouse className="h-3 w-3 mr-1" />Store Approve</Button>
+                                  <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-red-500 hover:text-red-600 border-red-200" onClick={() => { if (!confirm('Reject this material request?')) return; handleMatRequestAction(mr.id, 'storekeeper_reject', { notes: 'Rejected by store' }); }}><XCircle className="h-3 w-3 mr-1" />Reject</Button>
+                                </>
+                              )}
+                              {mr.status === 'storekeeper_approved' && isStoreOrAdminLocal() && (
+                                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-violet-600 hover:text-violet-700 border-violet-300 bg-violet-50" onClick={() => handleMatRequestPick(mr.id)}><PackageOpen className="h-3 w-3 mr-1" />Pick</Button>
+                              )}
+                              {mr.status === 'picking' && isStoreOrAdminLocal() && (
+                                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'issue', { quantityToIssue: mr.quantityApproved || mr.quantityRequested })}><PackageCheck className="h-3 w-3 mr-1" />Issue</Button>
+                              )}
+                              {mr.status === 'issued' && (
+                                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-amber-600 hover:text-amber-700 border-amber-300 bg-amber-50" onClick={() => handleMatRequestAction(mr.id, 'record_return', { quantityToReturn: mr.quantityIssued })}><RotateCcw className="h-3 w-3 mr-1" />Return</Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <Package className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No material requests yet.</p>
+                  <p className="text-xs text-muted-foreground mt-1">Click "Request Material" to add items that need supervisor and store approval.</p>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -4287,59 +4425,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </Card>
           )}
 
-          {/* Repair Material Requests (from Repair module) */}
-          {wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0 && (
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Material Requests</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests.length} requests</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" />View All</Button>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {wo.repairMaterialRequests.slice(0, 10).map((mr: any) => (
-                  <div key={mr.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/30">
-                    <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0"><Package className="h-3.5 w-3.5" /></div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium truncate">{mr.itemName || mr.item?.name || 'Material'}</p>
-                        <span className="text-[10px] text-muted-foreground">{mr.quantityRequested || mr.quantity || 0} {mr.unit || ''}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>{mr.requestedBy?.fullName || 'Unknown'}</span>
-                        {mr.urgency && mr.urgency !== 'normal' && (
-                          <Badge variant="outline" className={`text-[10px] ${mr.urgency === 'high' ? 'bg-amber-50 text-amber-700 border-amber-200' : mr.urgency === 'critical' ? 'bg-red-50 text-red-700 border-red-200' : ''}`}>{mr.urgency}</Badge>
-                        )}
-                      </div>
-                    </div>
-                    <Badge variant="outline" className={`text-[10px] shrink-0 ${
-                      mr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                      mr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                      mr.status === 'returned' || mr.status === 'closed' ? 'bg-slate-50 text-slate-500 border-slate-200' :
-                      mr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
-                      mr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : ''
-                    }`}>{mr.status?.replace(/_/g, ' ') || 'pending'}</Badge>
-                  </div>
-                ))}
-                {wo.repairMaterialRequests.length > 10 && (
-                  <p className="text-xs text-muted-foreground text-center">+{wo.repairMaterialRequests.length - 10} more material requests</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-          )}
-
           {/* Repairs Quick Access */}
           <Card className="border-0 shadow-sm">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2"><ClipboardList className="h-4 w-4 text-teal-600" />Repair Resources</CardTitle>
-              <CardDescription className="text-xs">Material requests, tool requests & transfers for this work order</CardDescription>
+              <CardDescription className="text-xs">Tool requests, transfers & other resources for this work order</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                <button onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
-                  <div className="h-9 w-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center"><Package className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">Material Requests</span>
-                </button>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <button onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Tool Requests</span>

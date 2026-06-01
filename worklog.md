@@ -798,3 +798,52 @@ Work Log:
 Stage Summary:
 - **API**: `src/app/api/work-orders/[id]/route.ts` — added repairToolRequests + repairMaterialRequests to include
 - **Frontend**: `src/components/modules/MaintenancePages.tsx` — added 2 new cards between "Materials & Parts" and "Repair Resources"
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix material request approval workflow visibility for supervisor/admin/store-attendant roles
+
+Work Log:
+- Investigated the codebase and discovered TWO separate material systems: (a) WO Materials (simple flow in `work_order_materials` table) and (b) Repair Material Requests (full approval pipeline in `repair_material_requests` table)
+- Found that when a planner/technician adds a material on the WO detail page, it only creates a `WorkOrderMaterial` — which does NOT appear in the Repairs → Material Requests page where supervisors and storekeepers approve
+- The disconnect means supervisors/storekeepers can't see or approve materials requested from work orders
+
+Stage Summary:
+- Root cause identified: `work_order_materials` (simple model) vs `repair_material_requests` (approval pipeline model) are disconnected
+---
+Task ID: 2
+Agent: Main Agent
+Task: Implement material request approval pipeline integration
+
+Work Log:
+- Modified POST `/api/work-orders/[id]/materials/route.ts` to create BOTH a `WorkOrderMaterial` (for cost tracking) AND a `RepairMaterialRequest` (for the approval pipeline) when a material is added on a work order
+- Added `reason`, `notes`, `urgency`, and `unit` fields to the WO materials POST endpoint
+- Added supervisor and planner notifications when a material request is created
+- Added VPS-compatible try/catch fallback for the repair material request creation
+- Changed WO material status from 'requested' to 'pending_approval'
+
+Stage Summary:
+- Backend now creates dual records: WO material for cost tracking + RepairMaterialRequest for approval pipeline
+- Supervisor/planner get notified when material requests are submitted
+---
+Task ID: 3
+Agent: Main Agent
+Task: Update WO detail page UI with approval pipeline and action buttons
+
+Work Log:
+- Replaced the old "Materials & Parts" card on WO detail with an enhanced version showing RepairMaterialRequests with:
+  - Visual pipeline progress dots (Pending → Supervisor → Store → Picking → Issued → Done)
+  - Status badges with color coding
+  - Action buttons per role: Supervisor Approve/Reject, Store Approve/Reject, Pick, Issue, Return
+  - Context-aware highlighting (pending requests glow amber for supervisors, etc.)
+- Enhanced "Add Material" dialog with: Approval workflow description, Urgency selector, Reason field (required)
+- Added missing imports: Tooltip components, Warehouse/PackageOpen/PackageCheck icons
+- Created local UrgencyBadge component in MaintenancePages.tsx
+- Added role-checking helpers (isSupervisorOrAdminLocal, isStoreOrAdminLocal) and material request action handlers
+- Removed duplicate "Repair Material Requests" card (consolidated into the new Materials card)
+- Updated "Repair Resources" quick access card (removed duplicate Material Requests button, changed to 4-col grid)
+
+Stage Summary:
+- Materials card now shows full approval pipeline with role-based action buttons
+- Add Material dialog explains the approval workflow and collects urgency/reason
+- Supervisors and storekeepers can now see and approve material requests directly on the WO detail page AND on the Repairs → Material Requests page
