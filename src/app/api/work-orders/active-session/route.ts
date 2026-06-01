@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
         workOrder: {
           select: {
             id: true,
-            workOrderNumber: true,
+            woNumber: true,
             title: true,
             status: true,
           },
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
           hasActive: true,
           session: {
             workOrderId: latestLog.workOrderId,
-            workOrderNumber: latestLog.workOrder?.workOrderNumber || 'N/A',
+            workOrderNumber: latestLog.workOrder?.woNumber || 'N/A',
             workOrderTitle: latestLog.workOrder?.title || '',
             workOrderStatus: latestLog.workOrder?.status || '',
             action: latestLog.action,

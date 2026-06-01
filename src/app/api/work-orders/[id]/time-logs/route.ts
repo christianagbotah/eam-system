@@ -222,17 +222,17 @@ export async function POST(
       const latestGlobalLog = await db.workOrderTimeLog.findFirst({
         where: { userId: effectiveUserId },
         orderBy: { timestamp: 'desc' },
-        include: { workOrder: { select: { id: true, workOrderNumber: true } } },
+        include: { workOrder: { select: { id: true, woNumber: true } } },
       });
       if (latestGlobalLog && (latestGlobalLog.action === 'start' || latestGlobalLog.action === 'resume')) {
         // User has an active session — check if it's on a DIFFERENT WO
         if (latestGlobalLog.workOrderId !== id) {
           return NextResponse.json({
             success: false,
-            error: `You already have an active work session on WO #${latestGlobalLog.workOrder?.workOrderNumber || 'unknown'}. Pause that work order before starting a new one.`,
+            error: `You already have an active work session on WO #${latestGlobalLog.workOrder?.woNumber || 'unknown'}. Pause that work order before starting a new one.`,
             conflict: {
               workOrderId: latestGlobalLog.workOrderId,
-              workOrderNumber: latestGlobalLog.workOrder?.workOrderNumber,
+              woNumber: latestGlobalLog.workOrder?.woNumber,
               action: latestGlobalLog.action,
               startedAt: (latestGlobalLog.startTime || latestGlobalLog.timestamp).toISOString(),
             },
