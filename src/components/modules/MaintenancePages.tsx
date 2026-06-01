@@ -93,6 +93,8 @@ export function MaintenanceRequestsPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [autoConvertId, setAutoConvertId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const { hasPermission, user, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
 
@@ -155,6 +157,20 @@ export function MaintenanceRequestsPage() {
 
   const handleRefresh = useCallback(() => setRefreshKey(k => k + 1), []);
 
+  const handleDeleteFromList = async () => {
+    if (!deleteId) return;
+    setDeleteLoading(true);
+    const res = await api.delete(`/api/maintenance-requests/${deleteId}`);
+    if (res.success) {
+      toast.success('Request deleted');
+      setDeleteId(null);
+      handleRefresh();
+    } else {
+      toast.error(res.error || 'Failed to delete request');
+    }
+    setDeleteLoading(false);
+  };
+
   // Helper: check if user can convert a specific MR to WO
   const canConvertMR = useCallback((mr: MaintenanceRequest) => {
     return mr.status === 'approved'
@@ -164,25 +180,50 @@ export function MaintenanceRequestsPage() {
 
   // Render action buttons for a request row
   const renderRowActions = useCallback((mr: MaintenanceRequest) => {
+    const isRequester = mr.requestedBy === user?.id;
+    const canEditRow = mr.status === 'pending' && (isRequester || isAdmin());
+    const canDeleteRow = mr.status === 'pending' && (isRequester || isAdmin());
     const convertable = canConvertMR(mr);
-    if (!convertable) return null;
+    if (!canEditRow && !canDeleteRow && !convertable) return null;
     return (
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-7 px-2 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
-        onClick={(e) => {
-          e.stopPropagation();
-          setAutoConvertId(mr.id);
-          setDetailId(mr.id);
-        }}
-        title="Convert to Work Order"
-      >
-        <RefreshCw className="h-3.5 w-3.5 mr-1" />
-        <span className="hidden sm:inline">Convert</span>
-      </Button>
+      <div className="flex items-center gap-0.5">
+        {canEditRow && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem className="text-blue-600 focus:text-blue-600 focus:bg-blue-50" onClick={(e) => { e.stopPropagation(); setDetailId(mr.id); }}>
+                <Pencil className="h-4 w-4 mr-2" />View / Edit
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50" onClick={(e) => { e.stopPropagation(); setDeleteId(mr.id); }}>
+                <Trash2 className="h-4 w-4 mr-2" />Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        {!canEditRow && convertable && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50"
+            onClick={(e) => {
+              e.stopPropagation();
+              setAutoConvertId(mr.id);
+              setDetailId(mr.id);
+            }}
+            title="Convert to Work Order"
+          >
+            <RefreshCw className="h-3.5 w-3.5 mr-1" />
+            <span className="hidden sm:inline">Convert</span>
+          </Button>
+        )}
+      </div>
     );
-  }, [canConvertMR]);
+  }, [canConvertMR, user, isAdmin]);
 
   return (
     <div className="page-content">
@@ -295,9 +336,21 @@ export function MaintenanceRequestsPage() {
       {/* Detail Side Sheet */}
       <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) { setDetailId(null); setAutoConvertId(null); } }}>
         <SheetContent side="right" className="overflow-y-auto overflow-x-hidden p-6 pt-0 min-w-0">
-          {detailId && <MRDetailPage id={detailId} onUpdate={handleRefresh} autoOpenConvert={autoConvertId === detailId} />}
+          {detailId && <MRDetailPage id={detailId} onUpdate={handleRefresh} autoOpenConvert={autoConvertId === detailId} onDelete={() => { setDetailId(null); }} />}
         </SheetContent>
       </Sheet>
+
+      {/* Delete Confirmation Dialog (from list) */}
+      <ConfirmDialog
+        open={!!deleteId}
+        onOpenChange={(open) => { if (!open) setDeleteId(null); }}
+        title="Delete Maintenance Request"
+        description="Are you sure you want to delete this maintenance request? This action cannot be undone."
+        confirmLabel="Yes, Delete"
+        variant="destructive"
+        loading={deleteLoading}
+        onConfirm={handleDeleteFromList}
+      />
     </div>
   );
 }
@@ -654,7 +707,7 @@ function MRWorkflowTimeline({ mr }: { mr: MaintenanceRequest }) {
   );
 }
 
-export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; onUpdate: () => void; autoOpenConvert?: boolean }) {
+export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: string; onUpdate: () => void; autoOpenConvert?: boolean; onDelete?: () => void }) {
   const [mr, setMr] = useState<MaintenanceRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -665,6 +718,18 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
   const { hasPermission, user, isAdmin } = useAuthStore();
   const isMobile = useIsMobile();
+
+  // Edit dialog state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: '', description: '', priority: 'medium', category: '',
+    assetId: '', departmentId: '', machineDownStatus: false,
+  });
+
+  // Delete dialog state
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Assign to Planner dialog
   const [assignPlannerOpen, setAssignPlannerOpen] = useState(false);
@@ -897,6 +962,59 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
     }
   };
 
+  // --- Edit handlers ---
+  const openEditDialog = () => {
+    if (!mr) return;
+    setEditForm({
+      title: mr.title,
+      description: mr.description || '',
+      priority: mr.priority,
+      category: mr.category || '',
+      assetId: mr.assetId || '',
+      departmentId: mr.departmentId || '',
+      machineDownStatus: mr.machineDownStatus || false,
+    });
+    setEditOpen(true);
+  };
+
+  const handleEdit = async () => {
+    if (!editForm.title.trim()) { toast.error('Title is required'); return; }
+    setEditLoading(true);
+    const res = await api.put(`/api/maintenance-requests/${id}`, {
+      title: editForm.title,
+      description: editForm.description,
+      priority: editForm.priority,
+      category: editForm.category,
+      assetId: editForm.assetId || null,
+      departmentId: editForm.departmentId || null,
+      machineDownStatus: editForm.machineDownStatus,
+    });
+    if (res.success) {
+      toast.success('Request updated');
+      setEditOpen(false);
+      handleRefresh();
+      onUpdate();
+    } else {
+      toast.error(res.error || 'Failed to update request');
+    }
+    setEditLoading(false);
+  };
+
+  // --- Delete handler ---
+  const handleDelete = async () => {
+    setDeleteLoading(true);
+    const res = await api.delete(`/api/maintenance-requests/${id}`);
+    if (res.success) {
+      toast.success('Request deleted');
+      setDeleteOpen(false);
+      onUpdate(); // refresh list
+      onDelete?.(); // close detail sheet
+    } else {
+      toast.error(res.error || 'Failed to delete request');
+    }
+    setDeleteLoading(false);
+  };
+
   if (loading) return <LoadingSkeleton />;
   if (!mr) return <div className="p-6">Request not found</div>;
 
@@ -913,6 +1031,10 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
   const canReject = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
   const canAssignPlanner = mr.status === 'approved' && (isAdminUser || isDeptSupervisor) && !mr.assignedPlannerId;
   const canConvert = mr.status === 'approved' && hasPermission('maintenance_requests.convert_to_wo') && (mr.assignedPlannerId === user?.id || isAdminUser || !mr.assignedPlannerId);
+  // Requester can edit/delete their own pending requests
+  const isRequester = mr.requestedBy === user?.id;
+  const canEdit = mr.status === 'pending' && (isRequester || isAdminUser);
+  const canDelete = mr.status === 'pending' && (isRequester || isAdminUser);
 
   return (
     <>
@@ -927,6 +1049,16 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
         <SheetDescription className="text-sm font-medium text-foreground mt-0.5 line-clamp-2">{mr.title}</SheetDescription>
         {/* Action buttons in header */}
         <div className="flex items-center gap-2 flex-wrap mt-2">
+          {canEdit && (
+            <Button size="sm" variant="outline" className="border-blue-200 text-blue-700 hover:bg-blue-50" onClick={openEditDialog}>
+              <Pencil className="h-4 w-4 mr-1" />Edit
+            </Button>
+          )}
+          {canDelete && (
+            <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setDeleteOpen(true)}>
+              <Trash2 className="h-4 w-4 mr-1" />Delete
+            </Button>
+          )}
           {canReject && (
             <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRejectDialogOpen(true)}>
               <XCircle className="h-4 w-4 mr-1" />Reject
@@ -964,6 +1096,105 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert }: { id: string; on
         confirmLabel="Yes, Approve"
         loading={actionLoading}
         onConfirm={() => handleAction('approve', '')}
+      />
+
+      {/* Edit Request Dialog */}
+      <ResponsiveDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        title="Edit Maintenance Request"
+        description="Update the details of your pending request."
+        footer={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white" disabled={editLoading} onClick={handleEdit}>
+              {editLoading ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Saving...</> : <><Pencil className="h-4 w-4 mr-1" />Save Changes</>}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>Title *</Label>
+            <Input value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} placeholder="Brief description of the issue" />
+          </div>
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Textarea value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} placeholder="Detailed description..." rows={3} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Priority</Label>
+              <Select value={editForm.priority} onValueChange={v => setEditForm(f => ({ ...f, priority: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="urgent">Urgent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={editForm.category} onValueChange={v => setEditForm(f => ({ ...f, category: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mechanical">Mechanical</SelectItem>
+                  <SelectItem value="electrical">Electrical</SelectItem>
+                  <SelectItem value="hydraulic">Hydraulic</SelectItem>
+                  <SelectItem value="pneumatic">Pneumatic</SelectItem>
+                  <SelectItem value="instrumentation">Instrumentation</SelectItem>
+                  <SelectItem value="structural">Structural</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Machine / Asset</Label>
+              <AsyncSearchableSelect
+                value={editForm.assetId}
+                onValueChange={v => setEditForm(f => ({ ...f, assetId: v }))}
+                fetchOptions={async () => {
+                  const res = await api.get('/api/assets');
+                  if (res.success && res.data) {
+                    return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                      value: a.id,
+                      label: `${a.name} [${a.assetTag}]`,
+                    }));
+                  }
+                  return [];
+                }}
+                placeholder="Select machine..."
+                searchPlaceholder="Search machines..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Machine Down?</Label>
+              <Select value={editForm.machineDownStatus ? 'Yes' : 'No'} onValueChange={v => setEditForm(f => ({ ...f, machineDownStatus: v === 'Yes' }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="No">No — Machine Running</SelectItem>
+                  <SelectItem value="Yes">Yes — Machine Down</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      </ResponsiveDialog>
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete Maintenance Request"
+        description={`Are you sure you want to delete "${mr?.title}"? This action cannot be undone. All comments and attachments will be permanently removed.`}
+        confirmLabel="Yes, Delete"
+        variant="destructive"
+        loading={deleteLoading}
+        onConfirm={handleDelete}
       />
 
       {/* Assign to Planner Dialog */}
