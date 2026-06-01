@@ -139,6 +139,7 @@ function buildNavigationItems(): PaletteItem[] {
     { id: 'repairs-downtime', label: 'Repairs - Downtime', icon: Timer, group: 'navigation', page: 'repairs-downtime', keywords: ['downtime', 'outage'] },
     { id: 'repairs-completion', label: 'Repairs - Completion', icon: CheckSquare, group: 'navigation', page: 'repairs-completion', keywords: ['completion', 'close'] },
     { id: 'repairs-analytics', label: 'Repairs - Analytics', icon: BarChart3, group: 'navigation', page: 'repairs-analytics' },
+    { id: 'wo-reports', label: 'WO Reports', icon: FileBarChart, group: 'navigation', page: 'wo-reports', keywords: ['work order', 'reports', 'downtime', 'man hours', 'breakdown'] },
     { id: 'repairs-spare-part-returns', label: 'Repairs - Spare Part Returns', icon: Recycle, group: 'navigation', page: 'repairs-spare-part-returns', keywords: ['spare', 'part', 'return', 'refurbish'] },
     { id: 'repairs-damaged-tools', label: 'Repairs - Damaged Tools', icon: TriangleAlert, group: 'navigation', page: 'repairs-damaged-tools', keywords: ['damage', 'tool', 'broken'] },
     { id: 'repairs-reports', label: 'Repairs - Reports', icon: FileText, group: 'navigation', page: 'repairs-reports', keywords: ['maintenance', 'report', 'lifecycle'] },
