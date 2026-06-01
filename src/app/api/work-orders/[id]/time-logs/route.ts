@@ -124,33 +124,39 @@ export async function POST(
     let effectiveLoggedById: string | null = null;
 
     if (loggedForUserId) {
-      effectiveIsTeamLog = true;
+      // Prevent logging for yourself via this mechanism
+      if (loggedForUserId === session.userId) {
+        effectiveIsTeamLog = false;
+      } else {
+        effectiveIsTeamLog = true;
 
-      // Validate that the session user is a team leader or admin for this WO
-      const isTeamLeader = wo.teamLeaderId === session.userId;
-      const isAdmin = session.roles.includes('admin');
-      const isAssignedTo = wo.assignedTo === session.userId;
+        // Any team member, assignee, team leader, or admin can log time for others
+        const isTeamMember = wo.teamMembers.some((m) => m.userId === session.userId);
+        const isAssignee = wo.assignedTo === session.userId;
+        const isTeamLeader = wo.teamLeaderId === session.userId;
+        const isAdminRole = session.roles.includes('admin');
 
-      if (!isTeamLeader && !isAdmin && !isAssignedTo) {
-        return NextResponse.json(
-          { success: false, error: 'Only team leaders, assignees, or admins can log time for other team members' },
-          { status: 403 },
-        );
+        if (!isTeamMember && !isAssignee && !isTeamLeader && !isAdminRole) {
+          return NextResponse.json(
+            { success: false, error: 'Only team members, assignees, or admins can log time for other team members' },
+            { status: 403 },
+          );
+        }
+
+        // Verify the target user is a team member or the assignee
+        const isTargetMember = wo.teamMembers.some((m) => m.userId === loggedForUserId);
+        const isTargetAssignee = wo.assignedTo === loggedForUserId;
+
+        if (!isTargetMember && !isTargetAssignee) {
+          return NextResponse.json(
+            { success: false, error: 'Target user is not a team member or assignee of this work order' },
+            { status: 400 },
+          );
+        }
+
+        effectiveUserId = loggedForUserId;
+        effectiveLoggedById = session.userId;
       }
-
-      // Verify the target user is a team member or the assignee
-      const isMember = wo.teamMembers.some((m) => m.userId === loggedForUserId);
-      const isAssignee = wo.assignedTo === loggedForUserId;
-
-      if (!isMember && !isAssignee) {
-        return NextResponse.json(
-          { success: false, error: 'Target user is not a team member or assignee of this work order' },
-          { status: 400 },
-        );
-      }
-
-      effectiveUserId = loggedForUserId;
-      effectiveLoggedById = session.userId;
     }
 
     const now = new Date();

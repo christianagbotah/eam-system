@@ -2543,6 +2543,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return false;
   }, [wo, user, isAdmin, hasPermission]);
 
+  // Permission: can log time for other team members (any team member on this WO)
+  const canLogForOthers = useMemo(() => {
+    if (!wo || !user) return false;
+    const isTeamMember = wo.teamMembers?.some(tm => tm.userId === user.id);
+    const isAssignee = wo.assignedToId === user.id;
+    return isTeamMember || isAssignee;
+  }, [wo, user]);
+
   const isReadOnly = useMemo(() => {
     if (!wo || !user) return false;
     if (fullAccess) return false;
@@ -3622,19 +3630,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       {/* Time Log Dialog */}
       <ResponsiveDialog open={timeLogOpen} onOpenChange={setTimeLogOpen} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={handleTimeLog}>{tlLoading ? 'Logging...' : 'Log Time'}</Button>}>
           <div className="space-y-4">
-            {/* Team member selector — only for team leaders/managers */}
-            {canManageTeamDirectly && wo?.teamMembers && wo.teamMembers.length > 0 && (
+            {/* Team member selector — any team member or assignee can log for others */}
+            {canLogForOthers && (wo?.teamMembers?.length > 0 || wo?.assignedToId) && (
               <div className="space-y-1.5">
                 <Label>Log For</Label>
                 <Select value={tlLoggedForUserId} onValueChange={setTlLoggedForUserId}>
                   <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Self (my own time)" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">Self (my own time)</SelectItem>
-                    {wo.teamMembers.map((tm: any) => (
-                      <SelectItem key={tm.userId} value={tm.userId}>
-                        {tm.user?.fullName || tm.userName || 'Unknown'}
-                      </SelectItem>
+                    {wo.teamMembers?.map((tm: any) => (
+                      tm.userId !== user?.id && (
+                        <SelectItem key={tm.userId} value={tm.userId}>
+                          {tm.user?.fullName || tm.userName || 'Unknown'}
+                        </SelectItem>
+                      )
                     ))}
+                    {wo.assignedToId && wo.assignedToId !== user?.id && !wo.teamMembers?.some((tm: any) => tm.userId === wo.assignedToId) && (
+                      <SelectItem key={wo.assignedToId} value={wo.assignedToId}>
+                        {wo.assignee?.fullName || 'Assignee'}
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
                 {tlLoggedForUserId && (
