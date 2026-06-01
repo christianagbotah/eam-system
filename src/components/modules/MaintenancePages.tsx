@@ -42,6 +42,7 @@ import {
   PieChart as PieChartIcon, Gauge, ListChecks, Shield, ShieldCheck, HardHat, MapPin,
   Crown, Timer, Hourglass, UserPlus, Workflow, ChevronRight, ExternalLink, Hammer,
   Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
+  FlaskConical,
   ArrowUpRight, ArrowDownRight, CalendarClock, LayoutDashboard, Bell, DollarSign,
   UserMinus, UserCheck, UserX,
 } from 'lucide-react';
@@ -2365,13 +2366,18 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [editDepartments, setEditDepartments] = useState<any[]>([]);
   const [editInventoryItems, setEditInventoryItems] = useState<any[]>([]);
   const [editToolsData, setEditToolsData] = useState<any[]>([]);
-  // Time log
+  // Time log — enterprise fields
   const [timeLogOpen, setTimeLogOpen] = useState(false);
   const [tlAction, setTlAction] = useState('start');
-  const [tlHours, setTlHours] = useState('');
+  const [tlStartTime, setTlStartTime] = useState('');
+  const [tlEndTime, setTlEndTime] = useState('');
+  const [tlActivityType, setTlActivityType] = useState('maintenance');
+  const [tlBreakMinutes, setTlBreakMinutes] = useState('');
+  const [tlManualHours, setTlManualHours] = useState('');
   const [tlNotes, setTlNotes] = useState('');
   const [tlLoading, setTlLoading] = useState(false);
   const [tlLoggedForUserId, setTlLoggedForUserId] = useState('');
+  const [deleteTlId, setDeleteTlId] = useState<string | null>(null);
   // Material
   const [materialOpen, setMaterialOpen] = useState(false);
   const [matItemId, setMatItemId] = useState('');
@@ -2785,16 +2791,35 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     setTlLoading(true);
     const body: any = { action: tlAction };
     if (tlNotes) body.notes = tlNotes;
-    if (tlHours && (tlAction === 'start' || tlAction === 'resume')) body.hoursWorked = parseFloat(tlHours);
-    // If logging for a team member
+    if (tlStartTime) body.startTime = tlStartTime;
+    if (tlEndTime) body.endTime = tlEndTime;
+    body.activityType = tlActivityType;
+    if (tlBreakMinutes) body.breakMinutes = parseInt(tlBreakMinutes, 10) || 0;
+    if (tlManualHours) body.manualHours = parseFloat(tlManualHours);
     if (tlLoggedForUserId) {
       body.loggedForUserId = tlLoggedForUserId;
       body.isTeamLog = true;
     }
     const res = await api.post(`/api/work-orders/${id}/time-logs`, body);
-    if (res.success) { toast.success('Time log recorded'); setTimeLogOpen(false); setTlHours(''); setTlNotes(''); setTlLoggedForUserId(''); fetchWO(); }
-    else { toast.error(res.error || 'Failed to log time'); }
+    if (res.success) {
+      toast.success('Time log recorded');
+      setTimeLogOpen(false);
+      setTlStartTime('');
+      setTlEndTime('');
+      setTlActivityType('maintenance');
+      setTlBreakMinutes('');
+      setTlManualHours('');
+      setTlNotes('');
+      setTlLoggedForUserId('');
+      fetchWO();
+    } else { toast.error(res.error || 'Failed to log time'); }
     setTlLoading(false);
+  };
+
+  const handleDeleteTimeLog = async (logId: string) => {
+    const res = await api.delete(`/api/work-orders/${id}/time-logs?logId=${logId}`);
+    if (res.success) { toast.success('Time log deleted'); setDeleteTlId(null); fetchWO(); }
+    else { toast.error(res.error || 'Failed to delete time log'); }
   };
 
   const handleAddMaterial = async () => {
@@ -3626,10 +3651,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       </MobileStepperSheet>
       )}
 
-      {/* Time Log Dialog */}
-      <ResponsiveDialog open={timeLogOpen} onOpenChange={setTimeLogOpen} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={handleTimeLog}>{tlLoading ? 'Logging...' : 'Log Time'}</Button>}>
+      {/* Time Log Dialog — Enterprise */}
+      <ResponsiveDialog open={timeLogOpen} onOpenChange={setTimeLogOpen} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={handleTimeLog}>{tlLoading ? 'Saving...' : 'Save Time Log'}</Button>}>
           <div className="space-y-4">
-            {/* Team member selector — any team member or assignee can log for others */}
+            {/* Team member selector — only team leader or admin */}
             {canLogForOthers && (wo?.teamMembers?.length > 0 || wo?.assignedToId) && (
               <div className="space-y-1.5">
                 <Label>Log For</Label>
@@ -3656,15 +3681,83 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 )}
               </div>
             )}
-            <div className="space-y-1.5"><Label>Action</Label>
-              <Select value={tlAction} onValueChange={setTlAction}>
+            <div className="space-y-1.5">
+              <Label>Activity Type</Label>
+              <Select value={tlActivityType} onValueChange={setTlActivityType}>
                 <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="start">Start</SelectItem><SelectItem value="pause">Pause</SelectItem><SelectItem value="resume">Resume</SelectItem><SelectItem value="complete">Complete</SelectItem></SelectContent>
+                <SelectContent>
+                  <SelectItem value="maintenance"><span className="flex items-center gap-2"><Wrench className="h-3.5 w-3.5" /> Maintenance</span></SelectItem>
+                  <SelectItem value="inspection"><span className="flex items-center gap-2"><Search className="h-3.5 w-3.5" /> Inspection</span></SelectItem>
+                  <SelectItem value="testing"><span className="flex items-center gap-2"><FlaskConical className="h-3.5 w-3.5" /> Testing</span></SelectItem>
+                  <SelectItem value="travel"><span className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5" /> Travel</span></SelectItem>
+                  <SelectItem value="standby"><span className="flex items-center gap-2"><Hourglass className="h-3.5 w-3.5" /> Standby</span></SelectItem>
+                  <SelectItem value="other"><span className="flex items-center gap-2"><MoreHorizontal className="h-3.5 w-3.5" /> Other</span></SelectItem>
+                </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5"><Label>Hours Worked</Label><Input className="min-h-[44px]" type="number" step="0.25" value={tlHours} onChange={e => setTlHours(e.target.value)} placeholder="e.g. 2.5" /></div>
-            <div className="space-y-1.5"><Label>Notes</Label><Textarea value={tlNotes} onChange={e => setTlNotes(e.target.value)} placeholder="Optional notes..." rows={2} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Start Time</Label>
+                <DateTimePicker
+                  value={tlStartTime || undefined}
+                  onChange={v => setTlStartTime(v || '')}
+                  placeholder="Now (auto)"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>End Time</Label>
+                <DateTimePicker
+                  value={tlEndTime || undefined}
+                  onChange={v => setTlEndTime(v || '')}
+                  placeholder="Leave blank if ongoing"
+                />
+              </div>
+            </div>
+            {/* Auto-calculated duration preview */}
+            {tlStartTime && tlEndTime && (
+              <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-emerald-600" />
+                  <span className="text-sm font-medium text-emerald-800">
+                    Duration: {
+                      (() => {
+                        const ms = new Date(tlEndTime).getTime() - new Date(tlStartTime).getTime();
+                        const totalMin = ms / 60000 - (parseInt(tlBreakMinutes) || 0);
+                        const h = Math.floor(Math.max(0, totalMin) / 60);
+                        const m = Math.floor(Math.max(0, totalMin) % 60);
+                        return `${h}h ${m}m`;
+                      })()
+                    }
+                  </span>
+                </div>
+                <p className="text-[10px] text-emerald-600 mt-0.5">Auto-calculated from start/end times</p>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Break (minutes)</Label>
+                <Input className="min-h-[44px]" type="number" min="0" max="480" value={tlBreakMinutes} onChange={e => setTlBreakMinutes(e.target.value)} placeholder="0" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Manual Hours (optional)</Label>
+                <Input className="min-h-[44px]" type="number" step="0.25" min="0" value={tlManualHours} onChange={e => setTlManualHours(e.target.value)} placeholder="e.g. 2.5" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea value={tlNotes} onChange={e => setTlNotes(e.target.value)} placeholder="What was done during this time..." rows={2} />
+            </div>
+            <div className="p-2.5 rounded-lg bg-muted/50">
+              <p className="text-[11px] text-muted-foreground">
+                <strong>Tip:</strong> Set start &amp; end times for auto-calculation. Leave end blank for ongoing work. Use manual hours to override.
+              </p>
+            </div>
           </div>
+      </ResponsiveDialog>
+
+      {/* Delete Time Log Confirm */}
+      <ResponsiveDialog open={!!deleteTlId} onOpenChange={(open) => { if (!open) setDeleteTlId(null); }} title="Delete Time Log" description="Are you sure? This will reduce the work order's total hours." footer={<div className="flex gap-2"><Button variant="outline" className="flex-1" onClick={() => setDeleteTlId(null)}>Cancel</Button><Button className="flex-1 bg-red-600 hover:bg-red-700 text-white" onClick={() => deleteTlId && handleDeleteTimeLog(deleteTlId)}>Delete</Button></div>}>
+          <p className="text-sm text-muted-foreground">This action cannot be undone. The work order's actual hours will be recalculated.</p>
       </ResponsiveDialog>
 
       {/* Add Material Dialog — pick from inventory */}
@@ -3773,51 +3866,112 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           {/* Attachments */}
           <FileUpload entityType="work_order" entityId={id} />
 
-          {/* Time Logs — Enhanced with Summary Bar */}
+          {/* Time Logs — Enterprise */}
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {wo.actualHours || 0}h total</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => { setTlAction('start'); setTlHours(''); setTlNotes(''); setTimeLogOpen(true); }}><Clock className="h-3.5 w-3.5" />Log Time</Button>
+              <Button size="sm" variant="outline" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => { setTlStartTime(''); setTlEndTime(''); setTlActivityType('maintenance'); setTlBreakMinutes(''); setTlManualHours(''); setTlNotes(''); setTlLoggedForUserId(''); setTimeLogOpen(true); }}><Clock className="h-3.5 w-3.5" />Log Time</Button>
             </CardHeader>
             <CardContent>
-              {/* Time Summary Bar */}
+              {/* Summary Bar */}
               <div className="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-lg bg-muted/50">
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center"><Clock className="h-4 w-4" /></div>
-                  <div><p className="text-[10px] text-muted-foreground uppercase">Total Logged</p><p className="text-sm font-bold">{wo.actualHours || 0}h</p></div>
+                  <div><p className="text-[10px] text-muted-foreground uppercase">Total</p><p className="text-sm font-bold">{wo.actualHours || 0}h</p></div>
                 </div>
                 {wo.actualStart && (
                   <div className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><Play className="h-4 w-4" /></div>
-                    <div><p className="text-[10px] text-muted-foreground uppercase">Started At</p><p className="text-sm font-bold">{formatDateTime(wo.actualStart)}</p></div>
+                    <div><p className="text-[10px] text-muted-foreground uppercase">Started</p><p className="text-xs font-bold">{formatDateTime(wo.actualStart)}</p></div>
                   </div>
                 )}
                 {sessionDuration !== null && (
                   <div className="flex items-center gap-2 ml-auto">
                     <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center animate-pulse"><Timer className="h-4 w-4" /></div>
-                    <div><p className="text-[10px] text-muted-foreground uppercase">Current Session</p><p className="text-sm font-bold font-mono text-amber-700">{formatSessionDuration(sessionDuration)}</p></div>
+                    <div><p className="text-[10px] text-muted-foreground uppercase">Session</p><p className="text-sm font-bold font-mono text-amber-700">{formatSessionDuration(sessionDuration)}</p></div>
                   </div>
                 )}
               </div>
               {(!wo.timeLogs || wo.timeLogs.length === 0) ? (
-                <p className="text-sm text-muted-foreground">No time logs recorded yet.</p>
+                <div className="text-center py-6">
+                  <Clock className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No time logs recorded yet.</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">Click "Log Time" to start tracking work hours.</p>
+                </div>
               ) : (
-                <div className="space-y-2">
-                  {wo.timeLogs.map(tl => (
-                    <div key={tl.id} className="flex items-center gap-3 text-sm py-2 border-b last:border-0">
-                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${tl.action === 'start' ? 'bg-emerald-100 text-emerald-700' : tl.action === 'pause' ? 'bg-amber-100 text-amber-700' : tl.action === 'resume' ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700'}`}>
-                        {tl.action === 'start' ? <Play className="h-3.5 w-3.5" /> : tl.action === 'pause' ? <Pause className="h-3.5 w-3.5" /> : tl.action === 'resume' ? <Play className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {wo.timeLogs.map((tl: any) => {
+                    const actType = tl.activityType || 'maintenance';
+                    const actColors: Record<string, string> = {
+                      maintenance: 'bg-emerald-100 text-emerald-700',
+                      inspection: 'bg-blue-100 text-blue-700',
+                      testing: 'bg-violet-100 text-violet-700',
+                      travel: 'bg-amber-100 text-amber-700',
+                      standby: 'bg-slate-100 text-slate-700',
+                      other: 'bg-gray-100 text-gray-700',
+                    };
+                    const actIcons: Record<string, React.ElementType> = {
+                      maintenance: Wrench, inspection: Search, testing: FlaskConical,
+                      travel: MapPin, standby: Hourglass, other: MoreHorizontal,
+                    };
+                    const ActIcon = actIcons[actType] || MoreHorizontal;
+                    const durationMin = tl.duration ? Math.round(tl.duration * 60) : 0;
+                    const durH = Math.floor(durationMin / 60);
+                    const durM = durationMin % 60;
+                    const durStr = durH > 0 ? `${durH}h ${durM}m` : `${durM}m`;
+
+                    return (
+                      <div key={tl.id} className="flex items-start gap-3 text-sm py-2.5 border-b last:border-0 group">
+                        {/* Activity icon */}
+                        <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${actColors[actType]}`}>
+                          <ActIcon className="h-3.5 w-3.5" />
+                        </div>
+                        {/* Details */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium capitalize text-xs">{actType}</p>
+                            {tl.breakMinutes > 0 && (
+                              <Badge variant="secondary" className="text-[9px] px-1 py-0">-{tl.breakMinutes}m break</Badge>
+                            )}
+                            {(tl as any).isTeamLog && (
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 text-amber-600 border-amber-300">team</Badge>
+                            )}
+                          </div>
+                          {/* Time range */}
+                          <p className="text-xs text-muted-foreground">
+                            {tl.startTime ? formatDateTime(tl.startTime) : formatDateTime(tl.timestamp || tl.createdAt)}
+                            {tl.endTime && tl.startTime && (
+                              <> → {formatDateTime(tl.endTime)}</>
+                            )}
+                          </p>
+                          {/* Worker */}
+                          <p className="text-xs text-muted-foreground">
+                            {tl.user?.fullName || tl.userName || 'Unknown'}
+                            {(tl as any).loggedBy && (
+                              <span className="text-amber-600"> (by {tl.loggedBy.fullName})</span>
+                            )}
+                          </p>
+                          {/* Notes */}
+                          {tl.notes && <p className="text-xs text-muted-foreground mt-0.5 italic">{tl.notes}</p>}
+                        </div>
+                        {/* Duration + delete */}
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          {tl.duration != null && tl.duration > 0 && (
+                            <Badge variant="outline" className="text-[10px] font-mono">{durStr}</Badge>
+                          )}
+                          {!readOnlyDisabled && (
+                            <button
+                              onClick={() => setDeleteTlId(tl.id)}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600 p-0.5"
+                              title="Delete time log"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium capitalize">{tl.action}</p>
-                        <p className="text-xs text-muted-foreground">{tl.user?.fullName || tl.userName || 'Unknown'} · {formatDateTime(tl.timestamp || tl.createdAt)}</p>
-                        {tl.notes && <p className="text-xs text-muted-foreground mt-0.5">{tl.notes}</p>}
-                      </div>
-                      {tl.duration != null && tl.duration > 0 && (
-                        <Badge variant="outline" className="text-[10px] shrink-0">{tl.duration}h</Badge>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

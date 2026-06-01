@@ -634,15 +634,21 @@ model WoTeamMemberRequest {
 }
 
 model WorkOrderTimeLog {
-  id          String   @id @default(cuid())
-  workOrderId String
-  userId      String
-  action      String // start, pause, resume, complete
-  duration    Float? // hours for this log entry (pause/complete)
-  notes       String?
-  timestamp   DateTime @default(now())
-  loggedById  String? // → User (team leader who logged time on behalf of a team member)
-  isTeamLog   Boolean  @default(false) // true if logged by team leader for a team member
+  id           String   @id @default(cuid())
+  workOrderId  String
+  userId       String
+  action       String   // start, pause, resume, complete
+  duration     Float?   // hours for this log entry (auto-calculated or manual)
+  notes        String?
+  timestamp    DateTime @default(now())
+  loggedById   String?  // → User (team leader who logged time on behalf of a team member)
+  isTeamLog    Boolean  @default(false) // true if logged by team leader for a team member
+
+  // Enterprise time tracking fields
+  startTime    DateTime? // actual work start time (user-selected or defaults to now)
+  endTime      DateTime? // actual work end time (user-selected or defaults to now)
+  activityType String   @default("maintenance") // maintenance, travel, inspection, testing, standby, other
+  breakMinutes Int      @default(0) // break/lunch minutes deducted from duration
 
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)

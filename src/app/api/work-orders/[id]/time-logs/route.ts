@@ -4,8 +4,34 @@ import { getSession } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
 
 const VALID_ACTIONS = ['start', 'pause', 'resume', 'complete'];
+const VALID_ACTIVITY_TYPES = ['maintenance', 'travel', 'inspection', 'testing', 'standby', 'other'];
 
-// GET /api/work-orders/[id]/time-logs
+// ============================================================================
+// Helper: calculate duration from start/end times minus break
+// ============================================================================
+function calcDurationHours(start: Date | string, end: Date | string, breakMinutes: number = 0): number {
+  const ms = new Date(end).getTime() - new Date(start).getTime();
+  const totalMinutes = ms / 60000 - breakMinutes;
+  return Math.max(0, Math.round((totalMinutes / 60) * 100) / 100);
+}
+
+// ============================================================================
+// Helper: recalculate total actualHours for a user on a WO
+// ============================================================================
+async function recalcWoActualHours(workOrderId: string, userId: string) {
+  const logs = await db.workOrderTimeLog.findMany({
+    where: { workOrderId, userId },
+  });
+  let total = 0;
+  for (const log of logs) {
+    if (log.duration) total += log.duration;
+  }
+  return Math.round(total * 100) / 100;
+}
+
+// ============================================================================
+// GET — fetch time logs with summary
+// ============================================================================
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -27,12 +53,10 @@ export async function GET(
 
     // By default, only return logs for the current user
     const where: Record<string, unknown> = { workOrderId: id };
-
     if (!includeTeamLogs) {
       where.userId = session.userId;
     }
 
-    // Try full query with loggedBy/isTeamLog support; fallback if columns don't exist
     let timeLogs;
     try {
       timeLogs = await db.workOrderTimeLog.findMany({
@@ -46,7 +70,6 @@ export async function GET(
         orderBy: { timestamp: 'asc' },
       });
     } catch {
-      // Fallback: loggedById column may not exist yet
       timeLogs = await db.workOrderTimeLog.findMany({
         where,
         include: {
@@ -56,10 +79,21 @@ export async function GET(
       });
     }
 
-    // Calculate summary — guard against isTeamLog being undefined
+    // Build summary
     const totalHours = timeLogs.reduce((sum, log) => sum + (log.duration || 0), 0);
+    const totalBreakMinutes = timeLogs.reduce((sum, log) => sum + (log.breakMinutes || 0), 0);
     const teamLogs = timeLogs.filter((log) => (log as Record<string, unknown>).isTeamLog === true);
     const personalLogs = timeLogs.filter((log) => (log as Record<string, unknown>).isTeamLog !== true);
+
+    // Per-user breakdown (for team log view)
+    const byUser: Record<string, { fullName: string; hours: number; entries: number }> = {};
+    for (const log of timeLogs) {
+      const uid = log.userId;
+      const name = log.user?.fullName || 'Unknown';
+      if (!byUser[uid]) byUser[uid] = { fullName: name, hours: 0, entries: 0 };
+      byUser[uid].hours += log.duration || 0;
+      byUser[uid].entries++;
+    }
 
     return NextResponse.json({
       success: true,
@@ -68,10 +102,12 @@ export async function GET(
         summary: {
           totalEntries: timeLogs.length,
           totalHours: Math.round(totalHours * 100) / 100,
+          totalBreakMinutes,
           personalEntries: personalLogs.length,
           personalHours: Math.round(personalLogs.reduce((s, l) => s + (l.duration || 0), 0) * 100) / 100,
           teamEntries: teamLogs.length,
           teamHours: Math.round(teamLogs.reduce((s, l) => s + (l.duration || 0), 0) * 100) / 100,
+          byUser,
         },
       },
     });
@@ -81,6 +117,9 @@ export async function GET(
   }
 }
 
+// ============================================================================
+// POST — create a time log entry
+// ============================================================================
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -93,11 +132,29 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { action, notes, hoursWorked, loggedForUserId, isTeamLog } = body;
+    const {
+      action,
+      notes,
+      loggedForUserId,
+      isTeamLog,
+      // Enterprise fields
+      startTime: startTimeStr,
+      endTime: endTimeStr,
+      activityType = 'maintenance',
+      breakMinutes = 0,
+      manualHours,
+    } = body;
 
     if (!action || !VALID_ACTIONS.includes(action)) {
       return NextResponse.json(
         { success: false, error: `Invalid action. Must be one of: ${VALID_ACTIONS.join(', ')}` },
+        { status: 400 },
+      );
+    }
+
+    if (activityType && !VALID_ACTIVITY_TYPES.includes(activityType)) {
+      return NextResponse.json(
+        { success: false, error: `Invalid activity type. Must be one of: ${VALID_ACTIVITY_TYPES.join(', ')}` },
         { status: 400 },
       );
     }
@@ -115,43 +172,35 @@ export async function POST(
     }
 
     if (wo.isLocked) {
-      return NextResponse.json({ success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Work order is permanently locked.' }, { status: 400 });
     }
 
-    // Resolve the effective user ID and team log state
+    // ── Resolve effective user (team leader logging for others) ──
     let effectiveUserId = session.userId;
     let effectiveIsTeamLog = Boolean(isTeamLog);
     let effectiveLoggedById: string | null = null;
 
     if (loggedForUserId) {
-      // Prevent logging for yourself via this mechanism
       if (loggedForUserId === session.userId) {
         effectiveIsTeamLog = false;
       } else {
         effectiveIsTeamLog = true;
-
-        // Only the team leader or admin can log time for other team members
         const isTeamLeader = wo.teamLeaderId === session.userId;
         const isAdminRole = session.roles.includes('admin');
-
         if (!isTeamLeader && !isAdminRole) {
           return NextResponse.json(
             { success: false, error: 'Only the team leader or admin can log time for other team members' },
             { status: 403 },
           );
         }
-
-        // Verify the target user is a team member or the assignee
         const isTargetMember = wo.teamMembers.some((m) => m.userId === loggedForUserId);
         const isTargetAssignee = wo.assignedTo === loggedForUserId;
-
         if (!isTargetMember && !isTargetAssignee) {
           return NextResponse.json(
-            { success: false, error: 'Target user is not a team member or assignee of this work order' },
+            { success: false, error: 'Target user is not a team member or assignee' },
             { status: 400 },
           );
         }
-
         effectiveUserId = loggedForUserId;
         effectiveLoggedById = session.userId;
       }
@@ -159,114 +208,117 @@ export async function POST(
 
     const now = new Date();
 
-    // Build WO update data based on action
-    const woUpdateData: Record<string, unknown> = {};
+    // ── Parse start/end times ──
+    const startTime = startTimeStr ? new Date(startTimeStr) : null;
+    const endTime = endTimeStr ? new Date(endTimeStr) : null;
+
+    // Validate: end must be after start
+    if (startTime && endTime && endTime <= startTime) {
+      return NextResponse.json(
+        { success: false, error: 'End time must be after start time' },
+        { status: 400 },
+      );
+    }
+
+    // ── Calculate duration ──
     let logDuration: number | null = null;
+    const safeBreak = Math.max(0, Math.min(breakMinutes || 0, 480)); // cap at 8h break
 
-    if (action === 'start') {
-      if (!wo.actualStart) {
-        woUpdateData.actualStart = now;
-      }
-      if (hoursWorked !== undefined && hoursWorked !== null) {
-        logDuration = typeof hoursWorked === 'number' ? Math.round(hoursWorked * 100) / 100 : null;
-      }
+    // Priority 1: If both start and end provided, auto-calculate
+    if (startTime && endTime) {
+      logDuration = calcDurationHours(startTime, endTime, safeBreak);
     }
-
-    if (action === 'resume') {
-      if (hoursWorked !== undefined && hoursWorked !== null) {
-        logDuration = typeof hoursWorked === 'number' ? Math.round(hoursWorked * 100) / 100 : null;
-      }
+    // Priority 2: Manual hours override
+    else if (manualHours !== undefined && manualHours !== null && typeof manualHours === 'number' && manualHours > 0) {
+      logDuration = Math.round((manualHours - (safeBreak / 60)) * 100) / 100;
+      if (logDuration < 0) logDuration = 0;
     }
-
-    if (action === 'pause') {
-      // Calculate duration: time since last "start" or "resume" action for this user
+    // Priority 3: Action-based calculation (legacy start/pause/resume/complete flow)
+    else if (action === 'start') {
+      // Start just records the start time, duration = null (timer running)
+      if (!startTime) logDuration = null;
+    } else if (action === 'pause') {
       const lastActiveLog = await db.workOrderTimeLog.findFirst({
-        where: {
-          workOrderId: id,
-          userId: effectiveUserId,
-          action: { in: ['start', 'resume'] },
-        },
+        where: { workOrderId: id, userId: effectiveUserId, action: { in: ['start', 'resume'] } },
         orderBy: { timestamp: 'desc' },
       });
-
       if (lastActiveLog) {
-        const elapsedMs = now.getTime() - new Date(lastActiveLog.timestamp).getTime();
-        logDuration = Math.round((elapsedMs / (1000 * 60 * 60)) * 100) / 100;
+        const ref = lastActiveLog.startTime || lastActiveLog.timestamp;
+        logDuration = calcDurationHours(ref, now, safeBreak);
+      }
+    } else if (action === 'resume') {
+      // Resume doesn't generate duration — just marks restart
+      logDuration = null;
+    } else if (action === 'complete') {
+      const lastActiveLog = await db.workOrderTimeLog.findFirst({
+        where: { workOrderId: id, userId: effectiveUserId, action: { in: ['start', 'resume'] } },
+        orderBy: { timestamp: 'desc' },
+      });
+      if (lastActiveLog) {
+        const ref = lastActiveLog.startTime || lastActiveLog.timestamp;
+        logDuration = calcDurationHours(ref, endTime || now, safeBreak);
       }
     }
 
-    if (action === 'complete') {
-      if (!wo.actualEnd) {
-        woUpdateData.actualEnd = now;
-      }
+    // ── Update WO timestamps ──
+    const woUpdateData: Record<string, unknown> = {};
 
-      // Calculate total duration from all time log entries for this user
-      const allLogs = await db.workOrderTimeLog.findMany({
-        where: { workOrderId: id, userId: effectiveUserId },
-        orderBy: { timestamp: 'asc' },
-      });
+    if (action === 'start' && !wo.actualStart) {
+      woUpdateData.actualStart = startTime || now;
+    }
+    if (action === 'complete' && !wo.actualEnd) {
+      woUpdateData.actualEnd = endTime || now;
+    }
 
-      let totalHours = 0;
+    // ── Update WO actualHours (non-team logs only) ──
+    if (!effectiveIsTeamLog && logDuration !== null) {
+      const newTotal = await recalcWoActualHours(id, effectiveUserId);
+      woUpdateData.actualHours = newTotal + logDuration;
+    } else if (!effectiveIsTeamLog && action === 'complete') {
+      // Recalculate total for this user including this entry
+      const newTotal = await recalcWoActualHours(id, effectiveUserId);
+      woUpdateData.actualHours = newTotal + (logDuration || 0);
+    }
 
+    // ── Also recalculate for team leader view: sum all logs for all users ──
+    if (!effectiveIsTeamLog) {
+      const allLogs = await db.workOrderTimeLog.findMany({ where: { workOrderId: id } });
+      let grandTotal = 0;
       for (const log of allLogs) {
-        if (log.duration) {
-          totalHours += log.duration;
-        }
+        if (log.duration) grandTotal += log.duration;
       }
-
-      const lastLog = allLogs.length > 0 ? allLogs[allLogs.length - 1] : null;
-      if (lastLog && (lastLog.action === 'start' || lastLog.action === 'resume') && !lastLog.duration) {
-        const elapsedMs = now.getTime() - new Date(lastLog.timestamp).getTime();
-        const elapsedHours = Math.round((elapsedMs / (1000 * 60 * 60)) * 100) / 100;
-        totalHours += elapsedHours;
-        logDuration = elapsedHours;
-      }
-
-      if (hoursWorked !== undefined && hoursWorked !== null && typeof hoursWorked === 'number') {
-        logDuration = Math.round(hoursWorked * 100) / 100;
-        let recalcTotal = 0;
-        for (const log of allLogs) {
-          if (log.duration) {
-            recalcTotal += log.duration;
-          }
-        }
-        recalcTotal += logDuration;
-        totalHours = recalcTotal;
-      }
-
-      // For team logs, we don't update the WO's actualHours directly
-      // Only update actualHours if this is the primary user's time
-      if (!effectiveIsTeamLog) {
-        woUpdateData.actualHours = Math.round(totalHours * 100) / 100;
-      }
+      woUpdateData.actualHours = Math.round((grandTotal + (logDuration || 0)) * 100) / 100;
     }
 
-    // For start/resume/pause with logDuration (non-team logs), update actualHours
-    if (logDuration !== null && action !== 'complete' && !effectiveIsTeamLog) {
-      const existingLogs = await db.workOrderTimeLog.findMany({
-        where: { workOrderId: id, userId: effectiveUserId },
-      });
-      let currentTotal = 0;
-      for (const log of existingLogs) {
-        if (log.duration) {
-          currentTotal += log.duration;
-        }
-      }
-      currentTotal += logDuration;
-      woUpdateData.actualHours = Math.round(currentTotal * 100) / 100;
-    }
-
-    // Update work order if there are changes
     if (Object.keys(woUpdateData).length > 0) {
-      await db.workOrder.update({
-        where: { id },
-        data: woUpdateData,
-      });
+      await db.workOrder.update({ where: { id }, data: woUpdateData });
     }
 
-    // Create time log entry — use raw SQL fallback if loggedById/isTeamLog columns don't exist yet
+    // ── Create time log entry ──
     let timeLog;
     try {
+      timeLog = await db.workOrderTimeLog.create({
+        data: {
+          workOrderId: id,
+          userId: effectiveUserId,
+          action,
+          duration: logDuration,
+          notes: notes || null,
+          timestamp: now,
+          loggedById: effectiveLoggedById,
+          isTeamLog: effectiveIsTeamLog,
+          startTime: startTime || (action === 'start' ? now : null),
+          endTime: endTime || (action === 'pause' ? now : (action === 'complete' ? now : null)),
+          activityType: activityType || 'maintenance',
+          breakMinutes: safeBreak,
+        },
+        include: {
+          user: { select: { id: true, fullName: true, username: true, avatar: true } },
+          loggedBy: { select: { id: true, fullName: true, username: true } },
+        },
+      });
+    } catch {
+      // Fallback: new columns may not exist on VPS yet
       timeLog = await db.workOrderTimeLog.create({
         data: {
           workOrderId: id,
@@ -280,43 +332,106 @@ export async function POST(
         },
         include: {
           user: { select: { id: true, fullName: true, username: true, avatar: true } },
-          loggedBy: { select: { id: true, fullName: true, username: true } },
-        },
-      });
-    } catch {
-      // Fallback: columns loggedById/isTeamLog may not exist on VPS yet
-      timeLog = await db.workOrderTimeLog.create({
-        data: {
-          workOrderId: id,
-          userId: effectiveUserId,
-          action,
-          duration: logDuration,
-          notes: notes || null,
-          timestamp: now,
-        },
-        include: {
-          user: { select: { id: true, fullName: true, username: true, avatar: true } },
         },
       });
     }
 
-    // Audit log
+    // ── Audit log ──
     await createAuditLog(session.userId, 'wo_time_log', 'create', timeLog.id, {
       newValues: {
         workOrderId: id,
         userId: effectiveUserId,
         action,
         duration: logDuration,
+        activityType: activityType || 'maintenance',
+        breakMinutes: safeBreak,
+        startTime: startTime?.toISOString() || undefined,
+        endTime: endTime?.toISOString() || undefined,
         notes: notes || undefined,
         isTeamLog: effectiveIsTeamLog,
         loggedById: effectiveLoggedById || undefined,
-        woUpdates: woUpdateData,
       },
     });
 
     return NextResponse.json({ success: true, data: timeLog }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create time log';
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+// ============================================================================
+// DELETE — remove a time log entry (creator, team leader, or admin only)
+// ============================================================================
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const { id } = await params;
+    // The logId comes from searchParams
+    const { searchParams } = new URL(request.url);
+    const logId = searchParams.get('logId');
+
+    if (!logId) {
+      return NextResponse.json({ success: false, error: 'logId is required' }, { status: 400 });
+    }
+
+    // Find the time log
+    const timeLog = await db.workOrderTimeLog.findUnique({
+      where: { id: logId },
+      include: { workOrder: { select: { id: true, isLocked: true, teamLeaderId: true } } },
+    });
+
+    if (!timeLog || timeLog.workOrderId !== id) {
+      return NextResponse.json({ success: false, error: 'Time log not found' }, { status: 404 });
+    }
+
+    if (timeLog.workOrder.isLocked) {
+      return NextResponse.json({ success: false, error: 'Work order is locked' }, { status: 400 });
+    }
+
+    // Permission: creator, team leader, or admin
+    const isCreator = timeLog.userId === session.userId;
+    const isTeamLeader = timeLog.workOrder.teamLeaderId === session.userId;
+    const isAdmin = session.roles.includes('admin');
+
+    if (!isCreator && !isTeamLeader && !isAdmin) {
+      return NextResponse.json({ success: false, error: 'Only the creator, team leader, or admin can delete time logs' }, { status: 403 });
+    }
+
+    await db.workOrderTimeLog.delete({ where: { id: logId } });
+
+    // Recalculate actualHours for the user whose log was deleted
+    const newTotal = await recalcWoActualHours(id, timeLog.userId);
+    // Also recalculate grand total
+    const allLogs = await db.workOrderTimeLog.findMany({ where: { workOrderId: id } });
+    let grandTotal = 0;
+    for (const log of allLogs) {
+      if (log.duration) grandTotal += log.duration;
+    }
+    await db.workOrder.update({
+      where: { id },
+      data: { actualHours: Math.round(grandTotal * 100) / 100 },
+    });
+
+    await createAuditLog(session.userId, 'wo_time_log', 'delete', logId, {
+      oldValues: {
+        userId: timeLog.userId,
+        action: timeLog.action,
+        duration: timeLog.duration,
+        deletedBy: session.userId,
+      },
+    });
+
+    return NextResponse.json({ success: true, message: 'Time log deleted' });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to delete time log';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

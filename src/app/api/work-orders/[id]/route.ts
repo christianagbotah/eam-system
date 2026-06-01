@@ -42,7 +42,10 @@ export async function GET(
         orderBy: { assignedAt: 'asc' as const },
       },
       timeLogs: {
-        include: { user: { select: { id: true, fullName: true, username: true } } },
+        include: {
+          user: { select: { id: true, fullName: true, username: true } },
+          loggedBy: { select: { id: true, fullName: true } },
+        },
         orderBy: { timestamp: 'desc' as const },
       },
       materials: {
