@@ -656,3 +656,21 @@ Stage Summary:
 - **Delete dialog**: Confirmation dialog with warning about tool release
 - **Permission model**: Edit/delete only for pending status + (requester or admin); approve buttons restricted to supervisor/storekeeper roles
 - **No new compilation errors**
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: Clarify multi-tool request architecture — requestNumber on header, not items
+
+Work Log:
+- User asked: "requestNumber is unique but we have multiple tools, how would that be?"
+- Explained the header-item architecture: requestNumber is on RepairToolRequest (header, 1 row per request), not on RepairToolRequestItem (line items, many rows per request)
+- Confirmed schema already has requestNumber as String? (nullable, commit b0f864e2) for backward compatibility with existing rows
+- Verified API: POST creates header with requestNumber + items in transaction, GET returns items with relations, detail view shows "Tool Items (N)" card
+- Verified frontend: Table shows Request #, Tools summary, Total Qty, Fulfillment progress; Detail shows items with per-item quantity tracking
+- No code changes needed — architecture already correct
+
+Stage Summary:
+- **Architecture confirmed**: requestNumber is unique per REQUEST (header), not per tool. Like a purchase order number grouping multiple line items.
+- **Schema**: requestNumber String? @unique on RepairToolRequest (already nullable, commit b0f864e2)
+- **VPS action needed**: Run `npx prisma db push` to add requestNumber column and repair_tool_request_items table
