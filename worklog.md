@@ -700,3 +700,31 @@ Stage Summary:
 - **Fix**: `src/app/api/work-orders/[id]/time-logs/route.ts` — `role: true`
 - **Frontend fixes**: `src/components/modules/MaintenancePages.tsx` — 4 field name corrections for time log display
 - **Commit**: bd0a1c68
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Enterprise-grade time logging system — full redesign
+
+Work Log:
+- Analyzed current system: simple action-based (start/pause/resume/complete) with optional manual hours input
+- Identified gaps: no start/end time recording, no activity categorization, no break tracking, no delete capability, no duration preview
+- Updated Prisma schema: added startTime, endTime, activityType, breakMinutes to WorkOrderTimeLog model
+- Rewrote POST /api/work-orders/[id]/time-logs with 3-tier duration calculation:
+  1. Auto-calc from start/end times minus break (highest priority)
+  2. Manual hours override (middle priority)
+  3. Legacy action-based elapsed time calculation (lowest priority, backward compat)
+- Added DELETE /api/work-orders/[id]/time-logs?logId=X endpoint (creator/team leader/admin only)
+- Added audit log entries for all time log operations
+- Updated GET to include loggedBy relation and per-user breakdown in summary
+- Rebuilt frontend dialog: DateTimePicker for start/end, activity type with icons, break minutes input, manual hours override, live duration preview (green box shows "Xh Ym")
+- Rebuilt frontend display: colored activity icons (Wrench=green/Maintenance, Search=blue/Inspection, FlaskConical=violet/Testing, MapPin=amber/Travel, Hourglass=gray/Standby), time ranges in "Start → End" format, break badges, team log indicators, per-entry "Xh Ym" duration, hover-reveal delete button, loggedBy attribution
+- Added delete confirmation dialog
+- Added FlaskConical icon import
+
+Stage Summary:
+- **Schema**: WorkOrderTimeLog — +startTime, +endTime, +activityType, +breakMinutes
+- **API**: Full rewrite with auto-duration, DELETE endpoint, per-user summary
+- **Frontend**: Enterprise time log dialog + rich timeline display
+- **Commit**: ae027c4b
+- **VPS**: Must run `npx prisma db push` to add new columns
