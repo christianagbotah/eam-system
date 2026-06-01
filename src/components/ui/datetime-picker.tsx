@@ -111,10 +111,26 @@ function TimeColumn({
     return () => cancelAnimationFrame(timer)
   }, [scrollToSelected])
 
+  // Mouse wheel scroll handler
+  const handleWheel = React.useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      const container = containerRef.current
+      if (!container) return
+      const currentIndex = items.indexOf(selected)
+      const direction = e.deltaY > 0 ? 1 : -1
+      const nextIndex = Math.max(0, Math.min(items.length - 1, currentIndex + direction))
+      if (nextIndex !== currentIndex) {
+        onSelect(items[nextIndex])
+      }
+    },
+    [items, selected, onSelect]
+  )
+
   return (
     <div
       className="relative overflow-hidden rounded-lg border bg-background"
-      style={{ height: `${COL_HEIGHT}px`, width: '64px' }}
+      style={{ height: `${COL_HEIGHT}px`, width: '56px' }}
     >
       {/* Fade masks */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-8 bg-gradient-to-b from-background to-transparent" />
@@ -130,6 +146,7 @@ function TimeColumn({
         ref={containerRef}
         className="scrollbar-none h-full snap-y snap-mandatory overflow-y-auto"
         style={{ scrollbarWidth: 'none' }}
+        onWheel={handleWheel}
       >
         {/* Spacer to center first item */}
         <div style={{ height: `${COL_ITEM_HEIGHT}px` }} />
@@ -491,8 +508,8 @@ export function DateTimePicker({
           </Popover>
         </div>
 
-        {/* Time portion — takes ~40% width */}
-        <div className="w-[140px] shrink-0">
+        {/* Time portion — compact */}
+        <div className="w-[120px] shrink-0">
           <Popover>
             <PopoverTrigger asChild>
               <Button
