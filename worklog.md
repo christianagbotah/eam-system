@@ -761,3 +761,20 @@ Stage Summary:
 - **Updated API**: `src/app/api/work-orders/[id]/time-logs/route.ts` — single-active-WO enforcement (409), pauseReason support
 - **Frontend**: `src/components/modules/MaintenancePages.tsx` — enterprise time log UI with Start/Pause/Resume/Complete controls, session banners, pause reason dialog
 - **Key rule**: A technician can only have ONE active work order at a time. Must pause before switching.
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: Fix DialogContent accessibility warning + resize date/time fields on Log Time form
+
+Work Log:
+- Investigated DialogContent accessibility warning across entire codebase
+- Found all dialogs use ResponsiveDialog or ConfirmDialog, which always include DialogTitle
+- Discovered root cause: `CommandDialog` in `src/components/ui/command.tsx` had `DialogHeader` with `DialogTitle` placed OUTSIDE `DialogContent` (as sibling, not child)
+- Fixed by moving `DialogHeader` inside `DialogContent` so Radix UI can detect the title
+- Resized date/time fields in Log Time form: reduced time portion from `w-[120px]` to `w-[100px]` in DateTimePicker desktop layout, giving date field more space
+- Verified no compilation errors after both changes
+
+Stage Summary:
+- **command.tsx**: Moved DialogHeader inside DialogContent to fix accessibility warning
+- **datetime-picker.tsx**: Reduced time field width from 120px to 100px for better date field proportion

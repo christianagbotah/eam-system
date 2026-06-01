@@ -509,7 +509,7 @@ export function DateTimePicker({
         </div>
 
         {/* Time portion — compact */}
-        <div className="w-[120px] shrink-0">
+        <div className="w-[100px] shrink-0">
           <Popover>
             <PopoverTrigger asChild>
               <Button
