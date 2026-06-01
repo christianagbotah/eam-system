@@ -143,7 +143,16 @@ export async function POST(
       activityType = 'maintenance',
       breakMinutes = 0,
       manualHours,
+      pauseReason,
     } = body;
+
+    const VALID_PAUSE_REASONS = ['break', 'switch_wo', 'waiting_parts', 'other'];
+    if (pauseReason && !VALID_PAUSE_REASONS.includes(pauseReason)) {
+      return NextResponse.json(
+        { success: false, error: `Invalid pause reason. Must be one of: ${VALID_PAUSE_REASONS.join(', ')}` },
+        { status: 400 },
+      );
+    }
 
     if (!action || !VALID_ACTIONS.includes(action)) {
       return NextResponse.json(
@@ -203,6 +212,32 @@ export async function POST(
         }
         effectiveUserId = loggedForUserId;
         effectiveLoggedById = session.userId;
+      }
+    }
+
+    // ── ENFORCEMENT: Single active work order rule ──
+    // A user can only have ONE active (running) work order at a time.
+    // Active = last time log action is 'start' or 'resume' (not 'pause' or 'complete').
+    if ((action === 'start' || action === 'resume') && !effectiveIsTeamLog) {
+      const latestGlobalLog = await db.workOrderTimeLog.findFirst({
+        where: { userId: effectiveUserId },
+        orderBy: { timestamp: 'desc' },
+        include: { workOrder: { select: { id: true, workOrderNumber: true } } },
+      });
+      if (latestGlobalLog && (latestGlobalLog.action === 'start' || latestGlobalLog.action === 'resume')) {
+        // User has an active session — check if it's on a DIFFERENT WO
+        if (latestGlobalLog.workOrderId !== id) {
+          return NextResponse.json({
+            success: false,
+            error: `You already have an active work session on WO #${latestGlobalLog.workOrder?.workOrderNumber || 'unknown'}. Pause that work order before starting a new one.`,
+            conflict: {
+              workOrderId: latestGlobalLog.workOrderId,
+              workOrderNumber: latestGlobalLog.workOrder?.workOrderNumber,
+              action: latestGlobalLog.action,
+              startedAt: (latestGlobalLog.startTime || latestGlobalLog.timestamp).toISOString(),
+            },
+          }, { status: 409 });
+        }
       }
     }
 
@@ -311,6 +346,7 @@ export async function POST(
           endTime: endTime || (action === 'pause' ? now : (action === 'complete' ? now : null)),
           activityType: activityType || 'maintenance',
           breakMinutes: safeBreak,
+          pauseReason: (action === 'pause') ? (pauseReason || null) : null,
         },
         include: {
           user: { select: { id: true, fullName: true, username: true, avatar: true } },
@@ -350,6 +386,7 @@ export async function POST(
         notes: notes || undefined,
         isTeamLog: effectiveIsTeamLog,
         loggedById: effectiveLoggedById || undefined,
+        pauseReason: pauseReason || undefined,
       },
     });
 

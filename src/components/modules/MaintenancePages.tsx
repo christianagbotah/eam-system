@@ -2378,6 +2378,22 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [tlLoading, setTlLoading] = useState(false);
   const [tlLoggedForUserId, setTlLoggedForUserId] = useState('');
   const [deleteTlId, setDeleteTlId] = useState<string | null>(null);
+  // Enterprise time session — active session tracking across all WOs
+  const [globalActiveSession, setGlobalActiveSession] = useState<{
+    workOrderId: string;
+    workOrderNumber: string;
+    workOrderTitle: string;
+    workOrderStatus: string;
+    action: string;
+    startedAt: string;
+    elapsedSeconds: number;
+    logId: string;
+    activityType: string;
+  } | null>(null);
+  const [pauseDialogOpen, setPauseDialogOpen] = useState(false);
+  const [pauseReason, setPauseReason] = useState('');
+  const [pauseNotes, setPauseNotes] = useState('');
+  const [pauseLoading, setPauseLoading] = useState(false);
   // Material
   const [materialOpen, setMaterialOpen] = useState(false);
   const [matItemId, setMatItemId] = useState('');
@@ -2562,6 +2578,16 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return wo.teamMembers?.some(tm => tm.userId === user.id && tm.accessLevel === 'read_only') || false;
   }, [wo, user, fullAccess]);
 
+  // Fetch global active session and set up live timer
+  const fetchActiveSession = useCallback(async () => {
+    try {
+      const res = await api.get('/api/work-orders/active-session');
+      if (res.success) {
+        setGlobalActiveSession(res.data.session);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   // Live session timer: find unmatched start/resume without pause
   useEffect(() => {
     if (!wo?.timeLogs || wo.timeLogs.length === 0) {
@@ -2578,6 +2604,57 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     sessionTimerRef.current = setInterval(calc, 1000);
     return () => { if (sessionTimerRef.current) clearInterval(sessionTimerRef.current); };
   }, [wo?.timeLogs]);
+
+  // Check global active session on mount and after actions
+  useEffect(() => {
+    fetchActiveSession();
+  }, [fetchActiveSession]);
+
+  // Derived session state for THIS work order
+  const isActiveOnThisWO = useMemo(() => {
+    return globalActiveSession && globalActiveSession.workOrderId === id;
+  }, [globalActiveSession, id]);
+
+  const isActiveOnOtherWO = useMemo(() => {
+    return globalActiveSession && globalActiveSession.workOrderId !== id;
+  }, [globalActiveSession, id]);
+
+  // Is there a paused session on THIS WO that can be resumed?
+  const hasPausedSession = useMemo(() => {
+    if (!wo?.timeLogs || wo.timeLogs.length === 0) return false;
+    if (isActiveOnThisWO) return false; // currently running, not paused
+    const sorted = [...wo.timeLogs].sort((a, b) => new Date(a.timestamp || a.createdAt).getTime() - new Date(b.timestamp || b.createdAt).getTime());
+    const lastAction = sorted[sorted.length - 1];
+    return lastAction?.action === 'pause';
+  }, [wo?.timeLogs, isActiveOnThisWO]);
+
+  // Quick action handlers for start/pause/resume/complete
+  const handleQuickTimeAction = async (action: string, reason?: string) => {
+    setTlLoading(true);
+    const body: any = {
+      action,
+      activityType: 'maintenance',
+    };
+    if (reason) body.pauseReason = reason;
+    if (pauseNotes) { body.notes = pauseNotes; setPauseNotes(''); }
+    const res = await api.post(`/api/work-orders/${id}/time-logs`, body);
+    if (res.success) {
+      const msgs: Record<string, string> = {
+        start: 'Work started — timer is running',
+        pause: reason === 'break' ? 'Paused for break' : reason === 'switch_wo' ? 'Paused — you can now work on another WO' : 'Work paused',
+        resume: 'Work resumed — timer is running',
+        complete: 'Work completed on this WO',
+      };
+      toast.success(msgs[action] || `Time ${action} recorded`);
+      setPauseDialogOpen(false);
+      setPauseReason('');
+      fetchActiveSession();
+      fetchWO();
+    } else {
+      toast.error(res.error || `Failed to ${action}`);
+    }
+    setTlLoading(false);
+  };
 
   const handleAction = async (action: string, extra?: Record<string, unknown>) => {
     setActionLoading(true);
@@ -2811,14 +2888,21 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       setTlManualHours('');
       setTlNotes('');
       setTlLoggedForUserId('');
+      fetchActiveSession();
       fetchWO();
-    } else { toast.error(res.error || 'Failed to log time'); }
+    } else {
+      if (res.conflict) {
+        toast.error(`${res.error} Go to WO #${res.conflict.workOrderNumber} and pause it first.`);
+      } else {
+        toast.error(res.error || 'Failed to log time');
+      }
+    }
     setTlLoading(false);
   };
 
   const handleDeleteTimeLog = async (logId: string) => {
     const res = await api.delete(`/api/work-orders/${id}/time-logs?logId=${logId}`);
-    if (res.success) { toast.success('Time log deleted'); setDeleteTlId(null); fetchWO(); }
+    if (res.success) { toast.success('Time log deleted'); setDeleteTlId(null); fetchActiveSession(); fetchWO(); }
     else { toast.error(res.error || 'Failed to delete time log'); }
   };
 
@@ -3760,6 +3844,35 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           <p className="text-sm text-muted-foreground">This action cannot be undone. The work order's actual hours will be recalculated.</p>
       </ResponsiveDialog>
 
+      {/* Pause Reason Dialog */}
+      <ResponsiveDialog open={pauseDialogOpen} onOpenChange={(open) => { if (!open) { setPauseDialogOpen(false); setPauseReason(''); setPauseNotes(''); } }} title="Pause Work" description="Select a reason for pausing. You can resume or switch to another work order after." footer={<div className="flex gap-2"><Button variant="outline" className="flex-1" onClick={() => { setPauseDialogOpen(false); setPauseReason(''); setPauseNotes(''); }}>Cancel</Button><Button className="flex-1 bg-amber-600 hover:bg-amber-700 text-white" disabled={pauseLoading || !pauseReason} onClick={() => handleQuickTimeAction('pause', pauseReason)}>{pauseLoading ? 'Pausing...' : 'Pause'}</Button></div>}>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { value: 'break', label: 'Take a Break', icon: <Hourglass className="h-5 w-5" />, desc: 'Lunch, rest, personal', color: 'border-amber-200 bg-amber-50 hover:border-amber-400' },
+                { value: 'switch_wo', label: 'Switch WO', icon: <ArrowRightLeft className="h-5 w-5" />, desc: 'Work on another order', color: 'border-sky-200 bg-sky-50 hover:border-sky-400' },
+                { value: 'waiting_parts', label: 'Waiting Parts', icon: <Package className="h-5 w-5" />, desc: 'Awaiting materials/tools', color: 'border-violet-200 bg-violet-50 hover:border-violet-400' },
+                { value: 'other', label: 'Other', icon: <MoreHorizontal className="h-5 w-5" />, desc: 'Different reason', color: 'border-gray-200 bg-gray-50 hover:border-gray-400' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setPauseReason(opt.value)}
+                  className={`p-3 rounded-lg border-2 text-left transition-all ${pauseReason === opt.value ? `${opt.color} ring-2 ring-offset-1 ring-current` : 'border-muted bg-background hover:bg-muted/50'}`}
+                >
+                  <div className={`mb-1 ${pauseReason === opt.value ? 'text-amber-700' : 'text-muted-foreground'}`}>{opt.icon}</div>
+                  <p className="text-sm font-medium">{opt.label}</p>
+                  <p className="text-[10px] text-muted-foreground">{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes (optional)</Label>
+              <Textarea value={pauseNotes} onChange={e => setPauseNotes(e.target.value)} placeholder="Any additional details..." rows={2} />
+            </div>
+          </div>
+      </ResponsiveDialog>
+
       {/* Add Material Dialog — pick from inventory */}
       <ResponsiveDialog open={materialOpen} onOpenChange={(open) => { setMaterialOpen(open); if (!open) { setMatItemId(''); setMatItemName(''); setMatQty(''); }}} title="Request Material" description="Select a material or part from inventory to request for this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={matLoading || !matItemId} onClick={handleAddMaterial}>{matLoading ? 'Requesting...' : 'Request Material'}</Button>}>
           <div className="space-y-4">
@@ -3866,13 +3979,94 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           {/* Attachments */}
           <FileUpload entityType="work_order" entityId={id} />
 
-          {/* Time Logs — Enterprise */}
+          {/* Time Logs — Enterprise with Session Controls */}
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {wo.actualHours || 0}h total</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => { setTlStartTime(''); setTlEndTime(''); setTlActivityType('maintenance'); setTlBreakMinutes(''); setTlManualHours(''); setTlNotes(''); setTlLoggedForUserId(''); setTimeLogOpen(true); }}><Clock className="h-3.5 w-3.5" />Log Time</Button>
+              <div className="flex items-center gap-2">
+                {/* Context-aware action buttons */}
+                {isActiveOnThisWO && !readOnlyDisabled && (
+                  <>
+                    <Button size="sm" variant="outline" className="gap-1.5 text-amber-600 border-amber-300 hover:bg-amber-50" disabled={tlLoading} onClick={() => { setPauseReason(''); setPauseNotes(''); setPauseDialogOpen(true); }}>
+                      {tlLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pause className="h-3.5 w-3.5" />}
+                      Pause
+                    </Button>
+                    <Button size="sm" variant="outline" className="gap-1.5 text-emerald-600 border-emerald-300 hover:bg-emerald-50" disabled={tlLoading} onClick={() => handleQuickTimeAction('complete')}>
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Complete
+                    </Button>
+                  </>
+                )}
+                {!isActiveOnThisWO && !isActiveOnOtherWO && !readOnlyDisabled && (
+                  <>
+                    {hasPausedSession && (
+                      <Button size="sm" variant="outline" className="gap-1.5 text-emerald-600 border-emerald-300 hover:bg-emerald-50" disabled={tlLoading} onClick={() => handleQuickTimeAction('resume')}>
+                        {tlLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                        Resume
+                      </Button>
+                    )}
+                    <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={() => handleQuickTimeAction('start')}>
+                      {tlLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                      Start Work
+                    </Button>
+                  </>
+                )}
+                {isActiveOnOtherWO && !readOnlyDisabled && (
+                  <Button size="sm" variant="outline" className="gap-1.5 text-red-600 border-red-300" disabled>
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    Busy on WO #{globalActiveSession?.workOrderNumber}
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => { setTlStartTime(''); setTlEndTime(''); setTlActivityType('maintenance'); setTlBreakMinutes(''); setTlManualHours(''); setTlNotes(''); setTlLoggedForUserId(''); setTlAction('start'); setTimeLogOpen(true); }} title="Manual time entry"><Clock className="h-3.5 w-3.5" /></Button>
+              </div>
             </CardHeader>
             <CardContent>
+              {/* Active Session Banner — running on THIS WO */}
+              {isActiveOnThisWO && (
+                <div className="mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-9 w-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center animate-pulse">
+                      <Timer className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">Active Session</p>
+                      <p className="text-lg font-bold font-mono text-emerald-700">{sessionDuration !== null ? formatSessionDuration(sessionDuration) : '...'}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs font-medium text-emerald-700">Recording</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Active on OTHER WO — warning banner */}
+              {isActiveOnOtherWO && (
+                <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-amber-800">Active Session on Another Work Order</p>
+                      <p className="text-xs text-amber-700 mt-0.5">
+                        You are currently working on <button onClick={() => navigate('wo-detail', { id: globalActiveSession?.workOrderId })} className="underline font-medium hover:text-amber-900">WO #{globalActiveSession?.workOrderNumber}</button> since {globalActiveSession?.startedAt ? formatDateTime(globalActiveSession?.startedAt) : 'unknown'}.
+                        Pause that work order first before starting work here.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Paused session indicator */}
+              {hasPausedSession && !isActiveOnThisWO && (
+                <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-2">
+                  <Pause className="h-4 w-4 text-amber-600" />
+                  <div>
+                    <p className="text-xs font-semibold text-amber-800">Paused</p>
+                    <p className="text-xs text-amber-700">Click "Resume" to continue working on this WO.</p>
+                  </div>
+                </div>
+              )}
+
               {/* Summary Bar */}
               <div className="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-lg bg-muted/50">
                 <div className="flex items-center gap-2">
@@ -3885,18 +4079,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     <div><p className="text-[10px] text-muted-foreground uppercase">Started</p><p className="text-xs font-bold">{formatDateTime(wo.actualStart)}</p></div>
                   </div>
                 )}
-                {sessionDuration !== null && (
-                  <div className="flex items-center gap-2 ml-auto">
-                    <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center animate-pulse"><Timer className="h-4 w-4" /></div>
-                    <div><p className="text-[10px] text-muted-foreground uppercase">Session</p><p className="text-sm font-bold font-mono text-amber-700">{formatSessionDuration(sessionDuration)}</p></div>
-                  </div>
-                )}
               </div>
               {(!wo.timeLogs || wo.timeLogs.length === 0) ? (
                 <div className="text-center py-6">
                   <Clock className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground">No time logs recorded yet.</p>
-                  <p className="text-xs text-muted-foreground/60 mt-1">Click "Log Time" to start tracking work hours.</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">Click "Start Work" to begin tracking your time.</p>
                 </div>
               ) : (
                 <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -3915,6 +4103,16 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       travel: MapPin, standby: Hourglass, other: MoreHorizontal,
                     };
                     const ActIcon = actIcons[actType] || MoreHorizontal;
+
+                    // Action icon + color for session state
+                    const actionStyles: Record<string, { icon: React.ElementType; color: string; label: string }> = {
+                      start: { icon: Play, color: 'bg-emerald-100 text-emerald-700', label: 'Started' },
+                      pause: { icon: Pause, color: 'bg-amber-100 text-amber-700', label: 'Paused' },
+                      resume: { icon: Play, color: 'bg-sky-100 text-sky-700', label: 'Resumed' },
+                      complete: { icon: CheckCircle2, color: 'bg-emerald-100 text-emerald-700', label: 'Completed' },
+                    };
+                    const actionStyle = actionStyles[tl.action] || actionStyles.start;
+                    const ActionIcon = actionStyle.icon;
                     const durationMin = tl.duration ? Math.round(tl.duration * 60) : 0;
                     const durH = Math.floor(durationMin / 60);
                     const durM = durationMin % 60;
@@ -3922,14 +4120,23 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
                     return (
                       <div key={tl.id} className="flex items-start gap-3 text-sm py-2.5 border-b last:border-0 group">
-                        {/* Activity icon */}
-                        <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${actColors[actType]}`}>
-                          <ActIcon className="h-3.5 w-3.5" />
+                        {/* Session action icon */}
+                        <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${actionStyle.color}`}>
+                          <ActionIcon className="h-3.5 w-3.5" />
                         </div>
                         {/* Details */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium capitalize text-xs">{actType}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium capitalize text-xs">{actionStyle.label}</p>
+                            <Badge variant="secondary" className="text-[9px] px-1 py-0 gap-0.5">
+                              <ActIcon className="h-2.5 w-2.5" />
+                              {actType}
+                            </Badge>
+                            {tl.pauseReason && (
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 text-amber-600 border-amber-300">
+                                {tl.pauseReason === 'break' ? 'Break' : tl.pauseReason === 'switch_wo' ? 'Switch WO' : tl.pauseReason === 'waiting_parts' ? 'Waiting Parts' : 'Other'}
+                              </Badge>
+                            )}
                             {tl.breakMinutes > 0 && (
                               <Badge variant="secondary" className="text-[9px] px-1 py-0">-{tl.breakMinutes}m break</Badge>
                             )}

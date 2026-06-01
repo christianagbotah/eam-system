@@ -649,6 +649,7 @@ model WorkOrderTimeLog {
   endTime      DateTime? // actual work end time (user-selected or defaults to now)
   activityType String   @default("maintenance") // maintenance, travel, inspection, testing, standby, other
   breakMinutes Int      @default(0) // break/lunch minutes deducted from duration
+  pauseReason  String?  // break, switch_wo, waiting_parts, other — reason for pausing
 
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)

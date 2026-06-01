@@ -728,3 +728,36 @@ Stage Summary:
 - **Frontend**: Enterprise time log dialog + rich timeline display
 - **Commit**: ae027c4b
 - **VPS**: Must run `npx prisma db push` to add new columns
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Enterprise-grade time logging with pause/resume, break tracking, single active WO enforcement
+
+Work Log:
+- Added `pauseReason` field to `WorkOrderTimeLog` model in Prisma schema (break, switch_wo, waiting_parts, other)
+- Created `GET /api/work-orders/active-session` API route — checks if current user has an active (unpaused) time session across ALL work orders
+- Updated `POST /api/work-orders/[id]/time-logs` with single-active-WO enforcement:
+  - Before creating `start` or `resume` entries, checks if user has active session on another WO
+  - Returns 409 Conflict with conflict details if active session exists elsewhere
+  - Added `pauseReason` to create data (only when action is "pause")
+  - Added `pauseReason` to audit log
+- Rebuilt frontend time log UI in WODetailPage with:
+  - Context-aware action buttons: Start Work / Pause / Resume / Complete
+  - Active session detection via `fetchActiveSession()` callback
+  - `isActiveOnThisWO` / `isActiveOnOtherWO` / `hasPausedSession` derived states
+  - Green "Active Session" banner with live running timer when working on current WO
+  - Amber warning banner when user has active session on another WO with clickable link
+  - Amber "Paused" indicator with Resume prompt
+  - "Busy on WO #XXX" disabled button when active on other WO
+  - Pause Reason dialog with 4 visual options: Break, Switch WO, Waiting Parts, Other
+  - Manual time entry still available via ghost clock button
+  - Time log entries now show action-based icons (Started/Paused/Resumed/Completed) and pause reason badges
+  - Delete and manual log both refresh active session state
+
+Stage Summary:
+- **Schema**: `prisma/schema.prisma` — added `pauseReason String?` to `WorkOrderTimeLog`
+- **New API**: `src/app/api/work-orders/active-session/route.ts` — cross-WO active session detection
+- **Updated API**: `src/app/api/work-orders/[id]/time-logs/route.ts` — single-active-WO enforcement (409), pauseReason support
+- **Frontend**: `src/components/modules/MaintenancePages.tsx` — enterprise time log UI with Start/Pause/Resume/Complete controls, session banners, pause reason dialog
+- **Key rule**: A technician can only have ONE active work order at a time. Must pause before switching.
