@@ -60,6 +60,26 @@ export async function GET(
         include: { user: { select: { id: true, fullName: true, username: true } } },
         orderBy: { createdAt: 'desc' as const },
       },
+      repairToolRequests: {
+        include: {
+          tool: { select: { id: true, name: true, toolCode: true, category: true } },
+          requestedBy: { select: { id: true, fullName: true } },
+          supervisorApprovedBy: { select: { id: true, fullName: true } },
+          storekeeperApprovedBy: { select: { id: true, fullName: true } },
+          issuedByUser: { select: { id: true, fullName: true } },
+        },
+        orderBy: { createdAt: 'desc' as const },
+      },
+      repairMaterialRequests: {
+        include: {
+          item: { select: { id: true, name: true, itemCode: true, category: true } },
+          requestedBy: { select: { id: true, fullName: true } },
+          supervisorApprovedBy: { select: { id: true, fullName: true } },
+          storekeeperApprovedBy: { select: { id: true, fullName: true } },
+          issuedByUser: { select: { id: true, fullName: true } },
+        },
+        orderBy: { createdAt: 'desc' as const },
+      },
     } as const;
 
     // Try full query with teamMemberRequests; fall back to base if table doesn't exist yet
@@ -101,9 +121,15 @@ export async function GET(
       }
     }
 
-    // Ensure teamMemberRequests array exists even if table wasn't queried
+    // Ensure relations arrays exist even if tables weren't queried
     if (!wo.teamMemberRequests) {
       (wo as Record<string, unknown>).teamMemberRequests = [];
+    }
+    if (!wo.repairToolRequests) {
+      (wo as Record<string, unknown>).repairToolRequests = [];
+    }
+    if (!wo.repairMaterialRequests) {
+      (wo as Record<string, unknown>).repairMaterialRequests = [];
     }
 
     return NextResponse.json({ success: true, data: wo });

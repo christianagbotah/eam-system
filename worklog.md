@@ -778,3 +778,23 @@ Work Log:
 Stage Summary:
 - **command.tsx**: Moved DialogHeader inside DialogContent to fix accessibility warning
 - **datetime-picker.tsx**: Reduced time field width from 120px to 100px for better date field proportion
+
+---
+Task ID: 9
+Agent: Main Agent
+Task: Fix tool requests not showing on WO detail view
+
+Work Log:
+- Investigated WO detail view — found that RepairToolRequest and RepairMaterialRequest are separate tables linked to WorkOrder via workOrderId
+- The WO GET API did NOT include repairToolRequests or repairMaterialRequests in its Prisma include
+- Added repairToolRequests (with tool, requestedBy, supervisorApprovedBy, storekeeperApprovedBy, issuedByUser) to baseInclude
+- Added repairMaterialRequests (with item, requestedBy, supervisorApprovedBy, storekeeperApprovedBy, issuedByUser) to baseInclude
+- Added fallback empty arrays for both relations when tables don't exist on VPS
+- Added "Tool Requests" card to WO detail view — shows tool name, code, requester, urgency, status badge, "View All" button
+- Added "Material Requests" card to WO detail view — shows item name, quantity, requester, urgency, status badge, "View All" button
+- Both cards are conditionally rendered only when requests exist
+- Both cards have max-h-64 with scroll for long lists (shows first 10, then "+N more")
+
+Stage Summary:
+- **API**: `src/app/api/work-orders/[id]/route.ts` — added repairToolRequests + repairMaterialRequests to include
+- **Frontend**: `src/components/modules/MaintenancePages.tsx` — added 2 new cards between "Materials & Parts" and "Repair Resources"

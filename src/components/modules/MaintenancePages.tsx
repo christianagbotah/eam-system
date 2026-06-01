@@ -4246,6 +4246,88 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </CardContent>
           </Card>
 
+          {/* Tool Requests (from Repair module) */}
+          {wo.repairToolRequests && wo.repairToolRequests.length > 0 && (
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4 text-orange-600" />Tool Requests</CardTitle><CardDescription className="text-xs">{wo.repairToolRequests.length} requests</CardDescription></div>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" />View All</Button>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {wo.repairToolRequests.slice(0, 10).map((tr: any) => (
+                  <div key={tr.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/30">
+                    <div className="h-8 w-8 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center shrink-0"><Wrench className="h-3.5 w-3.5" /></div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium truncate">{tr.toolName || tr.tool?.name || 'Tool'}</p>
+                        {tr.tool?.toolCode && <span className="text-[10px] font-mono text-muted-foreground">{tr.tool.toolCode}</span>}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{tr.requestedBy?.fullName || 'Unknown'}</span>
+                        {tr.urgency && tr.urgency !== 'normal' && (
+                          <Badge variant="outline" className={`text-[10px] ${tr.urgency === 'high' ? 'bg-amber-50 text-amber-700 border-amber-200' : tr.urgency === 'critical' ? 'bg-red-50 text-red-700 border-red-200' : ''}`}>{tr.urgency}</Badge>
+                        )}
+                      </div>
+                    </div>
+                    <Badge variant="outline" className={`text-[10px] shrink-0 ${
+                      tr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                      tr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                      tr.status === 'returned' ? 'bg-slate-50 text-slate-500 border-slate-200' :
+                      tr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
+                      tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : ''
+                    }`}>{tr.status?.replace(/_/g, ' ') || 'pending'}</Badge>
+                  </div>
+                ))}
+                {wo.repairToolRequests.length > 10 && (
+                  <p className="text-xs text-muted-foreground text-center">+{wo.repairToolRequests.length - 10} more tool requests</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+          )}
+
+          {/* Repair Material Requests (from Repair module) */}
+          {wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0 && (
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Material Requests</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests.length} requests</CardDescription></div>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" />View All</Button>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {wo.repairMaterialRequests.slice(0, 10).map((mr: any) => (
+                  <div key={mr.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/30">
+                    <div className="h-8 w-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0"><Package className="h-3.5 w-3.5" /></div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium truncate">{mr.itemName || mr.item?.name || 'Material'}</p>
+                        <span className="text-[10px] text-muted-foreground">{mr.quantityRequested || mr.quantity || 0} {mr.unit || ''}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{mr.requestedBy?.fullName || 'Unknown'}</span>
+                        {mr.urgency && mr.urgency !== 'normal' && (
+                          <Badge variant="outline" className={`text-[10px] ${mr.urgency === 'high' ? 'bg-amber-50 text-amber-700 border-amber-200' : mr.urgency === 'critical' ? 'bg-red-50 text-red-700 border-red-200' : ''}`}>{mr.urgency}</Badge>
+                        )}
+                      </div>
+                    </div>
+                    <Badge variant="outline" className={`text-[10px] shrink-0 ${
+                      mr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                      mr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                      mr.status === 'returned' || mr.status === 'closed' ? 'bg-slate-50 text-slate-500 border-slate-200' :
+                      mr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
+                      mr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : ''
+                    }`}>{mr.status?.replace(/_/g, ' ') || 'pending'}</Badge>
+                  </div>
+                ))}
+                {wo.repairMaterialRequests.length > 10 && (
+                  <p className="text-xs text-muted-foreground text-center">+{wo.repairMaterialRequests.length - 10} more material requests</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+          )}
+
           {/* Repairs Quick Access */}
           <Card className="border-0 shadow-sm">
             <CardHeader>
