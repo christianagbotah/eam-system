@@ -80,13 +80,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
 
     // ── Role-based access control for workflow actions ──
-    if (action === 'supervisor_approve' || action === 'supervisor_reject' ||
-        action === 'storekeeper_approve' || action === 'storekeeper_reject') {
+    if (action === 'supervisor_approve' || action === 'supervisor_reject') {
+      if (!isAdmin(session) &&
+          !hasRole(session, 'maintenance_supervisor') &&
+          !hasRole(session, 'maintenance_manager') &&
+          !hasRole(session, 'plant_manager')) {
+        return NextResponse.json({ success: false, error: 'Only admin, maintenance supervisor, maintenance manager, or plant manager can supervisor-approve tool requests' }, { status: 403 });
+      }
+    }
+    if (action === 'storekeeper_approve' || action === 'storekeeper_reject') {
       if (!isAdmin(session) &&
           !hasRole(session, 'store_keeper') &&
           !hasRole(session, 'inventory_manager') &&
           !hasRole(session, 'tools_shop_attendant')) {
-        return NextResponse.json({ success: false, error: 'Only admin, store keeper, store manager, or tools shop attendant can approve/reject tool requests' }, { status: 403 });
+        return NextResponse.json({ success: false, error: 'Only admin, store keeper, store manager, or tools shop attendant can store-approve tool requests' }, { status: 403 });
       }
     }
 
