@@ -674,3 +674,29 @@ Stage Summary:
 - **Architecture confirmed**: requestNumber is unique per REQUEST (header), not per tool. Like a purchase order number grouping multiple line items.
 - **Schema**: requestNumber String? @unique on RepairToolRequest (already nullable, commit b0f864e2)
 - **VPS action needed**: Run `npx prisma db push` to add requestNumber column and repair_tool_request_items table
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Fix 'string is not defined' error when technician logs time on WO
+
+Work Log:
+- User reported "string is not defined" error when technician tries to log time on maintenance-work-orders page
+- Traced through: handleTimeLog → POST /api/work-orders/[id]/time-logs → line 110
+- Root cause: `teamMembers: { select: { userId: true, role: string } }` — `string` used as a Prisma select value instead of `true`
+- In Prisma select, each field maps to `true | { nestedSelect }`. Using `string` as a value causes JS to evaluate it as a variable reference → `ReferenceError: string is not defined`
+- Fixed: `role: string` → `role: true`
+- Also fixed 3 frontend field mismatches in time log display:
+  - `tl.userName` → `tl.user?.fullName` (Prisma relation, not flat field)
+  - `tl.createdAt` → `tl.timestamp || tl.createdAt` (WorkOrderTimeLog uses `timestamp`)
+  - `tl.note` → `tl.notes` (model field is plural)
+  - Session timer sort: `a.createdAt` → `a.timestamp || a.createdAt`
+  - Session timer elapsed: `lastStart.startTime` → `lastStart.timestamp`
+- Scanned all route.ts files for similar `role: string` pattern in Prisma selects — none found
+- Pushed commit bd0a1c68
+
+Stage Summary:
+- **Bug**: `role: string` in Prisma select treated as runtime JS variable → ReferenceError
+- **Fix**: `src/app/api/work-orders/[id]/time-logs/route.ts` — `role: true`
+- **Frontend fixes**: `src/components/modules/MaintenancePages.tsx` — 4 field name corrections for time log display
+- **Commit**: bd0a1c68
