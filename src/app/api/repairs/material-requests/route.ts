@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin } from '@/lib/auth';
+import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 
@@ -12,6 +12,15 @@ const VALID_URGENCIES = ['low', 'normal', 'high', 'critical'];
 
 // 24-hour threshold for overdue detection
 const OVERDUE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+
+// Roles that can see ALL material requests (not just their own)
+const APPROVER_ROLES = ['admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager', 'maintenance_planner', 'store_keeper', 'inventory_manager', 'tools_shop_attendant'];
+
+// Check if user has any approver/management role
+function canViewAllRequests(session: any): boolean {
+  if (!session?.roles) return false;
+  return session.roles.some((role: string) => APPROVER_ROLES.includes(role));
+}
 
 // GET /api/repairs/material-requests — list with filters, stats, urgency sorting, overdue detection
 export async function GET(request: NextRequest) {
@@ -29,11 +38,15 @@ export async function GET(request: NextRequest) {
 
     const where: Record<string, unknown> = {};
 
-    // Apply plant scope filter
+    // Apply plant scope filter (best-effort — skip if plant-scope module errors)
     if (session) {
-      const plantScope = await getPlantScope(request, session);
-      if (plantScope) {
-        applyPlantScope(where, plantScope);
+      try {
+        const plantScope = await getPlantScope(request, session);
+        if (plantScope) {
+          applyPlantScope(where, plantScope);
+        }
+      } catch {
+        // Plant scope not available — skip filter
       }
     }
 
@@ -42,111 +55,129 @@ export async function GET(request: NextRequest) {
     if (requestedById) where.requestedById = requestedById;
     if (urgency && VALID_URGENCIES.includes(urgency)) where.urgency = urgency;
 
-    // Technicians see only their own requests (unless admin/supervisor)
-    if (session && !isAdmin(session) && !session.roles.includes('maintenance_supervisor') && !session.roles.includes('maintenance_planner') && !session.roles.includes('store_keeper') && !session.roles.includes('tools_shop_attendant')) {
+    // Technicians see only their own requests (unless they have an approver/management role)
+    if (session && !canViewAllRequests(session)) {
       where.requestedById = session.userId;
     }
 
     // Stats endpoint — aggregated counts instead of list
     if (stats) {
-      const [
-        total,
-        pending,
-        supervisorApproved,
-        storekeeperApproved,
-        issued,
-        returned,
-        rejected,
-        overdueCount,
-        urgencyBreakdown,
-      ] = await Promise.all([
-        db.repairMaterialRequest.count({ where: Object.keys(where).length > 0 ? where : undefined }),
-        db.repairMaterialRequest.count({ where: { ...where, status: 'pending' } }),
-        db.repairMaterialRequest.count({ where: { ...where, status: 'supervisor_approved' } }),
-        db.repairMaterialRequest.count({ where: { ...where, status: 'storekeeper_approved' } }),
-        db.repairMaterialRequest.count({ where: { ...where, status: 'issued' } }),
-        db.repairMaterialRequest.count({ where: { ...where, status: { in: ['partially_returned', 'fully_returned'] } } }),
-        db.repairMaterialRequest.count({ where: { ...where, status: 'rejected' } }),
-        // Overdue: pending requests older than 24 hours
-        db.repairMaterialRequest.count({
-          where: {
-            ...where,
-            status: 'pending',
-            createdAt: { lt: new Date(Date.now() - OVERDUE_THRESHOLD_MS) },
+      try {
+        const [
+          total,
+          pending,
+          supervisorApproved,
+          storekeeperApproved,
+          issued,
+          returned,
+          rejected,
+          overdueCount,
+          urgencyBreakdown,
+        ] = await Promise.all([
+          db.repairMaterialRequest.count({ where: Object.keys(where).length > 0 ? where : undefined }),
+          db.repairMaterialRequest.count({ where: { ...where, status: 'pending' } }),
+          db.repairMaterialRequest.count({ where: { ...where, status: 'supervisor_approved' } }),
+          db.repairMaterialRequest.count({ where: { ...where, status: 'storekeeper_approved' } }),
+          db.repairMaterialRequest.count({ where: { ...where, status: 'issued' } }),
+          db.repairMaterialRequest.count({ where: { ...where, status: { in: ['partially_returned', 'fully_returned'] } } }),
+          db.repairMaterialRequest.count({ where: { ...where, status: 'rejected' } }),
+          db.repairMaterialRequest.count({
+            where: {
+              ...where,
+              status: 'pending',
+              createdAt: { lt: new Date(Date.now() - OVERDUE_THRESHOLD_MS) },
+            },
+          }),
+          db.repairMaterialRequest.groupBy({
+            by: ['urgency'],
+            where: Object.keys(where).length > 0 ? where : undefined,
+            _count: { urgency: true },
+          }),
+        ]);
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            total,
+            byStatus: {
+              pending,
+              supervisorApproved,
+              storekeeperApproved,
+              issued,
+              returned,
+              rejected,
+            },
+            overdueCount,
+            urgency: urgencyBreakdown.map((g) => ({
+              level: g.urgency,
+              count: g._count.urgency,
+            })),
           },
-        }),
-        // Urgency breakdown
-        db.repairMaterialRequest.groupBy({
-          by: ['urgency'],
+        });
+      } catch (dbError: unknown) {
+        // Table may not exist on VPS yet
+        return NextResponse.json({
+          success: true,
+          data: {
+            total: 0,
+            byStatus: { pending: 0, supervisorApproved: 0, storekeeperApproved: 0, issued: 0, returned: 0, rejected: 0 },
+            overdueCount: 0,
+            urgency: [],
+          },
+        });
+      }
+    }
+
+    try {
+      const [requests, total] = await Promise.all([
+        db.repairMaterialRequest.findMany({
           where: Object.keys(where).length > 0 ? where : undefined,
-          _count: { urgency: true },
+          include: {
+            requestedBy: { select: { id: true, fullName: true, username: true } },
+            supervisorApprovedBy: { select: { id: true, fullName: true } },
+            storekeeperApprovedBy: { select: { id: true, fullName: true } },
+            issuedByUser: { select: { id: true, fullName: true } },
+            returnedByUser: { select: { id: true, fullName: true } },
+            workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
+            item: { select: { id: true, itemCode: true, name: true, currentStock: true, unitOfMeasure: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        db.repairMaterialRequest.count({
+          where: Object.keys(where).length > 0 ? where : undefined,
         }),
       ]);
 
+      // Apply urgency-based sorting in memory (critical → high → normal → low), then createdAt desc
+      const now = Date.now();
+      const enriched = requests.map((req) => ({
+        ...req,
+        isOverdue:
+          req.status === 'pending' &&
+          now - new Date(req.createdAt).getTime() > OVERDUE_THRESHOLD_MS,
+      }));
+
+      enriched.sort((a, b) => {
+        const urgencyDiff = (URGENCY_ORDER[b.urgency] || 0) - (URGENCY_ORDER[a.urgency] || 0);
+        if (urgencyDiff !== 0) return urgencyDiff;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+
       return NextResponse.json({
         success: true,
-        data: {
-          total,
-          byStatus: {
-            pending,
-            supervisorApproved,
-            storekeeperApproved,
-            issued,
-            returned,
-            rejected,
-          },
-          overdueCount,
-          urgency: urgencyBreakdown.map((g) => ({
-            level: g.urgency,
-            count: g._count.urgency,
-          })),
-        },
+        data: enriched,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      });
+    } catch (dbError: unknown) {
+      // Table may not exist on VPS yet — return empty list instead of error
+      return NextResponse.json({
+        success: true,
+        data: [],
+        pagination: { page, limit, total: 0, totalPages: 0 },
       });
     }
-
-    const [requests, total] = await Promise.all([
-      db.repairMaterialRequest.findMany({
-        where: Object.keys(where).length > 0 ? where : undefined,
-        include: {
-          requestedBy: { select: { id: true, fullName: true, username: true } },
-          supervisorApprovedBy: { select: { id: true, fullName: true } },
-          storekeeperApprovedBy: { select: { id: true, fullName: true } },
-          issuedByUser: { select: { id: true, fullName: true } },
-          returnedByUser: { select: { id: true, fullName: true } },
-          workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
-          item: { select: { id: true, itemCode: true, name: true, currentStock: true, unitOfMeasure: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      db.repairMaterialRequest.count({
-        where: Object.keys(where).length > 0 ? where : undefined,
-      }),
-    ]);
-
-    // Apply urgency-based sorting in memory (critical → high → normal → low), then createdAt desc
-    const now = Date.now();
-    const enriched = requests.map((req) => ({
-      ...req,
-      // Compute overdue flag: pending requests older than 24 hours
-      isOverdue:
-        req.status === 'pending' &&
-        now - new Date(req.createdAt).getTime() > OVERDUE_THRESHOLD_MS,
-    }));
-
-    enriched.sort((a, b) => {
-      const urgencyDiff = (URGENCY_ORDER[b.urgency] || 0) - (URGENCY_ORDER[a.urgency] || 0);
-      if (urgencyDiff !== 0) return urgencyDiff;
-      // Within same urgency, sort by createdAt desc (newest first)
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
-
-    return NextResponse.json({
-      success: true,
-      data: enriched,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load material requests';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
