@@ -130,15 +130,13 @@ export async function POST(
       } else {
         effectiveIsTeamLog = true;
 
-        // Any team member, assignee, team leader, or admin can log time for others
-        const isTeamMember = wo.teamMembers.some((m) => m.userId === session.userId);
-        const isAssignee = wo.assignedTo === session.userId;
+        // Only the team leader or admin can log time for other team members
         const isTeamLeader = wo.teamLeaderId === session.userId;
         const isAdminRole = session.roles.includes('admin');
 
-        if (!isTeamMember && !isAssignee && !isTeamLeader && !isAdminRole) {
+        if (!isTeamLeader && !isAdminRole) {
           return NextResponse.json(
-            { success: false, error: 'Only team members, assignees, or admins can log time for other team members' },
+            { success: false, error: 'Only the team leader or admin can log time for other team members' },
             { status: 403 },
           );
         }

@@ -2543,13 +2543,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return false;
   }, [wo, user, isAdmin, hasPermission]);
 
-  // Permission: can log time for other team members (any team member on this WO)
+  // Permission: can log time for other team members (only team leader or admin)
   const canLogForOthers = useMemo(() => {
     if (!wo || !user) return false;
-    const isTeamMember = wo.teamMembers?.some(tm => tm.userId === user.id);
-    const isAssignee = wo.assignedToId === user.id;
-    return isTeamMember || isAssignee;
-  }, [wo, user]);
+    if (isAdmin()) return true;
+    return wo.teamLeaderId === user.id;
+  }, [wo, user, isAdmin]);
 
   const isReadOnly = useMemo(() => {
     if (!wo || !user) return false;
