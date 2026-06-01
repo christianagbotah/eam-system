@@ -29,9 +29,25 @@ if (!process.env.DATABASE_URL || !process.env.DATABASE_URL.includes('mysql://'))
   console.log(`  📡 Using DATABASE_URL -> ${process.env.DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
 }
 
-const db = new PrismaClient({
-  log: ['warn', 'error'],
-});
+// Parse DATABASE_URL and create adapter-based client for MySQL/MariaDB
+let _dbClient: PrismaClient;
+try {
+  const _url = new URL(process.env.DATABASE_URL!);
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createAdapter } = require('../src/lib/create-mariadb-adapter');
+  const _adapter = createAdapter({
+    host: _url.hostname,
+    port: parseInt(_url.port || '3306', 10),
+    user: decodeURIComponent(_url.username),
+    password: decodeURIComponent(_url.password),
+    database: _url.pathname.slice(1),
+  });
+  _dbClient = new PrismaClient({ adapter: _adapter, log: ['warn', 'error'] });
+} catch (e) {
+  console.warn('Failed to create adapter client, falling back:', (e as Error).message);
+  _dbClient = new PrismaClient({ log: ['warn', 'error'] });
+}
+const db = _dbClient;
 
 // ============================================================================
 // 1. PERMISSION DEFINITIONS — 11 modules with structured actions
@@ -393,9 +409,9 @@ const rolePermissionBundles: Record<string, string[]> = {
     'equipment.view',
     'meters.view', 'meters.read',
     'tools.view', 'tools.checkout', 'tools.return',
-    'maintenance_requests.view', 'maintenance_requests.view_own',
+    'maintenance_requests.view_own',
     'maintenance_requests.create', 'maintenance_requests.update',
-    'work_orders.view', 'work_orders.view_own', 'work_orders.update',
+    'work_orders.view_own', 'work_orders.update',
     'work_orders.start', 'work_orders.complete',
     'assistance_requests.view', 'assistance_requests.create',
     'time_logs.view', 'time_logs.create', 'time_logs.update',
@@ -404,7 +420,6 @@ const rolePermissionBundles: Record<string, string[]> = {
     'pm_notifications.view',
     'inventory.view',
     'parts.view',
-    'reports.view',
   ],
 
   // ── 7. PRODUCTION MANAGER: full MPMP ──
@@ -433,7 +448,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'analytics.view', 'operations.view',
   ],
 
-  // ── 8. PRODUCTION OPERATOR: own data entry, surveys ──
+  // ── 8. PRODUCTION OPERATOR: own data entry, surveys, own requests only ──
   production_operator: [
     'dashboard.view', 'chat.view',
     'documents.view', 'documents.download',
@@ -443,12 +458,11 @@ const rolePermissionBundles: Record<string, string[]> = {
     'production.view',
     'production_surveys.view', 'production_surveys.create', 'production_surveys.update',
     'downtime.view', 'downtime.create',
-    'quality_checks.view', 'quality_checks.create', 'quality_checks.update',
-    'maintenance_requests.view', 'maintenance_requests.view_own',
-    'maintenance_requests.create', 'maintenance_requests.update',
-    'work_orders.view', 'work_orders.view_own',
+    'quality_checks.view',
+    'maintenance_requests.view_own',
+    'maintenance_requests.create',
+    'work_orders.view_own',
     'time_logs.view', 'time_logs.create',
-    'inventory.view',
   ],
 
   // ── 9. INVENTORY MANAGER: full IMS ──
@@ -485,7 +499,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'notifications.view',
     'tools.view', 'tools.create', 'tools.update', 'tools.checkout', 'tools.return', 'tools.transfer', 'tools.manage',
     'assets.view',
-    'work_orders.view', 'work_orders.view_all',
+    'work_orders.view',
     'maintenance_requests.view',
     'inventory.view',
     'reports.view', 'reports.export',
@@ -806,6 +820,7 @@ async function seed() {
 
   // Admin gets ALL permissions
   const allPermIds = Object.values(permissionMap);
+  await db.rolePermission.deleteMany({}); // Clear stale permissions before re-assigning
   await db.rolePermission.createMany({
     data: allPermIds.map((pid) => ({
       roleId: createdRoles['admin'],

@@ -181,12 +181,80 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
  * PageSwitcher — loads page components via useEffect + dynamic imports.
  * Never uses React.lazy/Suspense, so it NEVER suspends during a click event.
  * Loaded components are cached for instant subsequent navigation.
+ * Includes a permission guard: unauthorized pages redirect to dashboard.
  */
 function PageSwitcher({ page }: { page: string }) {
   const [Component, setComponent] = useState<PageComponent | null>(
     () => pageCache.get(page) || null
   );
   const [error, setError] = useState<string | null>(null);
+  const { hasPermission, isAdmin } = useAuthStore();
+  const navigate = useNavigationStore((s) => s.navigate);
+
+  // Page-to-permission mapping for route guard
+  const pagePermissions: Record<string, string[]> = {
+    'assets-machines': ['assets.view'],
+    'assets-spare-parts': ['parts.view'],
+    'assets-tree': ['assets.view'],
+    'maintenance-requests': ['maintenance_requests.view', 'maintenance_requests.view_own'],
+    'maintenance-work-orders': ['work_orders.view', 'work_orders.view_own'],
+    'planner': ['work_orders.view', 'work_orders.view_own'],
+    'repairs': ['work_orders.view', 'work_orders.view_own'],
+    'wo-detail': ['work_orders.view', 'work_orders.view_own'],
+    'mr-detail': ['maintenance_requests.view', 'maintenance_requests.view_own'],
+    'wo-reports': ['work_orders.view', 'work_orders.view_own'],
+    'pm-schedules': ['pm_schedules.view'],
+    'pm-templates': ['pm_templates.view'],
+    'inventory-dashboard': ['inventory.view'],
+    'inventory-items': ['inventory.view'],
+    'inventory-stock': ['inventory.view'],
+    'inventory-vendors': ['vendors.view'],
+    'inventory-purchase-orders': ['purchase_orders.view'],
+    'inventory-requisitions': ['material_requisitions.view'],
+    'inventory-locations': ['inventory_locations.view'],
+    'inventory-transfers': ['inventory_transfers.view'],
+    'production-dashboard': ['production.view'],
+    'production-surveys': ['production_surveys.view'],
+    'production-oee': ['oee.view'],
+    'production-downtime': ['downtime.view'],
+    'production-quality': ['quality_checks.view'],
+    'quality-inspections': ['quality_inspections.view'],
+    'quality-ncr': ['quality_ncr.view'],
+    'quality-audits': ['quality_audits.view'],
+    'quality-spc': ['spc.view'],
+    'safety-incidents': ['safety_incidents.view'],
+    'safety-inspections': ['safety_inspections.view'],
+    'safety-equipment': ['safety_equipment.view'],
+    'safety-permits': ['safety_permits.view'],
+    'iot-dashboard': ['iot.view'],
+    'iot-devices': ['iot_devices.view'],
+    'iot-rules': ['iot_rules.view'],
+    'predictive': ['predictive.view'],
+    'reliability-engineering': ['digital_twin.view'],
+    'digital-twin': ['digital_twin.view'],
+    'reports': ['reports.view'],
+    'settings': ['system_settings.view'],
+    'users': ['users.view'],
+    'departments': ['departments.view'],
+    'training': ['training.view'],
+    'tools': ['tools.view'],
+    'calibration': ['calibration.view'],
+    'chat': ['chat.view'],
+    'notifications': ['notifications.view'],
+  };
+
+  // Permission guard: check before loading the page
+  useEffect(() => {
+    const requiredPerms = pagePermissions[page];
+    if (requiredPerms && !isAdmin()) {
+      const hasAccess = requiredPerms.some(p => hasPermission(p));
+      if (!hasAccess) {
+        // Redirect to dashboard if no permission
+        navigate('dashboard');
+        return;
+      }
+    }
+  }, [page, hasPermission, isAdmin, navigate]);
 
   useEffect(() => {
     // If already cached, use it immediately

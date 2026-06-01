@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'work_orders.view') && !isAdmin(session)) {
+    if (!hasPermission(session, 'work_orders.view') && !hasPermission(session, 'work_orders.view_own') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -56,9 +56,26 @@ export async function GET(request: NextRequest) {
       where.title = { contains: search };
     }
 
-    if (!isAdmin(session)) {
+    const hasViewAll = hasPermission(session, 'work_orders.view') || hasPermission(session, 'work_orders.view_all') || isAdmin(session);
+
+    if (!hasViewAll) {
+      // Users with only view_own see WOs assigned to them or where they are team members
+      const teamWoIds = await db.workOrderTeamMember.findMany({
+        where: { userId: session.userId },
+        select: { workOrderId: true },
+      });
+      const teamIds = teamWoIds.map(t => t.workOrderId);
+      if (teamIds.length > 0) {
+        where.OR = [
+          { assignedTo: session.userId },
+          { id: { in: teamIds } },
+        ];
+      } else {
+        where.assignedTo = session.userId;
+      }
+    } else if (!isAdmin(session)) {
+      // Technicians get scoped view even with view_all
       if (session.roles.includes('maintenance_technician')) {
-        // Technicians see WOs assigned to them or where they are team members
         const teamWoIds = await db.workOrderTeamMember.findMany({
           where: { userId: session.userId },
           select: { workOrderId: true },
@@ -73,7 +90,7 @@ export async function GET(request: NextRequest) {
           where.assignedTo = session.userId;
         }
       }
-      // Planners and supervisors see all
+      // Planners, supervisors, and managers see all
     }
 
     if (assignedTo) {

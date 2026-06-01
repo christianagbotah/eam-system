@@ -32,9 +32,10 @@ export async function GET(request: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'maintenance_requests.view') && !isAdmin(session)) {
+    if (!hasPermission(session, 'maintenance_requests.view') && !hasPermission(session, 'maintenance_requests.view_own') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
+    const hasViewAll = hasPermission(session, 'maintenance_requests.view') || isAdmin(session);
 
     const { searchParams } = new URL(request.url);
 
@@ -61,11 +62,11 @@ export async function GET(request: NextRequest) {
       where.title = { contains: search };
     }
 
-    if (!isAdmin(session)) {
-      if (session.roles.includes('production_operator')) {
-        // Operators see their own requests
-        where.requestedBy = session.userId;
-      } else if (session.roles.includes('maintenance_supervisor')) {
+    // Users with only view_own should only see their own requests
+    if (!hasViewAll) {
+      where.requestedBy = session.userId;
+    } else if (!isAdmin(session)) {
+      if (session.roles.includes('maintenance_supervisor')) {
         // Supervisors see MRs from departments where they are the supervisor
         // OR MRs explicitly assigned to them (backward compatibility)
         const supervisedDepts = await db.department.findMany({
@@ -89,7 +90,7 @@ export async function GET(request: NextRequest) {
           { workOrder: { assignedTo: session.userId } },
         ];
       }
-      // Planners and admins see all
+      // Planners, admins, and users with view_all see everything
     }
 
     // Apply plant scoping filter

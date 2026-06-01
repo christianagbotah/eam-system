@@ -69,4 +69,7 @@ export default defineConfig({
     provider,
     url: dbUrl,
   },
+  migrations: {
+    seed: 'bun ./prisma/seed.ts',
+  },
 });
