@@ -107,7 +107,7 @@ export async function POST(
       include: {
         assignee: { select: { id: true } },
         teamLeader: { select: { id: true } },
-        teamMembers: { select: { userId: true, role: string } },
+        teamMembers: { select: { userId: true, role: true } },
       },
     });
     if (!wo) {

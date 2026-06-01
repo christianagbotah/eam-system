@@ -2556,10 +2556,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       if (sessionTimerRef.current) clearInterval(sessionTimerRef.current);
       return;
     }
-    const sorted = [...wo.timeLogs].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const sorted = [...wo.timeLogs].sort((a, b) => new Date(a.timestamp || a.createdAt).getTime() - new Date(b.timestamp || b.createdAt).getTime());
     const lastStart = [...sorted].reverse().find(t => t.action === 'start' || t.action === 'resume');
-    if (!lastStart?.startTime) { setSessionDuration(null); return; }
-    const startTime = new Date(lastStart.startTime).getTime();
+    if (!lastStart?.timestamp) { setSessionDuration(null); return; }
+    const startTime = new Date(lastStart.timestamp).getTime();
     const calc = () => setSessionDuration((Date.now() - startTime) / 1000);
     calc();
     sessionTimerRef.current = setInterval(calc, 1000);
@@ -3796,8 +3796,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium capitalize">{tl.action}</p>
-                        <p className="text-xs text-muted-foreground">{tl.userName || 'Unknown'} · {formatDateTime(tl.createdAt)}</p>
-                        {tl.note && <p className="text-xs text-muted-foreground mt-0.5">{tl.note}</p>}
+                        <p className="text-xs text-muted-foreground">{tl.user?.fullName || tl.userName || 'Unknown'} · {formatDateTime(tl.timestamp || tl.createdAt)}</p>
+                        {tl.notes && <p className="text-xs text-muted-foreground mt-0.5">{tl.notes}</p>}
                       </div>
                       {tl.duration != null && tl.duration > 0 && (
                         <Badge variant="outline" className="text-[10px] shrink-0">{tl.duration}h</Badge>
