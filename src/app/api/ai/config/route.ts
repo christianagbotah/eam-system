@@ -13,7 +13,7 @@ const DATA_FILE = join(process.cwd(), 'data', 'ai-config.json');
 // TYPES
 // ============================================================================
 
-type AIProvider = 'zai_sdk' | 'openai' | 'anthropic' | 'custom';
+type AIProvider = 'zai_sdk' | 'zai-sdk' | 'openai' | 'anthropic' | 'custom';
 
 interface GenerationSettings {
   subsystemCount: string;
@@ -126,7 +126,38 @@ function maskConfigSecrets(config: AiConfigRecord): AiConfigRecord {
 // VALIDATION
 // ============================================================================
 
-const VALID_PROVIDERS: AIProvider[] = ['zai_sdk', 'openai', 'anthropic', 'custom'];
+const VALID_PROVIDERS: AIProvider[] = ['zai_sdk', 'zai-sdk', 'openai', 'anthropic', 'custom'];
+
+/**
+ * Normalize the request body — accept both frontend field names (apiKey, temperature, etc.)
+ * and backend field names (llmApiKey, llmTemperature, etc.). Returns a normalized body
+ * that always uses the backend field names.
+ */
+function normalizeBody(body: Record<string, unknown>): Record<string, unknown> {
+  const normalized = { ...body };
+  // Normalize provider: frontend sends 'zai-sdk', backend uses 'zai_sdk'
+  if (normalized.provider === 'zai-sdk') {
+    normalized.provider = 'zai_sdk';
+  }
+  // Map frontend field names → backend field names
+  if (normalized.apiKey !== undefined && normalized.llmApiKey === undefined) {
+    normalized.llmApiKey = normalized.apiKey;
+    delete normalized.apiKey;
+  }
+  if (normalized.customEndpoint !== undefined && normalized.llmEndpoint === undefined) {
+    normalized.llmEndpoint = normalized.customEndpoint;
+    delete normalized.customEndpoint;
+  }
+  if (normalized.temperature !== undefined && normalized.llmTemperature === undefined) {
+    normalized.llmTemperature = normalized.temperature;
+    delete normalized.temperature;
+  }
+  if (normalized.maxTokens !== undefined && normalized.llmMaxTokens === undefined) {
+    normalized.llmMaxTokens = normalized.maxTokens;
+    delete normalized.maxTokens;
+  }
+  return normalized;
+}
 
 function validateConfigBody(body: Record<string, unknown>): { valid: boolean; error?: string } {
   if (!body.provider || typeof body.provider !== 'string') {
@@ -264,7 +295,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    const rawBody = await request.json();
+
+    // Normalize field names (frontend uses apiKey, backend uses llmApiKey, etc.)
+    const body = normalizeBody(rawBody);
 
     // Validate body
     const validation = validateConfigBody(body);
