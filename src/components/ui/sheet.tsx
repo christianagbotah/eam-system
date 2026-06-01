@@ -54,10 +54,37 @@ function SheetContent({
   side?: "top" | "right" | "bottom" | "left"
   hideClose?: boolean
 }) {
+  const contentRef = React.useRef<HTMLDivElement>(null)
+
+  // Handle focus management to prevent aria-hidden conflicts with nested Dialogs
+  const handleOpenAutoFocus = React.useCallback((e: Event) => {
+    // Prevent default auto-focus to avoid conflicts when nested Dialogs open later
+    e.preventDefault()
+    // Manually focus the first focusable element inside the sheet
+    const el = contentRef.current
+    if (el) {
+      const focusable = el.querySelector<HTMLElement>(
+        'input, select, textarea, button, [href], [tabindex]:not([tabindex="-1"])'
+      )
+      if (focusable) {
+        focusable.focus()
+      } else {
+        el.focus()
+      }
+    }
+  }, [])
+
+  const handleCloseAutoFocus = React.useCallback((e: Event) => {
+    // Prevent focus from returning to sheet content when it closes
+    // (focus should go back to the trigger element)
+    e.preventDefault()
+  }, [])
+
   return (
     <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Content
+        ref={contentRef}
         data-slot="sheet-content"
         className={cn(
           "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500 overflow-hidden",
@@ -71,6 +98,8 @@ function SheetContent({
             "data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t",
           className
         )}
+        onOpenAutoFocus={handleOpenAutoFocus}
+        onCloseAutoFocus={handleCloseAutoFocus}
         {...props}
       >
         {children}
