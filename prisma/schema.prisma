@@ -2499,7 +2499,7 @@ model RepairMaterialRequest {
 // 2. RepairToolRequest — Tool requests from technicians
 model RepairToolRequest {
   id                      String    @id @default(cuid())
-  requestNumber           String    @unique // format TR-YYYYMM-NNNN
+  requestNumber           String?   @unique // format TR-YYYYMM-NNNN (nullable for backward compat with existing rows)
   workOrderId             String
   toolId                  String? // → Tool
   toolName                String
