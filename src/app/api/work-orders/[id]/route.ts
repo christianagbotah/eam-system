@@ -172,6 +172,14 @@ export async function PUT(
       );
     }
 
+    // Don't allow edits once supervisor has verified the work (awaiting planner closure)
+    if (existing.status === 'verified' || existing.status === 'closed') {
+      return NextResponse.json(
+        { success: false, error: 'Work order has been reviewed and cannot be edited. Status: ' + existing.status + '. Contact supervisor or planner if changes are needed.' },
+        { status: 400 }
+      );
+    }
+
     // Build update data
     const updateData: Record<string, unknown> = {};
     const allowedFields = [

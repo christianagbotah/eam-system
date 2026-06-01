@@ -72,7 +72,7 @@ export async function POST(
 
     const wo = await db.workOrder.findUnique({
       where: { id },
-      select: { id: true, isLocked: true, assignedTo: true, teamMembers: { select: { userId: true } } },
+      select: { id: true, isLocked: true, status: true, assignedTo: true, teamMembers: { select: { userId: true } } },
     });
 
     if (!wo) {
@@ -81,6 +81,11 @@ export async function POST(
 
     if (wo.isLocked) {
       return NextResponse.json({ success: false, error: 'Work order is permanently locked.' }, { status: 400 });
+    }
+
+    // Don't allow adding personal tools once WO has been verified
+    if (wo.status === 'verified' || wo.status === 'closed') {
+      return NextResponse.json({ success: false, error: 'Work order has been reviewed. Changes are no longer allowed. Status: ' + wo.status }, { status: 400 });
     }
 
     // Any team member, assignee, or user with permission can add personal tools
@@ -174,6 +179,11 @@ export async function PUT(
 
     if (wo.isLocked) {
       return NextResponse.json({ success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' }, { status: 400 });
+    }
+
+    // Don't allow updating personal tools once WO has been verified
+    if (wo.status === 'verified' || wo.status === 'closed') {
+      return NextResponse.json({ success: false, error: 'Work order has been reviewed. Changes are no longer allowed. Status: ' + wo.status }, { status: 400 });
     }
 
     // Check permissions: requires work_orders.update permission OR team_leader role on the WO

@@ -110,9 +110,13 @@ export async function POST(
     }
 
     // Verify work order exists
-    const wo = await db.workOrder.findUnique({ where: { id } });
+    const wo = await db.workOrder.findUnique({ where: { id }, select: { id: true, status: true, isLocked: true } });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    if (wo.isLocked || wo.status === 'verified' || wo.status === 'closed') {
+      return NextResponse.json({ success: false, error: 'Work order has been reviewed. Task changes are no longer allowed. Status: ' + wo.status }, { status: 400 });
     }
 
     // Determine next task number if not provided

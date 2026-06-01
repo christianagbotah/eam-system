@@ -184,6 +184,11 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Work order is permanently locked.' }, { status: 400 });
     }
 
+    // Don't allow time logging once supervisor has verified (awaiting planner closure)
+    if (wo.status === 'verified' || wo.status === 'closed') {
+      return NextResponse.json({ success: false, error: 'Work order has been reviewed and time logging is no longer allowed. Status: ' + wo.status }, { status: 400 });
+    }
+
     // ── Resolve effective user (team leader logging for others) ──
     let effectiveUserId = session.userId;
     let effectiveIsTeamLog = Boolean(isTeamLog);
@@ -431,6 +436,12 @@ export async function DELETE(
 
     if (timeLog.workOrder.isLocked) {
       return NextResponse.json({ success: false, error: 'Work order is locked' }, { status: 400 });
+    }
+
+    // Don't allow deleting time logs once WO has been reviewed
+    const woForDelete = await db.workOrder.findUnique({ where: { id }, select: { status: true } });
+    if (woForDelete && (woForDelete.status === 'verified' || woForDelete.status === 'closed')) {
+      return NextResponse.json({ success: false, error: 'Work order has been reviewed. Time log changes are no longer allowed.' }, { status: 400 });
     }
 
     // Permission: creator, team leader, or admin

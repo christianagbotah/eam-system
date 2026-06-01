@@ -847,3 +847,30 @@ Stage Summary:
 - Materials card now shows full approval pipeline with role-based action buttons
 - Add Material dialog explains the approval workflow and collects urgency/reason
 - Supervisors and storekeepers can now see and approve material requests directly on the WO detail page AND on the Repairs → Material Requests page
+---
+Task ID: 1
+Agent: Main Agent
+Task: Implement WO lock after supervisor review + planner approval — disable all action buttons
+
+Work Log:
+- Analyzed WO status flow: completed → verified (supervisor) → closed (planner) 
+- Added backend status check to PUT /api/work-orders/[id] — blocks edits when status is 'verified' or 'closed'
+- Added backend status checks to sub-resource POST routes: time-logs, materials, tasks, personal-tools
+- Added backend status check to time-logs DELETE and personal-tools PUT
+- Frontend: Added `isWOFinalized`, `isWOPermanentlyLocked`, `actionDisabled` flags in WODetailPage
+- Frontend: Added 'verified' to canEdit exclusion list
+- Frontend: Replaced all `readOnlyDisabled` with `actionDisabled` for inline action buttons
+- Frontend: Actions dropdown hidden entirely when permanently locked
+- Frontend: Added "Under Review" badge + "Supervisor reviewed — awaiting planner closure" banner for verified status
+- Frontend: Added "Permanently Locked" badge + banner for closed/locked status
+- Comments section left intentionally enabled for verified/closed WOs (supervisors/planners need to add notes)
+
+Stage Summary:
+- Files modified:
+  - src/app/api/work-orders/[id]/route.ts (PUT: added verified/closed status check)
+  - src/app/api/work-orders/[id]/time-logs/route.ts (POST + DELETE: added status check)
+  - src/app/api/work-orders/[id]/materials/route.ts (POST: added status check)
+  - src/app/api/work-orders/[id]/tasks/route.ts (POST: added status check)
+  - src/app/api/work-orders/[id]/personal-tools/route.ts (POST + PUT: added status check)
+  - src/components/modules/MaintenancePages.tsx (frontend lock UI)
+- Workflow: completed (editable) → verified (locked, pending planner) → closed (permanently locked)

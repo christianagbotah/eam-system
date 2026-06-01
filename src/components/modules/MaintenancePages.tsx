@@ -3153,8 +3153,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     'wait-parts': { description: 'Are you sure you want to set this work order to Waiting for Parts?', label: 'Yes, Wait for Parts' },
   };
 
-  const canEdit = !['closed', 'cancelled'].includes(wo.status) && canManageTeamDirectly;
-  const readOnlyDisabled = isReadOnly;
+  // WO is finalized when supervisor has verified (awaiting planner closure) or permanently locked/closed
+  const isWOFinalized = wo.status === 'verified' || wo.status === 'closed' || wo.status === 'cancelled' || wo.isLocked;
+  const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
+  const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && canManageTeamDirectly;
+  // Disable all inline action buttons (time, materials, tools, tasks) when WO is finalized
+  const actionDisabled = isReadOnly || isWOFinalized;
 
   // Format session duration
   const formatSessionDuration = (seconds: number) => {
@@ -3173,7 +3177,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           <StatusBadge status={wo.status} />
           <PriorityBadge priority={wo.priority} />
           <Badge variant="outline" className="capitalize">{wo.type.replace('_', ' ')}</Badge>
-          {wo.isLocked && <Badge variant="secondary"><Lock className="h-3 w-3 mr-1" />Locked</Badge>}
+          {wo.status === 'verified' && !wo.isLocked && <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200"><ShieldCheck className="h-3 w-3 mr-1" />Under Review</Badge>}
+          {(wo.isLocked || wo.status === 'closed') && <Badge variant="secondary"><Lock className="h-3 w-3 mr-1" />Permanently Locked</Badge>}
           {wo.slaBreached && <Badge variant="destructive" className="text-[10px]"><AlertTriangle className="h-3 w-3 mr-1" />SLA BREACHED</Badge>}
         </SheetTitle>
         <SheetDescription className="mt-1">
@@ -3183,41 +3188,56 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
       {/* Actions Bar */}
       <div className="pb-4 flex items-center gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={readOnlyDisabled}><CheckCircle2 className="h-4 w-4 mr-1" />Actions</Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {canEdit && !isReadOnly && <DropdownMenuItem onClick={openEditWO}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}
-            {canEdit && !isReadOnly && <DropdownMenuSeparator />}
-            {transitionActions.map(ta => (
-              <DropdownMenuItem key={ta.toStatus} disabled={isReadOnly} onClick={() => {
-                if (needsDialog.has(ta.actionName)) {
-                  setActionDialog(ta.actionName);
-                } else if (ta.requiresReason) {
-                  setActionDialog(`reason:${ta.actionName}`);
-                } else if (woActionDescriptions[ta.actionName]) {
-                  const desc = woActionDescriptions[ta.actionName];
-                  setWoConfirmAction({
-                    action: ta.actionName,
-                    label: desc.label,
-                    variant: desc.variant || 'default',
-                    description: desc.description,
-                  });
-                } else {
-                  handleAction(ta.actionName);
-                }
-              }}>{ta.label}</DropdownMenuItem>
-            ))}
-            {transitionActions.length === 0 && canEdit && (
-              <DropdownMenuItem disabled>No transitions available</DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* When permanently locked, hide the entire Actions dropdown */}
+        {!isWOPermanentlyLocked && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isReadOnly}><CheckCircle2 className="h-4 w-4 mr-1" />Actions</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {canEdit && !isReadOnly && <DropdownMenuItem onClick={openEditWO}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}
+              {canEdit && !isReadOnly && <DropdownMenuSeparator />}
+              {transitionActions.map(ta => (
+                <DropdownMenuItem key={ta.toStatus} disabled={isReadOnly} onClick={() => {
+                  if (needsDialog.has(ta.actionName)) {
+                    setActionDialog(ta.actionName);
+                  } else if (ta.requiresReason) {
+                    setActionDialog(`reason:${ta.actionName}`);
+                  } else if (woActionDescriptions[ta.actionName]) {
+                    const desc = woActionDescriptions[ta.actionName];
+                    setWoConfirmAction({
+                      action: ta.actionName,
+                      label: desc.label,
+                      variant: desc.variant || 'default',
+                      description: desc.description,
+                    });
+                  } else {
+                    handleAction(ta.actionName);
+                  }
+                }}>{ta.label}</DropdownMenuItem>
+              ))}
+              {transitionActions.length === 0 && canEdit && (
+                <DropdownMenuItem disabled>No transitions available</DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         {isReadOnly && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
             <Eye className="h-3.5 w-3.5 shrink-0" />
             Read-Only Access
+          </div>
+        )}
+        {wo.status === 'verified' && !wo.isLocked && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-700">
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+            Supervisor reviewed — awaiting planner closure
+          </div>
+        )}
+        {(wo.isLocked || wo.status === 'closed') && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+            <Lock className="h-3.5 w-3.5 shrink-0" />
+            Permanently locked — no modifications allowed
           </div>
         )}
       </div>
@@ -4068,7 +4088,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {wo.actualHours || 0}h total</CardDescription></div>
               <div className="flex items-center gap-2">
                 {/* Context-aware action buttons */}
-                {isActiveOnThisWO && !readOnlyDisabled && (
+                {isActiveOnThisWO && !actionDisabled && (
                   <>
                     <Button size="sm" variant="outline" className="gap-1.5 text-amber-600 border-amber-300 hover:bg-amber-50" disabled={tlLoading} onClick={() => { setPauseReason(''); setPauseNotes(''); setPauseDialogOpen(true); }}>
                       {tlLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pause className="h-3.5 w-3.5" />}
@@ -4080,7 +4100,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     </Button>
                   </>
                 )}
-                {!isActiveOnThisWO && !isActiveOnOtherWO && !readOnlyDisabled && (
+                {!isActiveOnThisWO && !isActiveOnOtherWO && !actionDisabled && (
                   <>
                     {hasPausedSession && (
                       <Button size="sm" variant="outline" className="gap-1.5 text-emerald-600 border-emerald-300 hover:bg-emerald-50" disabled={tlLoading} onClick={() => handleQuickTimeAction('resume')}>
@@ -4094,13 +4114,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     </Button>
                   </>
                 )}
-                {isActiveOnOtherWO && !readOnlyDisabled && (
+                {isActiveOnOtherWO && !actionDisabled && (
                   <Button size="sm" variant="outline" className="gap-1.5 text-red-600 border-red-300" disabled>
                     <AlertCircle className="h-3.5 w-3.5" />
                     Busy on WO #{globalActiveSession?.workOrderNumber}
                   </Button>
                 )}
-                <Button size="sm" variant="ghost" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => { setTlStartTime(''); setTlEndTime(''); setTlActivityType('maintenance'); setTlBreakMinutes(''); setTlManualHours(''); setTlNotes(''); setTlLoggedForUserId(''); setTlAction('start'); setTimeLogOpen(true); }} title="Manual time entry"><Clock className="h-3.5 w-3.5" /></Button>
+                <Button size="sm" variant="ghost" className="gap-1.5" disabled={actionDisabled} onClick={() => { setTlStartTime(''); setTlEndTime(''); setTlActivityType('maintenance'); setTlBreakMinutes(''); setTlManualHours(''); setTlNotes(''); setTlLoggedForUserId(''); setTlAction('start'); setTimeLogOpen(true); }} title="Manual time entry"><Clock className="h-3.5 w-3.5" /></Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -4249,7 +4269,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                           {tl.duration != null && tl.duration > 0 && (
                             <Badge variant="outline" className="text-[10px] font-mono">{durStr}</Badge>
                           )}
-                          {!readOnlyDisabled && (
+                          {!actionDisabled && (
                             <button
                               onClick={() => setDeleteTlId(tl.id)}
                               className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600 p-0.5"
@@ -4275,7 +4295,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 {(wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0) && (
                   <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" />View All</Button>
                 )}
-                <Button size="sm" variant="outline" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" />Request Material</Button>
+                <Button size="sm" variant="outline" className="gap-1.5" disabled={actionDisabled} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" />Request Material</Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -4457,7 +4477,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base flex items-center gap-2"><Hammer className="h-4 w-4 text-orange-600" />Personal Tools On-Site</CardTitle><CardDescription className="text-xs">{personalTools.length} tools</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" disabled={readOnlyDisabled} onClick={() => setPtOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
+              <Button size="sm" variant="outline" className="gap-1.5" disabled={actionDisabled} onClick={() => setPtOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
             </CardHeader>
             <CardContent>
               {personalTools.length === 0 ? (
@@ -4475,7 +4495,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         </div>
                         {tool.notes && <p className="text-xs text-muted-foreground mt-0.5">{tool.notes}</p>}
                       </div>
-                      {!readOnlyDisabled && (
+                      {!actionDisabled && (
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-600 shrink-0" disabled={ptLoading} onClick={() => handleRemovePersonalTool(idx)}><Trash2 className="h-3.5 w-3.5" /></Button>
                       )}
                     </div>
@@ -4500,7 +4520,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
-                  {!readOnlyDisabled && (
+                  {!actionDisabled && (
                     <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTaskDialog(true)}>
                       <Plus className="h-3.5 w-3.5" />Add Task
                     </Button>
@@ -4583,7 +4603,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                             </p>
                           )}
                         </div>
-                        {!readOnlyDisabled && (
+                        {!actionDisabled && (
                           <div className="flex items-center gap-1 shrink-0">
                             {isPending && (
                               <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'in_progress')}>
@@ -4621,7 +4641,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   </CardTitle>
                   <CardDescription className="text-xs">Add tasks to track work progress step by step</CardDescription>
                 </div>
-                {!readOnlyDisabled && (
+                {!actionDisabled && (
                   <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTaskDialog(true)}>
                     <Plus className="h-3.5 w-3.5" />Add Task
                   </Button>

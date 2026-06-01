@@ -69,6 +69,12 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Work order is permanently locked. No modifications are allowed after planner closure.' }, { status: 400 });
     }
 
+    // Don't allow material requests once supervisor has verified
+    const woForMaterials = await db.workOrder.findUnique({ where: { id }, select: { status: true } });
+    if (woForMaterials && (woForMaterials.status === 'verified' || woForMaterials.status === 'closed')) {
+      return NextResponse.json({ success: false, error: 'Work order has been reviewed and material requests are no longer allowed. Status: ' + woForMaterials.status }, { status: 400 });
+    }
+
     // Auto-calculate totalCost if unitCost and quantity are provided
     const calculatedTotal =
       providedTotalCost !== undefined
