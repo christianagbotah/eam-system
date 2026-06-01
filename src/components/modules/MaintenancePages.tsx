@@ -3742,10 +3742,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             {canLogForOthers && (wo?.teamMembers?.length > 0 || wo?.assignedToId) && (
               <div className="space-y-1.5">
                 <Label>Log For</Label>
-                <Select value={tlLoggedForUserId} onValueChange={setTlLoggedForUserId}>
+                <Select value={tlLoggedForUserId || undefined} onValueChange={(v) => setTlLoggedForUserId(v === '__self__' ? '' : v)}>
                   <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Self (my own time)" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Self (my own time)</SelectItem>
+                    <SelectItem value="__self__">Self (my own time)</SelectItem>
                     {wo.teamMembers?.map((tm: any) => (
                       tm.userId !== user?.id && (
                         <SelectItem key={tm.userId} value={tm.userId}>
