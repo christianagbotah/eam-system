@@ -7,9 +7,68 @@ import { notifyUser } from '@/lib/notifications';
 const URGENCY_ORDER: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 };
 const VALID_URGENCIES = ['low', 'normal', 'high', 'critical'];
 
+// One-time flag to prevent repeated backfills
+let backfillDone = false;
+
+// Auto-backfill: generate request numbers for legacy rows that have null requestNumber
+async function ensureLegacyRequestNumbers() {
+  if (backfillDone) return;
+  backfillDone = true;
+  try {
+    const legacy = await db.repairToolRequest.findMany({
+      where: { requestNumber: null },
+      select: { id: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (legacy.length === 0) return;
+
+    console.log(`[backfill] Generating request numbers for ${legacy.length} legacy tool request(s)...`);
+
+    // Get all existing request numbers grouped by prefix
+    const existing = await db.repairToolRequest.findMany({
+      where: { requestNumber: { not: null } },
+      select: { requestNumber: true },
+    });
+    const usedByPrefix = new Map<string, Set<number>>();
+    for (const r of existing) {
+      if (!r.requestNumber) continue;
+      const parts = r.requestNumber.split('-');
+      if (parts.length >= 3) {
+        const prefix = `${parts[0]}-${parts[1]}`;
+        if (!usedByPrefix.has(prefix)) usedByPrefix.set(prefix, new Set());
+        usedByPrefix.get(prefix)!.add(parseInt(parts[2], 10));
+      }
+    }
+
+    // Assign numbers sequentially per month
+    const counterByPrefix = new Map<string, number>();
+    for (const row of legacy) {
+      const ym = `${row.createdAt.getFullYear()}${String(row.createdAt.getMonth() + 1).padStart(2, '0')}`;
+      const prefix = `TR-${ym}`;
+      let counter = counterByPrefix.get(prefix) || 1;
+      const used = usedByPrefix.get(prefix);
+      while (used && used.has(counter)) counter++;
+      counterByPrefix.set(prefix, counter);
+      const num = `${prefix}${String(counter).padStart(4, '0')}`;
+      if (!usedByPrefix.has(prefix)) usedByPrefix.set(prefix, new Set());
+      usedByPrefix.get(prefix)!.add(counter);
+      await db.repairToolRequest.update({ where: { id: row.id }, data: { requestNumber: num } });
+      console.log(`[backfill] ${row.id.slice(0, 8)}... → ${num}`);
+    }
+    console.log(`[backfill] Done. ${legacy.length} request number(s) generated.`);
+  } catch (err) {
+    // Don't let backfill failure block the API
+    console.warn('[backfill] Failed:', err instanceof Error ? err.message : err);
+    backfillDone = false; // Allow retry
+  }
+}
+
 // GET /api/repairs/tool-requests
 export async function GET(request: NextRequest) {
   try {
+    // Auto-backfill legacy rows on first access
+    await ensureLegacyRequestNumbers();
+
     const session = getSession(request);
     const { searchParams } = new URL(request.url);
 
