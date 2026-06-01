@@ -724,7 +724,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
   const [editLoading, setEditLoading] = useState(false);
   const [editForm, setEditForm] = useState({
     title: '', description: '', priority: 'medium', category: '',
-    assetId: '', assetName: '', location: '', departmentId: '', machineDownStatus: false,
+    assetId: '', departmentId: '', machineDownStatus: false,
   });
 
   // Delete dialog state
@@ -971,8 +971,6 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
       priority: mr.priority,
       category: mr.category || '',
       assetId: mr.assetId || '',
-      assetName: mr.assetName || '',
-      location: mr.location || '',
       departmentId: mr.departmentId || '',
       machineDownStatus: mr.machineDownStatus || false,
     });
@@ -988,8 +986,6 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
       priority: editForm.priority,
       category: editForm.category,
       assetId: editForm.assetId || null,
-      assetName: editForm.assetName || null,
-      location: editForm.location || null,
       departmentId: editForm.departmentId || null,
       machineDownStatus: editForm.machineDownStatus,
     });
@@ -1176,19 +1172,15 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
               />
             </div>
             <div className="space-y-2">
-              <Label>Location</Label>
-              <Input value={editForm.location} onChange={e => setEditForm(f => ({ ...f, location: e.target.value }))} placeholder="Location of the item" />
+              <Label>Machine Down?</Label>
+              <Select value={editForm.machineDownStatus ? 'Yes' : 'No'} onValueChange={v => setEditForm(f => ({ ...f, machineDownStatus: v === 'Yes' }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="No">No — Machine Running</SelectItem>
+                  <SelectItem value="Yes">Yes — Machine Down</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Machine Down?</Label>
-            <Select value={editForm.machineDownStatus ? 'Yes' : 'No'} onValueChange={v => setEditForm(f => ({ ...f, machineDownStatus: v === 'Yes' }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="No">No — Machine Running</SelectItem>
-                <SelectItem value="Yes">Yes — Machine Down</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </div>
       </ResponsiveDialog>
