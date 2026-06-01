@@ -1307,6 +1307,7 @@ model Tool {
   serialNumber   String?   @unique
   status         String    @default("available") // available, checked_out, in_repair, retired, transferred
   condition      String    @default("good") // new, good, fair, poor
+  quantity       Int       @default(1) // Number of units available in stock
   location       String?
   plantId        String?
   purchaseDate   DateTime?
@@ -1327,10 +1328,11 @@ model Tool {
   transactions ToolTransaction[]
 
   // Repair module relations
-  repairToolRequests  RepairToolRequest[]
-  repairToolTransfers ToolTransferRequest[]
-  damagedToolReports  DamagedToolReport[]
-  componentRequirements ComponentToolRequirement[] @relation("ToolComponentReq")
+  repairToolRequests     RepairToolRequest[]
+  repairToolTransfers    ToolTransferRequest[]
+  repairToolRequestItems RepairToolRequestItem[] @relation("ToolReqItemTool")
+  damagedToolReports      DamagedToolReport[]
+  componentRequirements   ComponentToolRequirement[] @relation("ToolComponentReq")
 
   @@map("tools")
 }
@@ -2497,6 +2499,7 @@ model RepairMaterialRequest {
 // 2. RepairToolRequest — Tool requests from technicians
 model RepairToolRequest {
   id                      String    @id @default(cuid())
+  requestNumber           String    @unique // format TR-YYYYMM-NNNN
   workOrderId             String
   toolId                  String? // → Tool
   toolName                String
@@ -2526,6 +2529,9 @@ model RepairToolRequest {
   // Tool relation
   tool Tool? @relation(fields: [toolId], references: [id])
 
+  // Line items (multi-tool support)
+  items RepairToolRequestItem[]
+
   // User relations
   requestedBy           User  @relation("RepairToolReqRequested", fields: [requestedById], references: [id])
   supervisorApprovedBy  User? @relation("RepairToolReqSupApproved", fields: [supervisorApprovedById], references: [id])
@@ -2537,6 +2543,34 @@ model RepairToolRequest {
   damagedToolReports DamagedToolReport[] @relation("DamagedToolReportToolReq")
 
   @@map("repair_tool_requests")
+}
+
+// 2b. RepairToolRequestItem — Line items for multi-tool requests
+model RepairToolRequestItem {
+  id                    String    @id @default(cuid())
+  repairToolRequestId   String    // → RepairToolRequest (header)
+  toolId                String?   // → Tool (nullable — may not have exact tool match)
+  toolName              String
+  toolCode              String?   // display only, from tool.toolCode
+  category              String?   // display only, from tool.category
+  quantityRequested     Int       @default(1)
+  quantityApproved      Int?
+  quantityIssued        Int       @default(0)
+  quantityReturned      Int       @default(0)
+  quantityTransferred   Int       @default(0)
+  unitCost              Float?    // cost per unit at time of request
+  availabilityStatus    String?   // available, limited, unavailable — set at issue time
+  issueNotes            String?   // reason for partial issue or non-issue
+  conditionAtIssue      String?   // condition of tool when issued
+  conditionAtReturn     String?   // condition when returned
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  repairToolRequest RepairToolRequest @relation(fields: [repairToolRequestId], references: [id], onDelete: Cascade)
+  tool               Tool?             @relation("ToolReqItemTool", fields: [toolId], references: [id])
+
+  @@index([repairToolRequestId])
+  @@map("repair_tool_request_items")
 }
 
 // 3. ToolTransferRequest — Tool transfer between technicians
