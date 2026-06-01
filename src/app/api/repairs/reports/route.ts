@@ -209,10 +209,11 @@ async function handleExecutionReport(
   const completed = workOrders.filter((wo) => ['completed', 'verified', 'closed'].includes(wo.status));
 
   // Completion by type
-  const byType: Record<string, { total: number; closed: number; rate: number }> = {};
+  const byType: Record<string, { total: number; closed: number; rate: number; totalHours: number }> = {};
   for (const wo of workOrders) {
-    if (!byType[wo.type]) byType[wo.type] = { total: 0, closed: 0, rate: 0 };
+    if (!byType[wo.type]) byType[wo.type] = { total: 0, closed: 0, rate: 0, totalHours: 0 };
     byType[wo.type].total++;
+    byType[wo.type].totalHours += wo.actualHours || 0;
     if (wo.status === 'closed') byType[wo.type].closed++;
   }
   for (const t of Object.keys(byType)) {
@@ -268,9 +269,32 @@ async function handleExecutionReport(
     tm.avgActualHours = tm.closed > 0 ? workOrders.filter((wo) => wo.assignedTo && wo.status === 'closed').reduce((sum) => sum + (workOrders.find((w) => w.assignedTo)?.actualHours || 0), 0) / tm.closed : 0;
   }
 
+  // Convert byType Record to array format for frontend
+  const byTypeArray = Object.entries(byType).map(([type, data]) => ({
+    type,
+    count: data.total,
+    closed: data.closed,
+    rate: Math.round(data.rate * 10000) / 100,
+    avgHours: data.total > 0 ? Math.round((data.totalHours / data.total) * 100) / 100 : 0,
+  }));
+
+  // Convert byPriority Record to array format
+  const byPriorityArray = Object.entries(byPriority).map(([priority, data]) => ({
+    priority,
+    total: data.total,
+    closed: data.closed,
+    rate: Math.round(data.rate * 10000) / 100,
+  }));
+
   return NextResponse.json({
     success: true,
     data: {
+      totalWOs: total,
+      completionRate: Math.round((total > 0 ? completed.length / total : 0) * 10000) / 100,
+      avgActualHours: Math.round(avgActual * 100) / 100,
+      reworkRate: Math.round(reworkRate * 10000) / 100,
+      byType: byTypeArray,
+      byPriority: byPriorityArray,
       summary: {
         total,
         completed: completed.length,
@@ -278,8 +302,7 @@ async function handleExecutionReport(
         completionRate: total > 0 ? completed.length / total : 0,
         closureRate: total > 0 ? closed.length / total : 0,
       },
-      byType,
-      byPriority,
+      byPriorityObj: byPriority,
       labor: {
         avgEstimatedHours: Math.round(avgEstimated * 100) / 100,
         avgActualHours: Math.round(avgActual * 100) / 100,

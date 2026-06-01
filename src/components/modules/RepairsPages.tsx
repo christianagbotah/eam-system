@@ -4151,7 +4151,7 @@ export function MaintenanceReportsPage() {
                 <StatsCard icon={Timer} count={`${reportData.avgActualHours ?? 0}h`} label="Avg Actual Hours" color="text-teal-600" bgColor="bg-teal-50" />
                 <StatsCard icon={AlertTriangle} count={`${reportData.reworkRate ?? 0}%`} label="Rework Rate" color="text-red-600" bgColor="bg-red-50" />
               </div>
-              {reportData.byType && (
+              {Array.isArray(reportData.byType) && reportData.byType.length > 0 && (
                 <Card><CardHeader><CardTitle className="text-base">By Work Order Type</CardTitle></CardHeader><CardContent>
                   <div className="space-y-3">
                     {reportData.byType.map((t: any) => (
