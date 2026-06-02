@@ -1,23 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin } from '@/lib/auth';
+import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 
-/**
- * GET /api/work-orders/kpi
- *
- * Returns aggregated KPI metrics for work orders:
- * - Total counts by status, priority, type
- * - Average completion time
- * - Overdue count
- * - Completion rate
- * - WO created this month vs last month trend
- */
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    // Permission gate: require dashboard/KPI/analytics permission
+    if (!hasAnyPermission(session, ['work_orders.dashboard', 'reports.view', 'analytics.view', 'dashboard.view']) && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
     // Resolve plant scope

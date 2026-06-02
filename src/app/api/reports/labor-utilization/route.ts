@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
 
 // GET /api/reports/labor-utilization
@@ -10,6 +10,10 @@ export async function GET(request: NextRequest) {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!hasAnyPermission(session, ['reports.view', 'reports.export', 'analytics.view']) && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions: reports.view required' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);

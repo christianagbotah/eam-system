@@ -31,6 +31,7 @@ import {
   Plus, Search, MoreHorizontal, Pencil, Trash2, AlertTriangle, CheckCircle2,
   Filter, Users, Calendar, Eye, ListChecks, ShieldAlert, Play, X,
   Activity, BookOpen, ClipboardCheck, ClipboardList, Settings, Send, Target, TrendingUp,
+  Download, BarChart3,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
 import { SearchableSelect } from '@/components/ui/searchable-select';
@@ -446,81 +447,148 @@ export function OperationsSurveysPage() {
     </div>
   );
 }
-// Time Logs: uses time_logs.create/update
+// Time Logs: enhanced with dedicated API, permission gating, filters, export, and productivity metrics
 export function OperationsTimeLogsPage() {
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const { hasPermission, isAdmin } = useAuthStore();
+  const [timeLogs, setTimeLogs] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [showSummary, setShowSummary] = useState(false);
 
-  useEffect(() => {
-    api.get<WorkOrder[]>('/api/work-orders').then(res => {
-      if (res.success && res.data) setWorkOrders(res.data);
+  const fetchLogs = () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (fromDate) params.set('from', fromDate);
+    if (toDate) params.set('to', toDate);
+    const url = `/api/time-logs?${params.toString()}`;
+    Promise.all([
+      api.get<any>(url),
+      api.get<any>(`/api/time-logs?summary=true&${params.toString()}`),
+    ]).then(([logsRes, summaryRes]) => {
+      if (logsRes.success) setTimeLogs(logsRes.data || []);
+      if (summaryRes.success) setSummary(summaryRes.data);
       setLoading(false);
-    });
-  }, []);
+    }).catch(() => setLoading(false));
+  };
 
-  const allTimeLogs = workOrders.flatMap(wo =>
-    (wo.timeLogs || []).map((tl: any) => ({
-      ...tl,
-      woNumber: wo.woNumber,
-      woTitle: wo.title,
-      userName: tl.user?.fullName || 'Unknown',
-      timestamp: tl.timestamp,
-    }))
-  ).sort((a, b) => new Date(b.timestamp || b.createdAt).getTime() - new Date(a.timestamp || a.createdAt).getTime());
+  useEffect(() => { fetchLogs(); }, [fromDate, toDate]);
 
-  const filtered = searchText.trim() ? allTimeLogs.filter(tl => {
+  const filtered = searchText.trim() ? timeLogs.filter((tl: any) => {
     const q = searchText.toLowerCase();
-    return (tl.woNumber || '').toLowerCase().includes(q) || (tl.userName || '').toLowerCase().includes(q) || (tl.action || '').toLowerCase().includes(q);
-  }) : allTimeLogs;
+    return (tl.workOrder?.woNumber || '').toLowerCase().includes(q) || (tl.user?.fullName || '').toLowerCase().includes(q) || (tl.action || '').toLowerCase().includes(q);
+  }) : timeLogs;
 
-  const totalEntries = allTimeLogs.length;
-  const now = new Date();
-  const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay());
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const thisWeekCount = allTimeLogs.filter(tl => { const d = new Date(tl.timestamp || tl.createdAt); return d >= weekStart; }).length;
-  const thisMonthCount = allTimeLogs.filter(tl => { const d = new Date(tl.timestamp || tl.createdAt); return d >= monthStart; }).length;
+  const handleExport = () => {
+    const params = new URLSearchParams();
+    if (fromDate) params.set('from', fromDate);
+    if (toDate) params.set('to', toDate);
+    params.set('export', 'csv');
+    window.open(`/api/time-logs?${params.toString()}`, '_blank');
+  };
 
-  const techEntries: Record<string, number> = {};
-  allTimeLogs.forEach(tl => {
-    const name = tl.userName || 'Unknown';
-    techEntries[name] = (techEntries[name] || 0) + 1;
-  });
-  const topTech = Object.entries(techEntries).sort((a, b) => b[1] - a[1])[0];
-
-  const summaryCards = [
-    { label: 'Total Log Entries', value: String(totalEntries), icon: Clock, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'This Week', value: String(thisWeekCount), icon: Calendar, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'This Month', value: String(thisMonthCount), icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Top Technician', value: topTech ? topTech[0] : '-', icon: Users, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
-  ];
+  const summaryCards = summary ? [
+    { label: 'Total Hours', value: `${summary.summary?.totalHours || 0}h`, icon: Clock, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Technicians', value: String(summary.summary?.uniqueTechnicians || 0), icon: Users, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Work Orders', value: String(summary.summary?.uniqueWorkOrders || 0), icon: ClipboardList, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Total Entries', value: String(summary.summary?.totalEntries || 0), icon: FileText, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+  ] : [];
 
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Time Logs</h1><p className="text-muted-foreground mt-1">Track employee work hours, shifts, and labor allocation</p></div>
-        <div className="relative min-w-[200px] max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search logs..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
+        <div className="flex items-center gap-2 flex-wrap">
+          {(hasPermission('time_logs.manage') || hasPermission('reports.export') || isAdmin()) && (
+            <Button variant="outline" size="sm" onClick={handleExport}><Download className="h-4 w-4 mr-1" />Export CSV</Button>
+          )}
+          <Button variant={showSummary ? 'default' : 'outline'} size="sm" onClick={() => setShowSummary(!showSummary)}><BarChart3 className="h-4 w-4 mr-1" />Productivity</Button>
+          <div className="relative min-w-[200px] max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search logs..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
+          </div>
         </div>
       </div>
-      {loading ? <LoadingSkeleton /> : (<>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {summaryCards.map(k => { const I = k.icon; return (
-            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
-          ); })}
+
+      {/* Date filters */}
+      <div className="flex items-center gap-3 flex-wrap mt-3">
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-muted-foreground">From:</label>
+          <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="w-auto" />
         </div>
-        <Card className="border-0 shadow-sm"><Table><TableHeader><TableRow><TableHead>WO #</TableHead><TableHead className="hidden sm:table-cell">User</TableHead><TableHead>Action</TableHead><TableHead className="hidden md:table-cell">Notes</TableHead><TableHead className="hidden lg:table-cell">Timestamp</TableHead><TableHead className="hidden lg:table-cell">Date</TableHead></TableRow></TableHeader><TableBody>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-muted-foreground">To:</label>
+          <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="w-auto" />
+        </div>
+        {(fromDate || toDate) && (
+          <Button variant="ghost" size="sm" onClick={() => { setFromDate(''); setToDate(''); }}>Clear</Button>
+        )}
+      </div>
+
+      {loading && !timeLogs.length ? <LoadingSkeleton /> : (<>
+        {/* Summary cards */}
+        {summaryCards.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-3">
+            {summaryCards.map(k => { const I = k.icon; return (
+              <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+            ); })}
+          </div>
+        )}
+
+        {/* Productivity summary view */}
+        {showSummary && summary && summary.byTechnician && summary.byTechnician.length > 0 && (
+          <Card className="mt-4 border-0 shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Technician Productivity</CardTitle></CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                <Table><TableHeader><TableRow>
+                  <TableHead>Technician</TableHead>
+                  <TableHead className="hidden sm:table-cell">Department</TableHead>
+                  <TableHead className="text-right">Total Hrs</TableHead>
+                  <TableHead className="text-right hidden md:table-cell">WOs</TableHead>
+                  <TableHead className="text-right hidden lg:table-cell">Entries</TableHead>
+                  <TableHead className="hidden lg:table-cell">Top Activity</TableHead>
+                </TableRow></TableHeader><TableBody>
+                  {summary.byTechnician.map((tech: any) => {
+                    const activities = [
+                      { name: 'Maintenance', hrs: tech.maintenanceHours },
+                      { name: 'Travel', hrs: tech.travelHours },
+                      { name: 'Inspection', hrs: tech.inspectionHours },
+                      { name: 'Testing', hrs: tech.testingHours },
+                      { name: 'Standby', hrs: tech.standbyHours },
+                    ].sort((a: any, b: any) => b.hrs - a.hrs);
+                    return (
+                      <TableRow key={tech.userId} className="hover:bg-muted/30">
+                        <TableCell className="font-medium text-sm">{tech.fullName}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{tech.department || '-'}</TableCell>
+                        <TableCell className="text-right font-mono text-sm">{tech.totalHours}h</TableCell>
+                        <TableCell className="text-right text-sm hidden md:table-cell">{tech.woCount}</TableCell>
+                        <TableCell className="text-right text-sm hidden lg:table-cell">{tech.entryCount}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{activities[0]?.hrs > 0 ? `${activities[0].name} (${activities[0].hrs}h)` : '-'}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody></Table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Time logs table */}
+        <Card className="mt-4 border-0 shadow-sm"><Table><TableHeader><TableRow><TableHead>WO #</TableHead><TableHead className="hidden sm:table-cell">Technician</TableHead><TableHead>Action</TableHead><TableHead className="hidden md:table-cell">Duration</TableHead><TableHead className="hidden md:table-cell">Activity</TableHead><TableHead className="hidden lg:table-cell">Notes</TableHead><TableHead className="hidden lg:table-cell">Timestamp</TableHead></TableRow></TableHeader><TableBody>
           {filtered.length === 0 ? (
-            <TableRow><TableCell colSpan={6} className="h-48"><EmptyState icon={Clock} title="No time logs found" description="Time logs will appear once work order time tracking is used." /></TableCell></TableRow>
-          ) : filtered.slice(0, 50).map((tl, i) => (
-            <TableRow key={i} className="hover:bg-muted/30">
-              <TableCell className="font-mono text-xs">{tl.woNumber}</TableCell>
-              <TableCell className="text-sm hidden sm:table-cell">{tl.userName || '-'}</TableCell>
-              <TableCell className="text-sm capitalize">{(tl.action || '').replace(/_/g, ' ')}</TableCell>
-              <TableCell className="text-xs text-muted-foreground hidden md:table-cell max-w-[200px] truncate">{tl.notes || '-'}</TableCell>
+            <TableRow><TableCell colSpan={7} className="h-48"><EmptyState icon={Clock} title="No time logs found" description="Time logs will appear once work order time tracking is used." /></TableCell></TableRow>
+          ) : filtered.slice(0, 50).map((tl: any, i: number) => (
+            <TableRow key={tl.id || i} className="hover:bg-muted/30">
+              <TableCell className="font-mono text-xs">{tl.workOrder?.woNumber || '-'}</TableCell>
+              <TableCell className="text-sm hidden sm:table-cell">{tl.user?.fullName || '-'}</TableCell>
+              <TableCell className="text-sm"><Badge variant={tl.action === 'start' ? 'default' : tl.action === 'complete' ? 'secondary' : 'outline'} className="text-xs">{(tl.action || '').replace(/_/g, ' ')}</Badge></TableCell>
+              <TableCell className="text-sm font-mono hidden md:table-cell">{tl.duration ? `${tl.duration}h` : '-'}</TableCell>
+              <TableCell className="text-xs text-muted-foreground hidden md:table-cell capitalize">{(tl.activityType || '-').replace(/_/g, ' ')}</TableCell>
+              <TableCell className="text-xs text-muted-foreground hidden lg:table-cell max-w-[200px] truncate">{tl.notes || '-'}</TableCell>
               <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{tl.timestamp ? formatDateTime(tl.timestamp) : '-'}</TableCell>
-              <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{formatDate(tl.createdAt)}</TableCell>
             </TableRow>
           ))}
         </TableBody></Table></Card>
