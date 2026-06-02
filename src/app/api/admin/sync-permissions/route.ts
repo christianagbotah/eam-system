@@ -542,7 +542,6 @@ export async function POST(request: Request) {
     // Step 6: Verification — use Prisma instead of raw SQL
     const allRolesWithPerms = await db.role.findMany({
       where: { slug: { not: 'admin' } },
-      select: { slug: true },
       include: { rolePermissions: { select: { id: true } } },
       orderBy: { level: 'desc' },
     });
