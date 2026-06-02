@@ -93,7 +93,8 @@ export async function GET(request: NextRequest) {
       // Planners, supervisors, and managers see all
     }
 
-    if (assignedTo) {
+    // Only allow assignedTo filter for users with view_all (prevents view_own bypass)
+    if (assignedTo && hasViewAll) {
       where.assignedTo = assignedTo;
     }
 

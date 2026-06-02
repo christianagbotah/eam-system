@@ -117,6 +117,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     label: string;
     icon: React.ElementType;
     perm: string;
+    permOr?: string[]; // alternative permissions — show group if user has ANY of these
     page?: PageName;
     moduleCode?: string; // maps to SystemModule.code (lowercase) for module-aware filtering
     moduleCodes?: string[]; // for groups spanning multiple modules (any match = visible)
@@ -149,7 +150,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Maintenance', icon: Wrench, perm: 'work_orders.view', moduleCodes: ['work_orders', 'maintenance_requests'],
+      label: 'Maintenance', icon: Wrench, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own', 'maintenance_requests.view', 'maintenance_requests.view_own'], moduleCodes: ['work_orders', 'maintenance_requests'],
       children: [
         { page: 'maintenance-work-orders', label: 'Work Orders', icon: ClipboardList },
         { page: 'maintenance-requests', label: 'Requests', icon: MessageSquare },
@@ -172,7 +173,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Repairs', icon: ArrowRightLeft, perm: 'work_orders.view', moduleCodes: ['work_orders', 'maintenance_requests'],
+      label: 'Repairs', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], moduleCodes: ['work_orders', 'maintenance_requests'],
       children: [
         { page: 'repairs-material-requests', label: 'Material Requests', icon: Package },
         { page: 'repairs-tool-requests', label: 'Tool Requests', icon: WrenchIcon },
@@ -376,8 +377,13 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const visibleGroups = useMemo(() => {
     const isAdm = isAdmin();
     return menuGroups.filter(g => {
-      // Permission check
-      if (!isAdm && permissions && permissions.length > 0 && !hasPermission(g.perm)) return false;
+      // Permission check (supports permOr for multiple alternative permissions)
+      if (!isAdm && permissions && permissions.length > 0) {
+        const permOk = g.permOr
+          ? g.permOr.some(p => hasPermission(p))
+          : hasPermission(g.perm);
+        if (!permOk) return false;
+      }
 
       // Module activation check — only apply once modules have loaded
       if (enabledModules.size > 0) {

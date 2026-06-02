@@ -35,6 +35,7 @@ import {
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 
+// MeterReadings: uses meters.create/update
 export function OperationsMeterReadingsPage() {
   const { hasPermission, isAdmin } = useAuthStore();
   const [readings, setReadings] = useState<any[]>([]);
@@ -142,7 +143,7 @@ export function OperationsMeterReadingsPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Meter Readings</h1><p className="text-muted-foreground mt-1">Record and track meter/gauge readings for utility meters and equipment</p></div>
-        {(hasPermission('operations.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />Record Reading</Button>}
+        {(hasPermission('meters.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />Record Reading</Button>}
       </div>
       {loading ? <LoadingSkeleton /> : (<>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -175,7 +176,7 @@ export function OperationsMeterReadingsPage() {
               <TableCell className={`text-right font-medium ${r.previousValue ? (change > 0 ? 'text-red-600' : 'text-emerald-600') : 'text-muted-foreground'}`}>{r.previousValue ? `${change > 0 ? '+' : ''}${change.toFixed(2)}%` : '-'}</TableCell>
               <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{formatDate(r.readingDate)}</TableCell>
               <TableCell><Badge variant="outline" className={statusColor(status)}><span className="capitalize">{status}</span></Badge></TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setViewItem(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('operations.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleEditOpen(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setViewItem(r)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('meters.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleEditOpen(r)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ); })}
         </TableBody></Table></div>
@@ -229,6 +230,7 @@ export function OperationsMeterReadingsPage() {
     </div>
   );
 }
+// Training: uses training.create/update
 export function OperationsTrainingPage() {
   const { hasPermission, isAdmin } = useAuthStore();
   const [courses, setCourses] = useState<any[]>([]);
@@ -287,7 +289,7 @@ export function OperationsTrainingPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Training</h1><p className="text-muted-foreground mt-1">Manage employee training records, certifications, and compliance</p></div>
-        {(hasPermission('operations.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Course</Button>}
+        {(hasPermission('training.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Course</Button>}
       </div>
       {loading ? <LoadingSkeleton /> : (<>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -338,6 +340,7 @@ export function OperationsTrainingPage() {
     </div>
   );
 }
+// Surveys: uses production_surveys.create/update
 export function OperationsSurveysPage() {
   const { hasPermission, isAdmin } = useAuthStore();
   const [surveys, setSurveys] = useState<any[]>([]);
@@ -395,7 +398,7 @@ export function OperationsSurveysPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Surveys</h1><p className="text-muted-foreground mt-1">Create and conduct safety, compliance, and operational surveys</p></div>
-        {(hasPermission('operations.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Survey</Button>}
+        {(hasPermission('production_surveys.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Survey</Button>}
       </div>
       {loading ? <LoadingSkeleton /> : (<>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -443,6 +446,7 @@ export function OperationsSurveysPage() {
     </div>
   );
 }
+// Time Logs: uses time_logs.create/update
 export function OperationsTimeLogsPage() {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -524,6 +528,7 @@ export function OperationsTimeLogsPage() {
     </div>
   );
 }
+// Shift Handover: uses shift_handovers.create
 export function OperationsShiftHandoverPage() {
   const { hasPermission, isAdmin } = useAuthStore();
   const [handovers, setHandovers] = useState<any[]>([]);
@@ -642,7 +647,7 @@ export function OperationsShiftHandoverPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Shift Handover</h1><p className="text-muted-foreground mt-1">Manage shift-to-shift handover notes, pending tasks, and critical information</p></div>
-        {(hasPermission('operations.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Handover</Button>}
+        {(hasPermission('shift_handovers.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-2" />New Handover</Button>}
       </div>
       {loading ? <LoadingSkeleton /> : (<>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -672,7 +677,7 @@ export function OperationsShiftHandoverPage() {
               <TableCell className="text-xs hidden md:table-cell max-w-[150px] truncate"><span className={h.safetyNotes ? 'text-amber-600 font-medium' : 'text-muted-foreground'}>{h.safetyNotes || '-'}</span></TableCell>
               <TableCell className="text-xs hidden sm:table-cell max-w-[150px] truncate"><span className={h.notes ? 'text-red-600 font-medium' : 'text-muted-foreground'}>{h.notes || '-'}</span></TableCell>
               <TableCell><Badge variant="outline" className={h.status === 'confirmed' ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : 'text-amber-600 bg-amber-50 border-amber-200'}><span className="capitalize">{h.status}</span></Badge></TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setViewItem(h)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('operations.update') || isAdmin()) && <DropdownMenuItem onClick={() => handleEditOpen(h)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => setViewItem(h)}><Eye className="h-4 w-4 mr-2" />View</DropdownMenuItem>{(hasPermission('shift_handovers.create') || isAdmin()) && <DropdownMenuItem onClick={() => handleEditOpen(h)}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ))}
         </TableBody></Table></div>
@@ -735,6 +740,7 @@ export function OperationsShiftHandoverPage() {
     </div>
   );
 }
+// Checklists: uses checklists.create
 export function OperationsChecklistsPage() {
   const { hasPermission, isAdmin } = useAuthStore();
   const [checklists, setChecklists] = useState<any[]>([]);
@@ -837,7 +843,7 @@ export function OperationsChecklistsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Search checklists..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
           </div>
-          {(hasPermission('operations.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Checklist</Button>}
+          {(hasPermission('pm_schedules.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />New Checklist</Button>}
         </div>
       </div>
 

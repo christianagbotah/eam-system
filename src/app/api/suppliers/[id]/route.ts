@@ -35,7 +35,7 @@ export async function PUT(
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    if (!hasPermission(session, 'inventory.update') && !isAdmin(session)) {
+    if (!hasPermission(session, 'vendors.update') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -71,7 +71,7 @@ export async function DELETE(
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
-    if (!hasPermission(session, 'inventory.delete') && !isAdmin(session)) {
+    if (!hasPermission(session, 'vendors.delete') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { bomEngineeringService } from '@/services/bomEngineering.service';
 
 export async function DELETE(
@@ -7,9 +7,13 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getCurrentUser(request);
-    if (!user) {
+    const session = getSession(request);
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!hasPermission(session, 'parts.delete') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const { id } = await params;

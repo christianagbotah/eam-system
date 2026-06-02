@@ -2845,6 +2845,20 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return wo.teamMembers?.some(tm => tm.userId === user.id && tm.accessLevel === 'read_only') || false;
   }, [wo, user, fullAccess]);
 
+  // Permission: can take modification actions on this WO (not just view it)
+  // Users with only work_orders.view_own who are NOT team members cannot modify
+  const canTakeActions = useMemo(() => {
+    if (!wo || !user) return false;
+    if (isAdmin()) return true;
+    if (hasPermission('work_orders.update')) return true;
+    if (hasPermission('work_orders.start')) return true;
+    if (hasPermission('work_orders.complete')) return true;
+    // Team members and assignees can take actions (log time, request materials, etc.)
+    const isTeamMember = wo.teamMembers?.some(tm => tm.userId === user.id) || false;
+    const isAssignee = wo.assignedToId === user.id;
+    return isTeamMember || isAssignee;
+  }, [wo, user, isAdmin, hasPermission]);
+
   // Fetch global active session and set up live timer
   const fetchActiveSession = useCallback(async () => {
     try {
@@ -3429,8 +3443,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const isWOFinalized = wo.status === 'verified' || wo.status === 'closed' || wo.status === 'cancelled' || wo.isLocked;
   const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
   const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && canManageTeamDirectly;
-  // Disable all inline action buttons (time, materials, tools, tasks) when WO is finalized
-  const actionDisabled = isReadOnly || isWOFinalized;
+  // Disable all inline action buttons (time, materials, tools, tasks) when WO is finalized or user lacks permission
+  const actionDisabled = isReadOnly || isWOFinalized || !canTakeActions;
 
   // Format session duration
   const formatSessionDuration = (seconds: number) => {
@@ -3460,8 +3474,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
       {/* Actions Bar */}
       <div className="pb-4 flex items-center gap-2">
-        {/* When permanently locked, hide the entire Actions dropdown */}
-        {!isWOPermanentlyLocked && (
+        {/* When permanently locked or user has no action permission, hide the entire Actions dropdown */}
+        {!isWOPermanentlyLocked && (canManageTeamDirectly || canTakeActions) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isReadOnly}><CheckCircle2 className="h-4 w-4 mr-1" />Actions</Button>
@@ -3510,6 +3524,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
             <Lock className="h-3.5 w-3.5 shrink-0" />
             Permanently locked — no modifications allowed
+          </div>
+        )}
+        {!isWOPermanentlyLocked && !isReadOnly && !canTakeActions && !canManageTeamDirectly && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600">
+            <Eye className="h-3.5 w-3.5 shrink-0" />
+            View Only — you don't have permission to modify this work order
           </div>
         )}
       </div>
@@ -6819,6 +6839,7 @@ export function MaintenanceToolsPage() {
   const [loading, setLoading] = useState(true);
   const [tools, setTools] = useState<any[]>([]);
   const [kpis, setKpis] = useState({ total: 0, available: 0, checkedOut: 0, inRepair: 0, retired: 0 });
+  const { hasPermission, isAdmin } = useAuthStore();
 
   const loadTools = async () => {
     try {
@@ -6894,7 +6915,9 @@ export function MaintenanceToolsPage() {
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div><CardTitle className="text-base">Tool Inventory</CardTitle><CardDescription className="text-xs">Track tool availability, assignments, and condition</CardDescription></div>
-            <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
+            {(hasPermission('tools.create') || isAdmin()) && (
+              <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
+            )}
             <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="Add New Tool" description="Register a new tool in the inventory" footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving}>{saving ? 'Adding...' : 'Add Tool'}</Button></div>}>
                 <div className="grid gap-4 py-2">
                   <div className="grid gap-2"><Label className="text-xs">Tool Name</Label><Input placeholder="e.g. Torque Wrench 1/2 inch" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>

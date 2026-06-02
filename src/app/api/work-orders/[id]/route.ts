@@ -121,6 +121,18 @@ export async function GET(
       }
     }
 
+    // Permission-based access control: enforce view_own restriction
+    const hasViewAll = hasPermission(session, 'work_orders.view') || hasPermission(session, 'work_orders.view_all') || isAdmin(session);
+    if (!hasViewAll) {
+      // User only has view_own — check if they are assigned or a team member
+      const isAssignee = wo.assignedTo === session.userId;
+      const isTeamMember = wo.teamMembers?.some((m: { userId: string }) => m.userId === session.userId);
+      const isRequester = wo.maintenanceRequest?.requester?.id === session.userId;
+      if (!isAssignee && !isTeamMember && !isRequester) {
+        return NextResponse.json({ success: false, error: 'Access denied — you can only view work orders assigned to you' }, { status: 403 });
+      }
+    }
+
     // Ensure relations arrays exist even if tables weren't queried
     if (!wo.teamMemberRequests) {
       (wo as Record<string, unknown>).teamMemberRequests = [];

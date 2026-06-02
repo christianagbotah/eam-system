@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     if (!hasPermission(session, 'maintenance_requests.view') && !hasPermission(session, 'maintenance_requests.view_own') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
-    const hasViewAll = hasPermission(session, 'maintenance_requests.view') || isAdmin(session);
+    const hasViewAll = hasPermission(session, 'maintenance_requests.view') || hasPermission(session, 'maintenance_requests.view_all') || isAdmin(session);
 
     const { searchParams } = new URL(request.url);
 

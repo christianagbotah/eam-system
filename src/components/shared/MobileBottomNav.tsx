@@ -58,6 +58,7 @@ interface MoreItem {
   label: string;
   icon: LucideIcon;
   perm: string;
+  permOr?: string[];
   activePages?: PageName[];
 }
 
@@ -77,6 +78,7 @@ const BOTTOM_TABS: NavItem[] = [
     label: 'Requests',
     icon: Wrench,
     perm: 'work_orders.view',
+    permOr: ['work_orders.view', 'work_orders.view_own', 'maintenance_requests.view', 'maintenance_requests.view_own'],
     activePages: ['maintenance-requests', 'mr-detail', 'create-mr'],
   },
   {
@@ -84,6 +86,7 @@ const BOTTOM_TABS: NavItem[] = [
     label: 'Work Orders',
     icon: ClipboardList,
     perm: 'work_orders.view',
+    permOr: ['work_orders.view', 'work_orders.view_own'],
     activePages: ['maintenance-work-orders', 'wo-detail'],
   },
   {
@@ -101,7 +104,7 @@ const BOTTOM_TABS: NavItem[] = [
 
 const MORE_ITEMS: MoreItem[] = [
   // Repairs & Tools
-  { page: 'repairs-material-requests', label: 'Repairs & Tools', icon: ArrowRightLeft, perm: 'work_orders.view', activePages: ['repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics', 'repairs-spare-part-returns', 'repairs-damaged-tools', 'repairs-reports'] },
+  { page: 'repairs-material-requests', label: 'Repairs & Tools', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], activePages: ['repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics', 'repairs-spare-part-returns', 'repairs-damaged-tools', 'repairs-reports'] },
   // Inventory
   { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view', activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'] },
   // PM Module
@@ -159,14 +162,22 @@ export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
   // Filter visible bottom tabs by permission and module
   const visibleTabs = useMemo(() => {
     return BOTTOM_TABS.filter(tab => {
-      if (!hasPermission(tab.perm)) return false;
+      const permOk = tab.permOr
+        ? tab.permOr.some(p => hasPermission(p))
+        : hasPermission(tab.perm);
+      if (!permOk) return false;
       return true;
     });
   }, [hasPermission]);
 
   // Filter visible more items by permission
   const visibleMoreItems = useMemo(() => {
-    return MORE_ITEMS.filter(item => hasPermission(item.perm));
+    return MORE_ITEMS.filter(item => {
+      const permOk = item.permOr
+        ? item.permOr.some(p => hasPermission(p))
+        : hasPermission(item.perm);
+      return permOk;
+    });
   }, [hasPermission]);
 
   // Don't render at all on desktop

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { bomEngineeringService } from '@/services/bomEngineering.service';
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUser(request);
-    if (!user) {
+    const session = getSession(request);
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
@@ -26,9 +26,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser(request);
-    if (!user) {
+    const session = getSession(request);
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!hasPermission(session, 'parts.create') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const body = await request.json();
@@ -43,7 +47,7 @@ export async function POST(request: NextRequest) {
       alternatePartId,
       interchangeability,
       notes,
-      createdById: user.id,
+      createdById: session.userId,
     });
 
     return NextResponse.json({ success: true, data: result }, { status: 201 });
