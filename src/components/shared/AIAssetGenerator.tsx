@@ -234,7 +234,7 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
       if (plantId) payload.plantId = plantId;
       if (categoryId) payload.categoryId = categoryId;
 
-      const res = await api.post('/api/assets/ai-generate', payload);
+      const res = await api.post('/api/assets/ai-generate', payload, { timeout: 300_000 }); // 5 min for LLM + image + DB
 
       timers.forEach(clearTimeout);
 

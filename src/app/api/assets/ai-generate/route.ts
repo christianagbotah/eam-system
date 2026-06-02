@@ -181,14 +181,43 @@ Remember: Return ONLY valid JSON matching the specified structure. Include reali
     throw new Error(`AI SDK not configured. ${configMsg}`);
   }
 
-  const response: Record<string, unknown> = await zai.chat.completions.create({
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: userPrompt },
-    ],
-    temperature: 0.7,
-    max_tokens: 8000,
-  });
+  // Retry LLM call up to 2 times on transient fetch errors
+  let response: Record<string, unknown>;
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      response = await zai.chat.completions.create({
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 8000,
+      });
+      lastError = null;
+      break;
+    } catch (llmErr) {
+      lastError = llmErr instanceof Error ? llmErr : new Error(String(llmErr));
+      const isRetryable = lastError.message.includes('fetch failed')
+        || lastError.message.includes('ECONNRESET')
+        || lastError.message.includes('ECONNREFUSED')
+        || lastError.message.includes('ETIMEDOUT')
+        || lastError.message.includes('socket hang up')
+        || lastError.message.includes('abort')
+        || lastError.message.includes('network');
+
+      if (isRetryable && attempt < 2) {
+        logger.warn(`LLM call failed (attempt ${attempt}/2), retrying in 3s...`, { message: lastError.message });
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      } else {
+        throw lastError;
+      }
+    }
+  }
+
+  if (!response || lastError) {
+    throw lastError || new Error('LLM call failed');
+  }
 
   const content = response.choices?.[0]?.message?.content;
   if (!content) {
@@ -387,6 +416,9 @@ no text overlays, no watermarks, high quality technical illustration.`;
 // ============================================================================
 // MAIN ROUTE HANDLER
 // ============================================================================
+
+// Allow up to 5 minutes for LLM generation + image + DB writes
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   const timer = logger.timer('ai-generate.post');
