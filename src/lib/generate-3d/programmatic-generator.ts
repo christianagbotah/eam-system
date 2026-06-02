@@ -12,6 +12,7 @@ import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { db } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
+import { getBuiltinGeometrySpec } from './builtin-geometry';
 
 const logger = createLogger('generate-3d:programmatic');
 
@@ -136,19 +137,36 @@ Remember: Return ONLY valid JSON. No markdown fences.`;
 
   logger.info('Calling LLM for geometry spec', { machineName });
 
-  const zai = await ZAI.create();
-  const response: Record<string, unknown> = await zai.chat.completions.create({
-    messages: [
-      { role: 'system', content: GEOMETRY_SYSTEM_PROMPT },
-      { role: 'user', content: userPrompt },
-    ],
-    temperature: 0.6,
-    max_tokens: 6000,
-  });
+  let zai: InstanceType<typeof ZAI> | null = null;
+  try {
+    zai = await ZAI.create();
+  } catch (configErr) {
+    logger.warn('ZAI SDK config not available — falling back to built-in geometry', {
+      message: configErr instanceof Error ? configErr.message : String(configErr),
+    });
+    return getBuiltinGeometrySpec(machineName);
+  }
 
-  const content = response.choices?.[0]?.message?.content;
+  let content: string | undefined;
+  try {
+    const response: Record<string, unknown> = await zai.chat.completions.create({
+      messages: [
+        { role: 'system', content: GEOMETRY_SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.6,
+      max_tokens: 6000,
+    });
+    content = response.choices?.[0]?.message?.content;
+  } catch (fetchErr) {
+    const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+    logger.warn('LLM API request failed — falling back to built-in geometry', { message: msg });
+    return getBuiltinGeometrySpec(machineName);
+  }
+
   if (!content) {
-    throw new Error('LLM returned empty response for geometry spec');
+    logger.warn('LLM returned empty response — falling back to built-in geometry');
+    return getBuiltinGeometrySpec(machineName);
   }
 
   // Strip markdown code fences if present
@@ -157,11 +175,20 @@ Remember: Return ONLY valid JSON. No markdown fences.`;
     jsonStr = jsonStr.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
   }
 
-  const parsed = JSON.parse(jsonStr);
+  let parsed: any;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch (parseErr) {
+    logger.warn('LLM response is not valid JSON — falling back to built-in geometry', {
+      message: parseErr instanceof Error ? parseErr.message : String(parseErr),
+    });
+    return getBuiltinGeometrySpec(machineName);
+  }
 
   // Validate
   if (!parsed.parts || !Array.isArray(parsed.parts) || parsed.parts.length === 0) {
-    throw new Error('LLM response missing parts array or it is empty');
+    logger.warn('LLM response missing parts array — falling back to built-in geometry');
+    return getBuiltinGeometrySpec(machineName);
   }
 
   // Validate each part has required fields and sanitize
