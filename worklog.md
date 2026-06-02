@@ -1011,3 +1011,26 @@ Stage Summary:
 - **Updated**: 5 files to use `aiChatCompletion()` instead of `ZAI.create()`
 - **Free providers available**: Google Gemini (2.5 Flash), Groq (Llama 3.3 70B), OpenRouter (50+ models), Cerebras
 - **User action needed**: Go to AI Settings → select Google Gemini or Groq → paste free API key → Save → Test Connection
+
+---
+Task ID: zai-setup
+Agent: Main Agent
+Task: Configure z.ai SDK as active AI provider for machine generation
+
+Work Log:
+- Investigated AI generation failure: "AI generation failed: fetch failed" — root cause was empty `data/ai-config.json` (no active provider configured)
+- Discovered `src/lib/ai-client.ts` already supports z.ai SDK as primary provider (`zai_sdk`) with fallback to `ZAI.create()` from `z-ai-web-dev-sdk`
+- The AI client supports 8 providers: zai_sdk, gemini, groq, openrouter, cerebras, openai, anthropic, custom
+- When no config is found, it falls back to z.ai SDK — but on VPS the `Z_AI_API_KEY` env var wasn't set, causing the fetch failure
+- Fixed `data/ai-config.json`: Added z.ai SDK as the active provider configuration (no API key needed — SDK handles auth internally)
+- Updated `src/lib/ai-client.ts`: Added `thinking: { type: 'disabled' }` parameter to `callZaiSdk()` to match z-ai SDK expected API
+- Verified z.ai SDK works via CLI: `z-ai chat` test returned successful response using GLM-4-Plus model
+- Tested machine-generation style prompt: z.ai generated professional centrifugal pump asset JSON with subsystems, components, and categories
+- No lint errors in modified file
+
+Stage Summary:
+- **Config file**: `data/ai-config.json` — z.ai SDK set as active provider (no external API key needed)
+- **Code fix**: `src/lib/ai-client.ts` — added `thinking: { type: 'disabled' }` to z.ai SDK call
+- **Verified**: z.ai SDK works perfectly with GLM-4-Plus model for machine generation prompts
+- **Impact**: AI machine generation will now work in the sandbox environment using z.ai SDK
+- **VPS note**: On the VPS deployment, the z.ai SDK is NOT available (sandbox-only). For VPS, the user should configure a free external provider like Google Gemini or Groq in AI Settings (the UI already supports this — no code changes needed)

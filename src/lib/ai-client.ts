@@ -282,6 +282,7 @@ async function callZaiSdk(options: ChatCompletionOptions): Promise<ChatCompletio
       messages: options.messages.map(m => ({ role: m.role, content: m.content })),
       temperature: options.temperature ?? 0.7,
       max_tokens: options.max_tokens ?? 8000,
+      thinking: { type: 'disabled' },
     });
     return response as ChatCompletionResponse;
   } catch (err) {
