@@ -465,7 +465,7 @@ export async function POST(request: Request) {
     const permMap = new Map(permissions.map(p => [p.slug, p.id]));
 
     // Step 3: Clear all existing role-permission mappings
-    await db.$executeRawUnsafe(`DELETE FROM role_permissions`);
+    await db.rolePermission.deleteMany({});
     logs.push('Cleared all existing role-permission mappings');
 
     // Step 4: Insert new mappings from ROLE_PERMISSIONS
@@ -501,14 +501,15 @@ export async function POST(request: Request) {
         count++;
       }
 
-      // Bulk insert using raw SQL for speed
+      // Bulk insert using Prisma createMany (avoids raw SQL column name issues)
       if (mappings.length > 0) {
-        for (const m of mappings) {
-          await db.$executeRawUnsafe(
-            'INSERT INTO role_permissions (id, role_id, permission_id, created_at) VALUES (UUID(), ?, ?, NOW())',
-            m.roleId, m.permissionId
-          );
-        }
+        await db.rolePermission.createMany({
+          data: mappings.map(m => ({
+            roleId: m.roleId,
+            permissionId: m.permissionId,
+          })),
+          skipDuplicates: true,
+        });
       }
 
       const roleName = roles.find(r => r.slug === roleSlug)?.name || roleSlug;
@@ -528,29 +529,27 @@ export async function POST(request: Request) {
 
     // Step 5: Clear session table AND in-memory cache to force re-auth
     try {
-      await db.$executeRawUnsafe(`DELETE FROM sessions`);
+      await db.session.deleteMany({});
       logs.push('Cleared all sessions — users must re-login');
     } catch {
-      logs.push('Could not clear sessions table (table may not exist)');
+      logs.push('Could not clear sessions table');
     }
 
     // Clear in-memory session cache
     sessionCache.clear();
     logs.push('Cleared in-memory session cache');
 
-    // Step 6: Verification
-    const counts = await db.$queryRawUnsafe<Array<{ slug: string; perm_count: bigint }>>(
-      `SELECT r.slug, COUNT(rp.permission_id) as perm_count
-       FROM roles r
-       LEFT JOIN role_permissions rp ON r.id = rp.role_id
-       WHERE r.slug != 'admin'
-       GROUP BY r.id, r.slug
-       ORDER BY r.level DESC`
-    );
+    // Step 6: Verification — use Prisma instead of raw SQL
+    const allRolesWithPerms = await db.role.findMany({
+      where: { slug: { not: 'admin' } },
+      select: { slug: true },
+      include: { rolePermissions: { select: { id: true } } },
+      orderBy: { level: 'desc' },
+    });
 
-    const verification = counts.map(c => ({
-      slug: c.slug,
-      permissionCount: Number(c.perm_count),
+    const verification = allRolesWithPerms.map(r => ({
+      slug: r.slug,
+      permissionCount: r.rolePermissions.length,
     }));
 
     return NextResponse.json({
