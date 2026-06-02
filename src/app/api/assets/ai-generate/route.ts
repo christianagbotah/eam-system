@@ -173,7 +173,14 @@ Remember: Return ONLY valid JSON matching the specified structure. Include reali
 
   logger.info('Calling LLM to generate machine data', { machineName });
 
-  const zai = await ZAI.create();
+  let zai;
+  try {
+    zai = await ZAI.create();
+  } catch (configErr) {
+    const configMsg = configErr instanceof Error ? configErr.message : String(configErr);
+    throw new Error(`AI SDK not configured. ${configMsg}`);
+  }
+
   const response: Record<string, unknown> = await zai.chat.completions.create({
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
