@@ -907,3 +907,34 @@ Stage Summary:
 - **VPS Action Required**: Run `bun run scripts/sync-role-permissions.ts` to re-sync role-permission mappings
 - **VPS Action Required**: All users must re-login after sync for new permissions to take effect
 - Commit: 4616b510 pushed to main
+
+---
+Task ID: 9
+Agent: Main Agent
+Task: Repair Maintenance Module Enhancement — PDF Reports, Permission Hardening, Enterprise Polish
+
+Work Log:
+- **Comprehensive audit** of entire repair/maintenance module (52+ API routes, 10 frontend components, 8 DB models)
+- Found module is production-grade: time logging, material/tool requests, transfer workflows, completion workflows, spare part returns, damaged tool reports all fully implemented
+- Identified 3 key enhancement areas: PDF report generation, permission gaps, role-based → permission-flag migration
+
+### PDF Report Generation
+- Installed `pdfkit` (v0.18.0) + `@types/pdfkit` for server-side PDF generation
+- Created `src/lib/generate-report-pdf.ts` — full PDF generation utility with professional header/footer, page numbering, summary cards, tables with auto-pagination, key-value sections
+- Added `?format=pdf` support to WO reports API (8 sections) and Repair reports API (6 report types)
+- Added "Download PDF" button to WOReportsPage.tsx and RepairAnalyticsPage in RepairsPages.tsx
+
+### Permission Hardening
+- Fixed critical gap in `src/app/api/work-orders/[id]/time-logs/route.ts` — added permission gates (`work_orders.view_own`/`view_all`), WO-level access validation, team log restrictions
+- Migrated 3 repair routes from hardcoded role arrays to permission-flag enforcement:
+  - `repair/material-requests` → `repair_material_requests.{view, view_all, view_own, create}`
+  - `repair/tool-requests` → `repair_tool_requests.{view, view_all, view_own, create}`
+  - `repair/tool-transfers` → `repair_tool_transfers.{view, view_all, view_own, create}`
+
+Stage Summary:
+- **New file**: `src/lib/generate-report-pdf.ts` — server-side PDF generation with pdfkit
+- **Updated**: WO reports API + Repair reports API with PDF export
+- **Updated**: WOReportsPage.tsx + RepairsPages.tsx with "Download PDF" buttons
+- **Hardened**: time-logs route — proper permission gates + WO access validation
+- **Migrated**: 3 repair routes from role-based to permission-flag enforcement
+- **All modified files pass ESLint with zero new errors**

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 
@@ -13,20 +13,15 @@ const VALID_URGENCIES = ['low', 'normal', 'high', 'critical'];
 // 24-hour threshold for overdue detection
 const OVERDUE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
-// Roles that can see ALL material requests (not just their own)
-const APPROVER_ROLES = ['admin', 'maintenance_supervisor', 'maintenance_manager', 'plant_manager', 'maintenance_planner', 'store_keeper', 'inventory_manager', 'tools_shop_attendant'];
-
-// Check if user has any approver/management role
-function canViewAllRequests(session: any): boolean {
-  if (!session?.roles) return false;
-  return session.roles.some((role: string) => APPROVER_ROLES.includes(role));
-}
 
 // GET /api/repairs/material-requests — list with filters, stats, urgency sorting, overdue detection
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!hasAnyPermission(session, ['repair_material_requests.view', 'repair_material_requests.view_all', 'repair_material_requests.view_own']) && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
     const { searchParams } = new URL(request.url);
 
     const workOrderId = searchParams.get('workOrderId');
@@ -56,8 +51,9 @@ export async function GET(request: NextRequest) {
     if (requestedById) where.requestedById = requestedById;
     if (urgency && VALID_URGENCIES.includes(urgency)) where.urgency = urgency;
 
-    // Technicians see only their own requests (unless they have an approver/management role)
-    if (session && !canViewAllRequests(session)) {
+    // Users with only view_own are scoped to their own requests
+    const canViewAll = hasAnyPermission(session, ['repair_material_requests.view', 'repair_material_requests.view_all']) || isAdmin(session);
+    if (!canViewAll) {
       where.requestedById = session.userId;
     }
 
@@ -190,6 +186,9 @@ export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!hasPermission(session, 'repair_material_requests.create') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
 
     const body = await request.json();
     const { workOrderId, itemId, itemName, quantityRequested, unit, unitCost, reason, notes, urgency } = body;

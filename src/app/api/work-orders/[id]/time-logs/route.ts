@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, hasPermission, hasAnyPermission, isAdmin } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
 
 const VALID_ACTIONS = ['start', 'pause', 'resume', 'complete'];
@@ -42,24 +42,43 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    // ── Permission gate ──
+    const canView = hasAnyPermission(session, ['work_orders.view_own', 'work_orders.view_all']) || isAdmin(session);
+    if (!canView) {
+      return NextResponse.json({ success: false, error: 'You do not have permission to view time logs' }, { status: 403 });
+    }
+
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const includeTeamLogs = searchParams.get('includeTeamLogs') === 'true';
 
-    if (includeTeamLogs) {
-      const canViewTeamLogs = session.roles.includes('admin') || session.roles.includes('maintenance_supervisor') || session.roles.includes('maintenance_manager') || session.roles.includes('maintenance_planner');
-      if (!canViewTeamLogs) {
-        // Only team leader can view team logs
-        const woForCheck = await db.workOrder.findUnique({ where: { id }, select: { teamLeaderId: true } });
-        if (woForCheck?.teamLeaderId !== session.userId) {
-          return NextResponse.json({ success: false, error: 'Insufficient permissions to view team time logs' }, { status: 403 });
-        }
-      }
-    }
-
-    const wo = await db.workOrder.findUnique({ where: { id } });
+    // Fetch WO with assignment info for access validation
+    const wo = await db.workOrder.findUnique({
+      where: { id },
+      include: {
+        assignee: { select: { id: true } },
+        teamLeader: { select: { id: true } },
+        teamMembers: { select: { userId: true } },
+      },
+    });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    // ── WO-level access validation ──
+    const isAssignee = wo.assignedTo === session.userId;
+    const isTeamMember = wo.teamMembers.some((m) => m.userId === session.userId);
+    const isTeamLeader = wo.teamLeaderId === session.userId;
+    if (!isAssignee && !isTeamMember && !isTeamLeader && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'You do not have access to this work order' }, { status: 403 });
+    }
+
+    // ── Team logs: require elevated permissions or team leader role ──
+    if (includeTeamLogs) {
+      const canViewTeamLogs = isAdmin(session) || hasAnyPermission(session, ['work_orders.view_all', 'time_logs.view_team']) || isTeamLeader;
+      if (!canViewTeamLogs) {
+        return NextResponse.json({ success: false, error: 'Insufficient permissions to view team time logs' }, { status: 403 });
+      }
     }
 
     // By default, only return logs for the current user
@@ -141,6 +160,12 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    // ── Permission gate ──
+    const canCreate = hasAnyPermission(session, ['work_orders.edit', 'time_logs.create']) || isAdmin(session);
+    if (!canCreate) {
+      return NextResponse.json({ success: false, error: 'You do not have permission to create time logs' }, { status: 403 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const {
@@ -189,6 +214,14 @@ export async function POST(
     });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    // ── WO-level access validation ──
+    const isAssignee = wo.assignedTo === session.userId;
+    const isTeamMember = wo.teamMembers.some((m) => m.userId === session.userId);
+    const isTeamLeader = wo.teamLeaderId === session.userId;
+    if (!isAssignee && !isTeamMember && !isTeamLeader && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'You do not have access to this work order' }, { status: 403 });
     }
 
     if (wo.isLocked) {
@@ -424,6 +457,12 @@ export async function DELETE(
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    // ── Permission gate ──
+    const canDelete = hasAnyPermission(session, ['work_orders.edit', 'time_logs.delete']) || isAdmin(session);
+    if (!canDelete) {
+      return NextResponse.json({ success: false, error: 'You do not have permission to delete time logs' }, { status: 403 });
     }
 
     const { id } = await params;

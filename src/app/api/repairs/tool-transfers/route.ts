@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 
@@ -9,6 +9,9 @@ export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!hasAnyPermission(session, ['repair_tool_transfers.view', 'repair_tool_transfers.view_all', 'repair_tool_transfers.view_own']) && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const toolId = searchParams.get('toolId');
@@ -42,7 +45,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Store keepers and admins see all; technicians see their own
-    if (session && !session.roles.includes('admin') && !session.roles.includes('store_keeper') && !session.roles.includes('tools_shop_attendant') && !session.roles.includes('maintenance_supervisor') && !session.roles.includes('maintenance_planner')) {
+    const canViewAll = hasAnyPermission(session, ['repair_tool_transfers.view', 'repair_tool_transfers.view_all']) || isAdmin(session);
+    if (!canViewAll) {
       const userFilter = { OR: [{ fromUserId: session.userId }, { toUserId: session.userId }, { requestedById: session.userId }] };
       if (where.OR && search) {
         // Merge search OR with user filter
@@ -104,6 +108,9 @@ export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!hasPermission(session, 'repair_tool_transfers.create') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
 
     const body = await request.json();
     const { toolId, fromUserId, toUserId, reason, notes } = body;

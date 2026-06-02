@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
+import { api, getAuthHeaders } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 
@@ -37,6 +37,7 @@ import {
   Timer, Activity, Ban, ChevronDown, ClipboardList, BarChart3,
   ArrowLeftRight, PackageCheck, PackageOpen, User, CircleDot,
   Handshake, Truck, DollarSign, RefreshCw, X, Info, Pencil, Trash2,
+  FileDown, Loader2,
 } from 'lucide-react';
 import { EmptyState, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
@@ -2653,6 +2654,8 @@ export function RepairAnalyticsPage() {
   const [repeatLoading, setRepeatLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [activeAnalyticsTab, setActiveAnalyticsTab] = useState('overview');
 
   useEffect(() => {
     (async () => {
@@ -2707,6 +2710,37 @@ export function RepairAnalyticsPage() {
     setRepeatLoading(false);
   }, [dateFrom, dateTo]);
 
+  const downloadPDF = useCallback(async () => {
+    try {
+      setPdfLoading(true);
+      const params = new URLSearchParams();
+      if (dateFrom) params.set('from', dateFrom);
+      if (dateTo) params.set('to', dateTo);
+      if (activeAnalyticsTab && activeAnalyticsTab !== 'overview') params.set('reportType', activeAnalyticsTab);
+      params.set('format', 'pdf');
+
+      const response = await fetch(`/api/repairs/reports?${params.toString()}`, {
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error('Failed to generate PDF');
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `repairs-analytics-${activeAnalyticsTab}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('PDF report downloaded');
+    } catch {
+      toast.error('Failed to download PDF report');
+    } finally {
+      setPdfLoading(false);
+    }
+  }, [dateFrom, dateTo, activeAnalyticsTab]);
+
   if (loading) return <LoadingSkeleton />;
 
   return (
@@ -2721,13 +2755,17 @@ export function RepairAnalyticsPage() {
           {(dateFrom || dateTo) && (
             <Button variant="ghost" size="sm" onClick={() => { setDateFrom(''); setDateTo(''); }} className="h-9"><X className="h-3.5 w-3.5" /></Button>
           )}
+          <Button variant="outline" size="sm" onClick={downloadPDF} disabled={pdfLoading} className="gap-1.5">
+            {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            Download PDF
+          </Button>
         </div>
       </div>
 
       {!kpi ? (
         <EmptyState icon={BarChart3} title="No data available" />
       ) : (
-        <Tabs defaultValue="overview">
+        <Tabs value={activeAnalyticsTab} onValueChange={setActiveAnalyticsTab}>
           <TabsList className="flex-wrap">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="backlog" className="gap-1"><Clock className="h-3.5 w-3.5" /> Backlog</TabsTrigger>

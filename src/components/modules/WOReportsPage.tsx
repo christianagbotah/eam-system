@@ -24,9 +24,10 @@ import {
 import {
   Activity, AlertTriangle, Clock, Wrench, Package, Timer, TrendingDown,
   FileBarChart, Download, RefreshCw, BarChart3, DollarSign, Zap,
-  ShieldAlert, Factory, HardHat, Users, Boxes, Loader2,
+  ShieldAlert, Factory, HardHat, Users, Boxes, Loader2, FileDown,
   Hammer, CircleStop, Gauge, ChartPie, ArrowDownUp, Pause, Construction
 } from 'lucide-react';
+import { getAuthHeaders } from '@/lib/api';
 import { EmptyState, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 
 // ============================================================================
@@ -132,6 +133,7 @@ export function WOReportsPage() {
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   // Filters
   const [tradeFilter, setTradeFilter] = useState('');
@@ -258,6 +260,43 @@ export function WOReportsPage() {
   }, [reportData, activeTab, startDate, endDate]);
 
   // ============================================================================
+  // PDF EXPORT
+  // ============================================================================
+
+  const downloadPDF = useCallback(async () => {
+    try {
+      setPdfLoading(true);
+      const params = new URLSearchParams();
+      if (startDate) params.set('from', startDate);
+      if (endDate) params.set('to', endDate);
+      if (tradeFilter) params.set('trade', tradeFilter);
+      if (priorityFilter) params.set('priority', priorityFilter);
+      if (deptFilter) params.set('department', deptFilter);
+      params.set('format', 'pdf');
+
+      const response = await fetch(`/api/work-orders/reports?${params.toString()}`, {
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) throw new Error('Failed to generate PDF');
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `work-order-report-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('PDF report downloaded');
+    } catch {
+      toast.error('Failed to download PDF report');
+    } finally {
+      setPdfLoading(false);
+    }
+  }, [startDate, endDate, tradeFilter, priorityFilter, deptFilter]);
+
+  // ============================================================================
   // KPI CARDS
   // ============================================================================
 
@@ -368,6 +407,10 @@ export function WOReportsPage() {
             <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!reportData || loading}>
               <Download className="h-4 w-4 mr-1.5" />
               Export CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={downloadPDF} disabled={pdfLoading}>
+              {pdfLoading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <FileDown className="h-4 w-4 mr-1.5" />}
+              Download PDF
             </Button>
           </div>
         </CardContent>

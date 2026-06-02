@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
+import { generateReportPDF } from '@/lib/generate-report-pdf';
 
 // GET /api/work-orders/reports
 // Comprehensive WO reports: downtime, response time, breakdowns, man hours, materials, failure rate, stoppages
@@ -22,6 +23,7 @@ export async function GET(request: NextRequest) {
     const department = searchParams.get('department');
     const trade = searchParams.get('trade');
     const priority = searchParams.get('priority');
+    const format = searchParams.get('format');
 
     const plantScope = await getPlantScope(request, session);
     const plantFilter = getPlantFilterWhere(plantScope);
@@ -566,8 +568,8 @@ export async function GET(request: NextRequest) {
       woByTrade[wo.tradeActivity || 'unspecified'] = (woByTrade[wo.tradeActivity || 'unspecified'] || 0) + 1;
     }
 
-    // ========== RETURN ALL DATA ==========
-    return NextResponse.json({
+    // ========== BUILD RESPONSE DATA ==========
+    const jsonData = {
       success: true,
       data: {
         // 1. Summary
@@ -661,7 +663,68 @@ export async function GET(request: NextRequest) {
           byTrade: Object.entries(woByTrade).map(([trade, count]) => ({ trade, count })).sort((a, b) => b.count - a.count),
         },
       },
-    });
+    };
+
+    // ========== PDF FORMAT ==========
+    if (format === 'pdf') {
+      const pdfBuffer = await generateReportPDF({
+        title: 'Work Order Analytics Report',
+        subtitle: 'Comprehensive WO Performance Analysis',
+        generatedBy: session.fullName || session.userId,
+        generatedAt: new Date(),
+        filters: { from: from || 'All time', to: to || 'Present', ...(department && { department }), ...(trade && { trade }), ...(priority && { priority }) },
+        sections: [
+          { title: 'Key Performance Indicators', type: 'summary-cards', data: [
+            { label: 'Total WOs', value: jsonData.data.summary.totalWOs },
+            { label: 'Completion Rate', value: `${jsonData.data.summary.completionRate}%` },
+            { label: 'Breakdown Rate', value: `${jsonData.data.summary.breakdownRate}%` },
+            { label: 'Avg Response Time', value: `${jsonData.data.summary.avgResponseTime}h` },
+            { label: 'Total Man Hours', value: jsonData.data.summary.totalManHours },
+            { label: 'Total Material Cost', value: `$${jsonData.data.summary.totalMaterialCost.toLocaleString()}` },
+            { label: 'Total Downtime', value: `${jsonData.data.summary.totalDowntimeHours}h` },
+            { label: 'Rework Rate', value: `${jsonData.data.summary.reworkRate}%` },
+          ]},
+          { title: 'Work Order Distribution by Type', type: 'table', data: {
+            headers: ['Type', 'Count'],
+            rows: jsonData.data.distribution.byType.map(d => [d.type, String(d.count)]),
+          }},
+          { title: 'Downtime by Trade', type: 'table', data: {
+            headers: ['Trade', 'Hours', 'Events', 'Production Loss'],
+            rows: jsonData.data.downtime.byTrade.map(d => [d.trade, String(d.totalHours), String(d.events), String(d.productionLoss)]),
+          }},
+          { title: 'Response Time by Priority', type: 'table', data: {
+            headers: ['Priority', 'Avg Hours', 'Min Hours', 'Max Hours', 'Count'],
+            rows: jsonData.data.responseTime.byPriority.map(d => [d.priority, String(d.avgHours), String(d.minHours), String(d.maxHours), String(d.count)]),
+          }},
+          { title: 'Man Hours by Technician', type: 'table', data: {
+            headers: ['Technician', 'Total Hours', 'WO Count', 'Avg Hours/WO'],
+            rows: jsonData.data.manHours.byTechnician.slice(0, 15).map(d => [d.name, String(d.totalHours), String(d.woCount), String(d.avgHoursPerWO)]),
+          }},
+          { title: 'Cost Summary', type: 'summary-cards', data: [
+            { label: 'Total Cost', value: `$${jsonData.data.cost.grandTotal.toLocaleString()}` },
+            { label: 'Labor Cost', value: `$${jsonData.data.cost.grandLabor.toLocaleString()}` },
+            { label: 'Parts Cost', value: `$${jsonData.data.cost.grandParts.toLocaleString()}` },
+            { label: 'Contractor Cost', value: `$${jsonData.data.cost.grandContractor.toLocaleString()}` },
+          ]},
+          { title: 'Top Materials by Cost', type: 'table', data: {
+            headers: ['Item', 'Qty', 'Cost', 'WO Count'],
+            rows: jsonData.data.materials.topItems.slice(0, 15).map(d => [d.name, String(d.totalQty), `$${d.totalCost.toLocaleString()}`, String(d.woCount)]),
+          }},
+          { title: 'Failure Rate by Asset', type: 'table', data: {
+            headers: ['Asset', 'Total WOs', 'Failures', 'Failure Rate'],
+            rows: jsonData.data.failureRate.byAsset.slice(0, 15).map(d => [d.assetName, String(d.totalWOs), String(d.failures), `${d.failureRate}%`]),
+          }},
+        ],
+      });
+      return new NextResponse(pdfBuffer, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'attachment; filename="work-order-report.pdf"',
+        },
+      });
+    }
+
+    return NextResponse.json(jsonData);
   } catch (error) {
     console.error('[WO Reports] Error:', error);
     return NextResponse.json({ success: false, error: 'Failed to generate reports' }, { status: 500 });

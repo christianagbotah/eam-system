@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
 
@@ -71,6 +71,9 @@ export async function GET(request: NextRequest) {
 
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!hasAnyPermission(session, ['repair_tool_requests.view', 'repair_tool_requests.view_all', 'repair_tool_requests.view_own']) && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
     const { searchParams } = new URL(request.url);
 
     const workOrderId = searchParams.get('workOrderId');
@@ -94,7 +97,9 @@ export async function GET(request: NextRequest) {
     if (status) where.status = status;
     if (requestedById) where.requestedById = requestedById;
 
-    if (session && !isAdmin(session) && !session.roles.includes('maintenance_supervisor') && !session.roles.includes('maintenance_planner') && !session.roles.includes('store_keeper') && !session.roles.includes('tools_shop_attendant')) {
+    // Users with only view_own are scoped to their own requests
+    const canViewAll = hasAnyPermission(session, ['repair_tool_requests.view', 'repair_tool_requests.view_all']) || isAdmin(session);
+    if (!canViewAll) {
       where.requestedById = session.userId;
     }
 
@@ -230,6 +235,9 @@ export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    if (!hasPermission(session, 'repair_tool_requests.create') && !isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
 
     const body = await request.json();
     const { workOrderId, items, reason, notes, urgency } = body;

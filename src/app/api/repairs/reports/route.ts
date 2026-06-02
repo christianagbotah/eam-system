@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { generateReportPDF, type ReportPDFParams } from '@/lib/generate-report-pdf';
 
 type ReportType = 'lifecycle' | 'execution' | 'materials' | 'tools' | 'downtime' | 'technician_performance';
 
@@ -31,21 +32,40 @@ export async function GET(request: NextRequest) {
     const priority = searchParams.get('priority') || undefined;
     const department = searchParams.get('department') || undefined;
     const assignee = searchParams.get('assignee') || undefined;
+    const format = searchParams.get('format');
 
     const dateFilter: Record<string, unknown> = {};
     if (from) dateFilter.gte = from;
     if (to) dateFilter.lte = to;
 
+    let result: NextResponse;
     switch (type) {
-      case 'lifecycle': return handleLifecycleReport(plantId, from, to, priority, department, dateFilter);
-      case 'execution': return handleExecutionReport(plantId, from, to, priority, assignee, dateFilter);
-      case 'technician_performance': return handleTechnicianPerformanceReport(plantId, from, to, department, dateFilter);
-      case 'materials': return handleMaterialsReport(plantId, from, to, dateFilter);
-      case 'downtime': return handleDowntimeReport(plantId, from, to, dateFilter);
-      case 'tools': return handleToolsReport(plantId, from, to, dateFilter);
+      case 'lifecycle': result = await handleLifecycleReport(plantId, from, to, priority, department, dateFilter); break;
+      case 'execution': result = await handleExecutionReport(plantId, from, to, priority, assignee, dateFilter); break;
+      case 'technician_performance': result = await handleTechnicianPerformanceReport(plantId, from, to, department, dateFilter); break;
+      case 'materials': result = await handleMaterialsReport(plantId, from, to, dateFilter); break;
+      case 'downtime': result = await handleDowntimeReport(plantId, from, to, dateFilter); break;
+      case 'tools': result = await handleToolsReport(plantId, from, to, dateFilter); break;
       default:
         return NextResponse.json({ success: false, error: 'Unknown report type' }, { status: 400 });
     }
+
+    // ========== PDF FORMAT ==========
+    if (format === 'pdf') {
+      const jsonBody = await result.json();
+      if (jsonBody.success && jsonBody.data) {
+        const pdfBuffer = await generateReportPDF(buildRepairPdfParams(type, jsonBody.data, session.fullName || session.userId, from, to, plantId, priority, department));
+        const filename = `repair-${type}-report.pdf`;
+        return new NextResponse(pdfBuffer, {
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename="${filename}"`,
+          },
+        });
+      }
+    }
+
+    return result;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to generate report';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -664,4 +684,191 @@ async function handleToolsReport(
       mostDamagedTools,
     },
   });
+}
+
+// ── PDF PARAMS BUILDER ─────────────────────────────────────────────────────────
+function buildRepairPdfParams(
+  type: ReportType,
+  data: any,
+  generatedBy: string,
+  from?: Date,
+  to?: Date,
+  plantId?: string,
+  priority?: string,
+  department?: string,
+): ReportPDFParams {
+  const filters: Record<string, string> = {
+    from: from?.toISOString().slice(0, 10) || 'All time',
+    to: to?.toISOString().slice(0, 10) || 'Present',
+    ...(plantId && { plantId }),
+    ...(priority && { priority }),
+    ...(department && { department }),
+  };
+
+  const reportTitles: Record<ReportType, { title: string; subtitle: string }> = {
+    lifecycle: { title: 'Maintenance Request Lifecycle Report', subtitle: 'MR → WO Conversion & Stage Durations' },
+    execution: { title: 'WO Execution Report', subtitle: 'Completion Rates, Rework & Team Performance' },
+    technician_performance: { title: 'Technician Performance Report', subtitle: 'Individual Technician Metrics & Rankings' },
+    materials: { title: 'Materials Report', subtitle: 'Material Cost Analysis & Spare Part Returns' },
+    downtime: { title: 'Downtime Report', subtitle: 'Equipment Downtime Analysis & Impact Assessment' },
+    tools: { title: 'Tool Damage Report', subtitle: 'Damage Incidents, Repair Costs & Tool Transfers' },
+  };
+
+  const { title, subtitle } = reportTitles[type];
+
+  const sections: ReportPDFParams['sections'] = [];
+
+  switch (type) {
+    case 'lifecycle': {
+      sections.push(
+        { title: 'Key Metrics', type: 'summary-cards', data: [
+          { label: 'Total MRs', value: data.totalRequests },
+          { label: 'Converted to WO', value: data.convertedToWo },
+          { label: 'Closed', value: data.closed },
+          { label: 'Avg Turnaround', value: `${data.avgTurnaroundHours}h` },
+        ]},
+        { title: 'Average Stage Durations', type: 'table', data: {
+          headers: ['Stage', 'Avg Hours'],
+          rows: Object.entries(data.avgStageDurations as Record<string, number>).map(([stage, hours]) => [
+            stage.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+            `${Math.round(hours * 100) / 100}`,
+          ]),
+        }},
+      );
+      break;
+    }
+
+    case 'execution': {
+      sections.push(
+        { title: 'Key Metrics', type: 'summary-cards', data: [
+          { label: 'Total WOs', value: data.totalWOs },
+          { label: 'Completion Rate', value: `${data.completionRate}%` },
+          { label: 'Avg Actual Hours', value: `${data.avgActualHours}h` },
+          { label: 'Rework Rate', value: `${data.reworkRate}%` },
+        ]},
+        { title: 'Work Orders by Type', type: 'table', data: {
+          headers: ['Type', 'Count', 'Closed', 'Rate (%)', 'Avg Hours'],
+          rows: (data.byType as any[]).map(d => [d.type, String(d.count), String(d.closed), String(d.rate), String(d.avgHours)]),
+        }},
+        { title: 'Team Performance', type: 'table', data: {
+          headers: ['Name', 'Total', 'Closed', 'Rework'],
+          rows: (data.teamMetrics as any[]).map(d => [d.fullName, String(d.total), String(d.closed), String(d.rework)]),
+        }},
+      );
+      break;
+    }
+
+    case 'technician_performance': {
+      sections.push(
+        { title: 'Technician Performance', type: 'table', data: {
+          headers: ['Name', 'WO Count', 'Closed', 'Avg Time/WO', 'Time Accuracy (%)', 'Rework Rate (%)'],
+          rows: (data.technicians as any[]).map(d => [
+            d.user?.fullName || 'Unknown',
+            String(d.woCount),
+            String(d.closedCount),
+            String(d.avgTimePerWo),
+            String(d.timeAccuracy),
+            String(d.reworkRate),
+          ]),
+        }},
+      );
+      break;
+    }
+
+    case 'materials': {
+      sections.push(
+        { title: 'Material Summary', type: 'summary-cards', data: [
+          { label: 'Total Material Cost', value: `$${data.summary.totalMaterialCost.toLocaleString()}` },
+          { label: 'WOs with Materials', value: data.summary.workOrdersWithMaterials },
+          { label: 'Avg Cost/WO', value: `$${data.summary.avgCostPerWo.toLocaleString()}` },
+        ]},
+        { title: 'Material Cost by Work Order', type: 'table', data: {
+          headers: ['WO #', 'Title', 'Items', 'Cost'],
+          rows: (data.costByWorkOrder as any[]).slice(0, 15).map(d => [
+            d.woNumber || '—',
+            d.title || '—',
+            String(d.materialCount),
+            `$${d.totalMaterialCost.toLocaleString()}`,
+          ]),
+        }},
+        { title: 'Spare Part Returns', type: 'key-value', data: [
+          { key: 'Total Returns', value: String(data.sparePartReturns.total) },
+          { key: 'Returned to Store', value: String(data.sparePartReturns.returnedToStore) },
+          { key: 'Disposed', value: String(data.sparePartReturns.disposed) },
+          { key: 'Return Rate', value: `${data.sparePartReturns.returnRate}%` },
+          { key: 'Total Refurb Cost', value: `$${data.sparePartReturns.totalRefurbCost.toLocaleString()}` },
+        ]},
+      );
+      break;
+    }
+
+    case 'downtime': {
+      sections.push(
+        { title: 'Downtime Summary', type: 'summary-cards', data: [
+          { label: 'Total Events', value: data.summary.totalEvents },
+          { label: 'Total Hours', value: `${data.summary.totalDowntimeHours}h` },
+          { label: 'Avg Duration', value: `${data.summary.avgDurationHours}h` },
+          { label: 'Production Loss', value: `$${data.summary.totalProductionLoss.toLocaleString()}` },
+        ]},
+        { title: 'Top 10 Assets by Downtime', type: 'table', data: {
+          headers: ['Asset', 'Events', 'Hours', 'Loss'],
+          rows: (data.byAsset as any[]).slice(0, 10).map(d => [
+            d.assetName || '—',
+            String(d.count),
+            String(d.totalHours),
+            `$${(d.totalLoss || 0).toLocaleString()}`,
+          ]),
+        }},
+        { title: 'Downtime by Category', type: 'table', data: {
+          headers: ['Category', 'Events', 'Hours'],
+          rows: Object.entries(data.byCategory as Record<string, any>).map(([cat, v]) => [
+            cat,
+            String(v.count),
+            String(v.totalHours),
+          ]),
+        }},
+      );
+      break;
+    }
+
+    case 'tools': {
+      sections.push(
+        { title: 'Tool Summary', type: 'summary-cards', data: [
+          { label: 'Damage Reports', value: data.summary.totalDamageReports },
+          { label: 'Repair Cost', value: `$${data.summary.totalRepairCost.toLocaleString()}` },
+          { label: 'Repaired', value: data.summary.repaired },
+          { label: 'Written Off', value: data.summary.writtenOff },
+          { label: 'Transfers', value: data.summary.totalTransfers },
+        ]},
+        { title: 'Most Damaged Tools', type: 'table', data: {
+          headers: ['Tool', 'Code', 'Category', 'Damage Count', 'Repair Cost'],
+          rows: (data.mostDamagedTools as any[]).slice(0, 10).map(d => [
+            d.toolName,
+            d.toolCode,
+            d.category,
+            String(d.damageCount),
+            `$${d.totalCost.toLocaleString()}`,
+          ]),
+        }},
+        { title: 'By Damage Type', type: 'table', data: {
+          headers: ['Damage Type', 'Count', 'Cost'],
+          rows: Object.entries(data.byDamageType as Record<string, any>).map(([dtype, v]) => [
+            dtype,
+            String(v.count),
+            `$${v.cost.toLocaleString()}`,
+          ]),
+        }},
+      );
+      break;
+    }
+  }
+
+  return {
+    title,
+    subtitle,
+    generatedBy,
+    generatedAt: new Date(),
+    filters,
+    sections,
+  };
 }
