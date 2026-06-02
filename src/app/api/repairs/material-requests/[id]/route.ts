@@ -56,6 +56,16 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const existing = await db.repairMaterialRequest.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
 
+    // Ownership check: only the requester (or admin/supervisor/manager) can edit a pending request
+    if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
+      if (existing.requestedById !== session.userId) {
+        return NextResponse.json({ success: false, error: 'You can only edit your own requests' }, { status: 403 });
+      }
+      if (existing.status !== 'pending') {
+        return NextResponse.json({ success: false, error: 'Only pending requests can be edited' }, { status: 400 });
+      }
+    }
+
     const body = await request.json();
     const allowedFields: Record<string, unknown> = {};
     if (body.quantityRequested !== undefined) allowedFields.quantityRequested = body.quantityRequested;
@@ -102,6 +112,13 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
     if (existing.status !== 'pending') {
       return NextResponse.json({ success: false, error: 'Only pending requests can be cancelled' }, { status: 400 });
+    }
+
+    // Ownership check: only requester or admin/supervisor/manager can cancel
+    if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
+      if (existing.requestedById !== session.userId) {
+        return NextResponse.json({ success: false, error: 'You can only cancel your own requests' }, { status: 403 });
+      }
     }
 
     await db.repairMaterialRequest.delete({ where: { id } });

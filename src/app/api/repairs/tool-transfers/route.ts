@@ -8,6 +8,7 @@ import { notifyUser } from '@/lib/notifications';
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const toolId = searchParams.get('toolId');

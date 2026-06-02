@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasRole } from '@/lib/auth';
 
 // GET /api/repairs/downtime/[id]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -30,6 +30,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     const existing = await db.workOrderDowntime.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+
+    // Ownership check: only the creator (or admin/supervisor/manager) can edit downtime records
+    if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
+      if (existing.createdById !== session.userId) {
+        return NextResponse.json({ success: false, error: 'You can only edit your own downtime records' }, { status: 403 });
+      }
+    }
 
     const data: Record<string, unknown> = {};
     if (downtimeEnd !== undefined) {
@@ -66,6 +73,13 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const { id } = await params;
     const existing = await db.workOrderDowntime.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+
+    // Ownership check: only the creator (or admin/supervisor/manager) can delete downtime records
+    if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
+      if (existing.createdById !== session.userId) {
+        return NextResponse.json({ success: false, error: 'You can only delete your own downtime records' }, { status: 403 });
+      }
+    }
 
     await db.workOrderDowntime.delete({ where: { id } });
 

@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 
 // GET /api/repairs/kpi
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
+    const canViewKpi = isAdmin(session) || hasRole(session, 'maintenance_manager') || hasRole(session, 'maintenance_planner') || hasRole(session, 'plant_manager') || hasRole(session, 'maintenance_supervisor');
+    if (!canViewKpi) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+    const plantScope = await getPlantScope(request, session);
+    const plantWhere = plantScope?.isScoped && plantScope.plantId ? { plantId: plantScope.plantId } : {};
 
     const [
       totalWos,
@@ -24,44 +32,43 @@ export async function GET(request: NextRequest) {
       recentCompletions,
     ] = await Promise.all([
       // Total WOs
-      db.workOrder.count(),
+      db.workOrder.count(Object.keys(plantWhere).length > 0 ? { where: plantWhere } : undefined),
       // Completed WOs
-      db.workOrder.count({ where: { status: { in: ['completed', 'verified', 'closed'] } } }),
+      db.workOrder.count({ where: { ...plantWhere, status: { in: ['completed', 'verified', 'closed'] } } }),
       // Closed WOs
-      db.workOrder.count({ where: { status: 'closed' } }),
+      db.workOrder.count({ where: { ...plantWhere, status: 'closed' } }),
       // In progress
-      db.workOrder.count({ where: { status: { in: ['assigned', 'in_progress', 'waiting_parts', 'on_hold'] } } }),
+      db.workOrder.count({ where: { ...plantWhere, status: { in: ['assigned', 'in_progress', 'waiting_parts', 'on_hold'] } } }),
       // Overdue (planned end past, not closed)
       db.workOrder.count({
         where: {
+          ...plantWhere,
           plannedEnd: { lt: new Date() },
           status: { notIn: ['closed', 'cancelled'] },
         },
       }),
       // Avg completion time (hours) — actual labor hours from RepairCompletion
-      db.repairCompletion.aggregate({
-        _avg: { totalLaborHours: true },
-      }),
+      db.repairCompletion.aggregate({ ...(Object.keys(plantWhere).length > 0 ? { where: plantWhere } : {}), _avg: { totalLaborHours: true } }),
       // Material requests by status
-      db.repairMaterialRequest.groupBy({ by: ['status'], _count: true }),
+      db.repairMaterialRequest.groupBy({ by: ['status'], ...(Object.keys(plantWhere).length > 0 ? { where: plantWhere } : {}), _count: true }),
       // Tool requests by status
-      db.repairToolRequest.groupBy({ by: ['status'], _count: true }),
+      db.repairToolRequest.groupBy({ by: ['status'], ...(Object.keys(plantWhere).length > 0 ? { where: plantWhere } : {}), _count: true }),
       // Transfer requests by status
-      db.toolTransferRequest.groupBy({ by: ['status'], _count: true }),
+      db.toolTransferRequest.groupBy({ by: ['status'], ...(Object.keys(plantWhere).length > 0 ? { where: plantWhere } : {}), _count: true }),
       // Total downtime minutes
-      db.workOrderDowntime.aggregate({ _sum: { durationMinutes: true } }),
+      db.workOrderDowntime.aggregate({ ...(Object.keys(plantWhere).length > 0 ? { where: plantWhere } : {}), _sum: { durationMinutes: true } }),
       // Avg downtime per WO
-      db.workOrderDowntime.aggregate({ _avg: { durationMinutes: true } }),
+      db.workOrderDowntime.aggregate({ ...(Object.keys(plantWhere).length > 0 ? { where: plantWhere } : {}), _avg: { durationMinutes: true } }),
       // Rework stats
       db.repairCompletion.aggregate({
         _count: true,
         _avg: { reworkCount: true },
         _sum: { reworkCount: true },
-        where: { reworkCount: { gt: 0 } },
+        where: { ...plantWhere, reworkCount: { gt: 0 } },
       }),
       // Recent completions (last 30 days)
       db.repairCompletion.findMany({
-        where: { supervisorApprovedAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+        where: { ...plantWhere, supervisorApprovedAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
         include: { workOrder: { select: { woNumber: true, title: true, priority: true } } },
         orderBy: { supervisorApprovedAt: 'desc' },
         take: 10,

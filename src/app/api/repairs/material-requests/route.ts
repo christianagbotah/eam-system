@@ -26,6 +26,7 @@ function canViewAllRequests(session: any): boolean {
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     const { searchParams } = new URL(request.url);
 
     const workOrderId = searchParams.get('workOrderId');

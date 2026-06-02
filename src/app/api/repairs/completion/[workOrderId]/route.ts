@@ -65,7 +65,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const wo = await db.workOrder.findUnique({
       where: { id: workOrderId },
-      include: { assignedSupervisor: { select: { id: true, fullName: true } }, planner: { select: { id: true, fullName: true } }, assignee: { select: { id: true, fullName: true } } },
+      include: { assignedSupervisor: { select: { id: true, fullName: true } }, planner: { select: { id: true, fullName: true } }, assignee: { select: { id: true, fullName: true } }, teamMembers: { select: { userId: true } } },
     });
     if (!wo) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
 
@@ -84,6 +84,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // Submit completion (technician)
     if (action === 'submit' || action === undefined) {
+      // Only WO assignee or team leader can submit completion
+      const isAssignee = wo.assignedToId === session.userId;
+      const isTeamLeader = wo.teamLeaderId === session.userId;
+      const isTeamMember = wo.teamMembers?.some((m) => m.userId === session.userId) || false;
+      if (!isAssignee && !isTeamLeader && !isTeamMember && !isAdmin(session)) {
+        return NextResponse.json({ success: false, error: 'Only the assigned technician, team leader, or team member can submit completion' }, { status: 403 });
+      }
+
       // Calculate totals from time logs
       const timeLogs = await db.workOrderTimeLog.findMany({ where: { workOrderId } });
       let calculatedLaborHours = 0;

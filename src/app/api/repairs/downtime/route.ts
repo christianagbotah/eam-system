@@ -41,6 +41,22 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    // Scope downtime to user's own WOs unless they have management role
+    const hasViewAll = isAdmin(session) || hasRole(session, 'maintenance_supervisor') || hasRole(session, 'maintenance_manager') || hasRole(session, 'maintenance_planner') || hasRole(session, 'plant_manager');
+    if (!hasViewAll) {
+      // Only show downtime for WOs assigned to this user or where they are a team member
+      const userWorkOrders = await db.workOrder.findMany({
+        where: { OR: [{ assignedTo: session.userId }, { teamMembers: { some: { userId: session.userId } } }] },
+        select: { id: true },
+      });
+      const woIds = userWorkOrders.map(wo => wo.id);
+      if (woIds.length > 0) {
+        where.workOrderId = { in: woIds };
+      } else {
+        where.workOrderId = { in: [] }; // No WOs = no downtime visible
+      }
+    }
+
     const [records, total] = await Promise.all([
       db.workOrderDowntime.findMany({
         where: Object.keys(where).length > 0 ? where : undefined,

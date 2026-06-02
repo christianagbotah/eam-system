@@ -95,6 +95,11 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    const hasViewAll = isAdmin(session) || hasRole(session, 'maintenance_supervisor') || hasRole(session, 'maintenance_manager') || hasRole(session, 'plant_manager') || hasRole(session, 'store_keeper') || hasRole(session, 'tools_shop_attendant') || hasRole(session, 'inventory_manager');
+    if (!hasViewAll) {
+      where.requestedById = session.userId;
+    }
+
     const [returns, total] = await Promise.all([
       db.sparePartReturn.findMany({
         where,

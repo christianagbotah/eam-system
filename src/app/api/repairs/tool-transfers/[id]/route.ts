@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 
 const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
@@ -87,6 +87,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     switch (action) {
       case 'storekeeper_approve': {
         if (transfer.status !== 'pending') return NextResponse.json({ success: false, error: `Cannot approve: status is ${transfer.status}` }, { status: 400 });
+        // Role check: only store-related roles or admin can approve transfers
+        if (!isAdmin(session) &&
+            !hasRole(session, 'store_keeper') &&
+            !hasRole(session, 'inventory_manager') &&
+            !hasRole(session, 'tools_shop_attendant')) {
+          return NextResponse.json({ success: false, error: 'Only admin, store keeper, inventory manager, or tools shop attendant can approve tool transfers' }, { status: 403 });
+        }
 
         // Validate and store tool condition at transfer
         const resolvedCondition = VALID_CONDITIONS.includes(toolConditionAtTransfer) ? toolConditionAtTransfer : null;
@@ -117,6 +124,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       case 'storekeeper_reject': {
         if (transfer.status !== 'pending') return NextResponse.json({ success: false, error: `Cannot reject: status is ${transfer.status}` }, { status: 400 });
+        // Role check: only store-related roles, admin, or the requester can reject/cancel
+        if (!isAdmin(session) &&
+            !hasRole(session, 'store_keeper') &&
+            !hasRole(session, 'inventory_manager') &&
+            !hasRole(session, 'tools_shop_attendant')) {
+          if (transfer.requestedById !== session.userId) {
+            return NextResponse.json({ success: false, error: 'You can only cancel your own transfer requests' }, { status: 403 });
+          }
+        }
         const rejectionReason = typeof notes === 'string' && notes.trim() ? notes.trim() : null;
         updated = await db.toolTransferRequest.update({
           where: { id },
@@ -220,6 +236,28 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to you`,
               'tool_transfer_request', id);
         }
+        break;
+      }
+
+      case 'cancel': {
+        if (transfer.status !== 'pending') return NextResponse.json({ success: false, error: `Cannot cancel: status is ${transfer.status}` }, { status: 400 });
+        // Ownership check: only requester or admin can cancel
+        if (!isAdmin(session) &&
+            !hasRole(session, 'maintenance_supervisor') &&
+            !hasRole(session, 'maintenance_manager') &&
+            !hasRole(session, 'plant_manager')) {
+          if (transfer.requestedById !== session.userId) {
+            return NextResponse.json({ success: false, error: 'You can only cancel your own transfer requests' }, { status: 403 });
+          }
+        }
+        updated = await db.toolTransferRequest.update({
+          where: { id },
+          data: { status: 'rejected', rejectionReason: notes || 'Cancelled by requester' },
+        });
+        await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Transfer Cancelled',
+            `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" has been cancelled`, 'tool_transfer_request', id);
+        await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Cancelled',
+            `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" has been cancelled`, 'tool_transfer_request', id);
         break;
       }
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { createAuditLog } from '@/lib/audit';
 import { notifyUser } from '@/lib/notifications';
 
@@ -72,6 +72,13 @@ export async function PUT(
       );
     }
 
+    // Ownership check: only the requester (or admin/supervisor/manager) can edit non-terminal returns
+    if (!isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
+      if (existing.requestedById !== session.userId) {
+        return NextResponse.json({ success: false, error: 'You can only edit your own spare part returns' }, { status: 403 });
+      }
+    }
+
     // Build update data (only allow certain fields)
     const allowedFields = ['itemName', 'partSerialNumber', 'quantity', 'conditionOnReturn', 'damageDescription', 'refurbishmentNotes', 'estimatedRefurbCost'];
     const updateData: Record<string, unknown> = {};
@@ -140,6 +147,16 @@ export async function POST(
       if (existing.status !== 'pending') {
         return NextResponse.json({ success: false, error: `Cannot inspect: current status is '${existing.status}', expected 'pending'` }, { status: 400 });
       }
+      // Role check: only store-related roles or admin can inspect returns
+      if (!isAdmin(session) &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'inventory_manager') &&
+          !hasRole(session, 'tools_shop_attendant') &&
+          !hasRole(session, 'maintenance_supervisor') &&
+          !hasRole(session, 'maintenance_manager') &&
+          !hasRole(session, 'plant_manager')) {
+        return NextResponse.json({ success: false, error: 'Only authorized roles can inspect spare part returns' }, { status: 403 });
+      }
 
       const { refurbishmentNeeded, inspectionNotes } = body;
       if (refurbishmentNeeded === undefined) {
@@ -186,6 +203,13 @@ export async function POST(
       }
       if (!existing.refurbishmentNeeded) {
         return NextResponse.json({ success: false, error: 'Refurbishment not needed for this part' }, { status: 400 });
+      }
+      // Role check: only authorized roles can start refurbishment
+      if (!isAdmin(session) &&
+          !hasRole(session, 'maintenance_supervisor') &&
+          !hasRole(session, 'maintenance_manager') &&
+          !hasRole(session, 'plant_manager')) {
+        return NextResponse.json({ success: false, error: 'Only admin or maintenance supervisors/managers can start refurbishment' }, { status: 403 });
       }
 
       const updated = await db.sparePartReturn.update({
@@ -250,6 +274,13 @@ export async function POST(
     if (action === 'return_to_store') {
       if (existing.status !== 'refurbished') {
         return NextResponse.json({ success: false, error: `Cannot return to store: current status is '${existing.status}'` }, { status: 400 });
+      }
+      // Role check: only store-related roles or admin can return to store
+      if (!isAdmin(session) &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'inventory_manager') &&
+          !hasRole(session, 'tools_shop_attendant')) {
+        return NextResponse.json({ success: false, error: 'Only admin, store keeper, inventory manager, or tools shop attendant can return parts to store' }, { status: 403 });
       }
 
       const updated = await db.sparePartReturn.update({
@@ -316,6 +347,15 @@ export async function POST(
       if (!['pending', 'inspected', 'refurbishing', 'refurbished'].includes(existing.status)) {
         return NextResponse.json({ success: false, error: `Cannot dispose: current status is '${existing.status}'` }, { status: 400 });
       }
+      // Role check: only authorized roles can dispose parts
+      if (!isAdmin(session) &&
+          !hasRole(session, 'maintenance_supervisor') &&
+          !hasRole(session, 'maintenance_manager') &&
+          !hasRole(session, 'plant_manager') &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'inventory_manager')) {
+        return NextResponse.json({ success: false, error: 'Only authorized roles can dispose spare parts' }, { status: 403 });
+      }
 
       const { disposalReason } = body;
       if (!disposalReason) {
@@ -347,6 +387,16 @@ export async function POST(
     if (action === 'reject') {
       if (existing.status !== 'pending') {
         return NextResponse.json({ success: false, error: `Cannot reject: current status is '${existing.status}'` }, { status: 400 });
+      }
+      // Role check: only store-related roles or admin can reject returns
+      if (!isAdmin(session) &&
+          !hasRole(session, 'store_keeper') &&
+          !hasRole(session, 'inventory_manager') &&
+          !hasRole(session, 'tools_shop_attendant') &&
+          !hasRole(session, 'maintenance_supervisor') &&
+          !hasRole(session, 'maintenance_manager') &&
+          !hasRole(session, 'plant_manager')) {
+        return NextResponse.json({ success: false, error: 'Only authorized roles can reject spare part returns' }, { status: 403 });
       }
 
       const { reason } = body;

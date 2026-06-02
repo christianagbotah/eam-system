@@ -529,8 +529,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ success: false, error: 'Cannot edit: request is no longer pending' }, { status: 400 });
     }
 
-    if (toolReq.requestedById !== session.userId && !isAdmin(session)) {
-      return NextResponse.json({ success: false, error: 'Only the requester or admin can edit' }, { status: 403 });
+    if (toolReq.requestedById !== session.userId && !isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
+      return NextResponse.json({ success: false, error: 'You can only edit your own requests' }, { status: 403 });
     }
 
     const VALID_URGENCIES = ['low', 'normal', 'medium', 'high', 'critical'];
@@ -696,8 +696,8 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       return NextResponse.json({ success: false, error: 'Cannot delete: request is no longer pending' }, { status: 400 });
     }
 
-    if (toolReq.requestedById !== session.userId && !isAdmin(session)) {
-      return NextResponse.json({ success: false, error: 'Only the requester or admin can delete' }, { status: 403 });
+    if (toolReq.requestedById !== session.userId && !isAdmin(session) && !hasRole(session, 'maintenance_supervisor') && !hasRole(session, 'maintenance_manager') && !hasRole(session, 'plant_manager')) {
+      return NextResponse.json({ success: false, error: 'You can only cancel your own requests' }, { status: 403 });
     }
 
     // Release tool if it was reserved (legacy single-tool)

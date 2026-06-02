@@ -46,6 +46,17 @@ export async function GET(
     const { searchParams } = new URL(request.url);
     const includeTeamLogs = searchParams.get('includeTeamLogs') === 'true';
 
+    if (includeTeamLogs) {
+      const canViewTeamLogs = session.roles.includes('admin') || session.roles.includes('maintenance_supervisor') || session.roles.includes('maintenance_manager') || session.roles.includes('maintenance_planner');
+      if (!canViewTeamLogs) {
+        // Only team leader can view team logs
+        const woForCheck = await db.workOrder.findUnique({ where: { id }, select: { teamLeaderId: true } });
+        if (woForCheck?.teamLeaderId !== session.userId) {
+          return NextResponse.json({ success: false, error: 'Insufficient permissions to view team time logs' }, { status: 403 });
+        }
+      }
+    }
+
     const wo = await db.workOrder.findUnique({ where: { id } });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });

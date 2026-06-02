@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasRole } from '@/lib/auth';
 
 type ReportType = 'lifecycle' | 'execution' | 'materials' | 'tools' | 'downtime' | 'technician_performance';
 
@@ -9,6 +9,11 @@ export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
+    const canViewReports = isAdmin(session) || hasRole(session, 'maintenance_manager') || hasRole(session, 'maintenance_planner') || hasRole(session, 'plant_manager') || hasRole(session, 'maintenance_supervisor');
+    if (!canViewReports) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions to view reports' }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') as ReportType | null;
