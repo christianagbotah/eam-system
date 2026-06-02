@@ -874,3 +874,36 @@ Stage Summary:
   - src/app/api/work-orders/[id]/personal-tools/route.ts (POST + PUT: added status check)
   - src/components/modules/MaintenancePages.tsx (frontend lock UI)
 - Workflow: completed (editable) → verified (locked, pending planner) → closed (permanently locked)
+
+---
+Task ID: 10
+Agent: Main Agent
+Task: Comprehensive permission overhaul - fix role-based access control misalignment
+
+Work Log:
+- Audited entire permission system: 15 roles, 300+ permissions, 6 layers of checking
+- Found seed data was correct but enforcement had critical gaps
+- Fixed WO List API `assignedTo` param bypass — operators could view any WO by passing `?assignedTo=<other-user-id>`
+- Fixed WO Detail API — added `view_own` enforcement, returns 403 if user is not assignee/team member/requester
+- Fixed MR List API — added `maintenance_requests.view_all` to `hasViewAll` check
+- Fixed Predictive Models API — wrong slugs (`digital_twin.*` → `predictive.*`)
+- Fixed Suppliers API — wrong slugs (`inventory.*` → `vendors.*`)
+- Fixed Alternate Parts API — had NO permission checks at all, added `parts.create`/`parts.delete`
+- Added `permOr` support to Sidebar NavGroup interface and filter logic
+- Added `permOr` support to MobileBottomNav MoreItem interface and filter logic
+- Updated Maintenance/Repairs sidebar groups to show for operators with `view_own`
+- Updated Mobile bottom tabs (Requests, WOs) to show for operators with `view_own`
+- Added `canTakeActions` flag in WO Detail page, gating all action buttons
+- Added "View Only" banner for restricted users on WO detail
+- Gated MaintenanceToolsPage "Add Tool" button by `tools.create` permission
+- Fixed SafetyPages: `safety.create/update/delete` (invalid) → `safety_incidents.create`/`safety_inspections.update`/etc. with `hasAnyPermission`
+- Fixed QualityPages: `quality.create/update/delete` (invalid) → `quality_inspections.create`/`quality_ncr.update`/etc. with `hasAnyPermission`
+- Fixed OperationsPages: `operations.create/update` (invalid) → `meters.create`/`training.create`/`production_surveys.create`/`shift_handovers.create` per sub-page
+- Created `scripts/sync-role-permissions.ts` — syncs all role-permission mappings from seed to DB
+
+Stage Summary:
+- **17 files changed, 802 insertions, 74 deletions**
+- **Key insight**: Seed permission data was already correct, but enforcement had critical gaps
+- **VPS Action Required**: Run `bun run scripts/sync-role-permissions.ts` to re-sync role-permission mappings
+- **VPS Action Required**: All users must re-login after sync for new permissions to take effect
+- Commit: 4616b510 pushed to main
