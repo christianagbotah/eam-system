@@ -91,7 +91,12 @@ const modulePermissions: Record<string, string[]> = {
   failure_codes: ['view', 'manage'],
   rca: ['view', 'create', 'update'],
   assistance_requests: ['view', 'create', 'respond'],
-  time_logs: ['view', 'create', 'update', 'delete'],
+  time_logs: ['view', 'view_team', 'create', 'update', 'delete'],
+
+  // ── Repair Module (~18) ──
+  repair_material_requests: ['view', 'view_all', 'view_own', 'create', 'update'],
+  repair_tool_requests: ['view', 'view_all', 'view_own', 'create', 'update'],
+  repair_tool_transfers: ['view', 'view_all', 'view_own', 'create', 'update'],
 
   // ── MRMP / PM (~28) ──
   pm_schedules: ['view', 'create', 'update', 'delete', 'activate', 'run'],
