@@ -1,40 +1,23 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { checkDbHealth } from '@/lib/db';
 
+/**
+ * GET /api/debug/db-health
+ * Returns detailed diagnostics about the Prisma client state.
+ * Useful for diagnosing "prisma generate" issues on VPS.
+ */
 export async function GET() {
   try {
-    const client = new PrismaClient();
-    const models = Object.keys(client).filter(k => !k.startsWith('_') && !k.startsWith('$') && typeof (client as any)[k] === 'object');
-
-    // Check if models have expected methods
-    const checkModel = (name: string) => {
-      const model = (client as any)[name];
-      if (!model) return { exists: false, methods: [] };
-      return {
-        exists: true,
-        methods: ['findMany', 'findUnique', 'create', 'update', 'delete'].filter(m => typeof model[m] === 'function'),
-      };
-    };
-
-    await client.$disconnect();
+    const health = await checkDbHealth();
 
     return NextResponse.json({
-      success: true,
-      prismaVersion: (PrismaClient as any).version || 'unknown',
-      totalModels: models.length,
-      criticalModels: {
-        componentRegistry: checkModel('componentRegistry'),
-        digitalTwin: checkModel('digitalTwin'),
-        systemDiagram: checkModel('systemDiagram'),
-        asset: checkModel('asset'),
-        user: checkModel('user'),
-      },
-      env: {
-        hasDbHost: !!process.env.DB_HOST,
-        hasDbUser: !!process.env.DB_USER,
-        hasDbName: !!process.env.DB_NAME,
-        databaseUrlPrefix: (process.env.DATABASE_URL || '').slice(0, 20) + '...',
-      },
+      success: health.connected,
+      ...health,
+      fixInstructions: !health.modelCheckPassed
+        ? 'Run: cd /path/to/project && rm -rf node_modules/.prisma && npx prisma generate && pm2 restart APP_NAME'
+        : undefined,
+    }, {
+      status: health.connected ? 200 : 503,
     });
   } catch (error: unknown) {
     return NextResponse.json({
