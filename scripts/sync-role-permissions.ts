@@ -10,40 +10,17 @@
  * Run on VPS:
  *   cd /home/ifleetpro/git/eam-system && bun run scripts/sync-role-permissions.ts
  *
+ * Run locally:
+ *   bun run scripts/sync-role-permissions.ts
+ *
  * This is safe to run multiple times — it replaces all mappings.
  * It will NOT delete existing roles, users, or permissions.
  * After running, all active sessions will be refreshed on next request.
  */
 
-import mariadb from 'mariadb';
+import { PrismaClient } from '@prisma/client';
 
-// Read DB credentials from environment or DATABASE_URL
-function getDbConfig() {
-  const host = process.env.DB_HOST || process.env.MYSQL_HOST;
-  const port = parseInt(process.env.DB_PORT || process.env.MYSQL_PORT || '3306', 10);
-  const user = process.env.DB_USER || process.env.MYSQL_USER;
-  const password = process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD;
-  const database = process.env.DB_NAME || process.env.MYSQL_DATABASE;
-
-  if (host && user && password && database) {
-    return { host, port, user, password, database };
-  }
-
-  const dbUrl = process.env.DATABASE_URL || '';
-  if (dbUrl.startsWith('mysql://')) {
-    const url = new URL(dbUrl);
-    return {
-      host: url.hostname,
-      port: parseInt(url.port || '3306', 10),
-      user: decodeURIComponent(url.username),
-      password: decodeURIComponent(url.password),
-      database: url.pathname.slice(1),
-    };
-  }
-
-  console.error('❌ No database credentials found. Set DB_HOST, DB_USER, DB_PASSWORD, DB_NAME or DATABASE_URL.');
-  process.exit(1);
-}
+const db = new PrismaClient();
 
 // ══════════════════════════════════════════════════════════════════════════
 // Role → Permission Matrix (must match prisma/seed.ts)
@@ -467,23 +444,11 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 };
 
 async function syncPermissions() {
-  const config = getDbConfig();
-  console.log(`🔄 Connecting to MariaDB: ${config.host}/${config.database}...`);
-
-  const conn = await mariadb.createConnection({
-    host: config.host,
-    port: config.port,
-    user: config.user,
-    password: config.password,
-    database: config.database,
-    multipleStatements: true,
-  });
-
-  console.log('✅ Connected! Syncing role-permission mappings...\n');
+  console.log('🔄 Connecting to database via Prisma...\n');
 
   try {
     // Step 1: Get all roles from DB
-    const roles = await conn.query('SELECT id, slug, name FROM roles') as Array<{ id: string; slug: string; name: string }>;
+    const roles = await db.role.findMany({ select: { id: true, slug: true, name: true }, orderBy: { level: 'desc' } });
     console.log(`📋 Found ${roles.length} roles in database:`);
     for (const r of roles) {
       console.log(`   • ${r.slug} (${r.name})`);
@@ -491,7 +456,7 @@ async function syncPermissions() {
     console.log('');
 
     // Step 2: Get all permissions from DB
-    const permissions = await conn.query('SELECT id, slug FROM permissions') as Array<{ id: string; slug: string }>;
+    const permissions = await db.permission.findMany({ select: { id: true, slug: true } });
     console.log(`📋 Found ${permissions.length} permissions in database\n`);
 
     // Build lookup maps
@@ -499,13 +464,13 @@ async function syncPermissions() {
     const permMap = new Map(permissions.map(p => [p.slug, p.id]));
 
     // Step 3: Clear all existing role-permission mappings
-    await conn.query('DELETE FROM role_permissions');
+    await db.$executeRawUnsafe(`DELETE FROM role_permissions`);
     console.log('🗑️  Cleared all existing role-permission mappings');
 
     // Step 4: Insert new mappings from ROLE_PERMISSIONS
     let totalMappings = 0;
-    let notFoundPerms: string[] = [];
-    let notFoundRoles: string[] = [];
+    const notFoundPerms: string[] = [];
+    const notFoundRoles: string[] = [];
 
     for (const [roleSlug, permSlugs] of Object.entries(ROLE_PERMISSIONS)) {
       const roleId = roleMap.get(roleSlug);
@@ -516,26 +481,35 @@ async function syncPermissions() {
 
       // Skip admin — gets ALL permissions programmatically
       if (roleSlug === 'admin') {
-        console.log(`   ⏭️  admin: skipped (gets ALL permissions programmatically)`);
+        console.log('   ⏭️  admin: skipped (gets ALL permissions programmatically)');
         continue;
       }
 
       let count = 0;
+      const mappings: { roleId: string; permissionId: string }[] = [];
+
       for (const permSlug of permSlugs) {
         const permId = permMap.get(permSlug);
         if (!permId) {
           if (!notFoundPerms.includes(permSlug)) notFoundPerms.push(permSlug);
           continue;
         }
-
-        await conn.query(
-          'INSERT INTO role_permissions (id, role_id, permission_id, created_at) VALUES (UUID(), ?, ?, NOW())',
-          [roleId, permId]
-        );
+        mappings.push({ roleId, permissionId: permId });
         count++;
-        totalMappings++;
       }
+
+      // Bulk insert using raw SQL for speed
+      if (mappings.length > 0) {
+        for (const m of mappings) {
+          await db.$executeRawUnsafe(
+            'INSERT INTO role_permissions (id, role_id, permission_id, created_at) VALUES (UUID(), ?, ?, NOW())',
+            m.roleId, m.permissionId
+          );
+        }
+      }
+
       console.log(`   ✅ ${roleSlug}: ${count} permissions mapped`);
+      totalMappings += count;
     }
 
     console.log(`\n📊 Total role-permission mappings: ${totalMappings}`);
@@ -550,31 +524,34 @@ async function syncPermissions() {
       }
     }
 
-    // Step 5: Clear session cache to force re-auth
+    // Step 5: Clear session table to force re-auth
     try {
-      await conn.query('DELETE FROM sessions');
+      await db.$executeRawUnsafe(`DELETE FROM sessions`);
       console.log('\n🔄 Cleared all sessions — users will need to re-login for new permissions to take effect');
     } catch {
       console.log('\n⚠️  Could not clear sessions (table may not exist). Users should log out and back in.');
     }
 
     // Verification
-    const counts = await conn.query(
+    const counts = await db.$queryRawUnsafe<Array<{ slug: string; perm_count: bigint }>>(
       `SELECT r.slug, COUNT(rp.permission_id) as perm_count
        FROM roles r
        LEFT JOIN role_permissions rp ON r.id = rp.role_id
        WHERE r.slug != 'admin'
        GROUP BY r.id, r.slug
        ORDER BY r.level DESC`
-    ) as Array<{ slug: string; perm_count: number }>;
+    );
 
     console.log('\n📋 Verification — permission counts per role:');
     for (const c of counts) {
       console.log(`   • ${c.slug}: ${c.perm_count} permissions`);
     }
 
+  } catch (err) {
+    console.error('❌ Sync failed:', err);
+    process.exit(1);
   } finally {
-    await conn.end();
+    await db.$disconnect();
   }
 }
 
@@ -585,6 +562,6 @@ syncPermissions()
     process.exit(0);
   })
   .catch((err) => {
-    console.error('❌ Sync failed:', err.message);
+    console.error('❌ Sync failed:', err);
     process.exit(1);
   });
