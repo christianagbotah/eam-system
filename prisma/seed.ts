@@ -713,50 +713,73 @@ async function seed() {
   }
 
   // ── Clear existing data for clean re-seed ──
+  // ⚠️  WARNING: This is a DESTRUCTIVE operation. Use seed-permissions-only.ts for production updates.
   console.log('🗑️  Clearing existing data...');
+  console.log('  ⚠️  DESTRUCTIVE — this will delete ALL data. For non-destructive updates, use seed-permissions-only.ts');
   try {
     // Method 1: TRUNCATE with FK checks disabled (fastest)
+    // NOTE: The MariaDB adapter may use connection pooling, so SET FOREIGN_KEY_CHECKS
+    // might not persist across queries. We use a single multi-statement approach.
     const tables = await db.$queryRawUnsafe(
       `SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME != '_prisma_migrations'`
     );
     const tableNames = (tables as Array<{ TABLE_NAME: string }>).map(t => t.TABLE_NAME);
     if (tableNames.length > 0) {
-      await db.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
-      for (const t of tableNames) {
-        try {
-          await db.$executeRawUnsafe(`TRUNCATE TABLE \`${t}\``);
-        } catch (truncErr) {
-          // Some tables might fail (views, etc) — log and continue
-          console.warn(`    ⚠️ Could not truncate ${t}: ${(truncErr as Error).message.slice(0, 80)}`);
+      // Build a single SQL statement to disable FK checks and truncate all tables
+      // This ensures FK checks are disabled in the same connection/transaction
+      const truncateSQL = tableNames.map(t => `TRUNCATE TABLE \`${t}\`;`).join('\n');
+      const fullSQL = `SET FOREIGN_KEY_CHECKS = 0;\n${truncateSQL}\nSET FOREIGN_KEY_CHECKS = 1;`;
+
+      try {
+        // Try single multi-statement approach first
+        await db.$executeRawUnsafe(fullSQL);
+        console.log(`  ✅ Cleared ${tableNames.length} tables via single TRUNCATE`);
+      } catch {
+        // Fallback: individual TRUNCATE with FK checks disabled per-table
+        console.log('  ⚠️  Multi-statement TRUNCATE failed, trying per-table approach...');
+        let successCount = 0;
+        for (const t of tableNames) {
+          try {
+            // Disable FK, truncate, re-enable in one statement per table
+            await db.$executeRawUnsafe(
+              `SET FOREIGN_KEY_CHECKS = 0; TRUNCATE TABLE \`${t}\`; SET FOREIGN_KEY_CHECKS = 1;`
+            );
+            successCount++;
+          } catch (truncErr) {
+            console.warn(`    ⚠️ Could not truncate ${t}: ${(truncErr as Error).message.slice(0, 80)}`);
+          }
+        }
+        console.log(`  ✅ Cleared ${successCount}/${tableNames.length} tables via per-table TRUNCATE`);
+
+        // If too many failures, fall back to DELETE
+        if (successCount < tableNames.length * 0.5) {
+          console.log('  ⚠️  TRUNCATE success rate too low, falling back to DELETE...');
+          const tablesToClear = [
+            'chatMessage', 'conversationParticipant', 'conversation',
+            'workOrderStatusHistory', 'workOrderComment', 'workOrderTimeLog',
+            'workOrderMaterial', 'workOrderTeamMember', 'woTeamMemberRequest',
+            'workOrder', 'pmTrigger', 'pmTemplateTask', 'pmTemplate', 'pmSchedule',
+            'maintenanceRequestComment', 'maintenanceRequest',
+            'inventoryItem', 'asset', 'assetCategory',
+            'notification', 'userPlant', 'userRole', 'userSkill', 'user',
+            'statusTransition', 'companyModule', 'systemModule',
+            'role', 'permission', 'department', 'plant', 'companyProfile',
+          ];
+          let cleared = 0;
+          for (const table of tablesToClear) {
+            try {
+              await (db as any)[table]?.deleteMany();
+              cleared++;
+            } catch { /* skip */ }
+          }
+          console.log(`  ✅ Cleared ${cleared} tables via DELETE fallback`);
         }
       }
-      await db.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
-      console.log(`  ✅ Cleared ${tableNames.length} tables via TRUNCATE`);
     } else {
       console.log('  ℹ️  No tables found (fresh database)');
     }
   } catch (e) {
-    console.warn('  ⚠️  TRUNCATE approach failed, trying DELETE...');
-    // Method 2: Individual deleteMany (slower but works with fewer privileges)
-    const tablesToClear = [
-      'chatMessage', 'conversationParticipant', 'conversation',
-      'workOrderStatusHistory', 'workOrderComment', 'workOrderTimeLog',
-      'workOrderMaterial', 'workOrderTeamMember', 'woTeamMemberRequest',
-      'workOrder', 'pmTrigger', 'pmTemplateTask', 'pmTemplate', 'pmSchedule',
-      'maintenanceRequestComment', 'maintenanceRequest',
-      'inventoryItem', 'asset', 'assetCategory',
-      'notification', 'userPlant', 'userRole', 'userSkill', 'user',
-      'statusTransition', 'companyModule', 'systemModule',
-      'role', 'permission', 'department', 'plant', 'companyProfile',
-    ];
-    let cleared = 0;
-    for (const table of tablesToClear) {
-      try {
-        const result = await (db as any)[table]?.deleteMany();
-        if (result) cleared++;
-      } catch { /* skip */ }
-    }
-    console.log(`  ✅ Cleared ${cleared} tables via DELETE`);
+    console.error('  ❌ All clear methods failed:', (e as Error).message);
   }
   console.log('');
 

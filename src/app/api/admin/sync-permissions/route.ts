@@ -3,6 +3,117 @@ import { getSession, isAdmin, sessionCache } from '@/lib/auth';
 import { NextResponse } from 'next/server';
 
 // ══════════════════════════════════════════════════════════════════════════
+// PERMISSION DEFINITIONS — Must match prisma/seed.ts & seed-permissions-only.ts
+// ══════════════════════════════════════════════════════════════════════════
+
+const MODULE_PERMISSIONS: Record<string, string[]> = {
+  dashboard: ['view', 'stats'],
+  chat: ['view'],
+  users: ['view', 'create', 'update', 'delete', 'manage', 'assign_role', 'assign_plant', 'reset_password'],
+  roles: ['view', 'create', 'update', 'delete', 'manage'],
+  permissions: ['view'],
+  departments: ['view', 'create', 'update', 'delete', 'manage'],
+  plants: ['view', 'create', 'update', 'delete', 'manage'],
+  notifications: ['view', 'manage', 'send'],
+  audit_logs: ['view'],
+  system_settings: ['view', 'update'],
+  modules: ['view', 'manage', 'activate'],
+  api_keys: ['view', 'create', 'update', 'delete'],
+  search: ['global'],
+  documents: ['view', 'upload', 'download', 'delete', 'manage'],
+  company: ['view', 'update'],
+  assets: ['view', 'view_all', 'view_own', 'create', 'update', 'delete', 'export', 'import', 'bulk_update', 'manage', 'hierarchy', 'relationships', 'health', 'criticality'],
+  equipment: ['view', 'create', 'update', 'delete'],
+  assemblies: ['view', 'create', 'update', 'delete', 'manage'],
+  bom: ['view', 'create', 'update', 'delete', 'import', 'export', 'manage'],
+  facilities: ['view', 'create', 'update', 'delete'],
+  meters: ['view', 'create', 'update', 'delete', 'read'],
+  tools: ['view', 'create', 'update', 'delete', 'manage', 'checkout', 'return', 'transfer'],
+  maintenance_requests: ['view', 'view_all', 'view_own', 'create', 'update', 'delete', 'approve', 'reject', 'triage', 'assign_planner', 'convert_to_wo', 'my_queue', 'archive'],
+  work_orders: ['view', 'view_all', 'view_own', 'create', 'update', 'delete', 'assign_supervisor', 'assign_technician', 'start', 'complete', 'verify', 'reopen', 'close', 'adjust_cost', 'failure_analysis', 'dashboard', 'bulk_update', 'cancel'],
+  work_order_templates: ['view', 'create', 'update', 'delete'],
+  recurring_work_orders: ['view', 'create', 'update', 'delete'],
+  approvals: ['view', 'approve', 'reject'],
+  verifications: ['view', 'check'],
+  sla: ['view', 'manage'],
+  failure_codes: ['view', 'manage'],
+  rca: ['view', 'create', 'update'],
+  assistance_requests: ['view', 'create', 'respond'],
+  time_logs: ['view', 'view_team', 'create', 'update', 'delete'],
+  repair_material_requests: ['view', 'view_all', 'view_own', 'create', 'update'],
+  repair_tool_requests: ['view', 'view_all', 'view_own', 'create', 'update'],
+  repair_tool_transfers: ['view', 'view_all', 'view_own', 'create', 'update'],
+  pm_schedules: ['view', 'create', 'update', 'delete', 'activate', 'run'],
+  pm_templates: ['view', 'create', 'update', 'delete'],
+  pm_triggers: ['view', 'create', 'update'],
+  pm_checklists: ['view', 'create', 'update', 'delete'],
+  pm_notifications: ['view'],
+  pm_analytics: ['view'],
+  pm_work_orders: ['view'],
+  calibration: ['view', 'create', 'update', 'delete', 'manage'],
+  asset_health: ['view'],
+  condition_monitoring: ['view', 'manage'],
+  inventory: ['view', 'view_all', 'create', 'update', 'delete', 'stock_in', 'stock_out', 'reserve', 'consume', 'export', 'manage', 'forecast'],
+  parts: ['view', 'create', 'update', 'delete'],
+  parts_categories: ['view', 'create', 'update'],
+  material_requisitions: ['view', 'create', 'approve', 'issue', 'reject'],
+  vendors: ['view', 'create', 'update', 'delete', 'manage'],
+  stock_transactions: ['view'],
+  purchase_orders: ['view', 'create', 'update', 'approve', 'receive', 'manage'],
+  inventory_locations: ['view', 'create', 'update', 'delete'],
+  inventory_adjustments: ['view', 'create', 'approve'],
+  inventory_transfers: ['view', 'create', 'approve'],
+  employees: ['view', 'create', 'update'],
+  shifts: ['view', 'create', 'update', 'assign'],
+  shift_handovers: ['view', 'create'],
+  training: ['view', 'create', 'update', 'manage'],
+  skills: ['view', 'create', 'update'],
+  skill_categories: ['view', 'manage'],
+  technician_groups: ['view', 'create', 'update'],
+  assignments: ['view', 'create', 'update'],
+  production: ['view', 'create', 'update', 'manage'],
+  production_surveys: ['view', 'create', 'update', 'manage'],
+  oee: ['view', 'manage'],
+  downtime: ['view', 'create', 'manage'],
+  quality_checks: ['view', 'create', 'update'],
+  energy: ['view', 'manage'],
+  work_centers: ['view', 'create', 'update'],
+  production_targets: ['view', 'create', 'update'],
+  production_batches: ['view', 'create', 'update'],
+  iot: ['view'],
+  analytics: ['view'],
+  operations: ['view'],
+  quality: ['view'],
+  safety: ['view'],
+  safety_incidents: ['view', 'create', 'update', 'manage'],
+  safety_inspections: ['view', 'create', 'update', 'manage'],
+  safety_equipment: ['view', 'create', 'update', 'delete'],
+  safety_permits: ['view', 'create', 'approve', 'close'],
+  risk_assessments: ['view', 'create', 'update', 'manage'],
+  iot_devices: ['view', 'create', 'update', 'delete'],
+  iot_monitoring: ['view'],
+  iot_rules: ['view', 'create', 'update', 'delete'],
+  predictive: ['view', 'analyze'],
+  digital_twin: ['view', 'manage'],
+  model_viewer: ['view'],
+  hotspots: ['view', 'manage'],
+  reports: ['view', 'create', 'generate', 'export', 'manage', 'schedule', 'customize'],
+  quality_inspections: ['view', 'create', 'update', 'delete'],
+  quality_ncr: ['view', 'create', 'update', 'delete'],
+  quality_audits: ['view', 'create', 'update', 'delete'],
+  quality_control_plans: ['view', 'create', 'update'],
+  spc: ['view', 'manage'],
+};
+
+// Helper: format module name for display
+function fmtMod(mod: string): string {
+  return mod.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+function fmtAction(action: string): string {
+  return action.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // Role → Permission Matrix (must match prisma/seed.ts)
 // ══════════════════════════════════════════════════════════════════════════
 
@@ -468,6 +579,44 @@ export async function POST(request: Request) {
     const logs: string[] = [];
     const roleResults: Array<{ slug: string; name: string; permissionCount: number; skipped: boolean }> = [];
 
+    // ── Step 0: Auto-seed any missing permissions ──
+    logs.push('Checking for missing permission slugs...');
+    let newPermCount = 0;
+
+    // Get existing permissions from DB
+    const existingPerms = await db.permission.findMany({ select: { slug: true } });
+    const existingSlugs = new Set(existingPerms.map(p => p.slug));
+
+    // Find and create any missing permissions
+    for (const [moduleName, actions] of Object.entries(MODULE_PERMISSIONS)) {
+      for (const action of actions) {
+        const slug = `${moduleName}.${action}`;
+        if (!existingSlugs.has(slug)) {
+          try {
+            await db.permission.create({
+              data: {
+                slug,
+                name: `${fmtMod(moduleName)} - ${fmtAction(action)}`,
+                module: moduleName,
+                action,
+                description: `${fmtAction(action)} access for ${fmtMod(moduleName)} module`,
+              },
+            });
+            logs.push(`  + Created missing permission: ${slug}`);
+            newPermCount++;
+          } catch {
+            // Might be a race condition — ignore
+          }
+        }
+      }
+    }
+
+    if (newPermCount > 0) {
+      logs.push(`Created ${newPermCount} new permission(s) that were missing`);
+    } else {
+      logs.push('All permission slugs already exist in database');
+    }
+
     // Step 1: Get all roles from DB
     const roles = await db.role.findMany({
       select: { id: true, slug: true, name: true },
@@ -475,7 +624,7 @@ export async function POST(request: Request) {
     });
     logs.push(`Found ${roles.length} roles in database`);
 
-    // Step 2: Get all permissions from DB
+    // Step 2: Get all permissions from DB (refresh after potential creates)
     const permissions = await db.permission.findMany({
       select: { id: true, slug: true },
     });
@@ -539,6 +688,18 @@ export async function POST(request: Request) {
       totalMappings += count;
     }
 
+    // Admin gets ALL permissions
+    const adminId = roleMap.get('admin');
+    if (adminId) {
+      const allPermIds = Array.from(permMap.values());
+      await db.rolePermission.createMany({
+        data: allPermIds.map(pid => ({ roleId: adminId, permissionId: pid })),
+        skipDuplicates: true,
+      });
+      logs.push(`admin: ${allPermIds.length} permissions (ALL)`);
+      totalMappings += allPermIds.length;
+    }
+
     logs.push(`Total role-permission mappings: ${totalMappings}`);
 
     if (notFoundRoles.length > 0) {
@@ -562,7 +723,6 @@ export async function POST(request: Request) {
 
     // Step 6: Verification — use Prisma instead of raw SQL
     const allRolesWithPerms = await db.role.findMany({
-      where: { slug: { not: 'admin' } },
       include: { rolePermissions: { select: { id: true } } },
       orderBy: { level: 'desc' },
     });
@@ -575,6 +735,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       message: 'Role-permission mappings synced successfully. All users must re-login.',
+      newPermissionsCreated: newPermCount,
       totalMappings,
       roleResults,
       verification,
@@ -598,8 +759,14 @@ export async function GET() {
   return NextResponse.json({
     endpoint: '/api/admin/sync-permissions',
     method: 'POST',
-    description: 'Syncs role-permission mappings from seed definitions to the database.',
+    description: 'Syncs role-permission mappings and auto-creates missing permissions.',
     usage: 'POST /api/admin/sync-permissions with Authorization: Bearer <admin-token>',
     note: 'Admin role required. Clears all sessions after sync.',
+    features: [
+      'Auto-creates any missing permission slugs before syncing',
+      'Clears and re-syncs all role-permission mappings',
+      'Admin role gets ALL permissions',
+      'Clears all sessions to force re-login',
+    ],
   });
 }
