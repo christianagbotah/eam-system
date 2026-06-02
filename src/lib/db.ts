@@ -9,6 +9,42 @@ let _lastModelErrorLoggedAt = 0
 const MODEL_ERROR_LOG_INTERVAL = 60_000
 
 /**
+ * Properties to skip in the Proxy — these are standard JS interop methods
+ * that exist on all objects but return undefined on PrismaClient.
+ * Without this exclusion, Promise interop (then, catch, finally) triggers
+ * false-positive "model undefined" errors.
+ */
+const SKIP_PROPS = new Set([
+  // Promise interop — JavaScript runtime checks these when awaiting/returning
+  'then', 'catch', 'finally',
+  // Common object methods
+  'toJSON', 'toString', 'valueOf', 'toLocaleString',
+  'constructor', 'prototype', '__proto__',
+  // Symbol properties (stringified by Proxy)
+  'Symbol(Symbol.toPrimitive)',
+  'Symbol(Symbol.toStringTag)',
+  'Symbol(Symbol.iterator)',
+  'Symbol(Symbol.asyncIterator)',
+  // Node.js internals
+  'inspect', 'toJSON',
+])
+
+/**
+ * Check if a property name looks like a Prisma model delegate
+ * (camelCase starting with lowercase, not a known JS method)
+ */
+function isLikelyModelProperty(prop: string): boolean {
+  if (SKIP_PROPS.has(prop)) return false
+  if (typeof prop !== 'string') return false
+  if (!/^[a-z]/.test(prop)) return false
+  if (prop.length < 2) return false
+  // Skip single-word JS methods that might be on prototypes
+  if (['then', 'catch', 'finally', 'constructor', 'hasOwnProperty', 'isPrototypeOf',
+       'propertyIsEnumerable', 'valueOf', 'toLocaleString'].includes(prop)) return false
+  return true
+}
+
+/**
  * Critical models that should always exist in the generated Prisma client.
  * Used to verify that `prisma generate` was run successfully.
  */
@@ -20,7 +56,6 @@ const CRITICAL_MODELS = [
 
 /**
  * Check whether the Prisma client has the expected model delegates.
- * Returns { ok: true } if all critical models exist, or { ok: false, missing: [...] } otherwise.
  */
 function checkPrismaModels(client: PrismaClient): { ok: boolean; missing?: string[] } {
   const missing: string[] = []
@@ -34,7 +69,6 @@ function checkPrismaModels(client: PrismaClient): { ok: boolean; missing?: strin
 
 /**
  * Run a one-time health check on the Prisma client after initialization.
- * Logs a clear, actionable message if models are missing.
  */
 function runHealthCheck(client: PrismaClient) {
   if (_healthChecked) return
@@ -47,10 +81,7 @@ function runHealthCheck(client: PrismaClient) {
   } else {
     console.error(
       `[db] ✗ Prisma client health check FAILED — missing models: ${result.missing!.join(', ')}\n` +
-      `[db]   This means "prisma generate" was NOT run successfully or the generated client is stale.\n` +
-      `[db]   FIX: cd /home/ifleetpro/git/eam-system && rm -rf node_modules/.prisma && npx prisma generate && pm2 restart iassetspro\n` +
-      `[db]   If DATABASE_URL is not set in your shell, run:\n` +
-      `[db]     export DATABASE_URL="mysql://USER:PASS@HOST:PORT/DB" && npx prisma generate`
+      `[db]   FIX: rm -rf node_modules/.prisma && npx prisma generate && next build && pm2 restart`
     )
   }
 }
@@ -60,9 +91,7 @@ function initDb(): PrismaClient {
     throw new Error('[db] Database not available — previous initialization failed. Check DB_* env vars.')
   }
 
-  // Always use MariaDB adapter (schema is MySQL)
   try {
-    // Use require() for dynamic import (avoids bundling issues)
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { createAdapter } = require('./create-mariadb-adapter')
 
@@ -101,9 +130,8 @@ function initDb(): PrismaClient {
       }
     }
 
-    // No valid MySQL config — create a placeholder client that will fail on actual queries
-    // This allows the build to proceed (static analysis) but queries will error at runtime
-    console.warn('[db] No MySQL credentials found — creating placeholder client. Set DB_HOST, DB_USER, DB_PASSWORD, DB_NAME.')
+    // No valid MySQL config — create a placeholder client
+    console.warn('[db] No MySQL credentials found — creating placeholder client. Set DB_HOST/DB_USER/DB_PASSWORD/DB_NAME or DATABASE_URL.')
     const adapter = createAdapter({ host: '127.0.0.1', port: 3306, user: 'placeholder', password: 'placeholder', database: 'placeholder' })
     _db = new PrismaClient({ adapter })
     runHealthCheck(_db)
@@ -123,17 +151,18 @@ function getDb(): PrismaClient {
 /**
  * Lazy-initialized Prisma client proxy.
  * Defers actual connection until first query.
- * On VPS: connects to MariaDB using adapter.
- * In sandbox: creates placeholder client (queries will fail gracefully).
  */
 export const db = new Proxy({} as PrismaClient, {
   get(_target, prop) {
+    // Skip Symbol properties entirely
+    if (typeof prop === 'symbol') return undefined
+
     try {
       const client = getDb()
       const value = (client as any)[prop]
-      if (value === undefined && typeof prop === 'string' && /^[a-z]/.test(prop)) {
-        // Model delegate is missing — Prisma client may not have been generated
-        // Rate-limit the error log to avoid spamming on every request
+
+      // Only flag as missing if it looks like a real model delegate name
+      if (value === undefined && isLikelyModelProperty(prop)) {
         const now = Date.now()
         if (now - _lastModelErrorLoggedAt > MODEL_ERROR_LOG_INTERVAL) {
           _lastModelErrorLoggedAt = now
@@ -143,8 +172,6 @@ export const db = new Proxy({} as PrismaClient, {
             `Run: npx prisma generate`
           )
         }
-        // Return a nested Proxy so that db.model.findUnique() etc. work
-        // (returning a rejected Promise instead of "is not a function")
         return new Proxy({}, {
           get(_inner, method) {
             if (typeof method === 'string' && /^[a-z]/.test(method)) {
@@ -163,8 +190,7 @@ export const db = new Proxy({} as PrismaClient, {
       }
       return value
     } catch (e) {
-      // Return nested Proxy for build-time / when DB is unavailable
-      if (typeof prop === 'string') {
+      if (typeof prop === 'string' && isLikelyModelProperty(prop)) {
         return new Proxy({}, {
           get(_inner, method) {
             if (typeof method === 'string' && /^[a-z]/.test(method)) {
@@ -183,13 +209,11 @@ export const db = new Proxy({} as PrismaClient, {
 })
 
 /**
- * Export a health check function for the /api/health and /api/debug/db-health endpoints.
- * Returns detailed info about the Prisma client state.
+ * Health check for diagnostic endpoints.
  */
 export async function checkDbHealth() {
   try {
     const client = getDb()
-    // Get all model delegates from the raw PrismaClient
     const models = Object.keys(client).filter(
       k => !k.startsWith('_') && !k.startsWith('$') && typeof (client as any)[k] === 'object'
     )
@@ -214,7 +238,7 @@ export async function checkDbHealth() {
     return {
       connected: false,
       modelCheckPassed: false,
-      missingModels: CRITICAL_MODELS,
+      missingModels: [...CRITICAL_MODELS],
       totalModels: 0,
       models: [],
       error: e instanceof Error ? e.message : String(e),
