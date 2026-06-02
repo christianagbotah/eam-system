@@ -50,7 +50,7 @@ import {
 // TYPES
 // ============================================================================
 
-type ProviderType = 'zai-sdk' | 'openai' | 'anthropic' | 'custom';
+type ProviderType = 'zai-sdk' | 'openai' | 'anthropic' | 'custom' | 'gemini' | 'groq' | 'openrouter' | 'cerebras';
 
 interface ProviderOption {
   id: ProviderType;
@@ -59,6 +59,8 @@ interface ProviderOption {
   icon: React.ElementType;
   color: string;
   bgColor: string;
+  free?: boolean;
+  docsUrl?: string;
 }
 
 interface AiConfig {
@@ -94,6 +96,46 @@ interface TestResult {
 
 const PROVIDERS: ProviderOption[] = [
   {
+    id: 'gemini',
+    label: 'Google Gemini',
+    description: 'Gemini 2.5 Flash — powerful, fast, FREE tier',
+    icon: Zap,
+    color: 'text-blue-600 dark:text-blue-400',
+    bgColor: 'bg-blue-50 dark:bg-blue-950/30',
+    free: true,
+    docsUrl: 'https://aistudio.google.com/apikey',
+  },
+  {
+    id: 'groq',
+    label: 'Groq',
+    description: 'Llama 3.3 70B — ultra-fast inference, FREE tier',
+    icon: Cpu,
+    color: 'text-orange-600 dark:text-orange-400',
+    bgColor: 'bg-orange-50 dark:bg-orange-950/30',
+    free: true,
+    docsUrl: 'https://console.groq.com/keys',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    description: '50+ free models — Gemini, Llama, Qwen, Mistral, and more',
+    icon: Server,
+    color: 'text-teal-600 dark:text-teal-400',
+    bgColor: 'bg-teal-50 dark:bg-teal-950/30',
+    free: true,
+    docsUrl: 'https://openrouter.ai/keys',
+  },
+  {
+    id: 'cerebras',
+    label: 'Cerebras',
+    description: 'Llama 3.3 70B — blazing fast, FREE tier',
+    icon: Cpu,
+    color: 'text-pink-600 dark:text-pink-400',
+    bgColor: 'bg-pink-50 dark:bg-pink-950/30',
+    free: true,
+    docsUrl: 'https://cloud.cerebras.ai/',
+  },
+  {
     id: 'zai-sdk',
     label: 'Z.ai SDK (Built-in)',
     description: 'Use the built-in Z.ai SDK — no API key needed',
@@ -104,18 +146,20 @@ const PROVIDERS: ProviderOption[] = [
   {
     id: 'openai',
     label: 'OpenAI',
-    description: 'GPT-4o, GPT-4-turbo, GPT-3.5-turbo, and more',
+    description: 'GPT-4o, GPT-4-turbo, GPT-3.5-turbo (paid)',
     icon: Cpu,
     color: 'text-emerald-600 dark:text-emerald-400',
     bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
+    docsUrl: 'https://platform.openai.com/api-keys',
   },
   {
     id: 'anthropic',
     label: 'Anthropic',
-    description: 'Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku',
+    description: 'Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku (paid)',
     icon: Shield,
     color: 'text-amber-600 dark:text-amber-400',
     bgColor: 'bg-amber-50 dark:bg-amber-950/30',
+    docsUrl: 'https://console.anthropic.com/',
   },
   {
     id: 'custom',
@@ -128,6 +172,10 @@ const PROVIDERS: ProviderOption[] = [
 ];
 
 const MODEL_SUGGESTIONS: Record<ProviderType, string[]> = {
+  'gemini': ['gemini-2.5-flash-preview-05-20', 'gemini-2.5-flash-preview-04-17', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+  'groq': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'],
+  'openrouter': ['google/gemini-2.5-flash-preview', 'meta-llama/llama-3.3-70b-instruct:free', 'google/gemma-2-9b-it:free', 'qwen/qwen-2.5-72b-instruct:free'],
+  'cerebras': ['llama-3.3-70b', 'llama3.1-8b'],
   'zai-sdk': ['z-ai-default'],
   'openai': ['gpt-4o', 'gpt-4-turbo', 'gpt-4o-mini', 'gpt-3.5-turbo'],
   'anthropic': ['claude-3-5-sonnet-20241022', 'claude-3-opus-20240229', 'claude-3-haiku-20240307'],
@@ -135,6 +183,10 @@ const MODEL_SUGGESTIONS: Record<ProviderType, string[]> = {
 };
 
 const IMAGE_MODEL_SUGGESTIONS: Record<ProviderType, string[]> = {
+  'gemini': [],
+  'groq': [],
+  'openrouter': [],
+  'cerebras': [],
   'zai-sdk': ['z-ai-image'],
   'openai': ['dall-e-3', 'dall-e-2'],
   'anthropic': [],
@@ -243,8 +295,8 @@ export function AIConfigPage() {
       provider,
       llmModel: defaultModel,
       imageModel: defaultImageModel,
-      // Clear API key when switching to built-in
-      ...(provider === 'zai-sdk' ? { apiKey: '', imageApiKey: '' } : {}),
+      // Clear custom endpoint when using pre-configured provider
+      ...(!['custom'].includes(provider) ? { customEndpoint: '' } : {}),
     }));
     setTestResult(null);
   };
@@ -355,8 +407,25 @@ export function AIConfigPage() {
                           <Icon className={`h-4 w-4 ${p.color}`} />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold">{p.label}</p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-xs font-semibold">{p.label}</p>
+                            {p.free && (
+                              <span className="px-1.5 py-0 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 leading-tight">
+                                FREE
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[10px] text-muted-foreground mt-0.5">{p.description}</p>
+                          {config.provider === p.id && p.docsUrl && (
+                            <a
+                              href={p.docsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-0.5 text-[10px] text-primary hover:underline mt-0.5"
+                            >
+                              Get API Key →
+                            </a>
+                          )}
                         </div>
                       </div>
                     </label>
@@ -419,13 +488,28 @@ export function AIConfigPage() {
               {/* API Key (not for built-in) */}
               {!isBuiltIn && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">API Key</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">API Key</Label>
+                    {(() => {
+                      const selectedProvider = PROVIDERS.find(p => p.id === config.provider);
+                      return selectedProvider?.docsUrl ? (
+                        <a
+                          href={selectedProvider.docsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-primary hover:underline"
+                        >
+                          Get free API key →
+                        </a>
+                      ) : null;
+                    })()}
+                  </div>
                   <div className="relative">
                     <Input
                       type={showApiKey ? 'text' : 'password'}
                       value={config.apiKey}
                       onChange={(e) => updateConfig('apiKey', e.target.value)}
-                      placeholder="sk-..."
+                      placeholder="Enter your API key..."
                       className="h-9 text-sm pr-10"
                     />
                     <button
@@ -841,7 +925,7 @@ export function AIConfigPage() {
               <Button
                 variant="outline"
                 onClick={handleTestConnection}
-                disabled={testing || isBuiltIn}
+                disabled={testing}
                 className="w-full gap-2"
               >
                 {testing ? (
@@ -852,7 +936,7 @@ export function AIConfigPage() {
                 ) : (
                   <>
                     <Zap className="h-4 w-4" />
-                    {isBuiltIn ? 'Built-in SDK — No Test Needed' : 'Test Connection'}
+                    {isBuiltIn ? 'Test Built-in SDK' : 'Test Connection'}
                   </>
                 )}
               </Button>

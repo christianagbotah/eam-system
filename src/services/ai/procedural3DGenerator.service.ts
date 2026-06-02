@@ -16,9 +16,9 @@
 
 import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
-import ZAI from 'z-ai-web-dev-sdk';
 import { db } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
+import { aiChatCompletion } from '@/lib/ai-client';
 
 const logger = createLogger('ai:procedural3DGenerator');
 
@@ -229,8 +229,7 @@ Remember:
 
   logger.info('Calling LLM to generate 3D geometry spec', { machineName });
 
-  const zai = await ZAI.create();
-  const response: Record<string, unknown> = await zai.chat.completions.create({
+  const response: Record<string, unknown> = await aiChatCompletion({
     messages: [
       { role: 'system', content: GEOMETRY_SPEC_SYSTEM_PROMPT },
       { role: 'user', content: userPrompt },

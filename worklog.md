@@ -964,3 +964,50 @@ Stage Summary:
 - **rebuild-vps.sh**: Automated VPS rebuild script that handles .env, prisma generate, next build, PM2 restart
 - **Result**: VPS app fully operational — 16 roles, 359 permissions, 22 user_roles confirmed working
 - **Commits**: 46d38150 (health checks), 98c99080 (proxy fix + rebuild script)
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: Add free AI providers (Google Gemini, Groq, OpenRouter, Cerebras) to replace broken Z.ai SDK
+
+Work Log:
+- Investigated "AI generation failed: fetch failed" error — root cause: `ZAI.create()` from z-ai-web-dev-sdk requires `Z_AI_API_KEY` env var which doesn't exist on VPS
+- All AI calls (machine generation, 3D geometry spec, image generation) used `ZAI.create()` directly without reading the saved config in `data/ai-config.json`
+- Created universal LLM client at `src/lib/ai-client.ts`:
+  - Reads config from `data/ai-config.json` with 30s in-memory cache
+  - Supports 8 providers: zai_sdk, gemini, groq, openrouter, cerebras, openai, anthropic, custom
+  - Pre-configured endpoints for free providers (Gemini, Groq, OpenRouter, Cerebras)
+  - Falls back to Z.ai SDK when no external config is set
+  - Exports: `aiChatCompletion()`, `aiImageGeneration()`, `testAIConnection()`, `invalidateAIConfigCache()`
+  - OpenAI-compatible HTTP fetch for all external providers
+  - Anthropic uses different message format (system extracted, content array)
+  - OpenRouter includes HTTP-Referer and X-Title headers
+- Updated `src/app/api/assets/ai-generate/route.ts`:
+  - Replaced `ZAI.create()` with `aiChatCompletion()` for LLM calls
+  - Replaced `zai.images.generations.create()` with `aiImageGeneration()`
+  - Improved image saving: handles both base64 and URL responses
+- Updated `src/services/ai/procedural3DGenerator.service.ts`:
+  - Replaced `ZAI.create()` with `aiChatCompletion()` for 3D geometry spec generation
+- Updated `src/lib/generate-3d/programmatic-generator.ts`:
+  - Replaced `ZAI.create()` with `aiChatCompletion()`
+  - Removed z-ai-web-dev-sdk import entirely
+- Updated `src/components/modules/AIConfigPage.tsx`:
+  - Added 4 new free providers with FREE badges: Google Gemini, Groq, OpenRouter, Cerebras
+  - Added model suggestions for each new provider
+  - Added "Get API Key →" links that appear when provider is selected
+  - Added "Get free API key →" link next to API key field
+  - Test Connection now enabled for all providers (not just non-built-in)
+- Created `src/app/api/ai/config/test/route.ts`:
+  - POST endpoint that temporarily saves config and tests connection
+  - Returns success/failure with response time and model info
+- Updated `src/app/api/ai/config/route.ts`:
+  - Added new provider types to validation (gemini, groq, openrouter, cerebras)
+  - Added `invalidateAIConfigCache()` call after saving config
+  - Imports invalidateAIConfigCache from ai-client
+
+Stage Summary:
+- **New file**: `src/lib/ai-client.ts` — universal LLM client supporting 8 providers
+- **New file**: `src/app/api/ai/config/test/route.ts` — connection test endpoint
+- **Updated**: 5 files to use `aiChatCompletion()` instead of `ZAI.create()`
+- **Free providers available**: Google Gemini (2.5 Flash), Groq (Llama 3.3 70B), OpenRouter (50+ models), Cerebras
+- **User action needed**: Go to AI Settings → select Google Gemini or Groq → paste free API key → Save → Test Connection

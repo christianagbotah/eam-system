@@ -7,8 +7,8 @@
  * No external 3D API required — pure programmatic generation.
  */
 
-import ZAI from 'z-ai-web-dev-sdk';
 import { mkdir, writeFile } from 'fs/promises';
+import { aiChatCompletion } from '@/lib/ai-client';
 import { join } from 'path';
 import { db } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
@@ -137,19 +137,9 @@ Remember: Return ONLY valid JSON. No markdown fences.`;
 
   logger.info('Calling LLM for geometry spec', { machineName });
 
-  let zai: InstanceType<typeof ZAI> | null = null;
-  try {
-    zai = await ZAI.create();
-  } catch (configErr) {
-    logger.warn('ZAI SDK config not available — falling back to built-in geometry', {
-      message: configErr instanceof Error ? configErr.message : String(configErr),
-    });
-    return getBuiltinGeometrySpec(machineName);
-  }
-
   let content: string | undefined;
   try {
-    const response: Record<string, unknown> = await zai.chat.completions.create({
+    const response: Record<string, unknown> = await aiChatCompletion({
       messages: [
         { role: 'system', content: GEOMETRY_SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },

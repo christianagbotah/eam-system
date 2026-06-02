@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
+import { invalidateAIConfigCache } from '@/lib/ai-client';
 import { createAuditLog } from '@/lib/audit';
 
 const logger = createLogger('api:ai:config');
@@ -13,7 +14,7 @@ const DATA_FILE = join(process.cwd(), 'data', 'ai-config.json');
 // TYPES
 // ============================================================================
 
-type AIProvider = 'zai_sdk' | 'zai-sdk' | 'openai' | 'anthropic' | 'custom';
+type AIProvider = 'zai_sdk' | 'zai-sdk' | 'openai' | 'anthropic' | 'custom' | 'gemini' | 'groq' | 'openrouter' | 'cerebras';
 
 interface GenerationSettings {
   subsystemCount: string;
@@ -126,7 +127,7 @@ function maskConfigSecrets(config: AiConfigRecord): AiConfigRecord {
 // VALIDATION
 // ============================================================================
 
-const VALID_PROVIDERS: AIProvider[] = ['zai_sdk', 'zai-sdk', 'openai', 'anthropic', 'custom'];
+const VALID_PROVIDERS: AIProvider[] = ['zai_sdk', 'zai-sdk', 'openai', 'anthropic', 'custom', 'gemini', 'groq', 'openrouter', 'cerebras'];
 
 /**
  * Normalize the request body — accept both frontend field names (apiKey, temperature, etc.)
@@ -345,6 +346,9 @@ export async function POST(request: NextRequest) {
     // Add to store and persist
     store.configs.push(newConfig);
     await writeConfigStore(store);
+
+    // Invalidate client-side cache so next AI call picks up the new config
+    invalidateAIConfigCache();
 
     // Audit log
     await createAuditLog(session.userId, 'AiConfig', 'create', newConfig.id, {

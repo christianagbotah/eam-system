@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import ZAI from 'z-ai-web-dev-sdk';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin, getUserPlantId } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
+import { aiChatCompletion, aiImageGeneration } from '@/lib/ai-client';
 
 const logger = createLogger('api:assets:ai-generate');
 
@@ -173,20 +173,12 @@ Remember: Return ONLY valid JSON matching the specified structure. Include reali
 
   logger.info('Calling LLM to generate machine data', { machineName });
 
-  let zai;
-  try {
-    zai = await ZAI.create();
-  } catch (configErr) {
-    const configMsg = configErr instanceof Error ? configErr.message : String(configErr);
-    throw new Error(`AI SDK not configured. ${configMsg}`);
-  }
-
   // Retry LLM call up to 2 times on transient fetch errors
   let response: Record<string, unknown>;
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      response = await zai.chat.completions.create({
+      response = await aiChatCompletion({
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userPrompt },
@@ -371,8 +363,6 @@ async function generateMachineImage(
   assetId: string,
 ): Promise<string | null> {
   try {
-    const zai = await ZAI.create();
-    
     const prompt = `Professional industrial technical illustration of a ${machineName}. 
 ${description}
 Style: Clean technical diagram style with isometric 3D perspective, labeled parts visible, 
@@ -382,16 +372,13 @@ no text overlays, no watermarks, high quality technical illustration.`;
 
     logger.info('Generating AI machine image', { machineName });
 
-    const response = await zai.images.generations.create({
+    const response = await aiImageGeneration({
       prompt,
-      size: '1344x768', // Landscape for equipment
+      size: '1024x1024',
     });
 
     const imageBase64 = response.data?.[0]?.base64;
-    if (!imageBase64) {
-      logger.warn('No image data returned from AI');
-      return null;
-    }
+    const imageUrl = response.data?.[0]?.url;
 
     // Save to public/generated-assets/
     const outputDir = path.join(process.cwd(), 'public', 'generated-assets');
@@ -401,10 +388,29 @@ no text overlays, no watermarks, high quality technical illustration.`;
 
     const filename = `${assetId}.png`;
     const filepath = path.join(outputDir, filename);
-    const buffer = Buffer.from(imageBase64, 'base64');
-    fs.writeFileSync(filepath, buffer);
 
-    logger.info('Machine image saved', { filepath, fileSize: buffer.length });
+    if (imageBase64) {
+      // Direct base64 data from API
+      const buffer = Buffer.from(imageBase64, 'base64');
+      fs.writeFileSync(filepath, buffer);
+      logger.info('Machine image saved (base64)', { filepath, fileSize: buffer.length });
+    } else if (imageUrl) {
+      // URL from API — download and save
+      const imgResponse = await fetch(imageUrl);
+      if (imgResponse.ok) {
+        const arrayBuffer = await imgResponse.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        fs.writeFileSync(filepath, buffer);
+        logger.info('Machine image saved (downloaded from URL)', { filepath, fileSize: buffer.length });
+      } else {
+        logger.warn('Failed to download image from URL', { url: imageUrl, status: imgResponse.status });
+        return null;
+      }
+    } else {
+      logger.warn('No image data returned from AI');
+      return null;
+    }
+
     return `/generated-assets/${filename}`;
   } catch (imgError) {
     const imgErr = imgError instanceof Error ? imgError : new Error(String(imgError));
