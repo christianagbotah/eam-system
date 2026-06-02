@@ -938,3 +938,29 @@ Stage Summary:
 - **Hardened**: time-logs route — proper permission gates + WO access validation
 - **Migrated**: 3 repair routes from role-based to permission-flag enforcement
 - **All modified files pass ESLint with zero new errors**
+
+---
+Task ID: 8
+Agent: main
+Task: Fix VPS "then is undefined on PrismaClient" — DB proxy bug + missing .env
+
+Work Log:
+- Diagnosed that the db.ts Proxy was flagging JS Promise interop property "then" as a missing Prisma model, causing error log spam on every request
+- Root cause: `value === undefined && typeof prop === 'string' && /^[a-z]/.test(prop)` matches "then", "catch", "finally" — standard JS interop methods that don't exist on PrismaClient directly
+- Fixed db.ts Proxy with SKIP_PROPS set and isLikelyModelProperty() filter to exclude Promise interop and standard JS methods
+- Added startup health check that verifies 12 critical models exist on PrismaClient
+- Added rate-limited error logging (once per 60s instead of every request)
+- Exported checkDbHealth() for diagnostic endpoint
+- Updated /api/debug/db-health to use real db module diagnostics
+- Discovered VPS had NO database credentials: PM2 env was empty, .env had placeholders
+- App runs from .next/standalone/server.js so code changes require next build
+- Found real DATABASE_URL from user: mysql://ifleetpro_user:myjesus4mE2018@163.245.212.15:3306/ifleetpro_eam_system
+- Created scripts/rebuild-vps.sh: complete rebuild script (git pull, set .env, prisma generate, next build, pm2 restart)
+- User ran rebuild script successfully — all 16 roles now showing
+
+Stage Summary:
+- **db.ts Proxy fix**: Eliminated false-positive "then is undefined" errors by filtering Promise interop properties
+- **Health check**: Startup validation of 12 critical Prisma models with clear pass/fail logging
+- **rebuild-vps.sh**: Automated VPS rebuild script that handles .env, prisma generate, next build, PM2 restart
+- **Result**: VPS app fully operational — 16 roles, 359 permissions, 22 user_roles confirmed working
+- **Commits**: 46d38150 (health checks), 98c99080 (proxy fix + rebuild script)
