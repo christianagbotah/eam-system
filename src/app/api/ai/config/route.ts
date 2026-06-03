@@ -120,14 +120,44 @@ function maskApiKey(key: string | undefined | null): string {
 }
 
 /**
- * Return a sanitized copy of the config with API keys masked.
+ * Check if a key value looks masked (starts with ****)
  */
-function maskConfigSecrets(config: AiConfigRecord): AiConfigRecord {
+function isMasked(value: string | undefined | null): boolean {
+  return typeof value === 'string' && value.startsWith('****');
+}
+
+// ============================================================================
+// DENORMALIZE FOR FRONTEND
+// ============================================================================
+
+/**
+ * Convert backend field names to frontend field names so the frontend
+ * can use them directly. Also adds hasApiKey booleans.
+ */
+function denormalizeForFrontend(config: AiConfigRecord): Record<string, unknown> {
   return {
-    ...config,
-    llmApiKey: maskApiKey(config.llmApiKey),
+    id: config.id,
+    provider: config.provider === 'zai_sdk' ? 'zai-sdk' : config.provider,
+    llmModel: config.llmModel,
+    apiKey: maskApiKey(config.llmApiKey),
+    customEndpoint: config.llmEndpoint || '',
+    temperature: config.llmTemperature ?? DEFAULT_CONFIG.llmTemperature,
+    maxTokens: config.llmMaxTokens ?? DEFAULT_CONFIG.llmMaxTokens,
+    imageModel: config.imageModel || DEFAULT_CONFIG.imageModel,
     imageApiKey: maskApiKey(config.imageApiKey),
     meshyApiKey: maskApiKey(config.meshyApiKey),
+    provider3d: config.provider3d || 'programmatic',
+    generationSettings: config.generationSettings || DEFAULT_GENERATION_SETTINGS,
+    // Flatten generationSettings for frontend
+    generateSystemDiagram: config.generationSettings?.includeSystemDiagram ?? true,
+    generateDigitalTwin: config.generationSettings?.includeDigitalTwin ?? true,
+    generateMachineImage: config.generationSettings?.includeMachineImage ?? true,
+    generateSpareParts: config.generationSettings?.includeSpareParts ?? true,
+    generateBom: config.generationSettings?.includeBOM ?? true,
+    // Boolean flags so frontend knows keys are set
+    hasApiKey: !!(config.llmApiKey && config.llmApiKey.length > 0),
+    hasImageApiKey: !!(config.imageApiKey && config.imageApiKey.length > 0),
+    hasMeshyApiKey: !!(config.meshyApiKey && config.meshyApiKey.length > 0),
   };
 }
 
@@ -246,34 +276,28 @@ export async function GET(request: NextRequest) {
     }
 
     const store = await readConfigStore();
-
-    // Find active config
     const activeConfig = store.configs.find((c) => c.isActive);
 
     if (!activeConfig) {
-      // Return defaults when no config exists
       logger.info('No active AI config found, returning defaults');
-
-      const defaultResponse: AiConfigRecord = {
+      const defaultRecord: AiConfigRecord = {
         id: '',
         ...DEFAULT_CONFIG,
         createdById: '',
         createdAt: '',
         updatedAt: '',
       };
-
       return NextResponse.json({
         success: true,
-        data: maskConfigSecrets(defaultResponse),
+        data: denormalizeForFrontend(defaultRecord),
         isDefault: true,
       });
     }
 
     logger.info('Active AI config retrieved', { configId: activeConfig.id, provider: activeConfig.provider });
-
     return NextResponse.json({
       success: true,
-      data: maskConfigSecrets(activeConfig),
+      data: denormalizeForFrontend(activeConfig),
       isDefault: false,
     });
   } catch (error: unknown) {
@@ -284,7 +308,7 @@ export async function GET(request: NextRequest) {
 }
 
 // ============================================================================
-// POST — Save AI configuration
+// POST — Save / Update AI configuration
 // ============================================================================
 
 export async function POST(request: NextRequest) {
@@ -305,80 +329,110 @@ export async function POST(request: NextRequest) {
     }
 
     const rawBody = await request.json();
-
-    // Normalize field names (frontend uses apiKey, backend uses llmApiKey, etc.)
     const body = normalizeBody(rawBody);
 
-    // Validate body
     const validation = validateConfigBody(body);
     if (!validation.valid) {
-      return NextResponse.json(
-        { success: false, error: validation.error },
-        { status: 400 },
-      );
+      return NextResponse.json({ success: false, error: validation.error }, { status: 400 });
     }
 
     const store = await readConfigStore();
     const now = new Date().toISOString();
 
-    // If there's an existing active config, deactivate it
+    // Find existing active config to preserve its API keys if needed
     const existingActive = store.configs.find((c) => c.isActive);
+
+    /**
+     * API KEY PRESERVATION LOGIC:
+     * When the frontend sends an empty or masked apiKey/imageApiKey/meshyApiKey,
+     * preserve the existing key from the active config. This prevents the
+     * "save after reload" cycle from overwriting real keys with empty strings.
+     */
+    const incomingLlmApiKey = (body.llmApiKey as string) || '';
+    const incomingImageApiKey = (body.imageApiKey as string) || '';
+    const incomingMeshyApiKey = (body.meshyApiKey as string) || '';
+
+    const finalLlmApiKey = (incomingLlmApiKey && !isMasked(incomingLlmApiKey))
+      ? incomingLlmApiKey
+      : (existingActive?.llmApiKey || incomingLlmApiKey);
+
+    const finalImageApiKey = (incomingImageApiKey && !isMasked(incomingImageApiKey))
+      ? incomingImageApiKey
+      : (existingActive?.imageApiKey || incomingImageApiKey);
+
+    const finalMeshyApiKey = (incomingMeshyApiKey && !isMasked(incomingMeshyApiKey))
+      ? incomingMeshyApiKey
+      : (existingActive?.meshyApiKey || incomingMeshyApiKey);
+
+    // Deactivate any existing active config
     if (existingActive) {
       existingActive.isActive = false;
       logger.info('Deactivated previous AI config', { configId: existingActive.id });
     }
 
-    // Build the new config record
-    const newConfig: AiConfigRecord = {
+    // Build the config record
+    const configRecord: AiConfigRecord = {
       id: `aicfg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       provider: body.provider as AIProvider,
       llmModel: body.llmModel as string,
-      llmEndpoint: body.llmEndpoint as string || '',
-      llmApiKey: body.llmApiKey as string || '',
-      llmTemperature: body.llmTemperature !== undefined ? Number(body.llmTemperature) : DEFAULT_CONFIG.llmTemperature,
-      llmMaxTokens: body.llmMaxTokens !== undefined ? Number(body.llmMaxTokens) : DEFAULT_CONFIG.llmMaxTokens,
-      imageModel: body.imageModel as string || DEFAULT_CONFIG.imageModel,
-      imageApiKey: body.imageApiKey as string || '',
-      meshyApiKey: body.meshyApiKey as string || '',
-      provider3d: (body.provider3d as string) || 'programmatic',
+      llmEndpoint: (body.llmEndpoint as string) || '',
+      llmApiKey: finalLlmApiKey,
+      llmTemperature: body.llmTemperature !== undefined ? Number(body.llmTemperature) : (existingActive?.llmTemperature ?? DEFAULT_CONFIG.llmTemperature),
+      llmMaxTokens: body.llmMaxTokens !== undefined ? Number(body.llmMaxTokens) : (existingActive?.llmMaxTokens ?? DEFAULT_CONFIG.llmMaxTokens),
+      imageModel: (body.imageModel as string) || (existingActive?.imageModel || DEFAULT_CONFIG.imageModel),
+      imageApiKey: finalImageApiKey,
+      meshyApiKey: finalMeshyApiKey,
+      provider3d: (body.provider3d as string) || (existingActive?.provider3d || 'programmatic'),
       generationSettings: {
-        ...DEFAULT_GENERATION_SETTINGS,
+        ...(existingActive?.generationSettings || DEFAULT_GENERATION_SETTINGS),
         ...(body.generationSettings || {}),
       },
       isActive: true,
       createdById: session.userId,
-      createdAt: now,
+      createdAt: existingActive?.createdAt || now,
       updatedAt: now,
     };
 
     // Add to store and persist
-    store.configs.push(newConfig);
+    store.configs.push(configRecord);
+
+    // Cleanup: keep only the last 5 configs to prevent the file from growing indefinitely
+    if (store.configs.length > 5) {
+      const inactiveConfigs = store.configs.filter(c => !c.isActive);
+      store.configs = [
+        configRecord,
+        ...inactiveConfigs.slice(-3),
+      ];
+    }
+
     await writeConfigStore(store);
 
     // Invalidate client-side cache so next AI call picks up the new config
     invalidateAIConfigCache();
 
     // Audit log
-    await createAuditLog(session.userId, 'AiConfig', 'create', newConfig.id, {
+    await createAuditLog(session.userId, 'AiConfig', 'create', configRecord.id, {
       newValues: {
-        provider: newConfig.provider,
-        llmModel: newConfig.llmModel,
-        llmTemperature: newConfig.llmTemperature,
-        llmMaxTokens: newConfig.llmMaxTokens,
-        imageModel: newConfig.imageModel,
-        provider3d: newConfig.provider3d,
+        provider: configRecord.provider,
+        llmModel: configRecord.llmModel,
+        llmTemperature: configRecord.llmTemperature,
+        llmMaxTokens: configRecord.llmMaxTokens,
+        imageModel: configRecord.imageModel,
+        provider3d: configRecord.provider3d,
       },
     });
 
     logger.info('AI config saved successfully', {
-      configId: newConfig.id,
-      provider: newConfig.provider,
-      llmModel: newConfig.llmModel,
+      configId: configRecord.id,
+      provider: configRecord.provider,
+      llmModel: configRecord.llmModel,
+      hasLlmKey: !!configRecord.llmApiKey,
+      hasImageKey: !!configRecord.imageApiKey,
     });
 
     return NextResponse.json({
       success: true,
-      data: maskConfigSecrets(newConfig),
+      data: denormalizeForFrontend(configRecord),
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to save AI configuration';

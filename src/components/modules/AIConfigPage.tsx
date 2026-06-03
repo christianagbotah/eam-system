@@ -82,6 +82,10 @@ interface AiConfig {
   generateSpareParts: boolean;
   generateBom: boolean;
   autoComponentCount: boolean;
+  // Flags from backend indicating existing keys
+  hasApiKey?: boolean;
+  hasImageApiKey?: boolean;
+  hasMeshyApiKey?: boolean;
   meshyApiKey: string;
   meshyArtStyle: string;
   provider3d: string;
@@ -287,12 +291,23 @@ export function AIConfigPage() {
     try {
       const res = await api.get<AiConfig>('/api/ai/config');
       if (res.success && res.data) {
-        const normalized = {
+        const data: AiConfig = {
           ...DEFAULT_CONFIG,
           ...res.data,
           provider: normalizeProvider(res.data.provider || DEFAULT_CONFIG.provider),
         };
-        setConfig(normalized);
+        // Backend returns apiKey as masked (e.g. ****7890) and hasApiKey flag.
+        // If apiKey is empty but hasApiKey is true, show the masked placeholder.
+        if (!data.apiKey && res.data.hasApiKey) {
+          data.apiKey = res.data.apiKey || '****configured';
+        }
+        if (!data.imageApiKey && res.data.hasImageApiKey) {
+          data.imageApiKey = res.data.imageApiKey || '****configured';
+        }
+        if (!data.meshyApiKey && res.data.hasMeshyApiKey) {
+          data.meshyApiKey = res.data.meshyApiKey || '****configured';
+        }
+        setConfig(data);
       }
     } catch {
       // Use defaults if no config exists yet
@@ -359,9 +374,33 @@ export function AIConfigPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await api.post('/api/ai/config', config);
+      // Don't send masked/placeholder API keys — backend will preserve existing keys
+      const payload: Record<string, unknown> = { ...config };
+      if (!payload.apiKey || (payload.apiKey as string).startsWith('****')) {
+        delete payload.apiKey;
+      }
+      if (!payload.imageApiKey || (payload.imageApiKey as string).startsWith('****')) {
+        delete payload.imageApiKey;
+      }
+      if (!payload.meshyApiKey || (payload.meshyApiKey as string).startsWith('****')) {
+        delete payload.meshyApiKey;
+      }
+      // Remove internal flags — not part of the config record
+      delete payload.hasApiKey;
+      delete payload.hasImageApiKey;
+      delete payload.hasMeshyApiKey;
+      // Remove flat generation flags that aren't backend fields
+      delete payload.generateSystemDiagram;
+      delete payload.generateDigitalTwin;
+      delete payload.generateMachineImage;
+      delete payload.generateSpareParts;
+      delete payload.generateBom;
+
+      const res = await api.post('/api/ai/config', payload);
       if (res.success) {
         toast.success('AI configuration saved successfully');
+        // Refresh config from server to get latest masked keys
+        await fetchConfig();
       } else {
         toast.error(res.error || 'Failed to save configuration');
       }
@@ -514,7 +553,12 @@ export function AIConfigPage() {
                       {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
-                  {config.apiKey && (
+                  {config.apiKey && config.apiKey.startsWith('****') && (
+                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                      ✓ API key is configured and saved
+                    </p>
+                  )}
+                  {config.apiKey && !config.apiKey.startsWith('****') && (
                     <p className="text-[10px] text-muted-foreground">
                       Currently set: {config.apiKey.substring(0, 6)}{'•'.repeat(12)}{config.apiKey.length > 18 ? config.apiKey.slice(-4) : ''}
                     </p>
