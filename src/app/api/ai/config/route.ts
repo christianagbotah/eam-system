@@ -83,7 +83,15 @@ const DEFAULT_CONFIG: Omit<AiConfigRecord, 'id' | 'createdById' | 'createdAt' | 
 async function readConfigStore(): Promise<AiConfigStore> {
   try {
     const raw = await readFile(DATA_FILE, 'utf-8');
-    return JSON.parse(raw) as AiConfigStore;
+    const parsed = JSON.parse(raw);
+    // Handle both formats: { configs: [...] } (correct) and [...] (legacy flat array)
+    if (Array.isArray(parsed)) {
+      return { configs: parsed };
+    }
+    if (parsed && Array.isArray(parsed.configs)) {
+      return parsed as AiConfigStore;
+    }
+    return { configs: [] };
   } catch {
     return { configs: [] };
   }

@@ -175,8 +175,10 @@ async function getActiveConfig(): Promise<AiConfigRecord | null> {
 
   try {
     const raw = await readFile(DATA_FILE, 'utf-8');
-    const store: AiConfigStore = JSON.parse(raw);
-    const active = store.configs.find((c) => c.isActive) || null;
+    const parsed = JSON.parse(raw);
+    // Handle both formats: { configs: [...] } (correct) and [...] (legacy flat array)
+    const configs = Array.isArray(parsed) ? parsed : (parsed?.configs || []);
+    const active = configs.find((c) => c.isActive) || null;
     _cachedConfig = active;
     _cacheTimestamp = now;
     return active;
