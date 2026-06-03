@@ -40,6 +40,7 @@ import {
   Sparkles,
   Globe,
   Activity,
+  ExternalLink,
 } from 'lucide-react';
 import {
   Select,
@@ -62,6 +63,8 @@ interface ProviderOption {
   icon: React.ElementType;
   color: string;
   bgColor: string;
+  docsUrl?: string;
+  free?: boolean;
 }
 
 interface AiConfig {
@@ -106,56 +109,66 @@ const PROVIDERS: ProviderOption[] = [
   },
   {
     id: 'gemini',
-    label: 'Google Gemini',
-    description: 'Gemini 2.5 Flash — FREE, powerful, fast',
+    label: 'Google Gemini ★ FREE',
+    description: 'Gemini 2.5 Flash — powerful, fast, no credit card needed',
     icon: Sparkles,
     color: 'text-blue-600 dark:text-blue-400',
     bgColor: 'bg-blue-50 dark:bg-blue-950/30',
+    docsUrl: 'https://aistudio.google.com/apikey',
+    free: true,
   },
   {
     id: 'groq',
-    label: 'Groq',
-    description: 'Llama 3.3 70B — FREE, ultra-fast inference',
+    label: 'Groq ★ FREE',
+    description: 'Llama 3.3 70B — ultra-fast inference, no credit card',
     icon: Cpu,
     color: 'text-orange-600 dark:text-orange-400',
     bgColor: 'bg-orange-50 dark:bg-orange-950/30',
+    docsUrl: 'https://console.groq.com/keys',
+    free: true,
   },
   {
     id: 'openrouter',
-    label: 'OpenRouter',
+    label: 'OpenRouter ★ FREE',
     description: '50+ free models — Gemini, Llama, Qwen, Mistral',
     icon: Globe,
     color: 'text-emerald-600 dark:text-emerald-400',
     bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
+    docsUrl: 'https://openrouter.ai/keys',
+    free: true,
   },
   {
     id: 'cerebras',
-    label: 'Cerebras',
-    description: 'Llama 3.3 70B — FREE, high-speed inference',
+    label: 'Cerebras ★ FREE',
+    description: 'Llama 3.3 70B — high-speed inference',
     icon: Activity,
     color: 'text-pink-600 dark:text-pink-400',
     bgColor: 'bg-pink-50 dark:bg-pink-950/30',
+    docsUrl: 'https://cloud.cerebras.ai/',
+    free: true,
   },
   {
     id: 'openai',
-    label: 'OpenAI',
-    description: 'GPT-4o, GPT-4-turbo, GPT-3.5-turbo, and more',
+    label: 'OpenAI (Paid)',
+    description: 'GPT-4o, GPT-4-turbo, GPT-3.5-turbo',
     icon: Cpu,
     color: 'text-green-600 dark:text-green-400',
     bgColor: 'bg-green-50 dark:bg-green-950/30',
+    docsUrl: 'https://platform.openai.com/api-keys',
   },
   {
     id: 'anthropic',
-    label: 'Anthropic',
+    label: 'Anthropic (Paid)',
     description: 'Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku',
     icon: Shield,
     color: 'text-amber-600 dark:text-amber-400',
     bgColor: 'bg-amber-50 dark:bg-amber-950/30',
+    docsUrl: 'https://console.anthropic.com/',
   },
   {
     id: 'custom',
     label: 'Custom Endpoint',
-    description: 'Connect to any OpenAI-compatible API endpoint',
+    description: 'Any OpenAI-compatible API endpoint',
     icon: Server,
     color: 'text-cyan-600 dark:text-cyan-400',
     bgColor: 'bg-cyan-50 dark:bg-cyan-950/30',
@@ -506,6 +519,23 @@ export function AIConfigPage() {
                       Currently set: {config.apiKey.substring(0, 6)}{'•'.repeat(12)}{config.apiKey.length > 18 ? config.apiKey.slice(-4) : ''}
                     </p>
                   )}
+                  {(() => {
+                    const selectedProvider = PROVIDERS.find(p => p.id === config.provider);
+                    if (selectedProvider?.docsUrl) {
+                      return (
+                        <a
+                          href={selectedProvider.docsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] text-blue-600 dark:text-blue-400 hover:underline mt-1"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Get your free API key →
+                        </a>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
               )}
 
