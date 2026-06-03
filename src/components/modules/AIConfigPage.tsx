@@ -37,6 +37,9 @@ import {
   Server,
   Shield,
   Box,
+  Sparkles,
+  Globe,
+  Activity,
 } from 'lucide-react';
 import {
   Select,
