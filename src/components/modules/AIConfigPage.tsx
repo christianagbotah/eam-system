@@ -50,7 +50,7 @@ import {
 // TYPES
 // ============================================================================
 
-type ProviderType = 'zai-sdk' | 'openai' | 'anthropic' | 'custom' | 'gemini' | 'groq' | 'openrouter' | 'cerebras';
+type ProviderType = 'zai-sdk' | 'gemini' | 'groq' | 'openrouter' | 'cerebras' | 'openai' | 'anthropic' | 'custom';
 
 interface ProviderOption {
   id: ProviderType;
@@ -59,8 +59,6 @@ interface ProviderOption {
   icon: React.ElementType;
   color: string;
   bgColor: string;
-  free?: boolean;
-  docsUrl?: string;
 }
 
 interface AiConfig {
@@ -96,70 +94,60 @@ interface TestResult {
 
 const PROVIDERS: ProviderOption[] = [
   {
-    id: 'gemini',
-    label: 'Google Gemini',
-    description: 'Gemini 2.5 Flash — powerful, fast, FREE tier',
-    icon: Zap,
-    color: 'text-blue-600 dark:text-blue-400',
-    bgColor: 'bg-blue-50 dark:bg-blue-950/30',
-    free: true,
-    docsUrl: 'https://aistudio.google.com/apikey',
-  },
-  {
-    id: 'groq',
-    label: 'Groq',
-    description: 'Llama 3.3 70B — ultra-fast inference, FREE tier',
-    icon: Cpu,
-    color: 'text-orange-600 dark:text-orange-400',
-    bgColor: 'bg-orange-50 dark:bg-orange-950/30',
-    free: true,
-    docsUrl: 'https://console.groq.com/keys',
-  },
-  {
-    id: 'openrouter',
-    label: 'OpenRouter',
-    description: '50+ free models — Gemini, Llama, Qwen, Mistral, and more',
-    icon: Server,
-    color: 'text-teal-600 dark:text-teal-400',
-    bgColor: 'bg-teal-50 dark:bg-teal-950/30',
-    free: true,
-    docsUrl: 'https://openrouter.ai/keys',
-  },
-  {
-    id: 'cerebras',
-    label: 'Cerebras',
-    description: 'Llama 3.3 70B — blazing fast, FREE tier',
-    icon: Cpu,
-    color: 'text-pink-600 dark:text-pink-400',
-    bgColor: 'bg-pink-50 dark:bg-pink-950/30',
-    free: true,
-    docsUrl: 'https://cloud.cerebras.ai/',
-  },
-  {
     id: 'zai-sdk',
     label: 'Z.ai SDK (Built-in)',
-    description: 'Use the built-in Z.ai SDK — no API key needed',
+    description: 'Use the built-in Z.ai SDK — no API key needed (sandbox only)',
     icon: Zap,
     color: 'text-violet-600 dark:text-violet-400',
     bgColor: 'bg-violet-50 dark:bg-violet-950/30',
   },
   {
-    id: 'openai',
-    label: 'OpenAI',
-    description: 'GPT-4o, GPT-4-turbo, GPT-3.5-turbo (paid)',
+    id: 'gemini',
+    label: 'Google Gemini',
+    description: 'Gemini 2.5 Flash — FREE, powerful, fast',
+    icon: Sparkles,
+    color: 'text-blue-600 dark:text-blue-400',
+    bgColor: 'bg-blue-50 dark:bg-blue-950/30',
+  },
+  {
+    id: 'groq',
+    label: 'Groq',
+    description: 'Llama 3.3 70B — FREE, ultra-fast inference',
     icon: Cpu,
+    color: 'text-orange-600 dark:text-orange-400',
+    bgColor: 'bg-orange-50 dark:bg-orange-950/30',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    description: '50+ free models — Gemini, Llama, Qwen, Mistral',
+    icon: Globe,
     color: 'text-emerald-600 dark:text-emerald-400',
     bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
-    docsUrl: 'https://platform.openai.com/api-keys',
+  },
+  {
+    id: 'cerebras',
+    label: 'Cerebras',
+    description: 'Llama 3.3 70B — FREE, high-speed inference',
+    icon: Activity,
+    color: 'text-pink-600 dark:text-pink-400',
+    bgColor: 'bg-pink-50 dark:bg-pink-950/30',
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    description: 'GPT-4o, GPT-4-turbo, GPT-3.5-turbo, and more',
+    icon: Cpu,
+    color: 'text-green-600 dark:text-green-400',
+    bgColor: 'bg-green-50 dark:bg-green-950/30',
   },
   {
     id: 'anthropic',
     label: 'Anthropic',
-    description: 'Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku (paid)',
+    description: 'Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku',
     icon: Shield,
     color: 'text-amber-600 dark:text-amber-400',
     bgColor: 'bg-amber-50 dark:bg-amber-950/30',
-    docsUrl: 'https://console.anthropic.com/',
   },
   {
     id: 'custom',
@@ -171,23 +159,23 @@ const PROVIDERS: ProviderOption[] = [
   },
 ];
 
-const MODEL_SUGGESTIONS: Record<ProviderType, string[]> = {
-  'gemini': ['gemini-2.5-flash-preview-05-20', 'gemini-2.5-flash-preview-04-17', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
-  'groq': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'],
-  'openrouter': ['google/gemini-2.5-flash-preview', 'meta-llama/llama-3.3-70b-instruct:free', 'google/gemma-2-9b-it:free', 'qwen/qwen-2.5-72b-instruct:free'],
-  'cerebras': ['llama-3.3-70b', 'llama3.1-8b'],
+const MODEL_SUGGESTIONS: Record<string, string[]> = {
   'zai-sdk': ['z-ai-default'],
+  'gemini': ['gemini-2.5-flash-preview-05-20', 'gemini-2.5-flash-preview-04-17', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+  'groq': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'gemma2-9b-it'],
+  'openrouter': ['google/gemini-2.5-flash-preview', 'meta-llama/llama-3.3-70b-instruct:free', 'qwen/qwen-2.5-72b-instruct:free', 'mistralai/mistral-7b-instruct:free'],
+  'cerebras': ['llama-3.3-70b', 'llama3.1-8b'],
   'openai': ['gpt-4o', 'gpt-4-turbo', 'gpt-4o-mini', 'gpt-3.5-turbo'],
   'anthropic': ['claude-3-5-sonnet-20241022', 'claude-3-opus-20240229', 'claude-3-haiku-20240307'],
   'custom': [],
 };
 
-const IMAGE_MODEL_SUGGESTIONS: Record<ProviderType, string[]> = {
+const IMAGE_MODEL_SUGGESTIONS: Record<string, string[]> = {
+  'zai-sdk': ['z-ai-image'],
   'gemini': [],
   'groq': [],
   'openrouter': [],
   'cerebras': [],
-  'zai-sdk': ['z-ai-image'],
   'openai': ['dall-e-3', 'dall-e-2'],
   'anthropic': [],
   'custom': [],
@@ -260,13 +248,35 @@ export function AIConfigPage() {
   const [showTripo3dApiKey, setShowTripo3dApiKey] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
+  // ── Normalize backend provider name to frontend ──
+  const normalizeProvider = (p: string): ProviderType => {
+    // Backend uses 'zai_sdk', frontend uses 'zai-sdk'
+    const map: Record<string, ProviderType> = {
+      'zai_sdk': 'zai-sdk',
+      'zai-sdk': 'zai-sdk',
+      'gemini': 'gemini',
+      'groq': 'groq',
+      'openrouter': 'openrouter',
+      'cerebras': 'cerebras',
+      'openai': 'openai',
+      'anthropic': 'anthropic',
+      'custom': 'custom',
+    };
+    return map[p] || 'zai-sdk';
+  };
+
   // ── Fetch existing config ──
   const fetchConfig = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get<AiConfig>('/api/ai/config');
       if (res.success && res.data) {
-        setConfig({ ...DEFAULT_CONFIG, ...res.data });
+        const normalized = {
+          ...DEFAULT_CONFIG,
+          ...res.data,
+          provider: normalizeProvider(res.data.provider || DEFAULT_CONFIG.provider),
+        };
+        setConfig(normalized);
       }
     } catch {
       // Use defaults if no config exists yet
@@ -288,15 +298,15 @@ export function AIConfigPage() {
 
   // ── When provider changes, update default model ──
   const handleProviderChange = (provider: ProviderType) => {
-    const defaultModel = MODEL_SUGGESTIONS[provider][0] || '';
-    const defaultImageModel = IMAGE_MODEL_SUGGESTIONS[provider][0] || '';
+    const defaultModel = MODEL_SUGGESTIONS[provider]?.[0] || '';
+    const defaultImageModel = IMAGE_MODEL_SUGGESTIONS[provider]?.[0] || '';
     setConfig(prev => ({
       ...prev,
       provider,
       llmModel: defaultModel,
       imageModel: defaultImageModel,
-      // Clear custom endpoint when using pre-configured provider
-      ...(!['custom'].includes(provider) ? { customEndpoint: '' } : {}),
+      // Clear API key when switching to built-in
+      ...(provider === 'zai-sdk' ? { apiKey: '', imageApiKey: '' } : {}),
     }));
     setTestResult(null);
   };
@@ -407,25 +417,8 @@ export function AIConfigPage() {
                           <Icon className={`h-4 w-4 ${p.color}`} />
                         </div>
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="text-xs font-semibold">{p.label}</p>
-                            {p.free && (
-                              <span className="px-1.5 py-0 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 leading-tight">
-                                FREE
-                              </span>
-                            )}
-                          </div>
+                          <p className="text-xs font-semibold">{p.label}</p>
                           <p className="text-[10px] text-muted-foreground mt-0.5">{p.description}</p>
-                          {config.provider === p.id && p.docsUrl && (
-                            <a
-                              href={p.docsUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-0.5 text-[10px] text-primary hover:underline mt-0.5"
-                            >
-                              Get API Key →
-                            </a>
-                          )}
                         </div>
                       </div>
                     </label>
@@ -449,12 +442,12 @@ export function AIConfigPage() {
                 <Input
                   value={config.llmModel}
                   onChange={(e) => updateConfig('llmModel', e.target.value)}
-                  placeholder={MODEL_SUGGESTIONS[config.provider][0] || 'Enter model name...'}
+                  placeholder={MODEL_SUGGESTIONS[config.provider]?.[0] || 'Enter model name...'}
                   className="h-9 text-sm"
                 />
-                {MODEL_SUGGESTIONS[config.provider].length > 0 && (
+                {(MODEL_SUGGESTIONS[config.provider]?.length ?? 0) > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {MODEL_SUGGESTIONS[config.provider].map((model) => (
+                    {(MODEL_SUGGESTIONS[config.provider] || []).map((model) => (
                       <button
                         key={model}
                         type="button"
@@ -488,28 +481,13 @@ export function AIConfigPage() {
               {/* API Key (not for built-in) */}
               {!isBuiltIn && (
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-medium">API Key</Label>
-                    {(() => {
-                      const selectedProvider = PROVIDERS.find(p => p.id === config.provider);
-                      return selectedProvider?.docsUrl ? (
-                        <a
-                          href={selectedProvider.docsUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] text-primary hover:underline"
-                        >
-                          Get free API key →
-                        </a>
-                      ) : null;
-                    })()}
-                  </div>
+                  <Label className="text-xs font-medium">API Key</Label>
                   <div className="relative">
                     <Input
                       type={showApiKey ? 'text' : 'password'}
                       value={config.apiKey}
                       onChange={(e) => updateConfig('apiKey', e.target.value)}
-                      placeholder="Enter your API key..."
+                      placeholder="sk-..."
                       className="h-9 text-sm pr-10"
                     />
                     <button
@@ -593,12 +571,12 @@ export function AIConfigPage() {
                 <Input
                   value={config.imageModel}
                   onChange={(e) => updateConfig('imageModel', e.target.value)}
-                  placeholder={IMAGE_MODEL_SUGGESTIONS[config.provider][0] || 'Enter image model name...'}
+                  placeholder={IMAGE_MODEL_SUGGESTIONS[config.provider]?.[0] || 'Enter image model name...'}
                   className="h-9 text-sm"
                 />
-                {IMAGE_MODEL_SUGGESTIONS[config.provider].length > 0 && (
+                {(IMAGE_MODEL_SUGGESTIONS[config.provider]?.length ?? 0) > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {IMAGE_MODEL_SUGGESTIONS[config.provider].map((model) => (
+                    {(IMAGE_MODEL_SUGGESTIONS[config.provider] || []).map((model) => (
                       <button
                         key={model}
                         type="button"
@@ -925,7 +903,7 @@ export function AIConfigPage() {
               <Button
                 variant="outline"
                 onClick={handleTestConnection}
-                disabled={testing}
+                disabled={testing || isBuiltIn}
                 className="w-full gap-2"
               >
                 {testing ? (
@@ -936,7 +914,7 @@ export function AIConfigPage() {
                 ) : (
                   <>
                     <Zap className="h-4 w-4" />
-                    {isBuiltIn ? 'Test Built-in SDK' : 'Test Connection'}
+                    {isBuiltIn ? 'Built-in SDK — No Test Needed' : 'Test Connection'}
                   </>
                 )}
               </Button>
