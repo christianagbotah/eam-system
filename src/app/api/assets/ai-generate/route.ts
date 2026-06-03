@@ -83,7 +83,7 @@ You MUST respond with ONLY a valid JSON object (no markdown fences, no commentar
 
 {
   "name": "Machine Full Name",
-  "description": "Detailed description of the machine, its purpose, and key capabilities (3-5 sentences)",
+  "description": "Concise description of the machine, its purpose, and key capabilities (max 200 words)",
   "manufacturer": "Common real-world manufacturer for this type of equipment",
   "model": "Common model number or series designation",
   "specification": {
@@ -100,12 +100,12 @@ You MUST respond with ONLY a valid JSON object (no markdown fences, no commentar
   "subsystems": [
     {
       "name": "Subsystem Name",
-      "description": "What this subsystem does (1-2 sentences)",
+      "description": "Concise description of what this subsystem does (max 100 words)",
       "criticality": "critical|high|medium|low",
       "components": [
         {
           "name": "Component Name",
-          "description": "What this component does (1-2 sentences)",
+          "description": "Concise description of what this component does (max 100 words)",
           "criticality": "critical|high|medium|low",
           "specification": { "key": "value" },
           "spareParts": [
@@ -155,6 +155,15 @@ CRITICAL RULES:
 7. Make spare part codes follow the format SP-{SUBSYSTEM_ABBREV}-{NUMBER}
 8. All values must be realistic for the given machine type
 9. ONLY return valid JSON — no markdown code fences, no text before/after`;
+
+// ============================================================================
+// HELPER — Safe text truncation to prevent DB column overflow
+// ============================================================================
+
+function truncateText(text: string, maxChars: number = 2000): string {
+  if (!text || text.length <= maxChars) return text || null;
+  return text.substring(0, maxChars).trim() + '…';
+}
 
 // ============================================================================
 // HELPER — Call LLM to generate machine data
@@ -536,7 +545,7 @@ export async function POST(request: NextRequest) {
       data: {
         name: machineData.name,
         assetTag: mainAssetTag,
-        description: machineData.description,
+        description: truncateText(machineData.description),
         manufacturer: machineData.manufacturer,
         model: machineData.model,
         yearManufactured: now.getFullYear(),
@@ -610,7 +619,7 @@ export async function POST(request: NextRequest) {
         data: {
           name: subsystem.name,
           assetTag: ssAssetTag,
-          description: subsystem.description,
+          description: truncateText(subsystem.description),
           condition: 'new',
           status: 'operational',
           criticality: subsystem.criticality || 'medium',
@@ -646,7 +655,7 @@ export async function POST(request: NextRequest) {
           data: {
             name: component.name,
             assetTag: compAssetTag,
-            description: component.description,
+            description: truncateText(component.description),
             condition: 'new',
             status: 'operational',
             criticality: component.criticality || 'medium',

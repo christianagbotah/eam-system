@@ -886,7 +886,7 @@ model Asset {
   id                String    @id @default(cuid())
   name              String
   assetTag          String    @unique
-  description       String?
+  description       String?   @db.Text
   categoryId        String
   serialNumber      String?   @unique
   manufacturer      String?
