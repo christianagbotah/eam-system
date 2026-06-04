@@ -1,57 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFile, writeFile } from 'fs/promises';
-import { readFileSync, writeFileSync } from 'fs';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { invalidateAIConfigCache } from '@/lib/ai-client';
 import { createAuditLog } from '@/lib/audit';
-import { getDataFilePath, resolveDataDir, ensureDataDir } from '@/lib/data-dir';
+import { resolveDataDir } from '@/lib/data-dir';
+import { db } from '@/lib/db';
 
 const logger = createLogger('api:ai:config');
 
 // Bump this string with every deploy to verify the VPS is running the latest code.
-const CODE_VERSION = 'v3-diag';
-
-const DATA_FILE = getDataFilePath('ai-config.json');
-
-// ============================================================================
-// STARTUP CLEANUP — Remove any masked keys that leaked into the data file
-// ============================================================================
-// IMPORTANT: This runs SYNCHRONOUSLY to prevent a race condition where an
-// async cleanup could overwrite a POST save that happens right after server start.
-
-function cleanupMaskedKeysSync(): void {
-  try {
-    if (!existsSync(DATA_FILE)) return;
-    const raw = readFileSync(DATA_FILE, 'utf-8');
-    const parsed = JSON.parse(raw);
-    const configs = Array.isArray(parsed) ? parsed : (parsed?.configs || []);
-    let dirty = false;
-
-    for (const config of configs) {
-      for (const keyField of ['llmApiKey', 'imageApiKey', 'meshyApiKey'] as const) {
-        const val = config[keyField];
-        if (val && typeof val === 'string' && val.startsWith('****')) {
-          logger.warn(`Cleaning corrupted masked key from config ${config.id}.${keyField}`, { masked: val });
-          config[keyField] = '';
-          dirty = true;
-        }
-      }
-    }
-
-    if (dirty) {
-      writeFileSync(DATA_FILE, JSON.stringify({ configs }, null, 2), 'utf-8');
-      logger.info('Cleaned masked keys from ai-config.json (sync)');
-    }
-  } catch {
-    // file doesn't exist or can't be read — that's fine
-  }
-}
-
-// Run cleanup SYNCHRONOUSLY on module load — guaranteed to complete before any request handler
-cleanupMaskedKeysSync();
+const CODE_VERSION = 'v4-db';
 
 // ============================================================================
 // TYPES
@@ -70,9 +30,13 @@ interface GenerationSettings {
   includeBOM: boolean;
 }
 
+/**
+ * Minimal interface matching the Prisma AiConfig record shape.
+ * generationSettings comes back as a string from the DB and is parsed separately.
+ */
 interface AiConfigRecord {
   id: string;
-  provider: AIProvider;
+  provider: string;
   llmModel: string;
   llmEndpoint: string;
   llmApiKey: string;
@@ -81,16 +45,12 @@ interface AiConfigRecord {
   imageModel: string;
   imageApiKey: string;
   meshyApiKey: string;
-  provider3d?: string;
+  provider3d: string;
   generationSettings: GenerationSettings;
   isActive: boolean;
   createdById: string;
   createdAt: string;
   updatedAt: string;
-}
-
-interface AiConfigStore {
-  configs: AiConfigRecord[];
 }
 
 const DEFAULT_GENERATION_SETTINGS: GenerationSettings = {
@@ -120,32 +80,6 @@ const DEFAULT_CONFIG: Omit<AiConfigRecord, 'id' | 'createdById' | 'createdAt' | 
 };
 
 // ============================================================================
-// FILE I/O HELPERS
-// ============================================================================
-
-async function readConfigStore(): Promise<AiConfigStore> {
-  try {
-    const raw = await readFile(DATA_FILE, 'utf-8');
-    const parsed = JSON.parse(raw);
-    // Handle both formats: { configs: [...] } (correct) and [...] (legacy flat array)
-    if (Array.isArray(parsed)) {
-      return { configs: parsed };
-    }
-    if (parsed && Array.isArray(parsed.configs)) {
-      return parsed as AiConfigStore;
-    }
-    return { configs: [] };
-  } catch {
-    return { configs: [] };
-  }
-}
-
-async function writeConfigStore(store: AiConfigStore): Promise<void> {
-  ensureDataDir();
-  await writeFile(DATA_FILE, JSON.stringify(store, null, 2), 'utf-8');
-}
-
-// ============================================================================
 // MASKING HELPERS
 // ============================================================================
 
@@ -163,6 +97,61 @@ function maskApiKey(key: string | undefined | null): string {
  */
 function isMasked(value: string | undefined | null): boolean {
   return typeof value === 'string' && value.startsWith('****');
+}
+
+// ============================================================================
+// DB → DOMAIN MAPPING HELPER
+// ============================================================================
+
+/**
+ * Convert a raw Prisma AiConfig row (where generationSettings is a JSON string)
+ * into our AiConfigRecord shape with parsed generationSettings.
+ */
+function mapDbRowToRecord(row: {
+  id: string;
+  provider: string;
+  llmModel: string;
+  llmEndpoint: string;
+  llmApiKey: string;
+  llmTemperature: number;
+  llmMaxTokens: number;
+  imageModel: string;
+  imageApiKey: string;
+  meshyApiKey: string;
+  provider3d: string;
+  generationSettings: string;
+  isActive: boolean;
+  createdById: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}): AiConfigRecord {
+  let parsedSettings: GenerationSettings;
+  try {
+    parsedSettings = typeof row.generationSettings === 'string'
+      ? JSON.parse(row.generationSettings)
+      : row.generationSettings;
+  } catch {
+    parsedSettings = DEFAULT_GENERATION_SETTINGS;
+  }
+
+  return {
+    id: row.id,
+    provider: row.provider,
+    llmModel: row.llmModel,
+    llmEndpoint: row.llmEndpoint,
+    llmApiKey: row.llmApiKey,
+    llmTemperature: row.llmTemperature,
+    llmMaxTokens: row.llmMaxTokens,
+    imageModel: row.imageModel,
+    imageApiKey: row.imageApiKey,
+    meshyApiKey: row.meshyApiKey,
+    provider3d: row.provider3d,
+    generationSettings: parsedSettings,
+    isActive: row.isActive,
+    createdById: row.createdById,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
+  };
 }
 
 // ============================================================================
@@ -314,11 +303,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const store = await readConfigStore();
-    const activeConfig = store.configs.find((c) => c.isActive);
+    const activeRow = await db.aiConfig.findFirst({ where: { isActive: true } });
 
-    if (!activeConfig) {
-      logger.info('No active AI config found, returning defaults');
+    if (!activeRow) {
+      logger.info('No active AI config found in database, returning defaults');
       const defaultRecord: AiConfigRecord = {
         id: '',
         ...DEFAULT_CONFIG,
@@ -333,7 +321,9 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    logger.info('Active AI config retrieved', { configId: activeConfig.id, provider: activeConfig.provider });
+    const activeConfig = mapDbRowToRecord(activeRow);
+
+    logger.info('Active AI config retrieved from database', { configId: activeConfig.id, provider: activeConfig.provider });
     return NextResponse.json({
       success: true,
       data: denormalizeForFrontend(activeConfig),
@@ -376,7 +366,7 @@ export async function POST(request: NextRequest) {
       llmApiKeyStartsWith: String(body.llmApiKey || '').substring(0, 6),
       provider: body.provider,
       llmModel: body.llmModel,
-      dataFilePath: DATA_FILE,
+      storage: 'database',
     });
 
     const validation = validateConfigBody(body);
@@ -384,11 +374,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: validation.error }, { status: 400 });
     }
 
-    const store = await readConfigStore();
-    const now = new Date().toISOString();
-
-    // Find existing active config to preserve its API keys if needed
-    const existingActive = store.configs.find((c) => c.isActive);
+    // Find existing active config in DB to preserve its API keys if needed
+    const existingActiveRow = await db.aiConfig.findFirst({ where: { isActive: true } });
+    const existingActive = existingActiveRow ? mapDbRowToRecord(existingActiveRow) : null;
 
     /**
      * API KEY PRESERVATION LOGIC:
@@ -419,80 +407,44 @@ export async function POST(request: NextRequest) {
       ? incomingMeshyApiKey
       : getExistingKey(existingActive?.meshyApiKey);
 
-    // Deactivate any existing active config
+    // Deactivate any existing active config in the database
+    await db.aiConfig.updateMany({
+      where: { isActive: true },
+      data: { isActive: false },
+    });
     if (existingActive) {
-      existingActive.isActive = false;
-      logger.info('Deactivated previous AI config', { configId: existingActive.id });
+      logger.info('Deactivated previous AI config in database', { configId: existingActive.id });
     }
 
-    // Build the config record
-    const configRecord: AiConfigRecord = {
-      id: `aicfg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      provider: body.provider as AIProvider,
-      llmModel: body.llmModel as string,
-      llmEndpoint: (body.llmEndpoint as string) || '',
-      llmApiKey: finalLlmApiKey,
-      llmTemperature: body.llmTemperature !== undefined ? Number(body.llmTemperature) : (existingActive?.llmTemperature ?? DEFAULT_CONFIG.llmTemperature),
-      llmMaxTokens: body.llmMaxTokens !== undefined ? Number(body.llmMaxTokens) : (existingActive?.llmMaxTokens ?? DEFAULT_CONFIG.llmMaxTokens),
-      imageModel: (body.imageModel as string) || (existingActive?.imageModel || DEFAULT_CONFIG.imageModel),
-      imageApiKey: finalImageApiKey,
-      meshyApiKey: finalMeshyApiKey,
-      provider3d: (body.provider3d as string) || (existingActive?.provider3d || 'programmatic'),
-      generationSettings: {
-        ...(existingActive?.generationSettings || DEFAULT_GENERATION_SETTINGS),
-        ...(body.generationSettings || {}),
-      },
-      isActive: true,
-      createdById: session.userId,
-      createdAt: existingActive?.createdAt || now,
-      updatedAt: now,
+    // Build merged generationSettings
+    const mergedSettings: GenerationSettings = {
+      ...(existingActive?.generationSettings || DEFAULT_GENERATION_SETTINGS),
+      ...(body.generationSettings || {}),
     };
 
-    // Add to store and persist
-    store.configs.push(configRecord);
+    // Create new active config record in the database
+    const newRecord = await db.aiConfig.create({
+      data: {
+        provider: body.provider as string,
+        llmModel: body.llmModel as string,
+        llmEndpoint: (body.llmEndpoint as string) || '',
+        llmApiKey: finalLlmApiKey,
+        llmTemperature: body.llmTemperature !== undefined ? Number(body.llmTemperature) : (existingActive?.llmTemperature ?? DEFAULT_CONFIG.llmTemperature),
+        llmMaxTokens: body.llmMaxTokens !== undefined ? Number(body.llmMaxTokens) : (existingActive?.llmMaxTokens ?? DEFAULT_CONFIG.llmMaxTokens),
+        imageModel: (body.imageModel as string) || (existingActive?.imageModel || DEFAULT_CONFIG.imageModel),
+        imageApiKey: finalImageApiKey,
+        meshyApiKey: finalMeshyApiKey,
+        provider3d: (body.provider3d as string) || (existingActive?.provider3d || 'programmatic'),
+        generationSettings: JSON.stringify(mergedSettings),
+        isActive: true,
+        createdById: session.userId,
+      },
+    });
 
-    // Cleanup: keep only the last 5 configs to prevent the file from growing indefinitely
-    if (store.configs.length > 5) {
-      const inactiveConfigs = store.configs.filter(c => !c.isActive);
-      store.configs = [
-        configRecord,
-        ...inactiveConfigs.slice(-3),
-      ];
-    }
+    const configRecord = mapDbRowToRecord(newRecord);
 
-    await writeConfigStore(store);
-
-    // ── POST-SAVE VERIFICATION: Read back the file to confirm key is actually on disk ──
-    try {
-      const verifyRaw = await readFile(DATA_FILE, 'utf-8');
-      const verifyParsed = JSON.parse(verifyRaw);
-      const verifyConfigs = Array.isArray(verifyParsed) ? verifyParsed : (verifyParsed?.configs || []);
-      const verifyActive = verifyConfigs.find((c: Record<string, unknown>) => c.isActive);
-      const verifyKey = (verifyActive?.llmApiKey as string) || '';
-      const verifyIsMasked = verifyKey.startsWith('****');
-      logger.info('[POST-SAVE-VERIFY] Read back file after write', {
-        configId: verifyActive?.id,
-        keyLength: verifyKey.length,
-        keyFirst6: verifyKey.substring(0, 6),
-        keyIsMasked: verifyIsMasked,
-        keyEmpty: !verifyKey,
-      });
-      if (verifyIsMasked) {
-        logger.error('[POST-SAVE-VERIFY] CRITICAL: Key on disk is MASKED! Overwriting with real key...');
-        // Emergency: re-write the active config with the correct key
-        if (verifyActive) {
-          verifyActive.llmApiKey = finalLlmApiKey;
-          await writeFile(DATA_FILE, JSON.stringify({ configs: verifyConfigs }, null, 2), 'utf-8');
-          logger.warn('[POST-SAVE-VERIFY] Emergency overwrite completed');
-        }
-      }
-    } catch (verifyErr) {
-      logger.error('[POST-SAVE-VERIFY] Failed to verify', { error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr) });
-    }
-
-    logger.info('AI config written to disk', {
-      filePath: DATA_FILE,
-      totalConfigs: store.configs.length,
+    logger.info('AI config written to database', {
+      configId: configRecord.id,
       savedHasLlmKey: !!configRecord.llmApiKey,
       savedKeyLength: configRecord.llmApiKey.length,
     });
@@ -525,13 +477,12 @@ export async function POST(request: NextRequest) {
       data: denormalizeForFrontend(configRecord),
       _diag: {
         codeVersion: CODE_VERSION,
-        dataFilePath: DATA_FILE,
+        storage: 'database',
         savedKeyLength: configRecord.llmApiKey.length,
         savedKeyEmpty: !configRecord.llmApiKey,
         savedKeyMasked: isMasked(configRecord.llmApiKey),
         incomingKeyLength: incomingLlmApiKey.length,
         finalKeyLength: finalLlmApiKey.length,
-        totalConfigsInFile: store.configs.length,
       },
     });
   } catch (error: unknown) {
@@ -542,53 +493,58 @@ export async function POST(request: NextRequest) {
 }
 
 // ============================================================================
-// PATCH /api/ai/config — Diagnostic endpoint (shows resolved paths + key status)
+// PATCH /api/ai/config — Diagnostic endpoint (DB status + legacy file check)
 // ============================================================================
 
 export async function PATCH() {
   try {
     const debugInfo: Record<string, unknown> = {
-      processCwd: process.cwd(),
-      resolvedDataDir: resolveDataDir(),
-      dataFilePath: DATA_FILE,
-      fileExists: existsSync(DATA_FILE),
+      storage: 'database',
+      codeVersion: CODE_VERSION,
     };
 
-    if (existsSync(DATA_FILE)) {
-      try {
-        const raw = await readFile(DATA_FILE, 'utf-8');
-        const parsed = JSON.parse(raw);
-        const configs = Array.isArray(parsed) ? parsed : (parsed?.configs || []);
-        const active = configs.find((c: Record<string, unknown>) => c.isActive);
+    // Query the active config from the database
+    const activeRow = await db.aiConfig.findFirst({ where: { isActive: true } });
 
-        const rawKey = (active?.llmApiKey as string) || '';
+    if (activeRow) {
+      const rawKey = activeRow.llmApiKey || '';
+      debugInfo.dbActiveConfig = {
+        configId: activeRow.id,
+        provider: activeRow.provider,
+        llmModel: activeRow.llmModel,
+        llmKeyStatus: rawKey
+          ? (rawKey.startsWith('****')
+              ? `MASKED_LEAK (${rawKey.length} chars) BUG!`
+              : `REAL_KEY (${rawKey.length} chars)`)
+          : 'EMPTY',
+        llmTemperature: activeRow.llmTemperature,
+        llmMaxTokens: activeRow.llmMaxTokens,
+        imageModel: activeRow.imageModel,
+        imageKeyStatus: activeRow.imageApiKey
+          ? (activeRow.imageApiKey.startsWith('****')
+              ? `MASKED_LEAK (${activeRow.imageApiKey.length} chars) BUG!`
+              : `REAL_KEY (${activeRow.imageApiKey.length} chars)`)
+          : 'EMPTY',
+        meshyKeyStatus: activeRow.meshyApiKey
+          ? (activeRow.meshyApiKey.startsWith('****')
+              ? `MASKED_LEAK (${activeRow.meshyApiKey.length} chars) BUG!`
+              : `REAL_KEY (${activeRow.meshyApiKey.length} chars)`)
+          : 'EMPTY',
+      };
+    } else {
+      debugInfo.dbActiveConfig = { status: 'no_active_config' };
+    }
 
-        debugInfo.fileContent = {
-          totalConfigs: configs.length,
-          activeConfigId: active?.id || 'none',
-          activeProvider: active?.provider || 'none',
-          activeLlmKey: rawKey
-            ? (rawKey.startsWith('****')
-                ? `MASKED_LEAK (${rawKey.length} chars) BUG!`
-                : `REAL_KEY (${rawKey.length} chars, starts: ${rawKey.substring(0, 6)}...)`)
-            : 'EMPTY',
-          activeLlmModel: active?.llmModel || 'none',
-          activeLlmTemperature: active?.llmTemperature,
-        };
-
-        // Check other possible locations
-        const altPaths = [
-          join(process.cwd(), 'data', 'ai-config.json'),
-          join(process.cwd(), '.next', 'standalone', 'data', 'ai-config.json'),
-        ];
-        debugInfo.pathCheck = altPaths.map(p => ({
-          path: p,
-          exists: existsSync(p),
-          isResolved: p === DATA_FILE,
-        }));
-      } catch (e) {
-        debugInfo.fileReadError = e instanceof Error ? e.message : String(e);
-      }
+    // Also check if the old JSON file still exists and report on it
+    try {
+      const legacyPath = join(resolveDataDir(), 'ai-config.json');
+      debugInfo.legacyFile = {
+        path: legacyPath,
+        exists: existsSync(legacyPath),
+        resolvedDataDir: resolveDataDir(),
+      };
+    } catch {
+      debugInfo.legacyFile = { error: 'failed to resolve legacy path' };
     }
 
     logger.info('[DEBUG] AI config diagnostic', debugInfo);

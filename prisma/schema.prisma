@@ -4865,3 +4865,28 @@ model ObservabilityMetricSnapshot {
   @@index([timestamp])
   @@map("observability_metric_snapshots")
 }
+
+// ============================================================================
+// AI CONFIGURATION — Database-backed AI settings (replaces JSON file)
+// ============================================================================
+
+model AiConfig {
+  id              String   @id @default(cuid())
+  provider        String   @default("zai_sdk") // zai_sdk, gemini, groq, openrouter, cerebras, openai, anthropic, custom
+  llmModel        String   @default("default")
+  llmEndpoint     String   @default("")
+  llmApiKey       String   @default("")
+  llmTemperature  Float    @default(0.7)
+  llmMaxTokens    Int      @default(8000)
+  imageModel      String   @default("default")
+  imageApiKey     String   @default("")
+  meshyApiKey     String   @default("")
+  provider3d      String   @default("programmatic")
+  generationSettings String @default("{}") @db.Text // JSON
+  isActive        Boolean  @default(false)
+  createdById     String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("ai_configs")
+}

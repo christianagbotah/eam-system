@@ -11,14 +11,13 @@
 //   - OpenAI
 //   - Anthropic (Claude)
 //
-// Reads configuration from data/ai-config.json and creates appropriate
-// HTTP clients for each provider. Falls back to Z.ai SDK when no
-// external config is set.
+// Reads configuration from the database (ai_configs table) and creates
+// appropriate HTTP clients for each provider. Falls back to Z.ai SDK when
+// no external config is set.
 // ============================================================================
 
-import { readFile } from 'fs/promises';
+import { db } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
-import { getDataFilePath } from '@/lib/data-dir';
 
 const logger = createLogger('lib:ai-client');
 
@@ -30,7 +29,7 @@ type AIProvider = 'zai_sdk' | 'openai' | 'anthropic' | 'custom' | 'gemini' | 'gr
 
 interface AiConfigRecord {
   id: string;
-  provider: AIProvider;
+  provider: string;
   llmModel: string;
   llmEndpoint: string;
   llmApiKey: string;
@@ -39,13 +38,12 @@ interface AiConfigRecord {
   imageModel: string;
   imageApiKey: string;
   meshyApiKey: string;
-  provider3d?: string;
-  generationSettings?: Record<string, unknown>;
+  provider3d: string;
+  generationSettings: Record<string, unknown> | string;
   isActive: boolean;
-}
-
-interface AiConfigStore {
-  configs: AiConfigRecord[];
+  createdById: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface ChatMessage {
@@ -152,37 +150,29 @@ const PROVIDER_ENDPOINTS: Record<string, { chatUrl: string; imageUrl: string; mo
 };
 
 // ============================================================================
-// CONFIG LOADING
+// CONFIG LOADING (DATABASE)
 // ============================================================================
-
-const DATA_FILE = getDataFilePath('ai-config.json');
 
 let _cachedConfig: AiConfigRecord | null | undefined = undefined; // undefined = not yet loaded
 let _cacheTimestamp = 0;
 const CONFIG_CACHE_TTL_MS = 30_000; // Cache for 30 seconds
 
 /**
- * Read the active AI config from data/ai-config.json.
- * Uses in-memory caching with 30s TTL to avoid file I/O on every request.
+ * Read the active AI config from the database (ai_configs table).
+ * Uses in-memory caching with 30s TTL to avoid DB queries on every request.
  */
 async function getActiveConfig(): Promise<AiConfigRecord | null> {
   const now = Date.now();
-
-  // Return cached value if still fresh
   if (_cachedConfig !== undefined && (now - _cacheTimestamp) < CONFIG_CACHE_TTL_MS) {
     return _cachedConfig;
   }
-
   try {
-    const raw = await readFile(DATA_FILE, 'utf-8');
-    const parsed = JSON.parse(raw);
-    // Handle both formats: { configs: [...] } (correct) and [...] (legacy flat array)
-    const configs = Array.isArray(parsed) ? parsed : (parsed?.configs || []);
-    const active = configs.find((c) => c.isActive) || null;
-    _cachedConfig = active;
+    const config = await db.aiConfig.findFirst({ where: { isActive: true } });
+    _cachedConfig = config || null;
     _cacheTimestamp = now;
-    return active;
-  } catch {
+    return _cachedConfig;
+  } catch (err) {
+    console.error('[ai-client] Failed to read config from DB:', err);
     _cachedConfig = null;
     _cacheTimestamp = now;
     return null;
@@ -347,7 +337,7 @@ export async function aiChatCompletion(
     : '(empty)';
   const keyLooksMasked = apiKey.startsWith('****');
   logger.warn(`[AI-KEY-DEBUG] Using key for ${provider}`, {
-    dataFile: DATA_FILE,
+    source: 'database',
     keyMaskedPreview: maskedForLog,
     keyLength: apiKey.length,
     keyStartsWithAsterisk: keyLooksMasked,
