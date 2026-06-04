@@ -5,7 +5,7 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { invalidateAIConfigCache } from '@/lib/ai-client';
 import { createAuditLog } from '@/lib/audit';
-import { getDataFilePath, resolveDataDir } from '@/lib/data-dir';
+import { getDataFilePath, resolveDataDir, ensureDataDir } from '@/lib/data-dir';
 
 const logger = createLogger('api:ai:config');
 
