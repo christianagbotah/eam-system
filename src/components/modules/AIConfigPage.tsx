@@ -406,7 +406,20 @@ export function AIConfigPage() {
 
       const res = await api.post('/api/ai/config', payload);
       if (res.success) {
-        toast.success('AI configuration saved successfully');
+        // Show diagnostic info to help verify the save actually worked
+        const diag = (res as any)._diag as Record<string, unknown> | undefined;
+        if (diag) {
+          console.log('[AI-CONFIG-SAVE] Diagnostic:', JSON.stringify(diag, null, 2));
+          if (diag.savedKeyEmpty) {
+            toast.error('⚠️ API key was NOT saved — key is empty on disk. Check browser console (F12) for details.');
+          } else if (diag.savedKeyMasked) {
+            toast.error('⚠️ API key was saved as MASKED value — this is a bug. Check browser console (F12).');
+          } else {
+            toast.success(`Config saved (key: ${diag.savedKeyLength} chars, file: ${diag.totalConfigsInFile} configs)`);
+          }
+        } else {
+          toast.success('AI configuration saved successfully');
+        }
         // Refresh — this clears input fields and shows saved status
         await fetchConfig();
       } else {

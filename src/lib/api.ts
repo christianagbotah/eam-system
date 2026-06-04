@@ -16,7 +16,7 @@ export function getAuthHeaders(): Record<string, string> {
 export async function apiFetch<T = any>(
   endpoint: string,
   options: RequestInit & { timeout?: number } = {}
-): Promise<{ success: boolean; data?: T; error?: string; kpis?: any; pagination?: any }> {
+): Promise<{ success: boolean; data?: T; error?: string; kpis?: any; pagination?: any; _diag?: any }> {
   const { timeout = DEFAULT_TIMEOUT_MS, signal: externalSignal, ...restOptions } = options;
   const isFormData = restOptions.body instanceof FormData;
 
@@ -75,12 +75,13 @@ export async function apiFetch<T = any>(
       return { success: false, error: json.error || `Request failed with status ${res.status}` };
     }
 
-    const result: { success: boolean; data?: T; kpis?: any; pagination?: any; error?: string } = {
+    const result: { success: boolean; data?: T; kpis?: any; pagination?: any; _diag?: any; error?: string } = {
       success: true,
       data: json.data !== undefined ? json.data : json,
     };
     if (json.kpis !== undefined) result.kpis = json.kpis;
     if (json.pagination !== undefined) result.pagination = json.pagination;
+    if (json._diag !== undefined) result._diag = json._diag;
     return result;
   } catch (err: any) {
     clearTimeout(timeoutId);

@@ -11,6 +11,9 @@ import { getDataFilePath, resolveDataDir, ensureDataDir } from '@/lib/data-dir';
 
 const logger = createLogger('api:ai:config');
 
+// Bump this string with every deploy to verify the VPS is running the latest code.
+const CODE_VERSION = 'v3-diag';
+
 const DATA_FILE = getDataFilePath('ai-config.json');
 
 // ============================================================================
@@ -520,6 +523,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: denormalizeForFrontend(configRecord),
+      _diag: {
+        codeVersion: CODE_VERSION,
+        dataFilePath: DATA_FILE,
+        savedKeyLength: configRecord.llmApiKey.length,
+        savedKeyEmpty: !configRecord.llmApiKey,
+        savedKeyMasked: isMasked(configRecord.llmApiKey),
+        incomingKeyLength: incomingLlmApiKey.length,
+        finalKeyLength: finalLlmApiKey.length,
+        totalConfigsInFile: store.configs.length,
+      },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to save AI configuration';
