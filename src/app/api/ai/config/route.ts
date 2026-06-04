@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile, writeFile } from 'fs/promises';
+import { existsSync } from 'fs';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { invalidateAIConfigCache } from '@/lib/ai-client';
 import { createAuditLog } from '@/lib/audit';
-import { getDataFilePath, ensureDataDir } from '@/lib/data-dir';
+import { getDataFilePath, resolveDataDir } from '@/lib/data-dir';
 
 const logger = createLogger('api:ai:config');
 
@@ -449,6 +450,64 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to save AI configuration';
     logger.error('POST /api/ai/config failed', { message });
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
+  }
+}
+
+// ============================================================================
+// PATCH /api/ai/config — Diagnostic endpoint (shows resolved paths + key status)
+// ============================================================================
+
+export async function PATCH() {
+  try {
+    const debugInfo: Record<string, unknown> = {
+      processCwd: process.cwd(),
+      resolvedDataDir: resolveDataDir(),
+      dataFilePath: DATA_FILE,
+      fileExists: existsSync(DATA_FILE),
+    };
+
+    if (existsSync(DATA_FILE)) {
+      try {
+        const raw = await readFile(DATA_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        const configs = Array.isArray(parsed) ? parsed : (parsed?.configs || []);
+        const active = configs.find((c: Record<string, unknown>) => c.isActive);
+
+        const rawKey = (active?.llmApiKey as string) || '';
+
+        debugInfo.fileContent = {
+          totalConfigs: configs.length,
+          activeConfigId: active?.id || 'none',
+          activeProvider: active?.provider || 'none',
+          activeLlmKey: rawKey
+            ? (rawKey.startsWith('****')
+                ? `MASKED_LEAK (${rawKey.length} chars) BUG!`
+                : `REAL_KEY (${rawKey.length} chars, starts: ${rawKey.substring(0, 6)}...)`)
+            : 'EMPTY',
+          activeLlmModel: active?.llmModel || 'none',
+          activeLlmTemperature: active?.llmTemperature,
+        };
+
+        // Check other possible locations
+        const altPaths = [
+          join(process.cwd(), 'data', 'ai-config.json'),
+          join(process.cwd(), '.next', 'standalone', 'data', 'ai-config.json'),
+        ];
+        debugInfo.pathCheck = altPaths.map(p => ({
+          path: p,
+          exists: existsSync(p),
+          isResolved: p === DATA_FILE,
+        }));
+      } catch (e) {
+        debugInfo.fileReadError = e instanceof Error ? e.message : String(e);
+      }
+    }
+
+    logger.info('[DEBUG] AI config diagnostic', debugInfo);
+    return NextResponse.json({ success: true, debug: debugInfo });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Debug failed';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

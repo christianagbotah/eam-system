@@ -341,6 +341,27 @@ export async function aiChatCompletion(
   let apiKey = config.llmApiKey || '';
   let model = config.llmModel || '';
 
+  // ── DEBUG: Log the key being used (first 6 chars + last 4) ──
+  const maskedForLog = apiKey
+    ? (apiKey.length > 10 ? apiKey.substring(0, 6) + '•••' + apiKey.slice(-4) : apiKey.substring(0, 3) + '•••')
+    : '(empty)';
+  const keyLooksMasked = apiKey.startsWith('****');
+  logger.warn(`[AI-KEY-DEBUG] Using key for ${provider}`, {
+    dataFile: DATA_FILE,
+    keyMaskedPreview: maskedForLog,
+    keyLength: apiKey.length,
+    keyStartsWithAsterisk: keyLooksMasked,
+    keyIsMasked_PLACEHOLDER: keyLooksMasked ? '⚠️ KEY IS MASKED — THIS IS THE BUG!' : 'OK (real key)',
+  });
+  // If key starts with ****, it means the masked value leaked into the data file
+  if (keyLooksMasked) {
+    throw new Error(
+      `BUG: API key for "${provider}" is masked (starts with ****). ` +
+      `This means the masked display value was saved as the real key. ` +
+      `Please go to AI Settings, clear the key field, enter your actual API key, and save again.`
+    );
+  }
+
   // For pre-configured providers, use built-in endpoints if no custom endpoint
   const providerDef = PROVIDER_ENDPOINTS[provider];
   if (providerDef && !endpoint) {
