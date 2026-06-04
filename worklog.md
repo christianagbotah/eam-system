@@ -1095,3 +1095,40 @@ Stage Summary:
 - AI config now stored in MySQL ai_configs table — no more file path issues
 - CODE_VERSION = 'v4-db' for deployment verification
 - VPS deploy requires: git pull && bun run db:push && bun run build && pm2 restart iassetspro
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Completely rewrite WOReportsPage.tsx with 8 professionally designed report tabs
+
+Work Log:
+- Read existing WOReportsPage.tsx (1632 lines) and API route to understand all data structures and 8 tabs
+- Completely rewrote `/src/components/modules/WOReportsPage.tsx` (~2500 lines) with professional CMMS/EAM design
+- Added sub-components: ReportHeader, TabSectionHeader, SummaryFooter, ChartCard, SafeChart, ReportTable, KPICard (enhanced with subtitle prop)
+- Added new helper functions: getSeverityColor, getSLAComplianceColor, formatTimestamp
+- Added ComposedChart import from recharts for Pareto analysis
+- Redesigned all 8 tabs with consistent professional structure:
+  - Tab 1 (Overview): 8 KPI strip, WO Distribution Donut, WO by Status HBar, WO by Trade VBar, Cost Trend Stacked Area, Summary Footer
+  - Tab 2 (Downtime): 4 KPI strip (hours/events/avg/prod loss), Downtime by Trade HBar sorted by hours, Downtime by Category Donut, Downtime Trend Line+Area, Professional table with totals row
+  - Tab 3 (Response Time): 4 KPI strip (avg/sample/best/worst), Response by Priority Bar, Response by Trade Bar, Table with SLA targets (critical=0.5h/high=1h/medium=4h/low=8h) and color-coded compliance badges
+  - Tab 4 (Breakdowns): 4 KPI strip, Breakdowns by Type Bar, Breakdowns by Trade Bar, Trend Line+markers, Priority Donut, Pareto ComposedChart (bar+cumulative%), Summary table with % of total
+  - Tab 5 (Man Hours): 4 KPI strip, MH by Trade HBar, Top 15 Technicians HBar, MH Trend Line, MH by Activity Donut, Table with % grand total and totals row
+  - Tab 6 (Materials): 4 KPI strip, Cost by WO Type Stacked Bar, Top 15 Materials HBar, Cost Trend Line, Table with unit cost/total/% total and totals row
+  - Tab 7 (Failure Rate): 4 KPI strip, Failure Rate by Asset (top 15, color-coded by severity), Failure Rate by Type Bar, MTBF by Asset HBar sorted ascending, Table with Risk Level badges (High/Medium/Low)
+  - Tab 8 (Stoppages): 4 KPI strip, Stoppages by Trade Bar, by Impact Donut, by Reason HBar (top 10), Table with totals row
+- Added print styles (@media print) to hide filters/export buttons, force white background
+- Added filter description badge, report generation timestamp, print button
+- Enhanced CSV export with more columns per tab (percentage, totals rows)
+- Kept all existing filter controls, API call pattern, PDF download
+- Used professional color palette: emerald, sky, amber, red, violet, teal, orange (no indigo/blue)
+- All charts use ResponsiveContainer with proper height, SafeChart wrapper for empty states
+- Lint passed with no errors
+
+Stage Summary:
+- **File**: `src/components/modules/WOReportsPage.tsx` — complete rewrite (~2500 lines, 8 professional report tabs)
+- **Design**: Professional CMMS/EAM report layout (Header → KPI Strip → Charts → Table → Summary Footer)
+- **New components**: ReportHeader, TabSectionHeader, SummaryFooter, ChartCard, SafeChart, ReportTable
+- **ComposedChart**: Pareto analysis on breakdowns tab (bar + cumulative line)
+- **SLA compliance**: Color-coded badges (green ≥90%, amber 70-90%, red <70%)
+- **Print styles**: @media print rules for clean printable reports
+- **No new lint errors introduced**

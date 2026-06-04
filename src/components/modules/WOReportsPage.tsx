@@ -13,16 +13,18 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Progress } from '@/components/ui/progress';
+import { Separator } from '@/components/ui/separator';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell,
   LineChart, Line, AreaChart, Area, ResponsiveContainer, Tooltip, Legend,
+  ComposedChart,
 } from 'recharts';
 import {
   Activity, AlertTriangle, Clock, Wrench, Package, Timer, TrendingDown,
   FileBarChart, Download, RefreshCw, BarChart3, DollarSign, Zap,
   ShieldAlert, Factory, HardHat, Users, Boxes, Loader2, FileDown,
-  Hammer, CircleStop, Gauge, ChartPie, ArrowDownUp, Pause, Construction
+  Hammer, CircleStop, Gauge, ChartPie, ArrowDownUp, Pause, Construction,
+  ClipboardList, CalendarDays, Filter, Printer,
 } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/api';
 import { EmptyState, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
@@ -40,6 +42,13 @@ const TRADE_COLORS: Record<string, string> = {
 
 const PRIORITY_COLORS: Record<string, string> = {
   low: '#94a3b8', medium: '#0ea5e9', high: '#f59e0b', critical: '#ef4444',
+};
+
+const SLA_TARGETS: Record<string, number> = {
+  critical: 0.5,
+  high: 1,
+  medium: 4,
+  low: 8,
 };
 
 type ReportData = {
@@ -97,12 +106,31 @@ function getColorForKey(key: string, fallback: string): string {
   return TRADE_COLORS[key] || PRIORITY_COLORS[key] || fallback;
 }
 
+function getSeverityColor(value: number): string {
+  if (value >= 40) return '#ef4444';
+  if (value >= 20) return '#f59e0b';
+  return '#059669';
+}
+
+function getSLAComplianceColor(rate: number): string {
+  if (rate >= 90) return '#059669';
+  if (rate >= 70) return '#f59e0b';
+  return '#ef4444';
+}
+
+function formatTimestamp(): string {
+  return new Date().toLocaleString('en-US', {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
 // ============================================================================
-// KPICard
+// SUB-COMPONENTS
 // ============================================================================
 
-function KPICard({ label, value, icon: Icon, color }: {
-  label: string; value: string | number; icon: React.ElementType; color: string;
+function KPICard({ label, value, icon: Icon, color, subtitle }: {
+  label: string; value: string | number; icon: React.ElementType; color: string; subtitle?: string;
 }) {
   return (
     <Card className="border border-border/60 shadow-sm">
@@ -111,10 +139,147 @@ function KPICard({ label, value, icon: Icon, color }: {
           <div className={`h-10 w-10 rounded-xl ${color} flex items-center justify-center shrink-0`}>
             <Icon className="h-5 w-5" />
           </div>
-          <div className="min-w-0">
-            <p className="text-xl font-bold truncate">{value}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-xl font-bold truncate leading-tight">{value}</p>
             <p className="text-[11px] text-muted-foreground truncate">{label}</p>
+            {subtitle && <p className="text-[10px] text-muted-foreground/70 truncate">{subtitle}</p>}
           </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReportHeader({ title, subtitle }: { title: string; subtitle: string }) {
+  return (
+    <div className="mb-6 print-mb-2">
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <FileBarChart className="h-6 w-6 text-emerald-600" />
+            {title}
+          </h1>
+          <p className="text-muted-foreground mt-1">{subtitle}</p>
+        </div>
+        <div className="text-xs text-muted-foreground text-right print-hidden">
+          <p className="flex items-center gap-1 justify-end">
+            <CalendarDays className="h-3 w-3" />
+            Report generated: {formatTimestamp()}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TabSectionHeader({ title, description }: { title: string; description?: string }) {
+  return (
+    <div className="mb-4">
+      <h3 className="text-base font-semibold">{title}</h3>
+      {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+    </div>
+  );
+}
+
+function SummaryFooter({ notes }: { notes: string[] }) {
+  return (
+    <Card className="border border-dashed border-muted-foreground/30 bg-muted/20 mt-6">
+      <CardContent className="p-4">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Key Takeaways</p>
+        <ul className="space-y-1">
+          {notes.map((note, i) => (
+            <li key={i} className="text-xs text-muted-foreground flex items-start gap-2">
+              <span className="w-1 h-1 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+              {note}
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ChartCard({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) {
+  return (
+    <Card className={`border border-border/60 shadow-sm ${className}`}>
+      <CardHeader className="pb-2 pt-4 px-4">
+        <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="px-4 pb-4">
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SafeChart({ data, children, emptyIcon: EmptyIcon, emptyTitle, emptyDescription, height = 280 }: {
+  data: any[]; children: React.ReactNode; emptyIcon: React.ElementType;
+  emptyTitle: string; emptyDescription: string; height?: number;
+}) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center text-center py-8">
+        <EmptyIcon className="h-8 w-8 text-muted-foreground/40 mb-2" />
+        <p className="text-sm font-medium text-muted-foreground">{emptyTitle}</p>
+        <p className="text-xs text-muted-foreground/70 mt-1">{emptyDescription}</p>
+      </div>
+    );
+  }
+  return <div style={{ height }}>{children}</div>;
+}
+
+function ReportTable({ headers, rows, totalRow, maxHeight = 400 }: {
+  headers: { key: string; label: string; align?: string; className?: string }[];
+  rows: Record<string, React.ReactNode>[];
+  totalRow?: Record<string, React.ReactNode>;
+  maxHeight?: number;
+}) {
+  const scrollStyle = maxHeight ? `max-h-[${maxHeight}px] overflow-y-auto` : '';
+  return (
+    <Card className="border border-border/60 shadow-sm">
+      <CardContent className="p-0">
+        <div className={`overflow-x-auto ${maxHeight ? 'max-h-96 overflow-y-auto' : ''}`}>
+          <Table>
+            <TableHeader className="sticky top-0 bg-background z-10">
+              <TableRow>
+                {headers.map((h) => (
+                  <TableHead key={h.key} className={`text-xs font-semibold uppercase tracking-wider ${h.align === 'right' ? 'text-right' : ''} ${h.className || ''}`}>
+                    {h.label}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={headers.length} className="text-center py-8">
+                    <p className="text-sm text-muted-foreground">No data available</p>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                <>
+                  {rows.map((row, idx) => (
+                    <TableRow key={idx} className="even:bg-muted/20 hover:bg-muted/40 transition-colors">
+                      {headers.map((h) => (
+                        <TableCell key={h.key} className={`text-sm ${h.align === 'right' ? 'text-right' : ''} ${h.className || ''}`}>
+                          {row[h.key] ?? '-'}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                  {totalRow && (
+                    <TableRow className="bg-muted/60 font-semibold border-t-2 border-border">
+                      {headers.map((h) => (
+                        <TableCell key={h.key} className={`text-sm ${h.align === 'right' ? 'text-right' : ''} ${h.className || ''}`}>
+                          {totalRow[h.key] ?? ''}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  )}
+                </>
+              )}
+            </TableBody>
+          </Table>
         </div>
       </CardContent>
     </Card>
@@ -131,6 +296,7 @@ export function WOReportsPage() {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
 
   // Filters
   const [tradeFilter, setTradeFilter] = useState('');
@@ -145,8 +311,12 @@ export function WOReportsPage() {
         `/api/work-orders/reports?from=${startDate}&to=${endDate}&trade=${tradeFilter || ''}&priority=${priorityFilter || ''}&department=${deptFilter || ''}`
       )
       .then((res) => {
-        if (res.success && res.data) setReportData(res.data);
-        else setReportData(null);
+        if (res.success && res.data) {
+          setReportData(res.data);
+          setGeneratedAt(formatTimestamp());
+        } else {
+          setReportData(null);
+        }
         setLoading(false);
       })
       .catch(() => {
@@ -164,7 +334,7 @@ export function WOReportsPage() {
   const s = reportData?.summary;
 
   // ============================================================================
-  // CSV EXPORT
+  // CSV EXPORT (Enhanced per tab)
   // ============================================================================
 
   const handleExportCSV = useCallback(() => {
@@ -176,71 +346,99 @@ export function WOReportsPage() {
 
     switch (tab) {
       case 'overview': {
-        filename += '-distribution';
-        headers = ['Type', 'Count'];
-        rows = (reportData.distribution?.byType || []).map((d: any) => [d.type, String(d.count)]);
-        (reportData.distribution?.byStatus || []).forEach((d: any) => rows.push(['Status: ' + d.status, String(d.count)]));
-        (reportData.distribution?.byPriority || []).forEach((d: any) => rows.push(['Priority: ' + d.priority, String(d.count)]));
-        (reportData.distribution?.byTrade || []).forEach((d: any) => rows.push(['Trade: ' + d.trade, String(d.count)]));
+        filename += '-overview';
+        headers = ['Category', 'Sub-Category', 'Count', 'Percentage'];
+        const total = s?.totalWOs || 1;
+        (reportData.distribution?.byType || []).forEach((d: any) => rows.push(['Type', d.type, String(d.count), `${((d.count/total)*100).toFixed(1)}%`]));
+        (reportData.distribution?.byStatus || []).forEach((d: any) => rows.push(['Status', d.status, String(d.count), `${((d.count/total)*100).toFixed(1)}%`]));
+        (reportData.distribution?.byTrade || []).forEach((d: any) => rows.push(['Trade', d.trade, String(d.count), `${((d.count/total)*100).toFixed(1)}%`]));
+        (reportData.distribution?.byPriority || []).forEach((d: any) => rows.push(['Priority', d.priority, String(d.count), `${((d.count/total)*100).toFixed(1)}%`]));
         break;
       }
       case 'downtime': {
         filename += '-downtime';
-        headers = ['Trade', 'Total Hours', 'Events', 'Production Loss'];
-        rows = (reportData.downtime?.byTrade || []).map((d: any) => [
-          d.trade, String(d.totalHours), String(d.events), String(d.productionLoss || 0),
+        const dtData = reportData.downtime?.byTrade || [];
+        const totalHrs = dtData.reduce((a: number, b: any) => a + b.totalHours, 0);
+        const totalEvts = dtData.reduce((a: number, b: any) => a + b.events, 0);
+        headers = ['Trade', 'Events', 'Hours', 'Avg Hours/Event', '% of Total', 'Production Loss'];
+        rows = dtData.map((d: any) => [
+          d.trade, String(d.events), String(d.totalHours),
+          d.events > 0 ? (d.totalHours / d.events).toFixed(1) : '0',
+          totalHrs > 0 ? `${((d.totalHours / totalHrs) * 100).toFixed(1)}%` : '0%',
+          String(d.productionLoss || 0),
         ]);
+        rows.push(['TOTAL', String(totalEvts), String(totalHrs), '-', '100%', String(dtData.reduce((a: number, b: any) => a + (b.productionLoss || 0), 0))]);
         break;
       }
       case 'response-time': {
         filename += '-response-time';
-        headers = ['Group', 'Avg Hours', 'Min Hours', 'Max Hours', 'Count'];
-        (reportData.responseTime?.byPriority || []).forEach((d: any) =>
-          rows.push(['Priority: ' + d.priority, String(d.avgHours), String(d.minHours), String(d.maxHours), String(d.count)])
-        );
+        headers = ['Group', 'Type', 'Count', 'Avg Hours', 'Min Hours', 'Max Hours', 'SLA Target (h)', 'SLA Compliance'];
+        (reportData.responseTime?.byPriority || []).forEach((d: any) => {
+          const target = SLA_TARGETS[d.priority] || 8;
+          const compliance = d.avgHours <= target ? 100 : Math.round((target / d.avgHours) * 100);
+          rows.push([d.priority, 'Priority', String(d.count), String(d.avgHours), String(d.minHours), String(d.maxHours), String(target), `${compliance}%`]);
+        });
         (reportData.responseTime?.byTrade || []).forEach((d: any) =>
-          rows.push(['Trade: ' + d.trade, String(d.avgHours), '-', '-', String(d.count)])
+          rows.push([d.trade, 'Trade', String(d.count), String(d.avgHours), '-', '-', '-', '-'])
         );
         break;
       }
       case 'breakdowns': {
         filename += '-breakdowns';
-        headers = ['Group', 'Count'];
-        (reportData.breakdowns?.byType || []).forEach((d: any) => rows.push(['Type: ' + d.type, String(d.count)]));
-        (reportData.breakdowns?.byTrade || []).forEach((d: any) => rows.push(['Trade: ' + d.trade, String(d.count)]));
-        (reportData.breakdowns?.byPriority || []).forEach((d: any) => rows.push(['Priority: ' + d.priority, String(d.count)]));
+        const bdTotal = reportData.breakdowns?.total || 1;
+        headers = ['Group', 'Type', 'Count', '% of Total'];
+        (reportData.breakdowns?.byTrade || []).forEach((d: any) => rows.push([d.trade, 'Trade', String(d.count), `${((d.count/bdTotal)*100).toFixed(1)}%`]));
+        (reportData.breakdowns?.byType || []).forEach((d: any) => rows.push([d.type, 'Type', String(d.count), `${((d.count/bdTotal)*100).toFixed(1)}%`]));
+        (reportData.breakdowns?.byPriority || []).forEach((d: any) => rows.push([d.priority, 'Priority', String(d.count), `${((d.count/bdTotal)*100).toFixed(1)}%`]));
         break;
       }
       case 'man-hours': {
         filename += '-man-hours';
-        headers = ['Technician', 'Total Hours', 'WO Count', 'Avg Hours/WO'];
-        rows = (reportData.manHours?.byTechnician || []).map((d: any) => [
-          d.name, String(d.totalHours), String(d.woCount), String(d.avgHoursPerWO),
+        const mhTotal = reportData.manHours?.grandTotal || 1;
+        const techs = reportData.manHours?.byTechnician || [];
+        headers = ['Technician', 'Total Hours', 'WO Count', 'Avg Hrs/WO', '% of Grand Total'];
+        rows = techs.map((d: any) => [
+          d.name, String(d.totalHours), String(d.woCount),
+          String(d.avgHoursPerWO), `${((d.totalHours / mhTotal) * 100).toFixed(1)}%`,
         ]);
+        rows.push(['TOTAL', String(reportData.manHours?.grandTotal || 0), '-', '-', '100%']);
         break;
       }
       case 'materials': {
         filename += '-materials';
-        headers = ['Item', 'Total Qty', 'Total Cost', 'WO Count'];
-        rows = (reportData.materials?.topItems || []).map((d: any) => [
-          d.name, String(d.totalQty), String(d.totalCost), String(d.woCount),
+        const matTotal = reportData.materials?.totalCost || 1;
+        const items = reportData.materials?.topItems || [];
+        headers = ['Item Name', 'Total Qty', 'Total Cost', 'WOs Used', '% of Total Cost'];
+        rows = items.map((d: any) => [
+          d.name, String(d.totalQty), String(d.totalCost),
+          String(d.woCount), `${((d.totalCost / matTotal) * 100).toFixed(1)}%`,
         ]);
+        rows.push(['TOTAL', String(reportData.materials?.totalQty || 0), String(reportData.materials?.totalCost || 0), '-', '100%']);
         break;
       }
       case 'failure-rate': {
         filename += '-failure-rate';
-        headers = ['Asset', 'Total WOs', 'Failures', 'Failure Rate'];
-        rows = (reportData.failureRate?.byAsset || []).map((d: any) => [
-          d.assetName || d.assetId, String(d.totalWOs), String(d.failures), String(d.failureRate),
-        ]);
+        headers = ['Asset', 'Total WOs', 'Failures', 'Failure Rate', 'MTBF (Days)', 'Risk Level'];
+        const assets = reportData.failureRate?.byAsset || [];
+        rows = assets.map((d: any) => {
+          const mtbf = reportData.failureRate?.mtbf?.find((m: any) => m.assetId === d.assetId);
+          const risk = d.failureRate >= 40 ? 'High' : d.failureRate >= 20 ? 'Medium' : 'Low';
+          return [d.assetName || d.assetId, String(d.totalWOs), String(d.failures), `${d.failureRate}%`, String(mtbf?.mtbfDays || '-'), risk];
+        });
         break;
       }
-      case 'stoppages-cost': {
-        filename += '-stoppages-cost';
-        headers = ['Trade', 'Labor Cost', 'Parts Cost', 'Contractor Cost', 'Total Cost'];
-        rows = (reportData.cost?.byTrade || []).map((d: any) => [
-          d.trade, String(d.laborCost), String(d.partsCost), String(d.contractorCost), String(d.totalCost),
+      case 'stoppages': {
+        filename += '-stoppages';
+        const spData = reportData.stoppages?.byTrade || [];
+        const totalSp = spData.reduce((a: number, b: any) => a + b.count, 0);
+        const totalSpHrs = spData.reduce((a: number, b: any) => a + b.totalHours, 0);
+        headers = ['Trade', 'Stoppage Count', 'Total Hours', 'Avg Hours', '% of Total'];
+        rows = spData.map((d: any) => [
+          d.trade, String(d.count), String(d.totalHours),
+          d.count > 0 ? (d.totalHours / d.count).toFixed(1) : '0',
+          totalSp > 0 ? `${((d.count / totalSp) * 100).toFixed(1)}%` : '0%',
         ]);
+        rows.push(['TOTAL', String(totalSp), String(totalSpHrs), '-', '100%']);
         break;
       }
       default: {
@@ -254,7 +452,7 @@ export function WOReportsPage() {
     }
 
     exportCSV(filename, headers, rows);
-  }, [reportData, activeTab, startDate, endDate]);
+  }, [reportData, activeTab, startDate, endDate, s]);
 
   // ============================================================================
   // PDF EXPORT
@@ -294,7 +492,7 @@ export function WOReportsPage() {
   }, [startDate, endDate, tradeFilter, priorityFilter, deptFilter]);
 
   // ============================================================================
-  // KPI CARDS
+  // COMPUTED DATA
   // ============================================================================
 
   const kpiCards = useMemo(() => {
@@ -303,13 +501,94 @@ export function WOReportsPage() {
       { label: 'Total Work Orders', value: s.totalWOs ?? 0, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
       { label: 'Completion Rate', value: `${s.completionRate ?? 0}%`, icon: Activity, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
       { label: 'Breakdown Rate', value: `${s.breakdownRate ?? 0}%`, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
-      { label: 'Avg Response Time', value: formatHours(s.avgResponseTime), icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+      { label: 'Avg Response', value: formatHours(s.avgResponseTime), icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
       { label: 'Total Man Hours', value: formatHours(s.totalManHours), icon: HardHat, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
       { label: 'Material Cost', value: formatCurrency(s.totalMaterialCost), icon: Package, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
       { label: 'Total Downtime', value: formatHours(s.totalDowntimeHours), icon: CircleStop, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400' },
       { label: 'Rework Rate', value: formatRate(s.reworkRate), icon: TrendingDown, color: 'text-rose-600 bg-rose-50 dark:bg-rose-900/30 dark:text-rose-400' },
     ];
   }, [s]);
+
+  // Downtime totals
+  const downtimeTotals = useMemo(() => {
+    const dt = reportData?.downtime?.byTrade || [];
+    return {
+      totalHours: dt.reduce((a: number, b: any) => a + (b.totalHours || 0), 0),
+      totalEvents: dt.reduce((a: number, b: any) => a + (b.events || 0), 0),
+      productionLoss: dt.reduce((a: number, b: any) => a + (b.productionLoss || 0), 0),
+    };
+  }, [reportData?.downtime?.byTrade]);
+
+  // Breakdown summary
+  const breakdownSummary = useMemo(() => {
+    const bd = reportData?.breakdowns;
+    const byMonth = bd?.byMonth || [];
+    const topMonth = byMonth.length > 0 ? byMonth.reduce((a: any, b: any) => a.count > b.count ? a : b) : null;
+    const byTrade = bd?.byTrade || [];
+    const mostAffected = byTrade.length > 0 ? byTrade[0] : null;
+    return { topMonth, mostAffected };
+  }, [reportData?.breakdowns]);
+
+  // Man hours summary
+  const manHoursSummary = useMemo(() => {
+    const mh = reportData?.manHours;
+    const byTrade = mh?.byTrade || [];
+    const mostActive = byTrade.length > 0 ? byTrade[0] : null;
+    const byTech = mh?.byTechnician || [];
+    const topTech = byTech.length > 0 ? byTech[0] : null;
+    return { mostActive, topTech };
+  }, [reportData?.manHours]);
+
+  // Materials summary
+  const materialsSummary = useMemo(() => {
+    const mat = reportData?.materials;
+    const topItem = mat?.topItems?.[0] || null;
+    const avgCostPerWO = (s?.totalWOs || 0) > 0 ? (mat?.totalCost || 0) / (s?.totalWOs || 1) : 0;
+    return { topItem, avgCostPerWO };
+  }, [reportData?.materials, s?.totalWOs]);
+
+  // Failure rate summary
+  const failureSummary = useMemo(() => {
+    const fr = reportData?.failureRate;
+    const byAsset = fr?.byAsset || [];
+    const highest = byAsset.length > 0 ? byAsset[0] : null;
+    const mtbfData = fr?.mtbf || [];
+    const avgMTBF = mtbfData.length > 0 ? mtbfData.reduce((a: number, b: any) => a + (b.mtbfDays || 0), 0) / mtbfData.length : 0;
+    const avgRate = byAsset.length > 0 ? byAsset.reduce((a: number, b: any) => a + (b.failureRate || 0), 0) / byAsset.length : 0;
+    return { highest, avgMTBF, avgRate };
+  }, [reportData?.failureRate]);
+
+  // Stoppages summary
+  const stoppageSummary = useMemo(() => {
+    const sp = reportData?.stoppages;
+    const byTrade = sp?.byTrade || [];
+    const mostTrade = byTrade.length > 0 ? byTrade.reduce((a: any, b: any) => a.count > b.count ? a : b) : null;
+    const totalHrs = byTrade.reduce((a: number, b: any) => a + (b.totalHours || 0), 0);
+    const total = sp?.total || 0;
+    return { mostTrade, totalHrs, avgDuration: total > 0 ? totalHrs / total : 0 };
+  }, [reportData?.stoppages]);
+
+  // Pareto data for breakdowns
+  const breakdownParetoData = useMemo(() => {
+    const byTrade = reportData?.breakdowns?.byTrade || [];
+    if (byTrade.length === 0) return [];
+    const total = byTrade.reduce((a: number, b: any) => a + b.count, 0);
+    let cumulative = 0;
+    return byTrade.map((d: any) => {
+      cumulative += d.count;
+      return { ...d, cumulative, cumulativePct: total > 0 ? Math.round((cumulative / total) * 100) : 0 };
+    });
+  }, [reportData?.breakdowns?.byTrade]);
+
+  // Filter description
+  const filterDescription = useMemo(() => {
+    const parts: string[] = [];
+    if (startDate && endDate) parts.push(`${startDate} to ${endDate}`);
+    if (tradeFilter && tradeFilter !== 'all') parts.push(`Trade: ${tradeFilter}`);
+    if (priorityFilter && priorityFilter !== 'all') parts.push(`Priority: ${priorityFilter}`);
+    if (deptFilter) parts.push(`Dept: ${deptFilter}`);
+    return parts.join(' | ') || 'All data';
+  }, [startDate, endDate, tradeFilter, priorityFilter, deptFilter]);
 
   // ============================================================================
   // RENDER
@@ -325,23 +604,36 @@ export function WOReportsPage() {
 
   return (
     <div className="page-content">
-      {/* ================================================================= */}
-      {/* HEADER                                                             */}
-      {/* ================================================================= */}
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Work Order Reports</h1>
-          <p className="text-muted-foreground mt-1">
-            Comprehensive analytics on work orders, downtime, response time, materials, and costs
-          </p>
-        </div>
-      </div>
+      {/* PRINT STYLES */}
+      <style jsx global>{`
+        @media print {
+          .print-hidden { display: none !important; }
+          .print-mb-2 { margin-bottom: 0.5rem !important; }
+          body { background: white !important; }
+          .page-content { padding: 0 !important; max-width: 100% !important; }
+          * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .recharts-responsive-container { min-height: 200px !important; }
+        }
+      `}</style>
 
-      {/* ================================================================= */}
-      {/* FILTER CONTROLS                                                    */}
-      {/* ================================================================= */}
-      <Card className="border border-border/60 shadow-sm">
+      {/* ================================================================ */}
+      {/* HEADER                                                           */}
+      {/* ================================================================ */}
+      <ReportHeader
+        title="Work Order Reports"
+        subtitle="Comprehensive analytics on work orders, downtime, response time, materials, and costs"
+      />
+
+      {/* ================================================================ */}
+      {/* FILTER CONTROLS                                                  */}
+      {/* ================================================================ */}
+      <Card className="border border-border/60 shadow-sm mb-6 print-hidden">
         <CardContent className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <p className="text-sm font-semibold">Filters</p>
+            <Badge variant="outline" className="text-[10px] ml-auto">{filterDescription}</Badge>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
             <div className="sm:col-span-2">
               <Label className="text-xs text-muted-foreground mb-1 block">Date Range</Label>
@@ -396,11 +688,12 @@ export function WOReportsPage() {
               />
             </div>
           </div>
-          <div className="flex items-center gap-2 mt-4">
+          <div className="flex items-center gap-2 mt-4 flex-wrap">
             <Button size="sm" onClick={fetchReport} disabled={loading}>
               {loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1.5" />}
               Generate Report
             </Button>
+            <Separator orientation="vertical" className="h-6 mx-1" />
             <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={!reportData || loading}>
               <Download className="h-4 w-4 mr-1.5" />
               Export CSV
@@ -409,15 +702,24 @@ export function WOReportsPage() {
               {pdfLoading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <FileDown className="h-4 w-4 mr-1.5" />}
               Download PDF
             </Button>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="h-4 w-4 mr-1.5" />
+              Print
+            </Button>
+            {generatedAt && (
+              <span className="text-[10px] text-muted-foreground ml-auto flex items-center gap-1">
+                <CalendarDays className="h-3 w-3" /> Generated: {generatedAt}
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* ================================================================= */}
-      {/* LOADING OVERLAY                                                    */}
-      {/* ================================================================= */}
+      {/* ================================================================ */}
+      {/* LOADING OVERLAY                                                  */}
+      {/* ================================================================ */}
       {loading && reportData && (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground mt-2">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4 print-hidden">
           <Loader2 className="h-4 w-4 animate-spin" />
           Refreshing report data...
         </div>
@@ -431,13 +733,13 @@ export function WOReportsPage() {
         />
       )}
 
-      {/* ================================================================= */}
-      {/* REPORT CONTENT                                                     */}
-      {/* ================================================================= */}
+      {/* ================================================================ */}
+      {/* REPORT CONTENT                                                   */}
+      {/* ================================================================ */}
       {reportData && !loading && (
         <>
-          {/* KPI Row */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Global KPI Strip */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
             {kpiCards.map((k) => (
               <KPICard key={k.label} {...k} />
             ))}
@@ -445,7 +747,7 @@ export function WOReportsPage() {
 
           {/* Tabbed Content */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="flex-wrap h-auto gap-1">
+            <TabsList className="flex-wrap h-auto gap-1 mb-6 print-hidden">
               <TabsTrigger value="overview" className="text-xs">
                 <BarChart3 className="h-3.5 w-3.5 mr-1" />Overview
               </TabsTrigger>
@@ -467,1158 +769,1134 @@ export function WOReportsPage() {
               <TabsTrigger value="failure-rate" className="text-xs">
                 <Gauge className="h-3.5 w-3.5 mr-1" />Failure Rate
               </TabsTrigger>
-              <TabsTrigger value="stoppages-cost" className="text-xs">
-                <DollarSign className="h-3.5 w-3.5 mr-1" />Stoppages & Cost
+              <TabsTrigger value="stoppages" className="text-xs">
+                <Pause className="h-3.5 w-3.5 mr-1" />Stoppages
               </TabsTrigger>
             </TabsList>
 
             {/* ============================================================= */}
-            {/* TAB 1: OVERVIEW                                               */}
+            {/* TAB 1: OVERVIEW DASHBOARD                                     */}
             {/* ============================================================= */}
-            <TabsContent value="overview" className="space-y-6 mt-6">
+            <TabsContent value="overview" className="space-y-6 mt-0">
+              <TabSectionHeader title="Overview Dashboard" description="High-level work order performance metrics and distribution analysis" />
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* WO Distribution by Type (PieChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">WO Distribution by Type</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.distribution?.byType || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={reportData.distribution.byType}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={55}
-                              outerRadius={90}
-                              dataKey="count"
-                              nameKey="type"
-                              paddingAngle={2}
-                            >
-                              {(reportData.distribution.byType || []).map((_: any, i: number) => (
-                                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                              ))}
-                            </Pie>
-                            <Tooltip />
-                            <Legend />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={ChartPie} title="No type data" description="Work order type distribution will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
+                {/* WO Distribution by Type (Donut) */}
+                <ChartCard title="WO Distribution by Type">
+                  <SafeChart
+                    data={reportData.distribution?.byType}
+                    emptyIcon={ChartPie}
+                    emptyTitle="No type data"
+                    emptyDescription="Work order type distribution will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={reportData.distribution.byType}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={55}
+                          outerRadius={90}
+                          dataKey="count"
+                          nameKey="type"
+                          paddingAngle={2}
+                          label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          labelLine={false}
+                          fontSize={11}
+                        >
+                          {(reportData.distribution.byType || []).map((_: any, i: number) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
 
-                {/* WO by Status (horizontal BarChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">WO by Status</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.distribution?.byStatus || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={reportData.distribution.byStatus}
-                            layout="vertical"
-                            margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
-                          >
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis type="number" tick={{ fontSize: 11 }} />
-                            <YAxis type="category" dataKey="status" tick={{ fontSize: 10 }} width={90} />
-                            <Tooltip />
-                            <Bar dataKey="count" name="Count" radius={[0, 4, 4, 0]}>
-                              {(reportData.distribution.byStatus || []).map((_: any, i: number) => (
-                                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={BarChart3} title="No status data" description="Status distribution will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
+                {/* WO by Status (Horizontal Bar) */}
+                <ChartCard title="WO by Status">
+                  <SafeChart
+                    data={reportData.distribution?.byStatus}
+                    emptyIcon={BarChart3}
+                    emptyTitle="No status data"
+                    emptyDescription="Status distribution will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={reportData.distribution.byStatus}
+                        layout="vertical"
+                        margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="status" tick={{ fontSize: 10 }} width={90} />
+                        <Tooltip />
+                        <Bar dataKey="count" name="Count" radius={[0, 4, 4, 0]}>
+                          {(reportData.distribution.byStatus || []).map((_: any, i: number) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
 
-                {/* WO by Trade (BarChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">WO by Trade</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.distribution?.byTrade || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={reportData.distribution.byTrade} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="trade" tick={{ fontSize: 11 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip />
-                            <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
-                              {(reportData.distribution.byTrade || []).map((entry: any) => (
-                                <Cell key={entry.trade} fill={getColorForKey(entry.trade, CHART_COLORS[0])} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={BarChart3} title="No trade data" description="Trade distribution will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
+                {/* WO by Trade (Vertical Bar) */}
+                <ChartCard title="WO by Trade">
+                  <SafeChart
+                    data={reportData.distribution?.byTrade}
+                    emptyIcon={BarChart3}
+                    emptyTitle="No trade data"
+                    emptyDescription="Trade distribution will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={reportData.distribution.byTrade} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="trade" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
+                          {(reportData.distribution.byTrade || []).map((entry: any) => (
+                            <Cell key={entry.trade} fill={getColorForKey(entry.trade, CHART_COLORS[0])} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
 
-                {/* Cost Trend by Month (LineChart with Area) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Cost Trend by Month</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.cost?.byMonth || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={reportData.cost.byMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip formatter={(value: any) => formatCurrency(value)} />
-                            <Legend />
-                            <Area type="monotone" dataKey="laborCost" stackId="1" stroke="#059669" fill="#05966933" name="Labor" />
-                            <Area type="monotone" dataKey="partsCost" stackId="1" stroke="#0ea5e9" fill="#0ea5e933" name="Parts" />
-                            <Area type="monotone" dataKey="totalCost" stackId="2" stroke="#f59e0b" fill="#f59e0b33" name="Total" />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={DollarSign} title="No cost trend data" description="Monthly cost trends will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
+                {/* Cost Trend by Month (Stacked Area) */}
+                <ChartCard title="Cost Trend by Month">
+                  <SafeChart
+                    data={reportData.cost?.byMonth}
+                    emptyIcon={DollarSign}
+                    emptyTitle="No cost trend data"
+                    emptyDescription="Monthly cost trends will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={reportData.cost.byMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                        <Legend />
+                        <Area type="monotone" dataKey="laborCost" stackId="1" stroke="#059669" fill="#05966933" name="Labor" />
+                        <Area type="monotone" dataKey="partsCost" stackId="1" stroke="#0ea5e9" fill="#0ea5e933" name="Parts" />
+                        <Area type="monotone" dataKey="totalCost" stroke="#f59e0b" fill="#f59e0b33" name="Total" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
               </div>
+
+              <SummaryFooter notes={[
+                `Total of ${s?.totalWOs ?? 0} work orders processed in the selected period.`,
+                `Completion rate of ${s?.completionRate ?? 0}% across all work order types.`,
+                `Breakdown work orders represent ${s?.breakdownRate ?? 0}% of total volume.`,
+                `Average response time is ${formatHours(s?.avgResponseTime)} with ${formatRate(s?.reworkRate)} rework rate.`,
+              ]} />
             </TabsContent>
 
             {/* ============================================================= */}
-            {/* TAB 2: DOWNTIME                                               */}
+            {/* TAB 2: DOWNTIME (PER TRADE) REPORT                            */}
             {/* ============================================================= */}
-            <TabsContent value="downtime" className="space-y-6 mt-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Downtime by Trade (BarChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Downtime by Trade</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.downtime?.byTrade || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={reportData.downtime.byTrade} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="trade" tick={{ fontSize: 11 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip />
-                            <Bar dataKey="totalHours" name="Hours" radius={[4, 4, 0, 0]}>
-                              {(reportData.downtime.byTrade || []).map((entry: any) => (
-                                <Cell key={entry.trade} fill={getColorForKey(entry.trade, CHART_COLORS[0])} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={CircleStop} title="No downtime data" description="Downtime events will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
+            <TabsContent value="downtime" className="space-y-6 mt-0">
+              <TabSectionHeader title="Downtime Report (Per Trade)" description="Analysis of equipment downtime events, duration, and production impact" />
 
-                {/* Downtime by Category (PieChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Downtime by Category</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.downtime?.byCategory || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={reportData.downtime.byCategory}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={55}
-                              outerRadius={90}
-                              dataKey="totalHours"
-                              nameKey="category"
-                              paddingAngle={2}
-                            >
-                              {(reportData.downtime.byCategory || []).map((_: any, i: number) => (
-                                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                              ))}
-                            </Pie>
-                            <Tooltip />
-                            <Legend />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={ChartPie} title="No category data" description="Category distribution will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Downtime Trend by Month (AreaChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Downtime Trend by Month</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.downtime?.byMonth || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={reportData.downtime.byMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip />
-                            <Area type="monotone" dataKey="totalHours" stroke="#ef4444" fill="#ef444433" name="Hours" />
-                            <Area type="monotone" dataKey="events" stroke="#f59e0b" fill="#f59e0b33" name="Events" />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={TrendingDown} title="No trend data" description="Monthly downtime trends will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Downtime Table */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Downtime Summary</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Trade</TableHead>
-                            <TableHead className="text-right">Hours</TableHead>
-                            <TableHead className="text-right">Events</TableHead>
-                            <TableHead className="text-right">Production Loss</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {(reportData.downtime?.byTrade || []).length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={4}>
-                                <EmptyState icon={CircleStop} title="No downtime data" description="Downtime events will appear here." />
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            (reportData.downtime.byTrade || []).map((d: any) => (
-                              <TableRow key={d.trade} className="even:bg-muted/30">
-                                <TableCell className="font-medium capitalize">{d.trade}</TableCell>
-                                <TableCell className="text-right">{formatHours(d.totalHours)}</TableCell>
-                                <TableCell className="text-right">{d.events}</TableCell>
-                                <TableCell className="text-right">{formatCurrency(d.productionLoss)}</TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
+              {/* KPI Strip */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <KPICard label="Total Downtime Hours" value={formatHours(downtimeTotals.totalHours)} icon={CircleStop} color="text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400" />
+                <KPICard label="Total Events" value={downtimeTotals.totalEvents} icon={AlertTriangle} color="text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400" />
+                <KPICard label="Avg Downtime/Event" value={formatHours(downtimeTotals.totalEvents > 0 ? downtimeTotals.totalHours / downtimeTotals.totalEvents : 0)} icon={Timer} color="text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400" />
+                <KPICard label="Production Loss" value={formatCurrency(downtimeTotals.productionLoss)} icon={DollarSign} color="text-rose-600 bg-rose-50 dark:bg-rose-900/30 dark:text-rose-400" />
               </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Downtime by Trade (Horizontal Bar) */}
+                <ChartCard title="Downtime by Trade (Hours)" className="lg:col-span-2">
+                  <SafeChart
+                    data={reportData.downtime?.byTrade}
+                    emptyIcon={CircleStop}
+                    emptyTitle="No downtime data"
+                    emptyDescription="Downtime by trade will appear here."
+                    height={300}
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={reportData.downtime.byTrade}
+                        layout="vertical"
+                        margin={{ top: 5, right: 30, left: 10, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} unit="h" />
+                        <YAxis type="category" dataKey="trade" tick={{ fontSize: 11 }} width={90} />
+                        <Tooltip formatter={(value: any) => `${value}h`} />
+                        <Bar dataKey="totalHours" name="Hours" radius={[0, 4, 4, 0]}>
+                          {(reportData.downtime.byTrade || []).map((entry: any) => (
+                            <Cell key={entry.trade} fill={getColorForKey(entry.trade, CHART_COLORS[0])} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+
+                {/* Downtime by Category (Donut) */}
+                <ChartCard title="Downtime by Category">
+                  <SafeChart
+                    data={reportData.downtime?.byCategory}
+                    emptyIcon={ChartPie}
+                    emptyTitle="No category data"
+                    emptyDescription="Category distribution will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={reportData.downtime.byCategory}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={55}
+                          outerRadius={90}
+                          dataKey="totalHours"
+                          nameKey="category"
+                          paddingAngle={2}
+                        >
+                          {(reportData.downtime.byCategory || []).map((_: any, i: number) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value: any) => `${value}h`} />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+
+                {/* Downtime Trend by Month (Line + Area) */}
+                <ChartCard title="Downtime Trend by Month">
+                  <SafeChart
+                    data={reportData.downtime?.byMonth}
+                    emptyIcon={TrendingDown}
+                    emptyTitle="No trend data"
+                    emptyDescription="Monthly downtime trends will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={reportData.downtime.byMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Legend />
+                        <Area type="monotone" dataKey="totalHours" stroke="#ef4444" fill="#ef444433" name="Hours" />
+                        <Line type="monotone" dataKey="events" stroke="#f59e0b" strokeWidth={2} name="Events" dot={{ r: 4 }} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+              </div>
+
+              {/* Downtime Detail Table */}
+              <ReportTable
+                headers={[
+                  { key: 'trade', label: 'Trade' },
+                  { key: 'events', label: 'Events', align: 'right' },
+                  { key: 'hours', label: 'Hours', align: 'right' },
+                  { key: 'avgHours', label: 'Avg Hours/Event', align: 'right' },
+                  { key: 'pctTotal', label: '% of Total', align: 'right' },
+                  { key: 'prodLoss', label: 'Production Loss', align: 'right' },
+                ]}
+                rows={(reportData.downtime?.byTrade || []).map((d: any) => ({
+                  trade: <span className="font-medium capitalize">{d.trade}</span>,
+                  events: d.events,
+                  hours: formatHours(d.totalHours),
+                  avgHours: formatHours(d.events > 0 ? d.totalHours / d.events : 0),
+                  pctTotal: downtimeTotals.totalHours > 0 ? `${((d.totalHours / downtimeTotals.totalHours) * 100).toFixed(1)}%` : '0%',
+                  prodLoss: formatCurrency(d.productionLoss),
+                }))}
+                totalRow={{
+                  trade: <span className="font-bold">TOTAL</span>,
+                  events: <span className="font-bold">{downtimeTotals.totalEvents}</span>,
+                  hours: <span className="font-bold">{formatHours(downtimeTotals.totalHours)}</span>,
+                  avgHours: <span className="font-bold">{formatHours(downtimeTotals.totalEvents > 0 ? downtimeTotals.totalHours / downtimeTotals.totalEvents : 0)}</span>,
+                  pctTotal: <span className="font-bold">100%</span>,
+                  prodLoss: <span className="font-bold">{formatCurrency(downtimeTotals.productionLoss)}</span>,
+                }}
+              />
+
+              <SummaryFooter notes={[
+                `${downtimeTotals.totalEvents} downtime events totaling ${formatHours(downtimeTotals.totalHours)}.`,
+                `Average event duration: ${formatHours(downtimeTotals.totalEvents > 0 ? downtimeTotals.totalHours / downtimeTotals.totalEvents : 0)}.`,
+                `Total production loss: ${formatCurrency(downtimeTotals.productionLoss)}.`,
+              ]} />
             </TabsContent>
 
             {/* ============================================================= */}
-            {/* TAB 3: RESPONSE TIME                                          */}
+            {/* TAB 3: RESPONSE TIME REPORT                                    */}
             {/* ============================================================= */}
-            <TabsContent value="response-time" className="space-y-6 mt-6">
-              {/* Overall Avg KPI */}
-              <Card className="border border-border/60 shadow-sm">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-14 w-14 rounded-xl text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400 flex items-center justify-center shrink-0">
-                      <Timer className="h-7 w-7" />
-                    </div>
-                    <div>
-                      <p className="text-3xl font-bold">{formatHours(reportData.responseTime?.overall?.avgHours)}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Overall Average Response Time
-                        <span className="ml-2 text-xs text-muted-foreground">
-                          (based on {reportData.responseTime?.overall?.sampleSize ?? 0} samples)
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            <TabsContent value="response-time" className="space-y-6 mt-0">
+              <TabSectionHeader title="Response Time Report" description="Analysis of work order response times by priority and trade with SLA compliance" />
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Response Time by Priority (BarChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Response Time by Priority</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.responseTime?.byPriority || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={reportData.responseTime.byPriority} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="priority" tick={{ fontSize: 11 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip />
-                            <Bar dataKey="avgHours" name="Avg Hours" radius={[4, 4, 0, 0]}>
-                              {(reportData.responseTime.byPriority || []).map((entry: any) => (
-                                <Cell key={entry.priority} fill={getColorForKey(entry.priority, CHART_COLORS[0])} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={Timer} title="No response time data" description="Response time by priority will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Response Time by Trade (BarChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Response Time by Trade</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.responseTime?.byTrade || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={reportData.responseTime.byTrade} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="trade" tick={{ fontSize: 11 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip />
-                            <Bar dataKey="avgHours" name="Avg Hours" radius={[4, 4, 0, 0]}>
-                              {(reportData.responseTime.byTrade || []).map((entry: any) => (
-                                <Cell key={entry.trade} fill={getColorForKey(entry.trade, CHART_COLORS[0])} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={Timer} title="No trade response data" description="Response time by trade will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Response Time Table */}
-              <Card className="border border-border/60 shadow-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold">Response Time Details</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Group</TableHead>
-                          <TableHead className="text-right">Avg Hours</TableHead>
-                          <TableHead className="text-right">Min Hours</TableHead>
-                          <TableHead className="text-right">Max Hours</TableHead>
-                          <TableHead className="text-right">Count</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(reportData.responseTime?.byPriority || []).length === 0 && (reportData.responseTime?.byTrade || []).length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={5}>
-                              <EmptyState icon={Timer} title="No response time data" description="Response time data will appear here." />
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          <>
-                            <TableRow className="bg-muted/50">
-                              <TableCell colSpan={5} className="font-semibold text-xs uppercase text-muted-foreground">By Priority</TableCell>
-                            </TableRow>
-                            {(reportData.responseTime.byPriority || []).map((d: any) => (
-                              <TableRow key={`p-${d.priority}`} className="even:bg-muted/30">
-                                <TableCell className="font-medium capitalize">{d.priority}</TableCell>
-                                <TableCell className="text-right">{formatHours(d.avgHours)}</TableCell>
-                                <TableCell className="text-right">{formatHours(d.minHours)}</TableCell>
-                                <TableCell className="text-right">{formatHours(d.maxHours)}</TableCell>
-                                <TableCell className="text-right">{d.count}</TableCell>
-                              </TableRow>
-                            ))}
-                            <TableRow className="bg-muted/50">
-                              <TableCell colSpan={5} className="font-semibold text-xs uppercase text-muted-foreground">By Trade</TableCell>
-                            </TableRow>
-                            {(reportData.responseTime.byTrade || []).map((d: any) => (
-                              <TableRow key={`t-${d.trade}`} className="even:bg-muted/30">
-                                <TableCell className="font-medium capitalize">{d.trade}</TableCell>
-                                <TableCell className="text-right">{formatHours(d.avgHours)}</TableCell>
-                                <TableCell className="text-right">-</TableCell>
-                                <TableCell className="text-right">-</TableCell>
-                                <TableCell className="text-right">{d.count}</TableCell>
-                              </TableRow>
-                            ))}
-                          </>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* ============================================================= */}
-            {/* TAB 4: BREAKDOWNS                                             */}
-            {/* ============================================================= */}
-            <TabsContent value="breakdowns" className="space-y-6 mt-6">
-              {/* Total Breakdowns KPI */}
-              <Card className="border border-border/60 shadow-sm">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-14 w-14 rounded-xl text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400 flex items-center justify-center shrink-0">
-                      <Zap className="h-7 w-7" />
-                    </div>
-                    <div>
-                      <p className="text-3xl font-bold">{reportData.breakdowns?.total ?? 0}</p>
-                      <p className="text-sm text-muted-foreground">Total Breakdown Work Orders</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Breakdowns by Type (PieChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Breakdowns by Type</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.breakdowns?.byType || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={reportData.breakdowns.byType}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={55}
-                              outerRadius={90}
-                              dataKey="count"
-                              nameKey="type"
-                              paddingAngle={2}
-                            >
-                              {(reportData.breakdowns.byType || []).map((_: any, i: number) => (
-                                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                              ))}
-                            </Pie>
-                            <Tooltip />
-                            <Legend />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={ChartPie} title="No breakdown type data" description="Breakdown type data will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Breakdowns by Trade (BarChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Breakdowns by Trade</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.breakdowns?.byTrade || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={reportData.breakdowns.byTrade} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="trade" tick={{ fontSize: 11 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip />
-                            <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
-                              {(reportData.breakdowns.byTrade || []).map((entry: any) => (
-                                <Cell key={entry.trade} fill={getColorForKey(entry.trade, CHART_COLORS[0])} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={BarChart3} title="No trade breakdown data" description="Trade breakdown data will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Breakdowns Trend by Month (LineChart) */}
-                <Card className="border border-border/60 shadow-sm lg:col-span-2">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Breakdown Trend by Month</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.breakdowns?.byMonth || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={reportData.breakdowns.byMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip />
-                            <Line type="monotone" dataKey="count" stroke="#ef4444" strokeWidth={2} name="Breakdowns" dot={{ r: 4 }} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={Zap} title="No monthly breakdown data" description="Monthly breakdown trends will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Breakdown Table */}
-              <Card className="border border-border/60 shadow-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold">Breakdown Summary</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Type</TableHead>
-                          <TableHead className="text-right">Count</TableHead>
-                          <TableHead>Trade</TableHead>
-                          <TableHead className="text-right">Count</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {Math.max((reportData.breakdowns?.byType || []).length, (reportData.breakdowns?.byTrade || []).length) === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={4}>
-                              <EmptyState icon={Zap} title="No breakdown data" description="Breakdown data will appear here." />
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          <>
-                            <TableRow className="bg-muted/50">
-                              <TableCell colSpan={4} className="font-semibold text-xs uppercase text-muted-foreground">By Type</TableCell>
-                            </TableRow>
-                            {(reportData.breakdowns.byType || []).map((d: any) => (
-                              <TableRow key={`bt-${d.type}`} className="even:bg-muted/30">
-                                <TableCell className="font-medium capitalize">{d.type}</TableCell>
-                                <TableCell className="text-right">{d.count}</TableCell>
-                                <TableCell>-</TableCell>
-                                <TableCell className="text-right">-</TableCell>
-                              </TableRow>
-                            ))}
-                            <TableRow className="bg-muted/50">
-                              <TableCell colSpan={4} className="font-semibold text-xs uppercase text-muted-foreground">By Trade</TableCell>
-                            </TableRow>
-                            {(reportData.breakdowns.byTrade || []).map((d: any) => (
-                              <TableRow key={`bd-${d.trade}`} className="even:bg-muted/30">
-                                <TableCell className="font-medium">-</TableCell>
-                                <TableCell className="text-right">-</TableCell>
-                                <TableCell className="font-medium capitalize">{d.trade}</TableCell>
-                                <TableCell className="text-right">{d.count}</TableCell>
-                              </TableRow>
-                            ))}
-                          </>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* ============================================================= */}
-            {/* TAB 5: MAN HOURS                                              */}
-            {/* ============================================================= */}
-            <TabsContent value="man-hours" className="space-y-6 mt-6">
-              {/* Grand Total KPI */}
-              <Card className="border border-border/60 shadow-sm">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-14 w-14 rounded-xl text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400 flex items-center justify-center shrink-0">
-                      <HardHat className="h-7 w-7" />
-                    </div>
-                    <div>
-                      <p className="text-3xl font-bold">{formatHours(reportData.manHours?.grandTotal)}</p>
-                      <p className="text-sm text-muted-foreground">Grand Total Man Hours</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Man Hours by Trade (BarChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Man Hours by Trade</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.manHours?.byTrade || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={reportData.manHours.byTrade} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="trade" tick={{ fontSize: 11 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip />
-                            <Bar dataKey="totalHours" name="Hours" radius={[4, 4, 0, 0]}>
-                              {(reportData.manHours.byTrade || []).map((entry: any) => (
-                                <Cell key={entry.trade} fill={getColorForKey(entry.trade, CHART_COLORS[0])} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={BarChart3} title="No trade hours data" description="Man hours by trade will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Man Hours by Technician (horizontal BarChart, top 10) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Top 10 Technicians by Hours</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {((reportData.manHours?.byTechnician || []).slice(0, 10)).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={(reportData.manHours.byTechnician || []).slice(0, 10)}
-                            layout="vertical"
-                            margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
-                          >
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis type="number" tick={{ fontSize: 11 }} />
-                            <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
-                            <Tooltip />
-                            <Bar dataKey="totalHours" name="Hours" radius={[0, 4, 4, 0]}>
-                              {(reportData.manHours.byTechnician || []).slice(0, 10).map((_: any, i: number) => (
-                                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={Users} title="No technician data" description="Technician hours will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Man Hours by Activity (PieChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Man Hours by Activity</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.manHours?.byActivity || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={reportData.manHours.byActivity}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={55}
-                              outerRadius={90}
-                              dataKey="totalHours"
-                              nameKey="activity"
-                              paddingAngle={2}
-                            >
-                              {(reportData.manHours.byActivity || []).map((_: any, i: number) => (
-                                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                              ))}
-                            </Pie>
-                            <Tooltip />
-                            <Legend />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={ChartPie} title="No activity data" description="Activity hours will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Man Hours by Month (AreaChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Man Hours Trend by Month</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.manHours?.byMonth || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={reportData.manHours.byMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip />
-                            <Area type="monotone" dataKey="totalHours" stroke="#8b5cf6" fill="#8b5cf633" name="Hours" />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={HardHat} title="No monthly data" description="Monthly man hours will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Technician Hours Table */}
-              <Card className="border border-border/60 shadow-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold">Technician Hours Detail</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-                    <Table>
-                      <TableHeader className="sticky top-0 bg-background">
-                        <TableRow>
-                          <TableHead>Technician</TableHead>
-                          <TableHead className="text-right">Total Hours</TableHead>
-                          <TableHead className="text-right">WO Count</TableHead>
-                          <TableHead className="text-right">Avg Hours/WO</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(reportData.manHours?.byTechnician || []).length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={4}>
-                              <EmptyState icon={Users} title="No technician data" description="Technician hours will appear here." />
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          (reportData.manHours.byTechnician || []).map((d: any) => (
-                            <TableRow key={d.name} className="even:bg-muted/30">
-                              <TableCell className="font-medium">{d.name}</TableCell>
-                              <TableCell className="text-right font-medium">{formatHours(d.totalHours)}</TableCell>
-                              <TableCell className="text-right">{d.woCount}</TableCell>
-                              <TableCell className="text-right">{formatHours(d.avgHoursPerWO)}</TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* ============================================================= */}
-            {/* TAB 6: MATERIALS                                              */}
-            {/* ============================================================= */}
-            <TabsContent value="materials" className="space-y-6 mt-6">
-              {/* KPI Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* KPI Strip */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <KPICard
-                  label="Total Material Cost"
-                  value={formatCurrency(reportData.materials?.totalCost)}
-                  icon={Package}
-                  color="text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400"
-                />
-                <KPICard
-                  label="Total Material Qty"
-                  value={String(reportData.materials?.totalQty ?? 0)}
-                  icon={Boxes}
-                  color="text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400"
-                />
-                <KPICard
-                  label="Top Item Cost"
-                  value={formatCurrency(reportData.materials?.topItems?.[0]?.totalCost)}
-                  icon={TrendingDown}
+                  label="Overall Avg Response"
+                  value={formatHours(reportData.responseTime?.overall?.avgHours)}
+                  icon={Timer}
                   color="text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400"
                 />
                 <KPICard
-                  label="WO Types Used"
-                  value={String((reportData.materials?.byType || []).length)}
-                  icon={Wrench}
-                  color="text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400"
+                  label="Sample Size"
+                  value={reportData.responseTime?.overall?.sampleSize ?? 0}
+                  subtitle="work orders"
+                  icon={ClipboardList}
+                  color="text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400"
+                />
+                <KPICard
+                  label="Best Response (Min)"
+                  value={formatHours(
+                    (reportData.responseTime?.byPriority || []).reduce((min: number, d: any) => d.minHours < min ? d.minHours : min, Infinity)
+                  )}
+                  icon={Activity}
+                  color="text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400"
+                />
+                <KPICard
+                  label="Worst Response (Max)"
+                  value={formatHours(
+                    (reportData.responseTime?.byPriority || []).reduce((max: number, d: any) => d.maxHours > max ? d.maxHours : max, 0)
+                  )}
+                  icon={AlertTriangle}
+                  color="text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400"
                 />
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Materials by WO Type (BarChart stacked) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Materials by WO Type</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.materials?.byType || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={reportData.materials.byType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="type" tick={{ fontSize: 11 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip formatter={(value: any, name: any) => name === 'totalQty' ? `${value} qty` : formatCurrency(value)} />
-                            <Legend />
-                            <Bar dataKey="totalQty" name="Qty" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-                            <Bar dataKey="totalCost" name="Cost" fill="#059669" radius={[4, 4, 0, 0]} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={Boxes} title="No material type data" description="Material usage by WO type will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
+                {/* Response Time by Priority */}
+                <ChartCard title="Response Time by Priority">
+                  <SafeChart
+                    data={reportData.responseTime?.byPriority}
+                    emptyIcon={Timer}
+                    emptyTitle="No priority data"
+                    emptyDescription="Response time by priority will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={reportData.responseTime.byPriority} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="priority" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} unit="h" />
+                        <Tooltip />
+                        <Bar dataKey="avgHours" name="Avg Hours" radius={[4, 4, 0, 0]}>
+                          {(reportData.responseTime.byPriority || []).map((entry: any) => (
+                            <Cell key={entry.priority} fill={getColorForKey(entry.priority, CHART_COLORS[0])} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
 
-                {/* Material Cost Trend by Month (LineChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Material Cost Trend by Month</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.materials?.costByMonth || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={reportData.materials.costByMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip formatter={(value: any) => formatCurrency(value)} />
-                            <Line type="monotone" dataKey="totalCost" stroke="#059669" strokeWidth={2} name="Cost" dot={{ r: 4 }} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={Package} title="No monthly cost data" description="Monthly material cost trends will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
+                {/* Response Time by Trade */}
+                <ChartCard title="Response Time by Trade">
+                  <SafeChart
+                    data={reportData.responseTime?.byTrade}
+                    emptyIcon={Timer}
+                    emptyTitle="No trade data"
+                    emptyDescription="Response time by trade will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={reportData.responseTime.byTrade} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="trade" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} unit="h" />
+                        <Tooltip />
+                        <Bar dataKey="avgHours" name="Avg Hours" radius={[4, 4, 0, 0]}>
+                          {(reportData.responseTime.byTrade || []).map((entry: any) => (
+                            <Cell key={entry.trade} fill={getColorForKey(entry.trade, CHART_COLORS[0])} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
               </div>
 
-              {/* Top 10 Materials Table */}
-              <Card className="border border-border/60 shadow-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold">Top 10 Materials</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Item Name</TableHead>
-                          <TableHead className="text-right">Total Qty</TableHead>
-                          <TableHead className="text-right">Total Cost</TableHead>
-                          <TableHead className="text-right">WO Count</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(reportData.materials?.topItems || []).length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={4}>
-                              <EmptyState icon={Boxes} title="No material data" description="Material usage data will appear here." />
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          (reportData.materials.topItems || []).slice(0, 10).map((d: any, i: number) => (
-                            <TableRow key={i} className="even:bg-muted/30">
-                              <TableCell className="font-medium">{d.name}</TableCell>
-                              <TableCell className="text-right">{d.totalQty}</TableCell>
-                              <TableCell className="text-right font-medium">{formatCurrency(d.totalCost)}</TableCell>
-                              <TableCell className="text-right">{d.woCount}</TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
+              {/* Response Time Table with SLA */}
+              <ReportTable
+                headers={[
+                  { key: 'group', label: 'Priority / Trade' },
+                  { key: 'count', label: 'Count', align: 'right' },
+                  { key: 'avgHrs', label: 'Avg Hours', align: 'right' },
+                  { key: 'minHrs', label: 'Min Hours', align: 'right' },
+                  { key: 'maxHrs', label: 'Max Hours', align: 'right' },
+                  { key: 'slaTarget', label: 'SLA Target', align: 'right' },
+                  { key: 'slaCompliance', label: 'SLA Compliance', align: 'right' },
+                ]}
+                rows={[
+                  ...(reportData.responseTime?.byPriority || []).map((d: any) => {
+                    const target = SLA_TARGETS[d.priority] || 8;
+                    const compliance = d.avgHours > 0 ? Math.min(100, Math.round((target / d.avgHours) * 100)) : 100;
+                    const compColor = getSLAComplianceColor(compliance);
+                    return {
+                      group: <span className="font-medium capitalize flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getColorForKey(d.priority, CHART_COLORS[0]) }} />
+                        {d.priority}
+                      </span>,
+                      count: d.count,
+                      avgHrs: formatHours(d.avgHours),
+                      minHrs: formatHours(d.minHours),
+                      maxHrs: formatHours(d.maxHours),
+                      slaTarget: `${target}h`,
+                      slaCompliance: <Badge variant="outline" className="text-[10px] px-1.5 py-0" style={{ color: compColor, borderColor: compColor }}>{compliance}%</Badge>,
+                    };
+                  }),
+                  ...(reportData.responseTime?.byTrade || []).map((d: any) => ({
+                    group: <span className="font-medium capitalize flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getColorForKey(d.trade, CHART_COLORS[0]) }} />
+                      {d.trade}
+                    </span>,
+                    count: d.count,
+                    avgHrs: formatHours(d.avgHours),
+                    minHrs: '-',
+                    maxHrs: '-',
+                    slaTarget: '-',
+                    slaCompliance: '-',
+                  })),
+                ]}
+              />
+
+              <SummaryFooter notes={[
+                `Overall average response time: ${formatHours(reportData.responseTime?.overall?.avgHours)} (${reportData.responseTime?.overall?.sampleSize ?? 0} samples).`,
+                'SLA targets: Critical=0.5h, High=1h, Medium=4h, Low=8h.',
+                'Green ≥90% compliance | Amber 70-90% | Red <70%.',
+              ]} />
             </TabsContent>
 
             {/* ============================================================= */}
-            {/* TAB 7: FAILURE RATE                                           */}
+            {/* TAB 4: BREAKDOWN REPORT                                        */}
             {/* ============================================================= */}
-            <TabsContent value="failure-rate" className="space-y-6 mt-6">
-              {/* Rework Rate KPI */}
-              <Card className="border border-border/60 shadow-sm">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-14 w-14 rounded-xl text-rose-600 bg-rose-50 dark:bg-rose-900/30 dark:text-rose-400 flex items-center justify-center shrink-0">
-                      <TrendingDown className="h-7 w-7" />
-                    </div>
-                    <div>
-                      <p className="text-3xl font-bold">
-                        {formatRate(reportData.failureRate?.reworkRate)}
-                        <span className="text-sm font-normal text-muted-foreground ml-2">
-                          ({reportData.failureRate?.reworkWOs ?? 0} WOs)
-                        </span>
-                      </p>
-                      <p className="text-sm text-muted-foreground">Rework Rate</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            <TabsContent value="breakdowns" className="space-y-6 mt-0">
+              <TabSectionHeader title="Number of Breakdown Report" description="Analysis of breakdown frequency, trends, and Pareto analysis by trade" />
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Failure Rate by Asset (horizontal BarChart, top 10) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Top 10 Assets by Failure Rate</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {((reportData.failureRate?.byAsset || []).slice(0, 10)).length > 0 ? (
-                      <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={(reportData.failureRate.byAsset || []).slice(0, 10)}
-                            layout="vertical"
-                            margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
-                          >
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis type="number" tick={{ fontSize: 11 }} unit="%" />
-                            <YAxis type="category" dataKey="assetName" tick={{ fontSize: 10 }} width={110} />
-                            <Tooltip formatter={(value: any) => `${value}%`} />
-                            <Bar dataKey="failureRate" name="Failure Rate" radius={[0, 4, 4, 0]}>
-                              {(reportData.failureRate.byAsset || []).slice(0, 10).map((entry: any, i: number) => (
-                                <Cell key={i} fill={entry.failureRate > 50 ? '#ef4444' : entry.failureRate > 25 ? '#f59e0b' : '#059669'} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={Gauge} title="No failure rate data" description="Asset failure rates will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Failure Rate by Type (BarChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Failure Rate by WO Type</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.failureRate?.byType || []).length > 0 ? (
-                      <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={reportData.failureRate.byType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="type" tick={{ fontSize: 11 }} />
-                            <YAxis tick={{ fontSize: 11 }} unit="%" />
-                            <Tooltip formatter={(value: any) => `${value}%`} />
-                            <Bar dataKey="failureRate" name="Failure Rate" radius={[4, 4, 0, 0]}>
-                              {(reportData.failureRate.byType || []).map((_: any, i: number) => (
-                                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={BarChart3} title="No type failure data" description="Failure rate by type will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
+              {/* KPI Strip */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <KPICard label="Total Breakdowns" value={reportData.breakdowns?.total ?? 0} icon={Zap} color="text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400" />
+                <KPICard label="Breakdown Rate" value={`${s?.breakdownRate ?? 0}%`} icon={AlertTriangle} color="text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400" />
+                <KPICard label="Most Affected Trade" value={breakdownSummary.mostAffected?.trade || '-'} icon={HardHat} color="text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400" />
+                <KPICard label="Top Breakdown Month" value={breakdownSummary.topMonth?.month || '-'} icon={CalendarDays} color="text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400" />
               </div>
 
-              {/* MTBF Analysis Table */}
-              <Card className="border border-border/60 shadow-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-semibold">MTBF Analysis (Mean Time Between Failures)</CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-                    <Table>
-                      <TableHeader className="sticky top-0 bg-background">
-                        <TableRow>
-                          <TableHead>Asset</TableHead>
-                          <TableHead className="text-right">MTBF (Days)</TableHead>
-                          <TableHead className="text-right">MTBF (Hours)</TableHead>
-                          <TableHead className="text-right">Failures</TableHead>
-                          <TableHead className="text-right">Operating Days</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(reportData.failureRate?.mtbf || []).length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={5}>
-                              <EmptyState icon={Gauge} title="No MTBF data" description="MTBF analysis requires assets with 2+ failures." />
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          (reportData.failureRate.mtbf || []).map((d: any) => (
-                            <TableRow key={d.assetId} className="even:bg-muted/30">
-                              <TableCell className="font-medium">{d.assetName || d.assetId}</TableCell>
-                              <TableCell className="text-right font-medium">{d.mtbfDays}</TableCell>
-                              <TableCell className="text-right">{d.mtbfHours}</TableCell>
-                              <TableCell className="text-right">{d.failureCount}</TableCell>
-                              <TableCell className="text-right">{d.operatingDays}</TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Breakdowns by Type (Bar) */}
+                <ChartCard title="Breakdowns by Type">
+                  <SafeChart
+                    data={reportData.breakdowns?.byType}
+                    emptyIcon={BarChart3}
+                    emptyTitle="No type data"
+                    emptyDescription="Breakdown type data will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={reportData.breakdowns.byType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="type" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
+                          {(reportData.breakdowns.byType || []).map((_: any, i: number) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+
+                {/* Breakdowns by Trade (Bar) */}
+                <ChartCard title="Breakdowns by Trade">
+                  <SafeChart
+                    data={reportData.breakdowns?.byTrade}
+                    emptyIcon={BarChart3}
+                    emptyTitle="No trade data"
+                    emptyDescription="Trade breakdown data will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={reportData.breakdowns.byTrade} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="trade" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
+                          {(reportData.breakdowns.byTrade || []).map((entry: any) => (
+                            <Cell key={entry.trade} fill={getColorForKey(entry.trade, CHART_COLORS[0])} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+
+                {/* Breakdown Trend by Month (Line with markers) */}
+                <ChartCard title="Breakdown Trend by Month" className="lg:col-span-2">
+                  <SafeChart
+                    data={reportData.breakdowns?.byMonth}
+                    emptyIcon={TrendingDown}
+                    emptyTitle="No monthly data"
+                    emptyDescription="Monthly breakdown trends will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={reportData.breakdowns.byMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="count" stroke="#ef4444" strokeWidth={2} name="Breakdowns" dot={{ r: 5, fill: '#ef4444', stroke: '#fff', strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+
+                {/* Breakdown by Priority (Donut) */}
+                <ChartCard title="Breakdown by Priority">
+                  <SafeChart
+                    data={reportData.breakdowns?.byPriority}
+                    emptyIcon={ChartPie}
+                    emptyTitle="No priority data"
+                    emptyDescription="Priority distribution will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={reportData.breakdowns.byPriority}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={55}
+                          outerRadius={90}
+                          dataKey="count"
+                          nameKey="priority"
+                          paddingAngle={2}
+                        >
+                          {(reportData.breakdowns.byPriority || []).map((entry: any) => (
+                            <Cell key={entry.priority} fill={getColorForKey(entry.priority, CHART_COLORS[0])} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+
+                {/* Pareto Chart (ComposedChart) */}
+                <ChartCard title="Pareto Analysis (Cumulative %)">
+                  <SafeChart
+                    data={breakdownParetoData}
+                    emptyIcon={ChartPie}
+                    emptyTitle="No data for Pareto"
+                    emptyDescription="Pareto analysis requires breakdown data by trade."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={breakdownParetoData} margin={{ top: 5, right: 40, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="trade" tick={{ fontSize: 10 }} />
+                        <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} unit="%" domain={[0, 100]} />
+                        <Tooltip />
+                        <Legend />
+                        <Bar yAxisId="left" dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
+                          {breakdownParetoData.map((entry: any) => (
+                            <Cell key={entry.trade} fill={getColorForKey(entry.trade, CHART_COLORS[0])} />
+                          ))}
+                        </Bar>
+                        <Line yAxisId="right" type="monotone" dataKey="cumulativePct" stroke="#8b5cf6" strokeWidth={2} name="Cumulative %" dot={{ r: 3 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+              </div>
+
+              {/* Breakdown Table */}
+              <ReportTable
+                headers={[
+                  { key: 'trade', label: 'Trade' },
+                  { key: 'breakdowns', label: 'Breakdowns', align: 'right' },
+                  { key: 'pctTotal', label: '% of Total', align: 'right' },
+                  { key: 'trend', label: 'Trend', align: 'right' },
+                ]}
+                rows={(reportData.breakdowns?.byTrade || []).map((d: any, idx: number) => {
+                  const total = reportData.breakdowns?.total || 1;
+                  return {
+                    trade: <span className="font-medium capitalize flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getColorForKey(d.trade, CHART_COLORS[0]) }} />
+                      {d.trade}
+                    </span>,
+                    breakdowns: d.count,
+                    pctTotal: `${((d.count / total) * 100).toFixed(1)}%`,
+                    trend: idx === 0 ? <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-red-600 border-red-300">Highest</Badge> : '-',
+                  };
+                })}
+              />
+
+              <SummaryFooter notes={[
+                `${reportData.breakdowns?.total ?? 0} breakdown work orders in the selected period.`,
+                `Most affected trade: ${breakdownSummary.mostAffected?.trade || 'N/A'}.`,
+                `Pareto analysis shows the top trades contributing to 80% of all breakdowns.`,
+              ]} />
             </TabsContent>
 
             {/* ============================================================= */}
-            {/* TAB 8: STOPPAGES & COST                                        */}
+            {/* TAB 5: MAN HOURS REPORT                                        */}
             {/* ============================================================= */}
-            <TabsContent value="stoppages-cost" className="space-y-6 mt-6">
-              {/* Total Stoppages KPI */}
-              <Card className="border border-border/60 shadow-sm">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-14 w-14 rounded-xl text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400 flex items-center justify-center shrink-0">
-                      <Pause className="h-7 w-7" />
-                    </div>
-                    <div>
-                      <p className="text-3xl font-bold">{reportData.stoppages?.total ?? 0}</p>
-                      <p className="text-sm text-muted-foreground">Total Production Stoppages</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            <TabsContent value="man-hours" className="space-y-6 mt-0">
+              <TabSectionHeader title="Man Hours Report" description="Labor hours analysis by trade, technician, activity type, and monthly trend" />
 
-              {/* Cost Summary KPI Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Card className="border border-border/60 shadow-sm">
-                  <CardContent className="p-4 text-center">
-                    <p className="text-2xl font-bold text-emerald-600">{formatCurrency(reportData.cost?.grandLabor)}</p>
-                    <p className="text-xs text-muted-foreground">Total Labor Cost</p>
-                  </CardContent>
-                </Card>
-                <Card className="border border-border/60 shadow-sm">
-                  <CardContent className="p-4 text-center">
-                    <p className="text-2xl font-bold text-sky-600">{formatCurrency(reportData.cost?.grandParts)}</p>
-                    <p className="text-xs text-muted-foreground">Total Parts Cost</p>
-                  </CardContent>
-                </Card>
-                <Card className="border border-border/60 shadow-sm">
-                  <CardContent className="p-4 text-center">
-                    <p className="text-2xl font-bold text-violet-600">{formatCurrency(reportData.cost?.grandContractor)}</p>
-                    <p className="text-xs text-muted-foreground">Total Contractor Cost</p>
-                  </CardContent>
-                </Card>
+              {/* KPI Strip */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <KPICard label="Total Man Hours" value={formatHours(reportData.manHours?.grandTotal)} icon={HardHat} color="text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400" />
+                <KPICard label="Avg Hours/WO" value={formatHours((s?.totalWOs || 0) > 0 ? (reportData.manHours?.grandTotal || 0) / (s?.totalWOs || 1) : 0)} icon={Timer} color="text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400" />
+                <KPICard label="Most Active Trade" value={manHoursSummary.mostActive?.trade || '-'} icon={Wrench} color="text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400" />
+                <KPICard label="Top Technician Hours" value={formatHours(manHoursSummary.topTech?.totalHours)} subtitle={manHoursSummary.topTech?.name} icon={Users} color="text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400" />
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Stoppages by Impact (PieChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Stoppages by Impact</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.stoppages?.byImpact || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={reportData.stoppages.byImpact}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={55}
-                              outerRadius={90}
-                              dataKey="count"
-                              nameKey="impact"
-                              paddingAngle={2}
-                            >
-                              {(reportData.stoppages.byImpact || []).map((entry: any) => (
-                                <Cell key={entry.impact} fill={getColorForKey(entry.impact, CHART_COLORS[0])} />
-                              ))}
-                            </Pie>
-                            <Tooltip />
-                            <Legend />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={ChartPie} title="No impact data" description="Stoppage impact data will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
+                {/* Man Hours by Trade (Horizontal Bar) */}
+                <ChartCard title="Man Hours by Trade">
+                  <SafeChart
+                    data={reportData.manHours?.byTrade}
+                    emptyIcon={BarChart3}
+                    emptyTitle="No trade data"
+                    emptyDescription="Man hours by trade will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={reportData.manHours.byTrade}
+                        layout="vertical"
+                        margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} unit="h" />
+                        <YAxis type="category" dataKey="trade" tick={{ fontSize: 11 }} width={90} />
+                        <Tooltip />
+                        <Bar dataKey="totalHours" name="Hours" radius={[0, 4, 4, 0]}>
+                          {(reportData.manHours.byTrade || []).map((entry: any) => (
+                            <Cell key={entry.trade} fill={getColorForKey(entry.trade, CHART_COLORS[0])} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
 
-                {/* Stoppages by Reason (BarChart) */}
-                <Card className="border border-border/60 shadow-sm">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Stoppages by Reason</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.stoppages?.byReason || []).length > 0 ? (
-                      <div className="h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={reportData.stoppages.byReason} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="reason" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={60} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip />
-                            <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]} fill="#f97316">
-                              {(reportData.stoppages.byReason || []).map((_: any, i: number) => (
-                                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={Construction} title="No reason data" description="Stoppage reason data will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
+                {/* Man Hours by Technician (Top 15 Horizontal Bar) */}
+                <ChartCard title="Top 15 Technicians by Hours">
+                  <SafeChart
+                    data={(reportData.manHours?.byTechnician || []).slice(0, 15)}
+                    emptyIcon={Users}
+                    emptyTitle="No technician data"
+                    emptyDescription="Technician hours will appear here."
+                    height={320}
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={(reportData.manHours.byTechnician || []).slice(0, 15)}
+                        layout="vertical"
+                        margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
+                        <Tooltip />
+                        <Bar dataKey="totalHours" name="Hours" radius={[0, 4, 4, 0]}>
+                          {(reportData.manHours.byTechnician || []).slice(0, 15).map((_: any, i: number) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
 
-                {/* Cost by Trade (stacked BarChart) */}
-                <Card className="border border-border/60 shadow-sm lg:col-span-2">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">Cost by Trade (Labor + Parts + Contractor)</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {(reportData.cost?.byTrade || []).length > 0 ? (
-                      <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={reportData.cost.byTrade} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                            <XAxis dataKey="trade" tick={{ fontSize: 11 }} />
-                            <YAxis tick={{ fontSize: 11 }} />
-                            <Tooltip formatter={(value: any) => formatCurrency(value)} />
-                            <Legend />
-                            <Bar dataKey="laborCost" stackId="a" fill="#059669" name="Labor" radius={[0, 0, 0, 0]} />
-                            <Bar dataKey="partsCost" stackId="a" fill="#0ea5e9" name="Parts" radius={[0, 0, 0, 0]} />
-                            <Bar dataKey="contractorCost" stackId="a" fill="#f59e0b" name="Contractor" radius={[4, 4, 0, 0]} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <EmptyState icon={DollarSign} title="No cost data" description="Cost breakdown by trade will appear here." />
-                    )}
-                  </CardContent>
-                </Card>
+                {/* Man Hours Trend by Month (Line) */}
+                <ChartCard title="Man Hours Trend by Month">
+                  <SafeChart
+                    data={reportData.manHours?.byMonth}
+                    emptyIcon={HardHat}
+                    emptyTitle="No monthly data"
+                    emptyDescription="Monthly man hours will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={reportData.manHours.byMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="totalHours" stroke="#8b5cf6" strokeWidth={2} name="Hours" dot={{ r: 4, fill: '#8b5cf6', stroke: '#fff', strokeWidth: 2 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+
+                {/* Man Hours by Activity Type (Donut) */}
+                <ChartCard title="Man Hours by Activity Type">
+                  <SafeChart
+                    data={reportData.manHours?.byActivity}
+                    emptyIcon={ChartPie}
+                    emptyTitle="No activity data"
+                    emptyDescription="Activity hours will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={reportData.manHours.byActivity}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={55}
+                          outerRadius={90}
+                          dataKey="totalHours"
+                          nameKey="activity"
+                          paddingAngle={2}
+                          label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          labelLine={false}
+                          fontSize={10}
+                        >
+                          {(reportData.manHours.byActivity || []).map((_: any, i: number) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value: any) => `${value}h`} />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
               </div>
 
-              {/* Grand Total Cost Card */}
-              <Card className="border border-border/60 shadow-sm">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-14 w-14 rounded-xl text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                      <DollarSign className="h-7 w-7" />
-                    </div>
-                    <div>
-                      <p className="text-3xl font-bold">{formatCurrency(reportData.cost?.grandTotal)}</p>
-                      <p className="text-sm text-muted-foreground">Grand Total Cost (Labor + Parts + Contractor)</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              {/* Technician Detail Table */}
+              <ReportTable
+                headers={[
+                  { key: 'name', label: 'Technician' },
+                  { key: 'totalHrs', label: 'Total Hours', align: 'right' },
+                  { key: 'woCount', label: 'WO Count', align: 'right' },
+                  { key: 'avgHrs', label: 'Avg Hrs/WO', align: 'right' },
+                  { key: 'pctTotal', label: '% of Grand Total', align: 'right' },
+                ]}
+                rows={(reportData.manHours?.byTechnician || []).map((d: any) => {
+                  const grandTotal = reportData.manHours?.grandTotal || 1;
+                  return {
+                    name: <span className="font-medium">{d.name}</span>,
+                    totalHrs: <span className="font-medium">{formatHours(d.totalHours)}</span>,
+                    woCount: d.woCount,
+                    avgHrs: formatHours(d.avgHoursPerWO),
+                    pctTotal: `${((d.totalHours / grandTotal) * 100).toFixed(1)}%`,
+                  };
+                })}
+                totalRow={{
+                  name: <span className="font-bold">TOTAL</span>,
+                  totalHrs: <span className="font-bold">{formatHours(reportData.manHours?.grandTotal)}</span>,
+                  woCount: '-',
+                  avgHrs: '-',
+                  pctTotal: <span className="font-bold">100%</span>,
+                }}
+                maxHeight={400}
+              />
+
+              <SummaryFooter notes={[
+                `Total man hours: ${formatHours(reportData.manHours?.grandTotal)} across ${(reportData.manHours?.byTechnician || []).length} technicians.`,
+                `Most active trade: ${manHoursSummary.mostActive?.trade || 'N/A'}.`,
+                `Top contributor: ${manHoursSummary.topTech?.name || 'N/A'} with ${formatHours(manHoursSummary.topTech?.totalHours)}.`,
+              ]} />
+            </TabsContent>
+
+            {/* ============================================================= */}
+            {/* TAB 6: MATERIAL QUANTITY & COST REPORT                         */}
+            {/* ============================================================= */}
+            <TabsContent value="materials" className="space-y-6 mt-0">
+              <TabSectionHeader title="Material Quantity & Cost Report" description="Analysis of material usage, costs, and trends by work order type" />
+
+              {/* KPI Strip */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <KPICard label="Total Items Used" value={String(reportData.materials?.totalQty ?? 0)} icon={Boxes} color="text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400" />
+                <KPICard label="Total Material Cost" value={formatCurrency(reportData.materials?.totalCost)} icon={Package} color="text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400" />
+                <KPICard label="Avg Cost/WO" value={formatCurrency(materialsSummary.avgCostPerWO)} icon={DollarSign} color="text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400" />
+                <KPICard label="Top Material by Cost" value={materialsSummary.topItem?.name || '-'} icon={TrendingDown} color="text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400" />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Material Cost by WO Type (Stacked Bar) */}
+                <ChartCard title="Material Cost by WO Type">
+                  <SafeChart
+                    data={reportData.materials?.byType}
+                    emptyIcon={Boxes}
+                    emptyTitle="No type data"
+                    emptyDescription="Material usage by WO type will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={reportData.materials.byType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="type" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(value: any, name: any) => name === 'totalQty' ? `${value} qty` : formatCurrency(value)} />
+                        <Legend />
+                        <Bar dataKey="totalCost" name="Cost" fill="#059669" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="totalQty" name="Qty" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+
+                {/* Top 15 Materials by Cost (Horizontal Bar) */}
+                <ChartCard title="Top 15 Materials by Cost">
+                  <SafeChart
+                    data={(reportData.materials?.topItems || []).slice(0, 15)}
+                    emptyIcon={Package}
+                    emptyTitle="No material data"
+                    emptyDescription="Top materials by cost will appear here."
+                    height={320}
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={(reportData.materials.topItems || []).slice(0, 15)}
+                        layout="vertical"
+                        margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={120} />
+                        <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                        <Bar dataKey="totalCost" name="Cost" radius={[0, 4, 4, 0]}>
+                          {(reportData.materials.topItems || []).slice(0, 15).map((_: any, i: number) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+
+                {/* Material Cost Trend by Month (Line) */}
+                <ChartCard title="Material Cost Trend by Month" className="lg:col-span-2">
+                  <SafeChart
+                    data={reportData.materials?.costByMonth}
+                    emptyIcon={TrendingDown}
+                    emptyTitle="No monthly data"
+                    emptyDescription="Monthly cost trends will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={reportData.materials.costByMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(value: any) => formatCurrency(value)} />
+                        <Line type="monotone" dataKey="totalCost" stroke="#059669" strokeWidth={2} name="Cost" dot={{ r: 4, fill: '#059669', stroke: '#fff', strokeWidth: 2 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+              </div>
+
+              {/* Materials Table */}
+              <ReportTable
+                headers={[
+                  { key: 'name', label: 'Item Name' },
+                  { key: 'totalQty', label: 'Total Qty', align: 'right' },
+                  { key: 'totalCost', label: 'Total Cost', align: 'right' },
+                  { key: 'woCount', label: 'WOs Used', align: 'right' },
+                  { key: 'pctTotal', label: '% of Total Cost', align: 'right' },
+                ]}
+                rows={(reportData.materials?.topItems || []).map((d: any) => {
+                  const totalCost = reportData.materials?.totalCost || 1;
+                  return {
+                    name: <span className="font-medium">{d.name}</span>,
+                    totalQty: d.totalQty,
+                    totalCost: <span className="font-medium">{formatCurrency(d.totalCost)}</span>,
+                    woCount: d.woCount,
+                    pctTotal: `${((d.totalCost / totalCost) * 100).toFixed(1)}%`,
+                  };
+                })}
+                totalRow={{
+                  name: <span className="font-bold">TOTAL</span>,
+                  totalQty: <span className="font-bold">{reportData.materials?.totalQty ?? 0}</span>,
+                  totalCost: <span className="font-bold">{formatCurrency(reportData.materials?.totalCost)}</span>,
+                  woCount: '-',
+                  pctTotal: <span className="font-bold">100%</span>,
+                }}
+                maxHeight={400}
+              />
+
+              <SummaryFooter notes={[
+                `Total material cost: ${formatCurrency(reportData.materials?.totalCost)} for ${reportData.materials?.totalQty ?? 0} items.`,
+                `Average material cost per work order: ${formatCurrency(materialsSummary.avgCostPerWO)}.`,
+                `Top material by cost: ${materialsSummary.topItem?.name || 'N/A'}.`,
+              ]} />
+            </TabsContent>
+
+            {/* ============================================================= */}
+            {/* TAB 7: FAILURE RATE REPORT                                     */}
+            {/* ============================================================= */}
+            <TabsContent value="failure-rate" className="space-y-6 mt-0">
+              <TabSectionHeader title="Failure Rate Report" description="Asset failure rate analysis, MTBF tracking, and risk assessment" />
+
+              {/* KPI Strip */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <KPICard label="Avg Failure Rate" value={formatRate(failureSummary.avgRate)} icon={Gauge} color="text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400" />
+                <KPICard label="Highest Risk Asset" value={failureSummary.highest?.assetName || '-'} icon={ShieldAlert} color="text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400" />
+                <KPICard label="MTBF (avg days)" value={`${failureSummary.avgMTBF.toFixed(1)}d`} icon={Clock} color="text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400" />
+                <KPICard label="Rework Rate" value={formatRate(reportData.failureRate?.reworkRate)} icon={TrendingDown} color="text-rose-600 bg-rose-50 dark:bg-rose-900/30 dark:text-rose-400" />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Failure Rate by Asset (Top 15, color coded by severity) */}
+                <ChartCard title="Failure Rate by Asset (Top 15)" className="lg:col-span-2">
+                  <SafeChart
+                    data={(reportData.failureRate?.byAsset || []).slice(0, 15)}
+                    emptyIcon={Gauge}
+                    emptyTitle="No failure rate data"
+                    emptyDescription="Asset failure rates will appear here."
+                    height={350}
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={(reportData.failureRate.byAsset || []).slice(0, 15)}
+                        layout="vertical"
+                        margin={{ top: 5, right: 30, left: 10, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} unit="%" />
+                        <YAxis type="category" dataKey="assetName" tick={{ fontSize: 10 }} width={120} />
+                        <Tooltip formatter={(value: any) => `${value}%`} />
+                        <Bar dataKey="failureRate" name="Failure Rate" radius={[0, 4, 4, 0]}>
+                          {(reportData.failureRate.byAsset || []).slice(0, 15).map((entry: any, i: number) => (
+                            <Cell key={i} fill={getSeverityColor(entry.failureRate)} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+
+                {/* Failure Rate by Type (Bar) */}
+                <ChartCard title="Failure Rate by WO Type">
+                  <SafeChart
+                    data={reportData.failureRate?.byType}
+                    emptyIcon={BarChart3}
+                    emptyTitle="No type data"
+                    emptyDescription="Failure rate by type will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={reportData.failureRate.byType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="type" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} unit="%" />
+                        <Tooltip formatter={(value: any) => `${value}%`} />
+                        <Bar dataKey="failureRate" name="Failure Rate" radius={[4, 4, 0, 0]}>
+                          {(reportData.failureRate.byType || []).map((_: any, i: number) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+
+                {/* MTBF by Asset (Horizontal Bar - sorted ascending) */}
+                <ChartCard title="MTBF by Asset (Days)">
+                  <SafeChart
+                    data={(reportData.failureRate?.mtbf || []).slice(0, 15)}
+                    emptyIcon={Clock}
+                    emptyTitle="No MTBF data"
+                    emptyDescription="MTBF requires assets with 2+ failures."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={(reportData.failureRate.mtbf || []).slice(0, 15)}
+                        layout="vertical"
+                        margin={{ top: 5, right: 30, left: 10, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} unit="d" />
+                        <YAxis type="category" dataKey="assetName" tick={{ fontSize: 10 }} width={120} />
+                        <Tooltip formatter={(value: any) => `${value} days`} />
+                        <Bar dataKey="mtbfDays" name="MTBF (Days)" radius={[0, 4, 4, 0]}>
+                          {(reportData.failureRate.mtbf || []).slice(0, 15).map((entry: any, i: number) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+              </div>
+
+              {/* Failure Rate Detail Table */}
+              <ReportTable
+                headers={[
+                  { key: 'asset', label: 'Asset' },
+                  { key: 'totalWOs', label: 'Total WOs', align: 'right' },
+                  { key: 'failures', label: 'Failures', align: 'right' },
+                  { key: 'failureRate', label: 'Failure Rate', align: 'right' },
+                  { key: 'mtbf', label: 'MTBF (Days)', align: 'right' },
+                  { key: 'riskLevel', label: 'Risk Level', align: 'center' },
+                ]}
+                rows={(reportData.failureRate?.byAsset || []).map((d: any) => {
+                  const mtbf = reportData.failureRate?.mtbf?.find((m: any) => m.assetId === d.assetId);
+                  const risk = d.failureRate >= 40 ? 'High' : d.failureRate >= 20 ? 'Medium' : 'Low';
+                  const riskColor = d.failureRate >= 40 ? 'text-red-600 bg-red-50 dark:bg-red-900/30 border-red-300' : d.failureRate >= 20 ? 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 border-amber-300' : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 border-emerald-300';
+                  return {
+                    asset: <span className="font-medium">{d.assetName || d.assetId}</span>,
+                    totalWOs: d.totalWOs,
+                    failures: d.failures,
+                    failureRate: <span style={{ color: getSeverityColor(d.failureRate) }} className="font-medium">{formatRate(d.failureRate)}</span>,
+                    mtbf: mtbf ? mtbf.mtbfDays.toFixed(1) : '-',
+                    riskLevel: <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${riskColor}`}>{risk}</Badge>,
+                  };
+                })}
+                maxHeight={400}
+              />
+
+              <SummaryFooter notes={[
+                `Average failure rate: ${formatRate(failureSummary.avgRate)} across ${(reportData.failureRate?.byAsset || []).length} assets.`,
+                `Average MTBF: ${failureSummary.avgMTBF.toFixed(1)} days.`,
+                `Rework rate: ${formatRate(reportData.failureRate?.reworkRate)} (${reportData.failureRate?.reworkWOs ?? 0} WOs).`,
+                `Risk levels: High (≥40%) | Medium (20-40%) | Low (<20%).`,
+              ]} />
+            </TabsContent>
+
+            {/* ============================================================= */}
+            {/* TAB 8: STOPPAGE NUMBER REPORT                                  */}
+            {/* ============================================================= */}
+            <TabsContent value="stoppages" className="space-y-6 mt-0">
+              <TabSectionHeader title="Stoppage Number Report" description="Analysis of production stoppage events by trade, impact level, and reason" />
+
+              {/* KPI Strip */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <KPICard label="Total Stoppages" value={reportData.stoppages?.total ?? 0} icon={Pause} color="text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400" />
+                <KPICard label="Most Stoppage Trade" value={stoppageSummary.mostTrade?.trade || '-'} icon={HardHat} color="text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400" />
+                <KPICard label="Avg Duration/Stoppage" value={formatHours(stoppageSummary.avgDuration)} icon={Timer} color="text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400" />
+                <KPICard label="Total Hours Lost" value={formatHours(stoppageSummary.totalHrs)} icon={CircleStop} color="text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400" />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Stoppages by Trade (Bar) */}
+                <ChartCard title="Stoppages by Trade">
+                  <SafeChart
+                    data={reportData.stoppages?.byTrade}
+                    emptyIcon={Pause}
+                    emptyTitle="No trade data"
+                    emptyDescription="Stoppages by trade will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={reportData.stoppages.byTrade} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="trade" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
+                          {(reportData.stoppages.byTrade || []).map((entry: any) => (
+                            <Cell key={entry.trade} fill={getColorForKey(entry.trade, CHART_COLORS[0])} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+
+                {/* Stoppages by Impact Level (Donut) */}
+                <ChartCard title="Stoppages by Impact Level">
+                  <SafeChart
+                    data={reportData.stoppages?.byImpact}
+                    emptyIcon={ChartPie}
+                    emptyTitle="No impact data"
+                    emptyDescription="Impact distribution will appear here."
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={reportData.stoppages.byImpact}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={55}
+                          outerRadius={90}
+                          dataKey="count"
+                          nameKey="impact"
+                          paddingAngle={2}
+                        >
+                          {(reportData.stoppages.byImpact || []).map((entry: any) => (
+                            <Cell key={entry.impact} fill={getColorForKey(entry.impact, CHART_COLORS[0])} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+
+                {/* Stoppages by Reason (Horizontal Bar - top 10) */}
+                <ChartCard title="Stoppages by Reason (Top 10)" className="lg:col-span-2">
+                  <SafeChart
+                    data={reportData.stoppages?.byReason}
+                    emptyIcon={Construction}
+                    emptyTitle="No reason data"
+                    emptyDescription="Stoppage reasons will appear here."
+                    height={300}
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={reportData.stoppages.byReason}
+                        layout="vertical"
+                        margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="reason" tick={{ fontSize: 10 }} width={100} />
+                        <Tooltip />
+                        <Bar dataKey="count" name="Count" radius={[0, 4, 4, 0]}>
+                          {(reportData.stoppages.byReason || []).map((_: any, i: number) => (
+                            <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </SafeChart>
+                </ChartCard>
+              </div>
+
+              {/* Stoppages Table */}
+              <ReportTable
+                headers={[
+                  { key: 'trade', label: 'Trade' },
+                  { key: 'count', label: 'Stoppage Count', align: 'right' },
+                  { key: 'totalHours', label: 'Total Hours', align: 'right' },
+                  { key: 'avgHours', label: 'Avg Hours', align: 'right' },
+                  { key: 'pctTotal', label: '% of Total', align: 'right' },
+                ]}
+                rows={(reportData.stoppages?.byTrade || []).map((d: any) => {
+                  const total = reportData.stoppages?.total || 1;
+                  const totalHrs = stoppageSummary.totalHrs || 1;
+                  return {
+                    trade: <span className="font-medium capitalize flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getColorForKey(d.trade, CHART_COLORS[0]) }} />
+                      {d.trade}
+                    </span>,
+                    count: d.count,
+                    totalHours: formatHours(d.totalHours),
+                    avgHours: formatHours(d.count > 0 ? d.totalHours / d.count : 0),
+                    pctTotal: `${((d.count / total) * 100).toFixed(1)}%`,
+                  };
+                })}
+                totalRow={{
+                  trade: <span className="font-bold">TOTAL</span>,
+                  count: <span className="font-bold">{reportData.stoppages?.total ?? 0}</span>,
+                  totalHours: <span className="font-bold">{formatHours(stoppageSummary.totalHrs)}</span>,
+                  avgHours: <span className="font-bold">{formatHours(stoppageSummary.avgDuration)}</span>,
+                  pctTotal: <span className="font-bold">100%</span>,
+                }}
+              />
+
+              <SummaryFooter notes={[
+                `${reportData.stoppages?.total ?? 0} total stoppage events in the selected period.`,
+                `Most stoppages from trade: ${stoppageSummary.mostTrade?.trade || 'N/A'}.`,
+                `Total hours lost to stoppages: ${formatHours(stoppageSummary.totalHrs)}.`,
+              ]} />
             </TabsContent>
           </Tabs>
         </>
@@ -1626,6 +1904,3 @@ export function WOReportsPage() {
     </div>
   );
 }
-
-// Extra icon import used in KPI cards
-import { ClipboardList } from 'lucide-react';
