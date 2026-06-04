@@ -1058,3 +1058,21 @@ Stage Summary:
 - **route.ts**: Added `import { join } from 'path'` for PATCH diagnostic endpoint
 - **VPS deploy**: Use `bun run build` (not `npx next build`)
 - **Key architecture**: LLM key masking uses `userTyping*` flags → empty field means "keep existing" → masked values never sent to backend
+---
+Task ID: 1
+Agent: Main Agent
+Task: Audit API key save→read flow, push pending commits to origin
+
+Work Log:
+- Read `src/app/api/ai/config/route.ts` — traced POST handler save flow (normalizeBody → key preservation → writeConfigStore → post-save verification)
+- Read `src/lib/ai-client.ts` — traced read flow (getActiveConfig → read DATA_FILE → find active config → get llmApiKey)
+- Read `src/lib/data-dir.ts` — confirmed both route.ts and ai-client.ts use same `getDataFilePath()` with same `process.cwd()` resolution
+- Read `src/components/modules/AIConfigPage.tsx` — confirmed typing flags, masked key stripping, and save handler are correct
+- Verified git status: 2 commits ahead of origin (image/meshy typing flags fix + route.ts join import fix)
+- Successfully pushed 2 commits to origin/main
+
+Stage Summary:
+- Code is correct: frontend typing flags prevent masked keys from being sent, backend preserves existing keys when none sent, startup cleanup removes corrupted masked keys
+- The root cause of "No API key configured for groq" was that code fixes hadn't been deployed to VPS yet
+- Pushed commits: 5ff47cc2 and b40554fc to origin/main
+- User needs to: `git pull && bun run build && pm2 restart iassetspro` on VPS, then re-enter the API key in AI Settings
