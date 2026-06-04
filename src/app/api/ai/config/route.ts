@@ -12,6 +12,40 @@ const logger = createLogger('api:ai:config');
 const DATA_FILE = getDataFilePath('ai-config.json');
 
 // ============================================================================
+// STARTUP CLEANUP — Remove any masked keys that leaked into the data file
+// ============================================================================
+
+async function cleanupMaskedKeysInFile(): Promise<void> {
+  try {
+    const raw = await readFile(DATA_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    const configs = Array.isArray(parsed) ? parsed : (parsed?.configs || []);
+    let dirty = false;
+
+    for (const config of configs) {
+      for (const keyField of ['llmApiKey', 'imageApiKey', 'meshyApiKey'] as const) {
+        const val = config[keyField];
+        if (val && typeof val === 'string' && val.startsWith('****')) {
+          logger.warn(`Cleaning corrupted masked key from config ${config.id}.${keyField}`, { masked: val });
+          config[keyField] = '';
+          dirty = true;
+        }
+      }
+    }
+
+    if (dirty) {
+      await writeFile(DATA_FILE, JSON.stringify({ configs }, null, 2), 'utf-8');
+      logger.info('Cleaned masked keys from ai-config.json');
+    }
+  } catch {
+    // file doesn't exist or can't be read — that's fine
+  }
+}
+
+// Run cleanup on module load (one-time when the route is first imported)
+cleanupMaskedKeysInFile();
+
+// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -350,25 +384,32 @@ export async function POST(request: NextRequest) {
 
     /**
      * API KEY PRESERVATION LOGIC:
-     * When the frontend sends an empty or masked apiKey/imageApiKey/meshyApiKey,
-     * preserve the existing key from the active config. This prevents the
-     * "save after reload" cycle from overwriting real keys with empty strings.
+     * 1. If incoming key is a real (non-masked) value → use it
+     * 2. If incoming key is empty/masked/missing → preserve existing key
+     * 3. If existing key is also masked (corrupted from old bug) → discard it
+     * 4. If no real key anywhere → keep empty string
      */
     const incomingLlmApiKey = (body.llmApiKey as string) || '';
     const incomingImageApiKey = (body.imageApiKey as string) || '';
     const incomingMeshyApiKey = (body.meshyApiKey as string) || '';
 
+    // Helper: get a safe (non-masked) existing key
+    const getExistingKey = (key: string | undefined): string => {
+      if (key && !isMasked(key)) return key;
+      return '';
+    };
+
     const finalLlmApiKey = (incomingLlmApiKey && !isMasked(incomingLlmApiKey))
       ? incomingLlmApiKey
-      : (existingActive?.llmApiKey || incomingLlmApiKey);
+      : getExistingKey(existingActive?.llmApiKey);
 
     const finalImageApiKey = (incomingImageApiKey && !isMasked(incomingImageApiKey))
       ? incomingImageApiKey
-      : (existingActive?.imageApiKey || incomingImageApiKey);
+      : getExistingKey(existingActive?.imageApiKey);
 
     const finalMeshyApiKey = (incomingMeshyApiKey && !isMasked(incomingMeshyApiKey))
       ? incomingMeshyApiKey
-      : (existingActive?.meshyApiKey || incomingMeshyApiKey);
+      : getExistingKey(existingActive?.meshyApiKey);
 
     // Deactivate any existing active config
     if (existingActive) {
