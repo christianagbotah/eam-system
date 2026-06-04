@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile, writeFile } from 'fs/promises';
+import { readFileSync, writeFileSync } from 'fs';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
@@ -15,10 +16,13 @@ const DATA_FILE = getDataFilePath('ai-config.json');
 // ============================================================================
 // STARTUP CLEANUP — Remove any masked keys that leaked into the data file
 // ============================================================================
+// IMPORTANT: This runs SYNCHRONOUSLY to prevent a race condition where an
+// async cleanup could overwrite a POST save that happens right after server start.
 
-async function cleanupMaskedKeysInFile(): Promise<void> {
+function cleanupMaskedKeysSync(): void {
   try {
-    const raw = await readFile(DATA_FILE, 'utf-8');
+    if (!existsSync(DATA_FILE)) return;
+    const raw = readFileSync(DATA_FILE, 'utf-8');
     const parsed = JSON.parse(raw);
     const configs = Array.isArray(parsed) ? parsed : (parsed?.configs || []);
     let dirty = false;
@@ -35,16 +39,16 @@ async function cleanupMaskedKeysInFile(): Promise<void> {
     }
 
     if (dirty) {
-      await writeFile(DATA_FILE, JSON.stringify({ configs }, null, 2), 'utf-8');
-      logger.info('Cleaned masked keys from ai-config.json');
+      writeFileSync(DATA_FILE, JSON.stringify({ configs }, null, 2), 'utf-8');
+      logger.info('Cleaned masked keys from ai-config.json (sync)');
     }
   } catch {
     // file doesn't exist or can't be read — that's fine
   }
 }
 
-// Run cleanup on module load (one-time when the route is first imported)
-cleanupMaskedKeysInFile();
+// Run cleanup SYNCHRONOUSLY on module load — guaranteed to complete before any request handler
+cleanupMaskedKeysSync();
 
 // ============================================================================
 // TYPES
@@ -454,6 +458,34 @@ export async function POST(request: NextRequest) {
     }
 
     await writeConfigStore(store);
+
+    // ── POST-SAVE VERIFICATION: Read back the file to confirm key is actually on disk ──
+    try {
+      const verifyRaw = await readFile(DATA_FILE, 'utf-8');
+      const verifyParsed = JSON.parse(verifyRaw);
+      const verifyConfigs = Array.isArray(verifyParsed) ? verifyParsed : (verifyParsed?.configs || []);
+      const verifyActive = verifyConfigs.find((c: Record<string, unknown>) => c.isActive);
+      const verifyKey = (verifyActive?.llmApiKey as string) || '';
+      const verifyIsMasked = verifyKey.startsWith('****');
+      logger.info('[POST-SAVE-VERIFY] Read back file after write', {
+        configId: verifyActive?.id,
+        keyLength: verifyKey.length,
+        keyFirst6: verifyKey.substring(0, 6),
+        keyIsMasked: verifyIsMasked,
+        keyEmpty: !verifyKey,
+      });
+      if (verifyIsMasked) {
+        logger.error('[POST-SAVE-VERIFY] CRITICAL: Key on disk is MASKED! Overwriting with real key...');
+        // Emergency: re-write the active config with the correct key
+        if (verifyActive) {
+          verifyActive.llmApiKey = finalLlmApiKey;
+          await writeFile(DATA_FILE, JSON.stringify({ configs: verifyConfigs }, null, 2), 'utf-8');
+          logger.warn('[POST-SAVE-VERIFY] Emergency overwrite completed');
+        }
+      }
+    } catch (verifyErr) {
+      logger.error('[POST-SAVE-VERIFY] Failed to verify', { error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr) });
+    }
 
     logger.info('AI config written to disk', {
       filePath: DATA_FILE,
