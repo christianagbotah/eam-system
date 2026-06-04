@@ -4192,7 +4192,7 @@ export function MaintenanceReportsPage() {
                 <StatsCard icon={Timer} count={`${reportData.avgTurnaroundHours ?? 0}h`} label="Avg Turnaround" color="text-teal-600" bgColor="bg-teal-50" />
                 <StatsCard icon={TrendingUp} count={`${reportData.avgMrToWoHours ?? 0}h`} label="MR→WO Time" color="text-amber-600" bgColor="bg-amber-50" />
               </div>
-              {reportData.stageBreakdown && (
+              {Array.isArray(reportData.stageBreakdown) && reportData.stageBreakdown.length > 0 && (
                 <Card><CardHeader><CardTitle className="text-base">Stage Breakdown</CardTitle></CardHeader><CardContent>
                   <div className="space-y-3">
                     {reportData.stageBreakdown.map((stage: any, i: number) => (
@@ -4354,13 +4354,13 @@ export function MaintenanceReportsPage() {
                 <StatsCard icon={ArrowRightLeft} count={reportData.totalTransfers ?? 0} label="Tool Transfers" color="text-blue-600" bgColor="bg-blue-50" />
                 <StatsCard icon={Ban} count={reportData.totalWrittenOff ?? 0} label="Written Off" color="text-gray-600" bgColor="bg-gray-50" />
               </div>
-              {reportData.byDamageType && (
+              {reportData.byDamageType && Object.keys(reportData.byDamageType as Record<string, unknown>).length > 0 && (
                 <Card><CardHeader><CardTitle className="text-base">By Damage Type</CardTitle></CardHeader><CardContent>
                   <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                    {reportData.byDamageType.map((d: any) => (
-                      <div key={d.type} className="bg-muted/50 rounded-lg p-3">
-                        <p className="text-lg font-bold capitalize">{d.type?.replace('_', ' ')}</p>
-                        <p className="text-xs text-muted-foreground">{d.count} incidents</p>
+                    {Object.entries(reportData.byDamageType as Record<string, any>).map(([type, d]) => (
+                      <div key={type} className="bg-muted/50 rounded-lg p-3">
+                        <p className="text-lg font-bold capitalize">{type?.replace('_', ' ')}</p>
+                        <p className="text-xs text-muted-foreground">{d.count} incidents, {formatCurrency(d.cost)}</p>
                       </div>
                     ))}
                   </div>
