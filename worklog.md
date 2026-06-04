@@ -1076,3 +1076,22 @@ Stage Summary:
 - The root cause of "No API key configured for groq" was that code fixes hadn't been deployed to VPS yet
 - Pushed commits: 5ff47cc2 and b40554fc to origin/main
 - User needs to: `git pull && bun run build && pm2 restart iassetspro` on VPS, then re-enter the API key in AI Settings
+---
+Task ID: 3
+Agent: Main Agent + 2 subagents
+Task: Switch AI config storage from JSON file to MySQL database to permanently fix API key persistence
+
+Work Log:
+- Added AiConfig model to prisma/schema.prisma (ai_configs table with all config fields)
+- Ran prisma generate to update Prisma client
+- Subagent 1: Rewrote src/app/api/ai/config/route.ts to use db.aiConfig (GET/POST/PATCH)
+- Subagent 2: Rewrote src/lib/ai-client.ts getActiveConfig() to query DB
+- Subagent 2: Updated src/app/api/ai/config/debug/route.ts to query DB
+- Removed all file-based storage (readConfigStore, writeConfigStore, cleanupMaskedKeysSync)
+- Lint passed on all modified files
+- Committed 81b17199 and pushed to origin/main
+
+Stage Summary:
+- AI config now stored in MySQL ai_configs table — no more file path issues
+- CODE_VERSION = 'v4-db' for deployment verification
+- VPS deploy requires: git pull && bun run db:push && bun run build && pm2 restart iassetspro
