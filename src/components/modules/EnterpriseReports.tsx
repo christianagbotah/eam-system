@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -34,8 +35,8 @@ import {
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
   PieChart, Pie, Cell, AreaChart, Area, ResponsiveContainer, ReferenceLine,
+  Tooltip as RechartsTooltip, Legend,
 } from 'recharts';
-import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 
 // ============================================================================
 // CHART COLORS
@@ -293,8 +294,8 @@ export default function EnterpriseReports() {
                       <Pie data={reportData.woByType} cx="50%" cy="50%" outerRadius={80} dataKey="count" nameKey="type" label={({ type, percent }) => `${type} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
                         {(reportData.woByType || []).map((entry: any, i: number) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                       </Pie>
-                      <ChartTooltip content={<ChartTooltipContent />} />
-                      <ChartLegend content={<ChartLegendContent />} />
+                      <RechartsTooltip />
+                      <Legend />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : <EmptyState icon={PieChartIcon} title="No data" description="Generate report to see data." />}
@@ -310,8 +311,8 @@ export default function EnterpriseReports() {
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 11 }} />
-                      <ChartTooltip content={<ChartTooltipContent />} />
-                      <ChartLegend content={<ChartLegendContent />} />
+                      <RechartsTooltip />
+                      <Legend />
                       <Bar dataKey="count" name="Created" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="completedCount" name="Completed" fill="#059669" radius={[4, 4, 0, 0]} />
                     </BarChart>
@@ -334,7 +335,7 @@ export default function EnterpriseReports() {
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                     <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <RechartsTooltip />
                     <ReferenceLine y={80} stroke="#f59e0b" strokeDasharray="5 5" label={{ value: 'Target 80%', position: 'right', fontSize: 10 }} />
                     <Area type="monotone" dataKey="rate" name="Completion %" stroke="#059669" fill="url(#greenGradient)" strokeWidth={2} />
                     <defs><linearGradient id="greenGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#059669" stopOpacity={0.3} /><stop offset="95%" stopColor="#059669" stopOpacity={0} /></linearGradient></defs>
@@ -358,7 +359,7 @@ export default function EnterpriseReports() {
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis dataKey="type" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} />
-                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <RechartsTooltip />
                       <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
                         {(reportData.woByType || []).map((entry: any, i: number) => <Cell key={i} fill={TYPE_COLOR_MAP[entry.type] || CHART_COLORS[i]} />)}
                       </Bar>
@@ -378,7 +379,7 @@ export default function EnterpriseReports() {
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis type="number" tick={{ fontSize: 11 }} />
                       <YAxis type="category" dataKey="priority" tick={{ fontSize: 11 }} width={80} />
-                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <RechartsTooltip />
                       <Bar dataKey="count" name="Count" radius={[0, 4, 4, 0]}>
                         {(reportData.woByPriority || []).map((entry: any) => <Cell key={entry.priority} fill={PRIORITY_COLOR_MAP[entry.priority] || CHART_COLORS[0]} />)}
                       </Bar>
@@ -398,8 +399,8 @@ export default function EnterpriseReports() {
                       <Pie data={reportData.woByStatus} cx="50%" cy="50%" outerRadius={75} dataKey="count" nameKey="status">
                         {(reportData.woByStatus || []).map((_: any, i: number) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                       </Pie>
-                      <ChartTooltip content={<ChartTooltipContent />} />
-                      <ChartLegend content={<ChartLegendContent />} />
+                      <RechartsTooltip />
+                      <Legend />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : <EmptyState icon={PieChartIcon} title="No status data" />}
@@ -416,7 +417,7 @@ export default function EnterpriseReports() {
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 11 }} />
-                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <RechartsTooltip />
                       <Line type="monotone" dataKey="count" name="Created" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 3 }} />
                     </LineChart>
                   </ResponsiveContainer>
@@ -483,7 +484,7 @@ export default function EnterpriseReports() {
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis dataKey="userName" tick={{ fontSize: 10 }} />
                     <YAxis tick={{ fontSize: 11 }} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <RechartsTooltip />
                     <Bar dataKey="totalHours" name="Total Hours" fill="#059669" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -573,7 +574,7 @@ export default function EnterpriseReports() {
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis dataKey="impactLevel" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} />
-                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <RechartsTooltip />
                       <Bar dataKey="count" name="Events" radius={[4, 4, 0, 0]}>
                         {(reportData.downtimeAnalysis.byImpactLevel || []).map((entry: any) => <Cell key={entry.impactLevel} fill={PRIORITY_COLOR_MAP[entry.impactLevel] || CHART_COLORS[0]} />)}
                       </Bar>
@@ -663,7 +664,7 @@ export default function EnterpriseReports() {
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis dataKey="name" tick={{ fontSize: 9 }} angle={-15} textAnchor="end" height={60} />
                     <YAxis tick={{ fontSize: 11 }} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <RechartsTooltip />
                     <Bar dataKey="count" name="Failures" radius={[4, 4, 0, 0]}>
                       {repeatFailures.slice(0, 10).map((_, i) => <Cell key={i} fill={i < 3 ? '#ef4444' : i < 6 ? '#f59e0b' : '#059669'} />)}
                     </Bar>
@@ -696,8 +697,8 @@ export default function EnterpriseReports() {
                       <Pie data={costByCategory} cx="50%" cy="50%" outerRadius={75} dataKey="cost" nameKey="category" label={({ category, percent }) => `${category} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
                         {costByCategory.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                       </Pie>
-                      <ChartTooltip content={<ChartTooltipContent />} />
-                      <ChartLegend content={<ChartLegendContent />} />
+                      <RechartsTooltip />
+                      <Legend />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : <EmptyState icon={DollarSign} title="No cost data" />}
@@ -714,7 +715,7 @@ export default function EnterpriseReports() {
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                       <YAxis tick={{ fontSize: 11 }} />
-                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <RechartsTooltip />
                       <Area type="monotone" dataKey="estimatedCost" name="Est. Cost" stroke="#059669" fill="url(#costGradient)" strokeWidth={2} />
                       <defs><linearGradient id="costGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#059669" stopOpacity={0.3} /><stop offset="95%" stopColor="#059669" stopOpacity={0} /></linearGradient></defs>
                     </AreaChart>
@@ -767,7 +768,7 @@ export default function EnterpriseReports() {
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis dataKey="itemName" tick={{ fontSize: 9 }} angle={-15} textAnchor="end" height={50} />
                     <YAxis tick={{ fontSize: 11 }} />
-                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <RechartsTooltip />
                     <Bar dataKey="totalCost" name="Cost" fill="#059669" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>

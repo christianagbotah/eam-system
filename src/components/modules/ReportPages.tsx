@@ -33,8 +33,8 @@ import {
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer,
+  Tooltip, Legend,
 } from 'recharts';
-import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { format } from 'date-fns';
 import { EmptyState, StatusBadge, PriorityBadge, formatDate, formatDateTime, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 
@@ -307,7 +307,7 @@ export function ReportsMaintenancePage() {
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="type" tick={{ fontSize: 11 }} />
                           <YAxis tick={{ fontSize: 11 }} />
-                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Tooltip />
                           <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
                             {(reportData.woByType || []).map((_: any, i: number) => (
                               <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
@@ -329,7 +329,7 @@ export function ReportsMaintenancePage() {
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis type="number" tick={{ fontSize: 11 }} />
                           <YAxis type="category" dataKey="priority" tick={{ fontSize: 11 }} width={80} />
-                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Tooltip />
                           <Bar dataKey="count" name="Count" radius={[0, 4, 4, 0]}>
                             {(reportData.woByPriority || []).map((entry: any) => (
                               <Cell key={entry.priority} fill={priorityColorMap[entry.priority] || CHART_COLORS[0]} />
@@ -351,7 +351,7 @@ export function ReportsMaintenancePage() {
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="status" tick={{ fontSize: 10 }} angle={-25} textAnchor="end" height={50} />
                           <YAxis tick={{ fontSize: 11 }} />
-                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Tooltip />
                           <Bar dataKey="count" name="Count" fill="#059669" radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
@@ -369,8 +369,8 @@ export function ReportsMaintenancePage() {
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                           <YAxis tick={{ fontSize: 11 }} />
-                          <ChartTooltip content={<ChartTooltipContent />} />
-                          <ChartLegend content={<ChartLegendContent />} />
+                          <Tooltip />
+                          <Legend />
                           <Bar dataKey="count" name="Created" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
                           <Bar dataKey="completedCount" name="Completed" fill="#059669" radius={[4, 4, 0, 0]} />
                         </BarChart>
@@ -557,7 +557,7 @@ export function ReportsMaintenancePage() {
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="impactLevel" tick={{ fontSize: 11 }} />
                           <YAxis tick={{ fontSize: 11 }} />
-                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <Tooltip />
                           <Bar dataKey="count" name="Events" radius={[4, 4, 0, 0]}>
                             {(reportData.downtimeAnalysis.byImpactLevel || []).map((entry: any) => (
                               <Cell key={entry.impactLevel} fill={priorityColorMap[entry.impactLevel] || CHART_COLORS[0]} />

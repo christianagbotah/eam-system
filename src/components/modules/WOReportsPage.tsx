@@ -19,9 +19,6 @@ import {
   LineChart, Line, AreaChart, Area, ResponsiveContainer, Tooltip, Legend,
 } from 'recharts';
 import {
-  ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent
-} from '@/components/ui/chart';
-import {
   Activity, AlertTriangle, Clock, Wrench, Package, Timer, TrendingDown,
   FileBarChart, Download, RefreshCw, BarChart3, DollarSign, Zap,
   ShieldAlert, Factory, HardHat, Users, Boxes, Loader2, FileDown,
