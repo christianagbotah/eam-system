@@ -699,8 +699,11 @@ export function AIConfigPage() {
                     <Input
                       type={showImageApiKey ? 'text' : 'password'}
                       value={config.imageApiKey}
-                      onChange={(e) => updateConfig('imageApiKey', e.target.value)}
-                      placeholder="Leave blank to use LLM API key"
+                      onChange={(e) => {
+                        setUserTypingImageKey(true);
+                        updateConfig('imageApiKey', e.target.value);
+                      }}
+                      placeholder={!config.imageApiKey && config.hasImageApiKey ? 'Leave blank to keep current key' : 'Leave blank to use LLM API key'}
                       className="h-9 text-sm pr-10"
                     />
                     <button
@@ -803,8 +806,11 @@ export function AIConfigPage() {
                       <Input
                         type={showMeshyApiKey ? 'text' : 'password'}
                         value={config.meshyApiKey}
-                        onChange={(e) => updateConfig('meshyApiKey', e.target.value)}
-                        placeholder="Enter your Meshy.ai API key from meshy.ai/api"
+                        onChange={(e) => {
+                          setUserTypingMeshyKey(true);
+                          updateConfig('meshyApiKey', e.target.value);
+                        }}
+                        placeholder={!config.meshyApiKey && config.hasMeshyApiKey ? 'Leave blank to keep current key' : 'Enter your Meshy.ai API key from meshy.ai/api'}
                         className="h-9 text-sm pr-10"
                       />
                       <button

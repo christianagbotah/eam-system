@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFile, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
+import { join } from 'path';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { invalidateAIConfigCache } from '@/lib/ai-client';

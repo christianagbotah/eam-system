@@ -1034,3 +1034,27 @@ Stage Summary:
 - **Verified**: z.ai SDK works perfectly with GLM-4-Plus model for machine generation prompts
 - **Impact**: AI machine generation will now work in the sandbox environment using z.ai SDK
 - **VPS note**: On the VPS deployment, the z.ai SDK is NOT available (sandbox-only). For VPS, the user should configure a free external provider like Google Gemini or Groq in AI Settings (the UI already supports this — no code changes needed)
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: Fix remaining API key masking bugs + route.ts missing import
+
+Work Log:
+- Verified LLM API key masking fix from previous session is correctly in place:
+  - `fetchConfig`: Strips masked values (lines 307-309)
+  - LLM key onChange: Sets `userTypingLlmKey = true` (line 567)
+  - `handleSave`: Only sends key if user typed new one (line 386)
+- Found 2 remaining bugs in image and meshy API key handlers:
+  - Image API key onChange (line 702) was missing `setUserTypingImageKey(true)` — typed key got deleted on save because `handleSave` checks `!userTypingImageKey`
+  - Meshy API key onChange (line 806) was missing `setUserTypingMeshyKey(true)` — same issue
+- Fixed both: Added `setUserTypingImageKey(true)` and `setUserTypingMeshyKey(true)` to their respective onChange handlers
+- Updated placeholders to show "Leave blank to keep current key" when key exists on server but input is empty
+- Fixed `route.ts` PATCH endpoint crash: Missing `join` import from `path` (used in diagnostic path check at line 535)
+- User confirmed: VPS build should use `bun run build` not `npx next build` (latter causes loading icon only)
+
+Stage Summary:
+- **AIConfigPage.tsx**: Fixed image API key and meshy API key onChange handlers to set typing flags
+- **route.ts**: Added `import { join } from 'path'` for PATCH diagnostic endpoint
+- **VPS deploy**: Use `bun run build` (not `npx next build`)
+- **Key architecture**: LLM key masking uses `userTyping*` flags → empty field means "keep existing" → masked values never sent to backend
