@@ -17,8 +17,8 @@
 // ============================================================================
 
 import { readFile } from 'fs/promises';
-import { join } from 'path';
 import { createLogger } from '@/lib/logger';
+import { getDataFilePath } from '@/lib/data-dir';
 
 const logger = createLogger('lib:ai-client');
 
@@ -155,7 +155,7 @@ const PROVIDER_ENDPOINTS: Record<string, { chatUrl: string; imageUrl: string; mo
 // CONFIG LOADING
 // ============================================================================
 
-const DATA_FILE = join(process.cwd(), 'data', 'ai-config.json');
+const DATA_FILE = getDataFilePath('ai-config.json');
 
 let _cachedConfig: AiConfigRecord | null | undefined = undefined; // undefined = not yet loaded
 let _cacheTimestamp = 0;

@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
+import { readFile, writeFile } from 'fs/promises';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { invalidateAIConfigCache } from '@/lib/ai-client';
 import { createAuditLog } from '@/lib/audit';
+import { getDataFilePath, ensureDataDir } from '@/lib/data-dir';
 
 const logger = createLogger('api:ai:config');
 
-const DATA_FILE = join(process.cwd(), 'data', 'ai-config.json');
+const DATA_FILE = getDataFilePath('ai-config.json');
 
 // ============================================================================
 // TYPES
@@ -98,11 +98,7 @@ async function readConfigStore(): Promise<AiConfigStore> {
 }
 
 async function writeConfigStore(store: AiConfigStore): Promise<void> {
-  try {
-    await mkdir(join(process.cwd(), 'data'), { recursive: true });
-  } catch {
-    // directory already exists
-  }
+  ensureDataDir();
   await writeFile(DATA_FILE, JSON.stringify(store, null, 2), 'utf-8');
 }
 
@@ -331,6 +327,15 @@ export async function POST(request: NextRequest) {
     const rawBody = await request.json();
     const body = normalizeBody(rawBody);
 
+    logger.info('POST /api/ai/config — incoming body after normalize', {
+      hasLlmApiKey: !!body.llmApiKey,
+      llmApiKeyLength: String(body.llmApiKey || '').length,
+      llmApiKeyStartsWith: String(body.llmApiKey || '').substring(0, 6),
+      provider: body.provider,
+      llmModel: body.llmModel,
+      dataFilePath: DATA_FILE,
+    });
+
     const validation = validateConfigBody(body);
     if (!validation.valid) {
       return NextResponse.json({ success: false, error: validation.error }, { status: 400 });
@@ -406,6 +411,13 @@ export async function POST(request: NextRequest) {
     }
 
     await writeConfigStore(store);
+
+    logger.info('AI config written to disk', {
+      filePath: DATA_FILE,
+      totalConfigs: store.configs.length,
+      savedHasLlmKey: !!configRecord.llmApiKey,
+      savedKeyLength: configRecord.llmApiKey.length,
+    });
 
     // Invalidate client-side cache so next AI call picks up the new config
     invalidateAIConfigCache();
