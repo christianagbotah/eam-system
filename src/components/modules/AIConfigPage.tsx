@@ -268,6 +268,11 @@ export function AIConfigPage() {
   const [showTripo3dApiKey, setShowTripo3dApiKey] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
+  // Track whether user has actively typed a new key (not just showing masked value)
+  const [userTypingLlmKey, setUserTypingLlmKey] = useState(false);
+  const [userTypingImageKey, setUserTypingImageKey] = useState(false);
+  const [userTypingMeshyKey, setUserTypingMeshyKey] = useState(false);
+
   // ── Normalize backend provider name to frontend ──
   const normalizeProvider = (p: string): ProviderType => {
     // Backend uses 'zai_sdk', frontend uses 'zai-sdk'
@@ -296,18 +301,17 @@ export function AIConfigPage() {
           ...res.data,
           provider: normalizeProvider(res.data.provider || DEFAULT_CONFIG.provider),
         };
-        // Backend returns apiKey as masked (e.g. ****7890) and hasApiKey flag.
-        // If apiKey is empty but hasApiKey is true, show the masked placeholder.
-        if (!data.apiKey && res.data.hasApiKey) {
-          data.apiKey = res.data.apiKey || '****configured';
-        }
-        if (!data.imageApiKey && res.data.hasImageApiKey) {
-          data.imageApiKey = res.data.imageApiKey || '****configured';
-        }
-        if (!data.meshyApiKey && res.data.hasMeshyApiKey) {
-          data.meshyApiKey = res.data.meshyApiKey || '****configured';
-        }
+        // NEVER put masked values into the apiKey field.
+        // Instead, keep the field empty and use hasApiKey flags to show status.
+        // This prevents masked values from ever being sent back to the server.
+        if (data.apiKey?.startsWith('****')) data.apiKey = '';
+        if (data.imageApiKey?.startsWith('****')) data.imageApiKey = '';
+        if (data.meshyApiKey?.startsWith('****')) data.meshyApiKey = '';
         setConfig(data);
+        // Reset typing flags — user hasn't typed anything new after load
+        setUserTypingLlmKey(false);
+        setUserTypingImageKey(false);
+        setUserTypingMeshyKey(false);
       }
     } catch {
       // Use defaults if no config exists yet
@@ -374,17 +378,21 @@ export function AIConfigPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Don't send masked/placeholder API keys — backend will preserve existing keys
       const payload: Record<string, unknown> = { ...config };
-      if (!payload.apiKey || (payload.apiKey as string).startsWith('****')) {
+
+      // Only send API key if the user actually typed a new one.
+      // Never send masked values. If field is empty, delete it from
+      // payload so backend preserves the existing key in the file.
+      if (!userTypingLlmKey || !payload.apiKey || (payload.apiKey as string).startsWith('****')) {
         delete payload.apiKey;
       }
-      if (!payload.imageApiKey || (payload.imageApiKey as string).startsWith('****')) {
+      if (!userTypingImageKey || !payload.imageApiKey || (payload.imageApiKey as string).startsWith('****')) {
         delete payload.imageApiKey;
       }
-      if (!payload.meshyApiKey || (payload.meshyApiKey as string).startsWith('****')) {
+      if (!userTypingMeshyKey || !payload.meshyApiKey || (payload.meshyApiKey as string).startsWith('****')) {
         delete payload.meshyApiKey;
       }
+
       // Remove internal flags — not part of the config record
       delete payload.hasApiKey;
       delete payload.hasImageApiKey;
@@ -399,7 +407,7 @@ export function AIConfigPage() {
       const res = await api.post('/api/ai/config', payload);
       if (res.success) {
         toast.success('AI configuration saved successfully');
-        // Refresh config from server to get latest masked keys
+        // Refresh — this clears input fields and shows saved status
         await fetchConfig();
       } else {
         toast.error(res.error || 'Failed to save configuration');
@@ -537,12 +545,29 @@ export function AIConfigPage() {
               {!isBuiltIn && (
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">API Key</Label>
+                  {/* Show saved status badge when no key is in input but a key exists on server */}
+                  {!config.apiKey && config.hasApiKey && (
+                    <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20 p-2.5">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                          API key is saved and active
+                        </p>
+                      </div>
+                      <p className="text-[10px] text-emerald-600 dark:text-emerald-500 mt-1">
+                        Enter a new key below to replace it, or leave blank to keep the current one
+                      </p>
+                    </div>
+                  )}
                   <div className="relative">
                     <Input
                       type={showApiKey ? 'text' : 'password'}
                       value={config.apiKey}
-                      onChange={(e) => updateConfig('apiKey', e.target.value)}
-                      placeholder="sk-..."
+                      onChange={(e) => {
+                        setUserTypingLlmKey(true);
+                        updateConfig('apiKey', e.target.value);
+                      }}
+                      placeholder={!config.apiKey && config.hasApiKey ? 'Leave blank to keep current key' : 'sk-...'}
                       className="h-9 text-sm pr-10"
                     />
                     <button
@@ -553,14 +578,9 @@ export function AIConfigPage() {
                       {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
-                  {config.apiKey && config.apiKey.startsWith('****') && (
-                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400">
-                      ✓ API key is configured and saved
-                    </p>
-                  )}
-                  {config.apiKey && !config.apiKey.startsWith('****') && (
-                    <p className="text-[10px] text-muted-foreground">
-                      Currently set: {config.apiKey.substring(0, 6)}{'•'.repeat(12)}{config.apiKey.length > 18 ? config.apiKey.slice(-4) : ''}
+                  {userTypingLlmKey && config.apiKey && (
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                      New key entered — click Save to update
                     </p>
                   )}
                   {(() => {
