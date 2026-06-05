@@ -146,15 +146,17 @@ function isTypeEnabled(prefs: NotificationPreferences | null, type: string): boo
  * Send an SMS notification to a user.
  * Truncates message to fit within SMS character limits.
  */
-async function sendNotificationSms(phone: string, title: string, message: string): Promise<void> {
+async function sendNotificationSms(phone: string, title: string, message: string): Promise<{ success: boolean; error?: string }> {
   try {
     const { sendAlertSms } = await import('@/lib/sms');
     // Truncate message for SMS (keep it concise)
     const smsMessage = `${title}: ${message}`.substring(0, 200);
-    await sendAlertSms(phone, 'iAssetsPro', smsMessage);
+    const result = await sendAlertSms(phone, 'iAssetsPro', smsMessage);
+    return { success: result.success, error: result.error };
   } catch (err) {
-    // Silently ignore SMS failures — never block the main flow
+    const errorMsg = err instanceof Error ? err.message : 'Unknown SMS error';
     console.error('[SMS] Failed to send notification:', err);
+    return { success: false, error: errorMsg };
   }
 }
 
@@ -231,17 +233,24 @@ export async function notifyUser(
         },
       });
 
-      if (!user) return;
+      if (!user) {
+        console.warn(`[Notification] User ${userId} not found for email/SMS dispatch`);
+        return;
+      }
 
       const prefs = (user.notificationPreferences as NotificationPreferences) || null;
 
       // Check type opt-out (in-app was already sent, this only affects email/SMS)
-      if (!isTypeEnabled(prefs, type)) return;
+      if (!isTypeEnabled(prefs, type)) {
+        console.log(`[Notification] User ${userId} opted out of type "${type}"`);
+        return;
+      }
 
       // Check quiet hours (skip for urgent types or forced)
       const isUrgent = URGENT_TYPES.has(type);
       if (!options?.skipQuietHours && !isUrgent && isQuietHours(prefs)) {
-        return; // Suppress during quiet hours
+        console.log(`[Notification] Quiet hours active for user ${userId}, skipping email/SMS`);
+        return;
       }
 
       // 3. Send Email (default: enabled unless explicitly opted out)
@@ -284,8 +293,17 @@ export async function notifyUser(
       // 4. Send SMS (default: enabled if user has opted in OR forceSms is set)
       const smsEnabled = options?.forceSms || prefs?.channels?.sms === true;
       const phone = prefs?.channels?.phone || user.phone;
-      if (smsEnabled && phone) {
-        await sendNotificationSms(phone, title, message);
+
+      if (smsEnabled) {
+        if (!phone) {
+          console.warn(`[SMS] SKIPPED for user ${userId} (${user.fullName}): No phone number found. User.phone="${user.phone || 'null'}", Prefs.phone="${prefs?.channels?.phone || 'not set'}". Set phone in user profile or notification preferences.`);
+        } else {
+          console.log(`[SMS] Dispatching to ${phone} for user ${userId} (${user.fullName}) — type: ${type}, forceSms: ${!!options?.forceSms}`);
+          const result = await sendNotificationSms(phone, title, message);
+          console.log(`[SMS] Result for ${phone}: ${JSON.stringify(result)}`);
+        }
+      } else {
+        console.log(`[SMS] Disabled for user ${userId} — smsEnabled: false, prefs.channels.sms: ${prefs?.channels?.sms}`);
       }
     } catch (err) {
       console.error('[Notification] Failed to dispatch email/SMS:', err);
