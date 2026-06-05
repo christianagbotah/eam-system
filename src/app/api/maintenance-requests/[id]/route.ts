@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope } from '@/lib/plant-scope';
+import { notifyUser, notifyAdmins } from '@/lib/notifications';
 
 // Helper: check if user can edit/delete a pending request (must be requester or admin)
 async function canModifyPendingRequest(id: string, session: any) {
@@ -160,6 +161,37 @@ export async function PUT(
         workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
       },
     });
+
+    // Notify supervisor and admins when a pending request is updated (not by themselves)
+    if (existing.status === 'pending' && Object.keys(updateData).length > 0) {
+      const changedFields = Object.keys(updateData).join(', ');
+      const notifyMessage = `Maintenance request ${existing.requestNumber} has been updated. Changed: ${changedFields}`;
+
+      // Notify the supervisor if assigned
+      if (existing.supervisorId && existing.supervisorId !== session.userId) {
+        await notifyUser(
+          existing.supervisorId,
+          'mr_assigned',
+          'Maintenance Request Updated',
+          notifyMessage,
+          'maintenance_request',
+          id,
+          `mr-detail?id=${id}`,
+        );
+      }
+
+      // Also notify admins if the updater is not an admin
+      if (!isAdmin(session)) {
+        await notifyAdmins(
+          'mr_assigned',
+          'Maintenance Request Updated',
+          `${existing.requestNumber} updated by ${session.userId}: ${changedFields}`,
+          'maintenance_request',
+          id,
+          `mr-detail?id=${id}`,
+        );
+      }
+    }
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {
