@@ -1155,3 +1155,38 @@ Stage Summary:
 - Added MTBF tracking, risk level badges, severity color coding
 - Added print-friendly CSS, filter description badge, generation timestamp
 - Backend API unchanged (already comprehensive at /api/work-orders/reports)
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Implement multi-channel notification alerts workflow for repair work orders with SMS
+
+Work Log:
+- Analyzed existing notification infrastructure: notifyUser() (DB+WS+email), sendSms() (Hubtel API), notification preferences
+- Identified gaps: SMS never called from notifyUser(), no admin notification on MR creation, WO verify route silent, preferences never enforced
+- Rewrote src/lib/notifications.ts with full multi-channel dispatch: in-app + email + SMS
+- Added preference enforcement: quiet hours, per-type opt-out, channel toggles
+- Added notifyAdmins() helper to broadcast to all admin users
+- Added notifyMultipleUsers() and notifyDepartmentSupervisor() helpers
+- Updated 12 API route files across the full WO lifecycle:
+  - MR creation: added admin + supervisor notifications with forceSms
+  - MR approve: added forceSms
+  - MR assign-planner: added forceSms
+  - MR convert: added forceSms for all technician notifications
+  - WO assign: added forceSms
+  - WO start: added forceSms
+  - WO complete: added forceSms
+  - WO verify: added planner notification (was previously silent) + forceSms
+  - WO hold: added forceSms
+  - WO cancel: added forceSms
+  - WO close: added forceSms
+  - Repair completion: all actions (submit/approve/rework/close) forceSms
+- Committed and pushed to origin/main
+
+Stage Summary:
+- Full 5-stage notification workflow implemented with SMS on every critical step
+- notifyUser() now dispatches via 3 channels: in-app (DB+WebSocket), email, SMS
+- forceSms option bypasses user preference for critical workflow steps
+- Admin users are now notified when maintenance requests are created
+- Planner is now notified when supervisor verifies WO (was a gap)
+- 13 files changed, 401 additions, 19 deletions
