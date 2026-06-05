@@ -120,7 +120,7 @@ export async function POST(
       },
     });
 
-    // Notify supervisors and planner
+    // Notify supervisors and planner (force SMS for critical workflow step)
     const notifyTargets = [wo.assignedSupervisorId, wo.teamLeaderId, wo.plannerId].filter(
       (uid): uid is string => !!uid && uid !== session.userId,
     );
@@ -133,6 +133,7 @@ export async function POST(
         'work_order',
         id,
         `wo-detail?id=${id}`,
+        { forceSms: true },
       );
     }
 

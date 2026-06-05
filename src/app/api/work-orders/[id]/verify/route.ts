@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { executeTransition } from '@/lib/state-machine';
+import { notifyUser } from '@/lib/notifications';
 
 /**
  * POST /api/work-orders/[id]/verify
@@ -70,6 +71,33 @@ export async function POST(
         }),
       },
     });
+
+    // Notify planner that WO has been verified and is ready for final action/closure
+    if (wo.plannerId && wo.plannerId !== session.userId) {
+      await notifyUser(
+        wo.plannerId,
+        'wo_completed',
+        'Work Order Verified — Ready for Closure',
+        `WO ${wo.woNumber} has been verified by supervisor and is ready for your final action/closure.`,
+        'work_order',
+        id,
+        `wo-detail?id=${id}`,
+        { forceSms: true },
+      );
+    }
+
+    // Also notify the assigned technician that work has been verified
+    if (wo.assignedTo && wo.assignedTo !== session.userId && wo.assignedTo !== wo.plannerId) {
+      await notifyUser(
+        wo.assignedTo,
+        'wo_completed',
+        'Work Order Verified',
+        `Your work on ${wo.woNumber} has been verified and approved.`,
+        'work_order',
+        id,
+        `wo-detail?id=${id}`,
+      );
+    }
 
     // Re-fetch with includes
     const updated = await db.workOrder.findUnique({

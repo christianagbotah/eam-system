@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
-import { notifyUser } from '@/lib/notifications';
+import { notifyUser, notifyAdmins } from '@/lib/notifications';
 
 // Helper: generate request number MR-YYYYMM-NNNN
 async function generateRequestNumber(): Promise<string> {
@@ -230,8 +230,20 @@ export async function POST(request: NextRequest) {
         'maintenance_request',
         mr.id,
         `mr-detail?id=${mr.id}`,
+        { forceSms: true },
       );
     }
+
+    // Also notify all admins about the new maintenance request
+    await notifyAdmins(
+      'mr_assigned',
+      'New Maintenance Request Submitted',
+      `Maintenance request ${mr.requestNumber} has been submitted by ${mr.requester?.fullName || 'a user'}: ${mr.title}`,
+      'maintenance_request',
+      mr.id,
+      `mr-detail?id=${mr.id}`,
+      { forceSms: true },
+    );
 
     return NextResponse.json({ success: true, data: mr }, { status: 201 });
   } catch (error: unknown) {

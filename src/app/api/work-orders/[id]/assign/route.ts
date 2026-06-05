@@ -120,7 +120,7 @@ export async function POST(
       },
     });
 
-    // Notify the assigned user
+    // Notify the assigned user (force SMS for critical workflow step)
     if (assignedTo !== session.userId) {
       await notifyUser(
         assignedTo,
@@ -130,10 +130,11 @@ export async function POST(
         'work_order',
         id,
         `wo-detail?id=${id}`,
+        { forceSms: true },
       );
     }
 
-    // Notify team members (excluding assignee and session user)
+    // Notify team members (excluding assignee and session user, force SMS)
     if (teamMembers && Array.isArray(teamMembers)) {
       for (const member of teamMembers) {
         if (member.userId !== session.userId && member.userId !== assignedTo) {
@@ -145,6 +146,7 @@ export async function POST(
             'work_order',
             id,
             `wo-detail?id=${id}`,
+            { forceSms: true },
           );
         }
       }

@@ -88,6 +88,7 @@ export async function POST(
         'work_order',
         id,
         `wo-detail?id=${id}`,
+        { forceSms: true },
       );
     }
 

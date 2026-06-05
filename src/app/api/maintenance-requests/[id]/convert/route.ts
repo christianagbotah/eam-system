@@ -263,6 +263,7 @@ export async function POST(
         'work_order',
         wo.id,
         `wo-detail?id=${wo.id}`,
+        { forceSms: true },
       );
     }
 
@@ -276,6 +277,7 @@ export async function POST(
         'work_order',
         wo.id,
         `wo-detail?id=${wo.id}`,
+        { forceSms: true },
       );
     }
 
@@ -291,6 +293,7 @@ export async function POST(
             'work_order',
             wo.id,
             `wo-detail?id=${wo.id}`,
+            { forceSms: true },
           );
         }
       }
@@ -306,6 +309,7 @@ export async function POST(
         'work_order',
         wo.id,
         `wo-detail?id=${wo.id}`,
+        { forceSms: true },
       );
     }
 

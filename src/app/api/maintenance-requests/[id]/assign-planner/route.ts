@@ -130,6 +130,7 @@ export async function POST(
         'maintenance_request',
         id,
         `mr-detail?id=${id}`,
+        { forceSms: true },
       );
     }
 
