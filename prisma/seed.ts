@@ -425,6 +425,8 @@ const rolePermissionBundles: Record<string, string[]> = {
     'pm_notifications.view',
     'inventory.view',
     'parts.view',
+    'repair_tool_requests.view_own', 'repair_tool_requests.create',
+    'repair_material_requests.view_own', 'repair_material_requests.create',
   ],
 
   // ── 7. PRODUCTION MANAGER: full MPMP ──

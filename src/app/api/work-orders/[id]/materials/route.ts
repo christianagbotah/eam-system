@@ -37,10 +37,10 @@ export async function POST(
     if (!resolvedItemName && itemId) {
       const invItem = await db.inventoryItem.findUnique({
         where: { id: itemId },
-        select: { itemName: true, name: true, unitCost: true },
+        select: { name: true, unitCost: true },
       });
       if (invItem) {
-        resolvedItemName = invItem.itemName || invItem.name || itemId;
+        resolvedItemName = invItem.name || itemId;
         if (!resolvedUnitCost) resolvedUnitCost = invItem.unitCost;
       } else {
         resolvedItemName = itemId;
