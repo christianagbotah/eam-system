@@ -290,20 +290,23 @@ export async function notifyUser(
         }
       }
 
-      // 4. Send SMS (default: enabled if user has opted in OR forceSms is set)
-      const smsEnabled = options?.forceSms || prefs?.channels?.sms === true;
+      // 4. Send SMS — enabled by default if user has a phone number,
+      //    unless they explicitly opted out (sms: false in preferences).
+      //    forceSms overrides everything.
       const phone = prefs?.channels?.phone || user.phone;
+      const userOptedOut = prefs?.channels?.sms === false;
+      const smsEnabled = !!phone && !userOptedOut;
 
       if (smsEnabled) {
-        if (!phone) {
-          console.warn(`[SMS] SKIPPED for user ${userId} (${user.fullName}): No phone number found. User.phone="${user.phone || 'null'}", Prefs.phone="${prefs?.channels?.phone || 'not set'}". Set phone in user profile or notification preferences.`);
-        } else {
-          console.log(`[SMS] Dispatching to ${phone} for user ${userId} (${user.fullName}) — type: ${type}, forceSms: ${!!options?.forceSms}`);
-          const result = await sendNotificationSms(phone, title, message);
-          console.log(`[SMS] Result for ${phone}: ${JSON.stringify(result)}`);
-        }
+        console.log(`[SMS] Dispatching to ${phone} for user ${userId} (${user.fullName}) — type: ${type}, forceSms: ${!!options?.forceSms}`);
+        const result = await sendNotificationSms(phone, title, message);
+        console.log(`[SMS] Result for ${phone}: ${JSON.stringify(result)}`);
+      } else if (options?.forceSms && !phone) {
+        console.warn(`[SMS] SKIPPED (forceSms) for user ${userId} (${user.fullName}): No phone number. User.phone="${user.phone || 'null'}", Prefs.phone="${prefs?.channels?.phone || 'not set'}"`);
+      } else if (!phone) {
+        console.log(`[SMS] No phone for user ${userId} (${user.fullName})`);
       } else {
-        console.log(`[SMS] Disabled for user ${userId} — smsEnabled: false, prefs.channels.sms: ${prefs?.channels?.sms}`);
+        console.log(`[SMS] User opted out for user ${userId} (${user.fullName})`);
       }
     } catch (err) {
       console.error('[Notification] Failed to dispatch email/SMS:', err);
