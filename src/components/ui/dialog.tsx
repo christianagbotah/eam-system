@@ -66,6 +66,7 @@ function DialogContent({
         )}
         {...props}
       >
+        <DialogTitleFallback />
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
@@ -78,6 +79,21 @@ function DialogContent({
         )}
       </DialogPrimitive.Content>
     </DialogPortal>
+  )
+}
+
+/**
+ * Visually hidden fallback DialogTitle injected by DialogContent.
+ * When children contain an explicit DialogTitle, it overrides this fallback
+ * via the Radix Dialog context (last setTitleId wins), so screen readers
+ * announce the real title text. When no explicit title exists, this fallback
+ * prevents the "DialogContent requires a DialogTitle" console warning.
+ */
+function DialogTitleFallback() {
+  return (
+    <DialogPrimitive.Title className="sr-only">
+      Dialog
+    </DialogPrimitive.Title>
   )
 }
 
