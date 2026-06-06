@@ -43,6 +43,7 @@ export async function POST(
         `Your request ${existing.requestNumber} has been rejected`,
         'inventory_request',
         id,
+        'inventory-requests',
       );
     }
 

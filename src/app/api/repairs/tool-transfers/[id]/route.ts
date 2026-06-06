@@ -44,10 +44,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       // Notify both parties of completion
       await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Transfer Completed',
         `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to ${transfer.toUser?.fullName ?? 'Unknown'}`,
-        'tool_transfer_request', id);
+        'tool_transfer_request', id, 'maintenance-tools');
       await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Completed',
         `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to you from ${transfer.fromUser?.fullName ?? 'Unknown'}`,
-        'tool_transfer_request', id);
+        'tool_transfer_request', id, 'maintenance-tools');
 
       return NextResponse.json({ success: true, data: { ...completed, autoCompleted: true } });
     }
@@ -140,14 +140,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         });
         await notifyUser(transfer.requestedById, 'tool_transfer_request', 'Tool Transfer Rejected',
             `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" was rejected by store keeper${rejectionReason ? `: ${rejectionReason}` : ''}`,
-            'tool_transfer_request', id);
+            'tool_transfer_request', id, 'maintenance-tools');
         // Also notify fromUser and toUser
         await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Transfer Rejected',
             `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" to ${transfer.toUser?.fullName ?? 'Unknown'} was rejected`,
-            'tool_transfer_request', id);
+            'tool_transfer_request', id, 'maintenance-tools');
         await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Rejected',
             `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" from ${transfer.fromUser?.fullName ?? 'Unknown'} was rejected`,
-            'tool_transfer_request', id);
+            'tool_transfer_request', id, 'maintenance-tools');
         break;
       }
 
@@ -187,10 +187,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           });
           await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Transfer Completed',
               `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to ${transfer.toUser?.fullName ?? 'Unknown'}`,
-              'tool_transfer_request', id);
+              'tool_transfer_request', id, 'maintenance-tools');
           await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Completed',
               `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to you`,
-              'tool_transfer_request', id);
+              'tool_transfer_request', id, 'maintenance-tools');
         }
         break;
       }
@@ -231,10 +231,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           });
           await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Transfer Completed',
               `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to ${transfer.toUser?.fullName ?? 'Unknown'}`,
-              'tool_transfer_request', id);
+              'tool_transfer_request', id, 'maintenance-tools');
           await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Completed',
               `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to you`,
-              'tool_transfer_request', id);
+              'tool_transfer_request', id, 'maintenance-tools');
         }
         break;
       }
@@ -255,9 +255,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           data: { status: 'rejected', rejectionReason: notes || 'Cancelled by requester' },
         });
         await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Transfer Cancelled',
-            `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" has been cancelled`, 'tool_transfer_request', id);
+            `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" has been cancelled`, 'tool_transfer_request', id, 'maintenance-tools');
         await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Cancelled',
-            `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" has been cancelled`, 'tool_transfer_request', id);
+            `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" has been cancelled`, 'tool_transfer_request', id, 'maintenance-tools');
         break;
       }
 

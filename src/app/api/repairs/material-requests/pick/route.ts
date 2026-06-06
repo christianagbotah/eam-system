@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
       `${matReq.quantityApproved} ${matReq.unit} of ${matReq.itemName} is being picked for WO ${matReq.workOrder.woNumber}`,
       'repair_material_request',
       id,
+      `material-requests?id=${id}`,
     );
 
     return NextResponse.json({

@@ -155,6 +155,7 @@ export async function POST(request: NextRequest) {
       `${matReq.itemName} for WO ${matReq.workOrder.woNumber}: ${consumedQty} consumed, ${resolvedWastedQty} wasted, ${returnedQty} returned. Rate: ${reconciliationRate.toFixed(1)}%`,
       'repair_material_request',
       id,
+      `material-requests?id=${id}`,
     );
 
     // Notify planner
@@ -166,6 +167,7 @@ export async function POST(request: NextRequest) {
         `${matReq.itemName} for WO ${matReq.workOrder.woNumber}: ${consumedQty} consumed, ${resolvedWastedQty} wasted, ${returnedQty} returned`,
         'repair_material_request',
         id,
+        `material-requests?id=${id}`,
       );
     }
 

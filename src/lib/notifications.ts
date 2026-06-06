@@ -144,12 +144,20 @@ function isTypeEnabled(prefs: NotificationPreferences | null, type: string): boo
 
 /**
  * Send an SMS notification to a user.
- * Format: [iAssetsPro] Title - Message (max 160 chars per SMS, Hubtel handles concat)
+ * Includes a clickable link to the action page if actionUrl is provided.
+ * Hubtel handles SMS concatenation for longer messages.
  */
-async function sendNotificationSms(phone: string, title: string, message: string): Promise<{ success: boolean; error?: string }> {
+async function sendNotificationSms(phone: string, title: string, message: string, actionUrl?: string | null): Promise<{ success: boolean; error?: string }> {
   try {
     const { sendSms } = await import('@/lib/sms');
-    const smsContent = `[iAssetsPro] ${title}\n${message}`.substring(0, 300);
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+    let smsContent = `[iAssetsPro] ${title}\n${message}`;
+    if (actionUrl && appUrl) {
+      const fullLink = `${appUrl}/#/${actionUrl.replace(/^\//, '')}`;
+      smsContent += `\n\nView: ${fullLink}`;
+    }
+    // Hubtel handles concatenation for longer messages, but cap at 500 chars
+    smsContent = smsContent.substring(0, 500);
     const result = await sendSms(phone, smsContent);
     return { success: result.success, error: result.error };
   } catch (err) {
@@ -266,7 +274,7 @@ export async function notifyUser(
             const appName = process.env.NEXT_PUBLIC_APP_NAME || 'iAssetsPro EAM';
             const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
             const actionLink = actionUrl
-              ? `\n\n<a href="${appUrl}${actionUrl}" style="background:#059669;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;margin-top:16px;">View Details</a>`
+              ? `\n\n<a href="${appUrl}/#/${actionUrl.replace(/^\//, '')}" style="background:#059669;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;margin-top:16px;">View Details</a>`
               : '';
             const html = `
               <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #e5e7eb;border-radius:8px;">
@@ -297,13 +305,13 @@ export async function notifyUser(
       const smsEnabled = !!phone && !userOptedOut;
 
       if (smsEnabled) {
-        console.log(`[SMS] Dispatching to ${phone} for user ${userId} (${user.fullName}) — type: ${type}, forceSms: ${!!options?.forceSms}`);
-        const result = await sendNotificationSms(phone, title, message);
-        console.log(`[SMS] Result for ${phone}: ${JSON.stringify(result)}`);
-      } else if (options?.forceSms && !phone) {
-        console.warn(`[SMS] SKIPPED (forceSms) for user ${userId} (${user.fullName}): No phone number. User.phone="${user.phone || 'null'}", Prefs.phone="${prefs?.channels?.phone || 'not set'}"`);
-      } else if (!phone) {
-        console.log(`[SMS] No phone for user ${userId} (${user.fullName})`);
+        if (!phone) {
+          console.warn(`[SMS] SKIPPED for user ${userId} (${user.fullName}): No phone number found. User.phone="${user.phone || 'null'}", Prefs.phone="${prefs?.channels?.phone || 'not set'}". Set phone in user profile or notification preferences.`);
+        } else {
+          console.log(`[SMS] Dispatching to ${phone} for user ${userId} (${user.fullName}) — type: ${type}, forceSms: ${!!options?.forceSms}`);
+          const result = await sendNotificationSms(phone, title, message, actionUrl);
+          console.log(`[SMS] Result for ${phone}: ${JSON.stringify(result)}`);
+        }
       } else {
         console.log(`[SMS] User opted out for user ${userId} (${user.fullName})`);
       }

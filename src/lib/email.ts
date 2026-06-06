@@ -55,7 +55,7 @@ export async function sendNotificationEmail(userId: string, subject: string, mes
   const appName = process.env.NEXT_PUBLIC_APP_NAME || 'iAssetsPro EAM';
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
   const actionLink = actionUrl
-    ? `\n\n<a href="${appUrl}${actionUrl}" style="background:#059669;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;margin-top:16px;">View Details</a>`
+    ? `\n\n<a href="${appUrl}/#/${actionUrl.replace(/^\//, '')}" style="background:#059669;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;margin-top:16px;">View Details</a>`
     : '';
 
   const html = `

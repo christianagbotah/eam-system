@@ -44,6 +44,7 @@ export async function POST(
         `PO ${existing.poNumber} has been approved`,
         'purchase_order',
         id,
+        'purchase-orders',
       );
     }
 

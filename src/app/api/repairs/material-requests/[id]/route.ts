@@ -250,6 +250,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             : `Your request for ${matReq.itemName} was approved by supervisor`,
           'repair_material_request',
           id,
+          `material-requests?id=${id}`,
         );
         break;
       }
@@ -300,6 +301,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           `Your request for ${matReq.itemName} was rejected by supervisor${notes ? `: ${notes}` : ''}`,
           'repair_material_request',
           id,
+          `material-requests?id=${id}`,
         );
         break;
       }
@@ -387,6 +389,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           `${qty} ${matReq.unit} of ${matReq.itemName} approved by store keeper. Ready for pickup.`,
           'repair_material_request',
           id,
+          `material-requests?id=${id}`,
         );
         break;
       }
@@ -437,6 +440,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           `Your request for ${matReq.itemName} was rejected by store keeper${notes ? `: ${notes}` : ''}`,
           'repair_material_request',
           id,
+          `material-requests?id=${id}`,
         );
         break;
       }
@@ -539,6 +543,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           `${qtyToIssue} ${matReq.unit} of ${matReq.itemName} issued for WO ${matReq.workOrder.woNumber}`,
           'repair_material_request',
           id,
+          `material-requests?id=${id}`,
         );
 
         // Notify work order's planner when material is issued
@@ -661,6 +666,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             : `${qtyToReturn} ${matReq.unit} of ${matReq.itemName} returned for WO ${matReq.workOrder.woNumber}. Total returned: ${cumulativeReturn}/${matReq.quantityIssued}`,
           'repair_material_request',
           id,
+          `material-requests?id=${id}`,
         );
         break;
       }

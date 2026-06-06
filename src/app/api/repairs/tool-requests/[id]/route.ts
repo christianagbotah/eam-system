@@ -145,11 +145,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         for (const sk of storeKeepers) {
           await notifyUser(sk.id, 'repair_tool_request', 'Tool Request Awaiting Store Approval',
               `${toolLabel} approved by supervisor for WO ${toolReq.workOrder.woNumber}${toolReq.urgency !== 'normal' ? ` [${toolReq.urgency.toUpperCase()}]` : ''}`,
-              'repair_tool_request', id);
+              'repair_tool_request', id, `tool-requests?id=${id}`);
         }
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Request Approved',
             `Your request for ${toolLabel} was approved by supervisor`,
-            'repair_tool_request', id);
+            'repair_tool_request', id, `tool-requests?id=${id}`);
         break;
       }
 
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         });
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Request Rejected',
             `Your request for "${toolReq.toolName}" was rejected by supervisor${rejectionReason ? `: ${rejectionReason}` : ''}`,
-            'repair_tool_request', id);
+            'repair_tool_request', id, `tool-requests?id=${id}`);
         break;
       }
 
@@ -217,7 +217,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const itemCount = toolReq.items.length > 0 ? toolReq.items.length : 1;
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Ready for Pickup',
             `${itemCount} tool${itemCount > 1 ? 's' : ''} approved and ready for issuance`,
-            'repair_tool_request', id);
+            'repair_tool_request', id, `tool-requests?id=${id}`);
         break;
       }
 
@@ -236,7 +236,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         });
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Request Rejected by Store',
             `"${toolReq.toolName}" was rejected by store keeper${rejectionReason ? `: ${rejectionReason}` : ''}`,
-            'repair_tool_request', id);
+            'repair_tool_request', id, `tool-requests?id=${id}`);
         break;
       }
 
@@ -368,7 +368,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         // Notify requester
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Issued',
             `${toolReq.items.length > 0 ? `${toolReq.items.length} tool${toolReq.items.length > 1 ? 's' : ''}` : `"${toolReq.toolName}"`} has been issued to you for WO ${toolReq.workOrder.woNumber}`,
-            'repair_tool_request', id);
+            'repair_tool_request', id, `tool-requests?id=${id}`);
 
         // Notify WO planner on issue
         if (toolReq.workOrder.plannerId && toolReq.workOrder.plannerId !== toolReq.requestedById) {

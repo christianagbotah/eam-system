@@ -266,7 +266,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       // Notify all parties (force SMS for critical workflow step)
       const notifyUsers = [wo.assignedTo, wo.assignedSupervisorId].filter(Boolean) as string[];
       for (const uid of notifyUsers) {
-        await notifyUser(uid, 'wo_closed', `WO Closed: ${wo.woNumber}`, `${session.fullName} closed "${wo.title}". This work order is now locked.`, 'work_order', workOrderId, undefined, { forceSms: true });
+        await notifyUser(uid, 'wo_closed', `WO Closed: ${wo.woNumber}`, `${session.fullName} closed "${wo.title}". This work order is now locked.`, 'work_order', workOrderId, 'maintenance-work-orders', { forceSms: true });
       }
 
       await createAuditLog(session.userId, 'RepairCompletion', 'planner_close_completion', updatedCompletion.id, {
