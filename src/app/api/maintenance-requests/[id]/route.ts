@@ -25,7 +25,7 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'maintenance_requests.view') && !isAdmin(session)) {
+    if (!hasPermission(session, 'maintenance_requests.view') && !hasPermission(session, 'maintenance_requests.view_own') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -59,6 +59,13 @@ export async function GET(
         { success: false, error: 'Maintenance request not found' },
         { status: 404 }
       );
+    }
+
+    // Ownership check: users with only view_own can only see their own requests
+    if (!hasPermission(session, 'maintenance_requests.view') && !isAdmin(session)) {
+      if (mr.requestedBy !== session.userId) {
+        return NextResponse.json({ success: false, error: 'Maintenance request not found' }, { status: 404 });
+      }
     }
 
     // IDOR protection: ensure user has access to this MR's plant
