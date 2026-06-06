@@ -3442,7 +3442,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // WO is finalized when supervisor has verified (awaiting planner closure) or permanently locked/closed
   const isWOFinalized = wo.status === 'verified' || wo.status === 'closed' || wo.status === 'cancelled' || wo.isLocked;
   const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
-  const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && canManageTeamDirectly;
+  const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && (canManageTeamDirectly || hasPermission('work_orders.update'));
   // Disable all inline action buttons (time, materials, tools, tasks) when WO is finalized or user lacks permission
   const actionDisabled = isReadOnly || isWOFinalized || !canTakeActions;
 
