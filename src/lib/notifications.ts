@@ -150,7 +150,7 @@ function isTypeEnabled(prefs: NotificationPreferences | null, type: string): boo
 async function sendNotificationSms(phone: string, title: string, message: string, actionUrl?: string | null): Promise<{ success: boolean; error?: string }> {
   try {
     const { sendSms } = await import('@/lib/sms');
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+    const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || '';
     let smsContent = `[iAssetsPro] ${title}\n${message}`;
     if (actionUrl && appUrl) {
       const fullLink = `${appUrl}/#/${actionUrl.replace(/^\//, '')}`;
@@ -272,7 +272,7 @@ export async function notifyUser(
           if (prefs?.channels?.emailAddr && prefs.channels.emailAddr !== user.email) {
             const { sendEmail } = await import('@/lib/email');
             const appName = process.env.NEXT_PUBLIC_APP_NAME || 'iAssetsPro EAM';
-            const appUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+            const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || '';
             const actionLink = actionUrl
               ? `\n\n<a href="${appUrl}/#/${actionUrl.replace(/^\//, '')}" style="background:#059669;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;display:inline-block;margin-top:16px;">View Details</a>`
               : '';
