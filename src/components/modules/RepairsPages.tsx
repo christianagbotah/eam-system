@@ -323,14 +323,18 @@ const TRANSFER_STAGES: PipelineStage[] = [
 
 function canApproveAsSupervisor(user: any): boolean {
   if (!user) return false;
-  const { hasPermission, isAdmin } = useAuthStore.getState();
-  return isAdmin() || hasPermission('repairs.approve_supervisor') || hasPermission('repairs.manage') || hasPermission('work_orders.update');
+  const { hasPermission, isAdmin, user: authUser } = useAuthStore.getState();
+  // Only supervisors, managers, and planners can approve tool/material requests
+  const supervisorRoles = ['admin', 'maintenance_manager', 'maintenance_supervisor', 'maintenance_planner', 'plant_manager'];
+  return isAdmin() || supervisorRoles.includes(authUser?.role?.slug || '') || hasPermission('repairs.approve_supervisor') || hasPermission('repairs.manage');
 }
 
 function canApproveAsStore(user: any): boolean {
   if (!user) return false;
-  const { hasPermission, isAdmin } = useAuthStore.getState();
-  return isAdmin() || hasPermission('repairs.approve_store') || hasPermission('inventory.manage') || hasPermission('tools.manage');
+  const { hasPermission, isAdmin, user: authUser } = useAuthStore.getState();
+  // Only store keepers, inventory managers, and admins can do store approval
+  const storeRoles = ['admin', 'inventory_manager', 'store_keeper', 'tools_shop_attendant'];
+  return isAdmin() || storeRoles.includes(authUser?.role?.slug || '') || hasPermission('repairs.approve_store');
 }
 
 function canViewAllRepairData(user: any): boolean {
