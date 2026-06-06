@@ -78,7 +78,7 @@ export async function POST(
         wo.plannerId,
         'wo_completed',
         'Work Order Verified — Ready for Closure',
-        `WO ${wo.woNumber} has been verified by supervisor and is ready for your final action/closure.`,
+        `WO ${wo.woNumber} has been verified by ${session.fullName} and is ready for your final action/closure.`,
         'work_order',
         id,
         `wo-detail?id=${id}`,

@@ -46,7 +46,20 @@ export async function POST(
         wo.plannerId,
         'wo_comment',
         'New Comment on WO',
-        `New comment on ${wo.woNumber}`,
+        `${session.fullName} commented on ${wo.woNumber}: "${content.trim().substring(0, 80)}${content.trim().length > 80 ? '...' : ''}"`,
+        'work_order',
+        id,
+        `wo-detail?id=${id}`,
+      );
+    }
+
+    // Also notify the assignee if different from commenter and planner
+    if (wo.assignedTo && wo.assignedTo !== session.userId && wo.assignedTo !== wo.plannerId) {
+      await notifyUser(
+        wo.assignedTo,
+        'wo_comment',
+        'New Comment on WO',
+        `${session.fullName} commented on ${wo.woNumber}: "${content.trim().substring(0, 80)}${content.trim().length > 80 ? '...' : ''}"`,
         'work_order',
         id,
         `wo-detail?id=${id}`,

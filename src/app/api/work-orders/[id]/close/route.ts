@@ -105,7 +105,7 @@ export async function POST(
         targetId,
         'wo_closed',
         'Work Order Closed',
-        `${wo.woNumber} has been closed`,
+        `${session.fullName} closed ${wo.woNumber}: "${wo.title}"`,
         'work_order',
         id,
         `wo-detail?id=${id}`,

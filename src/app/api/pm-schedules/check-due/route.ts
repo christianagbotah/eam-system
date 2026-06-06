@@ -250,7 +250,7 @@ export async function POST(request: NextRequest) {
           schedule.assignedToId,
           'wo_assigned',
           'PM Work Order Generated',
-          `A preventive maintenance WO (${woNumber}) has been auto-generated for ${schedule.asset.name}. Due: ${nextDueDate.toLocaleDateString()}.`,
+          `A preventive maintenance WO (${woNumber}) has been auto-generated for "${schedule.title}" on ${schedule.asset.name}. Due: ${nextDueDate.toLocaleDateString()}.`,
           'work_order',
           wo.id,
           `wo-detail?id=${wo.id}`,

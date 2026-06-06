@@ -70,7 +70,7 @@ export async function POST(
         targetId,
         'wo_started',
         'Work Order Started',
-        `${wo.woNumber} has been started`,
+        `${session.fullName} started work on ${wo.woNumber}: "${wo.title}"`,
         'work_order',
         id,
         `wo-detail?id=${id}`,

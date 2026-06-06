@@ -88,10 +88,11 @@ export async function POST(
         mr.requestedBy,
         'mr_rejected',
         'Maintenance Request Rejected',
-        `Your request ${mr.requestNumber} has been rejected. Reason: ${reason}`,
+        `Your request "${mr.title}" (${mr.requestNumber}) has been rejected by ${session.fullName}. Reason: ${reason}`,
         'maintenance_request',
         id,
         `mr-detail?id=${id}`,
+        { forceSms: true },
       );
     }
 

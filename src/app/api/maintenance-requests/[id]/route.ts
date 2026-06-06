@@ -182,12 +182,8 @@ export async function PUT(
     if (existing.status === 'pending' && Object.keys(updateData).length > 0) {
       const changedFields = Object.keys(updateData).join(', ');
 
-      // Get the updater's full name
-      const updater = await db.user.findUnique({
-        where: { id: session.userId },
-        select: { fullName: true },
-      });
-      const updaterName = updater?.fullName || session.userId;
+      // Get the updater's full name (from session, avoids extra DB query)
+      const updaterName = session.fullName || 'Unknown User';
 
       const notifyMessage = `Maintenance request ${existing.requestNumber} ("${existing.title}") has been updated by ${updaterName}. Changed: ${changedFields}`;
 

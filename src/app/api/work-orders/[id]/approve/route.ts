@@ -67,7 +67,7 @@ export async function POST(
           mr.requestedBy,
           'wo_approved',
           'Work Order Approved',
-          `${wo.woNumber} has been approved`,
+          `${session.fullName} approved ${wo.woNumber}: "${wo.title}"`,
           'work_order',
           id,
           `wo-detail?id=${id}`,

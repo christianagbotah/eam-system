@@ -123,7 +123,7 @@ export async function PUT(
           teamRequest.requestedUserId,
           'wo_team_approved',
           'Team Assignment Approved',
-          `You have been added to WO ${wo.woNumber || id.slice(-6)}: ${wo.title}`,
+          `You have been added to WO ${wo.woNumber || 'Work Order'}: ${wo.title}`,
           'work_order',
           id,
           `/maintenance?tab=work-orders&view=${id}`,
@@ -152,8 +152,8 @@ export async function PUT(
       const notificationType = action === 'approve' ? 'wo_team_request_approved' : 'wo_team_request_rejected';
       const notificationTitle = action === 'approve' ? 'Team Request Approved' : 'Team Request Rejected';
       const notificationMsg = action === 'approve'
-        ? `Your request to add ${teamRequest.requestedUser.fullName} to WO ${wo.woNumber || id.slice(-6)} has been approved.`
-        : `Your request to add ${teamRequest.requestedUser.fullName} to WO ${wo.woNumber || id.slice(-6)} has been rejected.${reviewNotes ? ` Reason: ${reviewNotes}` : ''}`;
+        ? `Your request to add ${teamRequest.requestedUser.fullName} to WO ${wo.woNumber || 'Work Order'} has been approved.`
+        : `Your request to add ${teamRequest.requestedUser.fullName} to WO ${wo.woNumber || 'Work Order'} has been rejected.${reviewNotes ? ` Reason: ${reviewNotes}` : ''}`;
 
       await notifyUser(
         teamRequest.requestedBy,

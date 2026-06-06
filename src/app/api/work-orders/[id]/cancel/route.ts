@@ -107,7 +107,7 @@ export async function POST(
         targetId,
         'wo_cancelled',
         'Work Order Cancelled',
-        `${wo.woNumber} has been cancelled. Reason: ${reason}`,
+        `${session.fullName} cancelled ${wo.woNumber}. Reason: ${reason}`,
         'work_order',
         id,
         `wo-detail?id=${id}`,

@@ -84,7 +84,7 @@ export async function POST(
         targetId,
         'wo_on_hold',
         'Work Order Placed On Hold',
-        `${wo.woNumber} has been placed on hold. Reason: ${reason}`,
+        `${session.fullName} placed ${wo.woNumber} on hold. Reason: ${reason}`,
         'work_order',
         id,
         `wo-detail?id=${id}`,

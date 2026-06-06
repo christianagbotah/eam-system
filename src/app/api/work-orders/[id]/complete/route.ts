@@ -129,7 +129,7 @@ export async function POST(
         targetId,
         'wo_completed',
         'Work Order Completed',
-        `${wo.woNumber} has been completed`,
+        `${session.fullName} completed ${wo.woNumber}: "${wo.title}"`,
         'work_order',
         id,
         `wo-detail?id=${id}`,

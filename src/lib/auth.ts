@@ -27,6 +27,7 @@ const CACHE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
 export interface SessionData {
   userId: string;
   username: string;
+  fullName: string;     // user's display name for notifications
   roles: string[];       // role slugs
   permissions: string[]; // permission slugs
   createdAt: Date;
@@ -105,6 +106,7 @@ export async function createSession(userId: string): Promise<{ token: string; se
   const sessionData: SessionData = {
     userId: user.id,
     username: user.username,
+    fullName: user.fullName || user.username,
     roles: uniqueRoles,
     permissions: uniquePermissions,
     createdAt: now,
@@ -193,9 +195,20 @@ export async function getSessionAsync(token: string): Promise<SessionData | null
     return null;
   }
 
+  // Look up fullName from User table (not stored in Session DB row)
+  let fullName = '';
+  try {
+    const userRecord = await db.user.findUnique({
+      where: { id: dbSession.userId },
+      select: { fullName: true, username: true },
+    });
+    fullName = userRecord?.fullName || userRecord?.username || '';
+  } catch { /* ignore */ }
+
   const sessionData: SessionData = {
     userId: dbSession.userId,
-    username: '', // Not stored in DB session; look up from user if needed
+    username: fullName.split(' ')[0] || '', // first name or username
+    fullName,
     roles,
     permissions,
     createdAt: dbSession.createdAt,
@@ -290,6 +303,7 @@ export async function getUserPlantId(userId: string): Promise<string | null> {
 export interface CurrentUser {
   id: string;
   username: string;
+  fullName: string;
   roles: string[];
   permissions: string[];
 }
@@ -305,6 +319,7 @@ export async function getCurrentUser(request: Request): Promise<CurrentUser | nu
   return {
     id: session.userId,
     username: session.username,
+    fullName: session.fullName,
     roles: session.roles,
     permissions: session.permissions,
   };
@@ -317,6 +332,14 @@ export async function warmSessionCache(): Promise<void> {
       where: { expiresAt: { gt: new Date() } },
     });
 
+    // Batch-load all user fullNames to avoid N+1 queries
+    const userIds = [...new Set(activeSessions.map(s => s.userId))];
+    const users = await db.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, fullName: true, username: true },
+    });
+    const userMap = new Map(users.map(u => [u.id, u.fullName || u.username || '']));
+
     for (const s of activeSessions) {
       let roles: string[] = [];
       let permissions: string[] = [];
@@ -327,10 +350,13 @@ export async function warmSessionCache(): Promise<void> {
         continue;
       }
 
+      const fullName = userMap.get(s.userId) || '';
+
       sessionCache.set(s.token, {
         data: {
           userId: s.userId,
-          username: '',
+          username: fullName.split(' ')[0] || '',
+          fullName,
           roles,
           permissions,
           createdAt: s.createdAt,

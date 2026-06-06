@@ -46,15 +46,11 @@ export async function POST(
 
     // Notify the requester if commenter is not the requester
     if (mr.requestedBy && mr.requestedBy !== session.userId) {
-      const sessionUser = await db.user.findUnique({
-        where: { id: session.userId },
-        select: { fullName: true },
-      });
       await notifyUser(
         mr.requestedBy,
         'mr_comment',
         'New Comment on MR',
-        `${sessionUser?.fullName || 'Someone'} commented on ${mr.requestNumber}`,
+        `${session.fullName} commented on ${mr.requestNumber}: "${content.trim().substring(0, 80)}${content.trim().length > 80 ? '...' : ''}"`,
         'maintenance_request',
         id,
         `mr-detail?id=${id}`,

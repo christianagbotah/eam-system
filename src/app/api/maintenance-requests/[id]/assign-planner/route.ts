@@ -126,7 +126,7 @@ export async function POST(
         plannerId,
         'mr_assigned',
         `MR Assigned for Planning: ${mr.requestNumber}`,
-        `Maintenance request "${mr.title}" has been assigned to you for planning. Priority: ${(mr.priority || 'medium').toUpperCase()}.${mr.description ? `\nDescription: ${mr.description.substring(0, 150)}` : ''}`,
+        `Maintenance request "${mr.title}" (${mr.requestNumber}) has been assigned to you for planning by ${session.fullName}. Priority: ${(mr.priority || 'medium').toUpperCase()}.${mr.description ? `\nDescription: ${mr.description.substring(0, 150)}` : ''}`,
         'maintenance_request',
         id,
         `mr-detail?id=${id}`,

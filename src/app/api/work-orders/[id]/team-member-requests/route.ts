@@ -191,7 +191,7 @@ export async function POST(
         approverId,
         'wo_team_request',
         'Team Member Request',
-        `${session.username} requested ${targetUser.fullName} to join WO ${wo.woNumber || id.slice(-6)}`,
+        `${session.fullName} requested ${targetUser.fullName} to join WO ${wo.woNumber || 'Work Order'}`,
         'work_order',
         id,
         `/maintenance?tab=work-orders&view=${id}`,
