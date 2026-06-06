@@ -92,7 +92,7 @@ export default function LoginPage() {
 
   const features = [
     { icon: BarChart3, label: 'Real-time Monitoring', desc: 'Track assets 24/7 with live dashboards', color: 'bg-emerald-500/20 text-emerald-300' },
-    { icon: Zap, label: 'Predictive AI', desc: 'Prevent failures before they happen', color: 'bg-amber-500/20 text-amber-300' },
+    { icon: Zap, label: 'Smart Prediction', desc: 'Prevent failures before they happen', color: 'bg-amber-500/20 text-amber-300' },
     { icon: Wrench, label: 'Work Orders', desc: 'Streamline maintenance tasks', color: 'bg-teal-500/20 text-teal-300' },
     { icon: Package, label: 'Inventory', desc: 'Manage parts & supplies', color: 'bg-orange-500/20 text-orange-300' },
   ];
