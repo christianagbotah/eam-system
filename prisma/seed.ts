@@ -727,56 +727,27 @@ async function seed() {
     );
     const tableNames = (tables as Array<{ TABLE_NAME: string }>).map(t => t.TABLE_NAME);
     if (tableNames.length > 0) {
-      // Build a single SQL statement to disable FK checks and truncate all tables
-      // This ensures FK checks are disabled in the same connection/transaction
-      const truncateSQL = tableNames.map(t => `TRUNCATE TABLE \`${t}\`;`).join('\n');
-      const fullSQL = `SET FOREIGN_KEY_CHECKS = 0;\n${truncateSQL}\nSET FOREIGN_KEY_CHECKS = 1;`;
-
-      try {
-        // Try single multi-statement approach first
-        await db.$executeRawUnsafe(fullSQL);
-        console.log(`  ✅ Cleared ${tableNames.length} tables via single TRUNCATE`);
-      } catch {
-        // Fallback: individual TRUNCATE with FK checks disabled per-table
-        console.log('  ⚠️  Multi-statement TRUNCATE failed, trying per-table approach...');
-        let successCount = 0;
-        for (const t of tableNames) {
-          try {
-            // Disable FK, truncate, re-enable in one statement per table
-            await db.$executeRawUnsafe(
-              `SET FOREIGN_KEY_CHECKS = 0; TRUNCATE TABLE \`${t}\`; SET FOREIGN_KEY_CHECKS = 1;`
-            );
-            successCount++;
-          } catch (truncErr) {
-            console.warn(`    ⚠️ Could not truncate ${t}: ${(truncErr as Error).message.slice(0, 80)}`);
-          }
-        }
-        console.log(`  ✅ Cleared ${successCount}/${tableNames.length} tables via per-table TRUNCATE`);
-
-        // If too many failures, fall back to DELETE
-        if (successCount < tableNames.length * 0.5) {
-          console.log('  ⚠️  TRUNCATE success rate too low, falling back to DELETE...');
-          const tablesToClear = [
-            'chatMessage', 'conversationParticipant', 'conversation',
-            'workOrderStatusHistory', 'workOrderComment', 'workOrderTimeLog',
-            'workOrderMaterial', 'workOrderTeamMember', 'woTeamMemberRequest',
-            'workOrder', 'pmTrigger', 'pmTemplateTask', 'pmTemplate', 'pmSchedule',
-            'maintenanceRequestComment', 'maintenanceRequest',
-            'inventoryItem', 'asset', 'assetCategory',
-            'notification', 'userPlant', 'userRole', 'userSkill', 'user',
-            'statusTransition', 'companyModule', 'systemModule',
-            'role', 'permission', 'department', 'plant', 'companyProfile',
-          ];
-          let cleared = 0;
-          for (const table of tablesToClear) {
-            try {
-              await (db as any)[table]?.deleteMany();
-              cleared++;
-            } catch { /* skip */ }
-          }
-          console.log(`  ✅ Cleared ${cleared} tables via DELETE fallback`);
-        }
+      // Use DELETE via Prisma client (safe with FK constraints, connection-pool friendly)
+      console.log('  🗑️  Clearing all tables via DELETE (Prisma-safe)...');
+      const tablesToClear = [
+        'chatMessage', 'conversationParticipant', 'conversation',
+        'workOrderStatusHistory', 'workOrderComment', 'workOrderTimeLog',
+        'workOrderMaterial', 'workOrderTeamMember', 'woTeamMemberRequest',
+        'workOrder', 'pmTrigger', 'pmTemplateTask', 'pmTemplate', 'pmSchedule',
+        'maintenanceRequestComment', 'maintenanceRequest',
+        'inventoryItem', 'asset', 'assetCategory',
+        'notification', 'userPlant', 'userRole', 'userSkill', 'user',
+        'statusTransition', 'companyModule', 'systemModule',
+        'role', 'permission', 'department', 'plant', 'companyProfile',
+      ];
+      let cleared = 0;
+      for (const table of tablesToClear) {
+        try {
+          await (db as any)[table]?.deleteMany();
+          cleared++;
+        } catch { /* skip — FK may prevent delete, handled by order */ }
       }
+      console.log(`  ✅ Cleared ${cleared} tables`);
     } else {
       console.log('  ℹ️  No tables found (fresh database)');
     }
@@ -1678,17 +1649,27 @@ async function seed() {
   // FINAL VERIFICATION — Confirm data was actually written
   // ══════════════════════════════════════════════════════════════════════════
   console.log('🔍 Verifying seeded data...');
+  let finalPermCount = 0;
+  let finalRoleCount = 0;
+  let finalRolePermCount = 0;
+  let finalUserCount = 0;
+  let finalPlantCount = 0;
+  let finalDeptCount = 0;
+  let finalAssetCount = 0;
+  let finalInvCount = 0;
+  let finalModuleCount = 0;
+  let finalWOCunt = 0;
   try {
-    const finalPermCount = await db.permission.count();
-    const finalRoleCount = await db.role.count();
-    const finalRolePermCount = await db.rolePermission.count();
-    const finalUserCount = await db.user.count();
-    const finalPlantCount = await db.plant.count();
-    const finalDeptCount = await db.department.count();
-    const finalAssetCount = await db.asset.count();
-    const finalInvCount = await db.inventoryItem.count();
-    const finalModuleCount = await db.systemModule.count();
-    const finalWOCunt = await db.workOrder.count();
+    finalPermCount = await db.permission.count();
+    finalRoleCount = await db.role.count();
+    finalRolePermCount = await db.rolePermission.count();
+    finalUserCount = await db.user.count();
+    finalPlantCount = await db.plant.count();
+    finalDeptCount = await db.department.count();
+    finalAssetCount = await db.asset.count();
+    finalInvCount = await db.inventoryItem.count();
+    finalModuleCount = await db.systemModule.count();
+    finalWOCunt = await db.workOrder.count();
 
     if (finalPermCount === 0) {
       console.error('  ❌ CRITICAL: No permissions found! Database may be empty.');
