@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, isAdmin } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { sendEmail } from '@/lib/email';
 
@@ -10,8 +10,9 @@ export async function POST(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (!hasPermission(session, 'system_settings.update') && !isAdmin(session)) {
-      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
+    // Admin-only: sending test emails requires admin
+    if (!isAdmin(session)) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     const body = await req.json();

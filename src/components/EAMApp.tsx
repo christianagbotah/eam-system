@@ -262,6 +262,14 @@ function PageSwitcher({ page }: { page: string }) {
 
   // Permission guard: check before loading the page
   useEffect(() => {
+    // Admin-only gate: all settings-* pages (except user-level preferences) require admin
+    if (page.startsWith('settings-') && page !== 'settings-preferences') {
+      if (!isAdmin()) {
+        navigate('dashboard');
+        return;
+      }
+    }
+
     let requiredPerms = pagePermissions[page];
     // Wildcard: any settings-* page not explicitly listed requires system_settings.view
     if (!requiredPerms && page.startsWith('settings-')) {

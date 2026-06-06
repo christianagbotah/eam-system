@@ -118,10 +118,11 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
     icon: React.ElementType;
     perm: string;
     permOr?: string[]; // alternative permissions — show group if user has ANY of these
+    adminOnly?: boolean; // when true, only admins can see this group
     page?: PageName;
     moduleCode?: string; // maps to SystemModule.code (lowercase) for module-aware filtering
     moduleCodes?: string[]; // for groups spanning multiple modules (any match = visible)
-    children?: { page: PageName; label: string; icon?: React.ElementType }[];
+    children?: { page: PageName; label: string; icon?: React.ElementType; pageAdminOnly?: boolean }[];
   }
 
   const menuGroups = useMemo<NavGroup[]>(() => [
@@ -285,7 +286,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       ],
     },
     {
-      label: 'Settings', icon: Cog, perm: 'system_settings.view', moduleCode: 'modules',
+      label: 'Settings', icon: Cog, perm: 'system_settings.view', adminOnly: true, moduleCode: 'modules',
       children: [
         { page: 'settings-general', label: 'General', icon: Settings },
         { page: 'settings-users', label: 'Users', icon: Users },
@@ -378,6 +379,9 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
   const visibleGroups = useMemo(() => {
     const isAdm = isAdmin();
     return menuGroups.filter(g => {
+      // Admin-only groups: non-admins cannot see them at all
+      if (g.adminOnly && !isAdm) return false;
+
       // Permission check (supports permOr for multiple alternative permissions)
       if (!isAdm && permissions && permissions.length > 0) {
         const permOk = g.permOr

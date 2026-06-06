@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession, isAdmin, hasPermission } from '@/lib/auth';
+import { getSession, isAdmin } from '@/lib/auth';
 import { sendSms, getSmsConfig } from '@/lib/sms';
 
 // POST /api/settings/test-sms
@@ -10,8 +10,9 @@ export async function POST(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
     }
-    if (!hasPermission(session, 'settings.update') && !isAdmin(session)) {
-      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    // Admin-only: sending test SMS requires admin
+    if (!isAdmin(session)) {
+      return NextResponse.json({ success: false, error: 'Admin access required' }, { status: 403 });
     }
 
     const body = await req.json();
