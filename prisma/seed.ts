@@ -727,27 +727,21 @@ async function seed() {
     );
     const tableNames = (tables as Array<{ TABLE_NAME: string }>).map(t => t.TABLE_NAME);
     if (tableNames.length > 0) {
-      // Use DELETE via Prisma client (safe with FK constraints, connection-pool friendly)
-      console.log('  🗑️  Clearing all tables via DELETE (Prisma-safe)...');
-      const tablesToClear = [
-        'chatMessage', 'conversationParticipant', 'conversation',
-        'workOrderStatusHistory', 'workOrderComment', 'workOrderTimeLog',
-        'workOrderMaterial', 'workOrderTeamMember', 'woTeamMemberRequest',
-        'workOrder', 'pmTrigger', 'pmTemplateTask', 'pmTemplate', 'pmSchedule',
-        'maintenanceRequestComment', 'maintenanceRequest',
-        'inventoryItem', 'asset', 'assetCategory',
-        'notification', 'userPlant', 'userRole', 'userSkill', 'user',
-        'statusTransition', 'companyModule', 'systemModule',
-        'role', 'permission', 'department', 'plant', 'companyProfile',
-      ];
-      let cleared = 0;
-      for (const table of tablesToClear) {
-        try {
-          await (db as any)[table]?.deleteMany();
-          cleared++;
-        } catch { /* skip — FK may prevent delete, handled by order */ }
-      }
-      console.log(`  ✅ Cleared ${cleared} tables`);
+      // Use a Prisma interactive transaction so all DELETE queries share one connection.
+      // This allows SET FOREIGN_KEY_CHECKS=0 to persist across all subsequent deletes.
+      console.log(`  🗑️  Clearing ${tableNames.length} tables via raw SQL in transaction...`);
+      await db.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 0`);
+        for (const t of tableNames) {
+          try {
+            await tx.$executeRawUnsafe(`DELETE FROM \`${t}\``);
+          } catch {
+            /* skip — some tables may not exist yet or have circular refs */
+          }
+        }
+        await tx.$executeRawUnsafe(`SET FOREIGN_KEY_CHECKS = 1`);
+      });
+      console.log(`  ✅ Cleared ${tableNames.length} tables`);
     } else {
       console.log('  ℹ️  No tables found (fresh database)');
     }
