@@ -71,7 +71,8 @@ export async function PUT(
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
-        updateData[field] = body[field];
+        // Convert empty strings to null for nullable FK fields (parentId, supervisorId)
+        updateData[field] = body[field] === '' ? null : body[field];
       }
     }
 
