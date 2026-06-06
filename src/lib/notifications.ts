@@ -144,14 +144,13 @@ function isTypeEnabled(prefs: NotificationPreferences | null, type: string): boo
 
 /**
  * Send an SMS notification to a user.
- * Truncates message to fit within SMS character limits.
+ * Format: [iAssetsPro] Title - Message (max 160 chars per SMS, Hubtel handles concat)
  */
 async function sendNotificationSms(phone: string, title: string, message: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const { sendAlertSms } = await import('@/lib/sms');
-    // Truncate message for SMS (keep it concise)
-    const smsMessage = `${title}: ${message}`.substring(0, 200);
-    const result = await sendAlertSms(phone, 'iAssetsPro', smsMessage);
+    const { sendSms } = await import('@/lib/sms');
+    const smsContent = `[iAssetsPro] ${title}\n${message}`.substring(0, 300);
+    const result = await sendSms(phone, smsContent);
     return { success: result.success, error: result.error };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown SMS error';

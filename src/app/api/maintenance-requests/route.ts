@@ -220,13 +220,16 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Send notification to the auto-detected supervisor
+    // Send notification to the auto-detected supervisor with full details
     if (resolvedSupervisorId && resolvedSupervisorId !== session.userId) {
+      const desc = description ? description.substring(0, 120) : '';
+      const assetInfo = assetName || '';
+      const priorityLabel = (priority || 'medium').toUpperCase();
       await notifyUser(
         resolvedSupervisorId,
         'mr_assigned',
-        'New Maintenance Request Pending Review',
-        `A new maintenance request ${mr.requestNumber} has been submitted for your review: ${mr.title}`,
+        `New MR: ${mr.requestNumber} [${priorityLabel}]`,
+        `"${mr.title}"${assetInfo ? ` — ${assetInfo}` : ''}\nSubmitted by ${mr.requester?.fullName || 'Unknown'}${desc ? `\n${desc}` : ''}`,
         'maintenance_request',
         mr.id,
         `mr-detail?id=${mr.id}`,
@@ -237,8 +240,8 @@ export async function POST(request: NextRequest) {
     // Also notify all admins about the new maintenance request
     await notifyAdmins(
       'mr_assigned',
-      'New Maintenance Request Submitted',
-      `Maintenance request ${mr.requestNumber} has been submitted by ${mr.requester?.fullName || 'a user'}: ${mr.title}`,
+      `New MR: ${mr.requestNumber}`,
+      `"${mr.title}" submitted by ${mr.requester?.fullName || 'Unknown'}${description ? `\n${description.substring(0, 100)}` : ''}`,
       'maintenance_request',
       mr.id,
       `mr-detail?id=${mr.id}`,

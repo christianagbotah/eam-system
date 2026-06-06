@@ -120,13 +120,13 @@ export async function POST(
       },
     });
 
-    // Send notification to the planner
+    // Send notification to the planner with full details
     if (plannerId !== session.userId) {
       await notifyUser(
         plannerId,
         'mr_assigned',
-        'Maintenance Request Assigned for Planning',
-        `Maintenance request ${mr.requestNumber} has been assigned to you for planning: ${mr.title}`,
+        `MR Assigned for Planning: ${mr.requestNumber}`,
+        `Maintenance request "${mr.title}" has been assigned to you for planning. Priority: ${(mr.priority || 'medium').toUpperCase()}.${mr.description ? `\nDescription: ${mr.description.substring(0, 150)}` : ''}`,
         'maintenance_request',
         id,
         `mr-detail?id=${id}`,

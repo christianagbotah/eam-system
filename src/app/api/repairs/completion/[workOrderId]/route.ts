@@ -159,7 +159,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       // Notify supervisor (force SMS for critical workflow step)
       if (wo.assignedSupervisorId) {
-        await notifyUser(wo.assignedSupervisorId, 'wo_completed', 'Work Order Completed - Review Required', `WO ${wo.woNumber} has been completed by technician. Your review is required.`, 'work_order', workOrderId, 'maintenance-work-orders', { forceSms: true });
+        const techName = wo.assignedTo ? (await db.user.findUnique({ where: { id: wo.assignedToId }, select: { fullName: true } }))?.fullName || 'Technician' : 'Technician';
+        await notifyUser(wo.assignedSupervisorId, 'wo_completed', `WO Completed: ${wo.woNumber}`, `Work order "${wo.title}" has been completed by ${techName}. Your review is required.`, 'work_order', workOrderId, 'maintenance-work-orders', { forceSms: true });
       }
 
       await createAuditLog(session.userId, 'RepairCompletion', 'submit_completion', completion.id, {
@@ -192,7 +193,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       // Notify planner (force SMS for critical workflow step)
       if (wo.plannerId) {
-        await notifyUser(wo.plannerId, 'wo_completed', 'Work Order Ready for Closure', `WO ${wo.woNumber} has been supervisor-approved. Ready for final closure.`, 'work_order', workOrderId, 'maintenance-work-orders', { forceSms: true });
+        await notifyUser(wo.plannerId, 'wo_completed', `WO Ready for Closure: ${wo.woNumber}`, `Work order "${wo.title}" has been supervisor-approved. Ready for your final review and closure.`, 'work_order', workOrderId, 'maintenance-work-orders', { forceSms: true });
       }
 
       await createAuditLog(session.userId, 'RepairCompletion', 'supervisor_approve_completion', completion.id, {
@@ -221,7 +222,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       // Notify technician (force SMS for critical workflow step)
       if (wo.assignedTo) {
-        await notifyUser(wo.assignedTo, 'wo_rework', 'Rework Requested', `WO ${wo.woNumber}: ${reworkReason}`, 'work_order', workOrderId, 'maintenance-work-orders', { forceSms: true });
+        await notifyUser(wo.assignedTo, 'wo_rework', `Rework Required: ${wo.woNumber}`, `Your work on "${wo.title}" requires rework. Reason: ${reworkReason}`, 'work_order', workOrderId, 'maintenance-work-orders', { forceSms: true });
       }
 
       await createAuditLog(session.userId, 'RepairCompletion', 'supervisor_request_rework', completion.id, {
@@ -266,7 +267,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       // Notify all parties (force SMS for critical workflow step)
       const notifyUsers = [wo.assignedTo, wo.assignedSupervisorId].filter(Boolean) as string[];
       for (const uid of notifyUsers) {
-        await notifyUser(uid, 'wo_closed', 'Work Order Closed', `WO ${wo.woNumber} has been closed by planner and locked.`, 'work_order', workOrderId, undefined, { forceSms: true });
+        await notifyUser(uid, 'wo_closed', `WO Closed: ${wo.woNumber}`, `Work order "${wo.title}" has been closed by planner and is now locked.`, 'work_order', workOrderId, undefined, { forceSms: true });
       }
 
       await createAuditLog(session.userId, 'RepairCompletion', 'planner_close_completion', updatedCompletion.id, {

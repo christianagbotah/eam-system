@@ -181,7 +181,15 @@ export async function PUT(
     // Notify supervisor and admins when a pending request is updated (not by themselves)
     if (existing.status === 'pending' && Object.keys(updateData).length > 0) {
       const changedFields = Object.keys(updateData).join(', ');
-      const notifyMessage = `Maintenance request ${existing.requestNumber} has been updated. Changed: ${changedFields}`;
+
+      // Get the updater's full name
+      const updater = await db.user.findUnique({
+        where: { id: session.userId },
+        select: { fullName: true },
+      });
+      const updaterName = updater?.fullName || session.userId;
+
+      const notifyMessage = `Maintenance request ${existing.requestNumber} ("${existing.title}") has been updated by ${updaterName}. Changed: ${changedFields}`;
 
       // Notify the supervisor if assigned
       if (existing.supervisorId && existing.supervisorId !== session.userId) {
@@ -201,7 +209,7 @@ export async function PUT(
         await notifyAdmins(
           'mr_assigned',
           'Maintenance Request Updated',
-          `${existing.requestNumber} updated by ${session.userId}: ${changedFields}`,
+          notifyMessage,
           'maintenance_request',
           id,
           `mr-detail?id=${id}`,

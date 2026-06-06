@@ -97,11 +97,12 @@ export async function POST(
 
     // Notify the requester
     if (mr.requestedBy && mr.requestedBy !== session.userId) {
+      const approverName = session.fullName || session.userId;
       await notifyUser(
         mr.requestedBy,
         'mr_approved',
-        'Maintenance Request Approved',
-        `Your request ${mr.requestNumber} has been approved`,
+        `MR Approved: ${mr.requestNumber}`,
+        `Your maintenance request "${mr.title}" has been approved by ${approverName} and will be assigned to a planner.`,
         'maintenance_request',
         id,
         `mr-detail?id=${id}`,
