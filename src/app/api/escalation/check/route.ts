@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
-import fs from 'fs';
-import path from 'path';
 
 // ============================================================================
 // Escalation Check — POST
@@ -16,8 +14,6 @@ import path from 'path';
 // ============================================================================
 
 const ESCALATION_SECRET = process.env.ESCALATION_SECRET || 'eam-escalation-cron-2025';
-
-const CONFIG_PATH = path.join(process.cwd(), 'data', 'escalation-config.json');
 
 interface EscalationConfig {
   enabled: boolean;
@@ -43,29 +39,33 @@ interface EscalationConfig {
   lastCheckResults: Record<string, unknown> | null;
 }
 
-function readConfig(): EscalationConfig {
+const DEFAULT_CONFIG: EscalationConfig = {
+  enabled: true,
+  maintenanceRequests: { enabled: true, level1ThresholdHours: 24, level2ThresholdHours: 48, cooldownMinutes: 360 },
+  workOrders: { enabled: true, level1ThresholdHours: 0, level2ThresholdHours: 48, cooldownMinutes: 360 },
+  safetyIncidents: { enabled: true, level1ThresholdHours: 4, level2ThresholdHours: 8, cooldownMinutes: 240 },
+  lastCheckAt: null,
+  lastCheckResults: null,
+};
+
+async function readConfig(): Promise<EscalationConfig> {
   try {
-    if (fs.existsSync(CONFIG_PATH)) {
-      const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
-      return JSON.parse(raw);
+    const row = await db.systemConfig.findUnique({ where: { key: 'escalation' } });
+    if (row?.config) {
+      const parsed = JSON.parse(row.config);
+      return { ...DEFAULT_CONFIG, ...parsed };
     }
   } catch { /* ignore */ }
-  return {
-    enabled: true,
-    maintenanceRequests: { enabled: true, level1ThresholdHours: 24, level2ThresholdHours: 48, cooldownMinutes: 360 },
-    workOrders: { enabled: true, level1ThresholdHours: 0, level2ThresholdHours: 48, cooldownMinutes: 360 },
-    safetyIncidents: { enabled: true, level1ThresholdHours: 4, level2ThresholdHours: 8, cooldownMinutes: 240 },
-    lastCheckAt: null,
-    lastCheckResults: null,
-  };
+  return { ...DEFAULT_CONFIG };
 }
 
-function writeConfig(config: EscalationConfig): void {
-  const dir = path.dirname(CONFIG_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+async function writeConfig(config: EscalationConfig): Promise<void> {
+  const configJson = JSON.stringify(config);
+  await db.systemConfig.upsert({
+    where: { key: 'escalation' },
+    update: { config: configJson },
+    create: { key: 'escalation', config: configJson },
+  });
 }
 
 /**
@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    const config = readConfig();
+    const config = await readConfig();
 
     if (!config.enabled) {
       return NextResponse.json({
@@ -426,14 +426,14 @@ export async function POST(request: NextRequest) {
     // ────────────────────────────────────────────────────────────────────
     // Update last check timestamp in config
     // ────────────────────────────────────────────────────────────────────
-    const updatedConfig = readConfig();
+    const updatedConfig = await readConfig();
     updatedConfig.lastCheckAt = now.toISOString();
     updatedConfig.lastCheckResults = {
       maintenanceRequests: results.maintenanceRequests,
       workOrders: results.workOrders,
       safetyIncidents: results.safetyIncidents,
     };
-    writeConfig(updatedConfig);
+    await writeConfig(updatedConfig);
 
     const totalEscalated = results.maintenanceRequests.level1 + results.maintenanceRequests.level2
       + results.workOrders.level1 + results.workOrders.level2

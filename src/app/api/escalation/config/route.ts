@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, isAdmin } from '@/lib/auth';
-import fs from 'fs';
-import path from 'path';
+import { db } from '@/lib/db';
 
 // ============================================================================
 // Escalation Configuration — GET/PUT
-// Stores config in data/escalation-config.json
+// Stores config in system_configs DB table under key "escalation"
 // ============================================================================
-
-const CONFIG_PATH = path.join(process.cwd(), 'data', 'escalation-config.json');
 
 interface EscalationConfig {
   enabled: boolean;
@@ -58,11 +55,11 @@ const DEFAULT_CONFIG: EscalationConfig = {
   lastCheckResults: null,
 };
 
-function readConfig(): EscalationConfig {
+async function readConfig(): Promise<EscalationConfig> {
   try {
-    if (fs.existsSync(CONFIG_PATH)) {
-      const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
-      const parsed = JSON.parse(raw);
+    const row = await db.systemConfig.findUnique({ where: { key: 'escalation' } });
+    if (row?.config) {
+      const parsed = JSON.parse(row.config);
       // Merge with defaults to handle new fields
       return { ...DEFAULT_CONFIG, ...parsed };
     }
@@ -72,12 +69,13 @@ function readConfig(): EscalationConfig {
   return { ...DEFAULT_CONFIG };
 }
 
-function writeConfig(config: EscalationConfig): void {
-  const dir = path.dirname(CONFIG_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+async function writeConfig(config: EscalationConfig): Promise<void> {
+  const configJson = JSON.stringify(config);
+  await db.systemConfig.upsert({
+    where: { key: 'escalation' },
+    update: { config: configJson },
+    create: { key: 'escalation', config: configJson },
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -87,7 +85,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Admin access required' }, { status: 403 });
     }
 
-    const config = readConfig();
+    const config = await readConfig();
     return NextResponse.json({ success: true, data: config });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to read escalation config';
@@ -103,7 +101,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const current = readConfig();
+    const current = await readConfig();
 
     // Build updated config — only allow updating specific safe fields
     const updated: EscalationConfig = {
@@ -159,7 +157,7 @@ export async function PUT(request: NextRequest) {
       lastCheckResults: current.lastCheckResults,
     };
 
-    writeConfig(updated);
+    await writeConfig(updated);
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {

@@ -7,7 +7,7 @@
  * Authentication: HTTP Basic Auth (ClientId:ClientSecret)
  * Endpoint: https://api.hubtel.com/v1/messages/send
  *
- * Configuration is stored in data/integrations.json under the "sms" key:
+ * Configuration is stored in the system_configs DB table under key "sms":
  *   {
  *     "clientId": "your-hubtel-client-id",
  *     "clientSecret": "your-hubtel-client-secret",
@@ -15,9 +15,6 @@
  *     "connected": true
  *   }
  */
-
-import { readFile, mkdir } from 'fs/promises';
-import { join } from 'path';
 
 // ============================================================================
 // Types
@@ -42,18 +39,19 @@ export interface SendSmsResult {
 }
 
 // ============================================================================
-// Config loader
+// Config loader — reads from DB (system_configs table, key="sms")
 // ============================================================================
-
-const INTEGRATIONS_FILE = join(process.cwd(), 'data', 'integrations.json');
 
 export async function getSmsConfig(): Promise<SmsConfig | null> {
   try {
-    const raw = await readFile(INTEGRATIONS_FILE, 'utf-8');
-    const data = JSON.parse(raw);
-    const sms = data?.sms;
-    if (sms?.connected && sms?.clientId && sms?.clientSecret) {
-      return sms as SmsConfig;
+    const { db } = await import('@/lib/db');
+    const row = await db.systemConfig.findUnique({ where: { key: 'sms' } });
+
+    if (!row?.config) return null;
+
+    const parsed = JSON.parse(row.config) as Partial<SmsConfig>;
+    if (parsed.connected && parsed.clientId && parsed.clientSecret) {
+      return parsed as SmsConfig;
     }
     return null;
   } catch {
@@ -73,7 +71,7 @@ const HUBTEL_SMS_URL = 'https://api.hubtel.com/v1/messages/send';
  * @param to  Recipient phone number (e.g. "23324XXXXXXX" or "+23324XXXXXXX")
  * @param content  Message text (max 160 chars per SMS segment)
  * @param senderName  Override sender name (falls back to config)
- * @param config  Override SMS config (falls back to integrations.json)
+ * @param config  Override SMS config (falls back to system_configs DB)
  */
 export async function sendSms(
   to: string,

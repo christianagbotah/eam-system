@@ -1,27 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
-
-const DATA_FILE = join(process.cwd(), 'data', 'integrations.json');
-
-async function readData(): Promise<Record<string, any>> {
-  try {
-    const raw = await readFile(DATA_FILE, 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
-async function writeData(data: Record<string, any>): Promise<void> {
-  try {
-    await mkdir(join(process.cwd(), 'data'), { recursive: true });
-  } catch {
-    // directory already exists
-  }
-  await writeFile(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
-}
+import { db } from '@/lib/db';
 
 // GET /api/settings/integrations
 export async function GET(req: NextRequest) {
@@ -30,7 +9,18 @@ export async function GET(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const data = await readData();
+
+    // Read all system configs and return as a flat key → parsed JSON object
+    const rows = await db.systemConfig.findMany();
+    const data: Record<string, any> = {};
+    for (const row of rows) {
+      try {
+        data[row.key] = JSON.parse(row.config);
+      } catch {
+        data[row.key] = row.config;
+      }
+    }
+
     return NextResponse.json({ success: true, data });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Failed to read integrations' }, { status: 500 });
@@ -54,11 +44,16 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Missing integrationId or config' }, { status: 400 });
     }
 
-    const data = await readData();
-    data[integrationId] = { ...config, updatedAt: new Date().toISOString() };
-    await writeData(data);
+    const configJson = JSON.stringify(config);
 
-    return NextResponse.json({ success: true, data });
+    // Upsert into system_configs table
+    await db.systemConfig.upsert({
+      where: { key: integrationId },
+      update: { config: configJson },
+      create: { key: integrationId, config: configJson },
+    });
+
+    return NextResponse.json({ success: true, data: config });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Failed to save integration config' }, { status: 500 });
   }

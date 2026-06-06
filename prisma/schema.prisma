@@ -4890,3 +4890,17 @@ model AiConfig {
 
   @@map("ai_configs")
 }
+
+// ============================================================================
+// SYSTEM CONFIGURATION ( persisted integrations, escalation, etc. )
+// ============================================================================
+
+model SystemConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique // "sms", "escalation", "email", etc.
+  config    String   @db.Text // JSON string of config
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@map("system_configs")
+}

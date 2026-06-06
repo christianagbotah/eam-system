@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
-import fs from 'fs';
-import path from 'path';
 
 // ============================================================================
 // Escalation Summary — GET
@@ -13,19 +11,23 @@ import path from 'path';
 // - Requires admin authentication
 // ============================================================================
 
-const CONFIG_PATH = path.join(process.cwd(), 'data', 'escalation-config.json');
-
 interface EscalationConfig {
   enabled: boolean;
+  maintenanceRequests?: {
+    level1ThresholdHours: number;
+  };
+  safetyIncidents?: {
+    level1ThresholdHours: number;
+  };
   lastCheckAt: string | null;
   lastCheckResults: Record<string, unknown> | null;
 }
 
-function readConfig(): EscalationConfig {
+async function readConfig(): Promise<EscalationConfig> {
   try {
-    if (fs.existsSync(CONFIG_PATH)) {
-      const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
-      return JSON.parse(raw);
+    const row = await db.systemConfig.findUnique({ where: { key: 'escalation' } });
+    if (row?.config) {
+      return JSON.parse(row.config);
     }
   } catch { /* ignore */ }
   return { enabled: true, lastCheckAt: null, lastCheckResults: null };
@@ -39,10 +41,10 @@ export async function GET(request: NextRequest) {
     }
 
     const now = new Date();
-    const config = readConfig();
+    const config = await readConfig();
 
     // ── Currently overdue Maintenance Requests ──
-    const mrConfig = (config as any).maintenanceRequests || { level1ThresholdHours: 24 };
+    const mrConfig = config.maintenanceRequests || { level1ThresholdHours: 24 };
     const mrLevel1Cutoff = new Date(now.getTime() - mrConfig.level1ThresholdHours * 60 * 60 * 1000);
 
     const overdueMrs = await db.maintenanceRequest.findMany({
@@ -85,7 +87,7 @@ export async function GET(request: NextRequest) {
     });
 
     // ── Currently overdue Safety Incidents ──
-    const siConfig = (config as any).safetyIncidents || { level1ThresholdHours: 4 };
+    const siConfig = config.safetyIncidents || { level1ThresholdHours: 4 };
     const siLevel1Cutoff = new Date(now.getTime() - siConfig.level1ThresholdHours * 60 * 60 * 1000);
 
     const overdueIncidents = await db.safetyIncident.findMany({
