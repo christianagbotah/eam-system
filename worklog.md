@@ -1211,3 +1211,24 @@ Stage Summary:
 - Key: "sms" for SMS/Hubtel config, "escalation" for escalation timer settings
 - Admin will need to re-enter SMS credentials once after deploying (old JSON data not migrated)
 - Deploy command: git pull && bunx prisma generate && bunx prisma db push && bun run build && pm2 restart iassetspro
+---
+Task ID: 2
+Agent: main
+Task: Protect settings and sensitive pages from unauthorized users
+
+Work Log:
+- Investigated: all 15 settings-* pages were missing from pagePermissions route guard
+- Frontend: Added explicit entries for each settings-* page + wildcard fallback in EAMApp.tsx
+- Backend: Added permission checks to 5 GET endpoints that had no auth beyond session:
+  - /api/settings/integrations (exposes API keys, passwords, client secrets)
+  - /api/settings/smtp-config (exposes SMTP credentials)
+  - /api/settings/smtp-status (exposes SMTP connection info)
+  - /api/backups (exposes backup history and full DB export capability)
+  - /api/permissions (exposes all permission slugs)
+- Migrated SMTP config from data/smtp-config.json to system_configs DB table
+- Build verified, committed and pushed
+
+Stage Summary:
+- Settings pages now properly protected both client-side (route guard) and server-side (API auth)
+- Non-admin users accessing #/settings-integrations get redirected to dashboard
+- API endpoints return 403 for users without system_settings.view or equivalent permission
