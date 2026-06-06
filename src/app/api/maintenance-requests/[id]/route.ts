@@ -99,7 +99,10 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'maintenance_requests.update') && !isAdmin(session)) {
+    const hasUpdateAll = hasPermission(session, 'maintenance_requests.update') || isAdmin(session);
+    const canUpdateOwn = hasPermission(session, 'maintenance_requests.update_own') || hasPermission(session, 'maintenance_requests.create');
+
+    if (!hasUpdateAll && !canUpdateOwn) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -114,9 +117,9 @@ export async function PUT(
       );
     }
 
-    // If request is pending, only the requester (or admin) can edit it
-    if (existing.status === 'pending') {
-      if (existing.requestedBy !== session.userId && !isAdmin(session)) {
+    // If request is pending, only the requester (or admin/supervisor with update) can edit it
+    if (existing.status === 'pending' && !hasUpdateAll) {
+      if (existing.requestedBy !== session.userId) {
         return NextResponse.json(
           { success: false, error: 'Only the requester can edit a pending request' },
           { status: 403 }
