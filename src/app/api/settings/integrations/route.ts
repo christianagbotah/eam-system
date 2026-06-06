@@ -2,12 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { db } from '@/lib/db';
 
+// Helper: check admin or system_settings.view permission
+function canViewSettings(session: any): boolean {
+  return isAdmin(session) || hasPermission(session, 'system_settings.view');
+}
+
 // GET /api/settings/integrations
 export async function GET(req: NextRequest) {
   try {
     const session = getSession({ headers: req.headers } as Request);
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (!canViewSettings(session)) {
+      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
     // Read all system configs and return as a flat key → parsed JSON object

@@ -1,26 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { db } from '@/lib/db';
 
-const DATA_FILE = join(process.cwd(), 'data', 'smtp-config.json');
-
-async function readData(): Promise<Record<string, unknown>> {
-  try {
-    const raw = await readFile(DATA_FILE, 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
-async function writeData(data: Record<string, unknown>): Promise<void> {
-  try {
-    await mkdir(join(process.cwd(), 'data'), { recursive: true });
-  } catch {
-    // directory already exists
-  }
-  await writeFile(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+// Helper: check admin or system_settings permission
+function canViewSettings(session: any): boolean {
+  return isAdmin(session) || hasPermission(session, 'system_settings.view');
 }
 
 // GET /api/settings/smtp-config
@@ -30,7 +14,15 @@ export async function GET(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const data = await readData();
+    if (!canViewSettings(session)) {
+      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
+    }
+
+    const row = await db.systemConfig.findUnique({ where: { key: 'smtp' } });
+    if (!row?.config) {
+      return NextResponse.json({ success: true, data: {} });
+    }
+    const data = JSON.parse(row.config);
     // Mask password before sending to client
     if (data.pass) {
       data.pass = '••••••••';
@@ -54,8 +46,12 @@ export async function PUT(req: NextRequest) {
     }
     const body = await req.json();
 
-    // Read existing data to preserve password if not provided
-    const existing = await readData();
+    // Read existing config to preserve password if not provided
+    const existingRow = await db.systemConfig.findUnique({ where: { key: 'smtp' } });
+    let existing: Record<string, any> = {};
+    if (existingRow?.config) {
+      try { existing = JSON.parse(existingRow.config); } catch { /* ignore */ }
+    }
 
     // If password is the mask placeholder, keep the existing password
     if (body.pass === '••••••••' || !body.pass) {
@@ -73,7 +69,12 @@ export async function PUT(req: NextRequest) {
       updatedBy: session.userId,
     };
 
-    await writeData(config);
+    const configJson = JSON.stringify(config);
+    await db.systemConfig.upsert({
+      where: { key: 'smtp' },
+      update: { config: configJson },
+      create: { key: 'smtp', config: configJson },
+    });
 
     // Set environment variables for nodemailer to use
     process.env.SMTP_HOST = config.host;

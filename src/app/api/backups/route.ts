@@ -48,6 +48,9 @@ export async function GET(req: NextRequest) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    if (!isAdmin(session) && !hasPermission(session, 'system_settings.view')) {
+      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
+    }
     const backups = await readBackups();
     return NextResponse.json({ success: true, data: backups });
   } catch (err: any) {

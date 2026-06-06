@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { testSmtpConnection } from '@/lib/email';
 
 // GET /api/settings/smtp-status
@@ -8,6 +8,9 @@ export async function GET(req: NextRequest) {
     const session = getSession({ headers: req.headers } as Request);
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (!isAdmin(session) && !hasPermission(session, 'system_settings.view')) {
+      return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const connected = await testSmtpConnection();

@@ -236,6 +236,21 @@ function PageSwitcher({ page }: { page: string }) {
     'digital-twin': ['digital_twin.view'],
     'reports': ['reports.view'],
     'settings': ['system_settings.view'],
+    'settings-general': ['system_settings.view'],
+    'settings-users': ['users.manage'],
+    'settings-roles': ['roles.manage'],
+    'settings-modules': ['system_settings.view'],
+    'settings-company': ['system_settings.view'],
+    'settings-plants': ['plants.manage'],
+    'settings-departments': ['departments.manage'],
+    'settings-notifications': ['system_settings.view'],
+    'settings-integrations': ['system_settings.view'],
+    'settings-backup': ['system_settings.view'],
+    'settings-audit': ['audit_logs.view'],
+    'settings-security': ['system_settings.view'],
+    'settings-health': ['system_settings.view'],
+    'settings-queues': ['system_settings.view'],
+    'settings-preferences': ['system_settings.view'],
     'users': ['users.view'],
     'departments': ['departments.view'],
     'training': ['training.view'],
@@ -247,7 +262,11 @@ function PageSwitcher({ page }: { page: string }) {
 
   // Permission guard: check before loading the page
   useEffect(() => {
-    const requiredPerms = pagePermissions[page];
+    let requiredPerms = pagePermissions[page];
+    // Wildcard: any settings-* page not explicitly listed requires system_settings.view
+    if (!requiredPerms && page.startsWith('settings-')) {
+      requiredPerms = ['system_settings.view'];
+    }
     if (requiredPerms && !isAdmin()) {
       const hasAccess = requiredPerms.some(p => hasPermission(p));
       if (!hasAccess) {
