@@ -107,8 +107,8 @@ export async function createNotification(params: {
 /**
  * Check if we're inside the user's quiet hours.
  */
-function isQuietHours(prefs: NotificationPreferences): boolean {
-  if (!prefs.quietHours?.enabled) return false;
+function isQuietHours(prefs: NotificationPreferences | null): boolean {
+  if (!prefs?.quietHours?.enabled) return false;
 
   const now = new Date();
   const startParts = (prefs.quietHours.start || '22:00').split(':');
