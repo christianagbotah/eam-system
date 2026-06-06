@@ -1232,3 +1232,24 @@ Stage Summary:
 - Settings pages now properly protected both client-side (route guard) and server-side (API auth)
 - Non-admin users accessing #/settings-integrations get redirected to dashboard
 - API endpoints return 403 for users without system_settings.view or equivalent permission
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: Fix DialogContent accessibility warning + status_transitions empty table + settings page protection
+
+Work Log:
+- Fixed DialogContent accessibility warning: Added visually hidden fallback DialogTitle inside DialogContent component (dialog.tsx) that auto-suppresses the Radix UI console warning. When children contain an explicit DialogTitle, Radix's internal context mechanism (last setTitleId wins) ensures the visible title is used for aria-labelledby.
+- Fixed status_transitions empty table error: Added auto-seed mechanism to state-machine.ts. When checkTransition() finds no matching rule and the table is empty (e.g. after fresh deploy), the system automatically seeds 5 MR transitions and 20 WO transitions, then retries the lookup. Self-healing — no manual seed script required.
+- Protected settings pages from unauthorized users:
+  - Frontend PageSwitcher (EAMApp.tsx): Added admin-only gate for all settings-* routes except settings-preferences. Non-admins are redirected to dashboard.
+  - Sidebar (Sidebar.tsx): Added adminOnly flag to NavGroup interface and marked Settings group as admin-only. Non-admins can no longer see the Settings menu.
+  - Backend API (5 routes): Changed all /api/settings/* routes to require isAdmin() — integrations, smtp-config, test-sms, test-email, smtp-status. No longer accepting system_settings.view permission as bypass.
+
+Stage Summary:
+- **dialog.tsx**: Added DialogTitleFallback component with sr-only class inside DialogContent
+- **state-machine.ts**: Added ensureTransitionsSeeded() with 25 default MR+WO transitions, called auto by checkTransition() and getAvailableTransitions()
+- **EAMApp.tsx**: Admin gate for settings-* pages in PageSwitcher useEffect
+- **Sidebar.tsx**: adminOnly flag on Settings nav group, filtered in visibleGroups
+- **5 API routes**: Integrations, SMTP config, test SMS, test email, SMTP status — all now isAdmin() only
+- Commits: f658ea50 (dialog + transitions), 7b19f68e (settings protection)
