@@ -1190,3 +1190,24 @@ Stage Summary:
 - Admin users are now notified when maintenance requests are created
 - Planner is now notified when supervisor verifies WO (was a gap)
 - 13 files changed, 401 additions, 19 deletions
+---
+Task ID: 1
+Agent: main
+Task: Migrate SMS and escalation configuration from volatile JSON files to MySQL database
+
+Work Log:
+- Investigated root cause: SMS config stored in data/integrations.json, cleared on every build via git reset --hard, Docker rebuild, and standalone output not tracing data/ directory
+- Added SystemConfig model to prisma/schema.prisma (key/value JSON store, table: system_configs)
+- Updated src/lib/sms.ts: replaced readFile() JSON parsing with db.systemConfig.findUnique() for key="sms"
+- Updated src/app/api/settings/integrations/route.ts: replaced file I/O with db.systemConfig.upsert()
+- Migrated 3 escalation routes from JSON to DB:
+  - src/app/api/escalation/config/route.ts
+  - src/app/api/escalation/check/route.ts
+  - src/app/api/escalation/summary/route.ts
+- Generated Prisma client, verified build passes, committed and pushed
+
+Stage Summary:
+- SMS and escalation config now persisted in MySQL, surviving builds and deploys
+- Key: "sms" for SMS/Hubtel config, "escalation" for escalation timer settings
+- Admin will need to re-enter SMS credentials once after deploying (old JSON data not migrated)
+- Deploy command: git pull && bunx prisma generate && bunx prisma db push && bun run build && pm2 restart iassetspro
