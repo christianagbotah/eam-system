@@ -3462,7 +3462,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // WO is finalized when supervisor has verified (awaiting planner closure) or permanently locked/closed
   const isWOFinalized = wo.status === 'verified' || wo.status === 'closed' || wo.status === 'cancelled' || wo.isLocked;
   const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
-  const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && (canManageTeamDirectly || hasPermission('work_orders.update'));
+  // Edit: restricted to admin, planner, and managers — NOT technician (technician has work_orders.update for status transitions only)
+  const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && (canManageTeamDirectly || isAdmin());
 
   // Format session duration
   const formatSessionDuration = (seconds: number) => {
@@ -5083,18 +5084,30 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     Your request will be sent to the person who assigned this work order for approval. They can approve or reject your request.
                   </p>
                 </div>
-                <div className="space-y-1.5"><Label>User to Add *</Label>
+                <div className="space-y-1.5"><Label>Technician to Request *</Label>
                   <AsyncSearchableSelect
                     value={reqMemberUserId}
                     onValueChange={setReqMemberUserId}
                     fetchOptions={async () => {
-                      const res = await api.get('/api/users');
-                      if (res.success && res.data) return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                      try {
+                        const res = await api.get('/api/users?role=maintenance_technician&includeSkills=true');
+                        if (res.success && res.data) {
+                          return (Array.isArray(res.data) ? res.data : [])
+                            .filter((u: any) => u.id !== user?.id)
+                            .map((u: any) => ({
+                              value: u.id,
+                              label: u.primaryTrade
+                                ? `${u.fullName} — ${u.primaryTrade}`
+                                : `${u.fullName} (${u.username})`,
+                            }));
+                        }
+                      } catch { /* ignore */ }
                       return [];
                     }}
-                    placeholder="Search users..."
-                    searchPlaceholder="Search by name..."
+                    placeholder="Search technicians..."
+                    searchPlaceholder="Search by name or trade..."
                   />
+                  <p className="text-xs text-muted-foreground">Select the technician you need on this work order</p>
                 </div>
                 <div className="space-y-1.5"><Label>Role</Label>
                   <Select value={reqMemberRole} onValueChange={setReqMemberRole}>
