@@ -2846,7 +2846,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   }, [wo, user, fullAccess]);
 
   // Permission: can take modification actions on this WO (not just view it)
-  // Users with only work_orders.view_own who are NOT team members cannot modify
+  // Used for: status transitions, edit, approve/reject etc. — includes planner via permissions
   const canTakeActions = useMemo(() => {
     if (!wo || !user) return false;
     if (isAdmin()) return true;
@@ -2858,6 +2858,19 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     const isAssignee = wo.assignedToId === user.id;
     return isTeamMember || isAssignee;
   }, [wo, user, isAdmin, hasPermission]);
+
+  // Permission: can perform WORK actions on this WO (time log, start work, personal tools, material/tool requests)
+  // Restricted to admin, the assigned technician, and team members — NOT planner
+  const isWorkerOnThisWO = useMemo(() => {
+    if (!wo || !user) return false;
+    if (isAdmin()) return true;
+    const isAssignee = wo.assignedToId === user.id;
+    const isTeamMember = wo.teamMembers?.some(tm => tm.userId === user.id) || false;
+    return isAssignee || isTeamMember;
+  }, [wo, user, isAdmin]);
+
+  // Disable work-performing buttons (time log, start, personal tools, materials) for non-workers
+  const workActionDisabled = isReadOnly || isWOFinalized || !isWorkerOnThisWO;
 
   // Fetch global active session and set up live timer
   const fetchActiveSession = useCallback(async () => {
@@ -3450,8 +3463,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const isWOFinalized = wo.status === 'verified' || wo.status === 'closed' || wo.status === 'cancelled' || wo.isLocked;
   const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
   const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && (canManageTeamDirectly || hasPermission('work_orders.update'));
-  // Disable all inline action buttons (time, materials, tools, tasks) when WO is finalized or user lacks permission
-  const actionDisabled = isReadOnly || isWOFinalized || !canTakeActions;
 
   // Format session duration
   const formatSessionDuration = (seconds: number) => {
@@ -4395,7 +4406,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {wo.actualHours || 0}h total</CardDescription></div>
               <div className="flex items-center gap-2">
                 {/* Context-aware action buttons */}
-                {isActiveOnThisWO && !actionDisabled && (
+                {isActiveOnThisWO && !workActionDisabled && (
                   <>
                     <Button size="sm" variant="outline" className="gap-1.5 text-amber-600 border-amber-300 hover:bg-amber-50" disabled={tlLoading} onClick={() => { setPauseReason(''); setPauseNotes(''); setPauseDialogOpen(true); }}>
                       {tlLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pause className="h-3.5 w-3.5" />}
@@ -4407,7 +4418,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     </Button>
                   </>
                 )}
-                {!isActiveOnThisWO && !isActiveOnOtherWO && !actionDisabled && (
+                {!isActiveOnThisWO && !isActiveOnOtherWO && !workActionDisabled && (
                   <>
                     {hasPausedSession && (
                       <Button size="sm" variant="outline" className="gap-1.5 text-emerald-600 border-emerald-300 hover:bg-emerald-50" disabled={tlLoading} onClick={() => handleQuickTimeAction('resume')}>
@@ -4421,13 +4432,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     </Button>
                   </>
                 )}
-                {isActiveOnOtherWO && !actionDisabled && (
+                {isActiveOnOtherWO && !workActionDisabled && (
                   <Button size="sm" variant="outline" className="gap-1.5 text-red-600 border-red-300" disabled>
                     <AlertCircle className="h-3.5 w-3.5" />
                     Busy on WO #{globalActiveSession?.workOrderNumber}
                   </Button>
                 )}
-                <Button size="sm" variant="ghost" className="gap-1.5" disabled={actionDisabled} onClick={() => { setTlStartTime(''); setTlEndTime(''); setTlActivityType('maintenance'); setTlBreakMinutes(''); setTlNotes(''); setTlLoggedForUserId(''); setTlAction('start'); setTlError(''); setTimeLogOpen(true); }} title="Log time"><Clock className="h-3.5 w-3.5" /></Button>
+                <Button size="sm" variant="ghost" className="gap-1.5" disabled={workActionDisabled} onClick={() => { setTlStartTime(''); setTlEndTime(''); setTlActivityType('maintenance'); setTlBreakMinutes(''); setTlNotes(''); setTlLoggedForUserId(''); setTlAction('start'); setTlError(''); setTimeLogOpen(true); }} title="Log time"><Clock className="h-3.5 w-3.5" /></Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -4576,7 +4587,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                           {tl.duration != null && tl.duration > 0 && (
                             <Badge variant="outline" className="text-[10px] font-mono">{durStr}</Badge>
                           )}
-                          {!actionDisabled && (
+                          {!workActionDisabled && (
                             <button
                               onClick={() => setDeleteTlId(tl.id)}
                               className="opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600 p-0.5"
@@ -4602,7 +4613,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 {(wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0) && (
                   <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" />View All</Button>
                 )}
-                <Button size="sm" variant="outline" className="gap-1.5" disabled={actionDisabled} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" />Request Material</Button>
+                <Button size="sm" variant="outline" className="gap-1.5" disabled={workActionDisabled} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" />Request Material</Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -4784,7 +4795,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle className="text-base flex items-center gap-2"><Hammer className="h-4 w-4 text-orange-600" />Personal Tools On-Site</CardTitle><CardDescription className="text-xs">{personalTools.length} tools</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" disabled={actionDisabled} onClick={() => setPtOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
+              <Button size="sm" variant="outline" className="gap-1.5" disabled={workActionDisabled} onClick={() => setPtOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
             </CardHeader>
             <CardContent>
               {personalTools.length === 0 ? (
@@ -4802,7 +4813,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         </div>
                         {tool.notes && <p className="text-xs text-muted-foreground mt-0.5">{tool.notes}</p>}
                       </div>
-                      {!actionDisabled && (
+                      {!workActionDisabled && (
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-600 shrink-0" disabled={ptLoading} onClick={() => handleRemovePersonalTool(idx)}><Trash2 className="h-3.5 w-3.5" /></Button>
                       )}
                     </div>
@@ -4827,7 +4838,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
-                  {!actionDisabled && (
+                  {!workActionDisabled && (
                     <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTaskDialog(true)}>
                       <Plus className="h-3.5 w-3.5" />Add Task
                     </Button>
@@ -4910,7 +4921,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                             </p>
                           )}
                         </div>
-                        {!actionDisabled && (
+                        {!workActionDisabled && (
                           <div className="flex items-center gap-1 shrink-0">
                             {isPending && (
                               <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'in_progress')}>
@@ -4948,7 +4959,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   </CardTitle>
                   <CardDescription className="text-xs">Add tasks to track work progress step by step</CardDescription>
                 </div>
-                {!actionDisabled && (
+                {!workActionDisabled && (
                   <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTaskDialog(true)}>
                     <Plus className="h-3.5 w-3.5" />Add Task
                   </Button>
