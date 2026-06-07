@@ -1253,3 +1253,26 @@ Stage Summary:
 - **Sidebar.tsx**: adminOnly flag on Settings nav group, filtered in visibleGroups
 - **5 API routes**: Integrations, SMTP config, test SMS, test email, SMTP status — all now isAdmin() only
 - Commits: f658ea50 (dialog + transitions), 7b19f68e (settings protection)
+
+---
+Task ID: 2
+Agent: main
+Task: Fix WO detail sheet permissions - restrict work-performing actions to assigned technician and admin only
+
+Work Log:
+- Analyzed WO detail page in MaintenancePages.tsx (line 2599+)
+- Found `canTakeActions` returns true for anyone with `work_orders.update`/`start`/`complete` permissions (planner has these)
+- All work-performing buttons used `actionDisabled = isReadOnly || isWOFinalized || !canTakeActions`
+- Created new `isWorkerOnThisWO` permission: only true for admin, assigned technician (wo.assignedToId), and team members
+- Created `workActionDisabled = isReadOnly || isWOFinalized || !isWorkerOnThisWO`
+- Replaced `actionDisabled` with `workActionDisabled` on: time log start/pause/resume/complete, Start Work, Log Time clock, Request Material, Add/Remove Personal Tool, Task Checklist add/start/complete
+- Removed unused `actionDisabled` variable
+- Fixed JSX syntax errors (missing `}` closing braces) on 3 blocks
+- Verified: lint passes (no new errors), dev server compiles successfully
+
+Stage Summary:
+- Planner can NO LONGER: add time log, start work, add personal tool, request material, manage task checklist
+- Planner can STILL: edit WO details, manage team, status transitions (Actions dropdown), approve/reject
+- Admin and assigned technician/team members retain full work-performing capabilities
+- Committed as f8253923, pushed to GitHub
+- Deploy command: `cd /home/ifleetpro/git/eam-system && git pull && bunx prisma generate && bun run build && pm2 restart iassetspro`
