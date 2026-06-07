@@ -3000,16 +3000,23 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // ── Edit form helpers ──
   const editUpdateField = (field: string, value: any) => setEditForm(f => ({ ...f, [field]: value }));
 
-  // Convert ISO datetime string to local "YYYY-MM-DDTHH:mm" for internal state
+  // Convert ISO datetime string to local "YYYY-MM-DDTHH:MM" for datetime picker.
+  // Prisma serializes DateTime as UTC (appends Z), but MariaDB stores without timezone.
+  // We strip the Z to treat the value as local time and avoid timezone double-conversion.
   function toLocalDatetime(iso: string): string {
-    const d = new Date(iso);
+    // Strip trailing Z and timezone offset to treat as local time
+    const cleaned = iso.replace(/[Zz]$/, '').replace(/[+-]\d{2}:\d{2}$/, '');
+    const d = new Date(cleaned);
+    if (isNaN(d.getTime())) return '';
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
-  // Convert ISO datetime string to local "YYYY-MM-DD" for internal state
+  // Convert ISO datetime string to local "YYYY-MM-DD" for date picker
   function toLocalDate(iso: string): string {
-    const d = new Date(iso);
+    const cleaned = iso.replace(/[Zz]$/, '').replace(/[+-]\d{2}:\d{2}$/, '');
+    const d = new Date(cleaned);
+    if (isNaN(d.getTime())) return '';
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   }
