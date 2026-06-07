@@ -1296,3 +1296,28 @@ Stage Summary:
 - Edit button: only visible to admin, planner (via work_orders.assign), and the person who assigned the WO
 - Request Team Member dropdown: now populates with technicians and shows their trade
 - Committed as ac108236, pushed to GitHub
+
+---
+Task ID: 3
+Agent: main
+Task: Change 'Request Team Member' to request TRADE instead of specific person; planner assigns technician
+
+Work Log:
+- Updated Prisma schema: requestedUserId nullable, added requestedTrade field
+- Updated POST API: accepts requestedTrade (technician) or requestedUserId (admin)
+- Updated PUT API: approve accepts assignUserId for trade-based requests
+- Changed Request dialog from user picker to trade dropdown (15 trades listed)
+- Added 'Assign Technician' dialog for planner to pick technician on trade approval
+- Updated pending requests display to show trade name + 'Trade Request' badge
+- Updated request history to show 'Electrician → Kofi Technician'
+- Changed notification messages for trade-based requests
+- Also fixed: canEdit now requires canManageTeamDirectly || isAdmin() (hides Edit from technician)
+
+Stage Summary:
+- Technician selects trade (e.g., "Electrician", "Welder") instead of picking a person
+- Planner sees "Trade Request" badge, clicks approve → gets technician picker dialog
+- Planner picks the best technician for the job and confirms
+- Both technician and assigned person get notified
+- Request history shows full flow: Trade requested → Person assigned
+- Committed as 276b770c, pushed to GitHub
+- Deploy requires: db push on VPS for schema change + build + restart
