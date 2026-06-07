@@ -42,16 +42,16 @@ export async function GET(
       wo.assignedBy === session.userId;
 
     // Build where clause: admins see all, others see their own
-    const where: any = { workOrderId: id };
+    const where: Record<string, unknown> = { workOrderId: id };
     if (!canManageTeam) {
-      where.requestedBy = session.userId;
+      (where as Record<string, unknown>).requestedBy = session.userId;
     }
 
     const requests = await db.woTeamMemberRequest.findMany({
       where,
       include: {
-        requestedByUser: { select: { id: true, fullName: true, username: true } },
-        requestedUser: { select: { id: true, fullName: true, username: true, department: true } },
+        requestedByUser: { select: { id: true, fullName: true, username: true, primaryTrade: true } },
+        requestedUser: { select: { id: true, fullName: true, username: true, department: true, primaryTrade: true } },
         reviewedByUser: { select: { id: true, fullName: true, username: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -67,8 +67,9 @@ export async function GET(
 /**
  * POST /api/work-orders/[id]/team-member-requests
  * Create a team member request.
- * - Technicians and team members can request
- * - The request is sent to the assigner for approval
+ * - Technicians and team members can request a TRADE (e.g. "Electrician", "Mechanical Fitter")
+ * - The request is sent to the assigner/planner for approval
+ * - On approval, the approver picks the actual technician to assign
  */
 export async function POST(
   request: NextRequest,
@@ -82,10 +83,11 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { requestedUserId, role, reason } = body;
+    const { requestedTrade, requestedUserId, role, reason } = body;
 
-    if (!requestedUserId) {
-      return NextResponse.json({ success: false, error: 'requestedUserId is required' }, { status: 400 });
+    // Accept either requestedTrade (from technician) or requestedUserId (from admin/planner direct add)
+    if (!requestedTrade && !requestedUserId) {
+      return NextResponse.json({ success: false, error: 'requestedTrade or requestedUserId is required' }, { status: 400 });
     }
 
     // Fetch WO
@@ -117,38 +119,43 @@ export async function POST(
       );
     }
 
-    // Verify the requested user exists
-    const targetUser = await db.user.findUnique({
-      where: { id: requestedUserId },
-      select: { id: true, fullName: true, status: true },
-    });
-    if (!targetUser) {
-      return NextResponse.json({ success: false, error: 'Requested user not found' }, { status: 400 });
-    }
-    if (targetUser.status !== 'active') {
-      return NextResponse.json({ success: false, error: 'Requested user is not active' }, { status: 400 });
+    // If a specific user was requested, verify they exist and are active
+    let targetUser: { id: string; fullName: string } | null = null;
+    if (requestedUserId) {
+      const user = await db.user.findUnique({
+        where: { id: requestedUserId },
+        select: { id: true, fullName: true, status: true },
+      });
+      if (!user) {
+        return NextResponse.json({ success: false, error: 'Requested user not found' }, { status: 400 });
+      }
+      if (user.status !== 'active') {
+        return NextResponse.json({ success: false, error: 'Requested user is not active' }, { status: 400 });
+      }
+      targetUser = user;
+
+      // Check not already a team member
+      const alreadyMember = wo.teamMembers?.some(tm => tm.userId === requestedUserId);
+      if (alreadyMember) {
+        return NextResponse.json(
+          { success: false, error: 'User is already a team member of this work order' },
+          { status: 409 }
+        );
+      }
     }
 
-    // Check not already a team member
-    const alreadyMember = wo.teamMembers?.some(tm => tm.userId === requestedUserId);
-    if (alreadyMember) {
-      return NextResponse.json(
-        { success: false, error: 'User is already a team member of this work order' },
-        { status: 409 }
-      );
+    // Check for duplicate pending request (same trade or same user)
+    const existingWhere: Record<string, unknown> = { workOrderId: id, status: 'pending' };
+    if (requestedUserId) {
+      (existingWhere as Record<string, unknown>).requestedUserId = requestedUserId;
+    } else if (requestedTrade) {
+      (existingWhere as Record<string, unknown>).requestedTrade = requestedTrade;
     }
 
-    // Check for duplicate pending request
-    const existingPending = await db.woTeamMemberRequest.findFirst({
-      where: {
-        workOrderId: id,
-        requestedUserId,
-        status: 'pending',
-      },
-    });
+    const existingPending = await db.woTeamMemberRequest.findFirst({ where: existingWhere });
     if (existingPending) {
       return NextResponse.json(
-        { success: false, error: 'A pending request already exists for this user on this work order' },
+        { success: false, error: 'A pending request already exists for this on this work order' },
         { status: 409 }
       );
     }
@@ -158,7 +165,8 @@ export async function POST(
       data: {
         workOrderId: id,
         requestedBy: session.userId,
-        requestedUserId,
+        requestedUserId: requestedUserId || null,
+        requestedTrade: requestedTrade || null,
         role: role || 'assistant',
         reason: reason || null,
       },
@@ -177,7 +185,8 @@ export async function POST(
         entityId: teamRequest.id,
         newValues: JSON.stringify({
           workOrderId: id,
-          requestedUser: targetUser.fullName,
+          requestedTrade: requestedTrade || null,
+          requestedUser: targetUser?.fullName || null,
           role: role || 'assistant',
           reason: reason || null,
         }),
@@ -187,11 +196,14 @@ export async function POST(
     // Notify the assigner (person who assigned the WO) about the new request
     const approverId = wo.assignedBy;
     if (approverId && approverId !== session.userId) {
+      const description = requestedTrade
+        ? `${session.fullName} requested a ${requestedTrade} for WO ${wo.woNumber || 'Work Order'}`
+        : `${session.fullName} requested ${targetUser?.fullName || 'a team member'} for WO ${wo.woNumber || 'Work Order'}`;
       await notifyUser(
         approverId,
         'wo_team_request',
         'Team Member Request',
-        `${session.fullName} requested ${targetUser.fullName} to join WO ${wo.woNumber || 'Work Order'}`,
+        description,
         'work_order',
         id,
         `/maintenance?tab=work-orders&view=${id}`,

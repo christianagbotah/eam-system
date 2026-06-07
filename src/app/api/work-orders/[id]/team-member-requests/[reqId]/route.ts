@@ -7,8 +7,8 @@ import { notifyUser } from '@/lib/notifications';
  * PUT /api/work-orders/[id]/team-member-requests/[reqId]
  * Approve or reject a team member request.
  * - Only the assigner, admin, or users with work_orders.assign permission can review
- * - On approve: automatically adds the team member to the WO
- * - On reject: notifies the requester
+ * - Trade-based requests: on approve, the planner selects which technician to assign
+ * - User-based requests: on approve, automatically adds the specified team member to the WO
  */
 export async function PUT(
   request: NextRequest,
@@ -22,7 +22,7 @@ export async function PUT(
 
     const { id, reqId } = await params;
     const body = await request.json();
-    const { action, reviewNotes } = body; // action: "approve" | "reject"
+    const { action, reviewNotes, assignUserId } = body; // action: "approve" | "reject", assignUserId: technician to assign when approving trade request
 
     if (!action || !['approve', 'reject'].includes(action)) {
       return NextResponse.json({ success: false, error: 'action must be "approve" or "reject"' }, { status: 400 });
@@ -65,7 +65,7 @@ export async function PUT(
       where: { id: reqId },
       include: {
         requestedByUser: { select: { id: true, fullName: true, username: true } },
-        requestedUser: { select: { id: true, fullName: true, username: true, department: true } },
+        requestedUser: { select: { id: true, fullName: true, username: true, department: true, primaryTrade: true } },
       },
     });
     if (!teamRequest) {
@@ -86,14 +86,48 @@ export async function PUT(
     const newStatus = action === 'approve' ? 'approved' : 'rejected';
 
     if (action === 'approve') {
+      // Determine which user to assign
+      let userIdToAssign = teamRequest.requestedUserId; // from user-based request
+
+      // Trade-based request: planner must specify which technician to assign
+      if (!userIdToAssign && teamRequest.requestedTrade) {
+        if (!assignUserId) {
+          return NextResponse.json(
+            { success: false, error: 'Please select a technician to assign for this trade request.' },
+            { status: 400 }
+          );
+        }
+        userIdToAssign = assignUserId;
+      }
+
+      if (!userIdToAssign) {
+        return NextResponse.json(
+          { success: false, error: 'No user to assign. Either the request must specify a user, or you must select one.' },
+          { status: 400 }
+        );
+      }
+
+      // Verify the assignee exists and is active
+      const assignee = await db.user.findUnique({
+        where: { id: userIdToAssign },
+        select: { id: true, fullName: true, status: true },
+      });
+      if (!assignee) {
+        return NextResponse.json({ success: false, error: 'Selected technician not found.' }, { status: 400 });
+      }
+      if (assignee.status !== 'active') {
+        return NextResponse.json({ success: false, error: 'Selected technician is not active.' }, { status: 400 });
+      }
+
       // Check not already a team member (could have been added since request was created)
-      const alreadyMember = wo.teamMembers?.some(tm => tm.userId === teamRequest.requestedUserId);
+      const alreadyMember = wo.teamMembers?.some(tm => tm.userId === userIdToAssign);
       if (alreadyMember) {
         // Still mark as approved but don't create duplicate
         await db.woTeamMemberRequest.update({
           where: { id: reqId },
           data: {
             status: 'approved',
+            requestedUserId: userIdToAssign, // record who was actually assigned
             reviewedBy: session.userId,
             reviewedAt: new Date(),
             reviewNotes: reviewNotes || 'Already a team member',
@@ -109,7 +143,7 @@ export async function PUT(
       await db.workOrderTeamMember.create({
         data: {
           workOrderId: id,
-          userId: teamRequest.requestedUserId,
+          userId: userIdToAssign,
           role: teamRequest.role,
           accessLevel: 'read_only',
           addedById: session.userId,
@@ -117,10 +151,22 @@ export async function PUT(
         },
       });
 
+      // Update the request with the assigned user
+      await db.woTeamMemberRequest.update({
+        where: { id: reqId },
+        data: {
+          status: 'approved',
+          requestedUserId: userIdToAssign, // record who was actually assigned (important for trade-based)
+          reviewedBy: session.userId,
+          reviewedAt: new Date(),
+          reviewNotes: reviewNotes || null,
+        },
+      });
+
       // Notify the new team member
-      if (teamRequest.requestedUserId !== session.userId) {
+      if (userIdToAssign !== session.userId) {
         await notifyUser(
-          teamRequest.requestedUserId,
+          userIdToAssign,
           'wo_team_approved',
           'Team Assignment Approved',
           `You have been added to WO ${wo.woNumber || 'Work Order'}: ${wo.title}`,
@@ -129,37 +175,71 @@ export async function PUT(
           `/maintenance?tab=work-orders&view=${id}`,
         );
       }
+
+      // Notify the requester
+      if (teamRequest.requestedBy !== session.userId) {
+        const assignedName = assignee?.fullName || 'a technician';
+        await notifyUser(
+          teamRequest.requestedBy,
+          'wo_team_request_approved',
+          'Team Request Approved',
+          `Your request for ${teamRequest.requestedTrade || 'a team member'} on WO ${wo.woNumber || 'Work Order'} has been approved. ${assignedName} has been assigned.`,
+          'work_order',
+          id,
+          `/maintenance?tab=work-orders&view=${id}`,
+        );
+      }
+
+      // Audit log
+      await db.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'approve',
+          entityType: 'wo_team_member_request',
+          entityId: reqId,
+          newValues: JSON.stringify({
+            workOrderId: id,
+            requestedTrade: teamRequest.requestedTrade || null,
+            assignedUser: assignee?.fullName || null,
+            assignedUserId: userIdToAssign,
+            status: 'approved',
+            reviewNotes: reviewNotes || null,
+          }),
+        },
+      });
+
+      // Fetch the updated request for response
+      const updated = await db.woTeamMemberRequest.findUnique({
+        where: { id: reqId },
+        include: {
+          requestedByUser: { select: { id: true, fullName: true, username: true } },
+          requestedUser: { select: { id: true, fullName: true, username: true, department: true, primaryTrade: true } },
+          reviewedByUser: { select: { id: true, fullName: true, username: true } },
+        },
+      });
+
+      return NextResponse.json({ success: true, data: updated });
     }
 
-    // Update the request
-    const updated = await db.woTeamMemberRequest.update({
+    // ---- REJECT ----
+    await db.woTeamMemberRequest.update({
       where: { id: reqId },
       data: {
-        status: newStatus,
+        status: 'rejected',
         reviewedBy: session.userId,
         reviewedAt: new Date(),
         reviewNotes: reviewNotes || null,
       },
-      include: {
-        requestedByUser: { select: { id: true, fullName: true, username: true } },
-        requestedUser: { select: { id: true, fullName: true, username: true, department: true } },
-        reviewedByUser: { select: { id: true, fullName: true, username: true } },
-      },
     });
 
-    // Notify the requester about the decision
+    // Notify the requester about the rejection
     if (teamRequest.requestedBy !== session.userId) {
-      const notificationType = action === 'approve' ? 'wo_team_request_approved' : 'wo_team_request_rejected';
-      const notificationTitle = action === 'approve' ? 'Team Request Approved' : 'Team Request Rejected';
-      const notificationMsg = action === 'approve'
-        ? `Your request to add ${teamRequest.requestedUser.fullName} to WO ${wo.woNumber || 'Work Order'} has been approved.`
-        : `Your request to add ${teamRequest.requestedUser.fullName} to WO ${wo.woNumber || 'Work Order'} has been rejected.${reviewNotes ? ` Reason: ${reviewNotes}` : ''}`;
-
+      const targetDesc = teamRequest.requestedTrade || teamRequest.requestedUser?.fullName || 'a team member';
       await notifyUser(
         teamRequest.requestedBy,
-        notificationType,
-        notificationTitle,
-        notificationMsg,
+        'wo_team_request_rejected',
+        'Team Request Rejected',
+        `Your request for ${targetDesc} on WO ${wo.woNumber || 'Work Order'} has been rejected.${reviewNotes ? ` Reason: ${reviewNotes}` : ''}`,
         'work_order',
         id,
         `/maintenance?tab=work-orders&view=${id}`,
@@ -170,15 +250,26 @@ export async function PUT(
     await db.auditLog.create({
       data: {
         userId: session.userId,
-        action: action === 'approve' ? 'approve' : 'reject',
+        action: 'reject',
         entityType: 'wo_team_member_request',
         entityId: reqId,
         newValues: JSON.stringify({
           workOrderId: id,
-          requestedUser: teamRequest.requestedUser.fullName,
-          status: newStatus,
+          requestedTrade: teamRequest.requestedTrade || null,
+          requestedUser: teamRequest.requestedUser?.fullName || null,
+          status: 'rejected',
           reviewNotes: reviewNotes || null,
         }),
+      },
+    });
+
+    // Fetch the updated request for response
+    const updated = await db.woTeamMemberRequest.findUnique({
+      where: { id: reqId },
+      include: {
+        requestedByUser: { select: { id: true, fullName: true, username: true } },
+        requestedUser: { select: { id: true, fullName: true, username: true, department: true, primaryTrade: true } },
+        reviewedByUser: { select: { id: true, fullName: true, username: true } },
       },
     });
 

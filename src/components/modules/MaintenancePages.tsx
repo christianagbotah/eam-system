@@ -2690,13 +2690,16 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [addMemberLoading, setAddMemberLoading] = useState(false);
   // Request team member dialog (for technicians)
   const [requestMemberOpen, setRequestMemberOpen] = useState(false);
-  const [reqMemberUserId, setReqMemberUserId] = useState('');
+  const [reqMemberTrade, setReqMemberTrade] = useState('');
   const [reqMemberRole, setReqMemberRole] = useState('assistant');
   const [reqMemberReason, setReqMemberReason] = useState('');
   const [reqMemberLoading, setReqMemberLoading] = useState(false);
   // Team member requests
   const [teamRequests, setTeamRequests] = useState<any[]>([]);
   const [reqActionLoading, setReqActionLoading] = useState<string | null>(null);
+  // Approve trade-based request: planner picks a technician
+  const [approveReqId, setApproveReqId] = useState<string | null>(null);
+  const [approveAssignUserId, setApproveAssignUserId] = useState('');
   // Enhanced complete dialog fields
   const [completeRootCause, setCompleteRootCause] = useState('');
   const [completeFindings, setCompleteFindings] = useState('');
@@ -3318,19 +3321,19 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     setAddMemberLoading(false);
   };
 
-  // Request team member handler (for technicians)
+  // Request team member handler (for technicians) — requests a TRADE, not a specific person
   const handleRequestTeamMember = async () => {
-    if (!reqMemberUserId) { toast.error('Please select a user'); return; }
+    if (!reqMemberTrade) { toast.error('Please select the trade/skill needed'); return; }
     setReqMemberLoading(true);
     const res = await api.post(`/api/work-orders/${id}/team-member-requests`, {
-      requestedUserId: reqMemberUserId,
+      requestedTrade: reqMemberTrade,
       role: reqMemberRole,
       reason: reqMemberReason || undefined,
     });
     if (res.success) {
       toast.success('Team member request submitted. Waiting for approval.');
       setRequestMemberOpen(false);
-      setReqMemberUserId('');
+      setReqMemberTrade('');
       setReqMemberRole('assistant');
       setReqMemberReason('');
       fetchTeamRequests();
@@ -3341,13 +3344,16 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   };
 
   // Review team member request (approve/reject)
-  const handleReviewTeamRequest = async (reqId: string, action: 'approve' | 'reject', reviewNotes?: string) => {
+  // For trade-based requests: assignUserId is the technician chosen by the planner
+  const handleReviewTeamRequest = async (reqId: string, action: 'approve' | 'reject', reviewNotes?: string, assignUserId?: string) => {
     setReqActionLoading(reqId);
-    const res = await api.put(`/api/work-orders/${id}/team-member-requests/${reqId}`, { action, reviewNotes });
+    const res = await api.put(`/api/work-orders/${id}/team-member-requests/${reqId}`, { action, reviewNotes, assignUserId });
     if (res.success) {
       toast.success(action === 'approve' ? 'Request approved — member added to team' : 'Request rejected');
       fetchTeamRequests();
       fetchWO(); // refresh team members
+      setApproveReqId(null);
+      setApproveAssignUserId('');
     } else {
       toast.error(res.error || `Failed to ${action} request`);
     }
@@ -5077,37 +5083,34 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </ResponsiveDialog>
 
           {/* Request Team Member Dialog (for technicians) */}
-          <ResponsiveDialog open={requestMemberOpen} onOpenChange={setRequestMemberOpen} title="Request Team Member" description="Submit a request to add a team member. The assigner will review and approve your request." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setRequestMemberOpen(false)}>Cancel</Button><Button className="bg-amber-600 hover:bg-amber-700 text-white" disabled={reqMemberLoading || !reqMemberUserId} onClick={handleRequestTeamMember}>{reqMemberLoading ? 'Submitting...' : 'Submit Request'}</Button></div>}>
+          <ResponsiveDialog open={requestMemberOpen} onOpenChange={setRequestMemberOpen} title="Request Team Member" description="Submit a request for additional support. The planner will assign the right technician." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setRequestMemberOpen(false)}>Cancel</Button><Button className="bg-amber-600 hover:bg-amber-700 text-white" disabled={reqMemberLoading || !reqMemberTrade} onClick={handleRequestTeamMember}>{reqMemberLoading ? 'Submitting...' : 'Submit Request'}</Button></div>}>
               <div className="space-y-4">
                 <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
                   <p className="text-xs text-amber-700">
-                    Your request will be sent to the person who assigned this work order for approval. They can approve or reject your request.
+                    Select the trade/skill needed for this job. The planner will review your request and assign the right technician.
                   </p>
                 </div>
-                <div className="space-y-1.5"><Label>Technician to Request *</Label>
-                  <AsyncSearchableSelect
-                    value={reqMemberUserId}
-                    onValueChange={setReqMemberUserId}
-                    fetchOptions={async () => {
-                      try {
-                        const res = await api.get('/api/users?role=maintenance_technician&includeSkills=true');
-                        if (res.success && res.data) {
-                          return (Array.isArray(res.data) ? res.data : [])
-                            .filter((u: any) => u.id !== user?.id)
-                            .map((u: any) => ({
-                              value: u.id,
-                              label: u.primaryTrade
-                                ? `${u.fullName} — ${u.primaryTrade}`
-                                : `${u.fullName} (${u.username})`,
-                            }));
-                        }
-                      } catch { /* ignore */ }
-                      return [];
-                    }}
-                    placeholder="Search technicians..."
-                    searchPlaceholder="Search by name or trade..."
-                  />
-                  <p className="text-xs text-muted-foreground">Select the technician you need on this work order</p>
+                <div className="space-y-1.5"><Label>Trade / Skill Needed *</Label>
+                  <Select value={reqMemberTrade} onValueChange={setReqMemberTrade}>
+                    <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Select the trade needed..." /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Mechanical Fitter">Mechanical Fitter</SelectItem>
+                      <SelectItem value="Electrician">Electrician</SelectItem>
+                      <SelectItem value="Electrical Technician">Electrical Technician</SelectItem>
+                      <SelectItem value="Instrumentation Technician">Instrumentation Technician</SelectItem>
+                      <SelectItem value="Instrumentation Fitter">Instrumentation Fitter</SelectItem>
+                      <SelectItem value="Welder">Welder</SelectItem>
+                      <SelectItem value="Plumber">Plumber</SelectItem>
+                      <SelectItem value="Pipe Fitter">Pipe Fitter</SelectItem>
+                      <SelectItem value="HVAC Technician">HVAC Technician</SelectItem>
+                      <SelectItem value="Machinist">Machinist</SelectItem>
+                      <SelectItem value="Rigger">Rigger</SelectItem>
+                      <SelectItem value="Painter">Painter</SelectItem>
+                      <SelectItem value="Utility Technician">Utility Technician</SelectItem>
+                      <SelectItem value="Workshop Technician">Workshop Technician</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Choose the trade/skill required to complete this task</p>
                 </div>
                 <div className="space-y-1.5"><Label>Role</Label>
                   <Select value={reqMemberRole} onValueChange={setReqMemberRole}>
@@ -5119,9 +5122,52 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   <Textarea
                     value={reqMemberReason}
                     onChange={e => setReqMemberReason(e.target.value)}
-                    placeholder="Why do you need this team member? (e.g., 'Need electrical specialist for wiring')"
+                    placeholder="Why do you need this trade? (e.g., 'Need electrician for motor rewinding')"
                     rows={3}
                   />
+                </div>
+              </div>
+          </ResponsiveDialog>
+
+          {/* Assign Technician Dialog — for planner approving trade-based requests */}
+          <ResponsiveDialog open={!!approveReqId} onOpenChange={(open) => { if (!open) { setApproveReqId(null); setApproveAssignUserId(''); } }} title="Assign Technician" description="Select the technician to assign for this trade request." footer={<div className="flex gap-2"><Button variant="outline" onClick={() => { setApproveReqId(null); setApproveAssignUserId(''); }}>Cancel</Button><Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={!approveAssignUserId || !!reqActionLoading} onClick={() => { if (approveReqId) handleReviewTeamRequest(approveReqId, 'approve', '', approveAssignUserId); }}>{reqActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Assign & Approve'}</Button></div>}>
+              <div className="space-y-4">
+                {approveReqId && (() => {
+                  const req = teamRequests.find((r: any) => r.id === approveReqId);
+                  if (!req) return null;
+                  return (
+                    <div className="p-3 rounded-lg bg-sky-50 border border-sky-200">
+                      <p className="text-xs text-sky-700">
+                        <strong>Trade needed:</strong> {req.requestedTrade}
+                        {req.reason && <> — {req.reason}</>}
+                      </p>
+                      <p className="text-xs text-sky-600 mt-1">Requested by {req.requestedByUser?.fullName} · {timeAgo(req.createdAt)}</p>
+                    </div>
+                  );
+                })()}
+                <div className="space-y-1.5">
+                  <Label>Select Technician *</Label>
+                  <AsyncSearchableSelect
+                    value={approveAssignUserId}
+                    onValueChange={setApproveAssignUserId}
+                    fetchOptions={async () => {
+                      try {
+                        const res = await api.get('/api/users?role=maintenance_technician');
+                        if (res.success && res.data) {
+                          return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                            value: u.id,
+                            label: u.primaryTrade
+                              ? `${u.fullName} — ${u.primaryTrade}${u.department ? ` (${u.department})` : ''}`
+                              : `${u.fullName}${u.department ? ` (${u.department})` : ''}`,
+                          }));
+                        }
+                      } catch { /* ignore */ }
+                      return [];
+                    }}
+                    placeholder="Search technicians..."
+                    searchPlaceholder="Search by name or trade..."
+                  />
+                  <p className="text-xs text-muted-foreground">Choose the best available technician for this trade</p>
                 </div>
               </div>
           </ResponsiveDialog>
@@ -5214,48 +5260,65 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              {/* Pending Team Requests (for reviewers) */}
+              {/* Pending Team Requests (for reviewers — planner/admin) */}
               {canReviewTeamRequests && (() => {
                 const pendingReqs = teamRequests.filter((r: any) => r.status === 'pending');
                 if (pendingReqs.length === 0) return null;
                 return (
                   <div className="space-y-2 mb-3">
                     <p className="text-xs font-medium text-amber-600 uppercase tracking-wider">Pending Requests</p>
-                    {pendingReqs.map((req: any) => (
-                      <div key={req.id} className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/50">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-sm font-medium">{req.requestedUser?.fullName || 'Unknown'}</span>
-                              <Badge variant="outline" className="text-[10px]">{req.role?.replace(/_/g, ' ')?.replace(/\b\w/g, (c: string) => c.toUpperCase())}</Badge>
+                    {pendingReqs.map((req: any) => {
+                      const isTradeBased = !!req.requestedTrade && !req.requestedUserId;
+                      const displayLabel = req.requestedTrade || req.requestedUser?.fullName || 'Unknown';
+                      return (
+                        <div key={req.id} className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/50">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-sm font-medium">{displayLabel}</span>
+                                {isTradeBased && <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-200">Trade Request</Badge>}
+                                <Badge variant="outline" className="text-[10px]">{req.role?.replace(/_/g, ' ')?.replace(/\b\w/g, (c: string) => c.toUpperCase())}</Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                Requested by {req.requestedByUser?.fullName} {req.reason && <>— {req.reason}</>}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground mt-0.5">{timeAgo(req.createdAt)}</p>
                             </div>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              Requested by {req.requestedByUser?.fullName} {req.reason && <>— {req.reason}</>}
-                            </p>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">{timeAgo(req.createdAt)}</p>
-                          </div>
-                          <div className="flex gap-1 shrink-0">
-                            <Button
-                              size="sm"
-                              className="h-7 text-[11px] px-2 bg-emerald-600 hover:bg-emerald-700 text-white"
-                              disabled={reqActionLoading === req.id}
-                              onClick={() => handleReviewTeamRequest(req.id, 'approve')}
-                            >
-                              {reqActionLoading === req.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserCheck className="h-3 w-3" />}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-[11px] px-2 text-red-600 border-red-200 hover:bg-red-50"
-                              disabled={reqActionLoading === req.id}
-                              onClick={() => handleReviewTeamRequest(req.id, 'reject', '')}
-                            >
-                              <UserX className="h-3 w-3" />
-                            </Button>
+                            <div className="flex gap-1 shrink-0">
+                              {isTradeBased ? (
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-[11px] px-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                  disabled={reqActionLoading === req.id}
+                                  onClick={() => { setApproveReqId(req.id); setApproveAssignUserId(''); }}
+                                  title="Select technician to assign"
+                                >
+                                  <UserCheck className="h-3 w-3" />
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  className="h-7 text-[11px] px-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                  disabled={reqActionLoading === req.id}
+                                  onClick={() => handleReviewTeamRequest(req.id, 'approve')}
+                                >
+                                  {reqActionLoading === req.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <UserCheck className="h-3 w-3" />}
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-[11px] px-2 text-red-600 border-red-200 hover:bg-red-50"
+                                disabled={reqActionLoading === req.id}
+                                onClick={() => handleReviewTeamRequest(req.id, 'reject', '')}
+                              >
+                                <UserX className="h-3 w-3" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })()}
@@ -5267,29 +5330,34 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 return (
                   <div className="space-y-2 mb-3">
                     <p className="text-xs font-medium text-amber-600 uppercase tracking-wider">My Pending Requests</p>
-                    {myPendingReqs.map((req: any) => (
-                      <div key={req.id} className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/50">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-sm font-medium">{req.requestedUser?.fullName || 'Unknown'}</span>
-                              <Badge variant="outline" className="text-[10px]">{req.role?.replace(/_/g, ' ')?.replace(/\b\w/g, (c: string) => c.toUpperCase())}</Badge>
+                    {myPendingReqs.map((req: any) => {
+                      const displayLabel = req.requestedTrade || req.requestedUser?.fullName || 'Unknown';
+                      const isTradeBased = !!req.requestedTrade && !req.requestedUserId;
+                      return (
+                        <div key={req.id} className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/50">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-medium">{displayLabel}</span>
+                                {isTradeBased && <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-200">Trade Request</Badge>}
+                                <Badge variant="outline" className="text-[10px]">{req.role?.replace(/_/g, ' ')?.replace(/\b\w/g, (c: string) => c.toUpperCase())}</Badge>
+                              </div>
+                              {req.reason && <p className="text-xs text-muted-foreground mt-0.5">{req.reason}</p>}
+                              <p className="text-[10px] text-muted-foreground mt-0.5">{timeAgo(req.createdAt)} · Awaiting approval</p>
                             </div>
-                            {req.reason && <p className="text-xs text-muted-foreground mt-0.5">{req.reason}</p>}
-                            <p className="text-[10px] text-muted-foreground mt-0.5">{timeAgo(req.createdAt)} · Awaiting approval</p>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-[10px] px-1.5 text-muted-foreground"
+                              disabled={reqActionLoading === req.id}
+                              onClick={() => handleCancelTeamRequest(req.id)}
+                            >
+                              Cancel
+                            </Button>
                           </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 text-[10px] px-1.5 text-muted-foreground"
-                            disabled={reqActionLoading === req.id}
-                            onClick={() => handleCancelTeamRequest(req.id)}
-                          >
-                            Cancel
-                          </Button>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })()}
@@ -5301,16 +5369,21 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 return (
                   <div className="space-y-1 mb-3">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Request History</p>
-                    {resolvedReqs.slice(0, 3).map((req: any) => (
-                      <div key={req.id} className="flex items-center justify-between text-xs py-1">
-                        <div className="flex items-center gap-1.5">
-                          {req.status === 'approved' ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <XCircle className="h-3 w-3 text-red-400" />}
-                          <span className="text-muted-foreground">{req.requestedUser?.fullName}</span>
-                          {req.reviewNotes && <span className="text-muted-foreground italic">— {req.reviewNotes}</span>}
+                    {resolvedReqs.slice(0, 3).map((req: any) => {
+                      const displayLabel = req.requestedTrade || req.requestedUser?.fullName || 'Unknown';
+                      const assignedLabel = req.requestedUser?.fullName;
+                      return (
+                        <div key={req.id} className="flex items-center justify-between text-xs py-1">
+                          <div className="flex items-center gap-1.5">
+                            {req.status === 'approved' ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <XCircle className="h-3 w-3 text-red-400" />}
+                            <span className="text-muted-foreground">{displayLabel}</span>
+                            {assignedLabel && <span className="text-muted-foreground">→ {assignedLabel}</span>}
+                            {req.reviewNotes && <span className="text-muted-foreground italic">— {req.reviewNotes}</span>}
+                          </div>
+                          <span className="text-muted-foreground">{timeAgo(req.createdAt)}</span>
                         </div>
-                        <span className="text-muted-foreground">{timeAgo(req.createdAt)}</span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })()}
