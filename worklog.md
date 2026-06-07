@@ -1321,3 +1321,22 @@ Stage Summary:
 - Request history shows full flow: Trade requested → Person assigned
 - Committed as 276b770c, pushed to GitHub
 - Deploy requires: db push on VPS for schema change + build + restart
+
+---
+Task ID: 4
+Agent: main
+Task: Fix runtime error "can't access lexical declaration 'sY' before initialization"
+
+Work Log:
+- User reported runtime error on production VPS after deploying commit 276b770c
+- Error: "can't access lexical declaration before initialization" in chunk d9f0c17d4b4e9a14
+- Root cause: `workActionDisabled` declared at line 2876 referenced `isWOFinalized` declared at line 3463
+- In JS, const/let are hoisted but NOT initialized until declaration line is reached (temporal dead zone)
+- Fix: moved `workActionDisabled` from line 2876 to line 3473 (after isWOFinalized)
+- Verified all 12 usages of workActionDisabled are in JSX (after line 3473)
+
+Stage Summary:
+- This was a critical crash caused by my earlier permission refactor (commit f8253923)
+- The original `actionDisabled` was defined right next to `isWOFinalized` (no issue)
+- When I created `workActionDisabled` I placed it with `isWorkerOnThisWO` but forgot it needed `isWOFinalized` too
+- Committed as 0688cb75, pushed to GitHub
