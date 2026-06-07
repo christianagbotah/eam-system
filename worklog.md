@@ -1276,3 +1276,23 @@ Stage Summary:
 - Admin and assigned technician/team members retain full work-performing capabilities
 - Committed as f8253923, pushed to GitHub
 - Deploy command: `cd /home/ifleetpro/git/eam-system && git pull && bunx prisma generate && bun run build && pm2 restart iassetspro`
+
+---
+Task ID: 3
+Agent: main
+Task: Fix WO Edit button visible to technician + Request Team Member dropdown empty
+
+Work Log:
+- Found `canEdit` (line 3465) uses `hasPermission('work_orders.update')` — technician role has this permission (seed.ts line 419)
+- Changed `canEdit` to require `canManageTeamDirectly || isAdmin()` — technician no longer sees Edit button
+- Technician retains `work_orders.update` for status transitions (start/complete/hold/resume) but NOT for editing WO details
+- Fixed Request Team Member modal: `/api/users` without role filter returns 403 for non-admins
+- Changed fetch URL to `/api/users?role=maintenance_technician&includeSkills=true`
+- Renamed label from "User to Add" to "Technician to Request"
+- Shows primaryTrade alongside technician name for context
+- Filters out the requesting user from the list
+
+Stage Summary:
+- Edit button: only visible to admin, planner (via work_orders.assign), and the person who assigned the WO
+- Request Team Member dropdown: now populates with technicians and shows their trade
+- Committed as ac108236, pushed to GitHub
