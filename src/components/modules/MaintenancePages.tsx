@@ -2872,9 +2872,6 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     return isAssignee || isTeamMember;
   }, [wo, user, isAdmin]);
 
-  // Disable work-performing buttons (time log, start, personal tools, materials) for non-workers
-  const workActionDisabled = isReadOnly || isWOFinalized || !isWorkerOnThisWO;
-
   // Fetch global active session and set up live timer
   const fetchActiveSession = useCallback(async () => {
     try {
@@ -3470,6 +3467,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
   // Edit: restricted to admin, planner, and managers — NOT technician (technician has work_orders.update for status transitions only)
   const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && (canManageTeamDirectly || isAdmin());
+
+  // Disable work-performing buttons (time log, start, personal tools, materials) for non-workers
+  // Must be declared AFTER isWOFinalized to avoid temporal dead zone error
+  const workActionDisabled = isReadOnly || isWOFinalized || !isWorkerOnThisWO;
 
   // Format session duration
   const formatSessionDuration = (seconds: number) => {
