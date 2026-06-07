@@ -1340,3 +1340,32 @@ Stage Summary:
 - The original `actionDisabled` was defined right next to `isWOFinalized` (no issue)
 - When I created `workActionDisabled` I placed it with `isWorkerOnThisWO` but forgot it needed `isWOFinalized` too
 - Committed as 0688cb75, pushed to GitHub
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix notification navigation + add pending team requests to dashboard
+
+Work Log:
+- Identified root cause: team request notifications used actionUrl format `/maintenance?tab=work-orders&view=${id}` with leading `/` which is NOT a valid PageName — the NotificationPopover splits on `?` and uses everything before it as the PageName
+- Fixed actionUrl in POST route (team-member-requests/route.ts): changed to `wo-detail?id=${id}` 
+- Fixed actionUrl in PUT route (team-member-requests/[reqId]/route.ts): changed all 3 occurrences (approve → new member, approve → requester, reject → requester) from `/maintenance?tab=work-orders&view=${id}` to `wo-detail?id=${id}`
+- Added `pendingTeamRequests` count query to dashboard stats API (`/api/dashboard/stats/route.ts`) — counts pending WoTeamMemberRequest where current user is the assigner (admin sees all)
+- Added `pendingTeamRequestsDetail` query to dashboard stats API — fetches up to 10 recent pending requests with WO number, title, requested trade, and requester name
+- Added both fields to API response under `plannerKPIs` and `pendingTeamRequestsDetail`
+- Added "Pending Team Requests" alert banner on DashboardPages.tsx for planners/admins with:
+  - Summary count card with pulse animation
+  - List of up to 5 recent pending requests showing WO number, trade badge, WO title, and requester name
+  - Each request is clickable and navigates to `wo-detail?id=xxx`
+  - "Team Requests" mini KPI card in planner's personal KPI row with scroll-to-section
+- Added 4 team-related notification types to NotificationPopover:
+  - `wo_team_request` → UserPlus icon, violet color
+  - `wo_team_approved` → UserCheck icon, emerald color
+  - `wo_team_request_approved` → UserCheck icon, emerald color
+  - `wo_team_request_rejected` → UserX icon, red color
+- Verified build compiles successfully with no errors
+
+Stage Summary:
+- Notifications now correctly navigate to WO detail page when clicked
+- Planners see pending team member requests prominently on dashboard with count, list, and one-click navigation
+- Team-related notifications have proper icons and color coding
+- Deploy command: `cd /home/ifleetpro/git/eam-system && git pull && bunx prisma db push && bunx prisma generate && bun run build && pm2 restart iassetspro`

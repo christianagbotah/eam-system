@@ -192,6 +192,10 @@ export async function GET(request: NextRequest) {
       teamActiveWOs,
       // Planning queue (for planners)
       planningQueueWOs,
+      // Pending team member requests (for planner/admin)
+      pendingTeamRequests,
+      // Pending team requests detail (for dashboard)
+      pendingTeamRequestsDetail,
       // Recent notifications count
       unreadNotifications,
       // WO type breakdown for donut chart
@@ -420,6 +424,30 @@ export async function GET(request: NextRequest) {
             where: { ...plantFilter, status: { in: ['draft', 'approved', 'requested'] } },
           }), 0)
         : Promise.resolve(0),
+      // Pending team member requests (for planner/admin — count WOs where current user is assigner)
+      isAdm || session.roles.includes('maintenance_planner')
+        ? safe(db.woTeamMemberRequest.count({
+            where: {
+              status: 'pending',
+              ...(isAdm ? {} : { workOrder: { assignedBy: session.userId } }),
+            },
+          }), 0)
+        : Promise.resolve(0),
+      // Pending team requests detail (WO number + trade) for dashboard cards
+      isAdm || session.roles.includes('maintenance_planner')
+        ? safe(db.woTeamMemberRequest.findMany({
+            where: {
+              status: 'pending',
+              ...(isAdm ? {} : { workOrder: { assignedBy: session.userId } }),
+            },
+            take: 10,
+            orderBy: { createdAt: 'desc' },
+            include: {
+              workOrder: { select: { id: true, woNumber: true, title: true } },
+              requestedByUser: { select: { id: true, fullName: true } },
+            },
+          }), [])
+        : Promise.resolve([]),
       // Unread notification count
       safe(db.notification.count({
         where: { userId: session.userId, isRead: false },
@@ -657,7 +685,10 @@ export async function GET(request: NextRequest) {
         plannerKPIs: {
           planningQueue: planningQueueWOs,
           pmSchedulesDue: pmSchedulesDue,
+          pendingTeamRequests,
         },
+        // Pending team requests detail
+        pendingTeamRequestsDetail,
 
         // User roles for frontend
         userRoles,

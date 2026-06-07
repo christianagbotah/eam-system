@@ -206,7 +206,7 @@ export async function POST(
         description,
         'work_order',
         id,
-        `/maintenance?tab=work-orders&view=${id}`,
+        `wo-detail?id=${id}`,
       );
     }
 

@@ -286,7 +286,8 @@ export function DashboardPage() {
   // ===== Role-Based Personal KPI Cards =====
   const myKPIs = stats?.myKPIs || { activeWorkOrders: 0, pendingTasks: 0, completedThisWeek: 0, toolsCheckedOut: 0, unreadNotifications: 0 };
   const supervisorKPIs = stats?.supervisorKPIs || { pendingApprovals: 0, teamActiveWOs: 0 };
-  const plannerKPIs = stats?.plannerKPIs || { planningQueue: 0, pmSchedulesDue: 0 };
+  const plannerKPIs = stats?.plannerKPIs || { planningQueue: 0, pmSchedulesDue: 0, pendingTeamRequests: 0 };
+  const pendingTeamRequestsDetail = stats?.pendingTeamRequestsDetail || [];
   const maintenanceKPIs = stats?.maintenanceKPIs || { mtbf: 0, mttr: 0, plannedRatio: 0, preventiveCount: 0, reactiveCount: 0 };
   const pmAlerts = stats?.pmScheduleAlerts || { dueSoon: 0, overdue: 0 };
   const costAnalysis = stats?.costAnalysis || { thisMonthTotal: 0, lastMonthTotal: 0, changePercent: 0, thisMonthLabor: 0, thisMonthParts: 0, thisMonthContractor: 0, byCategory: {} };
@@ -508,6 +509,21 @@ export function DashboardPage() {
                 <p className="text-xl font-bold text-teal-600 dark:text-teal-400">{plannerKPIs.pmSchedulesDue}</p>
               </div>
             </div>
+            {plannerKPIs.pendingTeamRequests > 0 && (
+              <button
+                onClick={() => document.getElementById('pending-team-requests-section')?.scrollIntoView({ behavior: 'smooth' })}
+                className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-violet-200 dark:border-violet-900/40 bg-violet-50 dark:bg-violet-950/30 transition-all hover:shadow-sm hover:border-violet-300 dark:hover:border-violet-800/50 cursor-pointer"
+              >
+                <div className="h-9 w-9 rounded-lg bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center shrink-0">
+                  <Users className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Team Requests</p>
+                  <p className="text-xl font-bold text-violet-600 dark:text-violet-400">{plannerKPIs.pendingTeamRequests}</p>
+                </div>
+                <span className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-pulse" />
+              </button>
+            )}
           </>
         )}
 
@@ -524,6 +540,57 @@ export function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* ===== Pending Team Member Requests Alert (Planner/Admin) ===== */}
+      {(isPlanner || isManager) && plannerKPIs.pendingTeamRequests > 0 && (
+        <div id="pending-team-requests-section" className="space-y-3">
+          <button
+            onClick={() => navigate('maintenance-work-orders', { status: 'assigned,in_progress,waiting_parts', autoOpenTeamRequests: 'true' })}
+            className="w-full flex items-center gap-4 px-5 py-4 rounded-xl border border-violet-200 dark:border-violet-900/40 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-950/20 dark:to-purple-950/20 hover:shadow-md hover:border-violet-300 dark:hover:border-violet-800/50 transition-all duration-300 cursor-pointer group"
+          >
+            <div className="h-11 w-11 rounded-xl bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+              <Users className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-bold text-violet-800 dark:text-violet-200">{plannerKPIs.pendingTeamRequests} Pending Team Request{plannerKPIs.pendingTeamRequests > 1 ? 's' : ''}</p>
+                <span className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-pulse" />
+              </div>
+              <p className="text-xs text-violet-600/70 dark:text-violet-400/70 mt-0.5">Click to review team member requests on work orders</p>
+            </div>
+            <div className="h-8 w-8 rounded-lg bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center shrink-0 group-hover:bg-violet-200 dark:group-hover:bg-violet-900/60 transition-colors">
+              <ChevronRight className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+            </div>
+          </button>
+          {/* Recent team requests list */}
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {pendingTeamRequestsDetail.slice(0, 5).map((req: { id: string; requestedTrade?: string | null; workOrder: { id: string; woNumber?: string; title?: string }; requestedByUser: { fullName: string } }) => (
+              <button
+                key={req.id}
+                onClick={() => navigate('wo-detail', { id: req.workOrder.id })}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-violet-100 dark:border-violet-900/30 bg-white dark:bg-gray-900/50 hover:border-violet-200 dark:hover:border-violet-800/50 hover:shadow-sm transition-all cursor-pointer group text-left"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-bold text-violet-600 dark:text-violet-400">WO #{req.workOrder.woNumber || '—'}</span>
+                    {req.requestedTrade && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300">
+                        {req.requestedTrade}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{req.workOrder.title || 'Untitled'}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-[10px] text-muted-foreground">Requested by</p>
+                  <p className="text-xs font-medium text-foreground">{req.requestedByUser.fullName}</p>
+                </div>
+                <ChevronRight className="h-3.5 w-3.5 text-violet-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ===== Pending Requests Alert (Supervisor/Admin) ===== */}
       {(isSupervisor || isManager) && pendingReqs > 0 && (

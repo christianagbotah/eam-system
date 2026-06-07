@@ -172,7 +172,7 @@ export async function PUT(
           `You have been added to WO ${wo.woNumber || 'Work Order'}: ${wo.title}`,
           'work_order',
           id,
-          `/maintenance?tab=work-orders&view=${id}`,
+          `wo-detail?id=${id}`,
         );
       }
 
@@ -186,7 +186,7 @@ export async function PUT(
           `Your request for ${teamRequest.requestedTrade || 'a team member'} on WO ${wo.woNumber || 'Work Order'} has been approved. ${assignedName} has been assigned.`,
           'work_order',
           id,
-          `/maintenance?tab=work-orders&view=${id}`,
+          `wo-detail?id=${id}`,
         );
       }
 
@@ -242,7 +242,7 @@ export async function PUT(
         `Your request for ${targetDesc} on WO ${wo.woNumber || 'Work Order'} has been rejected.${reviewNotes ? ` Reason: ${reviewNotes}` : ''}`,
         'work_order',
         id,
-        `/maintenance?tab=work-orders&view=${id}`,
+        `wo-detail?id=${id}`,
       );
     }
 

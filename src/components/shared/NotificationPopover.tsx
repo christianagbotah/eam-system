@@ -28,6 +28,9 @@ import {
   Check,
   ExternalLink,
   Clock,
+  UserPlus,
+  UserCheck,
+  UserX,
 } from 'lucide-react';
 
 function NotificationPopover() {
@@ -48,6 +51,10 @@ function NotificationPopover() {
     wo_completed: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
     mr_approved: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
     mr_rejected: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
+    wo_team_request: 'bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400',
+    wo_team_approved: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
+    wo_team_request_approved: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
+    wo_team_request_rejected: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400',
     system: 'bg-slate-100 text-slate-600 dark:bg-slate-800/50 dark:text-slate-400',
     info: 'bg-slate-50 text-slate-500 dark:bg-slate-800/30 dark:text-slate-400',
   };
@@ -58,6 +65,10 @@ function NotificationPopover() {
     wo_completed: CheckCircle2,
     mr_approved: CheckCircle2,
     mr_rejected: XCircle,
+    wo_team_request: UserPlus,
+    wo_team_approved: UserCheck,
+    wo_team_request_approved: UserCheck,
+    wo_team_request_rejected: UserX,
     system: Settings,
     info: MessageSquare,
   };
