@@ -5319,18 +5319,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </CardHeader>
             <CardContent>
               <div className="space-y-2 max-h-64 overflow-y-auto">
-                {wo.repairToolRequests.slice(0, 10).map((tr: any) => (
-                  <div key={tr.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/30">
-                    <div className="h-8 w-8 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center shrink-0"><Wrench className="h-3.5 w-3.5" /></div>
+                {wo.repairToolRequests.slice(0, 10).map((tr: any) => {
+                  const toolItems = (tr.items && tr.items.length > 0) ? tr.items : (tr.toolName ? [{ toolName: tr.toolName, toolCode: tr.tool?.toolCode, quantityRequested: 1 }] : []);
+                  const toolSummary = toolItems.map((i: any) => i.toolName || i.name || 'Tool').filter(Boolean);
+                  const totalRequested = toolItems.reduce((s: number, i: any) => s + (i.quantityRequested || 1), 0);
+                  return (
+                  <div key={tr.id} className="flex items-start gap-3 p-2.5 rounded-lg border bg-muted/30">
+                    <div className="h-8 w-8 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center shrink-0 mt-0.5"><Wrench className="h-3.5 w-3.5" /></div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium truncate">{tr.toolName || tr.tool?.name || 'Tool'}</p>
-                        {tr.tool?.toolCode && <span className="text-[10px] font-mono text-muted-foreground">{tr.tool.toolCode}</span>}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {tr.requestNumber && <Badge variant="outline" className="font-mono text-[10px] bg-sky-50 text-sky-700 border-sky-200">{tr.requestNumber}</Badge>}
+                        <p className="text-sm font-medium truncate">{toolSummary.length <= 2 ? toolSummary.join(', ') : `${toolSummary.length} tools: ${toolSummary.slice(0, 2).join(', ')}, +${toolSummary.length - 2}`}</p>
+                        {totalRequested > 1 && <span className="text-[10px] text-muted-foreground">({totalRequested} qty)</span>}
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {tr.reason && <p className="text-xs text-muted-foreground truncate mt-0.5">{tr.reason}</p>}
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                         <span>{tr.requestedBy?.fullName || 'Unknown'}</span>
+                        <span>·</span>
+                        <span>{timeAgo(tr.createdAt)}</span>
                         {tr.urgency && tr.urgency !== 'normal' && (
-                          <Badge variant="outline" className={`text-[10px] ${tr.urgency === 'high' ? 'bg-amber-50 text-amber-700 border-amber-200' : tr.urgency === 'critical' ? 'bg-red-50 text-red-700 border-red-200' : ''}`}>{tr.urgency}</Badge>
+                          <UrgencyBadge urgency={tr.urgency} />
                         )}
                       </div>
                     </div>
@@ -5342,7 +5350,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : ''
                     }`}>{tr.status?.replace(/_/g, ' ') || 'pending'}</Badge>
                   </div>
-                ))}
+                  );
+                })}
                 {wo.repairToolRequests.length > 10 && (
                   <p className="text-xs text-muted-foreground text-center">+{wo.repairToolRequests.length - 10} more tool requests</p>
                 )}

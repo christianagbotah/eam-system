@@ -67,6 +67,9 @@ export async function GET(
           supervisorApprovedBy: { select: { id: true, fullName: true } },
           storekeeperApprovedBy: { select: { id: true, fullName: true } },
           issuedByUser: { select: { id: true, fullName: true } },
+          items: {
+            include: { tool: { select: { id: true, name: true, toolCode: true, category: true } } },
+          },
         },
         orderBy: { createdAt: 'desc' as const },
       },
