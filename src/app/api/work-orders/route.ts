@@ -300,45 +300,155 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create required parts as material requests if provided
+    // ── Store planner-suggested parts & tools ──
+    // Support both legacy format (array of IDs) and new format (array of objects with qty)
+    const suggestedPartsArr: Array<{ id: string; itemId: string; itemName: string; itemCode: string; quantity: number; unit: string; notes?: string }> = [];
+    const suggestedToolsArr: Array<{ id: string; toolId: string; toolName: string; toolCode: string; quantity: number; notes?: string }> = [];
+
     if (requiredParts && Array.isArray(requiredParts) && requiredParts.length > 0) {
-      for (const partId of requiredParts) {
-        const part = await db.inventoryItem.findUnique({ where: { id: partId } });
-        if (part) {
-          await db.workOrderMaterial.create({
+      for (const part of requiredParts) {
+        // New format: { itemId, quantity, unit, notes } or { itemId, quantity, ... }
+        if (typeof part === 'object' && part.itemId) {
+          const invItem = await db.inventoryItem.findUnique({ where: { id: part.itemId } });
+          const entry = {
+            id: crypto.randomUUID(),
+            itemId: part.itemId,
+            itemName: invItem?.name || part.itemName || 'Unknown Part',
+            itemCode: invItem?.itemCode || part.itemCode || '',
+            quantity: part.quantity || 1,
+            unit: part.unit || invItem?.unit || 'each',
+            notes: part.notes || '',
+          };
+          suggestedPartsArr.push(entry);
+
+          // Also create a RepairMaterialRequest so store keeper can see it in the pipeline
+          await db.repairMaterialRequest.create({
             data: {
               workOrderId: wo.id,
-              itemId: part.id,
-              itemName: part.name,
-              quantity: 0,
-              unitCost: part.unitCost || 0,
-              totalCost: 0,
-              status: 'requested',
-              requestedBy: session.userId,
+              itemId: part.itemId,
+              itemName: entry.itemName,
+              quantityRequested: entry.quantity,
+              quantityApproved: 0,
+              unit: entry.unit,
+              unitCost: invItem?.unitCost || 0,
+              estimatedCost: (invItem?.unitCost || 0) * entry.quantity,
+              urgency: (part as Record<string, unknown>).urgency as string || 'normal',
+              reason: 'Planner suggested material for work order',
+              notes: part.notes || `Suggested by planner during WO creation`,
+              plantId: resolvedPlantId,
+              source: 'planner_suggested',
+              status: 'pending',
+              requestedById: session.userId,
             },
           });
+        }
+        // Legacy format: just an ID string
+        else if (typeof part === 'string') {
+          const invItem = await db.inventoryItem.findUnique({ where: { id: part } });
+          if (invItem) {
+            const entry = {
+              id: crypto.randomUUID(),
+              itemId: invItem.id,
+              itemName: invItem.name,
+              itemCode: invItem.itemCode || '',
+              quantity: 1,
+              unit: invItem.unit || 'each',
+              notes: '',
+            };
+            suggestedPartsArr.push(entry);
+
+            await db.repairMaterialRequest.create({
+              data: {
+                workOrderId: wo.id,
+                itemId: invItem.id,
+                itemName: invItem.name,
+                quantityRequested: 1,
+                unit: invItem.unit || 'each',
+                unitCost: invItem.unitCost || 0,
+                estimatedCost: invItem.unitCost || 0,
+                reason: 'Planner suggested material for work order',
+                plantId: resolvedPlantId,
+                source: 'planner_suggested',
+                status: 'pending',
+                requestedById: session.userId,
+              },
+            });
+          }
         }
       }
     }
 
-    // Create required tools as material references if provided
     if (requiredTools && Array.isArray(requiredTools) && requiredTools.length > 0) {
-      for (const toolId of requiredTools) {
-        const tool = await db.tool.findUnique({ where: { id: toolId } });
-        if (tool) {
-          await db.workOrderMaterial.create({
+      for (const tool of requiredTools) {
+        // New format: { toolId, quantity, notes }
+        if (typeof tool === 'object' && tool.toolId) {
+          const toolRec = await db.tool.findUnique({ where: { id: tool.toolId } });
+          const entry = {
+            id: crypto.randomUUID(),
+            toolId: tool.toolId,
+            toolName: toolRec?.name || tool.toolName || 'Unknown Tool',
+            toolCode: toolRec?.toolCode || tool.toolCode || '',
+            quantity: tool.quantity || 1,
+            notes: tool.notes || '',
+          };
+          suggestedToolsArr.push(entry);
+
+          await db.repairToolRequest.create({
             data: {
               workOrderId: wo.id,
-              itemName: tool.name,
-              quantity: 1,
-              unitCost: 0,
-              totalCost: 0,
-              status: 'requested',
-              requestedBy: session.userId,
+              toolId: tool.toolId,
+              toolName: entry.toolName,
+              reason: 'Planner suggested tool for work order',
+              notes: tool.notes || `Suggested by planner during WO creation`,
+              plantId: resolvedPlantId,
+              source: 'planner_suggested',
+              status: 'pending',
+              urgency: 'normal',
+              requestedById: session.userId,
             },
           });
         }
+        // Legacy format: just an ID string
+        else if (typeof tool === 'string') {
+          const toolRec = await db.tool.findUnique({ where: { id: tool } });
+          if (toolRec) {
+            const entry = {
+              id: crypto.randomUUID(),
+              toolId: toolRec.id,
+              toolName: toolRec.name,
+              toolCode: toolRec.toolCode || '',
+              quantity: 1,
+              notes: '',
+            };
+            suggestedToolsArr.push(entry);
+
+            await db.repairToolRequest.create({
+              data: {
+                workOrderId: wo.id,
+                toolId: toolRec.id,
+                toolName: toolRec.name,
+                reason: 'Planner suggested tool for work order',
+                plantId: resolvedPlantId,
+                source: 'planner_suggested',
+                status: 'pending',
+                urgency: 'normal',
+                requestedById: session.userId,
+              },
+            });
+          }
+        }
       }
+    }
+
+    // Store suggested parts/tools on the WO record
+    if (suggestedPartsArr.length > 0 || suggestedToolsArr.length > 0) {
+      await db.workOrder.update({
+        where: { id: wo.id },
+        data: {
+          suggestedParts: JSON.stringify(suggestedPartsArr),
+          suggestedTools: JSON.stringify(suggestedToolsArr),
+        },
+      });
     }
 
     // If created from a maintenance request, update the MR status

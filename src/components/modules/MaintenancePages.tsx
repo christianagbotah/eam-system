@@ -43,7 +43,7 @@ import {
   PieChart as PieChartIcon, Gauge, ListChecks, Shield, ShieldCheck, HardHat, MapPin,
   Crown, Timer, Hourglass, UserPlus, Workflow, ChevronRight, ExternalLink, Hammer,
   Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
-  FlaskConical, Warehouse, PackageOpen, PackageCheck,
+  FlaskConical, Warehouse, PackageOpen, PackageCheck, Lightbulb,
   ArrowUpRight, ArrowDownRight, CalendarClock, LayoutDashboard, Bell, DollarSign,
   UserMinus, UserCheck, UserX,
 } from 'lucide-react';
@@ -755,8 +755,8 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
     assignType: 'technician' as 'technician' | 'supervisor',
     selectedWorkerIds: [] as string[],
     teamLeaderId: '',
-    requiredParts: [] as string[],
-    requiredTools: [] as string[],
+    requiredParts: [] as Array<{ itemId: string; quantity: number }>,
+    requiredTools: [] as Array<{ toolId: string; quantity: number }>,
     // Section 4: Safety
     safetyNotes: '',
     ppeRequired: '',
@@ -938,18 +938,58 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
 
   // Helper: add/remove items from multi-select arrays
   const addToArray = (field: 'departmentIds' | 'requiredParts' | 'requiredTools', id: string) => {
-    setConvertForm(f => {
-      const arr = [...f[field]] as string[];
-      if (!arr.includes(id)) arr.push(id);
-      return { ...f, [field]: arr };
-    });
+    if (field === 'departmentIds') {
+      setConvertForm(f => {
+        const arr = [...f[field]] as string[];
+        if (!arr.includes(id)) arr.push(id);
+        return { ...f, [field]: arr };
+      });
+    } else if (field === 'requiredParts') {
+      setConvertForm(f => {
+        const arr = [...f[field]] as Array<{ itemId: string; quantity: number }>;
+        if (!arr.some(p => p.itemId === id)) arr.push({ itemId: id, quantity: 1 });
+        return { ...f, [field]: arr };
+      });
+    } else {
+      setConvertForm(f => {
+        const arr = [...f[field]] as Array<{ toolId: string; quantity: number }>;
+        if (!arr.some(t => t.toolId === id)) arr.push({ toolId: id, quantity: 1 });
+        return { ...f, [field]: arr };
+      });
+    }
   };
 
   const removeFromArray = (field: 'departmentIds' | 'requiredParts' | 'requiredTools', id: string) => {
-    setConvertForm(f => ({
-      ...f,
-      [field]: (f[field] as string[]).filter(x => x !== id),
-    }));
+    if (field === 'departmentIds') {
+      setConvertForm(f => ({
+        ...f,
+        [field]: (f[field] as string[]).filter(x => x !== id),
+      }));
+    } else if (field === 'requiredParts') {
+      setConvertForm(f => ({
+        ...f,
+        [field]: (f[field] as Array<{ itemId: string; quantity: number }>).filter(x => x.itemId !== id),
+      }));
+    } else {
+      setConvertForm(f => ({
+        ...f,
+        [field]: (f[field] as Array<{ toolId: string; quantity: number }>).filter(x => x.toolId !== id),
+      }));
+    }
+  };
+
+  const updateConvertItemQuantity = (field: 'requiredParts' | 'requiredTools', id: string, qty: number) => {
+    if (field === 'requiredParts') {
+      setConvertForm(f => ({
+        ...f,
+        [field]: (f[field] as Array<{ itemId: string; quantity: number }>).map(p => p.itemId === id ? { ...p, quantity: qty } : p),
+      }));
+    } else {
+      setConvertForm(f => ({
+        ...f,
+        [field]: (f[field] as Array<{ toolId: string; quantity: number }>).map(t => t.toolId === id ? { ...t, quantity: qty } : t),
+      }));
+    }
   };
 
   const handleComment = async () => {
@@ -1398,22 +1438,26 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                 {/* Required Spare Parts */}
                 <div className="space-y-2">
                   <Label className="text-xs flex items-center gap-1"><PackageSearch className="h-3.5 w-3.5" />Required Spare Parts</Label>
-                  <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+                  <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
                     {convertForm.requiredParts.length === 0 && <span className="text-sm text-muted-foreground">Select spare parts from inventory...</span>}
-                    {convertForm.requiredParts.map(partId => {
-                      const item = inventoryItems.find(i => i.id === partId);
+                    {convertForm.requiredParts.map(part => {
+                      const item = inventoryItems.find(i => i.id === part.itemId);
                       return item ? (
-                        <Badge key={partId} variant="secondary" className="gap-1">
-                          {item.itemName || item.name}
-                          <button onClick={() => removeFromArray('requiredParts', partId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
-                        </Badge>
+                        <div key={part.itemId} className="flex items-center gap-1">
+                          <Badge variant="secondary" className="gap-1">
+                            {item.itemName || item.name} <span className="font-semibold">x{part.quantity}</span>
+                            <button onClick={() => removeFromArray('requiredParts', part.itemId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+                          </Badge>
+                          <Input type="number" min={1} value={part.quantity} onChange={e => updateConvertItemQuantity('requiredParts', part.itemId, Math.max(1, parseInt(e.target.value) || 1))}
+                            className="h-7 w-14 text-center text-xs px-1" />
+                        </div>
                       ) : null;
                     })}
                   </div>
                   <Select onValueChange={v => addToArray('requiredParts', v)}>
                     <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add spare part..." /></SelectTrigger>
                     <SelectContent>
-                      {inventoryItems.filter(i => !convertForm.requiredParts.includes(i.id)).slice(0, 50).map(i => (
+                      {inventoryItems.filter(i => !convertForm.requiredParts.some(p => p.itemId === i.id)).slice(0, 50).map(i => (
                         <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
                       ))}
                     </SelectContent>
@@ -1423,22 +1467,26 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                 {/* Required Tools */}
                 <div className="space-y-2">
                   <Label className="text-xs flex items-center gap-1"><Hammer className="h-3.5 w-3.5" />Required Tools</Label>
-                  <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+                  <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
                     {convertForm.requiredTools.length === 0 && <span className="text-sm text-muted-foreground">Select tools...</span>}
-                    {convertForm.requiredTools.map(toolId => {
-                      const tool = toolsData.find(t => t.id === toolId);
-                      return tool ? (
-                        <Badge key={toolId} variant="secondary" className="gap-1">
-                          {tool.toolName || tool.name}
-                          <button onClick={() => removeFromArray('requiredTools', toolId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
-                        </Badge>
+                    {convertForm.requiredTools.map(tool => {
+                      const toolItem = toolsData.find(t => t.id === tool.toolId);
+                      return toolItem ? (
+                        <div key={tool.toolId} className="flex items-center gap-1">
+                          <Badge variant="secondary" className="gap-1">
+                            {toolItem.toolName || toolItem.name} <span className="font-semibold">x{tool.quantity}</span>
+                            <button onClick={() => removeFromArray('requiredTools', tool.toolId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+                          </Badge>
+                          <Input type="number" min={1} value={tool.quantity} onChange={e => updateConvertItemQuantity('requiredTools', tool.toolId, Math.max(1, parseInt(e.target.value) || 1))}
+                            className="h-7 w-14 text-center text-xs px-1" />
+                        </div>
                       ) : null;
                     })}
                   </div>
                   <Select onValueChange={v => addToArray('requiredTools', v)}>
                     <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add tool..." /></SelectTrigger>
                     <SelectContent>
-                      {toolsData.filter(t => !convertForm.requiredTools.includes(t.id)).slice(0, 50).map(t => (
+                      {toolsData.filter(t => !convertForm.requiredTools.some(to => to.toolId === t.id)).slice(0, 50).map(t => (
                         <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
                       ))}
                     </SelectContent>
@@ -1641,14 +1689,18 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                 </AccordionTrigger>
                 <AccordionContent className="px-2 pb-3 space-y-2">
                   {convertForm.requiredParts.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {convertForm.requiredParts.map(partId => {
-                        const item = inventoryItems.find(i => i.id === partId);
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {convertForm.requiredParts.map(part => {
+                        const item = inventoryItems.find(i => i.id === part.itemId);
                         return item ? (
-                          <Badge key={partId} variant="secondary" className="gap-1">
-                            {item.itemName || item.name}
-                            <button onClick={() => removeFromArray('requiredParts', partId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
-                          </Badge>
+                          <div key={part.itemId} className="flex items-center gap-1">
+                            <Badge variant="secondary" className="gap-1">
+                              {item.itemName || item.name} <span className="font-semibold">x{part.quantity}</span>
+                              <button onClick={() => removeFromArray('requiredParts', part.itemId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
+                            </Badge>
+                            <Input type="number" min={1} value={part.quantity} onChange={e => updateConvertItemQuantity('requiredParts', part.itemId, Math.max(1, parseInt(e.target.value) || 1))}
+                              className="h-7 w-14 text-center text-xs px-1" />
+                          </div>
                         ) : null;
                       })}
                     </div>
@@ -1656,7 +1708,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   <Select onValueChange={v => addToArray('requiredParts', v)}>
                     <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="+ Add spare part..." /></SelectTrigger>
                     <SelectContent>
-                      {inventoryItems.filter(i => !convertForm.requiredParts.includes(i.id)).slice(0, 50).map(i => (
+                      {inventoryItems.filter(i => !convertForm.requiredParts.some(p => p.itemId === i.id)).slice(0, 50).map(i => (
                         <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
                       ))}
                     </SelectContent>
@@ -1669,14 +1721,18 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                 </AccordionTrigger>
                 <AccordionContent className="px-2 pb-3 space-y-2">
                   {convertForm.requiredTools.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {convertForm.requiredTools.map(toolId => {
-                        const tool = toolsData.find(t => t.id === toolId);
-                        return tool ? (
-                          <Badge key={toolId} variant="secondary" className="gap-1">
-                            {tool.toolName || tool.name}
-                            <button onClick={() => removeFromArray('requiredTools', toolId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
-                          </Badge>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {convertForm.requiredTools.map(tool => {
+                        const toolItem = toolsData.find(t => t.id === tool.toolId);
+                        return toolItem ? (
+                          <div key={tool.toolId} className="flex items-center gap-1">
+                            <Badge variant="secondary" className="gap-1">
+                              {toolItem.toolName || toolItem.name} <span className="font-semibold">x{tool.quantity}</span>
+                              <button onClick={() => removeFromArray('requiredTools', tool.toolId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
+                            </Badge>
+                            <Input type="number" min={1} value={tool.quantity} onChange={e => updateConvertItemQuantity('requiredTools', tool.toolId, Math.max(1, parseInt(e.target.value) || 1))}
+                              className="h-7 w-14 text-center text-xs px-1" />
+                          </div>
                         ) : null;
                       })}
                     </div>
@@ -1684,7 +1740,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   <Select onValueChange={v => addToArray('requiredTools', v)}>
                     <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="+ Add tool..." /></SelectTrigger>
                     <SelectContent>
-                      {toolsData.filter(t => !convertForm.requiredTools.includes(t.id)).slice(0, 50).map(t => (
+                      {toolsData.filter(t => !convertForm.requiredTools.some(to => to.toolId === t.id)).slice(0, 50).map(t => (
                         <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
                       ))}
                     </SelectContent>
@@ -2160,8 +2216,8 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     assignType: 'technician' as 'technician' | 'supervisor',
     selectedWorkerIds: [] as string[],
     teamLeaderId: '',
-    requiredParts: [] as string[],
-    requiredTools: [] as string[],
+    requiredParts: [] as Array<{ itemId: string; quantity: number }>,
+    requiredTools: [] as Array<{ toolId: string; quantity: number }>,
     // Section: Safety
     safetyNotes: '',
     ppeRequired: '',
@@ -2226,14 +2282,36 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
 
   const addToArray = (field: 'requiredParts' | 'requiredTools', id: string) => {
     setForm(f => {
-      const arr = [...f[field]] as string[];
-      if (!arr.includes(id)) arr.push(id);
+      const arr = [...f[field]];
+      if (field === 'requiredParts') {
+        if (!(arr as Array<{ itemId: string; quantity: number }>).some(p => p.itemId === id)) {
+          (arr as Array<{ itemId: string; quantity: number }>).push({ itemId: id, quantity: 1 });
+        }
+      } else {
+        if (!(arr as Array<{ toolId: string; quantity: number }>).some(t => t.toolId === id)) {
+          (arr as Array<{ toolId: string; quantity: number }>).push({ toolId: id, quantity: 1 });
+        }
+      }
       return { ...f, [field]: arr };
     });
   };
 
   const removeFromArray = (field: 'requiredParts' | 'requiredTools', id: string) => {
-    setForm(f => ({ ...f, [field]: f[field].filter((x: string) => x !== id) }));
+    setForm(f => ({
+      ...f,
+      [field]: field === 'requiredParts'
+        ? (f[field] as Array<{ itemId: string; quantity: number }>).filter(x => x.itemId !== id)
+        : (f[field] as Array<{ toolId: string; quantity: number }>).filter(x => x.toolId !== id),
+    }));
+  };
+
+  const updateItemQuantity = (field: 'requiredParts' | 'requiredTools', id: string, qty: number) => {
+    setForm(f => ({
+      ...f,
+      [field]: field === 'requiredParts'
+        ? (f[field] as Array<{ itemId: string; quantity: number }>).map(p => p.itemId === id ? { ...p, quantity: qty } : p)
+        : (f[field] as Array<{ toolId: string; quantity: number }>).map(t => t.toolId === id ? { ...t, quantity: qty } : t),
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -2537,22 +2615,26 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
           {/* Required Spare Parts */}
           <div className="space-y-2">
             <Label className="text-xs flex items-center gap-1"><PackageSearch className="h-3.5 w-3.5" />Required Spare Parts</Label>
-            <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+            <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
               {form.requiredParts.length === 0 && <span className="text-sm text-muted-foreground">Select spare parts from inventory...</span>}
-              {form.requiredParts.map(partId => {
-                const item = inventoryItems.find(i => i.id === partId);
+              {form.requiredParts.map(part => {
+                const item = inventoryItems.find(i => i.id === part.itemId);
                 return item ? (
-                  <Badge key={partId} variant="secondary" className="gap-1">
-                    {item.itemName || item.name}
-                    <button onClick={() => removeFromArray('requiredParts', partId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
-                  </Badge>
+                  <div key={part.itemId} className="flex items-center gap-1">
+                    <Badge variant="secondary" className="gap-1">
+                      {item.itemName || item.name} <span className="font-semibold">x{part.quantity}</span>
+                      <button onClick={() => removeFromArray('requiredParts', part.itemId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+                    </Badge>
+                    <Input type="number" min={1} value={part.quantity} onChange={e => updateItemQuantity('requiredParts', part.itemId, Math.max(1, parseInt(e.target.value) || 1))}
+                      className="h-7 w-14 text-center text-xs px-1" />
+                  </div>
                 ) : null;
               })}
             </div>
             <Select onValueChange={v => addToArray('requiredParts', v)}>
               <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add spare part..." /></SelectTrigger>
               <SelectContent>
-                {inventoryItems.filter(i => !form.requiredParts.includes(i.id)).slice(0, 50).map(i => (
+                {inventoryItems.filter(i => !form.requiredParts.some(p => p.itemId === i.id)).slice(0, 50).map(i => (
                   <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
                 ))}
               </SelectContent>
@@ -2562,22 +2644,26 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
           {/* Required Tools */}
           <div className="space-y-2">
             <Label className="text-xs flex items-center gap-1"><Hammer className="h-3.5 w-3.5" />Required Tools</Label>
-            <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+            <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
               {form.requiredTools.length === 0 && <span className="text-sm text-muted-foreground">Select tools...</span>}
-              {form.requiredTools.map(toolId => {
-                const tool = toolsData.find(t => t.id === toolId);
-                return tool ? (
-                  <Badge key={toolId} variant="secondary" className="gap-1">
-                    {tool.toolName || tool.name}
-                    <button onClick={() => removeFromArray('requiredTools', toolId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
-                  </Badge>
+              {form.requiredTools.map(tool => {
+                const toolItem = toolsData.find(t => t.id === tool.toolId);
+                return toolItem ? (
+                  <div key={tool.toolId} className="flex items-center gap-1">
+                    <Badge variant="secondary" className="gap-1">
+                      {toolItem.toolName || toolItem.name} <span className="font-semibold">x{tool.quantity}</span>
+                      <button onClick={() => removeFromArray('requiredTools', tool.toolId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+                    </Badge>
+                    <Input type="number" min={1} value={tool.quantity} onChange={e => updateItemQuantity('requiredTools', tool.toolId, Math.max(1, parseInt(e.target.value) || 1))}
+                      className="h-7 w-14 text-center text-xs px-1" />
+                  </div>
                 ) : null;
               })}
             </div>
             <Select onValueChange={v => addToArray('requiredTools', v)}>
               <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add tool..." /></SelectTrigger>
               <SelectContent>
-                {toolsData.filter(t => !form.requiredTools.includes(t.id)).slice(0, 50).map(t => (
+                {toolsData.filter(t => !form.requiredTools.some(to => to.toolId === t.id)).slice(0, 50).map(t => (
                   <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
                 ))}
               </SelectContent>
@@ -2761,6 +2847,11 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [taskNotes, setTaskNotes] = useState('');
   const [taskFindings, setTaskFindings] = useState('');
   const [skipReason, setSkipReason] = useState('');
+  // Suggested Materials & Tools
+  const [suggestedParts, setSuggestedParts] = useState<any[]>([]);
+  const [suggestedTools, setSuggestedTools] = useState<any[]>([]);
+  const [suggestedPartDialogOpen, setSuggestedPartDialogOpen] = useState(false);
+  const [suggestedToolDialogOpen, setSuggestedToolDialogOpen] = useState(false);
 
   const fetchWO = useCallback(async () => {
     const res = await api.get<WorkOrder>(`/api/work-orders/${id}`);
@@ -2784,6 +2875,51 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     const res = await api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`);
     if (res.success && res.data) setPersonalTools(res.data);
   }, [id]);
+
+  // Fetch suggested materials & tools
+  const fetchSuggestedItems = useCallback(async () => {
+    try {
+      const res = await api.get(`/api/work-orders/${id}/suggested-items`);
+      if (res.success && res.data) {
+        setSuggestedParts(res.data.suggestedParts || []);
+        setSuggestedTools(res.data.suggestedTools || []);
+      }
+    } catch (err) {
+      // Suggested items are optional; don't block the UI
+      console.error('Failed to fetch suggested items:', err);
+    }
+  }, [id]);
+
+  const handleRejectSuggestedItem = async (itemType: 'part' | 'tool', itemId: string) => {
+    if (!confirm(`Remove this suggested ${itemType}?`)) return;
+    try {
+      const res = await fetch(`/api/work-orders/${id}/suggested-items?XTransformPort=3000`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject_item', itemType, itemId }),
+      });
+      if (res.ok) {
+        fetchSuggestedItems();
+        fetchWO();
+      }
+    } catch (err) { console.error(err); }
+  };
+
+  const handleSendToStore = async () => {
+    try {
+      const res = await fetch(`/api/work-orders/${id}/suggested-items?XTransformPort=3000`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'send_to_store' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.message || 'Items sent to store');
+        fetchSuggestedItems();
+        fetchWO();
+      }
+    } catch (err) { console.error(err); }
+  };
 
   useEffect(() => {
     let active = true;
@@ -2827,8 +2963,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     api.get(`/api/work-orders/${id}/team-member-requests`).then(res => {
       if (active && res.success && res.data) setTeamRequests(res.data);
     });
+    // Fetch suggested items
+    fetchSuggestedItems();
     return () => { active = false; };
-  }, [id]);
+  }, [id, fetchSuggestedItems]);
 
   // Role-based access check
   const fullAccess = useMemo(() => {
@@ -4647,6 +4785,130 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               )}
             </CardContent>
           </Card>
+
+          {/* Suggested Materials & Tools — Planner's suggestions */}
+          {(() => {
+            const hasSuggestedItems = suggestedParts.length > 0 || suggestedTools.length > 0;
+            const pendingSuggestedCount = [...suggestedParts, ...suggestedTools].filter((item: any) => item.pipelineStatus === 'suggested').length;
+            return hasSuggestedItems ? (
+          <Card className="border-0 shadow-sm border-l-4 border-l-violet-400">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4 text-violet-600" />
+                  Suggested Materials & Tools
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Planner-suggested items for this work order
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                {pendingSuggestedCount > 0 && (
+                  <Button size="sm" variant="outline" className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50"
+                    onClick={handleSendToStore}
+                  >
+                    <Warehouse className="h-3.5 w-3.5" />
+                    Send to Store ({pendingSuggestedCount})
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* Suggested Parts */}
+              {suggestedParts.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                    <PackageSearch className="h-3 w-3" /> Spare Parts ({suggestedParts.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {suggestedParts.map((part: any) => (
+                      <div key={part.id || part.itemId} className="flex items-center gap-3 p-2.5 rounded-lg border bg-violet-50/30">
+                        <div className="h-7 w-7 rounded-md bg-violet-100 text-violet-700 flex items-center justify-center shrink-0">
+                          <Package className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{part.itemName}</p>
+                          {part.itemCode && <p className="text-[10px] font-mono text-muted-foreground">{part.itemCode}</p>}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs text-muted-foreground">Qty:</span>
+                          <span className="text-sm font-semibold">{part.quantity} {part.unit || ''}</span>
+                          {part.pipelineStatus && part.pipelineStatus !== 'suggested' && (
+                            <Badge variant="outline" className={`text-[10px] ${
+                              part.pipelineStatus === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              part.pipelineStatus === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              part.pipelineStatus === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
+                              'bg-gray-50 border-gray-200'
+                            }`}>{part.pipelineStatus.replace(/_/g, ' ')}</Badge>
+                          )}
+                          {!workActionDisabled && part.pipelineStatus === 'pending' && (
+                            <button onClick={() => handleRejectSuggestedItem('part', part.itemId)}
+                              className="min-h-[32px] min-w-[32px] flex items-center justify-center text-muted-foreground hover:text-red-600 rounded hover:bg-red-50">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Suggested Tools */}
+              {suggestedTools.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                    <Hammer className="h-3 w-3" /> Tools ({suggestedTools.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {suggestedTools.map((tool: any) => (
+                      <div key={tool.id || tool.toolId} className="flex items-center gap-3 p-2.5 rounded-lg border bg-violet-50/30">
+                        <div className="h-7 w-7 rounded-md bg-orange-100 text-orange-700 flex items-center justify-center shrink-0">
+                          <Wrench className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{tool.toolName}</p>
+                          {tool.toolCode && <p className="text-[10px] font-mono text-muted-foreground">{tool.toolCode}</p>}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs text-muted-foreground">Qty:</span>
+                          <span className="text-sm font-semibold">{tool.quantity}</span>
+                          {tool.pipelineStatus && tool.pipelineStatus !== 'suggested' && (
+                            <Badge variant="outline" className={`text-[10px] ${
+                              tool.pipelineStatus === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              tool.pipelineStatus === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              tool.pipelineStatus === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
+                              'bg-gray-50 border-gray-200'
+                            }`}>{tool.pipelineStatus.replace(/_/g, ' ')}</Badge>
+                          )}
+                          {!workActionDisabled && tool.pipelineStatus === 'pending' && (
+                            <button onClick={() => handleRejectSuggestedItem('tool', tool.toolId)}
+                              className="min-h-[32px] min-w-[32px] flex items-center justify-center text-muted-foreground hover:text-red-600 rounded hover:bg-red-50">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Technician: Add new item button */}
+              {!workActionDisabled && (
+                <div className="mt-3 flex items-center gap-2">
+                  <Button size="sm" variant="ghost" className="gap-1 text-xs text-violet-600" onClick={() => setSuggestedPartDialogOpen(true)}>
+                    <Plus className="h-3 w-3" /> Add Part
+                  </Button>
+                  <Button size="sm" variant="ghost" className="gap-1 text-xs text-orange-600" onClick={() => setSuggestedToolDialogOpen(true)}>
+                    <Plus className="h-3 w-3" /> Add Tool
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+            ) : null;
+          })()}
 
           {/* Materials — with approval pipeline */}
           <Card className="border-0 shadow-sm">

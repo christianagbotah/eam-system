@@ -528,6 +528,8 @@ model WorkOrder {
   plantId              String?
   notes                String?
   personalTools        String    @default("[]") @db.Text // JSON: [{toolName, toolCode, condition, notes}]
+  suggestedParts       String    @default("[]") @db.Text // JSON: [{id, itemId, itemName, itemCode, quantity, unit, notes, status}]
+  suggestedTools       String    @default("[]") @db.Text // JSON: [{id, toolId, toolName, toolCode, quantity, notes, status}]
   isLocked             Boolean   @default(false)
   lockedBy             String? // → User
   lockedAt             DateTime?
@@ -2467,6 +2469,7 @@ model RepairMaterialRequest {
   reason                      String
   notes                       String?
   plantId                     String?
+  source                      String    @default("technician") // planner_suggested, technician, template
   status                      String    @default("pending") // pending, supervisor_approved, store_approved, picking, issued, returned, closed, rejected
   supervisorApprovedQuantity  Float? // qty approved by supervisor (may differ from requested)
   storekeeperApprovedQuantity Float? // qty approved by storekeeper (may differ from supervisor qty)
@@ -2516,6 +2519,7 @@ model RepairToolRequest {
   reason                  String
   notes                   String?
   plantId                 String?
+  source                  String    @default("technician") // planner_suggested, technician
   status                  String    @default("pending") // pending, supervisor_approved, storekeeper_approved, issued, returned, rejected
   urgency                 String    @default("normal") // low, normal, high, critical
   rejectionReason         String?
