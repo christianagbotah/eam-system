@@ -22,8 +22,11 @@ export async function GET(request: NextRequest) {
     const pendingReqs = await db.woTeamMemberRequest.findMany({
       where: {
         status: 'pending',
-        // Non-admins only see WOs they planned
-        ...(isAdmin(session) ? {} : { workOrder: { plannerId: session.userId } }),
+        // Non-admins only see WOs they planned or assigned
+        ...(isAdmin(session) ? {} : { OR: [
+          { workOrder: { plannerId: session.userId } },
+          { workOrder: { assignedBy: session.userId } },
+        ]}),
       },
       select: {
         workOrderId: true,
