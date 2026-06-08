@@ -1685,7 +1685,7 @@ export function RepairToolRequestsPage() {
                   {((detailItem.status === 'pending' && canApproveAsSupervisor(user)) ||
                     (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) ||
                     (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) ||
-                    detailItem.status === 'issued') && (<>
+                    (detailItem.status === 'issued' && hasOutstandingItems(detailItem))) && (<>(
                     <Separator />
                     <div className="flex flex-wrap gap-2">
                       {detailItem.status === 'pending' && canApproveAsSupervisor(user) && (<>
@@ -1701,8 +1701,8 @@ export function RepairToolRequestsPage() {
                       )}
                       {hasOutstandingItems(detailItem) && (
                         <div className="flex gap-2">
-                          <Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setDetailItem(detailItem); openReturnDialog(); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tools</Button>
-                          <Button size="sm" variant="outline" className="gap-1 border-sky-400 text-sky-700 hover:bg-sky-50" onClick={() => { setDetailItem(detailItem); openTransferDialog(); }} disabled={submitting}><ArrowRightLeft className="h-3.5 w-3.5" /> Transfer Tools</Button>
+                          <Button size="sm" className="gap-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => { setDetailItem(detailItem); openReturnDialog(); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tools</Button>
+                          <Button size="sm" className="gap-1 bg-sky-600 hover:bg-sky-700 text-white" onClick={() => { setDetailItem(detailItem); openTransferDialog(); }} disabled={submitting}><ArrowRightLeft className="h-3.5 w-3.5" /> Transfer Tools</Button>
                         </div>
                       )}
                     </div>
@@ -1916,7 +1916,7 @@ export function RepairToolRequestsPage() {
         </div>
         <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={() => setReturnItemsOpen(false)}>Cancel</Button>
-          <Button onClick={handleReturn} disabled={submitting || returnItemsForm.length === 0} className="gap-2 border-amber-400 text-amber-700 hover:bg-amber-50"><RotateCcw className="h-4 w-4" /> Return Tools</Button>
+          <Button onClick={handleReturn} disabled={submitting || returnItemsForm.length === 0} className="gap-2 bg-amber-600 hover:bg-amber-700 text-white"><RotateCcw className="h-4 w-4" /> Return Tools</Button>
         </div>
       </ResponsiveDialog>
 
@@ -1990,7 +1990,7 @@ export function RepairToolRequestsPage() {
         </div>
         <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={() => setTransferDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleTransfer} disabled={submitting || transferForm.length === 0} className="gap-2 border-sky-400 text-sky-700 hover:bg-sky-50"><ArrowRightLeft className="h-4 w-4" /> Transfer Tools</Button>
+          <Button onClick={handleTransfer} disabled={submitting || transferForm.length === 0} className="gap-2 bg-sky-600 hover:bg-sky-700 text-white"><ArrowRightLeft className="h-4 w-4" /> Transfer Tools</Button>
         </div>
       </ResponsiveDialog>
 
@@ -2982,11 +2982,11 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
 
       {/* Action Buttons */}
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" className="gap-2 border-amber-400 text-amber-700 hover:bg-amber-50" onClick={openReturn}>
+        <Button variant="outline" className="gap-2 bg-amber-600 hover:bg-amber-700 text-white" onClick={openReturn}>
           <RotateCcw className="h-4 w-4" /> Return All ({totalOutstanding} items)
         </Button>
         {hasTools && (
-          <Button variant="outline" className="gap-2 border-sky-400 text-sky-700 hover:bg-sky-50" onClick={openTransfer}>
+          <Button variant="outline" className="gap-2 bg-sky-600 hover:bg-sky-700 text-white" onClick={openTransfer}>
             <ArrowRightLeft className="h-4 w-4" /> Transfer Tools ({toolItems.length})
           </Button>
         )}
@@ -3102,7 +3102,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
         </div>
         <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={() => setTransferOpen(false)}>Cancel</Button>
-          <Button onClick={handleTransferSubmit} disabled={submitting || transferItems.length === 0} className="gap-2 border-sky-400 text-sky-700 hover:bg-sky-50">
+          <Button onClick={handleTransferSubmit} disabled={submitting || transferItems.length === 0} className="gap-2 bg-sky-600 hover:bg-sky-700 text-white">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRightLeft className="h-4 w-4" />}
             {submitting ? 'Processing...' : `Transfer ${transferItems.filter(i => i.qtyTransfer > 0).length} Tool(s)`}
           </Button>
