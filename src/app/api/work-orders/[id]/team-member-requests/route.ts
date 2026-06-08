@@ -21,12 +21,13 @@ export async function GET(
 
     const { id } = await params;
 
-    // Fetch WO with assigner info
+    // Fetch WO with planner info
     const wo = await db.workOrder.findUnique({
       where: { id },
       select: {
         id: true,
         assignedBy: true,
+        plannerId: true,
         teamLeaderId: true,
         assignedTo: true,
         teamMembers: { select: { userId: true } },
@@ -39,6 +40,7 @@ export async function GET(
     // Determine if user can see all requests (admin/planner/assigner)
     const canManageTeam = isAdmin(session) ||
       hasAnyPermission(session, ['work_orders.assign', 'work_orders.*']) ||
+      wo.plannerId === session.userId ||
       wo.assignedBy === session.userId;
 
     // Build where clause: admins see all, others see their own
@@ -93,7 +95,12 @@ export async function POST(
     // Fetch WO
     const wo = await db.workOrder.findUnique({
       where: { id },
-      include: {
+      select: {
+        id: true,
+        woNumber: true,
+        assignedBy: true,
+        plannerId: true,
+        isLocked: true,
         assigner: { select: { id: true, fullName: true } },
         teamMembers: { select: { userId: true } },
       },
@@ -193,8 +200,8 @@ export async function POST(
       },
     });
 
-    // Notify the assigner (person who assigned the WO) about the new request
-    const approverId = wo.assignedBy;
+    // Notify the planner (or assigner as fallback) about the new request
+    const approverId = wo.plannerId || wo.assignedBy;
     if (approverId && approverId !== session.userId) {
       const description = requestedTrade
         ? `${session.fullName} requested a ${requestedTrade} for WO ${wo.woNumber || 'Work Order'}`

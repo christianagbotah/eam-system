@@ -36,6 +36,7 @@ export async function PUT(
         woNumber: true,
         title: true,
         assignedBy: true,
+        plannerId: true,
         isLocked: true,
         teamMembers: { select: { userId: true } },
       },
@@ -48,9 +49,10 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Work order is permanently locked.' }, { status: 400 });
     }
 
-    // Permission check: only assigner, admin, or users with assign permission can review
+    // Permission check: only planner, assigner, admin, or users with assign permission can review
     const canReview = isAdmin(session) ||
       hasAnyPermission(session, ['work_orders.assign', 'work_orders.*']) ||
+      wo.plannerId === session.userId ||
       wo.assignedBy === session.userId;
 
     if (!canReview) {

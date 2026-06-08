@@ -424,12 +424,12 @@ export async function GET(request: NextRequest) {
             where: { ...plantFilter, status: { in: ['draft', 'approved', 'requested'] } },
           }), 0)
         : Promise.resolve(0),
-      // Pending team member requests (for planner/admin — count WOs where current user is assigner)
+      // Pending team member requests (for planner/admin — count WOs where current user is planner)
       isAdm || session.roles.includes('maintenance_planner')
         ? safe(db.woTeamMemberRequest.count({
             where: {
               status: 'pending',
-              ...(isAdm ? {} : { workOrder: { assignedBy: session.userId } }),
+              ...(isAdm ? {} : { workOrder: { plannerId: session.userId } }),
             },
           }), 0)
         : Promise.resolve(0),
@@ -438,7 +438,7 @@ export async function GET(request: NextRequest) {
         ? safe(db.woTeamMemberRequest.findMany({
             where: {
               status: 'pending',
-              ...(isAdm ? {} : { workOrder: { assignedBy: session.userId } }),
+              ...(isAdm ? {} : { workOrder: { plannerId: session.userId } }),
             },
             take: 10,
             orderBy: { createdAt: 'desc' },

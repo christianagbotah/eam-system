@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
 
@@ -7,9 +7,9 @@ import { getSession, hasAnyPermission, isAdmin } from '@/lib/auth';
  * Returns a list of WO IDs that have pending team member requests.
  * Used by the WO list page to show indicator badges for planners/admins.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const session = getSession();
+    const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
@@ -22,8 +22,8 @@ export async function GET() {
     const pendingReqs = await db.woTeamMemberRequest.findMany({
       where: {
         status: 'pending',
-        // Non-admins only see WOs they assigned
-        ...(isAdmin(session) ? {} : { workOrder: { assignedBy: session.userId } }),
+        // Non-admins only see WOs they planned
+        ...(isAdmin(session) ? {} : { workOrder: { plannerId: session.userId } }),
       },
       select: {
         workOrderId: true,
