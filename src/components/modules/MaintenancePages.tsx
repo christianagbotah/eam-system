@@ -2843,6 +2843,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (!wo || !user) return false;
     if (isAdmin()) return true;
     if (hasPermission('work_orders.assign')) return true;
+    if (hasPermission('work_orders.assign_supervisor') || hasPermission('work_orders.assign_technician')) return true;
+    if (wo.plannerId === user.id) return true;
     if (wo.assignedById === user.id) return true;
     return false;
   }, [wo, user, isAdmin, hasPermission]);
@@ -2861,6 +2863,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (!wo || !user) return false;
     if (isAdmin()) return true;
     if (hasPermission('work_orders.assign')) return true;
+    if (hasPermission('work_orders.assign_supervisor') || hasPermission('work_orders.assign_technician')) return true;
+    if (wo.plannerId === user.id) return true;
     if (wo.assignedById === user.id) return true;
     return false;
   }, [wo, user, isAdmin, hasPermission]);
@@ -2875,8 +2879,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const isReadOnly = useMemo(() => {
     if (!wo || !user) return false;
     if (fullAccess) return false;
+    if (canManageTeamDirectly) return false;
     return wo.teamMembers?.some(tm => tm.userId === user.id && tm.accessLevel === 'read_only') || false;
-  }, [wo, user, fullAccess]);
+  }, [wo, user, fullAccess, canManageTeamDirectly]);
 
   // Permission: can take modification actions on this WO (not just view it)
   // Used for: status transitions, edit, approve/reject etc. — includes planner via permissions
@@ -3495,7 +3500,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // WO is finalized when supervisor has verified (awaiting planner closure) or permanently locked/closed
   const isWOFinalized = wo.status === 'verified' || wo.status === 'closed' || wo.status === 'cancelled' || wo.isLocked;
   const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
-  // Edit: restricted to admin, planner, and managers — NOT technician (technician has work_orders.update for status transitions only)
+  // Edit: restricted to admin, planner (via assign permissions or WO creator), and managers — NOT technician (technician has work_orders.update for status transitions only)
   const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && (canManageTeamDirectly || isAdmin());
 
   // Disable work-performing buttons (time log, start, personal tools, materials) for non-workers
