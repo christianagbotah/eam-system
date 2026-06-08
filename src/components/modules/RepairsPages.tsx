@@ -2511,88 +2511,319 @@ export function RepairDowntimePage() {
 // PAGE 5: REPAIR COMPLETION & CLOSURE
 // ============================================================================
 
-// Sub-component: shows outstanding tools and materials that need returning/transferring
+// ============================================================================
+// Sub-component: Flexible tool & material return/transfer on WO completion
+// ============================================================================
+// Each tool/material line shows:
+//   - Item name, code, issued qty, already returned qty
+//   - Per-item decision: qty to RETURN vs qty to TRANSFER vs qty to KEEP
+//   - Condition selector for returns (good / fair / poor / damaged)
+//   - Transfer target technician selector (when qty to transfer > 0)
+// Materials only support return (no transfer for consumables).
+// ============================================================================
+
+interface ReturnTransferItem {
+  /** Unique row key (toolRequestId or materialRequestId) */
+  id: string;
+  /** 'tool' or 'material' */
+  type: 'tool' | 'material';
+  /** Display name */
+  name: string;
+  /** Code (toolCode or itemCode) */
+  code: string;
+  /** Qty issued by store */
+  issuedQty: number;
+  /** Qty already returned previously */
+  returnedQty: number;
+  /** Remaining = issuedQty - returnedQty */
+  remainingQty: number;
+  /** Unit label */
+  unit: string;
+  /** How many the user wants to RETURN now */
+  qtyReturn: number;
+  /** How many the user wants to TRANSFER now */
+  qtyTransfer: number;
+  /** Condition for returned items */
+  condition: string;
+  /** Target user ID for transfer */
+  transferToUserId: string;
+  /** Target user display name */
+  transferToUserName: string;
+  /** Transfer reason */
+  transferReason: string;
+  /** Original request ID for API call */
+  requestId: string;
+  /** For multi-item tool requests: item ID */
+  lineItemId?: string;
+  /** Tool ID (for creating transfer) */
+  toolId?: string;
+}
+
 function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
   const { user, hasPermission, isAdmin } = useAuthStore();
-  const [tools, setTools] = useState<any[]>([]);
-  const [materials, setMaterials] = useState<any[]>([]);
+  const [items, setItems] = useState<ReturnTransferItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [returning, setReturning] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
+  // Fetch all outstanding tools and materials
   useEffect(() => {
     if (!workOrderId) return;
     setLoading(true);
-    // Fetch tool requests for this WO that are issued but not returned
-    api.get(`/api/repairs/tool-requests?workOrderId=${workOrderId}&limit=999`).then(res => {
-      if (res.success && res.data) {
-        setTools((res.data as any[]).filter((t: any) => t.status === 'issued'));
+    Promise.all([
+      api.get(`/api/repairs/tool-requests?workOrderId=${workOrderId}&limit=999`),
+      api.get(`/api/repairs/material-requests?workOrderId=${workOrderId}&limit=999`),
+    ]).then(([toolRes, matRes]) => {
+      const rows: ReturnTransferItem[] = [];
+
+      // Tool requests that are issued (fully or partially)
+      if (toolRes.success && toolRes.data) {
+        for (const tr of toolRes.data as any[]) {
+          if (tr.status !== 'issued') continue;
+          // Multi-item tool request
+          if (tr.items && tr.items.length > 0) {
+            for (const item of tr.items) {
+              const issued = item.quantityIssued || 0;
+              const returned = item.quantityReturned || 0;
+              const remaining = issued - returned;
+              if (remaining <= 0) continue;
+              rows.push({
+                id: `${tr.id}-${item.id}`,
+                type: 'tool',
+                name: item.toolName || item.tool?.name || 'Unknown Tool',
+                code: item.toolCode || item.tool?.toolCode || '',
+                issuedQty: issued,
+                returnedQty: returned,
+                remainingQty: remaining,
+                unit: 'pcs',
+                qtyReturn: remaining,
+                qtyTransfer: 0,
+                condition: 'good',
+                transferToUserId: '',
+                transferToUserName: '',
+                transferReason: '',
+                requestId: tr.id,
+                lineItemId: item.id,
+                toolId: item.toolId || tr.toolId || '',
+              });
+            }
+          } else {
+            // Single-tool request
+            const issued = tr.quantityIssued || (tr.tool ? 1 : 0);
+            const returned = tr.quantityReturned || 0;
+            const remaining = issued - returned;
+            if (remaining <= 0) continue;
+            rows.push({
+              id: tr.id,
+              type: 'tool',
+              name: tr.toolName || tr.tool?.name || 'Unknown Tool',
+              code: tr.tool?.toolCode || '',
+              issuedQty: issued,
+              returnedQty: returned,
+              remainingQty: remaining,
+              unit: 'pcs',
+              qtyReturn: remaining,
+              qtyTransfer: 0,
+              condition: 'good',
+              transferToUserId: '',
+              transferToUserName: '',
+              transferReason: '',
+              requestId: tr.id,
+              toolId: tr.toolId || '',
+            });
+          }
+        }
       }
-    }).catch(() => {});
-    // Fetch material requests that are issued but not returned/closed
-    api.get(`/api/repairs/material-requests?workOrderId=${workOrderId}&limit=999`).then(res => {
-      if (res.success && res.data) {
-        setMaterials((res.data as any[]).filter((m: any) => m.status === 'issued'));
+
+      // Material requests that are issued
+      if (matRes.success && matRes.data) {
+        for (const mr of matRes.data as any[]) {
+          if (mr.status !== 'issued') continue;
+          const issued = mr.quantityIssued || 0;
+          const returned = mr.quantityReturned || 0;
+          const remaining = issued - returned;
+          if (remaining <= 0) continue;
+          rows.push({
+            id: mr.id,
+            type: 'material',
+            name: mr.itemName,
+            code: mr.item?.itemCode || '',
+            issuedQty: issued,
+            returnedQty: returned,
+            remainingQty: remaining,
+            unit: mr.unit || 'each',
+            qtyReturn: remaining,
+            qtyTransfer: 0,
+            condition: 'good',
+            transferToUserId: '',
+            transferToUserName: '',
+            transferReason: '',
+            requestId: mr.id,
+          });
+        }
       }
+
+      setItems(rows);
     }).catch(() => {}).finally(() => setLoading(false));
   }, [workOrderId]);
 
-  const handleReturnTool = async (toolReq: any) => {
-    if (!confirm(`Return "${toolReq.toolName}" to store?`)) return;
-    setReturning(toolReq.id);
-    try {
-      // Fetch full tool request to determine single-tool vs multi-item
-      const detailRes = await api.get(`/api/repairs/tool-requests/${toolReq.id}`);
-      if (!detailRes.success) { toast.error(detailRes.error || 'Failed to load tool request'); setReturning(null); return; }
-      const detail = detailRes.data;
+  // ── Helpers ──
+  const toggleExpanded = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
-      // Build return payload based on request type
-      let payload: Record<string, any> = { action: 'return' };
-      if (detail.items && detail.items.length > 0) {
-        // Multi-item request: build returnedItems array
-        payload.returnedItems = detail.items.map((item: any) => ({
-          itemId: item.id,
-          quantityReturned: (item.quantityIssued || 1) - (item.quantityReturned || 0),
-          conditionAtReturn: 'good',
-        }));
+  const updateItem = (id: string, patch: Partial<ReturnTransferItem>) => {
+    setItems(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const updated = { ...item, ...patch };
+      // Clamp: qtyReturn + qtyTransfer must not exceed remainingQty
+      const total = (updated.qtyReturn || 0) + (updated.qtyTransfer || 0);
+      if (total > updated.remainingQty) {
+        const scale = updated.remainingQty / Math.max(total, 1);
+        updated.qtyReturn = Math.round((updated.qtyReturn || 0) * scale);
+        updated.qtyTransfer = updated.remainingQty - updated.qtyReturn;
       }
-      // For single-tool requests, no returnedItems needed — toolConditionAtReturn defaults to tool's current condition
-
-      const res = await api.post(`/api/repairs/tool-requests/${toolReq.id}`, payload);
-      if (res.success) {
-        toast.success(`"${toolReq.toolName}" returned successfully`);
-        setTools(prev => prev.filter(t => t.id !== toolReq.id));
-      } else toast.error(res.error || 'Failed to return tool');
-    } catch { toast.error('Failed to return tool'); }
-    setReturning(null);
+      return updated;
+    }));
   };
 
-  const handleReturnMaterial = async (matReq: any) => {
-    if (!confirm(`Return "${matReq.itemName}" for inspection?`)) return;
-    setReturning(matReq.id);
-    try {
-      const qtyToReturn = matReq.quantityIssued - (matReq.quantityReturned || 0);
-      const res = await api.post(`/api/repairs/material-requests/${matReq.id}`, {
-        action: 'record_return',
-        approvedQuantity: qtyToReturn,
-        notes: 'Returned by technician on completion',
+  // Quick-action: Return All / Transfer All for a specific item
+  const setReturnAll = (id: string) => {
+    setItems(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      return { ...item, qtyReturn: item.remainingQty, qtyTransfer: 0, transferToUserId: '', transferToUserName: '', transferReason: '' };
+    }));
+  };
+  const setTransferAll = (id: string) => {
+    setItems(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      return { ...item, qtyReturn: 0, qtyTransfer: item.remainingQty };
+    }));
+  };
+
+  const totalOutstanding = items.length;
+
+  // ── Submit ──
+  const handleSubmit = async () => {
+    // Validation
+    for (const item of items) {
+      if (item.qtyTransfer > 0 && !item.transferToUserId) {
+        toast.error(`Select a transfer target for "${item.name}"`);
+        return;
+      }
+      if (item.qtyTransfer > 0 && (!item.transferReason || item.transferReason.length < 5)) {
+        toast.error(`Enter a reason for transferring "${item.name}" (min 5 chars)`);
+        return;
+      }
+    }
+
+    const hasActions = items.some(i => i.qtyReturn > 0 || i.qtyTransfer > 0);
+    if (!hasActions) {
+      toast.error('No items to return or transfer');
+      return;
+    }
+
+    setSubmitting(true);
+
+    // 1. Process all tool returns grouped by requestId
+    const toolReturnMap = new Map<string, { itemId?: string; qtyReturn: number; condition: string }[]>();
+    for (const item of items) {
+      if (item.type !== 'tool' || item.qtyReturn <= 0) continue;
+      const arr = toolReturnMap.get(item.requestId) || [];
+      arr.push({
+        itemId: item.lineItemId,
+        qtyReturn: item.qtyReturn,
+        condition: item.condition,
       });
-      if (res.success) {
-        toast.success(`"${matReq.itemName}" returned for inspection`);
-        setMaterials(prev => prev.filter(m => m.id !== matReq.id));
-      } else toast.error(res.error || 'Failed to return material');
-    } catch { toast.error('Failed to return material'); }
-    setReturning(null);
-  };
+      toolReturnMap.set(item.requestId, arr);
+    }
 
-  const handleInitiateTransfer = (toolReq: any) => {
-    // Navigate to tool transfers page with pre-filled data
-    const nav = useNavigationStore.getState();
-    nav.navigate('repairs-tool-transfers', { toolId: toolReq.toolId, toolName: toolReq.toolName, fromUserId: user?.id });
+    // 2. Process all material returns
+    const matReturnMap = new Map<string, { qtyReturn: number }>();
+    for (const item of items) {
+      if (item.type !== 'material' || item.qtyReturn <= 0) continue;
+      matReturnMap.set(item.requestId, { qtyReturn: item.qtyReturn });
+    }
+
+    // 3. Process all transfers
+    const transferItems = items.filter(i => i.type === 'tool' && i.qtyTransfer > 0);
+
+    let errors: string[] = [];
+
+    // Execute tool returns
+    for (const [requestId, returns] of toolReturnMap) {
+      try {
+        // Fetch full detail
+        const detailRes = await api.get(`/api/repairs/tool-requests/${requestId}`);
+        if (!detailRes.success) { errors.push(`Tool return failed: ${detailRes.error}`); continue; }
+        const detail = detailRes.data;
+
+        const payload: Record<string, any> = { action: 'return' };
+        if (detail.items && detail.items.length > 0) {
+          payload.returnedItems = returns.map(r => ({
+            itemId: r.itemId,
+            quantityReturned: r.qtyReturn,
+            conditionAtReturn: r.condition,
+          }));
+        } else {
+          // Single-tool: just return all
+          payload.toolConditionAtReturn = returns[0]?.condition || 'good';
+        }
+
+        const res = await api.post(`/api/repairs/tool-requests/${requestId}`, payload);
+        if (!res.success) errors.push(res.error || `Failed to return tool request`);
+        else if (res.warnings) res.warnings.forEach((w: string) => toast.warning(w));
+      } catch (e: any) { errors.push(`Tool return error: ${e.message}`); }
+    }
+
+    // Execute material returns
+    for (const [requestId, { qtyReturn }] of matReturnMap) {
+      try {
+        const res = await api.post(`/api/repairs/material-requests/${requestId}`, {
+          action: 'record_return',
+          approvedQuantity: qtyReturn,
+          notes: 'Returned by technician on completion',
+        });
+        if (!res.success) errors.push(res.error || `Failed to return material`);
+      } catch (e: any) { errors.push(`Material return error: ${e.message}`); }
+    }
+
+    // Execute transfers
+    for (const item of transferItems) {
+      try {
+        const res = await api.post('/api/repairs/tool-transfers', {
+          toolId: item.toolId,
+          fromUserId: user?.id,
+          toUserId: item.transferToUserId,
+          reason: item.transferReason,
+          notes: `WO completion transfer: ${item.qtyTransfer}x ${item.name}`,
+        });
+        if (!res.success) errors.push(res.error || `Failed to transfer "${item.name}"`);
+        else toast.success(`Transfer request submitted for "${item.name}"`);
+      } catch (e: any) { errors.push(`Transfer error: ${e.message}`); }
+    }
+
+    if (errors.length === 0) {
+      toast.success('All returns and transfers processed successfully');
+      // Remove fully returned items
+      setItems(prev => prev.filter(item => {
+        if (item.qtyReturn + item.qtyTransfer >= item.remainingQty) return false;
+        // Update quantities for partial
+        return true;
+      }));
+    } else {
+      errors.forEach(e => toast.error(e));
+    }
+
+    setSubmitting(false);
   };
 
   if (loading) return <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Checking outstanding items...</div>;
 
-  const totalOutstanding = tools.length + materials.length;
   if (totalOutstanding === 0) {
     return (
       <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3 border border-emerald-200">
@@ -2604,64 +2835,187 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
 
   return (
     <div className="space-y-4">
+      {/* Header */}
       <div className="flex items-center gap-2 text-sm text-amber-700">
         <AlertTriangle className="h-4 w-4 shrink-0" />
-        <span><strong>{totalOutstanding} outstanding item(s)</strong> need to be returned or transferred before closing.</span>
+        <span><strong>{totalOutstanding} outstanding item(s)</strong> — decide for each: return to store, transfer to technician, or keep.</span>
       </div>
 
-      {tools.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
-            <Wrench className="h-3 w-3" /> Issued Tools ({tools.length})
-          </p>
-          <div className="space-y-1.5">
-            {tools.map(t => (
-              <div key={t.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-white">
-                <div className="h-7 w-7 rounded-md bg-orange-100 text-orange-700 flex items-center justify-center shrink-0">
-                  <Wrench className="h-3.5 w-3.5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{t.toolName || t.tool?.name}</p>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <Button size="sm" variant="outline" className="h-7 text-[10px] text-emerald-600 border-emerald-200 hover:bg-emerald-50" onClick={() => handleReturnTool(t)} disabled={returning === t.id}>
-                    <Undo2 className="h-3 w-3 mr-1" /> Return
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-7 text-[10px] text-sky-600" onClick={() => handleInitiateTransfer(t)}>
-                    <ArrowRightLeft className="h-3 w-3 mr-1" /> Transfer
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Items list */}
+      <div className="space-y-3">
+        {items.map(item => {
+          const isExpanded = expandedIds.has(item.id);
+          const returnPercent = item.remainingQty > 0 ? Math.round((item.qtyReturn / item.remainingQty) * 100) : 0;
+          const transferPercent = item.remainingQty > 0 ? Math.round((item.qtyTransfer / item.remainingQty) * 100) : 0;
+          const keepPercent = 100 - returnPercent - transferPercent;
 
-      {materials.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
-            <Package className="h-3 w-3" /> Issued Materials ({materials.length})
-          </p>
-          <div className="space-y-1.5">
-            {materials.map(m => (
-              <div key={m.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-white">
-                <div className="h-7 w-7 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                  <Package className="h-3.5 w-3.5" />
+          return (
+            <div key={item.id} className="rounded-lg border bg-white overflow-hidden">
+              {/* Collapsed row — always visible */}
+              <div
+                className="flex items-center gap-3 p-3 cursor-pointer hover:bg-muted/30 transition-colors"
+                onClick={() => toggleExpanded(item.id)}
+              >
+                <div className={`h-7 w-7 rounded-md flex items-center justify-center shrink-0 ${item.type === 'tool' ? 'bg-orange-100 text-orange-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {item.type === 'tool' ? <Wrench className="h-3.5 w-3.5" /> : <Package className="h-3.5 w-3.5" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{m.itemName}</p>
-                  <p className="text-[10px] text-muted-foreground">Issued: {m.quantityIssued} {m.unit}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium truncate">{item.name}</p>
+                    {item.code && <span className="text-[10px] font-mono text-muted-foreground">{item.code}</span>}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Issued: {item.issuedQty} · Returned: {item.returnedQty} · <strong>Remaining: {item.remainingQty}</strong></p>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <Button size="sm" variant="outline" className="h-7 text-[10px] text-emerald-600 border-emerald-200 hover:bg-emerald-50" onClick={() => handleReturnMaterial(m)} disabled={returning === m.id}>
-                    <Undo2 className="h-3 w-3 mr-1" /> Return
-                  </Button>
+
+                {/* Quick action summary (collapsed) */}
+                <div className="flex items-center gap-2 shrink-0">
+                  {item.qtyReturn > 0 && (
+                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] gap-0.5">
+                      <Undo2 className="h-2.5 w-2.5" /> {item.qtyReturn} return
+                    </Badge>
+                  )}
+                  {item.qtyTransfer > 0 && (
+                    <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-[10px] gap-0.5">
+                      <ArrowRightLeft className="h-2.5 w-2.5" /> {item.qtyTransfer} transfer
+                    </Badge>
+                  )}
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                 </div>
               </div>
-            ))}
+
+              {/* Expanded controls */}
+              {isExpanded && (
+                <div className="border-t bg-muted/20 px-3 pb-3 pt-2 space-y-3" onClick={e => e.stopPropagation()}>
+                  {/* Split bar visual */}
+                  <div className="flex h-2 rounded-full overflow-hidden w-full">
+                    <div className="bg-emerald-500 transition-all" style={{ width: `${returnPercent}%` }} />
+                    <div className="bg-sky-500 transition-all" style={{ width: `${transferPercent}%` }} />
+                    <div className="bg-gray-200 transition-all" style={{ width: `${keepPercent}%` }} />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span className="text-emerald-600 font-medium">{item.qtyReturn} Return</span>
+                    <span className="text-sky-600 font-medium">{item.qtyTransfer} Transfer</span>
+                    <span>{item.remainingQty - item.qtyReturn - item.qtyTransfer} Keep</span>
+                  </div>
+
+                  {/* Quick action buttons */}
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50" onClick={() => setReturnAll(item.id)}>
+                      <Undo2 className="h-3 w-3" /> Return All ({item.remainingQty})
+                    </Button>
+                    {item.type === 'tool' && (
+                      <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-sky-300 text-sky-700 hover:bg-sky-50" onClick={() => setTransferAll(item.id)}>
+                        <ArrowRightLeft className="h-3 w-3" /> Transfer All ({item.remainingQty})
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Qty controls */}
+                  {item.remainingQty > 1 && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Qty to Return</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={item.remainingQty}
+                          value={item.qtyReturn}
+                          onChange={e => updateItem(item.id, { qtyReturn: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty)) })}
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                      {item.type === 'tool' && (
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Qty to Transfer</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={item.remainingQty - item.qtyReturn}
+                            value={item.qtyTransfer}
+                            onChange={e => updateItem(item.id, { qtyTransfer: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty - item.qtyReturn)) })}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Return condition */}
+                  {item.qtyReturn > 0 && (
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Return Condition</Label>
+                      <Select value={item.condition} onValueChange={v => updateItem(item.id, { condition: v })}>
+                        <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="good">🟢 Good — ready for reissue</SelectItem>
+                          <SelectItem value="fair">🟡 Fair — minor wear</SelectItem>
+                          <SelectItem value="poor">🟠 Poor — needs service</SelectItem>
+                          <SelectItem value="damaged">🔴 Damaged — needs repair</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Transfer target & reason */}
+                  {item.qtyTransfer > 0 && item.type === 'tool' && (
+                    <div className="space-y-3 rounded-lg border border-sky-200 bg-sky-50/50 p-3">
+                      <p className="text-[10px] font-semibold text-sky-700 flex items-center gap-1"><ArrowRightLeft className="h-3 w-3" /> Transfer Details</p>
+                      <AsyncSearchableSelect
+                        value={item.transferToUserId}
+                        onValueChange={v => updateItem(item.id, { transferToUserId: v, transferToUserName: '' })}
+                        placeholder="Select receiving technician..."
+                        searchPlaceholder="Search technicians..."
+                        fetchOptions={async () => {
+                          const res = await api.get('/api/workers?role=technician');
+                          if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                          return [];
+                        }}
+                      />
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Transfer Reason *</Label>
+                        <Input
+                          value={item.transferReason}
+                          onChange={e => updateItem(item.id, { transferReason: e.target.value })}
+                          placeholder="Why is this tool being transferred?"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Summary & Submit */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Summary</p>
+          <div className="flex flex-wrap gap-3 text-xs">
+            <span className="text-emerald-600">
+              <strong>{items.reduce((s, i) => s + i.qtyReturn, 0)}</strong> returning to store
+            </span>
+            {items.some(i => i.type === 'tool' && i.qtyTransfer > 0) && (
+              <span className="text-sky-600">
+                <strong>{items.reduce((s, i) => s + (i.type === 'tool' ? i.qtyTransfer : 0), 0)}</strong> transferring to technicians
+              </span>
+            )}
+            <span className="text-muted-foreground">
+              <strong>{items.reduce((s, i) => s + (i.remainingQty - i.qtyReturn - i.qtyTransfer), 0)}</strong> keeping
+            </span>
           </div>
         </div>
-      )}
+        <Button
+          className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
+          disabled={submitting || items.every(i => i.qtyReturn === 0 && i.qtyTransfer === 0)}
+          onClick={handleSubmit}
+        >
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+          {submitting ? 'Processing...' : 'Submit Returns & Transfers'}
+        </Button>
+      </div>
     </div>
   );
 }
