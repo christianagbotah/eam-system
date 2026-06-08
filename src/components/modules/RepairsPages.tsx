@@ -326,7 +326,8 @@ function canApproveAsSupervisor(user: any): boolean {
   const { hasPermission, isAdmin, user: authUser } = useAuthStore.getState();
   // Only supervisors, managers, and planners can approve tool/material requests
   const supervisorRoles = ['admin', 'maintenance_manager', 'maintenance_supervisor', 'maintenance_planner', 'plant_manager'];
-  return isAdmin() || supervisorRoles.includes(authUser?.role?.slug || '') || hasPermission('repairs.approve_supervisor') || hasPermission('repairs.manage');
+  const userRoles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  return isAdmin() || userRoles.some((slug: string) => supervisorRoles.includes(slug)) || (authUser?.role?.slug && supervisorRoles.includes(authUser.role.slug)) || hasPermission('repairs.approve_supervisor') || hasPermission('repairs.manage');
 }
 
 function canApproveAsStore(user: any): boolean {
@@ -334,7 +335,8 @@ function canApproveAsStore(user: any): boolean {
   const { hasPermission, isAdmin, user: authUser } = useAuthStore.getState();
   // Only store keepers, inventory managers, and admins can do store approval
   const storeRoles = ['admin', 'inventory_manager', 'store_keeper', 'tools_shop_attendant'];
-  return isAdmin() || storeRoles.includes(authUser?.role?.slug || '') || hasPermission('repairs.approve_store');
+  const userRoles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug)) || (authUser?.role?.slug && storeRoles.includes(authUser.role.slug)) || hasPermission('repairs.approve_store');
 }
 
 function canViewAllRepairData(user: any): boolean {
