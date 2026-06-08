@@ -2799,6 +2799,38 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [ptOpen, setPtOpen] = useState(false);
   const [ptLoading, setPtLoading] = useState(false);
   const [ptForm, setPtForm] = useState({ toolName: '', toolCode: '', condition: 'good' as PersonalTool['condition'], notes: '' });
+  // ── Repair Resource Modals ──
+  // Tool Request modal
+  const [toolReqOpen, setToolReqOpen] = useState(false);
+  const [toolReqSubmitting, setToolReqSubmitting] = useState(false);
+  const [toolReqToolId, setToolReqToolId] = useState('');
+  const [toolReqToolName, setToolReqToolName] = useState('');
+  const [toolReqQty, setToolReqQty] = useState('1');
+  const [toolReqReason, setToolReqReason] = useState('');
+  const [toolReqUrgency, setToolReqUrgency] = useState('normal');
+  // Tool Transfer modal
+  const [toolXferOpen, setToolXferOpen] = useState(false);
+  const [toolXferSubmitting, setToolXferSubmitting] = useState(false);
+  const [toolXferToolId, setToolXferToolId] = useState('');
+  const [toolXferToolName, setToolXferToolName] = useState('');
+  const [toolXferToUserId, setToolXferToUserId] = useState('');
+  const [toolXferToUserName, setToolXferToUserName] = useState('');
+  const [toolXferReason, setToolXferReason] = useState('');
+  // Downtime modal
+  const [downtimeOpen, setDowntimeOpen] = useState(false);
+  const [downtimeSubmitting, setDowntimeSubmitting] = useState(false);
+  const [dtReason, setDtReason] = useState('');
+  const [dtCategory, setDtCategory] = useState('unplanned');
+  const [dtImpactLevel, setDtImpactLevel] = useState('medium');
+  const [dtProductionLoss, setDtProductionLoss] = useState('');
+  // Spare Part Return modal
+  const [spareReturnOpen, setSpareReturnOpen] = useState(false);
+  const [spareReturnSubmitting, setSpareReturnSubmitting] = useState(false);
+  const [spareReturnItemName, setSpareReturnItemName] = useState('');
+  const [spareReturnQty, setSpareReturnQty] = useState('1');
+  const [spareReturnCondition, setSpareReturnCondition] = useState('used');
+  const [spareReturnDamageDesc, setSpareReturnDamageDesc] = useState('');
+  const [spareReturnNeedsRefurb, setSpareReturnNeedsRefurb] = useState(true);
   // Add team member dialog
   const [addTeamMemberOpen, setAddTeamMemberOpen] = useState(false);
   const [newMemberUserId, setNewMemberUserId] = useState('');
@@ -3427,6 +3459,75 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       }
     } else { toast.error(res.error || 'Failed to add material'); }
     setMatLoading(false);
+  };
+
+  // ── Repair Resource Modal Handlers ──
+  const resetToolReqForm = () => { setToolReqToolId(''); setToolReqToolName(''); setToolReqQty('1'); setToolReqReason(''); setToolReqUrgency('normal'); };
+  const handleToolRequest = async () => {
+    if (!toolReqToolId) { toast.error('Please select a tool'); return; }
+    if (toolReqReason.trim().length < 5) { toast.error('Reason must be at least 5 characters'); return; }
+    setToolReqSubmitting(true);
+    const res = await api.post('/api/repairs/tool-requests', {
+      workOrderId: id,
+      reason: toolReqReason,
+      urgency: toolReqUrgency,
+      items: [{ toolId: toolReqToolId, toolName: toolReqToolName, quantityRequested: parseInt(toolReqQty) || 1 }],
+    });
+    if (res.success) { toast.success('Tool request submitted for approval'); setToolReqOpen(false); resetToolReqForm(); fetchWO(); }
+    else toast.error(res.error || 'Failed to submit tool request');
+    setToolReqSubmitting(false);
+  };
+
+  const resetToolXferForm = () => { setToolXferToolId(''); setToolXferToolName(''); setToolXferToUserId(''); setToolXferToUserName(''); setToolXferReason(''); };
+  const handleToolTransfer = async () => {
+    if (!toolXferToolId) { toast.error('Please select a tool'); return; }
+    if (!toolXferToUserId) { toast.error('Please select a technician to transfer to'); return; }
+    if (toolXferReason.trim().length < 5) { toast.error('Reason must be at least 5 characters'); return; }
+    setToolXferSubmitting(true);
+    const res = await api.post('/api/repairs/tool-transfers', {
+      toolId: toolXferToolId,
+      fromUserId: user?.id,
+      toUserId: toolXferToUserId,
+      reason: toolXferReason,
+    });
+    if (res.success) { toast.success('Tool transfer request submitted for store keeper approval'); setToolXferOpen(false); resetToolXferForm(); }
+    else toast.error(res.error || 'Failed to submit transfer request');
+    setToolXferSubmitting(false);
+  };
+
+  const resetDowntimeForm = () => { setDtReason(''); setDtCategory('unplanned'); setDtImpactLevel('medium'); setDtProductionLoss(''); };
+  const handleDowntime = async () => {
+    if (!dtReason.trim()) { toast.error('Please provide a reason'); return; }
+    setDowntimeSubmitting(true);
+    const res = await api.post('/api/repairs/downtime', {
+      workOrderId: id,
+      reason: dtReason,
+      category: dtCategory,
+      impactLevel: dtImpactLevel,
+      productionLoss: dtProductionLoss ? parseFloat(dtProductionLoss) : undefined,
+      assetId: wo?.assetId || undefined,
+      assetName: wo?.assetName || undefined,
+    });
+    if (res.success) { toast.success('Downtime logged successfully'); setDowntimeOpen(false); resetDowntimeForm(); }
+    else toast.error(res.error || 'Failed to log downtime');
+    setDowntimeSubmitting(false);
+  };
+
+  const resetSpareReturnForm = () => { setSpareReturnItemName(''); setSpareReturnQty('1'); setSpareReturnCondition('used'); setSpareReturnDamageDesc(''); setSpareReturnNeedsRefurb(true); };
+  const handleSpareReturn = async () => {
+    if (!spareReturnItemName.trim()) { toast.error('Please enter the item name'); return; }
+    setSpareReturnSubmitting(true);
+    const res = await api.post('/api/repairs/spare-part-returns', {
+      workOrderId: id,
+      itemName: spareReturnItemName,
+      quantity: parseFloat(spareReturnQty) || 1,
+      conditionOnReturn: spareReturnCondition,
+      damageDescription: spareReturnDamageDesc || undefined,
+      refurbishmentNeeded: spareReturnNeedsRefurb,
+    });
+    if (res.success) { toast.success('Spare part return submitted'); setSpareReturnOpen(false); resetSpareReturnForm(); }
+    else toast.error(res.error || 'Failed to submit return');
+    setSpareReturnSubmitting(false);
   };
 
   // Repair Material Request action handlers (approval workflow from WO detail)
@@ -4520,6 +4621,151 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </div>
       </ResponsiveDialog>
 
+      {/* ═══════ Request Tool Dialog ═══════ */}
+      <ResponsiveDialog open={toolReqOpen} onOpenChange={(open) => { setToolReqOpen(open); if (!open) resetToolReqForm(); }} title="Request Tool" description="Request a tool for this work order. It will go through the approval pipeline." footer={<Button className="w-full bg-orange-600 hover:bg-orange-700 text-white" disabled={toolReqSubmitting || !toolReqToolId || toolReqReason.trim().length < 5} onClick={handleToolRequest}>{toolReqSubmitting ? 'Submitting...' : 'Submit Tool Request'}</Button>}>
+        <div className="space-y-4">
+          <div className="p-3 rounded-lg bg-orange-50 border border-orange-200">
+            <p className="text-xs text-orange-800 font-medium">📋 Approval Workflow</p>
+            <p className="text-xs text-orange-700 mt-1">Your request will be reviewed by a <strong>Supervisor</strong>, then <strong>Store/Shop</strong> before tools are issued.</p>
+          </div>
+          <div className="space-y-1.5"><Label>Tool *</Label>
+            <AsyncSearchableSelect
+              value={toolReqToolId}
+              onValueChange={(val) => { setToolReqToolId(val); }}
+              fetchOptions={async () => {
+                const res = await api.get('/api/tools?limit=999');
+                if (res.success && Array.isArray(res.data)) {
+                  const tools = res.data;
+                  return tools.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));
+                }
+                return [];
+              }}
+              placeholder="Search tools..."
+              searchPlaceholder="Search by name or code..."
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label>Quantity</Label><Input className="min-h-[44px]" type="number" min="1" value={toolReqQty} onChange={e => setToolReqQty(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>Urgency</Label>
+              <Select value={toolReqUrgency} onValueChange={setToolReqUrgency}>
+                <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="normal">Normal</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="critical">Critical</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1.5"><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label>
+            <Textarea value={toolReqReason} onChange={e => setToolReqReason(e.target.value)} placeholder="Why is this tool needed for this work order?" rows={2} />
+          </div>
+        </div>
+      </ResponsiveDialog>
+
+      {/* ═══════ Transfer Tool Dialog ═══════ */}
+      <ResponsiveDialog open={toolXferOpen} onOpenChange={(open) => { setToolXferOpen(open); if (!open) resetToolXferForm(); }} title="Transfer Tool" description="Transfer a tool to another technician. Store keeper approval required." footer={<Button className="w-full bg-teal-600 hover:bg-teal-700 text-white" disabled={toolXferSubmitting || !toolXferToolId || !toolXferToUserId || toolXferReason.trim().length < 5} onClick={handleToolTransfer}>{toolXferSubmitting ? 'Submitting...' : 'Submit Transfer Request'}</Button>}>
+        <div className="space-y-4">
+          <div className="p-3 rounded-lg bg-teal-50 border border-teal-200">
+            <p className="text-xs text-teal-800 font-medium">🔄 Transfer Workflow</p>
+            <p className="text-xs text-teal-700 mt-1">The <strong>Store Keeper</strong> must approve this transfer before the tool can be handed over.</p>
+          </div>
+          <div className="space-y-1.5"><Label>Tool *</Label>
+            <AsyncSearchableSelect
+              value={toolXferToolId}
+              onValueChange={(val) => { setToolXferToolId(val); }}
+              fetchOptions={async () => {
+                const res = await api.get('/api/tools?limit=999');
+                if (res.success && Array.isArray(res.data)) {
+                  return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));
+                }
+                return [];
+              }}
+              placeholder="Select tool..."
+              searchPlaceholder="Search tools..."
+            />
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Label>From (You)</Label>
+              <Badge variant="outline" className="text-xs">{user?.fullName}</Badge>
+            </div>
+          </div>
+          <div className="space-y-1.5"><Label>Transfer To *</Label>
+            <AsyncSearchableSelect
+              value={toolXferToUserId}
+              onValueChange={(val) => { setToolXferToUserId(val); }}
+              fetchOptions={async () => {
+                const res = await api.get('/api/workers?role=technician');
+                if (res.success && Array.isArray(res.data)) {
+                  return res.data.filter((u: any) => u.id !== user?.id).map((u: any) => ({ value: u.id, label: `${u.fullName}${u.username ? ` (${u.username})` : ''}` }));
+                }
+                return [];
+              }}
+              placeholder="Select technician..."
+              searchPlaceholder="Search technicians..."
+            />
+          </div>
+          <div className="space-y-1.5"><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label>
+            <Textarea value={toolXferReason} onChange={e => setToolXferReason(e.target.value)} placeholder="Why is this transfer needed?" rows={2} />
+          </div>
+        </div>
+      </ResponsiveDialog>
+
+      {/* ═══════ Log Downtime Dialog ═══════ */}
+      <ResponsiveDialog open={downtimeOpen} onOpenChange={(open) => { setDowntimeOpen(open); if (!open) resetDowntimeForm(); }} title="Log Downtime" description={`Record downtime for ${wo?.assetName || 'this asset'} on WO ${wo?.woNumber || ''}`} footer={<Button className="w-full bg-red-600 hover:bg-red-700 text-white" disabled={downtimeSubmitting || !dtReason.trim()} onClick={handleDowntime}>{downtimeSubmitting ? 'Saving...' : 'Log Downtime'}</Button>}>
+        <div className="space-y-4">
+          <div className="p-3 rounded-lg bg-red-50 border border-red-200">
+            <p className="text-xs text-red-800 font-medium">⚠️ Downtime Recording</p>
+            <p className="text-xs text-red-700 mt-1">This will be recorded against <strong>WO {wo?.woNumber || ''}</strong> and asset <strong>{wo?.assetName || 'N/A'}</strong>.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label>Category</Label>
+              <Select value={dtCategory} onValueChange={setDtCategory}>
+                <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="unplanned">Unplanned</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="partial">Partial</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5"><Label>Impact Level</Label>
+              <Select value={dtImpactLevel} onValueChange={setDtImpactLevel}>
+                <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1.5"><Label>Production Loss (₵)</Label><Input type="number" step="0.01" value={dtProductionLoss} onChange={e => setDtProductionLoss(e.target.value)} placeholder="Optional" /></div>
+          <div className="space-y-1.5"><Label>Reason *</Label><Textarea value={dtReason} onChange={e => setDtReason(e.target.value)} placeholder="Describe the downtime reason..." rows={2} /></div>
+        </div>
+      </ResponsiveDialog>
+
+      {/* ═══════ Return Spare Part / Material Dialog ═══════ */}
+      <ResponsiveDialog open={spareReturnOpen} onOpenChange={(open) => { setSpareReturnOpen(open); if (!open) resetSpareReturnForm(); }} title="Return Reusable Material" description="Register a reusable part removed from the machine for refurbishment." footer={<Button className="w-full bg-violet-600 hover:bg-violet-700 text-white" disabled={spareReturnSubmitting || !spareReturnItemName.trim()} onClick={handleSpareReturn}>{spareReturnSubmitting ? 'Submitting...' : 'Submit Return'}</Button>}>
+        <div className="space-y-4">
+          <div className="p-3 rounded-lg bg-violet-50 border border-violet-200">
+            <p className="text-xs text-violet-800 font-medium">♻️ Material Return Lifecycle</p>
+            <p className="text-xs text-violet-700 mt-1">Returned part will be <strong>inspected</strong> → <strong>refurbished</strong> (if needed) → <strong>returned to storeroom</strong>.</p>
+          </div>
+          <div className="space-y-1.5"><Label>Item Name *</Label><Input value={spareReturnItemName} onChange={e => setSpareReturnItemName(e.target.value)} placeholder="Part/material name" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label>Quantity</Label><Input type="number" min="1" value={spareReturnQty} onChange={e => setSpareReturnQty(e.target.value)} /></div>
+            <div className="space-y-1.5"><Label>Condition</Label>
+              <Select value={spareReturnCondition} onValueChange={setSpareReturnCondition}>
+                <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="used">Used</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem><SelectItem value="damaged">Damaged</SelectItem><SelectItem value="worn">Worn</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1.5"><Label>Damage/Wear Description</Label><Textarea value={spareReturnDamageDesc} onChange={e => setSpareReturnDamageDesc(e.target.value)} placeholder="Describe any damage or wear..." rows={2} /></div>
+          <div className="flex items-center gap-3 p-3 rounded-lg border">
+            <Checkbox id="spareRefurb" checked={spareReturnNeedsRefurb} onCheckedChange={v => setSpareReturnNeedsRefurb(!!v)} />
+            <Label htmlFor="spareRefurb" className="text-sm cursor-pointer">Needs Refurbishment</Label>
+          </div>
+        </div>
+      </ResponsiveDialog>
+
       {/* Reason Dialog (for transitions requiring a reason like cancel, hold) */}
       <ResponsiveDialog open={actionDialog?.startsWith('reason:') || false} onOpenChange={() => setActionDialog(null)} title="Confirm Action" description="Please provide a reason for this action.">
           <div className="space-y-4">
@@ -5078,25 +5324,33 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           <Card className="border-0 shadow-sm">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2"><ClipboardList className="h-4 w-4 text-teal-600" />Repair Resources</CardTitle>
-              <CardDescription className="text-xs">Tool requests, transfers & other resources for this work order</CardDescription>
+              <CardDescription className="text-xs">Quick actions for tools, transfers, downtime & returns</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <button onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">Tool Requests</span>
+                  <span className="text-xs font-medium">Request Tool</span>
                 </button>
-                <button onClick={() => navigate('repairs-tool-transfers')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center"><ArrowRightLeft className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">Tool Transfers</span>
+                  <span className="text-xs font-medium">Transfer Tool</span>
                 </button>
-                <button onClick={() => navigate('repairs-downtime', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-red-100 text-red-700 flex items-center justify-center"><Timer className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">Downtime</span>
+                  <span className="text-xs font-medium">Log Downtime</span>
                 </button>
-                <button onClick={() => navigate('repairs-completion', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                <button onClick={() => { resetSpareReturnForm(); setSpareReturnOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                  <div className="h-9 w-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center"><RefreshCw className="h-4 w-4" /></div>
+                  <span className="text-xs font-medium">Return Material</span>
+                </button>
+                <button onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                  <div className="h-9 w-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><ArrowUpRight className="h-4 w-4" /></div>
+                  <span className="text-xs font-medium">View All Tools</span>
+                </button>
+                <button onClick={() => setActionDialog('complete')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-green-100 text-green-700 flex items-center justify-center"><CheckCircle2 className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">Completion</span>
+                  <span className="text-xs font-medium">Complete WO</span>
                 </button>
               </div>
             </CardContent>
