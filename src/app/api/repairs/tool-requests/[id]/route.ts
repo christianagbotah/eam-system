@@ -380,7 +380,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
 
       case 'return': {
-        if (toolReq.status !== 'issued') return NextResponse.json({ success: false, error: `Cannot return: status is ${toolReq.status}` }, { status: 400 });
+        // Allow return when status is 'issued', or when status is 'returned' but items still have outstanding qty
+        if (toolReq.status !== 'issued' && toolReq.status !== 'returned') {
+          return NextResponse.json({ success: false, error: `Cannot return: status is ${toolReq.status}` }, { status: 400 });
+        }
+        // If status is already 'returned', verify there are still items to return
+        if (toolReq.status === 'returned') {
+          const hasRemaining = toolReq.items.length > 0
+            ? toolReq.items.some((i: any) => (i.quantityIssued || 0) > (i.quantityReturned || 0) + (i.quantityTransferred || 0))
+            : false;
+          if (!hasRemaining) {
+            return NextResponse.json({ success: false, error: 'All items have already been fully returned or transferred' }, { status: 400 });
+          }
+          // Reset status back to 'issued' so we can process additional returns
+          await db.repairToolRequest.update({ where: { id }, data: { status: 'issued' } });
+        }
 
         // Multi-item return: requires returnedItems array
         if (toolReq.items.length > 0) {
