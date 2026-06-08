@@ -449,7 +449,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       // ISSUE — handle both reserved and non-reserved stock
       // ──────────────────────────────────────────────
       case 'issue': {
-        if (matReq.status !== 'storekeeper_approved') {
+        if (matReq.status !== 'storekeeper_approved' && matReq.status !== 'picking') {
           return NextResponse.json({ success: false, error: `Cannot issue: current status is ${matReq.status}` }, { status: 400 });
         }
         const qtyToIssue = approvedQuantity ?? quantityApproved ?? matReq.quantityApproved;
