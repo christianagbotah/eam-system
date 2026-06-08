@@ -45,3 +45,26 @@ Stage Summary:
 - Database updated: 19 permissions inserted, 24 role-permission mappings created
 - Complete workflow: Tech creates WO → requests tools/materials → store issues → tech does work → tech can return tools OR transfer to nearby tech → store approves transfer → materials returned go through inspect→refurbish→store lifecycle
 - All permission checks now consistent between UI and API
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Fix technician permissions, tool transfer workflow, material return lifecycle, planner edit permissions
+
+Work Log:
+- Fixed stats API response format in tool-transfers route: Changed from flat keys (pending, storekeeperApproved) to nested byStatus object matching frontend expectations
+- Fixed ToolMaterialReturnPrompt component: handleReturnTool now fetches full tool request detail to handle multi-item vs single-tool returns properly, building returnedItems array when needed
+- Fixed handleReturnMaterial: Changed `quantityReturned` field to `approvedQuantity` to match API's destructuring (also added `quantityReturned` as fallback in API)
+- Fixed material requests API to also accept `quantityReturned` field name in addition to `approvedQuantity` for the record_return action
+- Fixed planner canEdit: Added `wo.plannerId === user?.id` and `wo.createdById === user?.id && hasPermission('work_orders.create')` checks so planners who created WOs can edit them
+- Created VPS migration script (scripts/migrate-repair-permissions.mjs) for adding missing repair module permissions and role assignments to production database
+- Migration script handles camelCase/snake_case column detection, table name detection, and non-destructive permission insertion
+- Migration also adds schema fields (suggestedParts, suggestedTools on WorkOrder; source on RepairMaterialRequest/RepairToolRequest) if missing
+
+Stage Summary:
+- Files modified: src/app/api/repairs/tool-transfers/route.ts, src/components/modules/RepairsPages.tsx, src/app/api/repairs/material-requests/[id]/route.ts
+- Files created: scripts/migrate-repair-permissions.mjs
+- Permission fix: Technicians now get repair_tool_transfers.view_own + create, spare_part_returns.view_own + create, damaged_tool_reports.create
+- Tool return workflow fully functional: multi-item returns, condition tracking, tool status restoration
+- Material return workflow fixed: proper field name matching between frontend and API
+- Stats cards on tool transfers and spare part returns pages now display correct counts

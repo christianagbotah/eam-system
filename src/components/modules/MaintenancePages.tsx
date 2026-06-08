@@ -3638,8 +3638,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // WO is finalized when supervisor has verified (awaiting planner closure) or permanently locked/closed
   const isWOFinalized = wo.status === 'verified' || wo.status === 'closed' || wo.status === 'cancelled' || wo.isLocked;
   const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
-  // Edit: restricted to admin, planner (via assign permissions or WO creator), and managers — NOT technician (technician has work_orders.update for status transitions only)
-  const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && (canManageTeamDirectly || isAdmin());
+  // Edit: planner who created the WO, anyone with assign permissions, or admin can edit
+  // Technicians with work_orders.update can only change status (start/complete), NOT edit WO fields
+  const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && (
+    canManageTeamDirectly ||
+    isAdmin() ||
+    (wo.plannerId === user?.id) ||
+    (wo.createdById === user?.id && hasPermission('work_orders.create'))
+  );
 
   // Disable work-performing buttons (time log, start, personal tools, materials) for non-workers
   // Must be declared AFTER isWOFinalized to avoid temporal dead zone error

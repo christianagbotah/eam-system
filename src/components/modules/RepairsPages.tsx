@@ -2538,7 +2538,24 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
     if (!confirm(`Return "${toolReq.toolName}" to store?`)) return;
     setReturning(toolReq.id);
     try {
-      const res = await api.post(`/api/repairs/tool-requests/${toolReq.id}`, { action: 'return' });
+      // Fetch full tool request to determine single-tool vs multi-item
+      const detailRes = await api.get(`/api/repairs/tool-requests/${toolReq.id}`);
+      if (!detailRes.success) { toast.error(detailRes.error || 'Failed to load tool request'); setReturning(null); return; }
+      const detail = detailRes.data;
+
+      // Build return payload based on request type
+      let payload: Record<string, any> = { action: 'return' };
+      if (detail.items && detail.items.length > 0) {
+        // Multi-item request: build returnedItems array
+        payload.returnedItems = detail.items.map((item: any) => ({
+          itemId: item.id,
+          quantityReturned: (item.quantityIssued || 1) - (item.quantityReturned || 0),
+          conditionAtReturn: 'good',
+        }));
+      }
+      // For single-tool requests, no returnedItems needed — toolConditionAtReturn defaults to tool's current condition
+
+      const res = await api.post(`/api/repairs/tool-requests/${toolReq.id}`, payload);
       if (res.success) {
         toast.success(`"${toolReq.toolName}" returned successfully`);
         setTools(prev => prev.filter(t => t.id !== toolReq.id));
@@ -2551,9 +2568,10 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
     if (!confirm(`Return "${matReq.itemName}" for inspection?`)) return;
     setReturning(matReq.id);
     try {
+      const qtyToReturn = matReq.quantityIssued - (matReq.quantityReturned || 0);
       const res = await api.post(`/api/repairs/material-requests/${matReq.id}`, {
         action: 'record_return',
-        quantityReturned: matReq.quantityIssued - (matReq.quantityReturned || 0),
+        approvedQuantity: qtyToReturn,
         notes: 'Returned by technician on completion',
       });
       if (res.success) {

@@ -73,7 +73,16 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        data: { total, pending, storekeeperApproved, awaitingHandover, transferred, rejected },
+        data: {
+          total,
+          byStatus: {
+            pending,
+            storekeeper_approved: storekeeperApproved,
+            awaiting_handover: awaitingHandover,
+            transferred,
+            rejected,
+          },
+        },
       });
     }
 
