@@ -212,6 +212,7 @@ async function main() {
           if (permColNames.includes('name') || permColNames.includes('Name')) { cols.push(permNameCol); vals.push(`'${name}'`); }
           if (permColNames.includes('module') || permColNames.includes('Module')) { cols.push(permModuleCol); vals.push(`'${module}'`); }
           if (permColNames.includes('description') || permColNames.includes('Description')) { cols.push(permDescCol); vals.push(`'${name}'`); }
+          if (permColNames.includes('action')) { cols.push('action'); vals.push(`'${action}'`); }
           if (permColNames.includes('createdAt') || permColNames.includes('created_at')) { cols.push(permColNames.includes('createdAt') ? 'createdAt' : 'created_at'); vals.push('NOW()'); }
           if (permColNames.includes('updatedAt') || permColNames.includes('updated_at')) { cols.push(permColNames.includes('updatedAt') ? 'updatedAt' : 'updated_at'); vals.push('NOW()'); }
 
