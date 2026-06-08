@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/dialog';
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { DatePicker, DateRangePicker } from '@/components/ui/datetime-picker';
-import { EmptyState, LoadingSkeleton, formatDate, formatCurrency } from '@/components/shared/helpers';
+import { EmptyState, LoadingSkeleton, formatDate, formatCurrency, formatDuration } from '@/components/shared/helpers';
 import {
   LayoutDashboard, GripVertical, ChevronLeft, ChevronRight, Clock, AlertTriangle,
   CheckCircle2, XCircle, Filter, Search, Plus, Users, Calendar, Wrench,
@@ -101,13 +101,13 @@ function SLAIndicator({ createdAt, priority }: { createdAt: string; priority: st
           <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" /><span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" /></span>
           BREACHED
         </span>
-      </TooltipTrigger><TooltipContent>Breached by {Math.abs(hours)}h</TooltipContent></Tooltip></TooltipProvider>
+      </TooltipTrigger><TooltipContent>Breached by {formatDuration(Math.abs(hours))}</TooltipContent></Tooltip></TooltipProvider>
     );
   }
   if (hours <= 12) {
-    return <span className="flex items-center gap-1 text-xs text-amber-600 font-medium"><Timer className="h-3 w-3" />{hours}h left</span>;
+    return <span className="flex items-center gap-1 text-xs text-amber-600 font-medium"><Timer className="h-3 w-3" />{formatDuration(hours)}</span>;
   }
-  return <span className="flex items-center gap-1 text-xs text-emerald-600"><Timer className="h-3 w-3" />{hours}h left</span>;
+  return <span className="flex items-center gap-1 text-xs text-emerald-600"><Timer className="h-3 w-3" />{formatDuration(hours)}</span>;
 }
 
 // ============================================================================
@@ -817,7 +817,7 @@ export default function PlannerWorkbench() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-xs font-medium truncate">{tech.fullName}</p>
-                                <p className="text-[10px] text-muted-foreground">{tech.assignedCount} WOs · {tech.totalHours}h</p>
+                                <p className="text-[10px] text-muted-foreground">{tech.assignedCount} WOs · {formatDuration(tech.totalHours || 0)}</p>
                               </div>
                               {tech.overAllocated && (
                                 <TooltipProvider><Tooltip><TooltipTrigger asChild>
@@ -855,7 +855,7 @@ export default function PlannerWorkbench() {
                             {workOrders.filter(wo => !wo.assignedTo && !['completed', 'closed'].includes(wo.status)).slice(0, 3).map(wo => (
                               <div key={wo.id} className="p-2 rounded border border-dashed border-emerald-200 bg-emerald-50/30">
                                 <p className="text-[10px] font-medium truncate">{wo.title}</p>
-                                <p className="text-[10px] text-muted-foreground">Priority: {wo.priority} · Est: {wo.estimatedHours || '?'}h</p>
+                                <p className="text-[10px] text-muted-foreground">Priority: {wo.priority} · Est: {formatDuration(wo.estimatedHours || 0)}</p>
                               </div>
                             ))}
                           </div>
@@ -905,7 +905,7 @@ export default function PlannerWorkbench() {
                             )}
                             <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
                               <span className="flex items-center gap-1"><ClipboardList className="h-3 w-3" />{wp._count?.workOrders || wp.workOrders?.length || 0} WOs</span>
-                              <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{wp.totalEstimatedHours}h est</span>
+                              <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatDuration(wp.totalEstimatedHours || 0)} est</span>
                               {wp.scheduledDate && (
                                 <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{formatDate(wp.scheduledDate)}</span>
                               )}
@@ -1002,7 +1002,7 @@ export default function PlannerWorkbench() {
                       <span className="text-[10px] text-muted-foreground">{wo.assetName || 'No asset'}</span>
                     </div>
                     <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground">
-                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{wo.estimatedHours || '?'}h</span>
+                      <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatDuration(wo.estimatedHours || 0)}</span>
                       {wo.assignee && <span className="flex items-center gap-1"><UserCheck className="h-3 w-3" />{wo.assignee.fullName}</span>}
                     </div>
                   </div>
@@ -1161,7 +1161,7 @@ export default function PlannerWorkbench() {
                                   </span>
                                 )}
                                 {event.estimatedDurationHours != null && (
-                                  <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{event.estimatedDurationHours}h est.</span>
+                                  <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatDuration(event.estimatedDurationHours || 0)} est.</span>
                                 )}
                                 {event.budgetAmount != null && event.budgetAmount > 0 && (
                                   <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{formatCurrency(event.budgetAmount)}</span>
@@ -1205,7 +1205,7 @@ export default function PlannerWorkbench() {
                   <div><Label className="text-xs text-muted-foreground">Type</Label><p className="text-sm mt-1 capitalize">{detailWO.type || 'Corrective'}</p></div>
                   <div><Label className="text-xs text-muted-foreground">Asset</Label><p className="text-sm mt-1">{detailWO.assetName || 'N/A'}</p></div>
                   <div><Label className="text-xs text-muted-foreground">Assigned To</Label><p className="text-sm mt-1">{detailWO.assignee?.fullName || 'Unassigned'}</p></div>
-                  <div><Label className="text-xs text-muted-foreground">Est. Hours</Label><p className="text-sm mt-1">{detailWO.estimatedHours || '?'}h</p></div>
+                  <div><Label className="text-xs text-muted-foreground">Est. Hours</Label><p className="text-sm mt-1">{formatDuration(detailWO.estimatedHours || 0)}</p></div>
                   <div><Label className="text-xs text-muted-foreground">Planned Start</Label><p className="text-sm mt-1">{detailWO.plannedStart ? formatDate(detailWO.plannedStart) : '—'}</p></div>
                   <div><Label className="text-xs text-muted-foreground">Created</Label><p className="text-sm mt-1">{formatDate(detailWO.createdAt)}</p></div>
                 </div>
@@ -1359,7 +1359,7 @@ export default function PlannerWorkbench() {
                   <Badge variant="outline" className="capitalize">{(stoDetailData.status || '').replace(/_/g, ' ')}</Badge>
                   <Badge variant="outline" className="capitalize">{(stoDetailData.type || '').replace(/_/g, ' ')}</Badge>
                   {stoDetailData.estimatedDurationHours != null && (
-                    <Badge variant="outline"><Clock className="h-3 w-3 mr-1" />{stoDetailData.estimatedDurationHours}h</Badge>
+                    <Badge variant="outline"><Clock className="h-3 w-3 mr-1" />{formatDuration(stoDetailData.estimatedDurationHours || 0)}</Badge>
                   )}
                 </div>
 
@@ -1388,7 +1388,7 @@ export default function PlannerWorkbench() {
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Actual Duration</Label>
-                    <p className="text-sm mt-1">{stoDetailData.actualDurationHours != null ? `${stoDetailData.actualDurationHours}h` : '—'}</p>
+                    <p className="text-sm mt-1">{stoDetailData.actualDurationHours != null ? formatDuration(stoDetailData.actualDurationHours) : '—'}</p>
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Budget</Label>
@@ -1438,7 +1438,7 @@ export default function PlannerWorkbench() {
                         <div key={i} className="flex items-center gap-2 text-xs">
                           <div className={`h-2 w-2 rounded-full shrink-0 ${ms.completed ? 'bg-emerald-500' : ms.inProgress ? 'bg-amber-500' : 'bg-slate-300'}`} />
                           <span className="font-medium">{ms.name || ms.title}</span>
-                          {ms.durationHours && <span className="text-muted-foreground">({ms.durationHours}h)</span>}
+                          {ms.durationHours && <span className="text-muted-foreground">({formatDuration(ms.durationHours)})</span>}
                           {ms.completed && <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 ml-auto">Done</Badge>}
                         </div>
                       ))}

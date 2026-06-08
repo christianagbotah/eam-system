@@ -39,7 +39,7 @@ import {
   Handshake, Truck, DollarSign, RefreshCw, X, Info, Pencil, Trash2,
   FileDown, Loader2,
 } from 'lucide-react';
-import { EmptyState, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
+import { EmptyState, LoadingSkeleton, formatCurrency, formatDuration, formatDurationFromMinutes } from '@/components/shared/helpers';
 import { DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 
@@ -2509,7 +2509,7 @@ export function RepairDowntimePage() {
         <StatsCard icon={Activity} count={records.filter((r: any) => !r.downtimeEnd).length} label="Ongoing" color="text-red-600" bgColor="bg-red-50" />
         <StatsCard icon={CheckCircle2} count={records.filter((r: any) => !!r.downtimeEnd).length} label="Completed" color="text-emerald-600" bgColor="bg-emerald-50" />
         <StatsCard icon={AlertTriangle} count={records.filter((r: any) => r.category === 'unplanned').length} label="Unplanned" color="text-orange-600" bgColor="bg-orange-50" />
-        <StatsCard icon={Clock} count={totalMinutes > 0 ? `${(totalMinutes / 60).toFixed(1)}h` : '0h'} label="Total Downtime" color="text-blue-600" bgColor="bg-blue-50" />
+        <StatsCard icon={Clock} count={formatDurationFromMinutes(totalMinutes)} label="Total Downtime" color="text-blue-600" bgColor="bg-blue-50" />
       </div>
 
       {/* Filters */}
@@ -3410,7 +3410,7 @@ export function RepairAnalyticsPage() {
                 <div className="text-center p-3 bg-green-50 rounded-lg"><p className="text-3xl font-bold text-green-700">{kpi.workOrders?.completionRate}%</p><p className="text-xs text-muted-foreground">Completion Rate</p></div>
                 <div className="text-center p-3 bg-orange-50 rounded-lg"><p className="text-3xl font-bold text-orange-700">{kpi.workOrders?.inProgress}</p><p className="text-xs text-muted-foreground">In Progress</p></div>
                 <div className="text-center p-3 bg-red-50 rounded-lg"><p className="text-3xl font-bold text-red-700">{kpi.workOrders?.overdue}</p><p className="text-xs text-muted-foreground">Overdue</p></div>
-                <div className="text-center p-3 bg-purple-50 rounded-lg"><p className="text-3xl font-bold text-purple-700">{kpi.workOrders?.avgLaborHours || 0}h</p><p className="text-xs text-muted-foreground">Avg Hours</p></div>
+                <div className="text-center p-3 bg-purple-50 rounded-lg"><p className="text-3xl font-bold text-purple-700">{formatDuration(kpi.workOrders?.avgLaborHours || 0)}</p><p className="text-xs text-muted-foreground">Avg Hours</p></div>
               </div>
             </CardContent>
           </Card>
@@ -3446,7 +3446,7 @@ export function RepairAnalyticsPage() {
               <CardHeader><CardTitle className="flex items-center gap-2"><Timer className="h-5 w-5" /> Downtime Analysis</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><p className="text-sm text-muted-foreground">Total Downtime</p><p className="text-xl font-bold text-red-600">{kpi.downtime?.totalHours || 0}h</p></div>
+                  <div><p className="text-sm text-muted-foreground">Total Downtime</p><p className="text-xl font-bold text-red-600">{formatDuration(kpi.downtime?.totalHours || 0)}</p></div>
                   <div><p className="text-sm text-muted-foreground">Avg per WO</p><p className="text-xl font-bold">{kpi.downtime?.avgMinutesPerWo || 0} min</p></div>
                 </div>
               </CardContent>
@@ -3618,9 +3618,9 @@ export function RepairAnalyticsPage() {
               <>
                 {/* KPI Metrics */}
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                  <StatsCard icon={Timer} count={`${downtimeReport.metrics?.totalDowntimeHours || 0}h`} label="Total Downtime" color="text-red-600" bgColor="bg-red-50" />
-                  <StatsCard icon={Activity} count={`${downtimeReport.metrics?.mtbfHours || 0}h`} label="MTBF" color="text-blue-600" bgColor="bg-blue-50" />
-                  <StatsCard icon={Wrench} count={`${downtimeReport.metrics?.mttrHours || 0}h`} label="MTTR" color="text-orange-600" bgColor="bg-orange-50" />
+                  <StatsCard icon={Timer} count={formatDuration(downtimeReport.metrics?.totalDowntimeHours || 0)} label="Total Downtime" color="text-red-600" bgColor="bg-red-50" />
+                  <StatsCard icon={Activity} count={formatDuration(downtimeReport.metrics?.mtbfHours || 0)} label="MTBF" color="text-blue-600" bgColor="bg-blue-50" />
+                  <StatsCard icon={Wrench} count={formatDuration(downtimeReport.metrics?.mttrHours || 0)} label="MTTR" color="text-orange-600" bgColor="bg-orange-50" />
                   <StatsCard icon={TrendingUp} count={`${downtimeReport.metrics?.availabilityPercent || 100}%`} label="Availability" color="text-emerald-600" bgColor="bg-emerald-50" />
                   <StatsCard icon={AlertTriangle} count={downtimeReport.metrics?.totalEvents || 0} label="Downtime Events" color="text-amber-600" bgColor="bg-amber-50" />
                 </div>
@@ -3705,7 +3705,7 @@ export function RepairAnalyticsPage() {
                             <div key={t.period} className="flex items-center gap-3">
                               <span className="text-xs text-muted-foreground w-24 flex-shrink-0">{t.period}</span>
                               <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden"><div className="h-full rounded-full bg-red-400 transition-all" style={{ width: `${pct}%` }} /></div>
-                              <span className="text-xs font-medium w-16 text-right">{t.totalHours}h</span>
+                              <span className="text-xs font-medium w-16 text-right">{formatDuration(t.totalHours)}</span>
                             </div>
                           );
                         })}
@@ -3776,7 +3776,7 @@ export function RepairAnalyticsPage() {
                                     ))}
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-right text-red-600">{a.totalDowntimeHours}h</TableCell>
+                                <TableCell className="text-right text-red-600">{formatDuration(a.totalDowntimeHours)}</TableCell>
                                 <TableCell className="text-right">{formatCurrency(a.totalRepairCost)}</TableCell>
                                 <TableCell className="text-right font-medium text-orange-600">{a.frequencyPerMonth}</TableCell>
                                 <TableCell className="text-sm text-muted-foreground">
@@ -4815,8 +4815,8 @@ export function MaintenanceReportsPage() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatsCard icon={Clock} count={reportData.totalRequests ?? 0} label="Total MRs" color="text-blue-600" bgColor="bg-blue-50" />
                 <StatsCard icon={CheckCircle2} count={reportData.convertedToWO ?? 0} label="Converted to WO" color="text-emerald-600" bgColor="bg-emerald-50" />
-                <StatsCard icon={Timer} count={`${reportData.avgTurnaroundHours ?? 0}h`} label="Avg Turnaround" color="text-teal-600" bgColor="bg-teal-50" />
-                <StatsCard icon={TrendingUp} count={`${reportData.avgMrToWoHours ?? 0}h`} label="MR→WO Time" color="text-amber-600" bgColor="bg-amber-50" />
+                <StatsCard icon={Timer} count={formatDuration(reportData.avgTurnaroundHours ?? 0)} label="Avg Turnaround" color="text-teal-600" bgColor="bg-teal-50" />
+                <StatsCard icon={TrendingUp} count={formatDuration(reportData.avgMrToWoHours ?? 0)} label="MR→WO Time" color="text-amber-600" bgColor="bg-amber-50" />
               </div>
               {Array.isArray(reportData.stageBreakdown) && reportData.stageBreakdown.length > 0 && (
                 <Card><CardHeader><CardTitle className="text-base">Stage Breakdown</CardTitle></CardHeader><CardContent>
@@ -4825,7 +4825,7 @@ export function MaintenanceReportsPage() {
                       <div key={i} className="flex items-center gap-3">
                         <div className="w-40 text-sm font-medium truncate">{stage.name}</div>
                         <div className="flex-1"><Progress value={Math.min(100, (stage.avgHours / (reportData.avgTurnaroundHours || 1)) * 100)} className="h-3" /></div>
-                        <div className="w-20 text-sm text-right text-muted-foreground">{stage.avgHours?.toFixed(1)}h avg</div>
+                        <div className="w-20 text-sm text-right text-muted-foreground">{formatDuration(stage.avgHours || 0)} avg</div>
                         <div className="w-16 text-sm text-right text-muted-foreground">{stage.count} items</div>
                       </div>
                     ))}
@@ -4838,7 +4838,7 @@ export function MaintenanceReportsPage() {
                     {Object.entries(reportData.priorityBreakdown).map(([key, val]: [string, any]) => (
                       <div key={key} className="bg-muted/50 rounded-lg p-3 text-center">
                         <p className="text-2xl font-bold">{val.count || 0}</p>
-                        <p className="text-xs text-muted-foreground capitalize">{key} ({val.avgHours?.toFixed(1)}h avg)</p>
+                        <p className="text-xs text-muted-foreground capitalize">{key} ({formatDuration(val.avgHours || 0)} avg)</p>
                       </div>
                     ))}
                   </div>
@@ -4853,7 +4853,7 @@ export function MaintenanceReportsPage() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatsCard icon={ClipboardList} count={reportData.totalWOs ?? 0} label="Total WOs" color="text-blue-600" bgColor="bg-blue-50" />
                 <StatsCard icon={CheckCircle2} count={`${reportData.completionRate ?? 0}%`} label="Completion Rate" color="text-emerald-600" bgColor="bg-emerald-50" />
-                <StatsCard icon={Timer} count={`${reportData.avgActualHours ?? 0}h`} label="Avg Actual Hours" color="text-teal-600" bgColor="bg-teal-50" />
+                <StatsCard icon={Timer} count={formatDuration(reportData.avgActualHours ?? 0)} label="Avg Actual Hours" color="text-teal-600" bgColor="bg-teal-50" />
                 <StatsCard icon={AlertTriangle} count={`${reportData.reworkRate ?? 0}%`} label="Rework Rate" color="text-red-600" bgColor="bg-red-50" />
               </div>
               {Array.isArray(reportData.byType) && reportData.byType.length > 0 && (
@@ -4864,7 +4864,7 @@ export function MaintenanceReportsPage() {
                         <div className="w-32 text-sm font-medium capitalize">{t.type?.replace('_', ' ')}</div>
                         <div className="flex-1"><Progress value={t.count ? (t.count / reportData.totalWOs) * 100 : 0} className="h-3" /></div>
                         <div className="w-20 text-sm text-right">{t.count} WOs</div>
-                        <div className="w-24 text-sm text-right text-muted-foreground">{t.avgHours?.toFixed(1)}h avg</div>
+                        <div className="w-24 text-sm text-right text-muted-foreground">{formatDuration(t.avgHours || 0)} avg</div>
                       </div>
                     ))}
                   </div>
@@ -4894,8 +4894,8 @@ export function MaintenanceReportsPage() {
                         <TableRow key={t.userId}>
                           <TableCell><div className="flex items-center gap-2"><AvatarPlaceholder name={t.name} /><span className="font-medium text-sm">{t.name}</span></div></TableCell>
                           <TableCell className="text-center font-medium">{t.woCount}</TableCell>
-                          <TableCell className="text-center">{t.avgHoursPerWo?.toFixed(1)}h</TableCell>
-                          <TableCell className="text-center">{t.totalHours?.toFixed(1)}h</TableCell>
+                          <TableCell className="text-center">{formatDuration(t.avgHoursPerWo || 0)}</TableCell>
+                          <TableCell className="text-center">{formatDuration(t.totalHours || 0)}</TableCell>
                           <TableCell className="text-center">
                             <Badge variant="outline" className={t.reworkRate > 10 ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}>{t.reworkRate}%</Badge>
                           </TableCell>
