@@ -22,7 +22,7 @@
 //   node scripts/migrate-repair-permissions.mjs
 // ══════════════════════════════════════════════════════════════════════════
 
-import mariadb from 'mariadb';
+import mariadb from 'mariadb/promise';
 
 function getDbConfig() {
   if (process.env.DATABASE_URL) {
