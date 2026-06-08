@@ -22,7 +22,7 @@
 //   node scripts/migrate-repair-permissions.mjs
 // ══════════════════════════════════════════════════════════════════════════
 
-import mariadb from 'mariadb/promise';
+import { createPool } from 'mariadb/promise';
 
 function getDbConfig() {
   if (process.env.DATABASE_URL) {
@@ -125,7 +125,7 @@ async function main() {
   const config = getDbConfig();
   console.log(`🔧 Connecting to ${config.host}:${config.port}/${config.database} as ${config.user}...`);
 
-  const pool = mariadb.createPool({
+  const pool = createPool({
     host: config.host,
     port: config.port,
     user: config.user,
