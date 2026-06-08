@@ -4642,9 +4642,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </div>
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {toolReqItems.map((item, idx) => (
-                <div key={idx} className="p-3 bg-muted/30 rounded-lg border space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground font-medium w-5">#{idx + 1}</span>
+                <div key={idx} className="flex items-center gap-2 p-2.5 bg-muted/30 rounded-lg border">
+                  <span className="text-xs text-muted-foreground font-medium shrink-0 w-5">#{idx + 1}</span>
+                  <div className="flex-1 min-w-0">
                     <AsyncSearchableSelect
                       value={item.toolId}
                       onValueChange={(val) => {
@@ -4662,17 +4662,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       placeholder="Search tools..."
                       searchPlaceholder="Search by name or code..."
                     />
-                    {toolReqItems.length > 1 && (
-                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => removeToolReqItem(idx)}><X className="h-3.5 w-3.5" /></Button>
-                    )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-24 shrink-0">
-                      <Label className="text-xs">Qty</Label>
-                      <Input type="number" min="1" value={item.quantityRequested} onChange={e => updateToolReqItem(idx, { quantityRequested: parseInt(e.target.value) || 1 })} className="h-8" />
-                    </div>
-                    {item.toolName && <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">{item.toolName}</Badge>}
+                  <div className="w-16 shrink-0">
+                    <Input type="number" min="1" value={item.quantityRequested} onChange={e => updateToolReqItem(idx, { quantityRequested: parseInt(e.target.value) || 1 })} className="h-9 text-center" />
                   </div>
+                  {toolReqItems.length > 1 && (
+                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => removeToolReqItem(idx)}><X className="h-3.5 w-3.5" /></Button>
+                  )}
                 </div>
               ))}
             </div>
