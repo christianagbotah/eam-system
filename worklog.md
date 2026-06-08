@@ -68,3 +68,24 @@ Stage Summary:
 - Tool return workflow fully functional: multi-item returns, condition tracking, tool status restoration
 - Material return workflow fixed: proper field name matching between frontend and API
 - Stats cards on tool transfers and spare part returns pages now display correct counts
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Fix VPS migration script mariadb import + Make Repair Resources buttons open modals directly
+
+Work Log:
+- Fixed `scripts/migrate-repair-permissions.mjs`: Changed `import mariadb from 'mariadb'` to `import { createPool } from 'mariadb/promise'` for Bun ESM compatibility
+- Fixed `mariadb.createPool` to `createPool` (named import)
+- Fixed missing `action` column in permission INSERT: The VPS permissions table requires an `action` field; added dynamic column detection for it
+- Modified WO Detail page Repair Resources card: Changed 4 navigation buttons to 6 action buttons that open modals directly
+- Added 4 new modal dialogs: Request Tool, Transfer Tool, Log Downtime, Return Reusable Material
+- Each modal has: workflow info banner, form fields, proper validation, submit handler
+- "View All Tools" still navigates to full tool requests page for browsing existing requests
+- "Complete WO" opens the existing completion dialog directly
+- Grid changed from 2x2 to 3x2 (mobile 3 cols, desktop 6 cols)
+
+Stage Summary:
+- Files modified: scripts/migrate-repair-permissions.mjs, src/components/modules/MaintenancePages.tsx
+- All 4 commits pushed to GitHub for VPS deployment
+- Technicians can now: request tools, transfer tools, log downtime, return materials — all directly from WO detail page without navigating away
