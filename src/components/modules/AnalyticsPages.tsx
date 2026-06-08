@@ -65,7 +65,7 @@ import {
   PieChart, Pie, Cell, AreaChart, Area, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
-import { EmptyState, StatusBadge, PriorityBadge, LoadingSkeleton, formatDate, formatCurrency } from '@/components/shared/helpers';
+import { EmptyState, StatusBadge, PriorityBadge, LoadingSkeleton, formatDate, formatCurrency, formatDuration } from '@/components/shared/helpers';
 
 export function AnalyticsPage() {
   const [data, setData] = useState<any>(null);
@@ -590,7 +590,7 @@ export function AnalyticsOeePage() {
                 <div key={loss.type} className="flex items-center gap-3">
                   <div className={`h-3 w-3 rounded-full ${loss.color} shrink-0`} />
                   <span className="text-sm flex-1 truncate">{loss.type}</span>
-                  <span className="text-xs text-muted-foreground w-16 text-right">{loss.hours}h</span>
+                  <span className="text-xs text-muted-foreground w-16 text-right">{formatDuration(loss.hours)}</span>
                   <div className="w-20 bg-muted rounded-full h-2"><div className={`h-full rounded-full ${loss.color}`} style={{ width: `${loss.pct}%` }} /></div>
                   <span className="text-xs font-semibold w-10 text-right">{loss.pct}%</span>
                 </div>

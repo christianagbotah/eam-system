@@ -20,7 +20,7 @@ import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Separator } from '@/components/ui/separator';
-import { EmptyState, LoadingSkeleton } from '@/components/shared/helpers';
+import { EmptyState, LoadingSkeleton, formatDuration } from '@/components/shared/helpers';
 import {
   ChevronLeft, ChevronRight, CalendarDays, Download, Clock,
   Users, User, Timer, FileSpreadsheet, TrendingUp, AlertTriangle,
@@ -78,11 +78,6 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 function getWeekDates(referenceDate: Date): Date[] {
   const monday = startOfWeek(referenceDate, { weekStartsOn: 1 });
   return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
-}
-
-function formatHours(h: number): string {
-  if (h === 0) return '—';
-  return h.toFixed(1);
 }
 
 function cellColorClass(hours: number): string {
@@ -250,7 +245,7 @@ function GridCell({
               ${isTotal ? 'font-bold text-foreground border-t-2 border-gray-300' : ''}
             `}
           >
-            {formatHours(hours)}
+            {formatDuration(hours)}
           </td>
         </TooltipTrigger>
         {hasData && breakdown && breakdown.length > 0 && (
@@ -260,7 +255,7 @@ function GridCell({
               {breakdown.map((b) => (
                 <div key={b.activity} className="flex items-center justify-between gap-4">
                   <span className="text-[11px] text-muted-foreground capitalize">{b.activity.replace(/_/g, ' ')}</span>
-                  <span className="text-[11px] font-medium">{formatHours(b.hours)}h</span>
+                  <span className="text-[11px] font-medium">{formatDuration(b.hours)}</span>
                 </div>
               ))}
             </div>
@@ -601,14 +596,14 @@ export function TimesheetPage() {
         <SummaryCard
           icon={Clock}
           label="Total Hours"
-          value={formatHours(summary.grandTotal)}
+          value={formatDuration(summary.grandTotal)}
           color="text-teal-600"
           bgColor="bg-teal-50"
         />
         <SummaryCard
           icon={AlertTriangle}
           label="Overtime Hours"
-          value={formatHours(summary.overtime)}
+          value={formatDuration(summary.overtime)}
           color={summary.overtime > 0 ? 'text-red-600' : 'text-gray-500'}
           bgColor={summary.overtime > 0 ? 'bg-red-50' : 'bg-gray-50'}
           subtext={`> ${WEEK_OVERHOUR_THRESHOLD}h`}
@@ -623,7 +618,7 @@ export function TimesheetPage() {
         <SummaryCard
           icon={TrendingUp}
           label="Avg Hours/WO"
-          value={formatHours(summary.avgPerWO)}
+          value={formatDuration(summary.avgPerWO)}
           color="text-amber-600"
           bgColor="bg-amber-50"
         />
@@ -822,7 +817,7 @@ export function TimesheetPage() {
                           ${row.totalHours > 0 ? cellColorClass(row.totalHours) : 'text-gray-300'}
                         `}
                       >
-                        {formatHours(row.totalHours)}
+                        {formatDuration(row.totalHours)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -844,10 +839,10 @@ export function TimesheetPage() {
                       `}
                     >
                       <div className="flex flex-col items-center">
-                        <span>{formatHours(summary.grandTotal)}</span>
+                        <span>{formatDuration(summary.grandTotal)}</span>
                         {summary.overtime > 0 && (
                           <span className="text-[9px] text-red-600 font-medium mt-0.5">
-                            +{formatHours(summary.overtime)} OT
+                            +{formatDuration(summary.overtime)} OT
                           </span>
                         )}
                       </div>
@@ -919,7 +914,7 @@ export function TimesheetPage() {
                       style={{ width: `${pct}%` }}
                     />
                     <span className="absolute inset-0 flex items-center justify-center text-[11px] font-medium">
-                      {formatHours(total)}h
+                      {formatDuration(total)}
                     </span>
                   </div>
                 </div>
@@ -931,12 +926,12 @@ export function TimesheetPage() {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
             <div className="bg-muted/50 rounded-lg p-3">
-              <p className="text-lg font-bold text-teal-600">{formatHours(summary.grandTotal)}</p>
+              <p className="text-lg font-bold text-teal-600">{formatDuration(summary.grandTotal)}</p>
               <p className="text-[10px] text-muted-foreground">Total Hours</p>
             </div>
             <div className="bg-muted/50 rounded-lg p-3">
               <p className={`text-lg font-bold ${summary.overtime > 0 ? 'text-red-600' : 'text-gray-500'}`}>
-                {formatHours(summary.overtime)}
+                {formatDuration(summary.overtime)}
               </p>
               <p className="text-[10px] text-muted-foreground">Overtime</p>
             </div>
@@ -945,7 +940,7 @@ export function TimesheetPage() {
               <p className="text-[10px] text-muted-foreground">Work Orders</p>
             </div>
             <div className="bg-muted/50 rounded-lg p-3">
-              <p className="text-lg font-bold text-amber-600">{formatHours(summary.avgPerWO)}</p>
+              <p className="text-lg font-bold text-amber-600">{formatDuration(summary.avgPerWO)}</p>
               <p className="text-[10px] text-muted-foreground">Avg Hrs/WO</p>
             </div>
           </div>

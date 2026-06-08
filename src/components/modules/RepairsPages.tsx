@@ -3643,9 +3643,9 @@ export function RepairAnalyticsPage() {
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-right">{a.events}</TableCell>
-                                <TableCell className="text-right font-semibold text-red-600">{a.totalHours}</TableCell>
-                                <TableCell className="text-right text-blue-600">{a.plannedHours}</TableCell>
-                                <TableCell className="text-right text-red-500">{a.unplannedHours}</TableCell>
+                                <TableCell className="text-right font-semibold text-red-600">{formatDuration(a.totalHours)}</TableCell>
+                                <TableCell className="text-right text-blue-600">{formatDuration(a.plannedHours)}</TableCell>
+                                <TableCell className="text-right text-red-500">{formatDuration(a.unplannedHours)}</TableCell>
                                 <TableCell className="text-right text-amber-600">{a.productionLoss > 0 ? formatCurrency(a.productionLoss) : '—'}</TableCell>
                               </TableRow>
                             ))}
@@ -3669,7 +3669,7 @@ export function RepairAnalyticsPage() {
                               <TableRow key={c.category}>
                                 <TableCell><StatusBadge status={c.category} /></TableCell>
                                 <TableCell className="text-right">{c.events}</TableCell>
-                                <TableCell className="text-right font-medium">{c.totalHours}</TableCell>
+                                <TableCell className="text-right font-medium">{formatDuration(c.totalHours)}</TableCell>
                               </TableRow>
                             ))}
                           </TableBody>

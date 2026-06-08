@@ -53,7 +53,7 @@ import {
 } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
-import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, formatDateLocal, timeAgo, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
+import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, formatDateLocal, timeAgo, LoadingSkeleton, formatCurrency, formatDuration } from '@/components/shared/helpers';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
@@ -2077,7 +2077,7 @@ export function WorkOrdersPage() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{woKpi?.completionMetrics.avgHours != null ? `${woKpi.completionMetrics.avgHours}h` : '-'}</div>
+            <div className="text-2xl font-bold">{woKpi?.completionMetrics.avgHours != null ? formatDuration(woKpi.completionMetrics.avgHours) : '-'}</div>
             <p className="text-xs text-muted-foreground mt-1">{woKpi ? `${woKpi.completionMetrics.completedCount} completed` : 'per work order'}</p>
           </CardContent>
         </Card>
@@ -3873,7 +3873,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             <div className="grid grid-cols-3 gap-3">
               <div className="p-3 rounded-lg bg-muted/50 text-center">
                 <p className="text-xs text-muted-foreground">Total Time</p>
-                <p className="text-lg font-bold">{wo.actualHours || 0}h</p>
+                <p className="text-lg font-bold">{formatDuration(wo.actualHours || 0)}</p>
               </div>
               <div className="p-3 rounded-lg bg-muted/50 text-center">
                 <p className="text-xs text-muted-foreground">Materials Used</p>
@@ -4867,7 +4867,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           {/* Time Logs — Enterprise with Session Controls */}
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
-              <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {wo.actualHours || 0}h total</CardDescription></div>
+              <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {formatDuration(wo.actualHours || 0)} total</CardDescription></div>
               <div className="flex items-center gap-2">
                 {/* Context-aware action buttons */}
                 {isActiveOnThisWO && !workActionDisabled && (
@@ -4956,7 +4956,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               <div className="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-lg bg-muted/50">
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center"><Clock className="h-4 w-4" /></div>
-                  <div><p className="text-[10px] text-muted-foreground uppercase">Total</p><p className="text-sm font-bold">{wo.actualHours || 0}h</p></div>
+                  <div><p className="text-[10px] text-muted-foreground uppercase">Total</p><p className="text-sm font-bold">{formatDuration(wo.actualHours || 0)}</p></div>
                 </div>
                 {wo.actualStart && (
                   <div className="flex items-center gap-2">
@@ -4998,10 +4998,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     };
                     const actionStyle = actionStyles[tl.action] || actionStyles.start;
                     const ActionIcon = actionStyle.icon;
-                    const durationMin = tl.duration ? Math.round(tl.duration * 60) : 0;
-                    const durH = Math.floor(durationMin / 60);
-                    const durM = durationMin % 60;
-                    const durStr = durH > 0 ? `${durH}h ${durM}m` : `${durM}m`;
+                    const durStr = tl.duration ? formatDuration(tl.duration) : '—';
 
                     return (
                       <div key={tl.id} className="flex items-start gap-3 text-sm py-2.5 border-b last:border-0 group">
@@ -5819,9 +5816,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               <Separator />
               <div className="flex justify-between"><span className="text-muted-foreground">Assigned To</span><span className="font-medium">{wo.assignee?.fullName || (wo.teamMembers?.length > 0 ? `Team (${wo.teamMembers.length} member${wo.teamMembers.length !== 1 ? 's' : ''})` : 'Unassigned')}</span></div>
               <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Est. Hours</span><span className="font-medium">{wo.estimatedHours || '-'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Est. Hours</span><span className="font-medium">{formatDuration(wo.estimatedHours || 0)}</span></div>
               <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Actual Hours</span><span className="font-medium">{wo.actualHours || '-'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Actual Hours</span><span className="font-medium">{formatDuration(wo.actualHours || 0)}</span></div>
               <Separator />
               <div className="flex justify-between"><span className="text-muted-foreground">Created By</span><span className="font-medium">{wo.creator?.fullName || '-'}</span></div>
               <Separator />
@@ -6751,7 +6748,7 @@ export function MaintenanceDashboardPage() {
               </div>
             </div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Avg MTTR</p>
-            <p className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">{avgMTTR}h</p>
+            <p className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">{formatDuration(avgMTTR)}</p>
             <p className="text-[11px] text-muted-foreground mt-0.5">mean time to repair</p>
           </CardContent>
         </Card>

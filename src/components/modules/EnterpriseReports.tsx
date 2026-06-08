@@ -24,7 +24,7 @@ import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Progress } from '@/components/ui/progress';
-import { EmptyState, LoadingSkeleton, formatDate, formatDateTime, formatCurrency } from '@/components/shared/helpers';
+import { EmptyState, LoadingSkeleton, formatDate, formatDateTime, formatCurrency, formatDuration } from '@/components/shared/helpers';
 import {
   BarChart3, TrendingUp, TrendingDown, Activity, Clock, AlertTriangle,
   CheckCircle2, ClipboardList, DollarSign, Package, Wrench, Users,
@@ -151,8 +151,8 @@ export default function EnterpriseReports() {
       summary: [
         { label: 'Total WOs', value: String(s.totalWOs) },
         { label: 'Completed', value: `${s.completedWOs} (${s.completionRate}%)` },
-        { label: 'MTBF', value: `${s.mtbf ?? 'N/A'}h` },
-        { label: 'MTTR', value: `${s.avgCompletionHours}h` },
+        { label: 'MTBF', value: formatDuration(s.mtbf ?? 0) },
+        { label: 'MTTR', value: formatDuration(s.avgCompletionHours ?? 0) },
         { label: 'Total Cost', value: formatCurrency(s.totalCost) },
         { label: 'SLA Compliance', value: `${s.slaComplianceRate ?? 'N/A'}%` },
       ],
@@ -457,8 +457,8 @@ export default function EnterpriseReports() {
                           <TableCell className="font-medium">{tech.userName}</TableCell>
                           <TableCell className="text-right">{tech.assignedCount}</TableCell>
                           <TableCell className="text-right text-emerald-600 font-medium">{tech.completedCount}</TableCell>
-                          <TableCell className="text-right">{tech.avgHoursPerWO || '—'}h</TableCell>
-                          <TableCell className="text-right">{tech.totalHours || '—'}h</TableCell>
+                          <TableCell className="text-right">{tech.avgHoursPerWO ? formatDuration(tech.avgHoursPerWO) : '—'}</TableCell>
+                          <TableCell className="text-right">{tech.totalHours ? formatDuration(tech.totalHours) : '—'}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
                               <Progress value={util} className="w-16 h-2" />

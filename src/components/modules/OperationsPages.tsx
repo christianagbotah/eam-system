@@ -33,7 +33,7 @@ import {
   Activity, BookOpen, ClipboardCheck, ClipboardList, Settings, Send, Target, TrendingUp,
   Download, BarChart3,
 } from 'lucide-react';
-import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
+import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton, formatDuration } from '@/components/shared/helpers';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 
 // MeterReadings: uses meters.create/update
@@ -315,7 +315,7 @@ export function OperationsTrainingPage() {
               <TableCell className="font-medium">{c.title}</TableCell>
               <TableCell><Badge variant="outline" className={categoryColor(c.category)}><span className="capitalize">{c.category}</span></Badge></TableCell>
               <TableCell className="text-sm hidden md:table-cell">{c.instructor || '-'}</TableCell>
-              <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{c.durationHours}h</TableCell>
+              <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{formatDuration(c.durationHours)}</TableCell>
               <TableCell className="text-sm text-muted-foreground hidden sm:table-cell capitalize">{(c.type || '').replace(/_/g, ' ')}</TableCell>
               <TableCell>{c.certification ? <Badge variant="outline" className="text-emerald-600 bg-emerald-50 border-emerald-200">Yes</Badge> : <Badge variant="outline" className="text-muted-foreground">No</Badge>}</TableCell>
               <TableCell><Badge variant="outline" className={statusColor(c.status)}><span className="capitalize">{c.status}</span></Badge></TableCell>
@@ -563,10 +563,10 @@ export function OperationsTimeLogsPage() {
                       <TableRow key={tech.userId} className="hover:bg-muted/30">
                         <TableCell className="font-medium text-sm">{tech.fullName}</TableCell>
                         <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{tech.department || '-'}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{tech.totalHours}h</TableCell>
+                        <TableCell className="text-right font-mono text-sm">{formatDuration(tech.totalHours)}</TableCell>
                         <TableCell className="text-right text-sm hidden md:table-cell">{tech.woCount}</TableCell>
                         <TableCell className="text-right text-sm hidden lg:table-cell">{tech.entryCount}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{activities[0]?.hrs > 0 ? `${activities[0].name} (${activities[0].hrs}h)` : '-'}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{activities[0]?.hrs > 0 ? `${activities[0].name} (${formatDuration(activities[0].hrs)})` : '-'}</TableCell>
                       </TableRow>
                     );
                   })}
