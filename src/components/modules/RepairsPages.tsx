@@ -1001,6 +1001,21 @@ export function RepairToolRequestsPage() {
     return [];
   };
 
+  /** True if ANY item still has qty outstanding (issued > returned + transferred) */
+  const hasOutstandingItems = (r: any) => {
+    const items = getRequestItems(r);
+    if (items.length === 0) {
+      // Single-tool request: outstanding if status is still 'issued'
+      return r.status === 'issued';
+    }
+    return items.some((i: any) => {
+      const issued = i.quantityIssued || 0;
+      const ret = i.quantityReturned || 0;
+      const xfer = i.quantityTransferred || 0;
+      return (ret + xfer) < issued;
+    });
+  };
+
   const getToolNamesSummary = (r: any) => {
     const items = getRequestItems(r);
     if (items.length === 0) return r.toolName || '—';
@@ -1552,10 +1567,10 @@ export function RepairToolRequestsPage() {
                               {r.status === 'storekeeper_approved' && canApproveAsStore(user) && (
                                 <DropdownMenuItem onClick={() => { setDetailItem(r); openIssueDialog(); }}><Wrench className="h-4 w-4 mr-2 text-emerald-600" /> Issue Tools</DropdownMenuItem>
                               )}
-                              {r.status === 'issued' && (
+                              {hasOutstandingItems(r) && (
                                 <DropdownMenuItem onClick={() => { setDetailItem(r); openReturnDialog(); }}><RotateCcw className="h-4 w-4 mr-2 text-amber-600" /> Return Tools</DropdownMenuItem>
                               )}
-                              {r.status === 'issued' && (
+                              {hasOutstandingItems(r) && (
                                 <DropdownMenuItem onClick={() => { setDetailItem(r); openTransferDialog(); }}><ArrowRightLeft className="h-4 w-4 mr-2 text-sky-600" /> Transfer Tools</DropdownMenuItem>
                               )}
                               {r.status === 'pending' && (r.requestedById === user?.id || isAdmin()) && (
@@ -1632,6 +1647,7 @@ export function RepairToolRequestsPage() {
                               {item.quantityApproved != null && <span>Approved: <strong className="text-foreground">{item.quantityApproved}</strong></span>}
                               <span>Issued: <strong className="text-foreground">{item.quantityIssued}</strong></span>
                               {item.quantityReturned > 0 && <span>Returned: <strong className="text-foreground">{item.quantityReturned}</strong></span>}
+                              {(item.quantityTransferred || 0) > 0 && <span>Transferred: <strong className="text-foreground">{item.quantityTransferred}</strong></span>}
                             </div>
                             {item.issueNotes && (
                               <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1">
@@ -1683,7 +1699,7 @@ export function RepairToolRequestsPage() {
                       {detailItem.status === 'storekeeper_approved' && canApproveAsStore(user) && (
                         <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setDetailItem(detailItem); openIssueDialog(); }} disabled={submitting}><Wrench className="h-3.5 w-3.5" /> Issue Tools</Button>
                       )}
-                      {detailItem.status === 'issued' && (
+                      {hasOutstandingItems(detailItem) && (
                         <div className="flex gap-2">
                           <Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setDetailItem(detailItem); openReturnDialog(); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tools</Button>
                           <Button size="sm" variant="outline" className="gap-1 border-sky-400 text-sky-700 hover:bg-sky-50" onClick={() => { setDetailItem(detailItem); openTransferDialog(); }} disabled={submitting}><ArrowRightLeft className="h-3.5 w-3.5" /> Transfer Tools</Button>
@@ -2691,6 +2707,7 @@ interface ReturnTransferItem {
   code: string;
   issuedQty: number;
   returnedQty: number;
+  transferredQty?: number;
   remainingQty: number;
   unit: string;
   requestId: string;
@@ -2729,9 +2746,10 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
             for (const item of tr.items) {
               const issued = item.quantityIssued || 0;
               const returned = item.quantityReturned || 0;
-              const remaining = issued - returned;
+              const xfer = item.quantityTransferred || 0;
+              const remaining = issued - returned - xfer;
               if (remaining <= 0) continue;
-              rows.push({ id: `${tr.id}-${item.id}`, type: 'tool', name: item.toolName || item.tool?.name || 'Unknown Tool', code: item.toolCode || item.tool?.toolCode || '', issuedQty: issued, returnedQty: returned, remainingQty: remaining, unit: 'pcs', requestId: tr.id, lineItemId: item.id, toolId: item.toolId || tr.toolId || '' });
+              rows.push({ id: `${tr.id}-${item.id}`, type: 'tool', name: item.toolName || item.tool?.name || 'Unknown Tool', code: item.toolCode || item.tool?.toolCode || '', issuedQty: issued, returnedQty: returned, transferredQty: xfer, remainingQty: remaining, unit: 'pcs', requestId: tr.id, lineItemId: item.id, toolId: item.toolId || tr.toolId || '' });
             }
           } else {
             const issued = tr.quantityIssued || (tr.tool ? 1 : 0);
@@ -2910,6 +2928,14 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
     if (errors.length === 0) {
       toast.success('All transfers processed successfully');
       setTransferOpen(false);
+      // Track transferred items locally (pending store approval)
+      setAllItems(prev => prev.map(item => {
+        const transferredItem = activeItems.find(ai => ai.id === item.id);
+        if (transferredItem && transferredItem.qtyTransfer > 0) {
+          return { ...item, transferredQty: (item.transferredQty || 0) + transferredItem.qtyTransfer, remainingQty: item.remainingQty - transferredItem.qtyTransfer };
+        }
+        return item;
+      }).filter(i => i.remainingQty > 0));
     } else {
       errors.forEach(e => toast.error(e));
     }
@@ -2945,6 +2971,11 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
             <span className="font-medium truncate flex-1">{item.name}</span>
             {item.code && <span className="text-xs font-mono text-muted-foreground">{item.code}</span>}
             <span className="text-xs text-muted-foreground whitespace-nowrap">Remaining: <strong>{item.remainingQty}</strong></span>
+            {(item.returnedQty > 0 || (item.transferredQty || 0) > 0) && (
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                (Returned: {item.returnedQty}{(item.transferredQty || 0) > 0 ? ` · Transferred: ${item.transferredQty}` : ''})
+              </span>
+            )}
           </div>
         ))}
       </div>

@@ -480,15 +480,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           });
         }
 
-        // Determine if ALL items are now fully returned
+        // Determine if ALL items are now fully returned OR transferred
         let allReturned = true;
         if (toolReq.items.length > 0) {
-          // Re-fetch items to get updated quantityReturned
+          // Re-fetch items to get updated quantities
           const updatedItems = await db.repairToolRequestItem.findMany({ where: { repairToolRequestId: id } });
           for (const item of updatedItems) {
             const issued = item.quantityIssued || 0;
             const ret = item.quantityReturned || 0;
-            if (ret < issued) { allReturned = false; break; }
+            const xfer = item.quantityTransferred || 0;
+            if ((ret + xfer) < issued) { allReturned = false; break; }
           }
         } else {
           // Single-tool: always fully returned after this action
