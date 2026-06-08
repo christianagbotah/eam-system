@@ -37,7 +37,7 @@ import {
   Timer, Activity, Ban, ChevronDown, ClipboardList, BarChart3,
   ArrowLeftRight, PackageCheck, PackageOpen, User, CircleDot,
   Handshake, Truck, DollarSign, RefreshCw, X, Info, Pencil, Trash2,
-  FileDown, Loader2,
+  FileDown, Loader2, Undo2,
 } from 'lucide-react';
 import { EmptyState, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
@@ -1885,6 +1885,7 @@ export function RepairToolRequestsPage() {
 
 export function RepairToolTransfersPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
+  const { pageParams } = useNavigationStore();
   const [transfers, setTransfers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -1901,6 +1902,22 @@ export function RepairToolTransfersPage() {
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<any>(null);
   const [createForm, setCreateForm] = useState({ toolId: '', fromUserId: '', toUserId: '', reason: '', notes: '' });
+
+  // Auto-fill create form from pageParams (e.g., from RepairCompletion's "Transfer" button)
+  useEffect(() => {
+    if (pageParams?.toolId) {
+      setCreateForm(prev => ({
+        ...prev,
+        toolId: pageParams.toolId,
+        fromUserId: pageParams.fromUserId || user?.id || '',
+        reason: `Transfer from WO completion — ${pageParams.toolName || 'tool'}`,
+      }));
+      setCreateOpen(true);
+      // Clear pageParams after using
+      const nav = useNavigationStore.getState();
+      nav.navigate('repairs-tool-transfers', {});
+    }
+  }, [pageParams?.toolId]);
 
   const activeFilters = useMemo(() => { let c = 0; if (filterStatus !== 'all') c++; if (searchText) c++; return c; }, [filterStatus, searchText]);
   const clearFilters = () => { setFilterStatus('all'); setSearchText(''); setPage(1); };
@@ -1962,7 +1979,7 @@ export function RepairToolTransfersPage() {
             <p className="text-sm text-muted-foreground">Manage tool custody transfers between technicians</p>
           </div>
         </div>
-        {(user && (hasPermission('repairs.create') || hasPermission('repairs.manage') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
+        {(user && (hasPermission('repair_tool_transfers.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -1991,7 +2008,7 @@ export function RepairToolTransfersPage() {
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : filtered.length === 0 ? (
             <EmptyState icon={ArrowRightLeft} title="No transfer requests found" description="Create a new transfer request to get started">
-              {(user && (hasPermission('repairs.create') || hasPermission('repairs.manage') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
+              {(user && (hasPermission('repair_tool_transfers.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
@@ -2035,18 +2052,27 @@ export function RepairToolTransfersPage() {
                       <TableCell><OverduePulse isOverdue={t.isOverdue} date={t.createdAt} /></TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                          {(hasPermission('work_orders.update') || isAdmin()) && <>
-                          {t.status === 'pending' && (<>
-                            <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(t.id); setConditionOpen(true); }}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button>
-                            <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => { setRejectTarget(t.id); setRejectOpen(true); }}><XCircle className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reject</TooltipContent></Tooltip></TooltipProvider>
-                          </>)}
-                          {t.status === 'storekeeper_approved' && (
-                            <Button size="sm" className="h-7 gap-1 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => handleAction(t.id, 'from_user_accept')}><Handshake className="h-3.5 w-3.5" /> Confirm Handover</Button>
+                          {/* Approve / Reject — store keeper / tools shop attendant only */}
+                          {(isAdmin() || ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(user?.role?.slug || '') || hasPermission('repair_tool_transfers.update')) && (
+                            <div className="flex items-center gap-1">
+                              {t.status === 'pending' && (<>
+                                <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(t.id); setConditionOpen(true); }}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button>
+                                <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => { setRejectTarget(t.id); setRejectOpen(true); }}><XCircle className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reject</TooltipContent></Tooltip></TooltipProvider>
+                              </>)}
+                            </div>
                           )}
-                          {t.status === 'awaiting_handover' && (
-                            <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(t.id, 'to_user_accept')}><CheckCircle2 className="h-3.5 w-3.5" /> Confirm Receipt</Button>
+                          {/* From User Accept Handover */}
+                          {t.status === 'awaiting_handover' && (user?.id === t.fromUserId || isAdmin()) && (
+                            <Button size="sm" variant="outline" className="h-7 text-[10px] text-sky-600" onClick={() => handleAction(t.id, 'from_user_accept')}>Accept Handover</Button>
                           )}
-                          </>}
+                          {/* To User Accept Receipt */}
+                          {t.status === 'awaiting_handover' && (user?.id === t.toUserId || isAdmin()) && (
+                            <Button size="sm" variant="outline" className="h-7 text-[10px] text-teal-600" onClick={() => handleAction(t.id, 'to_user_accept')}>Accept Receipt</Button>
+                          )}
+                          {/* Cancel — requester or supervisor */}
+                          {t.status === 'pending' && (user?.id === t.requestedById || isAdmin() || ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(user?.role?.slug || '')) && (
+                            <Button size="sm" variant="ghost" className="h-7 text-[10px] text-red-500" onClick={() => { if (confirm('Cancel this transfer request?')) handleAction(t.id, 'cancel'); }}>Cancel</Button>
+                          )}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
@@ -2113,20 +2139,33 @@ export function RepairToolTransfersPage() {
                 {detailItem.toolConditionAtTransfer && <div><Label className="text-xs text-muted-foreground">Condition at Transfer</Label><p className="mt-1"><StatusBadge status={detailItem.toolConditionAtTransfer} /></p></div>}
                 <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                 {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
-                {(detailItem.status === 'pending' || detailItem.status === 'storekeeper_approved' || detailItem.status === 'awaiting_handover') && (hasPermission('work_orders.update') || isAdmin()) && (<>
+                {/* Approve / Reject — store keeper / tools shop attendant only */}
+                {(isAdmin() || ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(user?.role?.slug || '') || hasPermission('repair_tool_transfers.update')) && detailItem.status === 'pending' && (<>
                   <Separator />
                   <div className="flex flex-wrap gap-2">
-                    {detailItem.status === 'pending' && (<>
-                      <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(detailItem.id); setConditionOpen(true); }} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve Transfer</Button>
-                      <Button size="sm" variant="destructive" onClick={() => { setRejectTarget(detailItem.id); setRejectOpen(true); }} disabled={submitting}>Reject</Button>
-                    </>)}
-                    {detailItem.status === 'storekeeper_approved' && (<>
-                      <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => handleAction(detailItem.id, 'from_user_accept')} disabled={submitting}><Handshake className="h-3.5 w-3.5" /> Confirm Handover</Button>
-                      <Button size="sm" variant="outline" onClick={() => handleAction(detailItem.id, 'to_user_accept')} disabled={submitting}>Confirm Receipt</Button>
-                    </>)}
-                    {detailItem.status === 'awaiting_handover' && (
-                      <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'to_user_accept')} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Confirm Receipt</Button>
-                    )}
+                    <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(detailItem.id); setConditionOpen(true); }} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve Transfer</Button>
+                    <Button size="sm" variant="destructive" onClick={() => { setRejectTarget(detailItem.id); setRejectOpen(true); }} disabled={submitting}>Reject</Button>
+                  </div>
+                </>)}
+                {/* From User Accept Handover */}
+                {detailItem.status === 'awaiting_handover' && (user?.id === detailItem.fromUserId || isAdmin()) && (<>
+                  <Separator />
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" className="gap-1 text-sky-600" onClick={() => handleAction(detailItem.id, 'from_user_accept')} disabled={submitting}><Handshake className="h-3.5 w-3.5" /> Accept Handover</Button>
+                  </div>
+                </>)}
+                {/* To User Accept Receipt */}
+                {(detailItem.status === 'storekeeper_approved' || detailItem.status === 'awaiting_handover') && (user?.id === detailItem.toUserId || isAdmin()) && (<>
+                  <Separator />
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'to_user_accept')} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Accept Receipt</Button>
+                  </div>
+                </>)}
+                {/* Cancel — requester or supervisor */}
+                {detailItem.status === 'pending' && (user?.id === detailItem.requestedById || isAdmin() || ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(user?.role?.slug || '')) && (<>
+                  <Separator />
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="ghost" className="text-red-500" onClick={() => { if (confirm('Cancel this transfer request?')) handleAction(detailItem.id, 'cancel'); }} disabled={submitting}>Cancel Transfer</Button>
                   </div>
                 </>)}
               </TabsContent>
@@ -2470,6 +2509,143 @@ export function RepairDowntimePage() {
 // PAGE 5: REPAIR COMPLETION & CLOSURE
 // ============================================================================
 
+// Sub-component: shows outstanding tools and materials that need returning/transferring
+function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
+  const { user, hasPermission, isAdmin } = useAuthStore();
+  const [tools, setTools] = useState<any[]>([]);
+  const [materials, setMaterials] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [returning, setReturning] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!workOrderId) return;
+    setLoading(true);
+    // Fetch tool requests for this WO that are issued but not returned
+    api.get(`/api/repairs/tool-requests?workOrderId=${workOrderId}&limit=999`).then(res => {
+      if (res.success && res.data) {
+        setTools((res.data as any[]).filter((t: any) => t.status === 'issued'));
+      }
+    }).catch(() => {});
+    // Fetch material requests that are issued but not returned/closed
+    api.get(`/api/repairs/material-requests?workOrderId=${workOrderId}&limit=999`).then(res => {
+      if (res.success && res.data) {
+        setMaterials((res.data as any[]).filter((m: any) => m.status === 'issued'));
+      }
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [workOrderId]);
+
+  const handleReturnTool = async (toolReq: any) => {
+    if (!confirm(`Return "${toolReq.toolName}" to store?`)) return;
+    setReturning(toolReq.id);
+    try {
+      const res = await api.post(`/api/repairs/tool-requests/${toolReq.id}`, { action: 'return' });
+      if (res.success) {
+        toast.success(`"${toolReq.toolName}" returned successfully`);
+        setTools(prev => prev.filter(t => t.id !== toolReq.id));
+      } else toast.error(res.error || 'Failed to return tool');
+    } catch { toast.error('Failed to return tool'); }
+    setReturning(null);
+  };
+
+  const handleReturnMaterial = async (matReq: any) => {
+    if (!confirm(`Return "${matReq.itemName}" for inspection?`)) return;
+    setReturning(matReq.id);
+    try {
+      const res = await api.post(`/api/repairs/material-requests/${matReq.id}`, {
+        action: 'record_return',
+        quantityReturned: matReq.quantityIssued - (matReq.quantityReturned || 0),
+        notes: 'Returned by technician on completion',
+      });
+      if (res.success) {
+        toast.success(`"${matReq.itemName}" returned for inspection`);
+        setMaterials(prev => prev.filter(m => m.id !== matReq.id));
+      } else toast.error(res.error || 'Failed to return material');
+    } catch { toast.error('Failed to return material'); }
+    setReturning(null);
+  };
+
+  const handleInitiateTransfer = (toolReq: any) => {
+    // Navigate to tool transfers page with pre-filled data
+    const nav = useNavigationStore.getState();
+    nav.navigate('repairs-tool-transfers', { toolId: toolReq.toolId, toolName: toolReq.toolName, fromUserId: user?.id });
+  };
+
+  if (loading) return <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Checking outstanding items...</div>;
+
+  const totalOutstanding = tools.length + materials.length;
+  if (totalOutstanding === 0) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+        <CheckCircle2 className="h-4 w-4 shrink-0" />
+        <span>All tools and materials have been returned. Work order is ready for closure.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 text-sm text-amber-700">
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+        <span><strong>{totalOutstanding} outstanding item(s)</strong> need to be returned or transferred before closing.</span>
+      </div>
+
+      {tools.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+            <Wrench className="h-3 w-3" /> Issued Tools ({tools.length})
+          </p>
+          <div className="space-y-1.5">
+            {tools.map(t => (
+              <div key={t.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-white">
+                <div className="h-7 w-7 rounded-md bg-orange-100 text-orange-700 flex items-center justify-center shrink-0">
+                  <Wrench className="h-3.5 w-3.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{t.toolName || t.tool?.name}</p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button size="sm" variant="outline" className="h-7 text-[10px] text-emerald-600 border-emerald-200 hover:bg-emerald-50" onClick={() => handleReturnTool(t)} disabled={returning === t.id}>
+                    <Undo2 className="h-3 w-3 mr-1" /> Return
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-7 text-[10px] text-sky-600" onClick={() => handleInitiateTransfer(t)}>
+                    <ArrowRightLeft className="h-3 w-3 mr-1" /> Transfer
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {materials.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+            <Package className="h-3 w-3" /> Issued Materials ({materials.length})
+          </p>
+          <div className="space-y-1.5">
+            {materials.map(m => (
+              <div key={m.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-white">
+                <div className="h-7 w-7 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <Package className="h-3.5 w-3.5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{m.itemName}</p>
+                  <p className="text-[10px] text-muted-foreground">Issued: {m.quantityIssued} {m.unit}</p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button size="sm" variant="outline" className="h-7 text-[10px] text-emerald-600 border-emerald-200 hover:bg-emerald-50" onClick={() => handleReturnMaterial(m)} disabled={returning === m.id}>
+                    <Undo2 className="h-3 w-3 mr-1" /> Return
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function RepairCompletionPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
@@ -2614,6 +2790,17 @@ export function RepairCompletionPage() {
                   </>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Outstanding Tools & Materials Return Reminder */}
+          <Card className="border-amber-200 bg-amber-50/30">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2"><PackageCheck className="h-4 w-4 text-amber-600" />Outstanding Tools & Materials</CardTitle>
+              <CardDescription className="text-xs">Return or transfer tools and reusable materials before closing this work order</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ToolMaterialReturnPrompt workOrderId={woId} />
             </CardContent>
           </Card>
         </div>
@@ -3452,7 +3639,7 @@ export function SparePartReturnsPage() {
             <p className="text-sm text-muted-foreground">Track reusable parts returned from machines for refurbishment</p>
           </div>
         </div>
-        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Return</Button>}
+        {(user && (hasPermission('spare_part_returns.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Return</Button>}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3524,17 +3711,17 @@ export function SparePartReturnsPage() {
                       <TableCell><OverduePulse isOverdue={false} date={r.createdAt} /></TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                          {r.status === 'pending' && (isAdmin() || hasPermission('inventory.update')) && (
+                          {r.status === 'pending' && (isAdmin() || hasPermission('spare_part_returns.update')) && (
                             <Button size="sm" className="h-7 gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => { setActionTarget({ id: r.id, action: 'inspect' }); setActionForm({ notes: '', refurbishmentNeeded: true, estimatedCost: '', disposalReason: '' }); setActionOpen(true); }}>
                               <Eye className="h-3.5 w-3.5" /> Inspect
                             </Button>
                           )}
-                          {r.status === 'inspected' && r.refurbishmentNeeded && (isAdmin() || hasPermission('inventory.update')) && (
+                          {r.status === 'inspected' && r.refurbishmentNeeded && (isAdmin() || hasPermission('spare_part_returns.update')) && (
                             <Button size="sm" className="h-7 gap-1 bg-violet-600 hover:bg-violet-700 text-white" onClick={() => handleAction(r.id, 'start_refurbishment')}>
                               <Wrench className="h-3.5 w-3.5" /> Start Refurb
                             </Button>
                           )}
-                          {r.status === 'refurbishing' && (isAdmin() || hasPermission('inventory.update')) && (
+                          {r.status === 'refurbishing' && (isAdmin() || hasPermission('spare_part_returns.update')) && (
                             <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(r.id, 'complete_refurbishment')}>
                               <CheckCircle2 className="h-3.5 w-3.5" /> Complete
                             </Button>
@@ -3548,7 +3735,7 @@ export function SparePartReturnsPage() {
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setDetailItem(r); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View Details</DropdownMenuItem>
-                              {(isAdmin() || hasPermission('inventory.update')) && r.status !== 'disposed' && r.status !== 'returned_to_store' && r.status !== 'rejected' && (
+                              {(isAdmin() || hasPermission('spare_part_returns.update')) && r.status !== 'disposed' && r.status !== 'returned_to_store' && r.status !== 'rejected' && (
                                 <DropdownMenuItem className="text-red-600" onClick={() => handleAction(r.id, 'dispose', { disposalReason: 'Disposed as unusable' })}><Ban className="h-4 w-4 mr-2" /> Dispose</DropdownMenuItem>
                               )}
                             </DropdownMenuContent>
@@ -3816,7 +4003,7 @@ export function DamagedToolReportsPage() {
             <p className="text-sm text-muted-foreground">Report and track damaged tools with repair lifecycle</p>
           </div>
         </div>
-        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Report Damage</Button>}
+        {(user && (hasPermission('damaged_tool_reports.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Report Damage</Button>}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3891,17 +4078,17 @@ export function DamagedToolReportsPage() {
                       <TableCell><OverduePulse isOverdue={false} date={r.createdAt} /></TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                          {r.status === 'reported' && (isAdmin() || hasPermission('tools.update')) && (
+                          {r.status === 'reported' && (isAdmin() || hasPermission('damaged_tool_reports.update')) && (
                             <Button size="sm" className="h-7 gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => { setActionTarget({ id: r.id, action: 'assess' }); setActionForm({ notes: '', estimatedCost: '', vendorName: '', reason: '' }); setActionOpen(true); }}>
                               <Search className="h-3.5 w-3.5" /> Assess
                             </Button>
                           )}
-                          {r.status === 'assessed' && (isAdmin() || hasPermission('tools.update')) && (
+                          {r.status === 'assessed' && (isAdmin() || hasPermission('damaged_tool_reports.update')) && (
                             <Button size="sm" className="h-7 gap-1 bg-violet-600 hover:bg-violet-700 text-white" onClick={() => { setActionTarget({ id: r.id, action: 'start_repair' }); setActionForm({ notes: '', estimatedCost: '', vendorName: '', reason: '' }); setActionOpen(true); }}>
                               <Wrench className="h-3.5 w-3.5" /> Start Repair
                             </Button>
                           )}
-                          {r.status === 'repair_in_progress' && (isAdmin() || hasPermission('tools.update')) && (
+                          {r.status === 'repair_in_progress' && (isAdmin() || hasPermission('damaged_tool_reports.update')) && (
                             <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(r.id, 'complete_repair')}>
                               <CheckCircle2 className="h-3.5 w-3.5" /> Complete
                             </Button>
@@ -3910,7 +4097,7 @@ export function DamagedToolReportsPage() {
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setDetailItem(r); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View</DropdownMenuItem>
-                              {(isAdmin() || hasPermission('tools.update')) && !['repaired', 'written_off', 'replaced'].includes(r.status) && (
+                              {(isAdmin() || hasPermission('damaged_tool_reports.update')) && !['repaired', 'written_off', 'replaced'].includes(r.status) && (
                                 <DropdownMenuItem className="text-red-600" onClick={() => { setActionTarget({ id: r.id, action: 'write_off' }); setActionForm({ notes: '', estimatedCost: '', vendorName: '', reason: '' }); setActionOpen(true); }}><Ban className="h-4 w-4 mr-2" /> Write Off</DropdownMenuItem>
                               )}
                             </DropdownMenuContent>

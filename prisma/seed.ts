@@ -97,6 +97,8 @@ const modulePermissions: Record<string, string[]> = {
   repair_material_requests: ['view', 'view_all', 'view_own', 'create', 'update'],
   repair_tool_requests: ['view', 'view_all', 'view_own', 'create', 'update'],
   repair_tool_transfers: ['view', 'view_all', 'view_own', 'create', 'update'],
+  spare_part_returns: ['view', 'view_all', 'view_own', 'create', 'update'],
+  damaged_tool_reports: ['view', 'view_all', 'view_own', 'create', 'update'],
 
   // ── MRMP / PM (~28) ──
   pm_schedules: ['view', 'create', 'update', 'delete', 'activate', 'run'],
@@ -427,6 +429,9 @@ const rolePermissionBundles: Record<string, string[]> = {
     'parts.view',
     'repair_tool_requests.view_own', 'repair_tool_requests.create',
     'repair_material_requests.view_own', 'repair_material_requests.create',
+    'repair_tool_transfers.view_own', 'repair_tool_transfers.create',
+    'spare_part_returns.view_own', 'spare_part_returns.create',
+    'damaged_tool_reports.create',
   ],
 
   // ── 7. PRODUCTION MANAGER: full MPMP ──
@@ -509,6 +514,9 @@ const rolePermissionBundles: Record<string, string[]> = {
     'work_orders.view',
     'maintenance_requests.view',
     'inventory.view',
+    'repair_tool_transfers.view_all', 'repair_tool_transfers.create', 'repair_tool_transfers.update',
+    'spare_part_returns.view_all', 'spare_part_returns.create', 'spare_part_returns.update',
+    'damaged_tool_reports.view_all', 'damaged_tool_reports.create', 'damaged_tool_reports.update',
     'reports.view', 'reports.export',
   ],
 
@@ -528,6 +536,11 @@ const rolePermissionBundles: Record<string, string[]> = {
     'inventory_locations.view',
     'inventory_adjustments.view', 'inventory_adjustments.create',
     'inventory_transfers.view',
+    'repair_tool_transfers.view_all', 'repair_tool_transfers.update',
+    'repair_tool_requests.view_all', 'repair_tool_requests.update',
+    'repair_material_requests.view_all', 'repair_material_requests.update',
+    'spare_part_returns.view_all', 'spare_part_returns.update',
+    'damaged_tool_reports.view_all', 'damaged_tool_reports.update',
     'reports.view',
   ],
 
