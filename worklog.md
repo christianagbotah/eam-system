@@ -140,3 +140,25 @@ Stage Summary:
 - Transfer dialog only shows tools (materials can't be transferred)
 - Return dialog shows both tools and materials
 - Applied to both Tool Requests page and WO Completion page
+
+---
+Task ID: 1
+Agent: Main
+Task: Fix return/transfer buttons disappearing after partial tool return
+
+Work Log:
+- Synced with remote (both at commit 4dca1a80), files intact
+- Completed time format changes (DD:HH:MM:SS) across 10 files, committed as e459997e
+- Investigated why return/transfer buttons disappear after partial return
+- Found buttons only checked `status === 'issued'` — fragile if status changes prematurely
+- Added `hasOutstandingItems()` helper that checks per-item (issued - returned - transferred)
+- Updated dropdown menu and detail view button visibility to use `hasOutstandingItems()`
+- Backend `allReturned` check now includes `quantityTransferred`
+- Transfer completion (3 code paths) now updates `quantityTransferred` on tool request items
+- WO completion prompt tracks transferred qty and shows it in item summary
+- Tool request detail shows "Transferred: X" alongside other quantities
+
+Stage Summary:
+- Return/Transfer buttons now persist until ALL items are fully returned OR transferred
+- Transfers are tracked in quantityTransferred field and count toward request completion
+- Committed as 1594d0cb, pushed to origin/main
