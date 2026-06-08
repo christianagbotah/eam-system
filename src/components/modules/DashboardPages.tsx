@@ -545,7 +545,10 @@ export function DashboardPage() {
       {(isPlanner || isManager) && plannerKPIs.pendingTeamRequests > 0 && (
         <div id="pending-team-requests-section" className="space-y-3">
           <button
-            onClick={() => navigate('maintenance-work-orders', { status: 'assigned,in_progress,waiting_parts', autoOpenTeamRequests: 'true' })}
+            onClick={() => {
+              const firstReq = pendingTeamRequestsDetail[0];
+              if (firstReq) navigate('wo-detail', { id: firstReq.workOrder.id });
+            }}
             className="w-full flex items-center gap-4 px-5 py-4 rounded-xl border border-violet-200 dark:border-violet-900/40 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-950/20 dark:to-purple-950/20 hover:shadow-md hover:border-violet-300 dark:hover:border-violet-800/50 transition-all duration-300 cursor-pointer group"
           >
             <div className="h-11 w-11 rounded-xl bg-violet-100 dark:bg-violet-900/50 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
@@ -556,7 +559,7 @@ export function DashboardPage() {
                 <p className="text-sm font-bold text-violet-800 dark:text-violet-200">{plannerKPIs.pendingTeamRequests} Pending Team Request{plannerKPIs.pendingTeamRequests > 1 ? 's' : ''}</p>
                 <span className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-pulse" />
               </div>
-              <p className="text-xs text-violet-600/70 dark:text-violet-400/70 mt-0.5">Click to review team member requests on work orders</p>
+              <p className="text-xs text-violet-600/70 dark:text-violet-400/70 mt-0.5">Click to review and approve team member requests</p>
             </div>
             <div className="h-8 w-8 rounded-lg bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center shrink-0 group-hover:bg-violet-200 dark:group-hover:bg-violet-900/60 transition-colors">
               <ChevronRight className="h-4 w-4 text-violet-600 dark:text-violet-400" />

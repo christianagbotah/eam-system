@@ -1868,7 +1868,12 @@ export function WorkOrdersPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const { hasPermission } = useAuthStore();
+  const { hasPermission, isAdmin, user } = useAuthStore();
+  const navigate = useNavigationStore(s => s.navigate);
+
+  // WO IDs that have pending team member requests (for planner/admin indicator badges)
+  const [woIdsWithPendingTeamReqs, setWoIdsWithPendingTeamReqs] = useState<Set<string>>(new Set());
+  const isPlannerOrAdmin = isAdmin() || hasPermission('work_orders.assign');
 
   // WO KPI state
   const [woKpi, setWoKpi] = useState<{
@@ -1909,6 +1914,18 @@ export function WorkOrdersPage() {
     });
     return () => { active = false; };
   }, [refreshKey]);
+
+  // Fetch WO IDs that have pending team member requests (planner/admin only)
+  useEffect(() => {
+    if (!isPlannerOrAdmin) return;
+    let active = true;
+    api.get('/api/work-orders/pending-team-request-wo-ids').then(res => {
+      if (active && res.success && Array.isArray(res.data)) {
+        setWoIdsWithPendingTeamReqs(new Set(res.data as string[]));
+      }
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [refreshKey, isPlannerOrAdmin]);
 
   useEffect(() => {
     let active = true;
@@ -2078,7 +2095,20 @@ export function WorkOrdersPage() {
                 </TableCell></TableRow>
               ) : filteredWOs.map(wo => (
                 <TableRow key={wo.id} className="cursor-pointer hover:bg-muted/30" onClick={() => setDetailId(wo.id)}>
-                  <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    <span className="flex items-center gap-1.5">
+                      {wo.woNumber}
+                      {isPlannerOrAdmin && woIdsWithPendingTeamReqs.has(wo.id) && (
+                        <span
+                          className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-violet-100 dark:bg-violet-900/50 text-[9px] font-bold text-violet-600 dark:text-violet-400 animate-pulse"
+                          title="Pending team member request"
+                          onClick={(e) => { e.stopPropagation(); setDetailId(wo.id); }}
+                        >
+                          <UserPlus className="h-2.5 w-2.5" />
+                        </span>
+                      )}
+                    </span>
+                  </TableCell>
                   <TableCell className="font-medium max-w-[250px] truncate">{wo.title}</TableCell>
                   <TableCell className="text-xs capitalize hidden md:table-cell">{wo.type.replace('_', ' ')}</TableCell>
                   <TableCell className="hidden sm:table-cell"><PriorityBadge priority={wo.priority} /></TableCell>
