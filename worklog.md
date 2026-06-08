@@ -112,3 +112,31 @@ Stage Summary:
 - Issue error fixed: Store can now issue materials from both 'storekeeper_approved' and 'picking' status
 - Supervisor fix: All maintenance roles (manager, planner, supervisor) now have repair_material_requests.view_all, repair_tool_requests.view_all, etc.
 - VPS action needed: Run seed-permissions-only.ts on VPS to apply permission changes
+
+---
+Task ID: 1
+Agent: main
+Task: Add Transfer button beside Return button with Remove button in modals
+
+Work Log:
+- Read existing ToolMaterialReturnPrompt (complex single-modal with per-item return/transfer/keep split)
+- Read existing RepairToolRequestsPage return dialog and transfer handler pattern
+- Added transfer dialog state variables (transferDialogOpen, transferForm) to RepairToolRequestsPage
+- Added openTransferDialog function that fetches issued tool items and populates transfer form
+- Added handleTransfer function that creates tool transfer requests via API
+- Added "Transfer Tools" option in dropdown menu (beside "Return Tools") for issued tool requests
+- Added "Transfer Tools" button in detail view beside "Return Tools" button
+- Added Remove (X) button to existing Return dialog items
+- Created new Transfer Tools dialog with per-item: qty, technician search, reason, and Remove button
+- Rewrote ToolMaterialReturnPrompt with two separate buttons: "Return All" (tools + materials) and "Transfer Tools" (tools only)
+- Each modal has Remove (X) button per item to exclude items
+- Cleaned up unused imports (Undo2, ChevronDown)
+- ESLint passed with zero errors
+- Next.js compilation successful (GET / 200)
+
+Stage Summary:
+- Two separate action flows: Return and Transfer, each in its own modal
+- Remove button (X) on every item in both modals lets user exclude items
+- Transfer dialog only shows tools (materials can't be transferred)
+- Return dialog shows both tools and materials
+- Applied to both Tool Requests page and WO Completion page

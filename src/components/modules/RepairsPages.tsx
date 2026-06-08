@@ -34,10 +34,10 @@ import {
   Package, Wrench, ArrowRightLeft, Clock, CheckCircle2, XCircle,
   AlertTriangle, TrendingUp, FileText, MoreHorizontal, Plus,
   Search, Filter, Eye, RotateCcw, Send, ShieldCheck, Warehouse,
-  Timer, Activity, Ban, ChevronDown, ClipboardList, BarChart3,
+  Timer, Activity, Ban, ClipboardList, BarChart3,
   ArrowLeftRight, PackageCheck, PackageOpen, User, CircleDot,
   Handshake, Truck, DollarSign, RefreshCw, X, Info, Pencil, Trash2,
-  FileDown, Loader2, Undo2,
+  FileDown, Loader2,
 } from 'lucide-react';
 import { EmptyState, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
@@ -929,6 +929,9 @@ export function RepairToolRequestsPage() {
   const [issueForm, setIssueForm] = useState<any[]>([]);
   const [returnItemsOpen, setReturnItemsOpen] = useState(false);
   const [returnItemsForm, setReturnItemsForm] = useState<any[]>([]);
+  // Transfer dialog state
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [transferForm, setTransferForm] = useState<any[]>([]);
 
   // Cache for tool lookup (used by AsyncSearchableSelect)
   const toolsCache = useRef<any[]>([]);
@@ -1279,6 +1282,73 @@ export function RepairToolRequestsPage() {
     setSubmitting(false);
   };
 
+  // ── Transfer dialog ──
+  const openTransferDialog = async () => {
+    if (!detailItem) return;
+    let fullDetail = detailItem;
+    if (!detailItem.items || detailItem.items.length === 0) {
+      const res = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
+      if (res.success) fullDetail = res.data;
+    }
+    const items = getRequestItems(fullDetail);
+    const form = items.map((i: any) => ({
+      itemId: i.id,
+      toolId: i.toolId || detailItem.toolId || '',
+      toolName: i.toolName || '',
+      toolCode: i.toolCode || '',
+      quantityIssued: i.quantityIssued || 0,
+      quantityReturned: i.quantityReturned || 0,
+      quantityToTransfer: (i.quantityIssued || 1) - (i.quantityReturned || 0),
+      toUserId: '',
+      toUserName: '',
+      transferReason: '',
+    }));
+    setTransferForm(form);
+    setTransferDialogOpen(true);
+  };
+
+  const handleTransfer = async () => {
+    if (!detailItem) return;
+    const itemsToTransfer = transferForm.filter(f => f.quantityToTransfer > 0);
+    if (itemsToTransfer.length === 0) {
+      toast.error('Select at least one tool to transfer');
+      return;
+    }
+    for (const item of itemsToTransfer) {
+      if (!item.toUserId) {
+        toast.error(`Select a receiving technician for "${item.toolName}"`);
+        return;
+      }
+      if (!item.transferReason || item.transferReason.length < 5) {
+        toast.error(`Enter a reason for transferring "${item.toolName}" (min 5 chars)`);
+        return;
+      }
+    }
+    setSubmitting(true);
+    let errors: string[] = [];
+    for (const item of itemsToTransfer) {
+      try {
+        const res = await api.post('/api/repairs/tool-transfers', {
+          toolId: item.toolId,
+          fromUserId: user?.id,
+          toUserId: item.toUserId,
+          reason: item.transferReason,
+          notes: `WO transfer: ${item.quantityToTransfer}x ${item.toolName}`,
+        });
+        if (!res.success) errors.push(res.error || `Failed to transfer "${item.toolName}"`);
+        else toast.success(`Transfer request submitted for "${item.toolName}"`);
+      } catch (e: any) { errors.push(`Transfer error: ${e.message}`); }
+    }
+    if (errors.length > 0) errors.forEach(e => toast.error(e));
+    else {
+      setTransferDialogOpen(false);
+      const detailRes = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
+      if (detailRes.success) setDetailItem(detailRes.data);
+      fetchRequests();
+    }
+    setSubmitting(false);
+  };
+
   const filtered = useMemo(() => requests.filter(r =>
     !searchText || r.toolName?.toLowerCase().includes(searchText.toLowerCase()) || r.workOrder?.woNumber?.toLowerCase().includes(searchText.toLowerCase()) || r.requestNumber?.toLowerCase().includes(searchText.toLowerCase())
   ), [requests, searchText]);
@@ -1482,6 +1552,9 @@ export function RepairToolRequestsPage() {
                               {r.status === 'issued' && (
                                 <DropdownMenuItem onClick={() => { setDetailItem(r); openReturnDialog(); }}><RotateCcw className="h-4 w-4 mr-2 text-amber-600" /> Return Tools</DropdownMenuItem>
                               )}
+                              {r.status === 'issued' && (
+                                <DropdownMenuItem onClick={() => { setDetailItem(r); openTransferDialog(); }}><ArrowRightLeft className="h-4 w-4 mr-2 text-sky-600" /> Transfer Tools</DropdownMenuItem>
+                              )}
                               {r.status === 'pending' && (r.requestedById === user?.id || isAdmin()) && (
                                 <>
                                   <DropdownMenuSeparator />
@@ -1608,7 +1681,10 @@ export function RepairToolRequestsPage() {
                         <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setDetailItem(detailItem); openIssueDialog(); }} disabled={submitting}><Wrench className="h-3.5 w-3.5" /> Issue Tools</Button>
                       )}
                       {detailItem.status === 'issued' && (
-                        <Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setDetailItem(detailItem); openReturnDialog(); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tools</Button>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setDetailItem(detailItem); openReturnDialog(); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tools</Button>
+                          <Button size="sm" variant="outline" className="gap-1 border-sky-400 text-sky-700 hover:bg-sky-50" onClick={() => { setDetailItem(detailItem); openTransferDialog(); }} disabled={submitting}><ArrowRightLeft className="h-3.5 w-3.5" /> Transfer Tools</Button>
+                        </div>
                       )}
                     </div>
                   </>)}
@@ -1763,15 +1839,22 @@ export function RepairToolRequestsPage() {
       <ResponsiveDialog open={returnItemsOpen} onOpenChange={setReturnItemsOpen}>
         <div className="space-y-1.5 mb-4">
           <h2 className="text-lg font-semibold leading-none tracking-tight">Return Tools</h2>
-          <p className="text-sm text-muted-foreground">Specify quantity and condition for each tool</p>
+          <p className="text-sm text-muted-foreground">Specify quantity and condition for each tool. Remove items you don&apos;t want to return.</p>
         </div>
         <div className="space-y-3 max-h-72 overflow-y-auto">
+          {returnItemsForm.length === 0 && (
+            <div className="text-sm text-muted-foreground text-center py-4">No items to return. All items have been removed.</div>
+          )}
           {returnItemsForm.map((item: any, idx: number) => (
             <div key={item.itemId} className="space-y-2 p-3 bg-muted/30 rounded-lg border">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-sm truncate">{item.toolName}</span>
+                <span className="font-medium text-sm truncate flex-1">{item.toolName}</span>
                 {item.toolCode && <span className="text-xs text-muted-foreground font-mono">{item.toolCode}</span>}
-                <span className="text-xs text-muted-foreground ml-auto">Issued: {item.quantityIssued}</span>
+                <span className="text-xs text-muted-foreground">Issued: {item.quantityIssued}</span>
+                <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => {
+                  const newForm = returnItemsForm.filter((_, i) => i !== idx);
+                  setReturnItemsForm(newForm);
+                }}><X className="h-3.5 w-3.5" /></Button>
               </div>
               <div className="flex flex-col sm:flex-row gap-2">
                 <div className="w-full sm:w-28">
@@ -1808,7 +1891,81 @@ export function RepairToolRequestsPage() {
         </div>
         <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={() => setReturnItemsOpen(false)}>Cancel</Button>
-          <Button onClick={handleReturn} disabled={submitting} className="gap-2 border-amber-400 text-amber-700 hover:bg-amber-50"><RotateCcw className="h-4 w-4" /> Return Tools</Button>
+          <Button onClick={handleReturn} disabled={submitting || returnItemsForm.length === 0} className="gap-2 border-amber-400 text-amber-700 hover:bg-amber-50"><RotateCcw className="h-4 w-4" /> Return Tools</Button>
+        </div>
+      </ResponsiveDialog>
+
+      {/* ═══════ Transfer Tools Dialog ═══════ */}
+      <ResponsiveDialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">Transfer Tools</h2>
+          <p className="text-sm text-muted-foreground">Select technician and reason for each tool. Remove items you don&apos;t want to transfer.</p>
+        </div>
+        <div className="space-y-3 max-h-72 overflow-y-auto">
+          {transferForm.length === 0 && (
+            <div className="text-sm text-muted-foreground text-center py-4">No items to transfer. All items have been removed.</div>
+          )}
+          {transferForm.map((item: any, idx: number) => (
+            <div key={item.itemId} className="space-y-2 p-3 bg-sky-50/50 rounded-lg border border-sky-200">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-sm truncate flex-1">{item.toolName}</span>
+                {item.toolCode && <span className="text-xs text-muted-foreground font-mono">{item.toolCode}</span>}
+                <span className="text-xs text-muted-foreground">Available: {item.quantityToTransfer}</span>
+                <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => {
+                  const newForm = transferForm.filter((_, i) => i !== idx);
+                  setTransferForm(newForm);
+                }}><X className="h-3.5 w-3.5" /></Button>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="w-full sm:w-24">
+                  <Label className="text-xs">Qty</Label>
+                  <Input type="number" min={0} max={(item.quantityIssued || 1) - (item.quantityReturned || 0)} value={item.quantityToTransfer}
+                    onChange={e => {
+                      const val = Math.max(0, Math.min(parseInt(e.target.value) || 0, (item.quantityIssued || 1) - (item.quantityReturned || 0)));
+                      const newForm = [...transferForm];
+                      newForm[idx] = { ...newForm[idx], quantityToTransfer: val };
+                      setTransferForm(newForm);
+                    }}
+                    className="h-8" />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-xs">Transfer To *</Label>
+                  <AsyncSearchableSelect
+                    value={item.toUserId}
+                    onValueChange={v => {
+                      const newForm = [...transferForm];
+                      newForm[idx] = { ...newForm[idx], toUserId: v, toUserName: '' };
+                      setTransferForm(newForm);
+                    }}
+                    placeholder="Search technician..."
+                    searchPlaceholder="Search by name or username..."
+                    fetchOptions={async () => {
+                      const res = await api.get('/api/workers?role=technician');
+                      if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                      return [];
+                    }}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Reason *</Label>
+                <Input
+                  value={item.transferReason}
+                  onChange={e => {
+                    const newForm = [...transferForm];
+                    newForm[idx] = { ...newForm[idx], transferReason: e.target.value };
+                    setTransferForm(newForm);
+                  }}
+                  placeholder="Why is this tool being transferred?"
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setTransferDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleTransfer} disabled={submitting || transferForm.length === 0} className="gap-2 border-sky-400 text-sky-700 hover:bg-sky-50"><ArrowRightLeft className="h-4 w-4" /> Transfer Tools</Button>
         </div>
       </ResponsiveDialog>
 
@@ -2514,57 +2671,37 @@ export function RepairDowntimePage() {
 // ============================================================================
 // Sub-component: Flexible tool & material return/transfer on WO completion
 // ============================================================================
-// Each tool/material line shows:
-//   - Item name, code, issued qty, already returned qty
-//   - Per-item decision: qty to RETURN vs qty to TRANSFER vs qty to KEEP
-//   - Condition selector for returns (good / fair / poor / damaged)
-//   - Transfer target technician selector (when qty to transfer > 0)
-// Materials only support return (no transfer for consumables).
+// Two separate modals: Return (tools + materials) and Transfer (tools only)
+// Each modal has a Remove (X) button per item to exclude items from the action.
 // ============================================================================
 
 interface ReturnTransferItem {
-  /** Unique row key (toolRequestId or materialRequestId) */
   id: string;
-  /** 'tool' or 'material' */
   type: 'tool' | 'material';
-  /** Display name */
   name: string;
-  /** Code (toolCode or itemCode) */
   code: string;
-  /** Qty issued by store */
   issuedQty: number;
-  /** Qty already returned previously */
   returnedQty: number;
-  /** Remaining = issuedQty - returnedQty */
   remainingQty: number;
-  /** Unit label */
   unit: string;
-  /** How many the user wants to RETURN now */
-  qtyReturn: number;
-  /** How many the user wants to TRANSFER now */
-  qtyTransfer: number;
-  /** Condition for returned items */
-  condition: string;
-  /** Target user ID for transfer */
-  transferToUserId: string;
-  /** Target user display name */
-  transferToUserName: string;
-  /** Transfer reason */
-  transferReason: string;
-  /** Original request ID for API call */
   requestId: string;
-  /** For multi-item tool requests: item ID */
   lineItemId?: string;
-  /** Tool ID (for creating transfer) */
   toolId?: string;
 }
 
 function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
-  const { user, hasPermission, isAdmin } = useAuthStore();
-  const [items, setItems] = useState<ReturnTransferItem[]>([]);
+  const { user, isAdmin } = useAuthStore();
+  const [allItems, setAllItems] = useState<ReturnTransferItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  // Return modal
+  const [returnOpen, setReturnOpen] = useState(false);
+  const [returnItems, setReturnItems] = useState<(ReturnTransferItem & { qtyReturn: number; condition: string })[]>([]);
+
+  // Transfer modal
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferItems, setTransferItems] = useState<(ReturnTransferItem & { qtyTransfer: number; toUserId: string; toUserName: string; transferReason: string })[]>([]);
 
   // Fetch all outstanding tools and materials
   useEffect(() => {
@@ -2576,66 +2713,27 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
     ]).then(([toolRes, matRes]) => {
       const rows: ReturnTransferItem[] = [];
 
-      // Tool requests that are issued (fully or partially)
       if (toolRes.success && toolRes.data) {
         for (const tr of toolRes.data as any[]) {
           if (tr.status !== 'issued') continue;
-          // Multi-item tool request
           if (tr.items && tr.items.length > 0) {
             for (const item of tr.items) {
               const issued = item.quantityIssued || 0;
               const returned = item.quantityReturned || 0;
               const remaining = issued - returned;
               if (remaining <= 0) continue;
-              rows.push({
-                id: `${tr.id}-${item.id}`,
-                type: 'tool',
-                name: item.toolName || item.tool?.name || 'Unknown Tool',
-                code: item.toolCode || item.tool?.toolCode || '',
-                issuedQty: issued,
-                returnedQty: returned,
-                remainingQty: remaining,
-                unit: 'pcs',
-                qtyReturn: remaining,
-                qtyTransfer: 0,
-                condition: 'good',
-                transferToUserId: '',
-                transferToUserName: '',
-                transferReason: '',
-                requestId: tr.id,
-                lineItemId: item.id,
-                toolId: item.toolId || tr.toolId || '',
-              });
+              rows.push({ id: `${tr.id}-${item.id}`, type: 'tool', name: item.toolName || item.tool?.name || 'Unknown Tool', code: item.toolCode || item.tool?.toolCode || '', issuedQty: issued, returnedQty: returned, remainingQty: remaining, unit: 'pcs', requestId: tr.id, lineItemId: item.id, toolId: item.toolId || tr.toolId || '' });
             }
           } else {
-            // Single-tool request
             const issued = tr.quantityIssued || (tr.tool ? 1 : 0);
             const returned = tr.quantityReturned || 0;
             const remaining = issued - returned;
             if (remaining <= 0) continue;
-            rows.push({
-              id: tr.id,
-              type: 'tool',
-              name: tr.toolName || tr.tool?.name || 'Unknown Tool',
-              code: tr.tool?.toolCode || '',
-              issuedQty: issued,
-              returnedQty: returned,
-              remainingQty: remaining,
-              unit: 'pcs',
-              qtyReturn: remaining,
-              qtyTransfer: 0,
-              condition: 'good',
-              transferToUserId: '',
-              transferToUserName: '',
-              transferReason: '',
-              requestId: tr.id,
-              toolId: tr.toolId || '',
-            });
+            rows.push({ id: tr.id, type: 'tool', name: tr.toolName || tr.tool?.name || 'Unknown Tool', code: tr.tool?.toolCode || '', issuedQty: issued, returnedQty: returned, remainingQty: remaining, unit: 'pcs', requestId: tr.id, toolId: tr.toolId || '' });
           }
         }
       }
 
-      // Material requests that are issued
       if (matRes.success && matRes.data) {
         for (const mr of matRes.data as any[]) {
           if (mr.status !== 'issued') continue;
@@ -2643,137 +2741,98 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
           const returned = mr.quantityReturned || 0;
           const remaining = issued - returned;
           if (remaining <= 0) continue;
-          rows.push({
-            id: mr.id,
-            type: 'material',
-            name: mr.itemName,
-            code: mr.item?.itemCode || '',
-            issuedQty: issued,
-            returnedQty: returned,
-            remainingQty: remaining,
-            unit: mr.unit || 'each',
-            qtyReturn: remaining,
-            qtyTransfer: 0,
-            condition: 'good',
-            transferToUserId: '',
-            transferToUserName: '',
-            transferReason: '',
-            requestId: mr.id,
-          });
+          rows.push({ id: mr.id, type: 'material', name: mr.itemName, code: mr.item?.itemCode || '', issuedQty: issued, returnedQty: returned, remainingQty: remaining, unit: mr.unit || 'each', requestId: mr.id });
         }
       }
 
-      setItems(rows);
+      setAllItems(rows);
     }).catch(() => {}).finally(() => setLoading(false));
   }, [workOrderId]);
 
-  // ── Helpers ──
-  const toggleExpanded = (id: string) => {
-    setExpandedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+  const toolItems = allItems.filter(i => i.type === 'tool');
+  const totalOutstanding = allItems.length;
+  const hasTools = toolItems.length > 0;
+
+  // ── Open Return modal ──
+  const openReturn = () => {
+    setReturnItems(allItems.map(item => ({
+      ...item,
+      qtyReturn: item.remainingQty,
+      condition: 'good' as string,
+    })));
+    setReturnOpen(true);
   };
 
-  const updateItem = (id: string, patch: Partial<ReturnTransferItem>) => {
-    setItems(prev => prev.map(item => {
-      if (item.id !== id) return item;
-      const updated = { ...item, ...patch };
-      // Clamp: qtyReturn + qtyTransfer must not exceed remainingQty
-      const total = (updated.qtyReturn || 0) + (updated.qtyTransfer || 0);
-      if (total > updated.remainingQty) {
-        const scale = updated.remainingQty / Math.max(total, 1);
-        updated.qtyReturn = Math.round((updated.qtyReturn || 0) * scale);
-        updated.qtyTransfer = updated.remainingQty - updated.qtyReturn;
-      }
-      return updated;
-    }));
+  // ── Open Transfer modal ──
+  const openTransfer = () => {
+    setTransferItems(toolItems.map(item => ({
+      ...item,
+      qtyTransfer: item.remainingQty,
+      toUserId: '',
+      toUserName: '',
+      transferReason: '',
+    })));
+    setTransferOpen(true);
   };
 
-  // Quick-action: Return All / Transfer All for a specific item
-  const setReturnAll = (id: string) => {
-    setItems(prev => prev.map(item => {
-      if (item.id !== id) return item;
-      return { ...item, qtyReturn: item.remainingQty, qtyTransfer: 0, transferToUserId: '', transferToUserName: '', transferReason: '' };
-    }));
-  };
-  const setTransferAll = (id: string) => {
-    setItems(prev => prev.map(item => {
-      if (item.id !== id) return item;
-      return { ...item, qtyReturn: 0, qtyTransfer: item.remainingQty };
-    }));
+  // ── Remove from return list ──
+  const removeReturnItem = (id: string) => {
+    setReturnItems(prev => prev.filter(i => i.id !== id));
   };
 
-  const totalOutstanding = items.length;
+  // ── Remove from transfer list ──
+  const removeTransferItem = (id: string) => {
+    setTransferItems(prev => prev.filter(i => i.id !== id));
+  };
 
-  // ── Submit ──
-  const handleSubmit = async () => {
-    // Validation
-    for (const item of items) {
-      if (item.qtyTransfer > 0 && !item.transferToUserId) {
-        toast.error(`Select a transfer target for "${item.name}"`);
-        return;
-      }
-      if (item.qtyTransfer > 0 && (!item.transferReason || item.transferReason.length < 5)) {
-        toast.error(`Enter a reason for transferring "${item.name}" (min 5 chars)`);
-        return;
-      }
-    }
+  // ── Update return item ──
+  const updateReturnItem = (id: string, patch: Record<string, any>) => {
+    setReturnItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
+  };
 
-    const hasActions = items.some(i => i.qtyReturn > 0 || i.qtyTransfer > 0);
-    if (!hasActions) {
-      toast.error('No items to return or transfer');
+  // ── Update transfer item ──
+  const updateTransferItem = (id: string, patch: Record<string, any>) => {
+    setTransferItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
+  };
+
+  // ── Submit returns ──
+  const handleReturnSubmit = async () => {
+    const activeItems = returnItems.filter(i => i.qtyReturn > 0);
+    if (activeItems.length === 0) {
+      toast.error('No items to return');
       return;
     }
-
     setSubmitting(true);
+    let errors: string[] = [];
 
-    // 1. Process all tool returns grouped by requestId
+    // Process tool returns grouped by requestId
     const toolReturnMap = new Map<string, { itemId?: string; qtyReturn: number; condition: string }[]>();
-    for (const item of items) {
-      if (item.type !== 'tool' || item.qtyReturn <= 0) continue;
+    for (const item of activeItems) {
+      if (item.type !== 'tool') continue;
       const arr = toolReturnMap.get(item.requestId) || [];
-      arr.push({
-        itemId: item.lineItemId,
-        qtyReturn: item.qtyReturn,
-        condition: item.condition,
-      });
+      arr.push({ itemId: item.lineItemId, qtyReturn: item.qtyReturn, condition: item.condition });
       toolReturnMap.set(item.requestId, arr);
     }
 
-    // 2. Process all material returns
+    // Process material returns
     const matReturnMap = new Map<string, { qtyReturn: number }>();
-    for (const item of items) {
-      if (item.type !== 'material' || item.qtyReturn <= 0) continue;
+    for (const item of activeItems) {
+      if (item.type !== 'material') continue;
       matReturnMap.set(item.requestId, { qtyReturn: item.qtyReturn });
     }
-
-    // 3. Process all transfers
-    const transferItems = items.filter(i => i.type === 'tool' && i.qtyTransfer > 0);
-
-    let errors: string[] = [];
 
     // Execute tool returns
     for (const [requestId, returns] of toolReturnMap) {
       try {
-        // Fetch full detail
         const detailRes = await api.get(`/api/repairs/tool-requests/${requestId}`);
         if (!detailRes.success) { errors.push(`Tool return failed: ${detailRes.error}`); continue; }
         const detail = detailRes.data;
-
         const payload: Record<string, any> = { action: 'return' };
         if (detail.items && detail.items.length > 0) {
-          payload.returnedItems = returns.map(r => ({
-            itemId: r.itemId,
-            quantityReturned: r.qtyReturn,
-            conditionAtReturn: r.condition,
-          }));
+          payload.returnedItems = returns.map(r => ({ itemId: r.itemId, quantityReturned: r.qtyReturn, conditionAtReturn: r.condition }));
         } else {
-          // Single-tool: just return all
           payload.toolConditionAtReturn = returns[0]?.condition || 'good';
         }
-
         const res = await api.post(`/api/repairs/tool-requests/${requestId}`, payload);
         if (!res.success) errors.push(res.error || `Failed to return tool request`);
         else if (res.warnings) res.warnings.forEach((w: string) => toast.warning(w));
@@ -2784,21 +2843,54 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
     for (const [requestId, { qtyReturn }] of matReturnMap) {
       try {
         const res = await api.post(`/api/repairs/material-requests/${requestId}`, {
-          action: 'record_return',
-          approvedQuantity: qtyReturn,
-          notes: 'Returned by technician on completion',
+          action: 'record_return', approvedQuantity: qtyReturn, notes: 'Returned by technician on completion',
         });
         if (!res.success) errors.push(res.error || `Failed to return material`);
       } catch (e: any) { errors.push(`Material return error: ${e.message}`); }
     }
 
-    // Execute transfers
-    for (const item of transferItems) {
+    if (errors.length === 0) {
+      toast.success('All returns processed successfully');
+      setReturnOpen(false);
+      // Update allItems to reflect returned quantities
+      setAllItems(prev => prev.map(item => {
+        const returnedItem = returnItems.find(ri => ri.id === item.id);
+        if (returnedItem && returnedItem.qtyReturn > 0) {
+          return { ...item, returnedQty: item.returnedQty + returnedItem.qtyReturn, remainingQty: item.remainingQty - returnedItem.qtyReturn };
+        }
+        return item;
+      }).filter(i => i.remainingQty > 0));
+    } else {
+      errors.forEach(e => toast.error(e));
+    }
+    setSubmitting(false);
+  };
+
+  // ── Submit transfers ──
+  const handleTransferSubmit = async () => {
+    const activeItems = transferItems.filter(i => i.qtyTransfer > 0);
+    if (activeItems.length === 0) {
+      toast.error('No items to transfer');
+      return;
+    }
+    for (const item of activeItems) {
+      if (!item.toUserId) {
+        toast.error(`Select a receiving technician for "${item.name}"`);
+        return;
+      }
+      if (!item.transferReason || item.transferReason.length < 5) {
+        toast.error(`Enter a reason for transferring "${item.name}" (min 5 chars)`);
+        return;
+      }
+    }
+    setSubmitting(true);
+    let errors: string[] = [];
+    for (const item of activeItems) {
       try {
         const res = await api.post('/api/repairs/tool-transfers', {
           toolId: item.toolId,
           fromUserId: user?.id,
-          toUserId: item.transferToUserId,
+          toUserId: item.toUserId,
           reason: item.transferReason,
           notes: `WO completion transfer: ${item.qtyTransfer}x ${item.name}`,
         });
@@ -2806,19 +2898,12 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
         else toast.success(`Transfer request submitted for "${item.name}"`);
       } catch (e: any) { errors.push(`Transfer error: ${e.message}`); }
     }
-
     if (errors.length === 0) {
-      toast.success('All returns and transfers processed successfully');
-      // Remove fully returned items
-      setItems(prev => prev.filter(item => {
-        if (item.qtyReturn + item.qtyTransfer >= item.remainingQty) return false;
-        // Update quantities for partial
-        return true;
-      }));
+      toast.success('All transfers processed successfully');
+      setTransferOpen(false);
     } else {
       errors.forEach(e => toast.error(e));
     }
-
     setSubmitting(false);
   };
 
@@ -2838,184 +2923,151 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
       {/* Header */}
       <div className="flex items-center gap-2 text-sm text-amber-700">
         <AlertTriangle className="h-4 w-4 shrink-0" />
-        <span><strong>{totalOutstanding} outstanding item(s)</strong> — decide for each: return to store, transfer to technician, or keep.</span>
+        <span><strong>{totalOutstanding} outstanding item(s)</strong> — return tools/materials to store or transfer tools to another technician.</span>
       </div>
 
-      {/* Items list */}
-      <div className="space-y-3">
-        {items.map(item => {
-          const isExpanded = expandedIds.has(item.id);
-          const returnPercent = item.remainingQty > 0 ? Math.round((item.qtyReturn / item.remainingQty) * 100) : 0;
-          const transferPercent = item.remainingQty > 0 ? Math.round((item.qtyTransfer / item.remainingQty) * 100) : 0;
-          const keepPercent = 100 - returnPercent - transferPercent;
+      {/* Items summary */}
+      <div className="space-y-2">
+        {allItems.map(item => (
+          <div key={item.id} className="flex items-center gap-2 p-2 rounded-md bg-muted/30 border text-sm">
+            <div className={`h-6 w-6 rounded flex items-center justify-center shrink-0 ${item.type === 'tool' ? 'bg-orange-100 text-orange-700' : 'bg-amber-100 text-amber-700'}`}>
+              {item.type === 'tool' ? <Wrench className="h-3 w-3" /> : <Package className="h-3 w-3" />}
+            </div>
+            <span className="font-medium truncate flex-1">{item.name}</span>
+            {item.code && <span className="text-xs font-mono text-muted-foreground">{item.code}</span>}
+            <span className="text-xs text-muted-foreground whitespace-nowrap">Remaining: <strong>{item.remainingQty}</strong></span>
+          </div>
+        ))}
+      </div>
 
-          return (
-            <div key={item.id} className="rounded-lg border bg-white overflow-hidden">
-              {/* Collapsed row — always visible */}
-              <div
-                className="flex items-center gap-3 p-3 cursor-pointer hover:bg-muted/30 transition-colors"
-                onClick={() => toggleExpanded(item.id)}
-              >
-                <div className={`h-7 w-7 rounded-md flex items-center justify-center shrink-0 ${item.type === 'tool' ? 'bg-orange-100 text-orange-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {item.type === 'tool' ? <Wrench className="h-3.5 w-3.5" /> : <Package className="h-3.5 w-3.5" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium truncate">{item.name}</p>
-                    {item.code && <span className="text-[10px] font-mono text-muted-foreground">{item.code}</span>}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">Issued: {item.issuedQty} · Returned: {item.returnedQty} · <strong>Remaining: {item.remainingQty}</strong></p>
-                </div>
+      {/* Action Buttons */}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" className="gap-2 border-amber-400 text-amber-700 hover:bg-amber-50" onClick={openReturn}>
+          <RotateCcw className="h-4 w-4" /> Return All ({totalOutstanding} items)
+        </Button>
+        {hasTools && (
+          <Button variant="outline" className="gap-2 border-sky-400 text-sky-700 hover:bg-sky-50" onClick={openTransfer}>
+            <ArrowRightLeft className="h-4 w-4" /> Transfer Tools ({toolItems.length})
+          </Button>
+        )}
+      </div>
 
-                {/* Quick action summary (collapsed) */}
-                <div className="flex items-center gap-2 shrink-0">
-                  {item.qtyReturn > 0 && (
-                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] gap-0.5">
-                      <Undo2 className="h-2.5 w-2.5" /> {item.qtyReturn} return
-                    </Badge>
-                  )}
-                  {item.qtyTransfer > 0 && (
-                    <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200 text-[10px] gap-0.5">
-                      <ArrowRightLeft className="h-2.5 w-2.5" /> {item.qtyTransfer} transfer
-                    </Badge>
-                  )}
-                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+      {/* ═══════ Return Modal ═══════ */}
+      <ResponsiveDialog open={returnOpen} onOpenChange={setReturnOpen}>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">Return Tools &amp; Materials</h2>
+          <p className="text-sm text-muted-foreground">Set quantity and condition for each item. Click the X button to remove items you don&apos;t want to return.</p>
+        </div>
+        <div className="space-y-3 max-h-96 overflow-y-auto">
+          {returnItems.length === 0 && (
+            <div className="text-sm text-muted-foreground text-center py-4">No items remaining. All items have been removed.</div>
+          )}
+          {returnItems.map(item => (
+            <div key={item.id} className="space-y-2 p-3 bg-muted/30 rounded-lg border">
+              <div className="flex items-center gap-2">
+                <div className={`h-6 w-6 rounded flex items-center justify-center shrink-0 ${item.type === 'tool' ? 'bg-orange-100 text-orange-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {item.type === 'tool' ? <Wrench className="h-3 w-3" /> : <Package className="h-3 w-3" />}
+                </div>
+                <span className="font-medium text-sm truncate flex-1">{item.name}</span>
+                {item.code && <span className="text-xs font-mono text-muted-foreground">{item.code}</span>}
+                <span className="text-xs text-muted-foreground">Available: {item.remainingQty}</span>
+                <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => removeReturnItem(item.id)}><X className="h-3.5 w-3.5" /></Button>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="w-full sm:w-28">
+                  <Label className="text-xs">Qty to Return</Label>
+                  <Input type="number" min={0} max={item.remainingQty} value={item.qtyReturn}
+                    onChange={e => updateReturnItem(item.id, { qtyReturn: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty)) })}
+                    className="h-8" />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-xs">Condition</Label>
+                  <Select value={item.condition} onValueChange={v => updateReturnItem(item.id, { condition: v })}>
+                    <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="good">Good — ready for reissue</SelectItem>
+                      <SelectItem value="fair">Fair — minor wear</SelectItem>
+                      <SelectItem value="poor">Poor — needs service</SelectItem>
+                      <SelectItem value="damaged">Damaged — needs repair</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
-
-              {/* Expanded controls */}
-              {isExpanded && (
-                <div className="border-t bg-muted/20 px-3 pb-3 pt-2 space-y-3" onClick={e => e.stopPropagation()}>
-                  {/* Split bar visual */}
-                  <div className="flex h-2 rounded-full overflow-hidden w-full">
-                    <div className="bg-emerald-500 transition-all" style={{ width: `${returnPercent}%` }} />
-                    <div className="bg-sky-500 transition-all" style={{ width: `${transferPercent}%` }} />
-                    <div className="bg-gray-200 transition-all" style={{ width: `${keepPercent}%` }} />
-                  </div>
-                  <div className="flex justify-between text-[10px] text-muted-foreground">
-                    <span className="text-emerald-600 font-medium">{item.qtyReturn} Return</span>
-                    <span className="text-sky-600 font-medium">{item.qtyTransfer} Transfer</span>
-                    <span>{item.remainingQty - item.qtyReturn - item.qtyTransfer} Keep</span>
-                  </div>
-
-                  {/* Quick action buttons */}
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50" onClick={() => setReturnAll(item.id)}>
-                      <Undo2 className="h-3 w-3" /> Return All ({item.remainingQty})
-                    </Button>
-                    {item.type === 'tool' && (
-                      <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 border-sky-300 text-sky-700 hover:bg-sky-50" onClick={() => setTransferAll(item.id)}>
-                        <ArrowRightLeft className="h-3 w-3" /> Transfer All ({item.remainingQty})
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Qty controls */}
-                  {item.remainingQty > 1 && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Qty to Return</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          max={item.remainingQty}
-                          value={item.qtyReturn}
-                          onChange={e => updateItem(item.id, { qtyReturn: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty)) })}
-                          className="h-8 text-sm"
-                        />
-                      </div>
-                      {item.type === 'tool' && (
-                        <div>
-                          <Label className="text-xs text-muted-foreground">Qty to Transfer</Label>
-                          <Input
-                            type="number"
-                            min={0}
-                            max={item.remainingQty - item.qtyReturn}
-                            value={item.qtyTransfer}
-                            onChange={e => updateItem(item.id, { qtyTransfer: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty - item.qtyReturn)) })}
-                            className="h-8 text-sm"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Return condition */}
-                  {item.qtyReturn > 0 && (
-                    <div>
-                      <Label className="text-xs text-muted-foreground">Return Condition</Label>
-                      <Select value={item.condition} onValueChange={v => updateItem(item.id, { condition: v })}>
-                        <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="good">🟢 Good — ready for reissue</SelectItem>
-                          <SelectItem value="fair">🟡 Fair — minor wear</SelectItem>
-                          <SelectItem value="poor">🟠 Poor — needs service</SelectItem>
-                          <SelectItem value="damaged">🔴 Damaged — needs repair</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {/* Transfer target & reason */}
-                  {item.qtyTransfer > 0 && item.type === 'tool' && (
-                    <div className="space-y-3 rounded-lg border border-sky-200 bg-sky-50/50 p-3">
-                      <p className="text-[10px] font-semibold text-sky-700 flex items-center gap-1"><ArrowRightLeft className="h-3 w-3" /> Transfer Details</p>
-                      <AsyncSearchableSelect
-                        value={item.transferToUserId}
-                        onValueChange={v => updateItem(item.id, { transferToUserId: v, transferToUserName: '' })}
-                        placeholder="Select receiving technician..."
-                        searchPlaceholder="Search technicians..."
-                        fetchOptions={async () => {
-                          const res = await api.get('/api/workers?role=technician');
-                          if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-                          return [];
-                        }}
-                      />
-                      <div>
-                        <Label className="text-xs text-muted-foreground">Transfer Reason *</Label>
-                        <Input
-                          value={item.transferReason}
-                          onChange={e => updateItem(item.id, { transferReason: e.target.value })}
-                          placeholder="Why is this tool being transferred?"
-                          className="h-8 text-sm"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
-          );
-        })}
-      </div>
-
-      {/* Summary & Submit */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3">
-        <div className="space-y-1">
-          <p className="text-sm font-medium">Summary</p>
-          <div className="flex flex-wrap gap-3 text-xs">
-            <span className="text-emerald-600">
-              <strong>{items.reduce((s, i) => s + i.qtyReturn, 0)}</strong> returning to store
-            </span>
-            {items.some(i => i.type === 'tool' && i.qtyTransfer > 0) && (
-              <span className="text-sky-600">
-                <strong>{items.reduce((s, i) => s + (i.type === 'tool' ? i.qtyTransfer : 0), 0)}</strong> transferring to technicians
-              </span>
-            )}
-            <span className="text-muted-foreground">
-              <strong>{items.reduce((s, i) => s + (i.remainingQty - i.qtyReturn - i.qtyTransfer), 0)}</strong> keeping
-            </span>
-          </div>
+          ))}
         </div>
-        <Button
-          className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
-          disabled={submitting || items.every(i => i.qtyReturn === 0 && i.qtyTransfer === 0)}
-          onClick={handleSubmit}
-        >
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-          {submitting ? 'Processing...' : 'Submit Returns & Transfers'}
-        </Button>
-      </div>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setReturnOpen(false)}>Cancel</Button>
+          <Button onClick={handleReturnSubmit} disabled={submitting || returnItems.length === 0} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+            {submitting ? 'Processing...' : `Return ${returnItems.filter(i => i.qtyReturn > 0).length} Item(s)`}
+          </Button>
+        </div>
+      </ResponsiveDialog>
+
+      {/* ═══════ Transfer Modal ═══════ */}
+      <ResponsiveDialog open={transferOpen} onOpenChange={setTransferOpen}>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">Transfer Tools</h2>
+          <p className="text-sm text-muted-foreground">Select a receiving technician and reason for each tool. Click the X button to remove items you don&apos;t want to transfer.</p>
+        </div>
+        <div className="space-y-3 max-h-96 overflow-y-auto">
+          {transferItems.length === 0 && (
+            <div className="text-sm text-muted-foreground text-center py-4">No tools remaining. All items have been removed.</div>
+          )}
+          {transferItems.map(item => (
+            <div key={item.id} className="space-y-2 p-3 bg-sky-50/50 rounded-lg border border-sky-200">
+              <div className="flex items-center gap-2">
+                <div className="h-6 w-6 rounded flex items-center justify-center shrink-0 bg-orange-100 text-orange-700">
+                  <Wrench className="h-3 w-3" />
+                </div>
+                <span className="font-medium text-sm truncate flex-1">{item.name}</span>
+                {item.code && <span className="text-xs font-mono text-muted-foreground">{item.code}</span>}
+                <span className="text-xs text-muted-foreground">Available: {item.remainingQty}</span>
+                <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => removeTransferItem(item.id)}><X className="h-3.5 w-3.5" /></Button>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="w-full sm:w-24">
+                  <Label className="text-xs">Qty</Label>
+                  <Input type="number" min={0} max={item.remainingQty} value={item.qtyTransfer}
+                    onChange={e => updateTransferItem(item.id, { qtyTransfer: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty)) })}
+                    className="h-8" />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-xs">Transfer To *</Label>
+                  <AsyncSearchableSelect
+                    value={item.toUserId}
+                    onValueChange={v => updateTransferItem(item.id, { toUserId: v, toUserName: '' })}
+                    placeholder="Search technician..."
+                    searchPlaceholder="Search by name or username..."
+                    fetchOptions={async () => {
+                      const res = await api.get('/api/workers?role=technician');
+                      if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                      return [];
+                    }}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Reason *</Label>
+                <Input
+                  value={item.transferReason}
+                  onChange={e => updateTransferItem(item.id, { transferReason: e.target.value })}
+                  placeholder="Why is this tool being transferred?"
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setTransferOpen(false)}>Cancel</Button>
+          <Button onClick={handleTransferSubmit} disabled={submitting || transferItems.length === 0} className="gap-2 border-sky-400 text-sky-700 hover:bg-sky-50">
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRightLeft className="h-4 w-4" />}
+            {submitting ? 'Processing...' : `Transfer ${transferItems.filter(i => i.qtyTransfer > 0).length} Tool(s)`}
+          </Button>
+        </div>
+      </ResponsiveDialog>
     </div>
   );
 }
