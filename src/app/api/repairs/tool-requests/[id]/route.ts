@@ -480,13 +480,30 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           });
         }
 
+        // Determine if ALL items are now fully returned
+        let allReturned = true;
+        if (toolReq.items.length > 0) {
+          // Re-fetch items to get updated quantityReturned
+          const updatedItems = await db.repairToolRequestItem.findMany({ where: { repairToolRequestId: id } });
+          for (const item of updatedItems) {
+            const issued = item.quantityIssued || 0;
+            const ret = item.quantityReturned || 0;
+            if (ret < issued) { allReturned = false; break; }
+          }
+        } else {
+          // Single-tool: always fully returned after this action
+          allReturned = true;
+        }
+
         updated = await db.repairToolRequest.update({
           where: { id },
-          data: { status: 'returned', returnedById: session.userId, returnedAt: now },
+          data: {
+            ...(allReturned ? { status: 'returned', returnedById: session.userId, returnedAt: now } : {}),
+          },
         });
 
-        // Notify WO planner on return
-        if (toolReq.workOrder.plannerId && toolReq.workOrder.plannerId !== toolReq.requestedById) {
+        // Notify WO planner on full return
+        if (allReturned && toolReq.workOrder.plannerId && toolReq.workOrder.plannerId !== toolReq.requestedById) {
           await notifyUser(toolReq.workOrder.plannerId, 'repair_tool_request', 'Tool Returned from WO',
               `${toolReq.items.length > 0 ? 'Tools' : `"${toolReq.toolName}"`} returned by ${toolReq.requestedBy.fullName} from WO ${toolReq.workOrder.woNumber}`,
               'repair_tool_request', id, 'maintenance-work-orders');

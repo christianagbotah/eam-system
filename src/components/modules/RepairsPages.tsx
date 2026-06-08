@@ -1245,23 +1245,25 @@ export function RepairToolRequestsPage() {
       if (res.success) fullDetail = res.data;
     }
     const items = getRequestItems(fullDetail);
+    // Only include items that still have remaining qty to return
     const form = items.map((i: any) => ({
       itemId: i.id,
       toolName: i.toolName || '',
       toolCode: i.toolCode || '',
       quantityIssued: i.quantityIssued || 0,
-      quantityReturned: i.quantityIssued || 0,
+      quantityAlreadyReturned: i.quantityReturned || 0,
+      quantityReturned: (i.quantityIssued || 0) - (i.quantityReturned || 0), // default to remaining
       conditionAtReturn: i.conditionAtIssue || 'good',
-    }));
+    })).filter(f => f.quantityReturned > 0);
     setReturnItemsForm(form);
     setReturnItemsOpen(true);
   };
 
   const handleReturn = async () => {
     if (!detailItem) return;
-    const returnedItems = returnItemsForm.map(f => ({
+    const returnedItems = returnItemsForm.filter(f => f.quantityReturned > 0).map(f => ({
       itemId: f.itemId,
-      quantityReturned: Math.max(0, Math.min(f.quantityReturned, f.quantityIssued)),
+      quantityReturned: Math.max(0, Math.min(f.quantityReturned, f.quantityIssued - f.quantityAlreadyReturned)),
       conditionAtReturn: f.conditionAtReturn,
     }));
     setSubmitting(true);
@@ -1291,6 +1293,7 @@ export function RepairToolRequestsPage() {
       if (res.success) fullDetail = res.data;
     }
     const items = getRequestItems(fullDetail);
+    // Only include items that still have remaining qty
     const form = items.map((i: any) => ({
       itemId: i.id,
       toolId: i.toolId || detailItem.toolId || '',
@@ -1302,7 +1305,7 @@ export function RepairToolRequestsPage() {
       toUserId: '',
       toUserName: '',
       transferReason: '',
-    }));
+    })).filter(f => f.quantityToTransfer > 0);
     setTransferForm(form);
     setTransferDialogOpen(true);
   };
@@ -1850,7 +1853,13 @@ export function RepairToolRequestsPage() {
               <div className="flex items-center gap-2">
                 <span className="font-medium text-sm truncate flex-1">{item.toolName}</span>
                 {item.toolCode && <span className="text-xs text-muted-foreground font-mono">{item.toolCode}</span>}
-                <span className="text-xs text-muted-foreground">Issued: {item.quantityIssued}</span>
+                <span className="text-xs text-muted-foreground">
+                  {item.quantityAlreadyReturned > 0 ? (
+                    <>Returned: {item.quantityAlreadyReturned} · Remaining: <strong>{item.quantityIssued - item.quantityAlreadyReturned}</strong></>
+                  ) : (
+                    <>Issued: {item.quantityIssued}</>
+                  )}
+                </span>
                 <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => {
                   const newForm = returnItemsForm.filter((_, i) => i !== idx);
                   setReturnItemsForm(newForm);
@@ -1859,9 +1868,9 @@ export function RepairToolRequestsPage() {
               <div className="flex flex-col sm:flex-row gap-2">
                 <div className="w-full sm:w-28">
                   <Label className="text-xs">Qty to Return</Label>
-                  <Input type="number" min={0} max={item.quantityIssued} value={item.quantityReturned}
+                  <Input type="number" min={0} max={item.quantityIssued - item.quantityAlreadyReturned} value={item.quantityReturned}
                     onChange={e => {
-                      const val = Math.max(0, Math.min(parseInt(e.target.value) || 0, item.quantityIssued));
+                      const val = Math.max(0, Math.min(parseInt(e.target.value) || 0, item.quantityIssued - item.quantityAlreadyReturned));
                       const newForm = [...returnItemsForm];
                       newForm[idx] = { ...newForm[idx], quantityReturned: val };
                       setReturnItemsForm(newForm);
