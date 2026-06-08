@@ -5183,13 +5183,27 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     onValueChange={setApproveAssignUserId}
                     fetchOptions={async () => {
                       try {
-                        const res = await api.get('/api/users?role=maintenance_technician');
+                        const req = teamRequests.find((r: any) => r.id === approveReqId);
+                        const tradeFilter = req?.requestedTrade || '';
+                        const url = tradeFilter
+                          ? `/api/users?role=maintenance_technician&primaryTrade=${encodeURIComponent(tradeFilter)}`
+                          : `/api/users?role=maintenance_technician`;
+                        const res = await api.get(url);
                         if (res.success && res.data) {
-                          return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                          let users = Array.isArray(res.data) ? res.data : [];
+                          // If filtered by trade and no results, fall back to all technicians
+                          if (tradeFilter && users.length === 0) {
+                            const fallbackRes = await api.get('/api/users?role=maintenance_technician');
+                            if (fallbackRes.success && fallbackRes.data) {
+                              users = Array.isArray(fallbackRes.data) ? fallbackRes.data : [];
+                            }
+                          }
+                          return users.map((u: any) => ({
                             value: u.id,
                             label: u.primaryTrade
                               ? `${u.fullName} — ${u.primaryTrade}${u.department ? ` (${u.department})` : ''}`
                               : `${u.fullName}${u.department ? ` (${u.department})` : ''}`,
+                            ...(tradeFilter && u.primaryTrade?.toLowerCase() !== tradeFilter.toLowerCase() ? { group: 'Other trades' } : {}),
                           }));
                         }
                       } catch { /* ignore */ }

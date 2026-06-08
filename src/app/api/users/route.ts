@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status');
     const search = searchParams.get('search');
     const role = searchParams.get('role');
+    const primaryTrade = searchParams.get('primaryTrade');
     const includeSkills = searchParams.get('includeSkills') === 'true';
 
     // Admin-only for unrestricted queries (no role filter)
@@ -27,6 +28,7 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = {};
     if (department) where.department = department;
     if (status) where.status = status;
+    if (primaryTrade) where.primaryTrade = primaryTrade;
     if (search) {
       where.OR = [
         { username: { contains: search } },
