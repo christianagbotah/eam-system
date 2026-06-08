@@ -2800,14 +2800,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [ptLoading, setPtLoading] = useState(false);
   const [ptForm, setPtForm] = useState({ toolName: '', toolCode: '', condition: 'good' as PersonalTool['condition'], notes: '' });
   // ── Repair Resource Modals ──
-  // Tool Request modal
+  // Tool Request modal (multi-tool)
   const [toolReqOpen, setToolReqOpen] = useState(false);
   const [toolReqSubmitting, setToolReqSubmitting] = useState(false);
-  const [toolReqToolId, setToolReqToolId] = useState('');
-  const [toolReqToolName, setToolReqToolName] = useState('');
-  const [toolReqQty, setToolReqQty] = useState('1');
   const [toolReqReason, setToolReqReason] = useState('');
   const [toolReqUrgency, setToolReqUrgency] = useState('normal');
+  const [toolReqItems, setToolReqItems] = useState<Array<{ toolId: string; toolName: string; toolCode: string; quantityRequested: number }>>([]);
   // Tool Transfer modal
   const [toolXferOpen, setToolXferOpen] = useState(false);
   const [toolXferSubmitting, setToolXferSubmitting] = useState(false);
@@ -2816,6 +2814,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [toolXferToUserId, setToolXferToUserId] = useState('');
   const [toolXferToUserName, setToolXferToUserName] = useState('');
   const [toolXferReason, setToolXferReason] = useState('');
+  // Tools cache for quick lookup
+  const toolsLookupCache = useRef<Array<{ id: string; name: string; toolCode: string }>>([]);
   // Downtime modal
   const [downtimeOpen, setDowntimeOpen] = useState(false);
   const [downtimeSubmitting, setDowntimeSubmitting] = useState(false);
@@ -3462,18 +3462,24 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   };
 
   // ── Repair Resource Modal Handlers ──
-  const resetToolReqForm = () => { setToolReqToolId(''); setToolReqToolName(''); setToolReqQty('1'); setToolReqReason(''); setToolReqUrgency('normal'); };
+  const resetToolReqForm = () => { setToolReqItems([{ toolId: '', toolName: '', toolCode: '', quantityRequested: 1 }]); setToolReqReason(''); setToolReqUrgency('normal'); };
+  const addToolReqItem = () => setToolReqItems(prev => [...prev, { toolId: '', toolName: '', toolCode: '', quantityRequested: 1 }]);
+  const removeToolReqItem = (idx: number) => { if (toolReqItems.length > 1) setToolReqItems(prev => prev.filter((_, i) => i !== idx)); };
+  const updateToolReqItem = (idx: number, updates: Partial<{ toolId: string; toolName: string; toolCode: string; quantityRequested: number }>) => {
+    setToolReqItems(prev => prev.map((item, i) => i === idx ? { ...item, ...updates } : item));
+  };
   const handleToolRequest = async () => {
-    if (!toolReqToolId) { toast.error('Please select a tool'); return; }
+    const validItems = toolReqItems.filter(i => i.toolId && i.toolName.trim());
+    if (validItems.length === 0) { toast.error('Please select at least one tool'); return; }
     if (toolReqReason.trim().length < 5) { toast.error('Reason must be at least 5 characters'); return; }
     setToolReqSubmitting(true);
     const res = await api.post('/api/repairs/tool-requests', {
       workOrderId: id,
       reason: toolReqReason,
       urgency: toolReqUrgency,
-      items: [{ toolId: toolReqToolId, toolName: toolReqToolName, quantityRequested: parseInt(toolReqQty) || 1 }],
+      items: validItems,
     });
-    if (res.success) { toast.success('Tool request submitted for approval'); setToolReqOpen(false); resetToolReqForm(); fetchWO(); }
+    if (res.success) { toast.success(`${validItems.length} tool(s) requested — sent for approval`); setToolReqOpen(false); resetToolReqForm(); fetchWO(); }
     else toast.error(res.error || 'Failed to submit tool request');
     setToolReqSubmitting(false);
   };
@@ -4622,44 +4628,68 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       </ResponsiveDialog>
 
       {/* ═══════ Request Tool Dialog ═══════ */}
-      <ResponsiveDialog open={toolReqOpen} onOpenChange={(open) => { setToolReqOpen(open); if (!open) resetToolReqForm(); }} title="Request Tool" description="Request a tool for this work order. It will go through the approval pipeline." footer={<Button className="w-full bg-orange-600 hover:bg-orange-700 text-white" disabled={toolReqSubmitting || !toolReqToolId || toolReqReason.trim().length < 5} onClick={handleToolRequest}>{toolReqSubmitting ? 'Submitting...' : 'Submit Tool Request'}</Button>}>
+      <ResponsiveDialog open={toolReqOpen} onOpenChange={(open) => { setToolReqOpen(open); if (!open) resetToolReqForm(); }} title="Request Tools" description="Request one or more tools for this work order. Goes through supervisor → store approval." footer={<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setToolReqOpen(false)}>Cancel</Button><Button className="bg-orange-600 hover:bg-orange-700 text-white" disabled={toolReqSubmitting || toolReqItems.filter(i => i.toolId && i.toolName.trim()).length === 0 || toolReqReason.trim().length < 5} onClick={handleToolRequest}>{toolReqSubmitting ? 'Submitting...' : 'Submit Request'}</Button></div>}>
         <div className="space-y-4">
           <div className="p-3 rounded-lg bg-orange-50 border border-orange-200">
             <p className="text-xs text-orange-800 font-medium">📋 Approval Workflow</p>
             <p className="text-xs text-orange-700 mt-1">Your request will be reviewed by a <strong>Supervisor</strong>, then <strong>Store/Shop</strong> before tools are issued.</p>
           </div>
-          <div className="space-y-1.5"><Label>Tool *</Label>
-            <AsyncSearchableSelect
-              value={toolReqToolId}
-              onValueChange={(val) => { setToolReqToolId(val); }}
-              fetchOptions={async () => {
-                const res = await api.get('/api/tools?limit=999');
-                if (res.success && Array.isArray(res.data)) {
-                  const tools = res.data;
-                  return tools.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));
-                }
-                return [];
-              }}
-              placeholder="Search tools..."
-              searchPlaceholder="Search by name or code..."
-            />
+          {/* Tool Items */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Tools *</Label>
+              <Button type="button" variant="outline" size="sm" className="h-7 gap-1" onClick={addToolReqItem}><Plus className="h-3 w-3" /> Add Another Tool</Button>
+            </div>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {toolReqItems.map((item, idx) => (
+                <div key={idx} className="p-3 bg-muted/30 rounded-lg border space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground font-medium w-5">#{idx + 1}</span>
+                    <AsyncSearchableSelect
+                      value={item.toolId}
+                      onValueChange={(val) => {
+                        const cached = toolsLookupCache.current.find(t => t.id === val);
+                        updateToolReqItem(idx, { toolId: val, toolName: cached?.name || '', toolCode: cached?.toolCode || '' });
+                      }}
+                      fetchOptions={async () => {
+                        const res = await api.get('/api/tools?limit=999');
+                        if (res.success && Array.isArray(res.data)) {
+                          toolsLookupCache.current = res.data.map((t: any) => ({ id: t.id, name: t.name || '', toolCode: t.toolCode || '' }));
+                          return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));
+                        }
+                        return [];
+                      }}
+                      placeholder="Search tools..."
+                      searchPlaceholder="Search by name or code..."
+                    />
+                    {toolReqItems.length > 1 && (
+                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => removeToolReqItem(idx)}><X className="h-3.5 w-3.5" /></Button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-24 shrink-0">
+                      <Label className="text-xs">Qty</Label>
+                      <Input type="number" min="1" value={item.quantityRequested} onChange={e => updateToolReqItem(idx, { quantityRequested: parseInt(e.target.value) || 1 })} className="h-8" />
+                    </div>
+                    {item.toolName && <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">{item.toolName}</Badge>}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label>Quantity</Label><Input className="min-h-[44px]" type="number" min="1" value={toolReqQty} onChange={e => setToolReqQty(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>Urgency</Label>
-              <Select value={toolReqUrgency} onValueChange={setToolReqUrgency}>
-                <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="normal">Normal</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
-                </SelectContent>
-              </Select>
+          <div>
+            <Label>Urgency</Label>
+            <div className="flex gap-2 mt-1">
+              {(['low', 'normal', 'high', 'critical'] as const).map(u => (
+                <button key={u} onClick={() => setToolReqUrgency(u)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 text-xs font-medium transition-all ${toolReqUrgency === u ? (URGENCY_CFG[u]?.color || 'bg-gray-100') + ' ring-2 ring-offset-1 ring-gray-300' : 'border-gray-200 text-muted-foreground hover:border-gray-300'}`}>
+                  <span className={`h-2 w-2 rounded-full ${URGENCY_CFG[u]?.dotColor || 'bg-gray-400'}`} />{URGENCY_CFG[u]?.label || u}
+                </button>
+              ))}
             </div>
           </div>
           <div className="space-y-1.5"><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label>
-            <Textarea value={toolReqReason} onChange={e => setToolReqReason(e.target.value)} placeholder="Why is this tool needed for this work order?" rows={2} />
+            <Textarea value={toolReqReason} onChange={e => setToolReqReason(e.target.value)} placeholder="Why are these tools needed for this work order?" rows={2} />
           </div>
         </div>
       </ResponsiveDialog>
@@ -4674,10 +4704,15 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           <div className="space-y-1.5"><Label>Tool *</Label>
             <AsyncSearchableSelect
               value={toolXferToolId}
-              onValueChange={(val) => { setToolXferToolId(val); }}
+              onValueChange={(val) => {
+                const cached = toolsLookupCache.current.find(t => t.id === val);
+                setToolXferToolId(val);
+                setToolXferToolName(cached?.name || '');
+              }}
               fetchOptions={async () => {
                 const res = await api.get('/api/tools?limit=999');
                 if (res.success && Array.isArray(res.data)) {
+                  toolsLookupCache.current = res.data.map((t: any) => ({ id: t.id, name: t.name || '', toolCode: t.toolCode || '' }));
                   return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));
                 }
                 return [];
