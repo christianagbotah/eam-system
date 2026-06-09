@@ -182,3 +182,27 @@ Stage Summary:
 - quantityTransferred is incremented at transfer creation, decremented on rejection/cancellation
 - Transfer completion no longer double-counts
 - Transfer dialog correctly calculates remaining transferable qty
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Implement store keeper confirmation workflow for tool returns
+
+Work Log:
+- Added pendingReturnQty, pendingReturnCondition, pendingReturnNotes fields to RepairToolRequestItem schema
+- Added returnConfirmedById/At to RepairToolRequest schema with User relation
+- Rewrote 'return' action in tool-requests/[id]/route.ts to store pending data instead of processing immediately
+- Added 'storekeeper_confirm_return' action: processes inventory updates, creates tool transactions, updates quantities
+- Added 'storekeeper_reject_return' action: clears pending data, resets to 'issued' status
+- Added notification flow: store keepers notified on return submission, technician notified on confirm/reject
+- Frontend: Added 'pending_return' status badge (amber) and filter option
+- Detail sheet shows pending return info with reported condition
+- Store keeper sees Confirm Return / Reject Return buttons on detail sheet
+- Return/Transfer buttons hidden during pending_return status
+- openReturnDialog guards against double-submit and correctly subtracts transferred qty
+- checkAndCloseToolRequest skips requests with pending_return status
+
+Stage Summary:
+- Complete store keeper confirmation workflow for tool returns is now implemented
+- Status flow: issued → pending_return → issued/returned (after store keeper confirms)
+- Schema changes require: bunx prisma db push && bunx prisma generate
