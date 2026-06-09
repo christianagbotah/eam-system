@@ -45,7 +45,7 @@ import {
   Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
   FlaskConical, Warehouse, PackageOpen, PackageCheck, Lightbulb,
   ArrowUpRight, ArrowDownRight, CalendarClock, LayoutDashboard, Bell, DollarSign,
-  UserMinus, UserCheck, UserX,
+  UserMinus, UserCheck, UserX, Undo2,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -3667,14 +3667,15 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     setTaskChecklistLoading(false);
   }, [id]);
 
-  const handleTaskAction = async (taskId: string, action: 'in_progress' | 'completed' | 'skipped' | 'failed', extra?: Record<string, string>) => {
+  const handleTaskAction = async (taskId: string, action: 'in_progress' | 'completed' | 'skipped' | 'failed' | 'pending', extra?: Record<string, string>) => {
     setTaskActionLoading(taskId);
     const body: Record<string, string> = { status: action };
     if (extra?.notes) body.notes = extra.notes;
     if (extra?.findings) body.findings = extra.findings;
     const res = await api.patch(`/api/work-orders/${id}/tasks/${taskId}`, body);
     if (res.success) {
-      toast.success(action === 'in_progress' ? 'Task started' : action === 'completed' ? 'Task completed' : action === 'skipped' ? 'Task skipped' : 'Task marked as failed');
+      const labels: Record<string, string> = { in_progress: 'Task started', completed: 'Task completed ✓', skipped: 'Task skipped', failed: 'Task marked as failed', pending: 'Task reopened' };
+      toast.success(labels[action] || 'Task updated');
       fetchTaskChecklist();
       setCompleteTaskDialog(null);
       setSkipTaskDialog(null);
@@ -5531,13 +5532,23 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                               </Button>
                             )}
                             {(isPending || isInProgress) && (
-                              <Button size="sm" className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isLoading} onClick={() => setCompleteTaskDialog(task.id)}>
-                                <Check className="h-3 w-3" />Done
-                              </Button>
+                              <>
+                                <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-500 hover:text-slate-700" disabled={isLoading} onClick={() => { setCompleteTaskDialog(task.id); setTaskNotes(''); setTaskFindings(''); }} title="Complete with notes/findings">
+                                  <MessageSquare className="h-3 w-3" />Notes
+                                </Button>
+                                <Button size="sm" className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'completed')}>
+                                  {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}Done
+                                </Button>
+                              </>
                             )}
                             {(isPending || isInProgress) && (
                               <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-500" disabled={isLoading} onClick={() => setSkipTaskDialog(task.id)}>
                                 <ArrowRight className="h-3 w-3" />Skip
+                              </Button>
+                            )}
+                            {(isCompleted || isSkipped || isFailed) && (
+                              <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'pending')} title="Undo — reopen this task">
+                                {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Undo2 className="h-3 w-3" />}Undo
                               </Button>
                             )}
                           </div>
@@ -5577,7 +5588,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           )}
 
           {/* Complete Task Dialog */}
-          <ResponsiveDialog open={!!completeTaskDialog} onOpenChange={(v) => { setCompleteTaskDialog(v ? completeTaskDialog : null); setTaskNotes(''); setTaskFindings(''); }} title="Complete Task" description="Record findings and notes for this task." footer={
+          <ResponsiveDialog open={!!completeTaskDialog} onOpenChange={(v) => { setCompleteTaskDialog(v ? completeTaskDialog : null); setTaskNotes(''); setTaskFindings(''); }} title="Complete with Notes" description="Optionally record findings and notes for this task before completing." footer={
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => { setCompleteTaskDialog(null); setTaskNotes(''); setTaskFindings(''); }}>Cancel</Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={!!taskActionLoading} onClick={() => { if (completeTaskDialog) handleTaskAction(completeTaskDialog, 'completed', { notes: taskNotes, findings: taskFindings }); }}>
