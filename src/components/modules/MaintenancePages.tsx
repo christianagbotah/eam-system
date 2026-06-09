@@ -2878,6 +2878,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [addTaskLoading, setAddTaskLoading] = useState(false);
   const [taskNotes, setTaskNotes] = useState('');
   const [taskFindings, setTaskFindings] = useState('');
+  const [bulkCompleteLoading, setBulkCompleteLoading] = useState(false);
   const [skipReason, setSkipReason] = useState('');
   // Suggested Materials & Tools
   const [suggestedParts, setSuggestedParts] = useState<any[]>([]);
@@ -5427,139 +5428,276 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </Card>
 
           {/* Task Checklist — Guided step-by-step task execution during WO execution */}
-          {wo.status === 'in_progress' && !taskChecklistLoading && taskChecklist.length > 0 && (
-            <Card className="border-0 shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <ClipboardCheck className="h-4 w-4 text-emerald-600" />
-                    Task Checklist
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    {taskChecklist.filter(t => t.status === 'completed').length} of {taskChecklist.length} completed
-                    {taskChecklistMeta?.templateTitle && ` · From: ${taskChecklistMeta.templateTitle}`}
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  {!workActionDisabled && (
-                    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTaskDialog(true)}>
-                      <Plus className="h-3.5 w-3.5" />Add Task
-                    </Button>
+          {wo.status === 'in_progress' && !taskChecklistLoading && taskChecklist.length > 0 && (() => {
+            const totalTasks = taskChecklist.length;
+            const completedCount = taskChecklist.filter(t => t.status === 'completed').length;
+            const inProgressCount = taskChecklist.filter(t => t.status === 'in_progress').length;
+            const skippedCount = taskChecklist.filter(t => t.status === 'skipped').length;
+            const failedCount = taskChecklist.filter(t => t.status === 'failed').length;
+            const pendingCount = totalTasks - completedCount - inProgressCount - skippedCount - failedCount;
+            const progressPercent = Math.round((completedCount / totalTasks) * 100);
+            const totalEstMinutes = taskChecklist.reduce((sum, t) => sum + (t.estimatedMinutes || 0), 0);
+            const remainingEstMinutes = taskChecklist.filter(t => t.status === 'pending' || t.status === 'in_progress').reduce((sum, t) => sum + (t.estimatedMinutes || 0), 0);
+            const canBulkComplete = !workActionDisabled && pendingCount + inProgressCount > 0;
+
+            // Task type icon mapping
+            const TASK_TYPE_CONFIG: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
+              check: { icon: <ClipboardCheck className="h-3 w-3" />, label: 'Check', color: 'bg-blue-50 text-blue-700 border-blue-200' },
+              measure: { icon: <Ruler className="h-3 w-3" />, label: 'Measure', color: 'bg-purple-50 text-purple-700 border-purple-200' },
+              inspect: { icon: <Eye className="h-3 w-3" />, label: 'Inspect', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+              lubricate: { icon: <Droplets className="h-3 w-3" />, label: 'Lubricate', color: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
+              replace: { icon: <RefreshCw className="h-3 w-3" />, label: 'Replace', color: 'bg-orange-50 text-orange-700 border-orange-200' },
+              record: { icon: <FileText className="h-3 w-3" />, label: 'Record', color: 'bg-slate-50 text-slate-700 border-slate-200' },
+            };
+
+            const handleBulkComplete = async () => {
+              const tasksToComplete = taskChecklist.filter(t => t.status === 'pending' || t.status === 'in_progress');
+              if (tasksToComplete.length === 0) return;
+              setBulkCompleteLoading(true);
+              let successCount = 0;
+              for (const task of tasksToComplete) {
+                const res = await api.patch(`/api/work-orders/${id}/tasks/${task.id}`, { status: 'completed' });
+                if (res.success) successCount++;
+              }
+              if (successCount === tasksToComplete.length) {
+                toast.success(`All ${successCount} tasks completed ✓`);
+              } else {
+                toast.success(`${successCount} of ${tasksToComplete.length} tasks completed`);
+              }
+              setBulkCompleteLoading(false);
+              fetchTaskChecklist();
+            };
+
+            const handleQuickComplete = (taskId: string) => {
+              handleTaskAction(taskId, 'completed');
+            };
+
+            return (
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <div>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <ClipboardCheck className="h-4 w-4 text-emerald-600" />
+                      Task Checklist
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      {taskChecklistMeta?.templateTitle && `From: ${taskChecklistMeta.templateTitle} · `}
+                      {progressPercent}% done · {completedCount}/{totalTasks} completed
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {canBulkComplete && (
+                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" disabled={bulkCompleteLoading} onClick={handleBulkComplete} title="Complete all remaining tasks">
+                        {bulkCompleteLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckSquare className="h-3.5 w-3.5" />}
+                        <span className="hidden sm:inline">Complete All</span>
+                      </Button>
+                    )}
+                    {!workActionDisabled && (
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTaskDialog(true)}>
+                        <Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline">Add Task</span>
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {/* Summary Stats + Progress Bar */}
+                  <div className="flex items-center gap-3">
+                    <Progress
+                      value={progressPercent}
+                      className="h-2.5 flex-1"
+                    />
+                    <div className="flex items-center gap-1.5 text-[10px] shrink-0">
+                      <span className="flex items-center gap-0.5 text-slate-500"><CircleDot className="h-2.5 w-2.5" />{pendingCount}</span>
+                      <span className="flex items-center gap-0.5 text-amber-600"><Play className="h-2.5 w-2.5" />{inProgressCount}</span>
+                      <span className="flex items-center gap-0.5 text-emerald-600"><CheckCircle2 className="h-2.5 w-2.5" />{completedCount}</span>
+                      {(skippedCount > 0 || failedCount > 0) && (
+                        <span className="flex items-center gap-0.5 text-slate-400"><ArrowRight className="h-2.5 w-2.5" />{skippedCount + failedCount}</span>
+                      )}
+                    </div>
+                  </div>
+                  {totalEstMinutes > 0 && (
+                    <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {remainingEstMinutes > 0 ? `~${remainingEstMinutes} min remaining` : 'All estimated time complete'}
+                      {totalEstMinutes > 0 && <span className="text-muted-foreground/60">(of ~{totalEstMinutes} min total)</span>}
+                    </p>
                   )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {/* Progress Bar */}
-                <div className="mb-4">
-                  <Progress
-                    value={(taskChecklist.filter(t => t.status === 'completed').length / taskChecklist.length) * 100}
-                    className="h-2"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {Math.round((taskChecklist.filter(t => t.status === 'completed').length / taskChecklist.length) * 100)}% complete
-                  </p>
-                </div>
 
-                {/* Task List */}
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {taskChecklist.map((task) => {
-                    const isCompleted = task.status === 'completed';
-                    const isInProgress = task.status === 'in_progress';
-                    const isSkipped = task.status === 'skipped';
-                    const isFailed = task.status === 'failed';
-                    const isPending = task.status === 'pending';
-                    const isLoading = taskActionLoading === task.id;
+                  {/* Task List */}
+                  <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-0.5">
+                    {taskChecklist.map((task, idx) => {
+                      const isCompleted = task.status === 'completed';
+                      const isInProgress = task.status === 'in_progress';
+                      const isSkipped = task.status === 'skipped';
+                      const isFailed = task.status === 'failed';
+                      const isPending = task.status === 'pending';
+                      const isLoading = taskActionLoading === task.id;
+                      const typeConfig = TASK_TYPE_CONFIG[task.taskType] || TASK_TYPE_CONFIG.check;
 
-                    const statusIcon = isCompleted
-                      ? <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                      : isInProgress
-                        ? <Play className="h-5 w-5 text-amber-500 animate-pulse" />
-                        : isSkipped
-                          ? <ArrowRight className="h-5 w-5 text-slate-400" />
-                          : isFailed
-                            ? <XCircle className="h-5 w-5 text-red-500" />
-                            : <CircleDot className="h-5 w-5 text-slate-300" />;
+                      let requiredPartsList: string[] = [];
+                      try { requiredPartsList = task.requiredParts ? JSON.parse(task.requiredParts) : []; } catch { /* ignore */ }
 
-                    const statusBg = isCompleted
-                      ? 'bg-emerald-50 border-emerald-200'
-                      : isInProgress
-                        ? 'bg-amber-50 border-amber-200'
-                        : isSkipped
-                          ? 'bg-slate-50 border-slate-200 opacity-60'
-                          : isFailed
-                            ? 'bg-red-50 border-red-200'
-                            : 'bg-muted/30 border-border';
+                      const statusBg = isCompleted
+                        ? 'bg-emerald-50/70 border-emerald-200/70'
+                        : isInProgress
+                          ? 'bg-amber-50 border-amber-200 shadow-sm ring-1 ring-amber-200/50'
+                          : isSkipped
+                            ? 'bg-slate-50/50 border-slate-200 opacity-60'
+                            : isFailed
+                              ? 'bg-red-50 border-red-200'
+                              : 'bg-background border-border';
 
-                    return (
-                      <div key={task.id} className={`flex items-start gap-3 p-3 rounded-lg border ${statusBg} transition-colors`}>
-                        <div className="mt-0.5 shrink-0">{statusIcon}</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono font-medium text-muted-foreground">Step {task.taskNumber}</span>
-                            <Badge variant="outline" className="text-[10px] capitalize">{task.taskType.replace('_', ' ')}</Badge>
-                            {task.estimatedMinutes && (
-                              <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                                <Clock className="h-3 w-3" />{task.estimatedMinutes}m
-                              </span>
+                      return (
+                        <div key={task.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-all ${statusBg}`}>
+                          {/* Clickable status icon for quick complete */}
+                          <TooltipProvider delayDuration={300}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  className="mt-0.5 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded-full"
+                                  onClick={() => {
+                                    if (workActionDisabled) return;
+                                    if (isPending) handleTaskAction(task.id, 'in_progress');
+                                    else if (isInProgress) handleQuickComplete(task.id);
+                                  }}
+                                  disabled={workActionDisabled || isLoading || isCompleted || isSkipped || isFailed}
+                                  title={isPending ? 'Click to start' : isInProgress ? 'Click to complete' : undefined}
+                                >
+                                  {isCompleted
+                                    ? <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                                    : isInProgress
+                                      ? <div className="relative"><Play className="h-5 w-5 text-amber-500 animate-pulse" /><span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-400 animate-ping" /></div>
+                                      : isSkipped
+                                        ? <ArrowRight className="h-5 w-5 text-slate-400" />
+                                        : isFailed
+                                          ? <XCircle className="h-5 w-5 text-red-500" />
+                                          : <CircleDot className="h-5 w-5 text-slate-300 hover:text-emerald-500 transition-colors" />}
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom" className="text-[11px]">
+                                {isPending ? 'Click to start task' : isInProgress ? 'Click to mark done' : isCompleted ? 'Completed' : isSkipped ? 'Skipped' : isFailed ? 'Failed' : 'Pending'}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+
+                          <div className="flex-1 min-w-0">
+                            {/* Step number + type badge + time */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] font-mono font-semibold text-muted-foreground/70">{idx + 1}</span>
+                              <Badge variant="outline" className={`text-[10px] gap-0.5 capitalize ${typeConfig.color}`}>
+                                {typeConfig.icon}{typeConfig.label}
+                              </Badge>
+                              {task.estimatedMinutes && (
+                                <span className="text-[10px] text-muted-foreground/60 flex items-center gap-0.5">
+                                  <Clock className="h-2.5 w-2.5" />{task.estimatedMinutes}m
+                                </span>
+                              )}
+                            </div>
+                            {/* Description */}
+                            <p className={`text-sm mt-0.5 leading-snug ${isCompleted || isSkipped ? 'line-through text-muted-foreground/70' : isInProgress ? 'font-medium text-foreground' : 'font-medium'}`}>
+                              {task.description}
+                            </p>
+                            {/* Required parts parsed */}
+                            {requiredPartsList.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {requiredPartsList.slice(0, 4).map((part, pi) => (
+                                  <span key={pi} className="text-[10px] bg-muted/60 text-muted-foreground rounded px-1.5 py-0.5 flex items-center gap-0.5">
+                                    <Package className="h-2.5 w-2.5" />{part}
+                                  </span>
+                                ))}
+                                {requiredPartsList.length > 4 && (
+                                  <span className="text-[10px] text-muted-foreground">+{requiredPartsList.length - 4} more</span>
+                                )}
+                              </div>
+                            )}
+                            {/* Findings / Notes / Completion info */}
+                            {(task.notes || task.findings) && (
+                              <div className="mt-1.5 text-xs text-muted-foreground space-y-0.5">
+                                {task.findings && <p className="bg-background/50 rounded px-1.5 py-0.5"><span className="font-medium">Findings:</span> {task.findings}</p>}
+                                {task.notes && <p className="truncate bg-background/50 rounded px-1.5 py-0.5"><span className="font-medium">Notes:</span> {task.notes}</p>}
+                              </div>
+                            )}
+                            {task.completedBy && task.completedAt && (
+                              <p className="text-[10px] text-muted-foreground/70 mt-1">
+                                {isCompleted && '✓ '}{isSkipped && '→ '}{isFailed && '✗ '}
+                                {task.completedBy.fullName} · {formatDateTime(task.completedAt)}
+                              </p>
                             )}
                           </div>
-                          <p className={`text-sm mt-0.5 ${isCompleted || isSkipped ? 'line-through text-muted-foreground' : 'font-medium'}`}>
-                            {task.description}
-                          </p>
-                          {task.requiredParts && (
-                            <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
-                              <Package className="h-3 w-3" />
-                              Parts required
-                            </p>
-                          )}
-                          {(task.notes || task.findings) && (
-                            <div className="mt-1.5 text-xs text-muted-foreground space-y-0.5">
-                              {task.findings && <p><span className="font-medium">Findings:</span> {task.findings}</p>}
-                              {task.notes && <p className="truncate"><span className="font-medium">Notes:</span> {task.notes}</p>}
+
+                          {/* Action buttons */}
+                          {!workActionDisabled && (
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              {isPending && (
+                                <TooltipProvider delayDuration={400}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'in_progress')}>
+                                        {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}<span className="hidden sm:inline">Start</span>
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="text-[11px]">Begin this task</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
+                              {(isPending || isInProgress) && (
+                                <>
+                                  <TooltipProvider delayDuration={400}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-500 hover:text-slate-700" disabled={isLoading} onClick={() => { setCompleteTaskDialog(task.id); setTaskNotes(''); setTaskFindings(''); }}>
+                                          <MessageSquare className="h-3 w-3" /><span className="hidden sm:inline">Notes</span>
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left" className="text-[11px]">Complete with notes/findings</TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                  <TooltipProvider delayDuration={400}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button size="sm" className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'completed')}>
+                                          {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}<span className="hidden sm:inline">Done</span>
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left" className="text-[11px]">Mark task as complete</TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                </>
+                              )}
+                              {(isPending || isInProgress) && (
+                                <TooltipProvider delayDuration={400}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-500" disabled={isLoading} onClick={() => setSkipTaskDialog(task.id)}>
+                                        <ArrowRight className="h-3 w-3" /><span className="hidden sm:inline">Skip</span>
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="text-[11px]">Skip this task</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
+                              {(isCompleted || isSkipped || isFailed) && (
+                                <TooltipProvider delayDuration={400}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'pending')}>
+                                        {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Undo2 className="h-3 w-3" />}<span className="hidden sm:inline">Undo</span>
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="text-[11px]">Reopen this task</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
                             </div>
                           )}
-                          {task.completedBy && task.completedAt && (
-                            <p className="text-[10px] text-muted-foreground mt-1">
-                              {isCompleted && 'Completed '}{isSkipped && 'Skipped '}{isFailed && 'Failed '}by {task.completedBy.fullName} · {formatDateTime(task.completedAt)}
-                            </p>
-                          )}
                         </div>
-                        {!workActionDisabled && (
-                          <div className="flex items-center gap-1 shrink-0">
-                            {isPending && (
-                              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'in_progress')}>
-                                {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}Start
-                              </Button>
-                            )}
-                            {(isPending || isInProgress) && (
-                              <>
-                                <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-500 hover:text-slate-700" disabled={isLoading} onClick={() => { setCompleteTaskDialog(task.id); setTaskNotes(''); setTaskFindings(''); }} title="Complete with notes/findings">
-                                  <MessageSquare className="h-3 w-3" />Notes
-                                </Button>
-                                <Button size="sm" className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'completed')}>
-                                  {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}Done
-                                </Button>
-                              </>
-                            )}
-                            {(isPending || isInProgress) && (
-                              <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-500" disabled={isLoading} onClick={() => setSkipTaskDialog(task.id)}>
-                                <ArrowRight className="h-3 w-3" />Skip
-                              </Button>
-                            )}
-                            {(isCompleted || isSkipped || isFailed) && (
-                              <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'pending')} title="Undo — reopen this task">
-                                {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Undo2 className="h-3 w-3" />}Undo
-                              </Button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {/* Task Checklist - Empty state for in_progress WOs */}
           {wo.status === 'in_progress' && !taskChecklistLoading && taskChecklist.length === 0 && (
@@ -5570,7 +5708,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     <ClipboardCheck className="h-4 w-4 text-emerald-600" />
                     Task Checklist
                   </CardTitle>
-                  <CardDescription className="text-xs">Add tasks to track work progress step by step</CardDescription>
+                  <CardDescription className="text-xs">Break down your work into steps for better tracking</CardDescription>
                 </div>
                 {!workActionDisabled && (
                   <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTaskDialog(true)}>
@@ -5579,9 +5717,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 )}
               </CardHeader>
               <CardContent>
-                <div className="flex flex-col items-center py-6 text-center">
-                  <ListChecks className="h-10 w-10 text-slate-300 mb-2" />
-                  <p className="text-sm text-muted-foreground">No tasks yet. Add tasks to create a guided checklist.</p>
+                <div className="flex flex-col items-center py-8 text-center">
+                  <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mb-3">
+                    <ListChecks className="h-6 w-6 text-emerald-400" />
+                  </div>
+                  <p className="text-sm font-medium text-muted-foreground">No tasks yet</p>
+                  <p className="text-xs text-muted-foreground/70 mt-1 max-w-[240px]">Add tasks to create a step-by-step checklist. This helps track progress and ensures nothing is missed.</p>
                 </div>
               </CardContent>
             </Card>
@@ -5627,22 +5768,34 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           }>
             <div className="space-y-4">
               <div className="space-y-1.5"><Label>Description *</Label><Input className="min-h-[44px]" value={addTaskDesc} onChange={e => setAddTaskDesc(e.target.value)} placeholder="Describe the task to be performed" /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5"><Label>Task Type</Label>
-                  <Select value={addTaskType} onValueChange={setAddTaskType}>
-                    <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="check">Check</SelectItem>
-                      <SelectItem value="measure">Measure</SelectItem>
-                      <SelectItem value="inspect">Inspect</SelectItem>
-                      <SelectItem value="lubricate">Lubricate</SelectItem>
-                      <SelectItem value="replace">Replace</SelectItem>
-                      <SelectItem value="record">Record</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {/* Task type quick-select buttons */}
+              <div className="space-y-1.5">
+                <Label>Task Type</Label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { value: 'check', label: 'Check', icon: <ClipboardCheck className="h-3.5 w-3.5" /> },
+                    { value: 'measure', label: 'Measure', icon: <Ruler className="h-3.5 w-3.5" /> },
+                    { value: 'inspect', label: 'Inspect', icon: <Eye className="h-3.5 w-3.5" /> },
+                    { value: 'lubricate', label: 'Lubricate', icon: <Droplets className="h-3.5 w-3.5" /> },
+                    { value: 'replace', label: 'Replace', icon: <RefreshCw className="h-3.5 w-3.5" /> },
+                    { value: 'record', label: 'Record', icon: <FileText className="h-3.5 w-3.5" /> },
+                  ].map((type) => (
+                    <button
+                      key={type.value}
+                      type="button"
+                      onClick={() => setAddTaskType(type.value)}
+                      className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs font-medium transition-all min-h-[44px] ${
+                        addTaskType === type.value
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-700 shadow-sm'
+                          : 'border-border bg-background text-muted-foreground hover:border-slate-300 hover:bg-muted/50'
+                      }`}
+                    >
+                      {type.icon}{type.label}
+                    </button>
+                  ))}
                 </div>
-                <div className="space-y-1.5"><Label>Est. Minutes</Label><Input className="min-h-[44px]" type="number" min="1" value={addTaskMinutes} onChange={e => setAddTaskMinutes(e.target.value)} placeholder="e.g. 15" /></div>
               </div>
+              <div className="space-y-1.5"><Label>Est. Minutes (optional)</Label><Input className="min-h-[44px]" type="number" min="1" value={addTaskMinutes} onChange={e => setAddTaskMinutes(e.target.value)} placeholder="e.g. 15" /></div>
             </div>
           </ResponsiveDialog>
 
