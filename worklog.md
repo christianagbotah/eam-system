@@ -162,3 +162,23 @@ Stage Summary:
 - Return/Transfer buttons now persist until ALL items are fully returned OR transferred
 - Transfers are tracked in quantityTransferred field and count toward request completion
 - Committed as 1594d0cb, pushed to origin/main
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix transfer workflow - transferred tools not showing update on tool request detail
+
+Work Log:
+- Analyzed the issue: quantityTransferred was only incremented when transfer fully completed (both parties accepted)
+- Created shared helper file src/lib/tool-transfer-helpers.ts with 3 functions: incrementToolRequestTransfer, decrementToolRequestTransfer, checkAndCloseToolRequest
+- Updated POST /api/repairs/tool-transfers to immediately increment quantityTransferred on transfer submission
+- Updated POST /api/repairs/tool-transfers/[id] to decrement on rejection/cancellation, removed old updateToolRequestItemOnTransfer
+- Fixed openTransferDialog in RepairsPages.tsx to subtract quantityTransferred when calculating available qty
+- Made "Transferred: X" label show in sky-blue color on detail sheet
+- Committed and pushed all changes
+
+Stage Summary:
+- Transferred tools now immediately show "Transferred: X" on the tool request detail sheet after submission
+- quantityTransferred is incremented at transfer creation, decremented on rejection/cancellation
+- Transfer completion no longer double-counts
+- Transfer dialog correctly calculates remaining transferable qty
