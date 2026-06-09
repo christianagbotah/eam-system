@@ -1966,7 +1966,7 @@ export function RepairToolRequestsPage() {
                     searchPlaceholder="Search by name or username..."
                     fetchOptions={async () => {
                       const res = await api.get('/api/workers?role=technician');
-                      if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                      if (res.success && Array.isArray(res.data)) return res.data.filter((u: any) => u.id !== user?.id).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
                       return [];
                     }}
                   />
@@ -2377,7 +2377,7 @@ export function RepairToolTransfersPage() {
             <div className="relative">
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>From User *</Label><AsyncSearchableSelect value={createForm.fromUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, fromUserId: v }))} placeholder="Current holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
-                <div><Label>To User *</Label><AsyncSearchableSelect value={createForm.toUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, toUserId: v }))} placeholder="New holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
+                <div><Label>To User *</Label><AsyncSearchableSelect value={createForm.toUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, toUserId: v }))} placeholder="New holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.filter((u: any) => u.id !== createForm.fromUserId).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
               </div>
               {createForm.fromUserId && createForm.toUserId && createForm.fromUserId === createForm.toUserId && (
                 <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> From and To users must be different</p>
@@ -3082,7 +3082,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
                     searchPlaceholder="Search by name or username..."
                     fetchOptions={async () => {
                       const res = await api.get('/api/workers?role=technician');
-                      if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                      if (res.success && Array.isArray(res.data)) return res.data.filter((u: any) => u.id !== user?.id).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
                       return [];
                     }}
                   />
