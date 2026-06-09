@@ -45,7 +45,7 @@ import {
   Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
   FlaskConical, Warehouse, PackageOpen, PackageCheck, Lightbulb,
   ArrowUpRight, ArrowDownRight, CalendarClock, LayoutDashboard, Bell, DollarSign,
-  UserMinus, UserCheck, UserX, Undo2,
+  UserMinus, UserCheck, UserX, Undo2, StopCircle,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -3164,7 +3164,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         start: 'Work started — timer is running',
         pause: reason === 'break' ? 'Paused for break' : reason === 'switch_wo' ? 'Paused — you can now work on another WO' : 'Work paused',
         resume: 'Work resumed — timer is running',
-        complete: 'Work completed on this WO',
+        complete: 'Time session ended — duration recorded',
       };
       toast.success(msgs[action] || `Time ${action} recorded`);
       setPauseDialogOpen(false);
@@ -5015,8 +5015,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       Pause
                     </Button>
                     <Button size="sm" variant="outline" className="gap-1.5 text-emerald-600 border-emerald-300 hover:bg-emerald-50" disabled={tlLoading} onClick={() => handleQuickTimeAction('complete')}>
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Complete
+                      <StopCircle className="h-3.5 w-3.5" />
+                      Stop
                     </Button>
                   </>
                 )}
@@ -5030,7 +5030,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     )}
                     <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={() => handleQuickTimeAction('start')}>
                       {tlLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                      Start Work
+                      {hasPausedSession ? 'Start New Session' : 'Start Work'}
                     </Button>
                   </>
                 )}
