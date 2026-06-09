@@ -5093,9 +5093,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               <ScrollArea className="max-h-64">
                 {wo.comments?.map(c => (
                   <div key={c.id} className="flex gap-3 py-2 border-b last:border-0">
-                    <Avatar className="h-7 w-7 shrink-0"><AvatarFallback className="text-[10px]">{getInitials(c.userName || 'U')}</AvatarFallback></Avatar>
+                    <Avatar className="h-7 w-7 shrink-0"><AvatarFallback className="text-[10px]">{getInitials(c.user?.fullName || c.userName || 'U')}</AvatarFallback></Avatar>
                     <div>
-                      <p className="text-xs"><span className="font-medium">{c.userName || 'Unknown'}</span> <span className="text-muted-foreground">{timeAgo(c.createdAt)}</span></p>
+                      <p className="text-xs"><span className="font-medium">{c.user?.fullName || c.userName || 'Unknown'}</span> <span className="text-muted-foreground">{timeAgo(c.createdAt)}</span></p>
                       <p className="text-sm mt-0.5">{c.content}</p>
                     </div>
                   </div>
