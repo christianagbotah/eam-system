@@ -3556,6 +3556,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       conditionOnReturn: spareReturnCondition,
       damageDescription: spareReturnDamageDesc || undefined,
       refurbishmentNeeded: spareReturnNeedsRefurb,
+      isConsumed: !spareReturnIsReusable,
       itemId: spareReturnItemId || undefined,
       materialRequestId: spareReturnMRId || undefined,
       plantId: wo?.plantId || undefined,

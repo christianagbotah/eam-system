@@ -152,6 +152,8 @@ export async function POST(request: NextRequest) {
       conditionOnReturn,
       damageDescription,
       plantId,
+      refurbishmentNeeded,
+      isConsumed,
     } = body;
 
     if (!workOrderId || !itemName) {
@@ -183,6 +185,12 @@ export async function POST(request: NextRequest) {
 
     const returnNumber = await generateReturnNumber();
 
+    // Determine status based on consumed flag
+    const resolvedIsConsumed = isConsumed === true;
+    const resolvedRefurbishmentNeeded = refurbishmentNeeded === true && !resolvedIsConsumed;
+    const resolvedStatus = resolvedIsConsumed ? 'disposed' : 'pending';
+    const now = new Date();
+
     const sparePartReturn = await db.sparePartReturn.create({
       data: {
         returnNumber,
@@ -194,8 +202,15 @@ export async function POST(request: NextRequest) {
         quantity: quantity ?? 1,
         conditionOnReturn: conditionOnReturn || 'used',
         damageDescription: damageDescription || null,
+        refurbishmentNeeded: resolvedRefurbishmentNeeded,
         plantId: resolvedPlantId,
         requestedById: session.userId,
+        status: resolvedStatus,
+        ...(resolvedIsConsumed ? {
+          disposedById: session.userId,
+          disposedAt: now,
+          disposalReason: 'Consumed during repair',
+        } : {}),
       },
       include: {
         workOrder: { select: { id: true, woNumber: true, title: true } },
@@ -203,6 +218,68 @@ export async function POST(request: NextRequest) {
         requestedBy: { select: { id: true, fullName: true, username: true } },
       },
     });
+
+    // Update linked RepairMaterialRequest if provided
+    if (materialRequestId) {
+      const matReq = await db.repairMaterialRequest.findUnique({ where: { id: materialRequestId } });
+      if (matReq) {
+        if (resolvedIsConsumed) {
+          // Material was consumed — update consumedQty and close the request
+          const newConsumedQty = (matReq.consumedQty || 0) + (quantity ?? 1);
+          const issuedQty = matReq.quantityIssued || matReq.quantityApproved || 0;
+          const newReturnedQty = Math.max(0, issuedQty - newConsumedQty - (matReq.wastedQty || 0));
+          const allAccountedFor = newConsumedQty + (matReq.wastedQty || 0) + newReturnedQty >= issuedQty;
+
+          await db.repairMaterialRequest.update({
+            where: { id: materialRequestId },
+            data: {
+              consumedQty: newConsumedQty,
+              quantityReturned: newReturnedQty,
+              status: allAccountedFor ? 'closed' : matReq.status,
+              returnedById: session.userId,
+              returnedAt: now,
+            },
+          });
+
+          // Audit log for material request update
+          await createAuditLog(session.userId, 'RepairMaterialRequest', 'update', materialRequestId, {
+            newValues: {
+              action: 'consumed_via_spare_return',
+              consumedQty: newConsumedQty,
+              quantityReturned: newReturnedQty,
+              status: allAccountedFor ? 'closed' : matReq.status,
+              sparePartReturnId: sparePartReturn.id,
+            },
+          });
+        } else {
+          // Material returned for refurbishment — record partial/full return
+          const issuedQty = matReq.quantityIssued || matReq.quantityApproved || 0;
+          const previousReturned = matReq.quantityReturned || 0;
+          const cumulativeReturn = previousReturned + (quantity ?? 1);
+          const newStatus = cumulativeReturn >= issuedQty ? 'returned' : 'issued';
+
+          await db.repairMaterialRequest.update({
+            where: { id: materialRequestId },
+            data: {
+              quantityReturned: cumulativeReturn,
+              status: newStatus,
+              returnedById: session.userId,
+              returnedAt: now,
+            },
+          });
+
+          // Audit log for material request update
+          await createAuditLog(session.userId, 'RepairMaterialRequest', 'update', materialRequestId, {
+            newValues: {
+              action: 'returned_via_spare_return',
+              quantityReturned: cumulativeReturn,
+              status: newStatus,
+              sparePartReturnId: sparePartReturn.id,
+            },
+          });
+        }
+      }
+    }
 
     // Audit log
     await createAuditLog(session.userId, 'SparePartReturn', 'create', sparePartReturn.id, {
@@ -212,12 +289,18 @@ export async function POST(request: NextRequest) {
         itemName,
         quantity,
         conditionOnReturn,
+        isConsumed: resolvedIsConsumed,
+        refurbishmentNeeded: resolvedRefurbishmentNeeded,
+        status: resolvedStatus,
       },
     });
 
     // Notify relevant users (planner, storekeeper)
     if (wo) {
-      notifyUser(session.userId, 'spare_part_returned', 'Spare Part Return Created', `${returnNumber} for WO ${wo.woNumber}: ${itemName}`, 'spare_part_return', sparePartReturn.id, 'spare-part-returns').catch(() => {});
+      const notificationMessage = resolvedIsConsumed
+        ? `${returnNumber} for WO ${wo.woNumber}: ${itemName} recorded as consumed`
+        : `${returnNumber} for WO ${wo.woNumber}: ${itemName} returned for refurbishment`;
+      notifyUser(session.userId, 'spare_part_returned', resolvedIsConsumed ? 'Material Recorded as Consumed' : 'Spare Part Return Created', notificationMessage, 'spare_part_return', sparePartReturn.id, 'spare-part-returns').catch(() => {});
     }
 
     return NextResponse.json({ success: true, data: sparePartReturn }, { status: 201 });
