@@ -2817,6 +2817,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [toolXferReason, setToolXferReason] = useState('');
   // Tools cache for quick lookup
   const toolsLookupCache = useRef<Array<{ id: string; name: string; toolCode: string }>>([]);
+  const woToolOptions = useRef<Array<{ value: string; label: string; id: string; name: string }>>([]);
   // Downtime modal
   const [downtimeOpen, setDowntimeOpen] = useState(false);
   const [downtimeSubmitting, setDowntimeSubmitting] = useState(false);
@@ -2834,6 +2835,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [spareReturnOpen, setSpareReturnOpen] = useState(false);
   const [spareReturnSubmitting, setSpareReturnSubmitting] = useState(false);
   const [spareReturnItemName, setSpareReturnItemName] = useState('');
+  // Material return from WO (lists issued materials)
+  const [matReturnOpen, setMatReturnOpen] = useState(false);
+  const [matReturnSubmitting, setMatReturnSubmitting] = useState(false);
+  const [matReturnItems, setMatReturnItems] = useState<Array<{ id: string; itemName: string; itemId: string; qtyIssued: number; qtyReturned: number; qtyReturn: number; isReusable: boolean; condition: string }>>([]);
   const [spareReturnQty, setSpareReturnQty] = useState('1');
   const [spareReturnCondition, setSpareReturnCondition] = useState('used');
   const [spareReturnDamageDesc, setSpareReturnDamageDesc] = useState('');
@@ -3562,7 +3567,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       productionLoss: dtProductionLoss ? parseFloat(dtProductionLoss) : undefined,
       durationMinutes: parseFloat(dtDurationMinutes),
       assetId: wo?.assetId || undefined,
-      assetName: wo?.assetName || undefined,
+      assetName: wo?.assetName || wo?.asset?.name || undefined,
     });
     if (res.success) { toast.success('Downtime logged successfully'); setDowntimeOpen(false); resetDowntimeForm(); fetchWO(); }
     else toast.error(res.error || 'Failed to log downtime');
@@ -3582,6 +3587,71 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     setSpareReturnNeedsRefurb(true);
     setSpareReturnIsReusable(true);
     setSpareReturnOpen(true);
+  };
+
+  // Open material return modal listing issued materials for this WO
+  const openMatReturn = () => {
+    const items: typeof matReturnItems = [];
+    if (wo?.repairMaterialRequests) {
+      for (const mr of wo.repairMaterialRequests as any[]) {
+        if (!['issued', 'partially_returned'].includes(mr.status)) continue;
+        const issued = mr.quantityIssued || 0;
+        const returned = mr.quantityReturned || 0;
+        const outstanding = issued - returned;
+        if (outstanding > 0) {
+          items.push({
+            id: mr.id,
+            itemName: mr.itemName || 'Unknown Material',
+            itemId: mr.itemId || '',
+            qtyIssued: issued,
+            qtyReturned: returned,
+            qtyReturn: outstanding,
+            isReusable: true,
+            condition: 'used',
+          });
+        }
+      }
+    }
+    setMatReturnItems(items);
+    setMatReturnOpen(true);
+  };
+
+  const updateMatReturnItem = (idx: number, patch: Partial<typeof matReturnItems[0]>) => {
+    setMatReturnItems(prev => prev.map((item, i) => i === idx ? { ...item, ...patch } : item));
+  };
+
+  const removeMatReturnItem = (idx: number) => {
+    setMatReturnItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleMatReturnSubmit = async () => {
+    const activeItems = matReturnItems.filter(i => i.qtyReturn > 0);
+    if (activeItems.length === 0) { toast.error('No items to return'); return; }
+    setMatReturnSubmitting(true);
+    let errors: string[] = [];
+    for (const item of activeItems) {
+      try {
+        const res = await api.post('/api/repairs/spare-part-returns', {
+          workOrderId: id,
+          itemName: item.itemName,
+          quantity: item.qtyReturn,
+          conditionOnReturn: item.condition,
+          refurbishmentNeeded: item.isReusable,
+          isConsumed: !item.isReusable,
+          itemId: item.itemId || undefined,
+          materialRequestId: item.id,
+          plantId: wo?.plantId || undefined,
+        });
+        if (!res.success) errors.push(res.error || `Failed: ${item.itemName}`);
+        else toast.success(item.isReusable
+          ? `${item.itemName}: ${item.qtyReturn} submitted for return/refurbishment`
+          : `${item.itemName}: ${item.qtyReturn} recorded as consumed`);
+      } catch (e: any) { errors.push(`${item.itemName}: ${e.message}`); }
+    }
+    if (errors.length > 0) errors.forEach(e => toast.error(e));
+    setMatReturnSubmitting(false);
+    setMatReturnOpen(false);
+    fetchWO();
   };
 
   const handleSpareReturn = async () => {
@@ -4765,29 +4835,52 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       </ResponsiveDialog>
 
       {/* ═══════ Transfer Tool Dialog ═══════ */}
-      <ResponsiveDialog open={toolXferOpen} onOpenChange={(open) => { setToolXferOpen(open); if (!open) resetToolXferForm(); }} title="Transfer Tool" description="Transfer a tool to another technician. Store keeper approval required." footer={<Button className="w-full bg-teal-600 hover:bg-teal-700 text-white" disabled={toolXferSubmitting || !toolXferToolId || !toolXferToUserId || toolXferReason.trim().length < 5} onClick={handleToolTransfer}>{toolXferSubmitting ? 'Submitting...' : 'Submit Transfer Request'}</Button>}>
+      <ResponsiveDialog open={toolXferOpen} onOpenChange={(open) => { setToolXferOpen(open); if (!open) resetToolXferForm(); }} title="Transfer Tool" description="Transfer a tool from this work order to another technician. Store keeper approval required." footer={<Button className="w-full bg-teal-600 hover:bg-teal-700 text-white" disabled={toolXferSubmitting || !toolXferToolId || !toolXferToUserId || toolXferReason.trim().length < 5} onClick={handleToolTransfer}>{toolXferSubmitting ? 'Submitting...' : 'Submit Transfer Request'}</Button>}>
         <div className="space-y-4">
           <div className="p-3 rounded-lg bg-teal-50 border border-teal-200">
             <p className="text-xs text-teal-800 font-medium">🔄 Transfer Workflow</p>
-            <p className="text-xs text-teal-700 mt-1">The <strong>Store Keeper</strong> must approve this transfer before the tool can be handed over.</p>
+            <p className="text-xs text-teal-700 mt-1">Only <strong>issued tools</strong> from this WO are shown. Already transferred or returned tools are excluded.</p>
           </div>
           <div className="space-y-1.5"><Label>Tool *</Label>
             <AsyncSearchableSelect
               value={toolXferToolId}
               onValueChange={(val) => {
-                const cached = toolsLookupCache.current.find(t => t.id === val);
+                const cached = woToolOptions.current.find(t => t.id === val);
                 setToolXferToolId(val);
                 setToolXferToolName(cached?.name || '');
               }}
               fetchOptions={async () => {
-                const res = await api.get('/api/tools?limit=999');
-                if (res.success && Array.isArray(res.data)) {
-                  toolsLookupCache.current = res.data.map((t: any) => ({ id: t.id, name: t.name || '', toolCode: t.toolCode || '' }));
-                  return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));
+                // Only show tools from this WO's issued requests (not transferred/returned)
+                const options: { value: string; label: string; id: string; name: string }[] = [];
+                if (wo?.repairToolRequests) {
+                  for (const tr of wo.repairToolRequests as any[]) {
+                    if (!['issued', 'pending_return'].includes(tr.status)) continue;
+                    if (tr.items && tr.items.length > 0) {
+                      for (const item of tr.items) {
+                        const issued = item.quantityIssued || 0;
+                        const returned = item.quantityReturned || 0;
+                        const transferred = item.quantityTransferred || 0;
+                        const outstanding = issued - returned - transferred;
+                        if (outstanding > 0) {
+                          const entry = { value: `${tr.id}__${item.id}`, label: `${item.toolName || 'Tool'}${item.toolCode ? ` (${item.toolCode})` : ''} — ${outstanding} available`, id: `${tr.id}__${item.id}`, name: item.toolName || '' };
+                          options.push(entry);
+                        }
+                      }
+                    } else if (tr.toolName) {
+                      const issued = tr.quantityIssued || 0;
+                      const returned = tr.quantityReturned || 0;
+                      const transferred = tr.quantityTransferred || 0;
+                      const outstanding = issued - returned - transferred;
+                      if (outstanding > 0) {
+                        options.push({ value: tr.id, label: `${tr.toolName}${tr.tool?.toolCode ? ` (${tr.tool.toolCode})` : ''} — ${outstanding} available`, id: tr.id, name: tr.toolName });
+                      }
+                    }
+                  }
                 }
-                return [];
+                woToolOptions.current = options;
+                return options;
               }}
-              placeholder="Select tool..."
+              placeholder={wo?.repairToolRequests?.some((tr: any) => ['issued', 'pending_return'].includes(tr.status)) ? 'Select tool from this WO...' : 'No issued tools available on this WO'}
               searchPlaceholder="Search tools..."
             />
           </div>
@@ -5515,7 +5608,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   <div className="h-9 w-9 rounded-lg bg-red-100 text-red-700 flex items-center justify-center"><Timer className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Log Downtime</span>
                 </button>
-                <button onClick={() => { resetSpareReturnForm(); setSpareReturnOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors">
+                <button onClick={() => openMatReturn()} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center"><RefreshCw className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Return Material</span>
                 </button>
@@ -5539,12 +5632,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{wo.repairToolRequests.length} Tool Request{wo.repairToolRequests.length > 1 ? 's' : ''}</p>
                   {wo.repairToolRequests.map((tr: any) => {
                     const toolItems = (tr.items && tr.items.length > 0) ? tr.items : (tr.toolName ? [{ toolName: tr.toolName, toolCode: tr.tool?.toolCode, quantityRequested: 1, quantityIssued: 0, quantityReturned: 0, quantityTransferred: 0 }] : []);
+                    const isFinalStatus = ['returned', 'transferred', 'rejected'].includes(tr.status);
                     return (
-                      <div key={tr.id} className="p-3 rounded-lg border bg-muted/30 space-y-2">
+                      <div key={tr.id} className={`p-3 rounded-lg border space-y-2 ${isFinalStatus ? 'bg-muted/20 opacity-60' : 'bg-muted/30'}`}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2 flex-wrap">
                             {tr.requestNumber && <Badge variant="outline" className="font-mono text-[10px] bg-sky-50 text-sky-700 border-sky-200">{tr.requestNumber}</Badge>}
                             <Badge variant="outline" className={`text-[10px] ${tr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : tr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : tr.status === 'pending_return' ? 'bg-violet-50 text-violet-700 border-violet-200' : tr.status === 'returned' ? 'bg-slate-50 text-slate-600 border-slate-200' : tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : tr.status === 'transferred' ? 'bg-teal-50 text-teal-700 border-teal-200' : tr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-muted'}`}>{tr.status?.replace(/_/g, ' ')}</Badge>
+                            {isFinalStatus && <span className="text-[10px] text-muted-foreground">✓ Done</span>}
                           </div>
                           {tr.urgency && tr.urgency !== 'normal' && <UrgencyBadge urgency={tr.urgency} />}
                         </div>
@@ -5565,10 +5660,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                 {issued > 0 && <span className="text-emerald-600">Issued: <strong>{issued}</strong></span>}
                                 {transferred > 0 && <span className="text-teal-600">Transferred: <strong>{transferred}</strong></span>}
                                 {returned > 0 && <span className="text-slate-500">Returned: <strong>{returned}</strong></span>}
-                                {outstanding > 0 && <span className="text-amber-600 font-medium">Outstanding: {outstanding}</span>}
+                                {outstanding > 0 && !isFinalStatus && <span className="text-amber-600 font-medium">Outstanding: {outstanding}</span>}
                               </div>
                               {/* Pending return info */}
-                              {item.pendingReturnQty > 0 && (
+                              {item.pendingReturnQty > 0 && !isFinalStatus && (
                                 <div className="p-2 rounded bg-violet-50 border border-violet-200 text-[11px]">
                                   <span className="text-violet-700 font-medium">⏳ Pending Return: {item.pendingReturnQty}</span>
                                   {item.pendingReturnCondition && <span className="text-violet-600 ml-2">Condition: {item.pendingReturnCondition}</span>}
@@ -5592,6 +5687,65 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   <p className="text-sm text-muted-foreground">No tool requests yet</p>
                 </div>
               )}
+            </div>
+          </ResponsiveDialog>
+
+          {/* Material Return Modal — lists issued materials for return/consume */}
+          <ResponsiveDialog open={matReturnOpen} onOpenChange={(v) => { if (!v) setMatReturnOpen(false); }} title="Return Materials" description={`Select materials to return or mark as consumed for WO ${wo?.woNumber || ''}`}>
+            <div className="space-y-3">
+              {matReturnItems.length === 0 ? (
+                <div className="text-center py-6">
+                  <Package className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No issued materials to return on this WO.</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {matReturnItems.map((item, idx) => (
+                    <div key={item.id} className="p-3 rounded-lg border bg-muted/30 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded flex items-center justify-center shrink-0 bg-amber-100 text-amber-700"><Package className="h-3 w-3" /></div>
+                        <span className="font-medium text-sm truncate flex-1">{item.itemName}</span>
+                        <span className="text-xs text-muted-foreground">Issued: {item.qtyIssued} · Returned: {item.qtyReturned}</span>
+                        <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => removeMatReturnItem(idx)}><X className="h-3.5 w-3.5" /></Button>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="w-full sm:w-24">
+                          <Label className="text-xs">Qty</Label>
+                          <Input type="number" min={0} max={item.qtyIssued - item.qtyReturned} value={item.qtyReturn}
+                            onChange={e => updateMatReturnItem(idx, { qtyReturn: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.qtyIssued - item.qtyReturned)) })}
+                            className="h-8" />
+                        </div>
+                        <div className="flex items-end gap-2">
+                          <Switch id={`mat-reusable-${idx}`} checked={item.isReusable} onCheckedChange={v => updateMatReturnItem(idx, { isReusable: !!v, condition: !!v ? 'used' : 'consumed' })} />
+                          <Label htmlFor={`mat-reusable-${idx}`} className="text-xs whitespace-nowrap">{item.isReusable ? 'Return/Refurbish' : 'Consumed'}</Label>
+                        </div>
+                        {item.isReusable && (
+                          <div className="w-full sm:w-32">
+                            <Label className="text-xs">Condition</Label>
+                            <Select value={item.condition} onValueChange={v => updateMatReturnItem(idx, { condition: v })}>
+                              <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="good">Good</SelectItem>
+                                <SelectItem value="used">Used</SelectItem>
+                                <SelectItem value="fair">Fair</SelectItem>
+                                <SelectItem value="poor">Poor</SelectItem>
+                                <SelectItem value="damaged">Damaged</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button variant="outline" onClick={() => setMatReturnOpen(false)}>Cancel</Button>
+                <Button className="gap-2 bg-violet-600 hover:bg-violet-700 text-white" onClick={handleMatReturnSubmit} disabled={matReturnSubmitting || matReturnItems.filter(i => i.qtyReturn > 0).length === 0}>
+                  {matReturnSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                  {matReturnSubmitting ? 'Processing...' : `Return ${matReturnItems.filter(i => i.qtyReturn > 0).length} Item(s)`}
+                </Button>
+              </div>
             </div>
           </ResponsiveDialog>
 
