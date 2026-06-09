@@ -206,3 +206,22 @@ Stage Summary:
 - Complete store keeper confirmation workflow for tool returns is now implemented
 - Status flow: issued → pending_return → issued/returned (after store keeper confirms)
 - Schema changes require: bunx prisma db push && bunx prisma generate
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Fix task checklist error and improve UX
+
+Work Log:
+- Found bug: PATCH /api/work-orders/[id]/tasks/[taskId] was validating `VALID_TRANSITIONS[targetStatus]` which fails because `completed` is not a KEY in the transitions object
+- Fixed validation to check target status against VALID_STATUSES array first, then check if transition is allowed
+- Added undo transitions: completed/skipped/failed → pending, in_progress → pending
+- Improved UX: 'Done' button now one-click completes without requiring dialog
+- Added 'Notes' button for optional findings/notes before completing
+- Added 'Undo' button on completed/skipped/failed tasks
+- Better error messages with human-readable status labels
+
+Stage Summary:
+- Task checklist "Done" button now works correctly
+- Users can undo completed/skipped/failed tasks
+- One-click completion + optional notes dialog = much more user-friendly
