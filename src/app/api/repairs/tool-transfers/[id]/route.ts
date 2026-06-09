@@ -2,70 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { decrementToolRequestTransfer, checkAndCloseToolRequest } from '@/lib/tool-transfer-helpers';
 
 const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
-
-/** When a transfer completes, increment quantityTransferred on the matching tool request item */
-async function updateToolRequestItemOnTransfer(toolId: string, fromUserId: string) {
-  // Find repair tool requests that contain this tool — check both 'issued' and 'returned' statuses
-  // since partial returns may prematurely set status to 'returned'
-  const activeRequests = await db.repairToolRequest.findMany({
-    where: {
-      status: { in: ['issued', 'returned'] },
-      OR: [
-        { toolId },
-        { items: { some: { toolId } } },
-      ],
-    },
-    include: { items: true },
-  });
-
-  for (const req of activeRequests) {
-    if (req.toolId === toolId && (!req.items || req.items.length === 0)) {
-      // Legacy single-tool request: no items table to update
-      continue;
-    }
-    if (req.items && req.items.length > 0) {
-      let updated = false;
-      for (const item of req.items) {
-        if (item.toolId === toolId) {
-          const issued = item.quantityIssued || 0;
-          const ret = item.quantityReturned || 0;
-          const xfer = item.quantityTransferred || 0;
-          if ((ret + xfer) < issued) {
-            await db.repairToolRequestItem.update({
-              where: { id: item.id },
-              data: { quantityTransferred: { increment: 1 } },
-            });
-            updated = true;
-          }
-        }
-      }
-      if (updated) {
-        // If status was 'returned' but we just tracked a transfer, reset to 'issued'
-        // so the request doesn't prematurely appear closed
-        if (req.status === 'returned') {
-          await db.repairToolRequest.update({ where: { id: req.id }, data: { status: 'issued' } });
-        }
-        // Re-check: are ALL items now fully returned/transferred?
-        const refreshedItems = await db.repairToolRequestItem.findMany({ where: { repairToolRequestId: req.id } });
-        let allDone = true;
-        for (const item of refreshedItems) {
-          const issued = item.quantityIssued || 0;
-          const ret = item.quantityReturned || 0;
-          const xfer = item.quantityTransferred || 0;
-          if ((ret + xfer) < issued) { allDone = false; break; }
-        }
-        if (allDone) {
-          await db.repairToolRequest.update({
-            where: { id: req.id },
-            data: { status: 'returned', returnedAt: new Date() },
-          });
-        }
-      }
-    }
-  }
-}
 
 // GET /api/repairs/tool-transfers/[id]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -111,8 +50,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to you from ${transfer.fromUser?.fullName ?? 'Unknown'}`,
         'tool_transfer_request', id, 'maintenance-tools');
 
-      // Update tool request item to track the transfer
-      await updateToolRequestItemOnTransfer(transfer.toolId, transfer.fromUserId);
+      // quantityTransferred was already incremented when transfer was submitted.
+      // Just check if the entire request is done now.
+      const activeRequests = await db.repairToolRequest.findMany({
+        where: {
+          status: { in: ['issued', 'returned'] },
+          OR: [{ toolId: transfer.toolId }, { items: { some: { toolId: transfer.toolId } } }],
+        },
+      });
+      for (const req of activeRequests) {
+        await checkAndCloseToolRequest(req.id);
+      }
 
       return NextResponse.json({ success: true, data: { ...completed, autoCompleted: true } });
     }
@@ -213,6 +161,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Rejected',
             `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" from ${transfer.fromUser?.fullName ?? 'Unknown'} was rejected`,
             'tool_transfer_request', id, 'maintenance-tools');
+
+        // Decrement quantityTransferred since transfer was rejected
+        await decrementToolRequestTransfer(transfer.toolId, transfer.fromUserId);
         break;
       }
 
@@ -256,8 +207,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Completed',
               `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to you`,
               'tool_transfer_request', id, 'maintenance-tools');
-          // Update tool request item to track the transfer
-          await updateToolRequestItemOnTransfer(transfer.toolId, transfer.fromUserId);
+          // quantityTransferred was already incremented at submission.
+          // Just check if the entire tool request is done.
+          const activeRequests = await db.repairToolRequest.findMany({
+            where: {
+              status: { in: ['issued', 'returned'] },
+              OR: [{ toolId: transfer.toolId }, { items: { some: { toolId: transfer.toolId } } }],
+            },
+          });
+          for (const req of activeRequests) {
+            await checkAndCloseToolRequest(req.id);
+          }
         }
         break;
       }
@@ -302,8 +262,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Completed',
               `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to you`,
               'tool_transfer_request', id, 'maintenance-tools');
-          // Update tool request item to track the transfer
-          await updateToolRequestItemOnTransfer(transfer.toolId, transfer.fromUserId);
+          // quantityTransferred was already incremented at submission.
+          // Just check if the entire tool request is done.
+          const activeRequests = await db.repairToolRequest.findMany({
+            where: {
+              status: { in: ['issued', 'returned'] },
+              OR: [{ toolId: transfer.toolId }, { items: { some: { toolId: transfer.toolId } } }],
+            },
+          });
+          for (const req of activeRequests) {
+            await checkAndCloseToolRequest(req.id);
+          }
         }
         break;
       }
@@ -327,6 +296,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" has been cancelled`, 'tool_transfer_request', id, 'maintenance-tools');
         await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Cancelled',
             `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" has been cancelled`, 'tool_transfer_request', id, 'maintenance-tools');
+
+        // Decrement quantityTransferred since transfer was cancelled
+        await decrementToolRequestTransfer(transfer.toolId, transfer.fromUserId);
         break;
       }
 

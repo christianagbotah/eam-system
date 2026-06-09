@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasPermission, hasAnyPermission } from '@/lib/auth';
 import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { notifyUser } from '@/lib/notifications';
+import { incrementToolRequestTransfer } from '@/lib/tool-transfer-helpers';
 
 // GET /api/repairs/tool-transfers
 export async function GET(request: NextRequest) {
@@ -163,6 +164,9 @@ export async function POST(request: NextRequest) {
         'tool_transfer_request', transfer.id, 'maintenance-tools',
       );
     }
+
+    // Immediately update tool request item to reflect the pending transfer
+    await incrementToolRequestTransfer(toolId, fromUserId);
 
     await db.auditLog.create({
       data: { userId: session.userId, action: 'create', entityType: 'tool_transfer_request', entityId: transfer.id, newValues: JSON.stringify({ toolId, fromUserId, toUserId, reason }) },

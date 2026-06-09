@@ -1316,7 +1316,7 @@ export function RepairToolRequestsPage() {
       toolCode: i.toolCode || '',
       quantityIssued: i.quantityIssued || 0,
       quantityReturned: i.quantityReturned || 0,
-      quantityToTransfer: (i.quantityIssued || 1) - (i.quantityReturned || 0),
+      quantityToTransfer: (i.quantityIssued || 1) - (i.quantityReturned || 0) - (i.quantityTransferred || 0),
       toUserId: '',
       toUserName: '',
       transferReason: '',
@@ -1647,7 +1647,7 @@ export function RepairToolRequestsPage() {
                               {item.quantityApproved != null && <span>Approved: <strong className="text-foreground">{item.quantityApproved}</strong></span>}
                               <span>Issued: <strong className="text-foreground">{item.quantityIssued}</strong></span>
                               {item.quantityReturned > 0 && <span>Returned: <strong className="text-foreground">{item.quantityReturned}</strong></span>}
-                              {(item.quantityTransferred || 0) > 0 && <span>Transferred: <strong className="text-foreground">{item.quantityTransferred}</strong></span>}
+                              {(item.quantityTransferred || 0) > 0 && <span className="text-sky-600">Transferred: <strong className="text-foreground">{item.quantityTransferred}</strong></span>}
                             </div>
                             {item.issueNotes && (
                               <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1">
