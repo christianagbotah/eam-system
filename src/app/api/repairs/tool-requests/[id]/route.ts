@@ -380,14 +380,27 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
 
       case 'return': {
-        if (toolReq.status !== 'issued') return NextResponse.json({ success: false, error: `Cannot return: status is ${toolReq.status}` }, { status: 400 });
+        // NEW: Store return as PENDING — store keeper must confirm before inventory updates
+        if (toolReq.status !== 'issued' && toolReq.status !== 'returned') {
+          return NextResponse.json({ success: false, error: `Cannot return: status is ${toolReq.status}` }, { status: 400 });
+        }
+        if (toolReq.status === 'returned') {
+          const hasRemaining = toolReq.items.length > 0
+            ? toolReq.items.some((i: any) => (i.quantityIssued || 0) > (i.quantityReturned || 0) + (i.quantityTransferred || 0))
+            : false;
+          if (!hasRemaining) {
+            return NextResponse.json({ success: false, error: 'All items have already been fully returned or transferred' }, { status: 400 });
+          }
+          await db.repairToolRequest.update({ where: { id }, data: { status: 'issued' } });
+        }
 
-        // Multi-item return: requires returnedItems array
+        // Multi-item: store pending return data on each item
         if (toolReq.items.length > 0) {
           if (!Array.isArray(returnedItems) || returnedItems.length === 0) {
             return NextResponse.json({ success: false, error: 'returnedItems array is required for multi-tool requests' }, { status: 400 });
           }
 
+          let anyPending = false;
           for (const retItem of returnedItems) {
             const lineItem = toolReq.items.find((i: any) => i.id === retItem.itemId);
             if (!lineItem) {
@@ -397,24 +410,93 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
             const qtyToReturn = Math.max(0, Math.min(
               parseInt(retItem.quantityReturned, 10) || 0,
-              lineItem.quantityIssued,
+              (lineItem.quantityIssued || 0) - (lineItem.quantityReturned || 0) - (lineItem.quantityTransferred || 0),
             ));
 
             if (qtyToReturn === 0) continue;
 
             const condition = VALID_CONDITIONS.includes(retItem.conditionAtReturn) ? retItem.conditionAtReturn : 'good';
+            const retNotes = typeof retItem.notes === 'string' ? retItem.notes.trim() : null;
 
-            // Add back to tool quantity
-            if (lineItem.toolId) {
-              const refreshTool = await db.tool.findUnique({ where: { id: lineItem.toolId } });
+            await db.repairToolRequestItem.update({
+              where: { id: lineItem.id },
+              data: {
+                pendingReturnQty: qtyToReturn,
+                pendingReturnCondition: condition,
+                pendingReturnNotes: retNotes || null,
+              },
+            });
+
+            if (condition === 'poor' || condition === 'damaged') {
+              warnings.push(`"${lineItem.toolName}" reported in "${condition}" condition — store keeper will inspect`);
+            }
+            anyPending = true;
+          }
+
+          if (!anyPending) {
+            return NextResponse.json({ success: false, error: 'No items to return' }, { status: 400 });
+          }
+        } else if (toolReq.toolId) {
+          // Legacy single-tool: store pending return on header
+          const resolvedCondition = VALID_CONDITIONS.includes(toolConditionAtReturn) ? toolConditionAtReturn : (toolReq.tool?.condition || 'good');
+          await db.repairToolRequest.update({
+            where: { id },
+            data: { toolConditionAtReturn: resolvedCondition },
+          });
+        }
+
+        // Set status to pending_return — store keeper must confirm
+        updated = await db.repairToolRequest.update({
+          where: { id },
+          data: { status: 'pending_return', returnedById: session.userId },
+        });
+
+        // Notify store keepers
+        const storeKeepers = await db.user.findMany({
+          where: { userRoles: { some: { OR: [{ role: { slug: 'store_keeper' } }, { role: { slug: 'tools_shop_attendant' } }] } }, status: 'active' },
+          select: { id: true },
+        });
+        const itemCount = toolReq.items.length > 0 ? toolReq.items.length : 1;
+        for (const sk of storeKeepers) {
+          await notifyUser(
+            sk.id, 'repair_tool_request', 'Tool Return Pending Confirmation',
+            `${toolReq.requestedBy.fullName} submitted return of ${itemCount} tool${itemCount > 1 ? 's' : ''} for WO ${toolReq.workOrder.woNumber}. Please inspect and confirm.`,
+            'repair_tool_request', id, `tool-requests?id=${id}`,
+          );
+        }
+
+        break;
+      }
+
+      case 'storekeeper_confirm_return': {
+        // Store keeper confirms return — process inventory updates
+        if (toolReq.status !== 'pending_return') {
+          return NextResponse.json({ success: false, error: `Cannot confirm return: status is ${toolReq.status}` }, { status: 400 });
+        }
+        if (!isAdmin(session) && !hasRole(session, 'store_keeper') && !hasRole(session, 'inventory_manager') && !hasRole(session, 'tools_shop_attendant')) {
+          return NextResponse.json({ success: false, error: 'Only store keeper or admin can confirm returns' }, { status: 403 });
+        }
+
+        // Multi-item: process pending returns
+        if (toolReq.items.length > 0) {
+          for (const item of toolReq.items) {
+            if (!item.pendingReturnQty || item.pendingReturnQty <= 0) continue;
+
+            const condition = VALID_CONDITIONS.includes(item.pendingReturnCondition || '')
+              ? item.pendingReturnCondition!
+              : 'good';
+
+            // Update tool inventory
+            if (item.toolId) {
+              const refreshTool = await db.tool.findUnique({ where: { id: item.toolId } });
               if (refreshTool) {
                 const toolStatus = (condition === 'poor' || condition === 'damaged') ? 'in_repair' :
-                  (refreshTool.quantity + qtyToReturn > 0 ? 'available' : refreshTool.status);
+                  (refreshTool.quantity + item.pendingReturnQty > 0 ? 'available' : refreshTool.status);
 
                 await db.tool.update({
-                  where: { id: lineItem.toolId },
+                  where: { id: item.toolId },
                   data: {
-                    quantity: { increment: qtyToReturn },
+                    quantity: { increment: item.pendingReturnQty },
                     status: toolStatus,
                     condition: condition,
                     ...(toolStatus === 'available' ? { assignedToId: null, checkedOutAt: null } : {}),
@@ -423,74 +505,128 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
                 await db.toolTransaction.create({
                   data: {
-                    toolId: lineItem.toolId,
+                    toolId: item.toolId,
                     type: 'return',
                     fromUserId: toolReq.requestedById,
-                    notes: `Returned ${qtyToReturn}x from WO ${toolReq.workOrder.woNumber} (condition: ${condition})`,
+                    notes: `Returned ${item.pendingReturnQty}x from WO ${toolReq.workOrder.woNumber} (condition: ${condition})${item.pendingReturnNotes ? ` — ${item.pendingReturnNotes}` : ''}`,
                     performedById: session.userId,
                   },
                 });
               }
             }
 
+            // Move pending → confirmed
             await db.repairToolRequestItem.update({
-              where: { id: lineItem.id },
+              where: { id: item.id },
               data: {
-                quantityReturned: { increment: qtyToReturn },
+                quantityReturned: { increment: item.pendingReturnQty },
                 conditionAtReturn: condition,
+                pendingReturnQty: 0,
+                pendingReturnCondition: null,
+                pendingReturnNotes: null,
               },
             });
 
             if (condition === 'poor' || condition === 'damaged') {
-              warnings.push(`"${lineItem.toolName}" returned in "${condition}" condition — flagged for repair`);
+              warnings.push(`"${item.toolName}" confirmed in "${condition}" condition — flagged for repair`);
             }
           }
         } else if (toolReq.toolId) {
-          // Legacy single-tool request
-          const resolvedReturnCondition = VALID_CONDITIONS.includes(toolConditionAtReturn) ? toolConditionAtReturn : (toolReq.tool?.condition || 'good');
+          // Legacy single-tool
+          const resolvedCondition = VALID_CONDITIONS.includes(toolReq.toolConditionAtReturn || '')
+            ? toolReq.toolConditionAtReturn!
+            : 'good';
 
-          const previousCondition = toolReq.toolConditionAtIssue || toolReq.tool?.condition || 'good';
-          if (resolvedReturnCondition === 'poor' || resolvedReturnCondition === 'damaged') {
-            warnings.push(`Tool condition is "${resolvedReturnCondition}". Tool has been automatically flagged for repair.`);
-          } else if (
-            (previousCondition === 'new' && resolvedReturnCondition === 'fair') ||
-            (previousCondition === 'good' && resolvedReturnCondition === 'fair')
-          ) {
-            warnings.push(`Tool condition has changed from "${previousCondition}" to "${resolvedReturnCondition}".`);
-          }
-
-          const toolStatus = (resolvedReturnCondition === 'poor' || resolvedReturnCondition === 'damaged') ? 'in_repair' : 'available';
+          const toolStatus = (resolvedCondition === 'poor' || resolvedCondition === 'damaged') ? 'in_repair' : 'available';
           await db.tool.update({
             where: { id: toolReq.toolId },
-            data: { status: toolStatus, assignedToId: null, checkedOutAt: null, condition: resolvedReturnCondition },
+            data: { status: toolStatus, assignedToId: null, checkedOutAt: null, condition: resolvedCondition },
           });
           await db.toolTransaction.create({
             data: {
               toolId: toolReq.toolId,
               type: 'return',
               fromUserId: toolReq.requestedById,
-              notes: `Returned from WO ${toolReq.workOrder.woNumber} (condition: ${resolvedReturnCondition})`,
+              notes: `Returned from WO ${toolReq.workOrder.woNumber} (condition: ${resolvedCondition})`,
               performedById: session.userId,
             },
           });
+        }
 
-          await db.repairToolRequest.update({
-            where: { id },
-            data: { toolConditionAtReturn: resolvedReturnCondition },
-          });
+        // Check if ALL items are now fully returned/transferred
+        let allDone = true;
+        if (toolReq.items.length > 0) {
+          const refreshedItems = await db.repairToolRequestItem.findMany({ where: { repairToolRequestId: id } });
+          for (const item of refreshedItems) {
+            const issued = item.quantityIssued || 0;
+            const ret = item.quantityReturned || 0;
+            const xfer = item.quantityTransferred || 0;
+            if ((ret + xfer) < issued) { allDone = false; break; }
+          }
+        } else {
+          allDone = true;
         }
 
         updated = await db.repairToolRequest.update({
           where: { id },
-          data: { status: 'returned', returnedById: session.userId, returnedAt: now },
+          data: {
+            status: allDone ? 'returned' : 'issued',
+            ...(allDone ? { returnedAt: now } : {}),
+            returnConfirmedById: session.userId,
+            returnConfirmedAt: now,
+          },
         });
 
-        // Notify WO planner on return
-        if (toolReq.workOrder.plannerId && toolReq.workOrder.plannerId !== toolReq.requestedById) {
+        // Notify technician
+        await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Return Confirmed',
+            `Your return of tools for WO ${toolReq.workOrder.woNumber} has been confirmed by store keeper.`,
+            'repair_tool_request', id, `tool-requests?id=${id}`);
+
+        // Notify WO planner on full return
+        if (allDone && toolReq.workOrder.plannerId && toolReq.workOrder.plannerId !== toolReq.requestedById) {
           await notifyUser(toolReq.workOrder.plannerId, 'repair_tool_request', 'Tool Returned from WO',
               `${toolReq.items.length > 0 ? 'Tools' : `"${toolReq.toolName}"`} returned by ${toolReq.requestedBy.fullName} from WO ${toolReq.workOrder.woNumber}`,
               'repair_tool_request', id, 'maintenance-work-orders');
         }
+        break;
+      }
+
+      case 'storekeeper_reject_return': {
+        // Store keeper rejects return — clear pending data
+        if (toolReq.status !== 'pending_return') {
+          return NextResponse.json({ success: false, error: `Cannot reject return: status is ${toolReq.status}` }, { status: 400 });
+        }
+        if (!isAdmin(session) && !hasRole(session, 'store_keeper') && !hasRole(session, 'inventory_manager') && !hasRole(session, 'tools_shop_attendant')) {
+          return NextResponse.json({ success: false, error: 'Only store keeper or admin can reject returns' }, { status: 403 });
+        }
+
+        const rejectionReason = typeof notes === 'string' && notes.trim() ? notes.trim() : null;
+
+        // Clear pending return data from all items
+        if (toolReq.items.length > 0) {
+          for (const item of toolReq.items) {
+            if (item.pendingReturnQty && item.pendingReturnQty > 0) {
+              await db.repairToolRequestItem.update({
+                where: { id: item.id },
+                data: {
+                  pendingReturnQty: 0,
+                  pendingReturnCondition: null,
+                  pendingReturnNotes: null,
+                },
+              });
+            }
+          }
+        }
+
+        updated = await db.repairToolRequest.update({
+          where: { id },
+          data: { status: 'issued', rejectionReason: rejectionReason || 'Return rejected by store keeper' },
+        });
+
+        // Notify technician
+        await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Return Rejected',
+            `Your return of tools for WO ${toolReq.workOrder.woNumber} was rejected by store keeper${rejectionReason ? `: ${rejectionReason}` : ''}. Please resubmit.`,
+            'repair_tool_request', id, `tool-requests?id=${id}`);
         break;
       }
 

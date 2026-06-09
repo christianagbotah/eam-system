@@ -67,6 +67,9 @@ export async function GET(
           supervisorApprovedBy: { select: { id: true, fullName: true } },
           storekeeperApprovedBy: { select: { id: true, fullName: true } },
           issuedByUser: { select: { id: true, fullName: true } },
+          items: {
+            include: { tool: { select: { id: true, name: true, toolCode: true, category: true } } },
+          },
         },
         orderBy: { createdAt: 'desc' as const },
       },
@@ -275,67 +278,143 @@ export async function PUT(
       });
     }
 
-    // Handle required parts update (relational)
+    // Handle suggested parts update (stored as JSON + RepairMaterialRequest)
     if (body.requiredParts && Array.isArray(body.requiredParts)) {
-      // Delete existing materials that are parts (not tools)
-      const existingMaterials = await db.workOrderMaterial.findMany({ where: { workOrderId: id } });
-      const existingPartIds = new Set(
-        (existingMaterials.filter(m => m.itemId).map(m => m.id))
-      );
-      if (existingPartIds.size > 0) {
-        await db.workOrderMaterial.deleteMany({
-          where: { id: { in: Array.from(existingPartIds) } },
-        });
-      }
-      // Create new material records for parts
-      for (const partId of body.requiredParts) {
-        const part = await db.inventoryItem.findUnique({ where: { id: partId } });
-        if (part) {
-          await db.workOrderMaterial.create({
+      // Delete existing planner-suggested material requests that haven't been acted on yet
+      await db.repairMaterialRequest.deleteMany({
+        where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
+      });
+
+      const suggestedPartsArr: Array<{ id: string; itemId: string; itemName: string; itemCode: string; quantity: number; unit: string; notes?: string }> = [];
+      for (const part of body.requiredParts) {
+        if (typeof part === 'object' && part.itemId) {
+          const invItem = await db.inventoryItem.findUnique({ where: { id: part.itemId } });
+          const entry = {
+            id: crypto.randomUUID(),
+            itemId: part.itemId,
+            itemName: invItem?.name || part.itemName || 'Unknown Part',
+            itemCode: invItem?.itemCode || part.itemCode || '',
+            quantity: part.quantity || 1,
+            unit: part.unit || invItem?.unit || 'each',
+            notes: part.notes || '',
+          };
+          suggestedPartsArr.push(entry);
+
+          await db.repairMaterialRequest.create({
             data: {
               workOrderId: id,
-              itemId: part.id,
-              itemName: part.name,
-              quantity: 0,
-              unitCost: part.unitCost || 0,
-              totalCost: 0,
-              status: 'requested',
-              requestedBy: session.userId,
+              itemId: part.itemId,
+              itemName: entry.itemName,
+              quantityRequested: entry.quantity,
+              unit: entry.unit,
+              unitCost: invItem?.unitCost || 0,
+              estimatedCost: (invItem?.unitCost || 0) * entry.quantity,
+              reason: 'Planner suggested material (updated)',
+              plantId: existing.plantId,
+              source: 'planner_suggested',
+              status: 'pending',
+              requestedById: session.userId,
             },
           });
+        } else if (typeof part === 'string') {
+          const invItem = await db.inventoryItem.findUnique({ where: { id: part } });
+          if (invItem) {
+            const entry = {
+              id: crypto.randomUUID(),
+              itemId: invItem.id,
+              itemName: invItem.name,
+              itemCode: invItem.itemCode || '',
+              quantity: 1,
+              unit: invItem.unit || 'each',
+              notes: '',
+            };
+            suggestedPartsArr.push(entry);
+
+            await db.repairMaterialRequest.create({
+              data: {
+                workOrderId: id,
+                itemId: invItem.id,
+                itemName: invItem.name,
+                quantityRequested: 1,
+                unit: invItem.unit || 'each',
+                unitCost: invItem.unitCost || 0,
+                estimatedCost: invItem.unitCost || 0,
+                reason: 'Planner suggested material (updated)',
+                plantId: existing.plantId,
+                source: 'planner_suggested',
+                status: 'pending',
+                requestedById: session.userId,
+              },
+            });
+          }
         }
       }
+      await db.workOrder.update({ where: { id }, data: { suggestedParts: JSON.stringify(suggestedPartsArr) } });
     }
 
-    // Handle required tools update (relational)
+    // Handle suggested tools update (stored as JSON + RepairToolRequest)
     if (body.requiredTools && Array.isArray(body.requiredTools)) {
-      // Delete existing materials that are tools (no itemId, but linked to tools)
-      const existingMaterials = await db.workOrderMaterial.findMany({ where: { workOrderId: id } });
-      const existingToolMaterialIds = new Set(
-        existingMaterials.filter(m => !m.itemId).map(m => m.id)
-      );
-      if (existingToolMaterialIds.size > 0) {
-        await db.workOrderMaterial.deleteMany({
-          where: { id: { in: Array.from(existingToolMaterialIds) } },
-        });
-      }
-      // Create new material records for tools
-      for (const toolId of body.requiredTools) {
-        const tool = await db.tool.findUnique({ where: { id: toolId } });
-        if (tool) {
-          await db.workOrderMaterial.create({
+      await db.repairToolRequest.deleteMany({
+        where: { workOrderId: id, source: 'planner_suggested', status: 'pending' },
+      });
+
+      const suggestedToolsArr: Array<{ id: string; toolId: string; toolName: string; toolCode: string; quantity: number; notes?: string }> = [];
+      for (const tool of body.requiredTools) {
+        if (typeof tool === 'object' && tool.toolId) {
+          const toolRec = await db.tool.findUnique({ where: { id: tool.toolId } });
+          const entry = {
+            id: crypto.randomUUID(),
+            toolId: tool.toolId,
+            toolName: toolRec?.name || tool.toolName || 'Unknown Tool',
+            toolCode: toolRec?.toolCode || tool.toolCode || '',
+            quantity: tool.quantity || 1,
+            notes: tool.notes || '',
+          };
+          suggestedToolsArr.push(entry);
+
+          await db.repairToolRequest.create({
             data: {
               workOrderId: id,
-              itemName: tool.name,
-              quantity: 1,
-              unitCost: 0,
-              totalCost: 0,
-              status: 'requested',
-              requestedBy: session.userId,
+              toolId: tool.toolId,
+              toolName: entry.toolName,
+              reason: 'Planner suggested tool (updated)',
+              plantId: existing.plantId,
+              source: 'planner_suggested',
+              status: 'pending',
+              urgency: 'normal',
+              requestedById: session.userId,
             },
           });
+        } else if (typeof tool === 'string') {
+          const toolRec = await db.tool.findUnique({ where: { id: tool } });
+          if (toolRec) {
+            const entry = {
+              id: crypto.randomUUID(),
+              toolId: toolRec.id,
+              toolName: toolRec.name,
+              toolCode: toolRec.toolCode || '',
+              quantity: 1,
+              notes: '',
+            };
+            suggestedToolsArr.push(entry);
+
+            await db.repairToolRequest.create({
+              data: {
+                workOrderId: id,
+                toolId: toolRec.id,
+                toolName: toolRec.name,
+                reason: 'Planner suggested tool (updated)',
+                plantId: existing.plantId,
+                source: 'planner_suggested',
+                status: 'pending',
+                urgency: 'normal',
+                requestedById: session.userId,
+              },
+            });
+          }
         }
       }
+      await db.workOrder.update({ where: { id }, data: { suggestedTools: JSON.stringify(suggestedToolsArr) } });
     }
 
     // Create audit log

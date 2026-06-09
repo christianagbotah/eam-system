@@ -45,6 +45,39 @@ export function formatPercent(value: number | undefined | null, decimals = 1): s
   return `${value >= 0 ? '+' : ''}${value.toFixed(decimals)}%`;
 }
 
+// ============================================================================
+// DURATION FORMATTING
+// ============================================================================
+
+/**
+ * Convert decimal hours to DD:HH:MM:SS or HH:MM:SS format.
+ * - Input: 2.06 → "02:03:36"
+ * - Input: 25.5 → "1:01:30:00" (1 day, 1hr, 30min)
+ * - Input: 0.5 → "00:30:00"
+ * - Input: null/NaN → "—"
+ */
+export function formatDuration(decimalHours: number | null | undefined): string {
+  if (decimalHours == null || isNaN(decimalHours)) return '—';
+  const totalSeconds = Math.round(decimalHours * 3600);
+  const dd = Math.floor(totalSeconds / 86400);
+  const hh = Math.floor((totalSeconds % 86400) / 3600);
+  const mm = Math.floor((totalSeconds % 3600) / 60);
+  const ss = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  if (dd > 0) return `${dd}:${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+  return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+}
+
+/**
+ * Convert minutes to DD:HH:MM:SS or HH:MM:SS format.
+ * - Input: 90 → "01:30:00"
+ * - Input: 1500 → "00:25:00:00" → "1:01:00:00"
+ */
+export function formatDurationFromMinutes(minutes: number | null | undefined): string {
+  if (minutes == null || isNaN(minutes)) return '—';
+  return formatDuration(minutes / 60);
+}
+
 /** Ghana-aware date format from company settings */
 export function getDateFormat(): string {
   if (typeof window !== 'undefined') {

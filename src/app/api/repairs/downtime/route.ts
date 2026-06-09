@@ -93,20 +93,24 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { workOrderId, assetId, assetName, downtimeStart, downtimeEnd, reason, category, impactLevel, productionLoss, notes } = body;
 
-    if (!workOrderId || !assetName || !downtimeStart || !reason) {
-      return NextResponse.json({ success: false, error: 'workOrderId, assetName, downtimeStart, and reason are required' }, { status: 400 });
+    if (!workOrderId || !reason) {
+      return NextResponse.json({ success: false, error: 'workOrderId and reason are required' }, { status: 400 });
     }
 
     const wo = await db.workOrder.findUnique({ where: { id: workOrderId } });
     if (!wo) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
 
-    const start = new Date(downtimeStart);
+    // Resolve asset info: prefer body values, fall back to WO's asset
+    const resolvedAssetId = assetId || wo.assetId || null;
+    const resolvedAssetName = assetName || (await db.asset.findUnique({ where: { id: resolvedAssetId || '' }, select: { name: true } }))?.name || wo.assetName || null;
+
+    const start = downtimeStart ? new Date(downtimeStart) : new Date();
     const end = downtimeEnd ? new Date(downtimeEnd) : null;
-    const durationMinutes = end ? Math.max(0, (end.getTime() - start.getTime()) / 60000) : 0;
+    const durationMinutes = body.durationMinutes ? parseFloat(body.durationMinutes) : (end ? Math.max(0, (end.getTime() - start.getTime()) / 60000) : 0);
 
     const record = await db.workOrderDowntime.create({
       data: {
-        workOrderId, assetId: assetId || null, assetName,
+        workOrderId, assetId: resolvedAssetId, assetName: resolvedAssetName,
         downtimeStart: start, downtimeEnd: end, durationMinutes,
         reason, category: category || 'unplanned', impactLevel: impactLevel || 'medium',
         productionLoss: productionLoss || null, notes: notes || null,

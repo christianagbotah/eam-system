@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { formatDuration, formatDurationFromMinutes } from '@/components/shared/helpers';
 import {
   BarChart3,
   TrendingUp,
@@ -366,7 +367,6 @@ export function FailureAnalysisPanel({
     );
   }
 
-  const totalDowntimeHrs = Math.round(failureAnalysis.totalDowntimeMinutes / 60);
   const totalCost = failureAnalysis.totalRepairCost;
 
   if (compact) {
@@ -383,7 +383,7 @@ export function FailureAnalysisPanel({
           <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2 text-center">
             <div className="text-[9px] text-slate-500 uppercase">MTTR</div>
             <div className="text-sm font-bold text-amber-400">
-              {failureAnalysis.mttr ? `${failureAnalysis.mttr.toFixed(1)}h` : 'N/A'}
+              {failureAnalysis.mttr ? formatDuration(failureAnalysis.mttr) : 'N/A'}
             </div>
           </div>
           <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-2 text-center">
@@ -461,7 +461,7 @@ export function FailureAnalysisPanel({
         />
         <KpiCard
           label="Total Downtime"
-          value={String(totalDowntimeHrs)}
+          value={formatDurationFromMinutes(failureAnalysis.totalDowntimeMinutes)}
           suffix="hours"
           icon={<Clock className="h-4 w-4 text-orange-400" />}
           color="text-orange-400"
@@ -582,7 +582,7 @@ export function FailureAnalysisPanel({
                       </TableCell>
                       <TableCell className="text-[10px] text-slate-400 py-2">
                         {fr.downtimeMinutes > 60
-                          ? `${(fr.downtimeMinutes / 60).toFixed(1)}h`
+                          ? formatDurationFromMinutes(fr.downtimeMinutes)
                           : `${fr.downtimeMinutes}m`}
                       </TableCell>
                       <TableCell className="text-[10px] text-slate-400 py-2">

@@ -38,7 +38,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 import { DatePicker } from '@/components/ui/datetime-picker';
-import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton } from '@/components/shared/helpers';
+import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton, formatDuration } from '@/components/shared/helpers';
 
 export function SafetyIncidentsPage() {
   const [search, setSearch] = useState('');
@@ -715,7 +715,7 @@ export function SafetyTrainingPage() {
                     <TableCell className="font-medium max-w-[220px] truncate">{t.title}</TableCell>
                     <TableCell><Badge variant="outline" className={typeColors[t.type] || ''}>{t.type?.replace(/_/g, ' ')}</Badge></TableCell>
                     <TableCell className="text-sm text-muted-foreground">{t.trainer || '—'}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{t.durationHours ? `${t.durationHours}h` : '—'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{t.durationHours ? formatDuration(t.durationHours) : '—'}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{t.location || '—'}</TableCell>
                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDate(t.scheduledDate)}</TableCell>
                     <TableCell><Badge variant="outline" className={statusColors[t.status] || ''}>{t.status?.replace(/_/g, ' ')}</Badge></TableCell>

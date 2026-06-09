@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import { cn } from '@/lib/utils';
+import { formatDuration } from '@/components/shared/helpers';
 
 // ── API HELPER ──────────────────────────────────────────────────────────────
 
@@ -1217,11 +1218,11 @@ function DowntimeTab() {
                       <TableCell className="text-xs">
                         {new Date(a.periodStart).toLocaleDateString()} — {new Date(a.periodEnd).toLocaleDateString()}
                       </TableCell>
-                      <TableCell className="font-mono text-sm">{a.totalDowntime.toFixed(1)}h</TableCell>
-                      <TableCell className="font-mono text-sm text-green-600">{a.plannedDowntime.toFixed(1)}h</TableCell>
-                      <TableCell className="font-mono text-sm text-red-600">{a.unplannedDowntime.toFixed(1)}h</TableCell>
-                      <TableCell className="font-mono text-sm">{a.mtbf?.toFixed(1) ?? '—'}</TableCell>
-                      <TableCell className="font-mono text-sm">{a.mttr?.toFixed(1) ?? '—'}</TableCell>
+                      <TableCell className="font-mono text-sm">{formatDuration(a.totalDowntime)}</TableCell>
+                      <TableCell className="font-mono text-sm text-green-600">{formatDuration(a.plannedDowntime)}</TableCell>
+                      <TableCell className="font-mono text-sm text-red-600">{formatDuration(a.unplannedDowntime)}</TableCell>
+                      <TableCell className="font-mono text-sm">{formatDuration(a.mtbf ?? 0)}</TableCell>
+                      <TableCell className="font-mono text-sm">{formatDuration(a.mttr ?? 0)}</TableCell>
                       <TableCell className="font-mono text-sm font-semibold">{a.availability?.toFixed(1) ?? '—'}%</TableCell>
                     </TableRow>
                   ))}

@@ -43,9 +43,9 @@ import {
   PieChart as PieChartIcon, Gauge, ListChecks, Shield, ShieldCheck, HardHat, MapPin,
   Crown, Timer, Hourglass, UserPlus, Workflow, ChevronRight, ExternalLink, Hammer,
   Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
-  FlaskConical, Warehouse, PackageOpen, PackageCheck,
+  FlaskConical, Warehouse, PackageOpen, PackageCheck, Lightbulb,
   ArrowUpRight, ArrowDownRight, CalendarClock, LayoutDashboard, Bell, DollarSign,
-  UserMinus, UserCheck, UserX,
+  UserMinus, UserCheck, UserX, Undo2, StopCircle,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -53,7 +53,7 @@ import {
 } from 'recharts';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
-import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, formatDateLocal, timeAgo, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
+import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, formatDateLocal, timeAgo, LoadingSkeleton, formatCurrency, formatDuration } from '@/components/shared/helpers';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { MobileStepperSheet } from '@/components/shared/MobileStepperSheet';
@@ -755,8 +755,8 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
     assignType: 'technician' as 'technician' | 'supervisor',
     selectedWorkerIds: [] as string[],
     teamLeaderId: '',
-    requiredParts: [] as string[],
-    requiredTools: [] as string[],
+    requiredParts: [] as Array<{ itemId: string; quantity: number }>,
+    requiredTools: [] as Array<{ toolId: string; quantity: number }>,
     // Section 4: Safety
     safetyNotes: '',
     ppeRequired: '',
@@ -938,18 +938,58 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
 
   // Helper: add/remove items from multi-select arrays
   const addToArray = (field: 'departmentIds' | 'requiredParts' | 'requiredTools', id: string) => {
-    setConvertForm(f => {
-      const arr = [...f[field]] as string[];
-      if (!arr.includes(id)) arr.push(id);
-      return { ...f, [field]: arr };
-    });
+    if (field === 'departmentIds') {
+      setConvertForm(f => {
+        const arr = [...f[field]] as string[];
+        if (!arr.includes(id)) arr.push(id);
+        return { ...f, [field]: arr };
+      });
+    } else if (field === 'requiredParts') {
+      setConvertForm(f => {
+        const arr = [...f[field]] as Array<{ itemId: string; quantity: number }>;
+        if (!arr.some(p => p.itemId === id)) arr.push({ itemId: id, quantity: 1 });
+        return { ...f, [field]: arr };
+      });
+    } else {
+      setConvertForm(f => {
+        const arr = [...f[field]] as Array<{ toolId: string; quantity: number }>;
+        if (!arr.some(t => t.toolId === id)) arr.push({ toolId: id, quantity: 1 });
+        return { ...f, [field]: arr };
+      });
+    }
   };
 
   const removeFromArray = (field: 'departmentIds' | 'requiredParts' | 'requiredTools', id: string) => {
-    setConvertForm(f => ({
-      ...f,
-      [field]: (f[field] as string[]).filter(x => x !== id),
-    }));
+    if (field === 'departmentIds') {
+      setConvertForm(f => ({
+        ...f,
+        [field]: (f[field] as string[]).filter(x => x !== id),
+      }));
+    } else if (field === 'requiredParts') {
+      setConvertForm(f => ({
+        ...f,
+        [field]: (f[field] as Array<{ itemId: string; quantity: number }>).filter(x => x.itemId !== id),
+      }));
+    } else {
+      setConvertForm(f => ({
+        ...f,
+        [field]: (f[field] as Array<{ toolId: string; quantity: number }>).filter(x => x.toolId !== id),
+      }));
+    }
+  };
+
+  const updateConvertItemQuantity = (field: 'requiredParts' | 'requiredTools', id: string, qty: number) => {
+    if (field === 'requiredParts') {
+      setConvertForm(f => ({
+        ...f,
+        [field]: (f[field] as Array<{ itemId: string; quantity: number }>).map(p => p.itemId === id ? { ...p, quantity: qty } : p),
+      }));
+    } else {
+      setConvertForm(f => ({
+        ...f,
+        [field]: (f[field] as Array<{ toolId: string; quantity: number }>).map(t => t.toolId === id ? { ...t, quantity: qty } : t),
+      }));
+    }
   };
 
   const handleComment = async () => {
@@ -1398,22 +1438,26 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                 {/* Required Spare Parts */}
                 <div className="space-y-2">
                   <Label className="text-xs flex items-center gap-1"><PackageSearch className="h-3.5 w-3.5" />Required Spare Parts</Label>
-                  <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+                  <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
                     {convertForm.requiredParts.length === 0 && <span className="text-sm text-muted-foreground">Select spare parts from inventory...</span>}
-                    {convertForm.requiredParts.map(partId => {
-                      const item = inventoryItems.find(i => i.id === partId);
+                    {convertForm.requiredParts.map(part => {
+                      const item = inventoryItems.find(i => i.id === part.itemId);
                       return item ? (
-                        <Badge key={partId} variant="secondary" className="gap-1">
-                          {item.itemName || item.name}
-                          <button onClick={() => removeFromArray('requiredParts', partId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
-                        </Badge>
+                        <div key={part.itemId} className="flex items-center gap-1">
+                          <Badge variant="secondary" className="gap-1">
+                            {item.itemName || item.name} <span className="font-semibold">x{part.quantity}</span>
+                            <button onClick={() => removeFromArray('requiredParts', part.itemId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+                          </Badge>
+                          <Input type="number" min={1} value={part.quantity} onChange={e => updateConvertItemQuantity('requiredParts', part.itemId, Math.max(1, parseInt(e.target.value) || 1))}
+                            className="h-7 w-14 text-center text-xs px-1" />
+                        </div>
                       ) : null;
                     })}
                   </div>
                   <Select onValueChange={v => addToArray('requiredParts', v)}>
                     <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add spare part..." /></SelectTrigger>
                     <SelectContent>
-                      {inventoryItems.filter(i => !convertForm.requiredParts.includes(i.id)).slice(0, 50).map(i => (
+                      {inventoryItems.filter(i => !convertForm.requiredParts.some(p => p.itemId === i.id)).slice(0, 50).map(i => (
                         <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
                       ))}
                     </SelectContent>
@@ -1423,22 +1467,26 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                 {/* Required Tools */}
                 <div className="space-y-2">
                   <Label className="text-xs flex items-center gap-1"><Hammer className="h-3.5 w-3.5" />Required Tools</Label>
-                  <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+                  <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
                     {convertForm.requiredTools.length === 0 && <span className="text-sm text-muted-foreground">Select tools...</span>}
-                    {convertForm.requiredTools.map(toolId => {
-                      const tool = toolsData.find(t => t.id === toolId);
-                      return tool ? (
-                        <Badge key={toolId} variant="secondary" className="gap-1">
-                          {tool.toolName || tool.name}
-                          <button onClick={() => removeFromArray('requiredTools', toolId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
-                        </Badge>
+                    {convertForm.requiredTools.map(tool => {
+                      const toolItem = toolsData.find(t => t.id === tool.toolId);
+                      return toolItem ? (
+                        <div key={tool.toolId} className="flex items-center gap-1">
+                          <Badge variant="secondary" className="gap-1">
+                            {toolItem.toolName || toolItem.name} <span className="font-semibold">x{tool.quantity}</span>
+                            <button onClick={() => removeFromArray('requiredTools', tool.toolId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+                          </Badge>
+                          <Input type="number" min={1} value={tool.quantity} onChange={e => updateConvertItemQuantity('requiredTools', tool.toolId, Math.max(1, parseInt(e.target.value) || 1))}
+                            className="h-7 w-14 text-center text-xs px-1" />
+                        </div>
                       ) : null;
                     })}
                   </div>
                   <Select onValueChange={v => addToArray('requiredTools', v)}>
                     <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add tool..." /></SelectTrigger>
                     <SelectContent>
-                      {toolsData.filter(t => !convertForm.requiredTools.includes(t.id)).slice(0, 50).map(t => (
+                      {toolsData.filter(t => !convertForm.requiredTools.some(to => to.toolId === t.id)).slice(0, 50).map(t => (
                         <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
                       ))}
                     </SelectContent>
@@ -1641,14 +1689,18 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                 </AccordionTrigger>
                 <AccordionContent className="px-2 pb-3 space-y-2">
                   {convertForm.requiredParts.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {convertForm.requiredParts.map(partId => {
-                        const item = inventoryItems.find(i => i.id === partId);
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {convertForm.requiredParts.map(part => {
+                        const item = inventoryItems.find(i => i.id === part.itemId);
                         return item ? (
-                          <Badge key={partId} variant="secondary" className="gap-1">
-                            {item.itemName || item.name}
-                            <button onClick={() => removeFromArray('requiredParts', partId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
-                          </Badge>
+                          <div key={part.itemId} className="flex items-center gap-1">
+                            <Badge variant="secondary" className="gap-1">
+                              {item.itemName || item.name} <span className="font-semibold">x{part.quantity}</span>
+                              <button onClick={() => removeFromArray('requiredParts', part.itemId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
+                            </Badge>
+                            <Input type="number" min={1} value={part.quantity} onChange={e => updateConvertItemQuantity('requiredParts', part.itemId, Math.max(1, parseInt(e.target.value) || 1))}
+                              className="h-7 w-14 text-center text-xs px-1" />
+                          </div>
                         ) : null;
                       })}
                     </div>
@@ -1656,7 +1708,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   <Select onValueChange={v => addToArray('requiredParts', v)}>
                     <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="+ Add spare part..." /></SelectTrigger>
                     <SelectContent>
-                      {inventoryItems.filter(i => !convertForm.requiredParts.includes(i.id)).slice(0, 50).map(i => (
+                      {inventoryItems.filter(i => !convertForm.requiredParts.some(p => p.itemId === i.id)).slice(0, 50).map(i => (
                         <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
                       ))}
                     </SelectContent>
@@ -1669,14 +1721,18 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                 </AccordionTrigger>
                 <AccordionContent className="px-2 pb-3 space-y-2">
                   {convertForm.requiredTools.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {convertForm.requiredTools.map(toolId => {
-                        const tool = toolsData.find(t => t.id === toolId);
-                        return tool ? (
-                          <Badge key={toolId} variant="secondary" className="gap-1">
-                            {tool.toolName || tool.name}
-                            <button onClick={() => removeFromArray('requiredTools', toolId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
-                          </Badge>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {convertForm.requiredTools.map(tool => {
+                        const toolItem = toolsData.find(t => t.id === tool.toolId);
+                        return toolItem ? (
+                          <div key={tool.toolId} className="flex items-center gap-1">
+                            <Badge variant="secondary" className="gap-1">
+                              {toolItem.toolName || toolItem.name} <span className="font-semibold">x{tool.quantity}</span>
+                              <button onClick={() => removeFromArray('requiredTools', tool.toolId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
+                            </Badge>
+                            <Input type="number" min={1} value={tool.quantity} onChange={e => updateConvertItemQuantity('requiredTools', tool.toolId, Math.max(1, parseInt(e.target.value) || 1))}
+                              className="h-7 w-14 text-center text-xs px-1" />
+                          </div>
                         ) : null;
                       })}
                     </div>
@@ -1684,7 +1740,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
                   <Select onValueChange={v => addToArray('requiredTools', v)}>
                     <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="+ Add tool..." /></SelectTrigger>
                     <SelectContent>
-                      {toolsData.filter(t => !convertForm.requiredTools.includes(t.id)).slice(0, 50).map(t => (
+                      {toolsData.filter(t => !convertForm.requiredTools.some(to => to.toolId === t.id)).slice(0, 50).map(t => (
                         <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
                       ))}
                     </SelectContent>
@@ -2021,7 +2077,7 @@ export function WorkOrdersPage() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{woKpi?.completionMetrics.avgHours != null ? `${woKpi.completionMetrics.avgHours}h` : '-'}</div>
+            <div className="text-2xl font-bold">{woKpi?.completionMetrics.avgHours != null ? formatDuration(woKpi.completionMetrics.avgHours) : '-'}</div>
             <p className="text-xs text-muted-foreground mt-1">{woKpi ? `${woKpi.completionMetrics.completedCount} completed` : 'per work order'}</p>
           </CardContent>
         </Card>
@@ -2160,8 +2216,8 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     assignType: 'technician' as 'technician' | 'supervisor',
     selectedWorkerIds: [] as string[],
     teamLeaderId: '',
-    requiredParts: [] as string[],
-    requiredTools: [] as string[],
+    requiredParts: [] as Array<{ itemId: string; quantity: number }>,
+    requiredTools: [] as Array<{ toolId: string; quantity: number }>,
     // Section: Safety
     safetyNotes: '',
     ppeRequired: '',
@@ -2226,14 +2282,36 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
 
   const addToArray = (field: 'requiredParts' | 'requiredTools', id: string) => {
     setForm(f => {
-      const arr = [...f[field]] as string[];
-      if (!arr.includes(id)) arr.push(id);
+      const arr = [...f[field]];
+      if (field === 'requiredParts') {
+        if (!(arr as Array<{ itemId: string; quantity: number }>).some(p => p.itemId === id)) {
+          (arr as Array<{ itemId: string; quantity: number }>).push({ itemId: id, quantity: 1 });
+        }
+      } else {
+        if (!(arr as Array<{ toolId: string; quantity: number }>).some(t => t.toolId === id)) {
+          (arr as Array<{ toolId: string; quantity: number }>).push({ toolId: id, quantity: 1 });
+        }
+      }
       return { ...f, [field]: arr };
     });
   };
 
   const removeFromArray = (field: 'requiredParts' | 'requiredTools', id: string) => {
-    setForm(f => ({ ...f, [field]: f[field].filter((x: string) => x !== id) }));
+    setForm(f => ({
+      ...f,
+      [field]: field === 'requiredParts'
+        ? (f[field] as Array<{ itemId: string; quantity: number }>).filter(x => x.itemId !== id)
+        : (f[field] as Array<{ toolId: string; quantity: number }>).filter(x => x.toolId !== id),
+    }));
+  };
+
+  const updateItemQuantity = (field: 'requiredParts' | 'requiredTools', id: string, qty: number) => {
+    setForm(f => ({
+      ...f,
+      [field]: field === 'requiredParts'
+        ? (f[field] as Array<{ itemId: string; quantity: number }>).map(p => p.itemId === id ? { ...p, quantity: qty } : p)
+        : (f[field] as Array<{ toolId: string; quantity: number }>).map(t => t.toolId === id ? { ...t, quantity: qty } : t),
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -2537,22 +2615,26 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
           {/* Required Spare Parts */}
           <div className="space-y-2">
             <Label className="text-xs flex items-center gap-1"><PackageSearch className="h-3.5 w-3.5" />Required Spare Parts</Label>
-            <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+            <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
               {form.requiredParts.length === 0 && <span className="text-sm text-muted-foreground">Select spare parts from inventory...</span>}
-              {form.requiredParts.map(partId => {
-                const item = inventoryItems.find(i => i.id === partId);
+              {form.requiredParts.map(part => {
+                const item = inventoryItems.find(i => i.id === part.itemId);
                 return item ? (
-                  <Badge key={partId} variant="secondary" className="gap-1">
-                    {item.itemName || item.name}
-                    <button onClick={() => removeFromArray('requiredParts', partId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
-                  </Badge>
+                  <div key={part.itemId} className="flex items-center gap-1">
+                    <Badge variant="secondary" className="gap-1">
+                      {item.itemName || item.name} <span className="font-semibold">x{part.quantity}</span>
+                      <button onClick={() => removeFromArray('requiredParts', part.itemId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+                    </Badge>
+                    <Input type="number" min={1} value={part.quantity} onChange={e => updateItemQuantity('requiredParts', part.itemId, Math.max(1, parseInt(e.target.value) || 1))}
+                      className="h-7 w-14 text-center text-xs px-1" />
+                  </div>
                 ) : null;
               })}
             </div>
             <Select onValueChange={v => addToArray('requiredParts', v)}>
               <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add spare part..." /></SelectTrigger>
               <SelectContent>
-                {inventoryItems.filter(i => !form.requiredParts.includes(i.id)).slice(0, 50).map(i => (
+                {inventoryItems.filter(i => !form.requiredParts.some(p => p.itemId === i.id)).slice(0, 50).map(i => (
                   <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
                 ))}
               </SelectContent>
@@ -2562,22 +2644,26 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
           {/* Required Tools */}
           <div className="space-y-2">
             <Label className="text-xs flex items-center gap-1"><Hammer className="h-3.5 w-3.5" />Required Tools</Label>
-            <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+            <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
               {form.requiredTools.length === 0 && <span className="text-sm text-muted-foreground">Select tools...</span>}
-              {form.requiredTools.map(toolId => {
-                const tool = toolsData.find(t => t.id === toolId);
-                return tool ? (
-                  <Badge key={toolId} variant="secondary" className="gap-1">
-                    {tool.toolName || tool.name}
-                    <button onClick={() => removeFromArray('requiredTools', toolId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
-                  </Badge>
+              {form.requiredTools.map(tool => {
+                const toolItem = toolsData.find(t => t.id === tool.toolId);
+                return toolItem ? (
+                  <div key={tool.toolId} className="flex items-center gap-1">
+                    <Badge variant="secondary" className="gap-1">
+                      {toolItem.toolName || toolItem.name} <span className="font-semibold">x{tool.quantity}</span>
+                      <button onClick={() => removeFromArray('requiredTools', tool.toolId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+                    </Badge>
+                    <Input type="number" min={1} value={tool.quantity} onChange={e => updateItemQuantity('requiredTools', tool.toolId, Math.max(1, parseInt(e.target.value) || 1))}
+                      className="h-7 w-14 text-center text-xs px-1" />
+                  </div>
                 ) : null;
               })}
             </div>
             <Select onValueChange={v => addToArray('requiredTools', v)}>
               <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add tool..." /></SelectTrigger>
               <SelectContent>
-                {toolsData.filter(t => !form.requiredTools.includes(t.id)).slice(0, 50).map(t => (
+                {toolsData.filter(t => !form.requiredTools.some(to => to.toolId === t.id)).slice(0, 50).map(t => (
                   <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
                 ))}
               </SelectContent>
@@ -2657,6 +2743,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [tlBreakMinutes, setTlBreakMinutes] = useState('');
   const [tlNotes, setTlNotes] = useState('');
   const [tlLoading, setTlLoading] = useState(false);
+  const [optimisticPausedOnThisWO, setOptimisticPausedOnThisWO] = useState(false);
   const [tlLoggedForUserId, setTlLoggedForUserId] = useState('');
   const [tlError, setTlError] = useState('');
 
@@ -2713,6 +2800,52 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [ptOpen, setPtOpen] = useState(false);
   const [ptLoading, setPtLoading] = useState(false);
   const [ptForm, setPtForm] = useState({ toolName: '', toolCode: '', condition: 'good' as PersonalTool['condition'], notes: '' });
+  // ── Repair Resource Modals ──
+  // Tool Request modal (multi-tool)
+  const [toolReqOpen, setToolReqOpen] = useState(false);
+  const [toolReqSubmitting, setToolReqSubmitting] = useState(false);
+  const [toolReqReason, setToolReqReason] = useState('');
+  const [toolReqUrgency, setToolReqUrgency] = useState('normal');
+  const [toolReqItems, setToolReqItems] = useState<Array<{ toolId: string; toolName: string; toolCode: string; quantityRequested: number }>>([]);
+  // Tool Transfer modal
+  const [toolXferOpen, setToolXferOpen] = useState(false);
+  const [toolXferSubmitting, setToolXferSubmitting] = useState(false);
+  const [toolXferToolId, setToolXferToolId] = useState('');
+  const [toolXferToolName, setToolXferToolName] = useState('');
+  const [toolXferToUserId, setToolXferToUserId] = useState('');
+  const [toolXferToUserName, setToolXferToUserName] = useState('');
+  const [toolXferReason, setToolXferReason] = useState('');
+  // Tools cache for quick lookup
+  const toolsLookupCache = useRef<Array<{ id: string; name: string; toolCode: string }>>([]);
+  const woToolOptions = useRef<Array<{ value: string; label: string; id: string; name: string }>>([]);
+  // Downtime modal
+  const [downtimeOpen, setDowntimeOpen] = useState(false);
+  const [downtimeSubmitting, setDowntimeSubmitting] = useState(false);
+  const [dtReason, setDtReason] = useState('');
+  const [dtCategory, setDtCategory] = useState('unplanned');
+  const [dtImpactLevel, setDtImpactLevel] = useState('medium');
+  const [dtProductionLoss, setDtProductionLoss] = useState('');
+  const [dtDurationMinutes, setDtDurationMinutes] = useState('');
+  // View All Tools modal
+  const [viewAllToolsOpen, setViewAllToolsOpen] = useState(false);
+  const [toolDetailSheet, setToolDetailSheet] = useState<any>(null);
+  // Spare Part Return — linked to material request
+  const [spareReturnLinkedMR, setSpareReturnLinkedMR] = useState<any>(null);
+  // Spare Part Return modal
+  const [spareReturnOpen, setSpareReturnOpen] = useState(false);
+  const [spareReturnSubmitting, setSpareReturnSubmitting] = useState(false);
+  const [spareReturnItemName, setSpareReturnItemName] = useState('');
+  // Material return from WO (lists issued materials)
+  const [matReturnOpen, setMatReturnOpen] = useState(false);
+  const [matReturnSubmitting, setMatReturnSubmitting] = useState(false);
+  const [matReturnItems, setMatReturnItems] = useState<Array<{ id: string; itemName: string; itemId: string; qtyIssued: number; qtyReturned: number; qtyReturn: number; isReusable: boolean; condition: string }>>([]);
+  const [spareReturnQty, setSpareReturnQty] = useState('1');
+  const [spareReturnCondition, setSpareReturnCondition] = useState('used');
+  const [spareReturnDamageDesc, setSpareReturnDamageDesc] = useState('');
+  const [spareReturnNeedsRefurb, setSpareReturnNeedsRefurb] = useState(true);
+  const [spareReturnIsReusable, setSpareReturnIsReusable] = useState(true);
+  const [spareReturnItemId, setSpareReturnItemId] = useState('');
+  const [spareReturnMRId, setSpareReturnMRId] = useState('');
   // Add team member dialog
   const [addTeamMemberOpen, setAddTeamMemberOpen] = useState(false);
   const [newMemberUserId, setNewMemberUserId] = useState('');
@@ -2760,12 +2893,27 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [addTaskLoading, setAddTaskLoading] = useState(false);
   const [taskNotes, setTaskNotes] = useState('');
   const [taskFindings, setTaskFindings] = useState('');
+  const [bulkCompleteLoading, setBulkCompleteLoading] = useState(false);
   const [skipReason, setSkipReason] = useState('');
+  // Suggested Materials & Tools
+  const [suggestedParts, setSuggestedParts] = useState<any[]>([]);
+  const [suggestedTools, setSuggestedTools] = useState<any[]>([]);
+  const [suggestedPartDialogOpen, setSuggestedPartDialogOpen] = useState(false);
+  const [suggestedToolDialogOpen, setSuggestedToolDialogOpen] = useState(false);
 
   const fetchWO = useCallback(async () => {
     const res = await api.get<WorkOrder>(`/api/work-orders/${id}`);
     if (res.success && res.data) {
       setWo(res.data);
+      // Reset optimistic paused state only if server timeLogs confirm the state
+      // (hasPausedSession memo will re-evaluate from wo.timeLogs)
+      if (res.data.timeLogs && res.data.timeLogs.length > 0) {
+        const sorted = [...res.data.timeLogs].sort((a: any, b: any) => new Date(a.timestamp || a.createdAt).getTime() - new Date(b.timestamp || b.createdAt).getTime());
+        const lastAction = sorted[sorted.length - 1] as any;
+        setOptimisticPausedOnThisWO(lastAction?.action === 'pause');
+      } else {
+        setOptimisticPausedOnThisWO(false);
+      }
       // Team member requests are now included in the WO response
       if ((res.data as any).teamMemberRequests) {
         setTeamRequests((res.data as any).teamMemberRequests);
@@ -2784,6 +2932,51 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     const res = await api.get<PersonalTool[]>(`/api/work-orders/${id}/personal-tools`);
     if (res.success && res.data) setPersonalTools(res.data);
   }, [id]);
+
+  // Fetch suggested materials & tools
+  const fetchSuggestedItems = useCallback(async () => {
+    try {
+      const res = await api.get(`/api/work-orders/${id}/suggested-items`);
+      if (res.success && res.data) {
+        setSuggestedParts(res.data.suggestedParts || []);
+        setSuggestedTools(res.data.suggestedTools || []);
+      }
+    } catch (err) {
+      // Suggested items are optional; don't block the UI
+      console.error('Failed to fetch suggested items:', err);
+    }
+  }, [id]);
+
+  const handleRejectSuggestedItem = async (itemType: 'part' | 'tool', itemId: string) => {
+    if (!confirm(`Remove this suggested ${itemType}?`)) return;
+    try {
+      const res = await fetch(`/api/work-orders/${id}/suggested-items?XTransformPort=3000`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject_item', itemType, itemId }),
+      });
+      if (res.ok) {
+        fetchSuggestedItems();
+        fetchWO();
+      }
+    } catch (err) { console.error(err); }
+  };
+
+  const handleSendToStore = async () => {
+    try {
+      const res = await fetch(`/api/work-orders/${id}/suggested-items?XTransformPort=3000`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'send_to_store' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.success(data.message || 'Items sent to store');
+        fetchSuggestedItems();
+        fetchWO();
+      }
+    } catch (err) { console.error(err); }
+  };
 
   useEffect(() => {
     let active = true;
@@ -2827,8 +3020,19 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     api.get(`/api/work-orders/${id}/team-member-requests`).then(res => {
       if (active && res.success && res.data) setTeamRequests(res.data);
     });
+    // Fetch suggested items
+    fetchSuggestedItems();
+    // Background sync: fix any mismatched quantityTransferred on tool request items
+    api.post(`/api/repairs/tool-transfers/sync-quantities`, { workOrderId: id }).then(res => {
+      if (active && res.success && res.data && (res.data as any).synced > 0) {
+        // Re-fetch WO to show corrected transfer quantities
+        api.get<WorkOrder>(`/api/work-orders/${id}`).then(woRes => {
+          if (active && woRes.success && woRes.data) setWo(woRes.data);
+        });
+      }
+    });
     return () => { active = false; };
-  }, [id]);
+  }, [id, fetchSuggestedItems]);
 
   // Role-based access check
   const fullAccess = useMemo(() => {
@@ -2843,6 +3047,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (!wo || !user) return false;
     if (isAdmin()) return true;
     if (hasPermission('work_orders.assign')) return true;
+    if (hasPermission('work_orders.assign_supervisor') || hasPermission('work_orders.assign_technician')) return true;
+    if (wo.plannerId === user.id) return true;
     if (wo.assignedById === user.id) return true;
     return false;
   }, [wo, user, isAdmin, hasPermission]);
@@ -2861,6 +3067,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     if (!wo || !user) return false;
     if (isAdmin()) return true;
     if (hasPermission('work_orders.assign')) return true;
+    if (hasPermission('work_orders.assign_supervisor') || hasPermission('work_orders.assign_technician')) return true;
+    if (wo.plannerId === user.id) return true;
     if (wo.assignedById === user.id) return true;
     return false;
   }, [wo, user, isAdmin, hasPermission]);
@@ -2875,8 +3083,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const isReadOnly = useMemo(() => {
     if (!wo || !user) return false;
     if (fullAccess) return false;
+    if (canManageTeamDirectly) return false;
     return wo.teamMembers?.some(tm => tm.userId === user.id && tm.accessLevel === 'read_only') || false;
-  }, [wo, user, fullAccess]);
+  }, [wo, user, fullAccess, canManageTeamDirectly]);
 
   // Permission: can take modification actions on this WO (not just view it)
   // Used for: status transitions, edit, approve/reject etc. — includes planner via permissions
@@ -2945,12 +3154,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
   // Is there a paused session on THIS WO that can be resumed?
   const hasPausedSession = useMemo(() => {
+    // Optimistic: if we just paused, show immediately
+    if (optimisticPausedOnThisWO) return true;
     if (!wo?.timeLogs || wo.timeLogs.length === 0) return false;
     if (isActiveOnThisWO) return false; // currently running, not paused
     const sorted = [...wo.timeLogs].sort((a, b) => new Date(a.timestamp || a.createdAt).getTime() - new Date(b.timestamp || b.createdAt).getTime());
     const lastAction = sorted[sorted.length - 1];
     return lastAction?.action === 'pause';
-  }, [wo?.timeLogs, isActiveOnThisWO]);
+  }, [wo?.timeLogs, isActiveOnThisWO, optimisticPausedOnThisWO]);
 
   // Quick action handlers for start/pause/resume/complete
   const handleQuickTimeAction = async (action: string, reason?: string) => {
@@ -2967,11 +3178,37 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
         start: 'Work started — timer is running',
         pause: reason === 'break' ? 'Paused for break' : reason === 'switch_wo' ? 'Paused — you can now work on another WO' : 'Work paused',
         resume: 'Work resumed — timer is running',
-        complete: 'Work completed on this WO',
+        complete: 'Time session ended — duration recorded',
       };
       toast.success(msgs[action] || `Time ${action} recorded`);
       setPauseDialogOpen(false);
       setPauseReason('');
+
+      // Optimistic update: immediately reflect the action in the UI
+      // so buttons (Start/Pause/Resume) switch without waiting for server re-fetch
+      if (action === 'start' || action === 'resume') {
+        setOptimisticPausedOnThisWO(false);
+        setGlobalActiveSession({
+          workOrderId: id,
+          workOrderNumber: wo?.woNumber || '',
+          workOrderTitle: wo?.title || '',
+          workOrderStatus: wo?.status || '',
+          action,
+          startedAt: new Date().toISOString(),
+          elapsedSeconds: 0,
+          logId: res.data?.id || '',
+          activityType: 'maintenance',
+        });
+      } else if (action === 'pause' || action === 'complete') {
+        setGlobalActiveSession(null);
+        if (action === 'pause') {
+          setOptimisticPausedOnThisWO(true);
+        } else {
+          setOptimisticPausedOnThisWO(false);
+        }
+      }
+
+      // Background sync with server to ensure consistency
       fetchActiveSession();
       fetchWO();
     } else {
@@ -3286,6 +3523,171 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     setMatLoading(false);
   };
 
+  // ── Repair Resource Modal Handlers ──
+  const resetToolReqForm = () => { setToolReqItems([{ toolId: '', toolName: '', toolCode: '', quantityRequested: 1 }]); setToolReqReason(''); setToolReqUrgency('normal'); };
+  const addToolReqItem = () => setToolReqItems(prev => [...prev, { toolId: '', toolName: '', toolCode: '', quantityRequested: 1 }]);
+  const removeToolReqItem = (idx: number) => { if (toolReqItems.length > 1) setToolReqItems(prev => prev.filter((_, i) => i !== idx)); };
+  const updateToolReqItem = (idx: number, updates: Partial<{ toolId: string; toolName: string; toolCode: string; quantityRequested: number }>) => {
+    setToolReqItems(prev => prev.map((item, i) => i === idx ? { ...item, ...updates } : item));
+  };
+  const handleToolRequest = async () => {
+    const validItems = toolReqItems.filter(i => i.toolId && i.toolName.trim());
+    if (validItems.length === 0) { toast.error('Please select at least one tool'); return; }
+    if (toolReqReason.trim().length < 5) { toast.error('Reason must be at least 5 characters'); return; }
+    setToolReqSubmitting(true);
+    const res = await api.post('/api/repairs/tool-requests', {
+      workOrderId: id,
+      reason: toolReqReason,
+      urgency: toolReqUrgency,
+      items: validItems,
+    });
+    if (res.success) { toast.success(`${validItems.length} tool(s) requested — sent for approval`); setToolReqOpen(false); resetToolReqForm(); fetchWO(); }
+    else toast.error(res.error || 'Failed to submit tool request');
+    setToolReqSubmitting(false);
+  };
+
+  const resetToolXferForm = () => { setToolXferToolId(''); setToolXferToolName(''); setToolXferToUserId(''); setToolXferToUserName(''); setToolXferReason(''); };
+  const handleToolTransfer = async () => {
+    if (!toolXferToolId) { toast.error('Please select a tool'); return; }
+    if (!toolXferToUserId) { toast.error('Please select a technician to transfer to'); return; }
+    if (toolXferReason.trim().length < 5) { toast.error('Reason must be at least 5 characters'); return; }
+    setToolXferSubmitting(true);
+    const res = await api.post('/api/repairs/tool-transfers', {
+      toolId: toolXferToolId,
+      fromUserId: user?.id,
+      toUserId: toolXferToUserId,
+      reason: toolXferReason,
+    });
+    if (res.success) { toast.success('Tool transfer request submitted for store keeper approval'); setToolXferOpen(false); resetToolXferForm(); }
+    else toast.error(res.error || 'Failed to submit transfer request');
+    setToolXferSubmitting(false);
+  };
+
+  const resetDowntimeForm = () => { setDtReason(''); setDtCategory('unplanned'); setDtImpactLevel('medium'); setDtProductionLoss(''); setDtDurationMinutes(''); };
+  const handleDowntime = async () => {
+    if (!dtReason.trim()) { toast.error('Please provide a reason'); return; }
+    if (!dtDurationMinutes || parseFloat(dtDurationMinutes) <= 0) { toast.error('Please enter the downtime duration'); return; }
+    setDowntimeSubmitting(true);
+    const res = await api.post('/api/repairs/downtime', {
+      workOrderId: id,
+      reason: dtReason,
+      category: dtCategory,
+      impactLevel: dtImpactLevel,
+      productionLoss: dtProductionLoss ? parseFloat(dtProductionLoss) : undefined,
+      durationMinutes: parseFloat(dtDurationMinutes),
+      assetId: wo?.assetId || undefined,
+      assetName: wo?.assetName || wo?.asset?.name || undefined,
+    });
+    if (res.success) { toast.success('Downtime logged successfully'); setDowntimeOpen(false); resetDowntimeForm(); fetchWO(); }
+    else toast.error(res.error || 'Failed to log downtime');
+    setDowntimeSubmitting(false);
+  };
+
+  const resetSpareReturnForm = () => { setSpareReturnItemName(''); setSpareReturnQty('1'); setSpareReturnCondition('used'); setSpareReturnDamageDesc(''); setSpareReturnNeedsRefurb(true); setSpareReturnIsReusable(true); setSpareReturnItemId(''); setSpareReturnMRId(''); setSpareReturnLinkedMR(null); };
+
+  const openSpareReturnFromMR = (mr: any) => {
+    setSpareReturnLinkedMR(mr);
+    setSpareReturnItemName(mr.itemName || '');
+    setSpareReturnQty(String(mr.quantityIssued || mr.quantityRequested || 1));
+    setSpareReturnItemId(mr.itemId || '');
+    setSpareReturnMRId(mr.id || '');
+    setSpareReturnCondition('used');
+    setSpareReturnDamageDesc('');
+    setSpareReturnNeedsRefurb(true);
+    setSpareReturnIsReusable(true);
+    setSpareReturnOpen(true);
+  };
+
+  // Open material return modal listing issued materials for this WO
+  const openMatReturn = () => {
+    const items: typeof matReturnItems = [];
+    if (wo?.repairMaterialRequests) {
+      for (const mr of wo.repairMaterialRequests as any[]) {
+        if (!['issued', 'partially_returned'].includes(mr.status)) continue;
+        const issued = mr.quantityIssued || 0;
+        const returned = mr.quantityReturned || 0;
+        const outstanding = issued - returned;
+        if (outstanding > 0) {
+          items.push({
+            id: mr.id,
+            itemName: mr.itemName || 'Unknown Material',
+            itemId: mr.itemId || '',
+            qtyIssued: issued,
+            qtyReturned: returned,
+            qtyReturn: outstanding,
+            isReusable: true,
+            condition: 'used',
+          });
+        }
+      }
+    }
+    setMatReturnItems(items);
+    setMatReturnOpen(true);
+  };
+
+  const updateMatReturnItem = (idx: number, patch: Partial<typeof matReturnItems[0]>) => {
+    setMatReturnItems(prev => prev.map((item, i) => i === idx ? { ...item, ...patch } : item));
+  };
+
+  const removeMatReturnItem = (idx: number) => {
+    setMatReturnItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleMatReturnSubmit = async () => {
+    const activeItems = matReturnItems.filter(i => i.qtyReturn > 0);
+    if (activeItems.length === 0) { toast.error('No items to return'); return; }
+    setMatReturnSubmitting(true);
+    let errors: string[] = [];
+    for (const item of activeItems) {
+      try {
+        const res = await api.post('/api/repairs/spare-part-returns', {
+          workOrderId: id,
+          itemName: item.itemName,
+          quantity: item.qtyReturn,
+          conditionOnReturn: item.condition,
+          refurbishmentNeeded: item.isReusable,
+          isConsumed: !item.isReusable,
+          itemId: item.itemId || undefined,
+          materialRequestId: item.id,
+          plantId: wo?.plantId || undefined,
+        });
+        if (!res.success) errors.push(res.error || `Failed: ${item.itemName}`);
+        else toast.success(item.isReusable
+          ? `${item.itemName}: ${item.qtyReturn} submitted for return/refurbishment`
+          : `${item.itemName}: ${item.qtyReturn} recorded as consumed`);
+      } catch (e: any) { errors.push(`${item.itemName}: ${e.message}`); }
+    }
+    if (errors.length > 0) errors.forEach(e => toast.error(e));
+    setMatReturnSubmitting(false);
+    setMatReturnOpen(false);
+    fetchWO();
+  };
+
+  const handleSpareReturn = async () => {
+    if (!spareReturnItemName.trim()) { toast.error('Please enter the item name'); return; }
+    setSpareReturnSubmitting(true);
+    const res = await api.post('/api/repairs/spare-part-returns', {
+      workOrderId: id,
+      itemName: spareReturnItemName,
+      quantity: parseFloat(spareReturnQty) || 1,
+      conditionOnReturn: spareReturnCondition,
+      damageDescription: spareReturnDamageDesc || undefined,
+      refurbishmentNeeded: spareReturnNeedsRefurb,
+      isConsumed: !spareReturnIsReusable,
+      itemId: spareReturnItemId || undefined,
+      materialRequestId: spareReturnMRId || undefined,
+      plantId: wo?.plantId || undefined,
+    });
+    if (res.success) {
+      toast.success(spareReturnIsReusable
+        ? 'Material return submitted — pending inspection & refurbishment'
+        : 'Material recorded as consumed (not returnable)');
+      setSpareReturnOpen(false); resetSpareReturnForm(); fetchWO();
+    }
+    else toast.error(res.error || 'Failed to submit return');
+    setSpareReturnSubmitting(false);
+  };
+
   // Repair Material Request action handlers (approval workflow from WO detail)
   const handleMatRequestAction = async (mrId: string, action: string, extra?: Record<string, any>) => {
     const res = await api.post(`/api/repairs/material-requests/${mrId}`, { action, ...extra });
@@ -3417,14 +3819,15 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     setTaskChecklistLoading(false);
   }, [id]);
 
-  const handleTaskAction = async (taskId: string, action: 'in_progress' | 'completed' | 'skipped' | 'failed', extra?: Record<string, string>) => {
+  const handleTaskAction = async (taskId: string, action: 'in_progress' | 'completed' | 'skipped' | 'failed' | 'pending', extra?: Record<string, string>) => {
     setTaskActionLoading(taskId);
     const body: Record<string, string> = { status: action };
     if (extra?.notes) body.notes = extra.notes;
     if (extra?.findings) body.findings = extra.findings;
     const res = await api.patch(`/api/work-orders/${id}/tasks/${taskId}`, body);
     if (res.success) {
-      toast.success(action === 'in_progress' ? 'Task started' : action === 'completed' ? 'Task completed' : action === 'skipped' ? 'Task skipped' : 'Task marked as failed');
+      const labels: Record<string, string> = { in_progress: 'Task started', completed: 'Task completed ✓', skipped: 'Task skipped', failed: 'Task marked as failed', pending: 'Task reopened' };
+      toast.success(labels[action] || 'Task updated');
       fetchTaskChecklist();
       setCompleteTaskDialog(null);
       setSkipTaskDialog(null);
@@ -3495,8 +3898,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   // WO is finalized when supervisor has verified (awaiting planner closure) or permanently locked/closed
   const isWOFinalized = wo.status === 'verified' || wo.status === 'closed' || wo.status === 'cancelled' || wo.isLocked;
   const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
-  // Edit: restricted to admin, planner, and managers — NOT technician (technician has work_orders.update for status transitions only)
-  const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && (canManageTeamDirectly || isAdmin());
+  // Edit: planner who created the WO, anyone with assign permissions, or admin can edit
+  // Technicians with work_orders.update can only change status (start/complete), NOT edit WO fields
+  const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && (
+    canManageTeamDirectly ||
+    isAdmin() ||
+    (wo.plannerId === user?.id) ||
+    (wo.createdById === user?.id && hasPermission('work_orders.create'))
+  );
 
   // Disable work-performing buttons (time log, start, personal tools, materials) for non-workers
   // Must be declared AFTER isWOFinalized to avoid temporal dead zone error
@@ -3617,7 +4026,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             <div className="grid grid-cols-3 gap-3">
               <div className="p-3 rounded-lg bg-muted/50 text-center">
                 <p className="text-xs text-muted-foreground">Total Time</p>
-                <p className="text-lg font-bold">{wo.actualHours || 0}h</p>
+                <p className="text-lg font-bold">{formatDuration(wo.actualHours || 0)}</p>
               </div>
               <div className="p-3 rounded-lg bg-muted/50 text-center">
                 <p className="text-xs text-muted-foreground">Materials Used</p>
@@ -4371,6 +4780,266 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </div>
       </ResponsiveDialog>
 
+      {/* ═══════ Request Tool Dialog ═══════ */}
+      <ResponsiveDialog open={toolReqOpen} onOpenChange={(open) => { setToolReqOpen(open); if (!open) resetToolReqForm(); }} title="Request Tools" description="Request one or more tools for this work order. Goes through supervisor → store approval." footer={<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setToolReqOpen(false)}>Cancel</Button><Button className="bg-orange-600 hover:bg-orange-700 text-white" disabled={toolReqSubmitting || toolReqItems.filter(i => i.toolId && i.toolName.trim()).length === 0 || toolReqReason.trim().length < 5} onClick={handleToolRequest}>{toolReqSubmitting ? 'Submitting...' : 'Submit Request'}</Button></div>}>
+        <div className="space-y-4">
+          <div className="p-3 rounded-lg bg-orange-50 border border-orange-200">
+            <p className="text-xs text-orange-800 font-medium">📋 Approval Workflow</p>
+            <p className="text-xs text-orange-700 mt-1">Your request will be reviewed by a <strong>Supervisor</strong>, then <strong>Store/Shop</strong> before tools are issued.</p>
+          </div>
+          {/* Tool Items */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Tools *</Label>
+              <Button type="button" variant="outline" size="sm" className="h-7 gap-1" onClick={addToolReqItem}><Plus className="h-3 w-3" /> Add Another Tool</Button>
+            </div>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {toolReqItems.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-2.5 bg-muted/30 rounded-lg border">
+                  <span className="text-xs text-muted-foreground font-medium shrink-0 w-5">#{idx + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <AsyncSearchableSelect
+                      value={item.toolId}
+                      onValueChange={(val) => {
+                        const cached = toolsLookupCache.current.find(t => t.id === val);
+                        updateToolReqItem(idx, { toolId: val, toolName: cached?.name || '', toolCode: cached?.toolCode || '' });
+                      }}
+                      fetchOptions={async () => {
+                        const res = await api.get('/api/tools?limit=999');
+                        if (res.success && Array.isArray(res.data)) {
+                          toolsLookupCache.current = res.data.map((t: any) => ({ id: t.id, name: t.name || '', toolCode: t.toolCode || '' }));
+                          return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));
+                        }
+                        return [];
+                      }}
+                      placeholder="Search tools..."
+                      searchPlaceholder="Search by name or code..."
+                    />
+                  </div>
+                  <div className="w-16 shrink-0">
+                    <Input type="number" min="1" value={item.quantityRequested} onChange={e => updateToolReqItem(idx, { quantityRequested: parseInt(e.target.value) || 1 })} className="h-9 text-center" />
+                  </div>
+                  {toolReqItems.length > 1 && (
+                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => removeToolReqItem(idx)}><X className="h-3.5 w-3.5" /></Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <Label>Urgency</Label>
+            <div className="flex gap-2 mt-1">
+              {(['low', 'normal', 'high', 'critical'] as const).map(u => (
+                <button key={u} onClick={() => setToolReqUrgency(u)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 text-xs font-medium transition-all ${toolReqUrgency === u ? (URGENCY_CFG[u]?.color || 'bg-gray-100') + ' ring-2 ring-offset-1 ring-gray-300' : 'border-gray-200 text-muted-foreground hover:border-gray-300'}`}>
+                  <span className={`h-2 w-2 rounded-full ${URGENCY_CFG[u]?.dotColor || 'bg-gray-400'}`} />{URGENCY_CFG[u]?.label || u}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-1.5"><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label>
+            <Textarea value={toolReqReason} onChange={e => setToolReqReason(e.target.value)} placeholder="Why are these tools needed for this work order?" rows={2} />
+          </div>
+        </div>
+      </ResponsiveDialog>
+
+      {/* ═══════ Transfer Tool Dialog ═══════ */}
+      <ResponsiveDialog open={toolXferOpen} onOpenChange={(open) => { setToolXferOpen(open); if (!open) resetToolXferForm(); }} title="Transfer Tool" description="Transfer a tool from this work order to another technician. Store keeper approval required." footer={<Button className="w-full bg-teal-600 hover:bg-teal-700 text-white" disabled={toolXferSubmitting || !toolXferToolId || !toolXferToUserId || toolXferReason.trim().length < 5} onClick={handleToolTransfer}>{toolXferSubmitting ? 'Submitting...' : 'Submit Transfer Request'}</Button>}>
+        <div className="space-y-4">
+          <div className="p-3 rounded-lg bg-teal-50 border border-teal-200">
+            <p className="text-xs text-teal-800 font-medium">🔄 Transfer Workflow</p>
+            <p className="text-xs text-teal-700 mt-1">Only <strong>issued tools</strong> from this WO are shown. Already transferred or returned tools are excluded.</p>
+          </div>
+          <div className="space-y-1.5"><Label>Tool *</Label>
+            <AsyncSearchableSelect
+              value={toolXferToolId}
+              onValueChange={(val) => {
+                const cached = woToolOptions.current.find(t => t.value === val);
+                setToolXferToolId(val);
+                setToolXferToolName(cached?.name || '');
+              }}
+              fetchOptions={async () => {
+                // Only show tools from this WO's issued requests (not transferred/returned)
+                const options: { value: string; label: string; id: string; name: string; toolDbId: string | null }[] = [];
+                if (wo?.repairToolRequests) {
+                  for (const tr of wo.repairToolRequests as any[]) {
+                    if (!['issued', 'pending_return'].includes(tr.status)) continue;
+                    if (tr.items && tr.items.length > 0) {
+                      for (const item of tr.items) {
+                        const issued = item.quantityIssued || 0;
+                        const returned = item.quantityReturned || 0;
+                        const transferred = item.quantityTransferred || 0;
+                        const outstanding = issued - returned - transferred;
+                        if (outstanding > 0) {
+                          // Use actual Tool DB ID if available, otherwise fall back to item ID
+                          const actualToolId = item.tool?.id || item.toolId || item.id;
+                          const entry = { value: actualToolId, label: `${item.toolName || 'Tool'}${item.toolCode ? ` (${item.toolCode})` : ''} — ${outstanding} available`, id: `${tr.id}__${item.id}`, name: item.toolName || '', toolDbId: item.tool?.id || item.toolId || null };
+                          options.push(entry);
+                        }
+                      }
+                    } else if (tr.toolName) {
+                      const issued = tr.quantityIssued || 0;
+                      const returned = tr.quantityReturned || 0;
+                      const transferred = tr.quantityTransferred || 0;
+                      const outstanding = issued - returned - transferred;
+                      if (outstanding > 0) {
+                        const actualToolId = tr.tool?.id || tr.toolId || tr.id;
+                        options.push({ value: actualToolId, label: `${tr.toolName}${tr.tool?.toolCode ? ` (${tr.tool.toolCode})` : ''} — ${outstanding} available`, id: tr.id, name: tr.toolName, toolDbId: tr.tool?.id || tr.toolId || null });
+                      }
+                    }
+                  }
+                }
+                woToolOptions.current = options;
+                return options;
+              }}
+              placeholder={wo?.repairToolRequests?.some((tr: any) => ['issued', 'pending_return'].includes(tr.status)) ? 'Select tool from this WO...' : 'No issued tools available on this WO'}
+              searchPlaceholder="Search tools..."
+            />
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Label>From (You)</Label>
+              <Badge variant="outline" className="text-xs">{user?.fullName}</Badge>
+            </div>
+          </div>
+          <div className="space-y-1.5"><Label>Transfer To *</Label>
+            <AsyncSearchableSelect
+              value={toolXferToUserId}
+              onValueChange={(val) => { setToolXferToUserId(val); }}
+              fetchOptions={async () => {
+                const res = await api.get('/api/workers?role=technician');
+                if (res.success && Array.isArray(res.data)) {
+                  return res.data.filter((u: any) => u.id !== user?.id).map((u: any) => ({ value: u.id, label: `${u.fullName}${u.username ? ` (${u.username})` : ''}` }));
+                }
+                return [];
+              }}
+              placeholder="Select technician..."
+              searchPlaceholder="Search technicians..."
+            />
+          </div>
+          <div className="space-y-1.5"><Label>Reason * <span className="text-xs text-muted-foreground">(min 5 chars)</span></Label>
+            <Textarea value={toolXferReason} onChange={e => setToolXferReason(e.target.value)} placeholder="Why is this transfer needed?" rows={2} />
+          </div>
+        </div>
+      </ResponsiveDialog>
+
+      {/* ═══════ Log Downtime Dialog ═══════ */}
+      <ResponsiveDialog open={downtimeOpen} onOpenChange={(open) => { setDowntimeOpen(open); if (!open) resetDowntimeForm(); }} title="Log Downtime" description={`Record downtime for ${wo?.assetName || 'this asset'} on WO ${wo?.woNumber || ''}`} footer={<Button className="w-full bg-red-600 hover:bg-red-700 text-white" disabled={downtimeSubmitting || !dtReason.trim() || !dtDurationMinutes || parseFloat(dtDurationMinutes) <= 0} onClick={handleDowntime}>{downtimeSubmitting ? 'Saving...' : 'Log Downtime'}</Button>}>
+        <div className="space-y-4">
+          <div className="p-3 rounded-lg bg-red-50 border border-red-200">
+            <p className="text-xs text-red-800 font-medium">⚠️ Downtime Recording</p>
+            <p className="text-xs text-red-700 mt-1">This will be recorded against <strong>WO {wo?.woNumber || ''}</strong> and asset <strong>{wo?.assetName || 'N/A'}</strong>.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label>Category</Label>
+              <Select value={dtCategory} onValueChange={setDtCategory}>
+                <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="unplanned">Unplanned</SelectItem><SelectItem value="planned">Planned</SelectItem><SelectItem value="partial">Partial</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5"><Label>Impact Level</Label>
+              <Select value={dtImpactLevel} onValueChange={setDtImpactLevel}>
+                <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Duration * <span className="text-xs text-muted-foreground font-normal">How long was the asset down?</span></Label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="relative">
+                <Input type="number" min="1" step="1" value={dtDurationMinutes} onChange={e => setDtDurationMinutes(e.target.value)} placeholder="e.g. 120" className="min-h-[44px] pr-12" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">min</span>
+              </div>
+              {dtDurationMinutes && parseFloat(dtDurationMinutes) > 0 && (
+                <div className="flex items-center text-xs text-muted-foreground bg-muted/50 rounded-lg px-3">
+                  <Clock className="h-3.5 w-3.5 mr-1.5 text-red-500" />
+                  {parseFloat(dtDurationMinutes) >= 60
+                    ? `${Math.floor(parseFloat(dtDurationMinutes) / 60)}h ${Math.round(parseFloat(dtDurationMinutes) % 60)}m`
+                    : `${parseFloat(dtDurationMinutes)}m`}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Production Loss (₵) <span className="text-xs text-muted-foreground font-normal">Estimated monetary loss — optional</span></Label>
+            <Input type="number" step="0.01" value={dtProductionLoss} onChange={e => setDtProductionLoss(e.target.value)} placeholder="e.g. 500.00" />
+          </div>
+          <div className="space-y-1.5"><Label>Reason * <span className="text-xs text-muted-foreground font-normal">Why was the asset down?</span></Label><Textarea value={dtReason} onChange={e => setDtReason(e.target.value)} placeholder="Describe the downtime reason..." rows={2} /></div>
+        </div>
+      </ResponsiveDialog>
+
+      {/* ═══════ Return Spare Part / Material Dialog ═══════ */}
+      <ResponsiveDialog open={spareReturnOpen} onOpenChange={(open) => { setSpareReturnOpen(open); if (!open) resetSpareReturnForm(); }} title="Return Material" description={spareReturnLinkedMR ? `Returning material from request — ${spareReturnLinkedMR.itemName}` : 'Register a material removed from the machine for return or disposal.'} footer={<Button className="w-full bg-violet-600 hover:bg-violet-700 text-white" disabled={spareReturnSubmitting || !spareReturnItemName.trim()} onClick={handleSpareReturn}>{spareReturnSubmitting ? 'Submitting...' : spareReturnIsReusable ? 'Submit for Return & Refurbishment' : 'Record as Consumed'}</Button>}>
+        <div className="space-y-4">
+          {/* Linked material request banner */}
+          {spareReturnLinkedMR && (
+            <div className="p-3 rounded-lg bg-sky-50 border border-sky-200">
+              <p className="text-xs text-sky-800 font-medium">📋 Linked Material Request</p>
+              <div className="flex items-center gap-3 text-xs text-sky-700 mt-1">
+                <span>{spareReturnLinkedMR.itemName}</span>
+                <span>Issued: <strong>{spareReturnLinkedMR.quantityIssued || spareReturnLinkedMR.quantityRequested}</strong></span>
+              </div>
+            </div>
+          )}
+
+          {/* Reusable vs Consumed toggle */}
+          <div className="p-3 rounded-lg border space-y-3">
+            <div className="flex items-center gap-3">
+              <Switch id="spareReusable" checked={spareReturnIsReusable} onCheckedChange={(v) => {
+                setSpareReturnIsReusable(!!v);
+                if (!v) setSpareReturnNeedsRefurb(false);
+              }} />
+              <div>
+                <Label htmlFor="spareReusable" className="text-sm font-medium cursor-pointer">Returnable / Reusable</Label>
+                <p className="text-[11px] text-muted-foreground">{spareReturnIsReusable ? 'Part will go through inspection → refurbishment → storeroom return' : 'Part was consumed during repair and cannot be returned'}</p>
+              </div>
+            </div>
+            {spareReturnIsReusable && (
+              <div className="ml-9 p-2.5 rounded-lg bg-violet-50 border border-violet-100">
+                <p className="text-[11px] text-violet-800 font-medium">♻️ Return Lifecycle</p>
+                <div className="flex items-center gap-1.5 mt-1 text-[10px] text-violet-700">
+                  <span className="bg-violet-100 rounded px-1.5 py-0.5">Pending</span>
+                  <ArrowRight className="h-3 w-3" />
+                  <span className="bg-violet-100 rounded px-1.5 py-0.5">Inspect</span>
+                  <ArrowRight className="h-3 w-3" />
+                  <span className="bg-violet-100 rounded px-1.5 py-0.5">Refurbish</span>
+                  <ArrowRight className="h-3 w-3" />
+                  <span className="bg-emerald-100 text-emerald-800 rounded px-1.5 py-0.5">Return to Store</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {!spareReturnLinkedMR && (
+            <div className="space-y-1.5"><Label>Item Name *</Label><Input value={spareReturnItemName} onChange={e => setSpareReturnItemName(e.target.value)} placeholder="Part/material name" className="min-h-[44px]" /></div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label>Quantity</Label><Input type="number" min="1" value={spareReturnQty} onChange={e => setSpareReturnQty(e.target.value)} className="min-h-[44px]" /></div>
+            {spareReturnIsReusable && (
+              <div className="space-y-1.5"><Label>Condition</Label>
+                <Select value={spareReturnCondition} onValueChange={setSpareReturnCondition}>
+                  <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="used">Used</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem><SelectItem value="damaged">Damaged</SelectItem><SelectItem value="worn">Worn</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          {spareReturnIsReusable && (
+            <>
+              <div className="space-y-1.5"><Label>Damage/Wear Description</Label><Textarea value={spareReturnDamageDesc} onChange={e => setSpareReturnDamageDesc(e.target.value)} placeholder="Describe any damage or wear..." rows={2} /></div>
+              <div className="flex items-center gap-3 p-3 rounded-lg border">
+                <Checkbox id="spareRefurb" checked={spareReturnNeedsRefurb} onCheckedChange={v => setSpareReturnNeedsRefurb(!!v)} />
+                <Label htmlFor="spareRefurb" className="text-sm cursor-pointer">Needs Refurbishment</Label>
+                <span className="text-[10px] text-muted-foreground ml-auto">{spareReturnNeedsRefurb ? 'Will go through refurb process' : 'Can return directly'}</span>
+              </div>
+            </>
+          )}
+        </div>
+      </ResponsiveDialog>
+
       {/* Reason Dialog (for transitions requiring a reason like cancel, hold) */}
       <ResponsiveDialog open={actionDialog?.startsWith('reason:') || false} onOpenChange={() => setActionDialog(null)} title="Confirm Action" description="Please provide a reason for this action.">
           <div className="space-y-4">
@@ -4424,9 +5093,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               <ScrollArea className="max-h-64">
                 {wo.comments?.map(c => (
                   <div key={c.id} className="flex gap-3 py-2 border-b last:border-0">
-                    <Avatar className="h-7 w-7 shrink-0"><AvatarFallback className="text-[10px]">{getInitials(c.userName || 'U')}</AvatarFallback></Avatar>
+                    <Avatar className="h-7 w-7 shrink-0"><AvatarFallback className="text-[10px]">{getInitials(c.user?.fullName || c.userName || 'U')}</AvatarFallback></Avatar>
                     <div>
-                      <p className="text-xs"><span className="font-medium">{c.userName || 'Unknown'}</span> <span className="text-muted-foreground">{timeAgo(c.createdAt)}</span></p>
+                      <p className="text-xs"><span className="font-medium">{c.user?.fullName || c.userName || 'Unknown'}</span> <span className="text-muted-foreground">{timeAgo(c.createdAt)}</span></p>
                       <p className="text-sm mt-0.5">{c.content}</p>
                     </div>
                   </div>
@@ -4441,7 +5110,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           {/* Time Logs — Enterprise with Session Controls */}
           <Card className="border-0 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between">
-              <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {wo.actualHours || 0}h total</CardDescription></div>
+              <div><CardTitle className="text-base">Time Logs</CardTitle><CardDescription className="text-xs">{wo.timeLogs?.length || 0} entries · {formatDuration(wo.actualHours || 0)} total</CardDescription></div>
               <div className="flex items-center gap-2">
                 {/* Context-aware action buttons */}
                 {isActiveOnThisWO && !workActionDisabled && (
@@ -4451,8 +5120,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       Pause
                     </Button>
                     <Button size="sm" variant="outline" className="gap-1.5 text-emerald-600 border-emerald-300 hover:bg-emerald-50" disabled={tlLoading} onClick={() => handleQuickTimeAction('complete')}>
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Complete
+                      <StopCircle className="h-3.5 w-3.5" />
+                      Stop
                     </Button>
                   </>
                 )}
@@ -4466,7 +5135,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     )}
                     <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading} onClick={() => handleQuickTimeAction('start')}>
                       {tlLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-                      Start Work
+                      {hasPausedSession ? 'Start New Session' : 'Start Work'}
                     </Button>
                   </>
                 )}
@@ -4530,7 +5199,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               <div className="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-lg bg-muted/50">
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center"><Clock className="h-4 w-4" /></div>
-                  <div><p className="text-[10px] text-muted-foreground uppercase">Total</p><p className="text-sm font-bold">{wo.actualHours || 0}h</p></div>
+                  <div><p className="text-[10px] text-muted-foreground uppercase">Total</p><p className="text-sm font-bold">{formatDuration(wo.actualHours || 0)}</p></div>
                 </div>
                 {wo.actualStart && (
                   <div className="flex items-center gap-2">
@@ -4572,10 +5241,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     };
                     const actionStyle = actionStyles[tl.action] || actionStyles.start;
                     const ActionIcon = actionStyle.icon;
-                    const durationMin = tl.duration ? Math.round(tl.duration * 60) : 0;
-                    const durH = Math.floor(durationMin / 60);
-                    const durM = durationMin % 60;
-                    const durStr = durH > 0 ? `${durH}h ${durM}m` : `${durM}m`;
+                    const durStr = tl.duration ? formatDuration(tl.duration) : '—';
 
                     return (
                       <div key={tl.id} className="flex items-start gap-3 text-sm py-2.5 border-b last:border-0 group">
@@ -4642,6 +5308,130 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               )}
             </CardContent>
           </Card>
+
+          {/* Suggested Materials & Tools — Planner's suggestions */}
+          {(() => {
+            const hasSuggestedItems = suggestedParts.length > 0 || suggestedTools.length > 0;
+            const pendingSuggestedCount = [...suggestedParts, ...suggestedTools].filter((item: any) => item.pipelineStatus === 'suggested').length;
+            return hasSuggestedItems ? (
+          <Card className="border-0 shadow-sm border-l-4 border-l-violet-400">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4 text-violet-600" />
+                  Suggested Materials & Tools
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Planner-suggested items for this work order
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                {pendingSuggestedCount > 0 && (
+                  <Button size="sm" variant="outline" className="gap-1.5 border-violet-300 text-violet-700 hover:bg-violet-50"
+                    onClick={handleSendToStore}
+                  >
+                    <Warehouse className="h-3.5 w-3.5" />
+                    Send to Store ({pendingSuggestedCount})
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* Suggested Parts */}
+              {suggestedParts.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                    <PackageSearch className="h-3 w-3" /> Spare Parts ({suggestedParts.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {suggestedParts.map((part: any) => (
+                      <div key={part.id || part.itemId} className="flex items-center gap-3 p-2.5 rounded-lg border bg-violet-50/30">
+                        <div className="h-7 w-7 rounded-md bg-violet-100 text-violet-700 flex items-center justify-center shrink-0">
+                          <Package className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{part.itemName}</p>
+                          {part.itemCode && <p className="text-[10px] font-mono text-muted-foreground">{part.itemCode}</p>}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs text-muted-foreground">Qty:</span>
+                          <span className="text-sm font-semibold">{part.quantity} {part.unit || ''}</span>
+                          {part.pipelineStatus && part.pipelineStatus !== 'suggested' && (
+                            <Badge variant="outline" className={`text-[10px] ${
+                              part.pipelineStatus === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              part.pipelineStatus === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              part.pipelineStatus === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
+                              'bg-gray-50 border-gray-200'
+                            }`}>{part.pipelineStatus.replace(/_/g, ' ')}</Badge>
+                          )}
+                          {!workActionDisabled && part.pipelineStatus === 'pending' && (
+                            <button onClick={() => handleRejectSuggestedItem('part', part.itemId)}
+                              className="min-h-[32px] min-w-[32px] flex items-center justify-center text-muted-foreground hover:text-red-600 rounded hover:bg-red-50">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Suggested Tools */}
+              {suggestedTools.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1">
+                    <Hammer className="h-3 w-3" /> Tools ({suggestedTools.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {suggestedTools.map((tool: any) => (
+                      <div key={tool.id || tool.toolId} className="flex items-center gap-3 p-2.5 rounded-lg border bg-violet-50/30">
+                        <div className="h-7 w-7 rounded-md bg-orange-100 text-orange-700 flex items-center justify-center shrink-0">
+                          <Wrench className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{tool.toolName}</p>
+                          {tool.toolCode && <p className="text-[10px] font-mono text-muted-foreground">{tool.toolCode}</p>}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs text-muted-foreground">Qty:</span>
+                          <span className="text-sm font-semibold">{tool.quantity}</span>
+                          {tool.pipelineStatus && tool.pipelineStatus !== 'suggested' && (
+                            <Badge variant="outline" className={`text-[10px] ${
+                              tool.pipelineStatus === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                              tool.pipelineStatus === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              tool.pipelineStatus === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' :
+                              'bg-gray-50 border-gray-200'
+                            }`}>{tool.pipelineStatus.replace(/_/g, ' ')}</Badge>
+                          )}
+                          {!workActionDisabled && tool.pipelineStatus === 'pending' && (
+                            <button onClick={() => handleRejectSuggestedItem('tool', tool.toolId)}
+                              className="min-h-[32px] min-w-[32px] flex items-center justify-center text-muted-foreground hover:text-red-600 rounded hover:bg-red-50">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Technician: Add new item button */}
+              {!workActionDisabled && (
+                <div className="mt-3 flex items-center gap-2">
+                  <Button size="sm" variant="ghost" className="gap-1 text-xs text-violet-600" onClick={() => setSuggestedPartDialogOpen(true)}>
+                    <Plus className="h-3 w-3" /> Add Part
+                  </Button>
+                  <Button size="sm" variant="ghost" className="gap-1 text-xs text-orange-600" onClick={() => setSuggestedToolDialogOpen(true)}>
+                    <Plus className="h-3 w-3" /> Add Tool
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+            ) : null;
+          })()}
 
           {/* Materials — with approval pipeline */}
           <Card className="border-0 shadow-sm">
@@ -4741,7 +5531,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                 <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'issue', { quantityToIssue: mr.quantityApproved || mr.quantityRequested })}><PackageCheck className="h-3 w-3 mr-1" />Issue</Button>
                               )}
                               {mr.status === 'issued' && (
-                                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-amber-600 hover:text-amber-700 border-amber-300 bg-amber-50" onClick={() => handleMatRequestAction(mr.id, 'record_return', { quantityToReturn: mr.quantityIssued })}><RotateCcw className="h-3 w-3 mr-1" />Return</Button>
+                                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-amber-600 hover:text-amber-700 border-amber-300 bg-amber-50" onClick={() => openSpareReturnFromMR(mr)}><RotateCcw className="h-3 w-3 mr-1" />Return</Button>
                               )}
                             </div>
                           </div>
@@ -4769,18 +5559,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </CardHeader>
             <CardContent>
               <div className="space-y-2 max-h-64 overflow-y-auto">
-                {wo.repairToolRequests.slice(0, 10).map((tr: any) => (
-                  <div key={tr.id} className="flex items-center gap-3 p-2.5 rounded-lg border bg-muted/30">
-                    <div className="h-8 w-8 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center shrink-0"><Wrench className="h-3.5 w-3.5" /></div>
+                {wo.repairToolRequests.slice(0, 10).map((tr: any) => {
+                  const toolItems = (tr.items && tr.items.length > 0) ? tr.items : (tr.toolName ? [{ toolName: tr.toolName, toolCode: tr.tool?.toolCode, quantityRequested: 1 }] : []);
+                  const toolSummary = toolItems.map((i: any) => i.toolName || i.name || 'Tool').filter(Boolean);
+                  const totalRequested = toolItems.reduce((s: number, i: any) => s + (i.quantityRequested || 1), 0);
+                  return (
+                  <div key={tr.id} className="flex items-start gap-3 p-2.5 rounded-lg border bg-muted/30">
+                    <div className="h-8 w-8 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center shrink-0 mt-0.5"><Wrench className="h-3.5 w-3.5" /></div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium truncate">{tr.toolName || tr.tool?.name || 'Tool'}</p>
-                        {tr.tool?.toolCode && <span className="text-[10px] font-mono text-muted-foreground">{tr.tool.toolCode}</span>}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {tr.requestNumber && <Badge variant="outline" className="font-mono text-[10px] bg-sky-50 text-sky-700 border-sky-200">{tr.requestNumber}</Badge>}
+                        <p className="text-sm font-medium truncate">{toolSummary.length <= 2 ? toolSummary.join(', ') : `${toolSummary.length} tools: ${toolSummary.slice(0, 2).join(', ')}, +${toolSummary.length - 2}`}</p>
+                        {totalRequested > 1 && <span className="text-[10px] text-muted-foreground">({totalRequested} qty)</span>}
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      {tr.reason && <p className="text-xs text-muted-foreground truncate mt-0.5">{tr.reason}</p>}
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                         <span>{tr.requestedBy?.fullName || 'Unknown'}</span>
+                        <span>·</span>
+                        <span>{timeAgo(tr.createdAt)}</span>
                         {tr.urgency && tr.urgency !== 'normal' && (
-                          <Badge variant="outline" className={`text-[10px] ${tr.urgency === 'high' ? 'bg-amber-50 text-amber-700 border-amber-200' : tr.urgency === 'critical' ? 'bg-red-50 text-red-700 border-red-200' : ''}`}>{tr.urgency}</Badge>
+                          <UrgencyBadge urgency={tr.urgency} />
                         )}
                       </div>
                     </div>
@@ -4792,7 +5590,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : ''
                     }`}>{tr.status?.replace(/_/g, ' ') || 'pending'}</Badge>
                   </div>
-                ))}
+                  );
+                })}
                 {wo.repairToolRequests.length > 10 && (
                   <p className="text-xs text-muted-foreground text-center">+{wo.repairToolRequests.length - 10} more tool requests</p>
                 )}
@@ -4805,29 +5604,162 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           <Card className="border-0 shadow-sm">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2"><ClipboardList className="h-4 w-4 text-teal-600" />Repair Resources</CardTitle>
-              <CardDescription className="text-xs">Tool requests, transfers & other resources for this work order</CardDescription>
+              <CardDescription className="text-xs">Quick actions for tools, transfers, downtime & returns</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <button onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">Tool Requests</span>
+                  <span className="text-xs font-medium">Request Tool</span>
                 </button>
-                <button onClick={() => navigate('repairs-tool-transfers')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
-                  <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center"><ArrowRightLeft className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">Tool Transfers</span>
+                <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-teal-50 transition-colors">
+                  <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center relative"><ArrowRightLeft className="h-4 w-4" />{wo.repairToolRequests?.some((tr: any) => tr.status === 'transferred' || tr.status === 'completed') && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-white" />}</div>
+                  <span className="text-xs font-medium">Transfer Tool</span>
                 </button>
-                <button onClick={() => navigate('repairs-downtime', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-red-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-red-100 text-red-700 flex items-center justify-center"><Timer className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">Downtime</span>
+                  <span className="text-xs font-medium">Log Downtime</span>
                 </button>
-                <button onClick={() => navigate('repairs-completion', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                <button onClick={() => openMatReturn()} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors">
+                  <div className="h-9 w-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center"><RefreshCw className="h-4 w-4" /></div>
+                  <span className="text-xs font-medium">Return Material</span>
+                </button>
+                <button onClick={() => setViewAllToolsOpen(true)} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-sky-50 transition-colors">
+                  <div className="h-9 w-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
+                  <span className="text-xs font-medium">View All Tools</span>
+                </button>
+                <button onClick={() => setActionDialog('complete')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-emerald-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-green-100 text-green-700 flex items-center justify-center"><CheckCircle2 className="h-4 w-4" /></div>
-                  <span className="text-xs font-medium">Completion</span>
+                  <span className="text-xs font-medium">Complete WO</span>
                 </button>
               </div>
             </CardContent>
           </Card>
+
+          {/* View All Tools Modal — shows tool requests + transfers + returns inline */}
+          <ResponsiveDialog open={viewAllToolsOpen} onOpenChange={setViewAllToolsOpen} title="All Tools & Requests" description={`Tool requests, transfers and returns for WO ${wo?.woNumber || ''}`} className="max-w-2xl">
+            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+              {wo.repairToolRequests && wo.repairToolRequests.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{wo.repairToolRequests.length} Tool Request{wo.repairToolRequests.length > 1 ? 's' : ''}</p>
+                  {wo.repairToolRequests.map((tr: any) => {
+                    const toolItems = (tr.items && tr.items.length > 0) ? tr.items : (tr.toolName ? [{ toolName: tr.toolName, toolCode: tr.tool?.toolCode, quantityRequested: 1, quantityIssued: 0, quantityReturned: 0, quantityTransferred: 0 }] : []);
+                    const isFinalStatus = ['returned', 'transferred', 'rejected'].includes(tr.status);
+                    return (
+                      <div key={tr.id} className={`p-3 rounded-lg border space-y-2 ${isFinalStatus ? 'bg-muted/20 opacity-60' : 'bg-muted/30'}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {tr.requestNumber && <Badge variant="outline" className="font-mono text-[10px] bg-sky-50 text-sky-700 border-sky-200">{tr.requestNumber}</Badge>}
+                            <Badge variant="outline" className={`text-[10px] ${tr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : tr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : tr.status === 'pending_return' ? 'bg-violet-50 text-violet-700 border-violet-200' : tr.status === 'returned' ? 'bg-slate-50 text-slate-600 border-slate-200' : tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : tr.status === 'transferred' ? 'bg-teal-50 text-teal-700 border-teal-200' : tr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-muted'}`}>{tr.status?.replace(/_/g, ' ')}</Badge>
+                            {isFinalStatus && <span className="text-[10px] text-muted-foreground">{tr.status === 'transferred' ? '🔄 Transferred out' : tr.status === 'returned' ? '↩️ Returned' : '✓ Done'}</span>}
+                          </div>
+                          {tr.urgency && tr.urgency !== 'normal' && <UrgencyBadge urgency={tr.urgency} />}
+                        </div>
+                        {/* Per-item details */}
+                        {toolItems.map((item: any, ii: number) => {
+                          const issued = item.quantityIssued || 0;
+                          const returned = item.quantityReturned || 0;
+                          const transferred = item.quantityTransferred || 0;
+                          const outstanding = Math.max(0, issued - returned - transferred);
+                          return (
+                            <div key={ii} className="pl-3 border-l-2 border-border space-y-1">
+                              <div className="flex items-center gap-2 text-sm">
+                                <span className="font-medium">{item.toolName || 'Tool'}</span>
+                                {item.toolCode && <span className="text-[10px] font-mono text-muted-foreground">{item.toolCode}</span>}
+                              </div>
+                              <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
+                                <span>Requested: <strong>{item.quantityRequested}</strong></span>
+                                {issued > 0 && <span className="text-emerald-600">Issued: <strong>{issued}</strong></span>}
+                                {transferred > 0 && <span className="text-teal-600">Transferred: <strong>{transferred}</strong></span>}
+                                {returned > 0 && <span className="text-slate-500">Returned: <strong>{returned}</strong></span>}
+                                {outstanding > 0 && !isFinalStatus && <span className="text-amber-600 font-medium">Outstanding: {outstanding}</span>}
+                              </div>
+                              {/* Pending return info */}
+                              {item.pendingReturnQty > 0 && !isFinalStatus && (
+                                <div className="p-2 rounded bg-violet-50 border border-violet-200 text-[11px]">
+                                  <span className="text-violet-700 font-medium">⏳ Pending Return: {item.pendingReturnQty}</span>
+                                  {item.pendingReturnCondition && <span className="text-violet-600 ml-2">Condition: {item.pendingReturnCondition}</span>}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground pt-1">
+                          <span>By {tr.requestedBy?.fullName || 'Unknown'}</span><span>·</span>
+                          <span>{formatDateTime(tr.createdAt)}</span>
+                          {tr.reason && <span className="truncate">· {tr.reason}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <Wrench className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No tool requests yet</p>
+                </div>
+              )}
+            </div>
+          </ResponsiveDialog>
+
+          {/* Material Return Modal — lists issued materials for return/consume */}
+          <ResponsiveDialog open={matReturnOpen} onOpenChange={(v) => { if (!v) setMatReturnOpen(false); }} title="Return Materials" description={`Select materials to return or mark as consumed for WO ${wo?.woNumber || ''}`}>
+            <div className="space-y-3">
+              {matReturnItems.length === 0 ? (
+                <div className="text-center py-6">
+                  <Package className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No issued materials to return on this WO.</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {matReturnItems.map((item, idx) => (
+                    <div key={item.id} className="p-3 rounded-lg border bg-muted/30 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 w-6 rounded flex items-center justify-center shrink-0 bg-amber-100 text-amber-700"><Package className="h-3 w-3" /></div>
+                        <span className="font-medium text-sm truncate flex-1">{item.itemName}</span>
+                        <span className="text-xs text-muted-foreground">Issued: {item.qtyIssued} · Returned: {item.qtyReturned}</span>
+                        <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => removeMatReturnItem(idx)}><X className="h-3.5 w-3.5" /></Button>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="w-full sm:w-24">
+                          <Label className="text-xs">Qty</Label>
+                          <Input type="number" min={0} max={item.qtyIssued - item.qtyReturned} value={item.qtyReturn}
+                            onChange={e => updateMatReturnItem(idx, { qtyReturn: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.qtyIssued - item.qtyReturned)) })}
+                            className="h-8" />
+                        </div>
+                        <div className="flex items-end gap-2">
+                          <Switch id={`mat-reusable-${idx}`} checked={item.isReusable} onCheckedChange={v => updateMatReturnItem(idx, { isReusable: !!v, condition: !!v ? 'used' : 'consumed' })} />
+                          <Label htmlFor={`mat-reusable-${idx}`} className="text-xs whitespace-nowrap">{item.isReusable ? 'Return/Refurbish' : 'Consumed'}</Label>
+                        </div>
+                        {item.isReusable && (
+                          <div className="w-full sm:w-32">
+                            <Label className="text-xs">Condition</Label>
+                            <Select value={item.condition} onValueChange={v => updateMatReturnItem(idx, { condition: v })}>
+                              <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="good">Good</SelectItem>
+                                <SelectItem value="used">Used</SelectItem>
+                                <SelectItem value="fair">Fair</SelectItem>
+                                <SelectItem value="poor">Poor</SelectItem>
+                                <SelectItem value="damaged">Damaged</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button variant="outline" onClick={() => setMatReturnOpen(false)}>Cancel</Button>
+                <Button className="gap-2 bg-violet-600 hover:bg-violet-700 text-white" onClick={handleMatReturnSubmit} disabled={matReturnSubmitting || matReturnItems.filter(i => i.qtyReturn > 0).length === 0}>
+                  {matReturnSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                  {matReturnSubmitting ? 'Processing...' : `Return ${matReturnItems.filter(i => i.qtyReturn > 0).length} Item(s)`}
+                </Button>
+              </div>
+            </div>
+          </ResponsiveDialog>
 
           {/* Personal Tools On-Site */}
           <Card className="border-0 shadow-sm">
@@ -4862,129 +5794,276 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           </Card>
 
           {/* Task Checklist — Guided step-by-step task execution during WO execution */}
-          {wo.status === 'in_progress' && !taskChecklistLoading && taskChecklist.length > 0 && (
-            <Card className="border-0 shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <ClipboardCheck className="h-4 w-4 text-emerald-600" />
-                    Task Checklist
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    {taskChecklist.filter(t => t.status === 'completed').length} of {taskChecklist.length} completed
-                    {taskChecklistMeta?.templateTitle && ` · From: ${taskChecklistMeta.templateTitle}`}
-                  </CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  {!workActionDisabled && (
-                    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTaskDialog(true)}>
-                      <Plus className="h-3.5 w-3.5" />Add Task
-                    </Button>
+          {wo.status === 'in_progress' && !taskChecklistLoading && taskChecklist.length > 0 && (() => {
+            const totalTasks = taskChecklist.length;
+            const completedCount = taskChecklist.filter(t => t.status === 'completed').length;
+            const inProgressCount = taskChecklist.filter(t => t.status === 'in_progress').length;
+            const skippedCount = taskChecklist.filter(t => t.status === 'skipped').length;
+            const failedCount = taskChecklist.filter(t => t.status === 'failed').length;
+            const pendingCount = totalTasks - completedCount - inProgressCount - skippedCount - failedCount;
+            const progressPercent = Math.round((completedCount / totalTasks) * 100);
+            const totalEstMinutes = taskChecklist.reduce((sum, t) => sum + (t.estimatedMinutes || 0), 0);
+            const remainingEstMinutes = taskChecklist.filter(t => t.status === 'pending' || t.status === 'in_progress').reduce((sum, t) => sum + (t.estimatedMinutes || 0), 0);
+            const canBulkComplete = !workActionDisabled && pendingCount + inProgressCount > 0;
+
+            // Task type icon mapping
+            const TASK_TYPE_CONFIG: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
+              check: { icon: <ClipboardCheck className="h-3 w-3" />, label: 'Check', color: 'bg-blue-50 text-blue-700 border-blue-200' },
+              measure: { icon: <Ruler className="h-3 w-3" />, label: 'Measure', color: 'bg-purple-50 text-purple-700 border-purple-200' },
+              inspect: { icon: <Eye className="h-3 w-3" />, label: 'Inspect', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+              lubricate: { icon: <Droplets className="h-3 w-3" />, label: 'Lubricate', color: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
+              replace: { icon: <RefreshCw className="h-3 w-3" />, label: 'Replace', color: 'bg-orange-50 text-orange-700 border-orange-200' },
+              record: { icon: <FileText className="h-3 w-3" />, label: 'Record', color: 'bg-slate-50 text-slate-700 border-slate-200' },
+            };
+
+            const handleBulkComplete = async () => {
+              const tasksToComplete = taskChecklist.filter(t => t.status === 'pending' || t.status === 'in_progress');
+              if (tasksToComplete.length === 0) return;
+              setBulkCompleteLoading(true);
+              let successCount = 0;
+              for (const task of tasksToComplete) {
+                const res = await api.patch(`/api/work-orders/${id}/tasks/${task.id}`, { status: 'completed' });
+                if (res.success) successCount++;
+              }
+              if (successCount === tasksToComplete.length) {
+                toast.success(`All ${successCount} tasks completed ✓`);
+              } else {
+                toast.success(`${successCount} of ${tasksToComplete.length} tasks completed`);
+              }
+              setBulkCompleteLoading(false);
+              fetchTaskChecklist();
+            };
+
+            const handleQuickComplete = (taskId: string) => {
+              handleTaskAction(taskId, 'completed');
+            };
+
+            return (
+              <Card className="border-0 shadow-sm">
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <div>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <ClipboardCheck className="h-4 w-4 text-emerald-600" />
+                      Task Checklist
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      {taskChecklistMeta?.templateTitle && `From: ${taskChecklistMeta.templateTitle} · `}
+                      {progressPercent}% done · {completedCount}/{totalTasks} completed
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {canBulkComplete && (
+                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" disabled={bulkCompleteLoading} onClick={handleBulkComplete} title="Complete all remaining tasks">
+                        {bulkCompleteLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckSquare className="h-3.5 w-3.5" />}
+                        <span className="hidden sm:inline">Complete All</span>
+                      </Button>
+                    )}
+                    {!workActionDisabled && (
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTaskDialog(true)}>
+                        <Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline">Add Task</span>
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {/* Summary Stats + Progress Bar */}
+                  <div className="flex items-center gap-3">
+                    <Progress
+                      value={progressPercent}
+                      className="h-2.5 flex-1"
+                    />
+                    <div className="flex items-center gap-1.5 text-[10px] shrink-0">
+                      <span className="flex items-center gap-0.5 text-slate-500"><CircleDot className="h-2.5 w-2.5" />{pendingCount}</span>
+                      <span className="flex items-center gap-0.5 text-amber-600"><Play className="h-2.5 w-2.5" />{inProgressCount}</span>
+                      <span className="flex items-center gap-0.5 text-emerald-600"><CheckCircle2 className="h-2.5 w-2.5" />{completedCount}</span>
+                      {(skippedCount > 0 || failedCount > 0) && (
+                        <span className="flex items-center gap-0.5 text-slate-400"><ArrowRight className="h-2.5 w-2.5" />{skippedCount + failedCount}</span>
+                      )}
+                    </div>
+                  </div>
+                  {totalEstMinutes > 0 && (
+                    <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {remainingEstMinutes > 0 ? `~${remainingEstMinutes} min remaining` : 'All estimated time complete'}
+                      {totalEstMinutes > 0 && <span className="text-muted-foreground/60">(of ~{totalEstMinutes} min total)</span>}
+                    </p>
                   )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {/* Progress Bar */}
-                <div className="mb-4">
-                  <Progress
-                    value={(taskChecklist.filter(t => t.status === 'completed').length / taskChecklist.length) * 100}
-                    className="h-2"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {Math.round((taskChecklist.filter(t => t.status === 'completed').length / taskChecklist.length) * 100)}% complete
-                  </p>
-                </div>
 
-                {/* Task List */}
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {taskChecklist.map((task) => {
-                    const isCompleted = task.status === 'completed';
-                    const isInProgress = task.status === 'in_progress';
-                    const isSkipped = task.status === 'skipped';
-                    const isFailed = task.status === 'failed';
-                    const isPending = task.status === 'pending';
-                    const isLoading = taskActionLoading === task.id;
+                  {/* Task List */}
+                  <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-0.5">
+                    {taskChecklist.map((task, idx) => {
+                      const isCompleted = task.status === 'completed';
+                      const isInProgress = task.status === 'in_progress';
+                      const isSkipped = task.status === 'skipped';
+                      const isFailed = task.status === 'failed';
+                      const isPending = task.status === 'pending';
+                      const isLoading = taskActionLoading === task.id;
+                      const typeConfig = TASK_TYPE_CONFIG[task.taskType] || TASK_TYPE_CONFIG.check;
 
-                    const statusIcon = isCompleted
-                      ? <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                      : isInProgress
-                        ? <Play className="h-5 w-5 text-amber-500 animate-pulse" />
-                        : isSkipped
-                          ? <ArrowRight className="h-5 w-5 text-slate-400" />
-                          : isFailed
-                            ? <XCircle className="h-5 w-5 text-red-500" />
-                            : <CircleDot className="h-5 w-5 text-slate-300" />;
+                      let requiredPartsList: string[] = [];
+                      try { requiredPartsList = task.requiredParts ? JSON.parse(task.requiredParts) : []; } catch { /* ignore */ }
 
-                    const statusBg = isCompleted
-                      ? 'bg-emerald-50 border-emerald-200'
-                      : isInProgress
-                        ? 'bg-amber-50 border-amber-200'
-                        : isSkipped
-                          ? 'bg-slate-50 border-slate-200 opacity-60'
-                          : isFailed
-                            ? 'bg-red-50 border-red-200'
-                            : 'bg-muted/30 border-border';
+                      const statusBg = isCompleted
+                        ? 'bg-emerald-50/70 border-emerald-200/70'
+                        : isInProgress
+                          ? 'bg-amber-50 border-amber-200 shadow-sm ring-1 ring-amber-200/50'
+                          : isSkipped
+                            ? 'bg-slate-50/50 border-slate-200 opacity-60'
+                            : isFailed
+                              ? 'bg-red-50 border-red-200'
+                              : 'bg-background border-border';
 
-                    return (
-                      <div key={task.id} className={`flex items-start gap-3 p-3 rounded-lg border ${statusBg} transition-colors`}>
-                        <div className="mt-0.5 shrink-0">{statusIcon}</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono font-medium text-muted-foreground">Step {task.taskNumber}</span>
-                            <Badge variant="outline" className="text-[10px] capitalize">{task.taskType.replace('_', ' ')}</Badge>
-                            {task.estimatedMinutes && (
-                              <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                                <Clock className="h-3 w-3" />{task.estimatedMinutes}m
-                              </span>
+                      return (
+                        <div key={task.id} className={`flex items-start gap-3 p-3 rounded-lg border transition-all ${statusBg}`}>
+                          {/* Clickable status icon for quick complete */}
+                          <TooltipProvider delayDuration={300}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  className="mt-0.5 shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded-full"
+                                  onClick={() => {
+                                    if (workActionDisabled) return;
+                                    if (isPending) handleTaskAction(task.id, 'in_progress');
+                                    else if (isInProgress) handleQuickComplete(task.id);
+                                  }}
+                                  disabled={workActionDisabled || isLoading || isCompleted || isSkipped || isFailed}
+                                  title={isPending ? 'Click to start' : isInProgress ? 'Click to complete' : undefined}
+                                >
+                                  {isCompleted
+                                    ? <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                                    : isInProgress
+                                      ? <div className="relative"><Play className="h-5 w-5 text-amber-500 animate-pulse" /><span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-400 animate-ping" /></div>
+                                      : isSkipped
+                                        ? <ArrowRight className="h-5 w-5 text-slate-400" />
+                                        : isFailed
+                                          ? <XCircle className="h-5 w-5 text-red-500" />
+                                          : <CircleDot className="h-5 w-5 text-slate-300 hover:text-emerald-500 transition-colors" />}
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom" className="text-[11px]">
+                                {isPending ? 'Click to start task' : isInProgress ? 'Click to mark done' : isCompleted ? 'Completed' : isSkipped ? 'Skipped' : isFailed ? 'Failed' : 'Pending'}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+
+                          <div className="flex-1 min-w-0">
+                            {/* Step number + type badge + time */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] font-mono font-semibold text-muted-foreground/70">{idx + 1}</span>
+                              <Badge variant="outline" className={`text-[10px] gap-0.5 capitalize ${typeConfig.color}`}>
+                                {typeConfig.icon}{typeConfig.label}
+                              </Badge>
+                              {task.estimatedMinutes && (
+                                <span className="text-[10px] text-muted-foreground/60 flex items-center gap-0.5">
+                                  <Clock className="h-2.5 w-2.5" />{task.estimatedMinutes}m
+                                </span>
+                              )}
+                            </div>
+                            {/* Description */}
+                            <p className={`text-sm mt-0.5 leading-snug ${isCompleted || isSkipped ? 'line-through text-muted-foreground/70' : isInProgress ? 'font-medium text-foreground' : 'font-medium'}`}>
+                              {task.description}
+                            </p>
+                            {/* Required parts parsed */}
+                            {requiredPartsList.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {requiredPartsList.slice(0, 4).map((part, pi) => (
+                                  <span key={pi} className="text-[10px] bg-muted/60 text-muted-foreground rounded px-1.5 py-0.5 flex items-center gap-0.5">
+                                    <Package className="h-2.5 w-2.5" />{part}
+                                  </span>
+                                ))}
+                                {requiredPartsList.length > 4 && (
+                                  <span className="text-[10px] text-muted-foreground">+{requiredPartsList.length - 4} more</span>
+                                )}
+                              </div>
+                            )}
+                            {/* Findings / Notes / Completion info */}
+                            {(task.notes || task.findings) && (
+                              <div className="mt-1.5 text-xs text-muted-foreground space-y-0.5">
+                                {task.findings && <p className="bg-background/50 rounded px-1.5 py-0.5"><span className="font-medium">Findings:</span> {task.findings}</p>}
+                                {task.notes && <p className="truncate bg-background/50 rounded px-1.5 py-0.5"><span className="font-medium">Notes:</span> {task.notes}</p>}
+                              </div>
+                            )}
+                            {task.completedBy && task.completedAt && (
+                              <p className="text-[10px] text-muted-foreground/70 mt-1">
+                                {isCompleted && '✓ '}{isSkipped && '→ '}{isFailed && '✗ '}
+                                {task.completedBy.fullName} · {formatDateTime(task.completedAt)}
+                              </p>
                             )}
                           </div>
-                          <p className={`text-sm mt-0.5 ${isCompleted || isSkipped ? 'line-through text-muted-foreground' : 'font-medium'}`}>
-                            {task.description}
-                          </p>
-                          {task.requiredParts && (
-                            <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center gap-1">
-                              <Package className="h-3 w-3" />
-                              Parts required
-                            </p>
-                          )}
-                          {(task.notes || task.findings) && (
-                            <div className="mt-1.5 text-xs text-muted-foreground space-y-0.5">
-                              {task.findings && <p><span className="font-medium">Findings:</span> {task.findings}</p>}
-                              {task.notes && <p className="truncate"><span className="font-medium">Notes:</span> {task.notes}</p>}
+
+                          {/* Action buttons */}
+                          {!workActionDisabled && (
+                            <div className="flex items-center gap-0.5 shrink-0">
+                              {isPending && (
+                                <TooltipProvider delayDuration={400}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'in_progress')}>
+                                        {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}<span className="hidden sm:inline">Start</span>
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="text-[11px]">Begin this task</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
+                              {(isPending || isInProgress) && (
+                                <>
+                                  <TooltipProvider delayDuration={400}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-500 hover:text-slate-700" disabled={isLoading} onClick={() => { setCompleteTaskDialog(task.id); setTaskNotes(''); setTaskFindings(''); }}>
+                                          <MessageSquare className="h-3 w-3" /><span className="hidden sm:inline">Notes</span>
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left" className="text-[11px]">Complete with notes/findings</TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                  <TooltipProvider delayDuration={400}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button size="sm" className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'completed')}>
+                                          {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}<span className="hidden sm:inline">Done</span>
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left" className="text-[11px]">Mark task as complete</TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                </>
+                              )}
+                              {(isPending || isInProgress) && (
+                                <TooltipProvider delayDuration={400}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-500" disabled={isLoading} onClick={() => setSkipTaskDialog(task.id)}>
+                                        <ArrowRight className="h-3 w-3" /><span className="hidden sm:inline">Skip</span>
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="text-[11px]">Skip this task</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
+                              {(isCompleted || isSkipped || isFailed) && (
+                                <TooltipProvider delayDuration={400}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'pending')}>
+                                        {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Undo2 className="h-3 w-3" />}<span className="hidden sm:inline">Undo</span>
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="text-[11px]">Reopen this task</TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
                             </div>
                           )}
-                          {task.completedBy && task.completedAt && (
-                            <p className="text-[10px] text-muted-foreground mt-1">
-                              {isCompleted && 'Completed '}{isSkipped && 'Skipped '}{isFailed && 'Failed '}by {task.completedBy.fullName} · {formatDateTime(task.completedAt)}
-                            </p>
-                          )}
                         </div>
-                        {!workActionDisabled && (
-                          <div className="flex items-center gap-1 shrink-0">
-                            {isPending && (
-                              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={isLoading} onClick={() => handleTaskAction(task.id, 'in_progress')}>
-                                {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}Start
-                              </Button>
-                            )}
-                            {(isPending || isInProgress) && (
-                              <Button size="sm" className="h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isLoading} onClick={() => setCompleteTaskDialog(task.id)}>
-                                <Check className="h-3 w-3" />Done
-                              </Button>
-                            )}
-                            {(isPending || isInProgress) && (
-                              <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-500" disabled={isLoading} onClick={() => setSkipTaskDialog(task.id)}>
-                                <ArrowRight className="h-3 w-3" />Skip
-                              </Button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {/* Task Checklist - Empty state for in_progress WOs */}
           {wo.status === 'in_progress' && !taskChecklistLoading && taskChecklist.length === 0 && (
@@ -4995,7 +6074,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     <ClipboardCheck className="h-4 w-4 text-emerald-600" />
                     Task Checklist
                   </CardTitle>
-                  <CardDescription className="text-xs">Add tasks to track work progress step by step</CardDescription>
+                  <CardDescription className="text-xs">Break down your work into steps for better tracking</CardDescription>
                 </div>
                 {!workActionDisabled && (
                   <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTaskDialog(true)}>
@@ -5004,16 +6083,19 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 )}
               </CardHeader>
               <CardContent>
-                <div className="flex flex-col items-center py-6 text-center">
-                  <ListChecks className="h-10 w-10 text-slate-300 mb-2" />
-                  <p className="text-sm text-muted-foreground">No tasks yet. Add tasks to create a guided checklist.</p>
+                <div className="flex flex-col items-center py-8 text-center">
+                  <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mb-3">
+                    <ListChecks className="h-6 w-6 text-emerald-400" />
+                  </div>
+                  <p className="text-sm font-medium text-muted-foreground">No tasks yet</p>
+                  <p className="text-xs text-muted-foreground/70 mt-1 max-w-[240px]">Add tasks to create a step-by-step checklist. This helps track progress and ensures nothing is missed.</p>
                 </div>
               </CardContent>
             </Card>
           )}
 
           {/* Complete Task Dialog */}
-          <ResponsiveDialog open={!!completeTaskDialog} onOpenChange={(v) => { setCompleteTaskDialog(v ? completeTaskDialog : null); setTaskNotes(''); setTaskFindings(''); }} title="Complete Task" description="Record findings and notes for this task." footer={
+          <ResponsiveDialog open={!!completeTaskDialog} onOpenChange={(v) => { setCompleteTaskDialog(v ? completeTaskDialog : null); setTaskNotes(''); setTaskFindings(''); }} title="Complete with Notes" description="Optionally record findings and notes for this task before completing." footer={
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => { setCompleteTaskDialog(null); setTaskNotes(''); setTaskFindings(''); }}>Cancel</Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={!!taskActionLoading} onClick={() => { if (completeTaskDialog) handleTaskAction(completeTaskDialog, 'completed', { notes: taskNotes, findings: taskFindings }); }}>
@@ -5052,22 +6134,34 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           }>
             <div className="space-y-4">
               <div className="space-y-1.5"><Label>Description *</Label><Input className="min-h-[44px]" value={addTaskDesc} onChange={e => setAddTaskDesc(e.target.value)} placeholder="Describe the task to be performed" /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5"><Label>Task Type</Label>
-                  <Select value={addTaskType} onValueChange={setAddTaskType}>
-                    <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="check">Check</SelectItem>
-                      <SelectItem value="measure">Measure</SelectItem>
-                      <SelectItem value="inspect">Inspect</SelectItem>
-                      <SelectItem value="lubricate">Lubricate</SelectItem>
-                      <SelectItem value="replace">Replace</SelectItem>
-                      <SelectItem value="record">Record</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {/* Task type quick-select buttons */}
+              <div className="space-y-1.5">
+                <Label>Task Type</Label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { value: 'check', label: 'Check', icon: <ClipboardCheck className="h-3.5 w-3.5" /> },
+                    { value: 'measure', label: 'Measure', icon: <Ruler className="h-3.5 w-3.5" /> },
+                    { value: 'inspect', label: 'Inspect', icon: <Eye className="h-3.5 w-3.5" /> },
+                    { value: 'lubricate', label: 'Lubricate', icon: <Droplets className="h-3.5 w-3.5" /> },
+                    { value: 'replace', label: 'Replace', icon: <RefreshCw className="h-3.5 w-3.5" /> },
+                    { value: 'record', label: 'Record', icon: <FileText className="h-3.5 w-3.5" /> },
+                  ].map((type) => (
+                    <button
+                      key={type.value}
+                      type="button"
+                      onClick={() => setAddTaskType(type.value)}
+                      className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs font-medium transition-all min-h-[44px] ${
+                        addTaskType === type.value
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-700 shadow-sm'
+                          : 'border-border bg-background text-muted-foreground hover:border-slate-300 hover:bg-muted/50'
+                      }`}
+                    >
+                      {type.icon}{type.label}
+                    </button>
+                  ))}
                 </div>
-                <div className="space-y-1.5"><Label>Est. Minutes</Label><Input className="min-h-[44px]" type="number" min="1" value={addTaskMinutes} onChange={e => setAddTaskMinutes(e.target.value)} placeholder="e.g. 15" /></div>
               </div>
+              <div className="space-y-1.5"><Label>Est. Minutes (optional)</Label><Input className="min-h-[44px]" type="number" min="1" value={addTaskMinutes} onChange={e => setAddTaskMinutes(e.target.value)} placeholder="e.g. 15" /></div>
             </div>
           </ResponsiveDialog>
 
@@ -5217,31 +6311,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               </div>
           </ResponsiveDialog>
 
-          {/* Timeline */}
-          <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">Activity Timeline</CardTitle></CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {wo.statusHistory?.map((h, i) => (
-                  <div key={h.id} className="flex items-center gap-3 text-sm">
-                    <div className="relative flex flex-col items-center">
-                      <div className={`h-3 w-3 rounded-full ${i === 0 ? 'bg-emerald-500 ring-4 ring-emerald-100' : 'bg-emerald-300'}`} />
-                      {i < (wo.statusHistory?.length || 0) - 1 && <div className="w-0.5 h-6 bg-emerald-200" />}
-                    </div>
-                    <div className="flex-1 flex items-center justify-between">
-                      <div>
-                        <span className="font-medium">{h.toStatus.replace(/_/g, ' ')}</span>
-                        {h.reason && <span className="text-muted-foreground"> — {h.reason}</span>}
-                      </div>
-                      <span className="text-muted-foreground text-xs">{formatDateTime(h.createdAt)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-        {/* Right Panel — Details, Cost, Source, Team */}
+          {/* Right Panel — Details, Cost, Source, Team */}
         <div className="space-y-4">
           <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader>
@@ -5252,9 +6322,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               <Separator />
               <div className="flex justify-between"><span className="text-muted-foreground">Assigned To</span><span className="font-medium">{wo.assignee?.fullName || (wo.teamMembers?.length > 0 ? `Team (${wo.teamMembers.length} member${wo.teamMembers.length !== 1 ? 's' : ''})` : 'Unassigned')}</span></div>
               <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Est. Hours</span><span className="font-medium">{wo.estimatedHours || '-'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Est. Hours</span><span className="font-medium">{formatDuration(wo.estimatedHours || 0)}</span></div>
               <Separator />
-              <div className="flex justify-between"><span className="text-muted-foreground">Actual Hours</span><span className="font-medium">{wo.actualHours || '-'}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Actual Hours</span><span className="font-medium">{formatDuration(wo.actualHours || 0)}</span></div>
               <Separator />
               <div className="flex justify-between"><span className="text-muted-foreground">Created By</span><span className="font-medium">{wo.creator?.fullName || '-'}</span></div>
               <Separator />
@@ -6184,7 +7254,7 @@ export function MaintenanceDashboardPage() {
               </div>
             </div>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Avg MTTR</p>
-            <p className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">{avgMTTR}h</p>
+            <p className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">{formatDuration(avgMTTR)}</p>
             <p className="text-[11px] text-muted-foreground mt-0.5">mean time to repair</p>
           </CardContent>
         </Card>

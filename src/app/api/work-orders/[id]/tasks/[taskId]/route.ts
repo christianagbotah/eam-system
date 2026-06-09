@@ -2,9 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
 
-const VALID_TRANSITIONS: Record<string, string[]> = {
+// Valid target statuses a task can transition TO
+const VALID_STATUSES = ['pending', 'in_progress', 'completed', 'skipped', 'failed'] as const;
+type ValidStatus = typeof VALID_STATUSES[number];
+
+// Transition rules: from → [allowed targets]
+const VALID_TRANSITIONS: Record<string, ValidStatus[]> = {
   pending: ['in_progress', 'skipped', 'completed'],
-  in_progress: ['completed', 'skipped', 'failed'],
+  in_progress: ['completed', 'skipped', 'failed', 'pending'], // allow going back to pending
+  completed: ['pending', 'in_progress'],  // allow undo
+  skipped: ['pending', 'in_progress'],   // allow undo
+  failed: ['pending', 'in_progress'],    // allow retry
+};
+
+// Human-readable status labels
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'Pending',
+  in_progress: 'In Progress',
+  completed: 'Completed',
+  skipped: 'Skipped',
+  failed: 'Failed',
 };
 
 export async function PATCH(
@@ -21,12 +38,15 @@ export async function PATCH(
     const body = await request.json();
     const { status, notes, findings } = body;
 
-    if (!status || !VALID_TRANSITIONS[status] || !Array.isArray(VALID_TRANSITIONS[status])) {
+    // Validate that status is a valid target
+    if (!status || !VALID_STATUSES.includes(status)) {
       return NextResponse.json(
-        { success: false, error: `Invalid status. Must be one of: ${Object.keys(VALID_TRANSITIONS).join(', ')}` },
+        { success: false, error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` },
         { status: 400 }
       );
     }
+
+    const targetStatus = status as ValidStatus;
 
     // Fetch the task execution
     const task = await db.workOrderTaskExecution.findUnique({
@@ -60,13 +80,9 @@ export async function PATCH(
 
     // Validate transition
     const allowed = VALID_TRANSITIONS[task.status];
-    // Also allow direct complete from pending (shortcut)
-    const targetStatus = body.status;
-    const validTargets = allowed || [];
-
-    if (!validTargets.includes(targetStatus)) {
+    if (!allowed || !allowed.includes(targetStatus)) {
       return NextResponse.json(
-        { success: false, error: `Cannot transition from '${task.status}' to '${targetStatus}'` },
+        { success: false, error: `Cannot transition from '${STATUS_LABELS[task.status] || task.status}' to '${STATUS_LABELS[targetStatus] || targetStatus}'` },
         { status: 400 }
       );
     }
@@ -78,14 +94,14 @@ export async function PATCH(
       updatedAt: now,
     };
 
-    // Set completion data for completed/skipped/failed
+    // Set completion data for terminal statuses
     if (['completed', 'skipped', 'failed'].includes(targetStatus)) {
       updateData.completedAt = now;
       updateData.completedById = session.userId;
     }
 
-    // If going to in_progress from pending, clear any previous completedAt
-    if (targetStatus === 'in_progress') {
+    // Clear completion data when reverting to pending/in_progress
+    if (['pending', 'in_progress'].includes(targetStatus)) {
       updateData.completedAt = null;
       updateData.completedById = null;
     }

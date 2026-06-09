@@ -34,12 +34,12 @@ import {
   Package, Wrench, ArrowRightLeft, Clock, CheckCircle2, XCircle,
   AlertTriangle, TrendingUp, FileText, MoreHorizontal, Plus,
   Search, Filter, Eye, RotateCcw, Send, ShieldCheck, Warehouse,
-  Timer, Activity, Ban, ChevronDown, ClipboardList, BarChart3,
+  Timer, Activity, Ban, ClipboardList, BarChart3,
   ArrowLeftRight, PackageCheck, PackageOpen, User, CircleDot,
   Handshake, Truck, DollarSign, RefreshCw, X, Info, Pencil, Trash2,
   FileDown, Loader2,
 } from 'lucide-react';
-import { EmptyState, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
+import { EmptyState, LoadingSkeleton, formatCurrency, formatDuration, formatDurationFromMinutes } from '@/components/shared/helpers';
 import { DateTimePicker, DateRangePicker } from '@/components/ui/datetime-picker';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
 
@@ -57,6 +57,7 @@ const statusColors: Record<string, string> = {
   partially_returned: 'bg-teal-100 text-teal-800',
   fully_returned: 'bg-gray-100 text-gray-800',
   returned: 'bg-gray-100 text-gray-800',
+  pending_return: 'bg-amber-100 text-amber-800',
   rejected: 'bg-red-100 text-red-800',
   transferred: 'bg-emerald-100 text-emerald-800',
   pending_review: 'bg-orange-100 text-orange-800',
@@ -326,7 +327,8 @@ function canApproveAsSupervisor(user: any): boolean {
   const { hasPermission, isAdmin, user: authUser } = useAuthStore.getState();
   // Only supervisors, managers, and planners can approve tool/material requests
   const supervisorRoles = ['admin', 'maintenance_manager', 'maintenance_supervisor', 'maintenance_planner', 'plant_manager'];
-  return isAdmin() || supervisorRoles.includes(authUser?.role?.slug || '') || hasPermission('repairs.approve_supervisor') || hasPermission('repairs.manage');
+  const userRoles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  return isAdmin() || userRoles.some((slug: string) => supervisorRoles.includes(slug)) || (authUser?.role?.slug && supervisorRoles.includes(authUser.role.slug)) || hasPermission('repairs.approve_supervisor') || hasPermission('repairs.manage');
 }
 
 function canApproveAsStore(user: any): boolean {
@@ -334,7 +336,8 @@ function canApproveAsStore(user: any): boolean {
   const { hasPermission, isAdmin, user: authUser } = useAuthStore.getState();
   // Only store keepers, inventory managers, and admins can do store approval
   const storeRoles = ['admin', 'inventory_manager', 'store_keeper', 'tools_shop_attendant'];
-  return isAdmin() || storeRoles.includes(authUser?.role?.slug || '') || hasPermission('repairs.approve_store');
+  const userRoles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
+  return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug)) || (authUser?.role?.slug && storeRoles.includes(authUser.role.slug)) || hasPermission('repairs.approve_store');
 }
 
 function canViewAllRepairData(user: any): boolean {
@@ -927,6 +930,9 @@ export function RepairToolRequestsPage() {
   const [issueForm, setIssueForm] = useState<any[]>([]);
   const [returnItemsOpen, setReturnItemsOpen] = useState(false);
   const [returnItemsForm, setReturnItemsForm] = useState<any[]>([]);
+  // Transfer dialog state
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [transferForm, setTransferForm] = useState<any[]>([]);
 
   // Cache for tool lookup (used by AsyncSearchableSelect)
   const toolsCache = useRef<any[]>([]);
@@ -994,6 +1000,21 @@ export function RepairToolRequestsPage() {
     if (r.items && r.items.length > 0) return r.items;
     if (r._virtualItem) return [r._virtualItem];
     return [];
+  };
+
+  /** True if ANY item still has qty outstanding (issued > returned + transferred) */
+  const hasOutstandingItems = (r: any) => {
+    const items = getRequestItems(r);
+    if (items.length === 0) {
+      // Single-tool request: outstanding if status is still 'issued'
+      return r.status === 'issued';
+    }
+    return items.some((i: any) => {
+      const issued = i.quantityIssued || 0;
+      const ret = i.quantityReturned || 0;
+      const xfer = i.quantityTransferred || 0;
+      return (ret + xfer) < issued;
+    });
   };
 
   const getToolNamesSummary = (r: any) => {
@@ -1234,29 +1255,35 @@ export function RepairToolRequestsPage() {
   // ── Return dialog ──
   const openReturnDialog = async () => {
     if (!detailItem) return;
+    if (detailItem.status === 'pending_return') {
+      toast.error('A return is already pending store keeper confirmation');
+      return;
+    }
     let fullDetail = detailItem;
     if (!detailItem.items || detailItem.items.length === 0) {
       const res = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
       if (res.success) fullDetail = res.data;
     }
     const items = getRequestItems(fullDetail);
+    // Only include items that still have remaining qty to return (subtract transferred)
     const form = items.map((i: any) => ({
       itemId: i.id,
       toolName: i.toolName || '',
       toolCode: i.toolCode || '',
       quantityIssued: i.quantityIssued || 0,
-      quantityReturned: i.quantityIssued || 0,
+      quantityAlreadyReturned: (i.quantityReturned || 0) + (i.quantityTransferred || 0),
+      quantityReturned: (i.quantityIssued || 0) - (i.quantityReturned || 0) - (i.quantityTransferred || 0),
       conditionAtReturn: i.conditionAtIssue || 'good',
-    }));
+    })).filter(f => f.quantityReturned > 0);
     setReturnItemsForm(form);
     setReturnItemsOpen(true);
   };
 
   const handleReturn = async () => {
     if (!detailItem) return;
-    const returnedItems = returnItemsForm.map(f => ({
+    const returnedItems = returnItemsForm.filter(f => f.quantityReturned > 0).map(f => ({
       itemId: f.itemId,
-      quantityReturned: Math.max(0, Math.min(f.quantityReturned, f.quantityIssued)),
+      quantityReturned: Math.max(0, Math.min(f.quantityReturned, f.quantityIssued - f.quantityAlreadyReturned)),
       conditionAtReturn: f.conditionAtReturn,
     }));
     setSubmitting(true);
@@ -1265,7 +1292,7 @@ export function RepairToolRequestsPage() {
       returnedItems,
     });
     if (res.success) {
-      toast.success('Tools returned successfully');
+      toast.success('Return submitted — awaiting store keeper confirmation');
       if (res.warnings) res.warnings.forEach((w: string) => toast.warning(w));
       setReturnItemsOpen(false);
       const detailRes = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
@@ -1273,6 +1300,74 @@ export function RepairToolRequestsPage() {
       fetchRequests();
     } else {
       toast.error(res.error || 'Failed to return');
+    }
+    setSubmitting(false);
+  };
+
+  // ── Transfer dialog ──
+  const openTransferDialog = async () => {
+    if (!detailItem) return;
+    let fullDetail = detailItem;
+    if (!detailItem.items || detailItem.items.length === 0) {
+      const res = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
+      if (res.success) fullDetail = res.data;
+    }
+    const items = getRequestItems(fullDetail);
+    // Only include items that still have remaining qty
+    const form = items.map((i: any) => ({
+      itemId: i.id,
+      toolId: i.toolId || detailItem.toolId || '',
+      toolName: i.toolName || '',
+      toolCode: i.toolCode || '',
+      quantityIssued: i.quantityIssued || 0,
+      quantityReturned: i.quantityReturned || 0,
+      quantityToTransfer: (i.quantityIssued || 1) - (i.quantityReturned || 0) - (i.quantityTransferred || 0),
+      toUserId: '',
+      toUserName: '',
+      transferReason: '',
+    })).filter(f => f.quantityToTransfer > 0);
+    setTransferForm(form);
+    setTransferDialogOpen(true);
+  };
+
+  const handleTransfer = async () => {
+    if (!detailItem) return;
+    const itemsToTransfer = transferForm.filter(f => f.quantityToTransfer > 0);
+    if (itemsToTransfer.length === 0) {
+      toast.error('Select at least one tool to transfer');
+      return;
+    }
+    for (const item of itemsToTransfer) {
+      if (!item.toUserId) {
+        toast.error(`Select a receiving technician for "${item.toolName}"`);
+        return;
+      }
+      if (!item.transferReason || item.transferReason.length < 5) {
+        toast.error(`Enter a reason for transferring "${item.toolName}" (min 5 chars)`);
+        return;
+      }
+    }
+    setSubmitting(true);
+    let errors: string[] = [];
+    for (const item of itemsToTransfer) {
+      try {
+        const res = await api.post('/api/repairs/tool-transfers', {
+          toolId: item.toolId,
+          fromUserId: user?.id,
+          toUserId: item.toUserId,
+          reason: item.transferReason,
+          notes: `WO transfer: ${item.quantityToTransfer}x ${item.toolName}`,
+        });
+        if (!res.success) errors.push(res.error || `Failed to transfer "${item.toolName}"`);
+        else toast.success(`Transfer request submitted for "${item.toolName}"`);
+      } catch (e: any) { errors.push(`Transfer error: ${e.message}`); }
+    }
+    if (errors.length > 0) errors.forEach(e => toast.error(e));
+    else {
+      setTransferDialogOpen(false);
+      const detailRes = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
+      if (detailRes.success) setDetailItem(detailRes.data);
+      fetchRequests();
     }
     setSubmitting(false);
   };
@@ -1384,7 +1479,7 @@ export function RepairToolRequestsPage() {
         </div>
         <Select value={filterStatus} onValueChange={setFilterStatus}>
           <SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger>
-          <SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="supervisor_approved">Supervisor Approved</SelectItem><SelectItem value="storekeeper_approved">Store Approved</SelectItem><SelectItem value="issued">Issued</SelectItem><SelectItem value="returned">Returned</SelectItem></SelectContent>
+          <SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="supervisor_approved">Supervisor Approved</SelectItem><SelectItem value="storekeeper_approved">Store Approved</SelectItem><SelectItem value="issued">Issued</SelectItem><SelectItem value="pending_return">Pending Return</SelectItem><SelectItem value="returned">Returned</SelectItem></SelectContent>
         </Select>
         <Select value={filterUrgency} onValueChange={setFilterUrgency}>
           <SelectTrigger className="w-36"><SelectValue placeholder="Urgency" /></SelectTrigger>
@@ -1477,8 +1572,11 @@ export function RepairToolRequestsPage() {
                               {r.status === 'storekeeper_approved' && canApproveAsStore(user) && (
                                 <DropdownMenuItem onClick={() => { setDetailItem(r); openIssueDialog(); }}><Wrench className="h-4 w-4 mr-2 text-emerald-600" /> Issue Tools</DropdownMenuItem>
                               )}
-                              {r.status === 'issued' && (
+                              {hasOutstandingItems(r) && (
                                 <DropdownMenuItem onClick={() => { setDetailItem(r); openReturnDialog(); }}><RotateCcw className="h-4 w-4 mr-2 text-amber-600" /> Return Tools</DropdownMenuItem>
+                              )}
+                              {hasOutstandingItems(r) && (
+                                <DropdownMenuItem onClick={() => { setDetailItem(r); openTransferDialog(); }}><ArrowRightLeft className="h-4 w-4 mr-2 text-sky-600" /> Transfer Tools</DropdownMenuItem>
                               )}
                               {r.status === 'pending' && (r.requestedById === user?.id || isAdmin()) && (
                                 <>
@@ -1554,10 +1652,19 @@ export function RepairToolRequestsPage() {
                               {item.quantityApproved != null && <span>Approved: <strong className="text-foreground">{item.quantityApproved}</strong></span>}
                               <span>Issued: <strong className="text-foreground">{item.quantityIssued}</strong></span>
                               {item.quantityReturned > 0 && <span>Returned: <strong className="text-foreground">{item.quantityReturned}</strong></span>}
+                              {(item.quantityTransferred || 0) > 0 && <span className="text-sky-600">Transferred: <strong className="text-foreground">{item.quantityTransferred}</strong></span>}
+                              {(item.pendingReturnQty || 0) > 0 && <span className="text-amber-600 font-medium">⏳ Pending Return: <strong className="text-foreground">{item.pendingReturnQty}</strong></span>}
                             </div>
                             {item.issueNotes && (
                               <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1">
                                 <Info className="h-3 w-3 inline mr-1" />{item.issueNotes}
+                              </div>
+                            )}
+                            {/* Pending return condition and notes */}
+                            {(item.pendingReturnQty || 0) > 0 && (
+                              <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1 space-y-0.5">
+                                <div>Reported condition: <StatusBadge status={item.pendingReturnCondition || 'good'} /></div>
+                                {item.pendingReturnNotes && <div>Notes: {item.pendingReturnNotes}</div>}
                               </div>
                             )}
                             {(item.conditionAtIssue || item.conditionAtReturn) && (
@@ -1591,7 +1698,8 @@ export function RepairToolRequestsPage() {
                   {((detailItem.status === 'pending' && canApproveAsSupervisor(user)) ||
                     (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) ||
                     (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) ||
-                    detailItem.status === 'issued') && (<>
+                    (detailItem.status === 'pending_return' && canApproveAsStore(user)) ||
+                    (detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem))) && (<>
                     <Separator />
                     <div className="flex flex-wrap gap-2">
                       {detailItem.status === 'pending' && canApproveAsSupervisor(user) && (<>
@@ -1605,8 +1713,31 @@ export function RepairToolRequestsPage() {
                       {detailItem.status === 'storekeeper_approved' && canApproveAsStore(user) && (
                         <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setDetailItem(detailItem); openIssueDialog(); }} disabled={submitting}><Wrench className="h-3.5 w-3.5" /> Issue Tools</Button>
                       )}
-                      {detailItem.status === 'issued' && (
-                        <Button size="sm" variant="outline" className="gap-1 border-amber-400 text-amber-700" onClick={() => { setDetailItem(detailItem); openReturnDialog(); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tools</Button>
+                      {/* ── Store Keeper Return Confirmation ── */}
+                      {detailItem.status === 'pending_return' && canApproveAsStore(user) && (
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={async () => {
+                            setSubmitting(true);
+                            const res = await api.post(`/api/repairs/tool-requests/${detailItem.id}`, { action: 'storekeeper_confirm_return' });
+                            if (res.success) {
+                              toast.success('Return confirmed — tools updated in inventory');
+                              if (res.warnings) res.warnings.forEach((w: string) => toast.warning(w));
+                              const detailRes = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
+                              if (detailRes.success) setDetailItem(detailRes.data);
+                              fetchRequests();
+                            } else {
+                              toast.error(res.error || 'Failed to confirm return');
+                            }
+                            setSubmitting(false);
+                          }} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Confirm Return</Button>
+                          <Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'storekeeper_reject_return' }); setRejectOpen(true); }} disabled={submitting}><XCircle className="h-3.5 w-3.5" /> Reject Return</Button>
+                        </div>
+                      )}
+                      {detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem) && (
+                        <div className="flex gap-2">
+                          <Button size="sm" className="gap-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => { setDetailItem(detailItem); openReturnDialog(); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tools</Button>
+                          <Button size="sm" className="gap-1 bg-sky-600 hover:bg-sky-700 text-white" onClick={() => { setDetailItem(detailItem); openTransferDialog(); }} disabled={submitting}><ArrowRightLeft className="h-3.5 w-3.5" /> Transfer Tools</Button>
+                        </div>
                       )}
                     </div>
                   </>)}
@@ -1761,22 +1892,35 @@ export function RepairToolRequestsPage() {
       <ResponsiveDialog open={returnItemsOpen} onOpenChange={setReturnItemsOpen}>
         <div className="space-y-1.5 mb-4">
           <h2 className="text-lg font-semibold leading-none tracking-tight">Return Tools</h2>
-          <p className="text-sm text-muted-foreground">Specify quantity and condition for each tool</p>
+          <p className="text-sm text-muted-foreground">Specify quantity and condition for each tool. Remove items you don&apos;t want to return.</p>
         </div>
         <div className="space-y-3 max-h-72 overflow-y-auto">
+          {returnItemsForm.length === 0 && (
+            <div className="text-sm text-muted-foreground text-center py-4">No items to return. All items have been removed.</div>
+          )}
           {returnItemsForm.map((item: any, idx: number) => (
             <div key={item.itemId} className="space-y-2 p-3 bg-muted/30 rounded-lg border">
               <div className="flex items-center gap-2">
-                <span className="font-medium text-sm truncate">{item.toolName}</span>
+                <span className="font-medium text-sm truncate flex-1">{item.toolName}</span>
                 {item.toolCode && <span className="text-xs text-muted-foreground font-mono">{item.toolCode}</span>}
-                <span className="text-xs text-muted-foreground ml-auto">Issued: {item.quantityIssued}</span>
+                <span className="text-xs text-muted-foreground">
+                  {item.quantityAlreadyReturned > 0 ? (
+                    <>Returned: {item.quantityAlreadyReturned} · Remaining: <strong>{item.quantityIssued - item.quantityAlreadyReturned}</strong></>
+                  ) : (
+                    <>Issued: {item.quantityIssued}</>
+                  )}
+                </span>
+                <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => {
+                  const newForm = returnItemsForm.filter((_, i) => i !== idx);
+                  setReturnItemsForm(newForm);
+                }}><X className="h-3.5 w-3.5" /></Button>
               </div>
               <div className="flex flex-col sm:flex-row gap-2">
                 <div className="w-full sm:w-28">
                   <Label className="text-xs">Qty to Return</Label>
-                  <Input type="number" min={0} max={item.quantityIssued} value={item.quantityReturned}
+                  <Input type="number" min={0} max={item.quantityIssued - item.quantityAlreadyReturned} value={item.quantityReturned}
                     onChange={e => {
-                      const val = Math.max(0, Math.min(parseInt(e.target.value) || 0, item.quantityIssued));
+                      const val = Math.max(0, Math.min(parseInt(e.target.value) || 0, item.quantityIssued - item.quantityAlreadyReturned));
                       const newForm = [...returnItemsForm];
                       newForm[idx] = { ...newForm[idx], quantityReturned: val };
                       setReturnItemsForm(newForm);
@@ -1806,11 +1950,85 @@ export function RepairToolRequestsPage() {
         </div>
         <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={() => setReturnItemsOpen(false)}>Cancel</Button>
-          <Button onClick={handleReturn} disabled={submitting} className="gap-2 border-amber-400 text-amber-700 hover:bg-amber-50"><RotateCcw className="h-4 w-4" /> Return Tools</Button>
+          <Button onClick={handleReturn} disabled={submitting || returnItemsForm.length === 0} className="gap-2 bg-amber-600 hover:bg-amber-700 text-white"><RotateCcw className="h-4 w-4" /> Return Tools</Button>
         </div>
       </ResponsiveDialog>
 
-      <RejectDialog open={rejectOpen} onClose={() => { setRejectOpen(false); setRejectTarget(null); }} onConfirm={(reason) => { if (rejectTarget) handleAction(rejectTarget.id, rejectTarget.action, { notes: reason }); }} title="Reject Tool Request" />
+      {/* ═══════ Transfer Tools Dialog ═══════ */}
+      <ResponsiveDialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">Transfer Tools</h2>
+          <p className="text-sm text-muted-foreground">Select technician and reason for each tool. Remove items you don&apos;t want to transfer.</p>
+        </div>
+        <div className="space-y-3 max-h-72 overflow-y-auto">
+          {transferForm.length === 0 && (
+            <div className="text-sm text-muted-foreground text-center py-4">No items to transfer. All items have been removed.</div>
+          )}
+          {transferForm.map((item: any, idx: number) => (
+            <div key={item.itemId} className="space-y-2 p-3 bg-sky-50/50 rounded-lg border border-sky-200">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-sm truncate flex-1">{item.toolName}</span>
+                {item.toolCode && <span className="text-xs text-muted-foreground font-mono">{item.toolCode}</span>}
+                <span className="text-xs text-muted-foreground">Available: {item.quantityToTransfer}</span>
+                <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => {
+                  const newForm = transferForm.filter((_, i) => i !== idx);
+                  setTransferForm(newForm);
+                }}><X className="h-3.5 w-3.5" /></Button>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="w-full sm:w-24">
+                  <Label className="text-xs">Qty</Label>
+                  <Input type="number" min={0} max={(item.quantityIssued || 1) - (item.quantityReturned || 0)} value={item.quantityToTransfer}
+                    onChange={e => {
+                      const val = Math.max(0, Math.min(parseInt(e.target.value) || 0, (item.quantityIssued || 1) - (item.quantityReturned || 0)));
+                      const newForm = [...transferForm];
+                      newForm[idx] = { ...newForm[idx], quantityToTransfer: val };
+                      setTransferForm(newForm);
+                    }}
+                    className="h-8" />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-xs">Transfer To *</Label>
+                  <AsyncSearchableSelect
+                    value={item.toUserId}
+                    onValueChange={v => {
+                      const newForm = [...transferForm];
+                      newForm[idx] = { ...newForm[idx], toUserId: v, toUserName: '' };
+                      setTransferForm(newForm);
+                    }}
+                    placeholder="Search technician..."
+                    searchPlaceholder="Search by name or username..."
+                    fetchOptions={async () => {
+                      const res = await api.get('/api/workers?role=technician');
+                      if (res.success && Array.isArray(res.data)) return res.data.filter((u: any) => u.id !== user?.id).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                      return [];
+                    }}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Reason *</Label>
+                <Input
+                  value={item.transferReason}
+                  onChange={e => {
+                    const newForm = [...transferForm];
+                    newForm[idx] = { ...newForm[idx], transferReason: e.target.value };
+                    setTransferForm(newForm);
+                  }}
+                  placeholder="Why is this tool being transferred?"
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setTransferDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleTransfer} disabled={submitting || transferForm.length === 0} className="gap-2 bg-sky-600 hover:bg-sky-700 text-white"><ArrowRightLeft className="h-4 w-4" /> Transfer Tools</Button>
+        </div>
+      </ResponsiveDialog>
+
+      <RejectDialog open={rejectOpen} onClose={() => { setRejectOpen(false); setRejectTarget(null); }} onConfirm={(reason) => { if (rejectTarget) handleAction(rejectTarget.id, rejectTarget.action, { notes: reason }); }} title={rejectTarget?.action === 'storekeeper_reject_return' ? 'Reject Tool Return' : 'Reject Tool Request'} />
 
       {/* ═══════ Edit Dialog ═══════ */}
       <ResponsiveDialog open={editOpen} onOpenChange={(v) => { if (!v) setEditOpen(false); }}>
@@ -1885,6 +2103,7 @@ export function RepairToolRequestsPage() {
 
 export function RepairToolTransfersPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
+  const { pageParams } = useNavigationStore();
   const [transfers, setTransfers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -1901,6 +2120,22 @@ export function RepairToolTransfersPage() {
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<any>(null);
   const [createForm, setCreateForm] = useState({ toolId: '', fromUserId: '', toUserId: '', reason: '', notes: '' });
+
+  // Auto-fill create form from pageParams (e.g., from RepairCompletion's "Transfer" button)
+  useEffect(() => {
+    if (pageParams?.toolId) {
+      setCreateForm(prev => ({
+        ...prev,
+        toolId: pageParams.toolId,
+        fromUserId: pageParams.fromUserId || user?.id || '',
+        reason: `Transfer from WO completion — ${pageParams.toolName || 'tool'}`,
+      }));
+      setCreateOpen(true);
+      // Clear pageParams after using
+      const nav = useNavigationStore.getState();
+      nav.navigate('repairs-tool-transfers', {});
+    }
+  }, [pageParams?.toolId]);
 
   const activeFilters = useMemo(() => { let c = 0; if (filterStatus !== 'all') c++; if (searchText) c++; return c; }, [filterStatus, searchText]);
   const clearFilters = () => { setFilterStatus('all'); setSearchText(''); setPage(1); };
@@ -1962,7 +2197,7 @@ export function RepairToolTransfersPage() {
             <p className="text-sm text-muted-foreground">Manage tool custody transfers between technicians</p>
           </div>
         </div>
-        {(user && (hasPermission('repairs.create') || hasPermission('repairs.manage') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
+        {(user && (hasPermission('repair_tool_transfers.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -1991,7 +2226,7 @@ export function RepairToolTransfersPage() {
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : filtered.length === 0 ? (
             <EmptyState icon={ArrowRightLeft} title="No transfer requests found" description="Create a new transfer request to get started">
-              {(user && (hasPermission('repairs.create') || hasPermission('repairs.manage') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
+              {(user && (hasPermission('repair_tool_transfers.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Transfer</Button>}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
@@ -2035,18 +2270,27 @@ export function RepairToolTransfersPage() {
                       <TableCell><OverduePulse isOverdue={t.isOverdue} date={t.createdAt} /></TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                          {(hasPermission('work_orders.update') || isAdmin()) && <>
-                          {t.status === 'pending' && (<>
-                            <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(t.id); setConditionOpen(true); }}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button>
-                            <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => { setRejectTarget(t.id); setRejectOpen(true); }}><XCircle className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reject</TooltipContent></Tooltip></TooltipProvider>
-                          </>)}
-                          {t.status === 'storekeeper_approved' && (
-                            <Button size="sm" className="h-7 gap-1 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => handleAction(t.id, 'from_user_accept')}><Handshake className="h-3.5 w-3.5" /> Confirm Handover</Button>
+                          {/* Approve / Reject — store keeper / tools shop attendant only */}
+                          {(isAdmin() || ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(user?.role?.slug || '') || hasPermission('repair_tool_transfers.update')) && (
+                            <div className="flex items-center gap-1">
+                              {t.status === 'pending' && (<>
+                                <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(t.id); setConditionOpen(true); }}><CheckCircle2 className="h-3.5 w-3.5" /> Approve</Button>
+                                <TooltipProvider><Tooltip><TooltipTrigger asChild><Button size="sm" variant="ghost" className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => { setRejectTarget(t.id); setRejectOpen(true); }}><XCircle className="h-3.5 w-3.5" /></Button></TooltipTrigger><TooltipContent>Reject</TooltipContent></Tooltip></TooltipProvider>
+                              </>)}
+                            </div>
                           )}
-                          {t.status === 'awaiting_handover' && (
-                            <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(t.id, 'to_user_accept')}><CheckCircle2 className="h-3.5 w-3.5" /> Confirm Receipt</Button>
+                          {/* From User Accept Handover */}
+                          {t.status === 'awaiting_handover' && (user?.id === t.fromUserId || isAdmin()) && (
+                            <Button size="sm" variant="outline" className="h-7 text-[10px] text-sky-600" onClick={() => handleAction(t.id, 'from_user_accept')}>Accept Handover</Button>
                           )}
-                          </>}
+                          {/* To User Accept Receipt */}
+                          {t.status === 'awaiting_handover' && (user?.id === t.toUserId || isAdmin()) && (
+                            <Button size="sm" variant="outline" className="h-7 text-[10px] text-teal-600" onClick={() => handleAction(t.id, 'to_user_accept')}>Accept Receipt</Button>
+                          )}
+                          {/* Cancel — requester or supervisor */}
+                          {t.status === 'pending' && (user?.id === t.requestedById || isAdmin() || ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(user?.role?.slug || '')) && (
+                            <Button size="sm" variant="ghost" className="h-7 text-[10px] text-red-500" onClick={() => { if (confirm('Cancel this transfer request?')) handleAction(t.id, 'cancel'); }}>Cancel</Button>
+                          )}
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
@@ -2113,20 +2357,33 @@ export function RepairToolTransfersPage() {
                 {detailItem.toolConditionAtTransfer && <div><Label className="text-xs text-muted-foreground">Condition at Transfer</Label><p className="mt-1"><StatusBadge status={detailItem.toolConditionAtTransfer} /></p></div>}
                 <div><Label className="text-xs text-muted-foreground">Reason</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.reason}</p></div>
                 {detailItem.notes && <div><Label className="text-xs text-muted-foreground">Notes</Label><p className="text-sm mt-1 bg-muted/50 rounded-lg p-3">{detailItem.notes}</p></div>}
-                {(detailItem.status === 'pending' || detailItem.status === 'storekeeper_approved' || detailItem.status === 'awaiting_handover') && (hasPermission('work_orders.update') || isAdmin()) && (<>
+                {/* Approve / Reject — store keeper / tools shop attendant only */}
+                {(isAdmin() || ['store_keeper', 'inventory_manager', 'tools_shop_attendant'].includes(user?.role?.slug || '') || hasPermission('repair_tool_transfers.update')) && detailItem.status === 'pending' && (<>
                   <Separator />
                   <div className="flex flex-wrap gap-2">
-                    {detailItem.status === 'pending' && (<>
-                      <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(detailItem.id); setConditionOpen(true); }} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve Transfer</Button>
-                      <Button size="sm" variant="destructive" onClick={() => { setRejectTarget(detailItem.id); setRejectOpen(true); }} disabled={submitting}>Reject</Button>
-                    </>)}
-                    {detailItem.status === 'storekeeper_approved' && (<>
-                      <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => handleAction(detailItem.id, 'from_user_accept')} disabled={submitting}><Handshake className="h-3.5 w-3.5" /> Confirm Handover</Button>
-                      <Button size="sm" variant="outline" onClick={() => handleAction(detailItem.id, 'to_user_accept')} disabled={submitting}>Confirm Receipt</Button>
-                    </>)}
-                    {detailItem.status === 'awaiting_handover' && (
-                      <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'to_user_accept')} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Confirm Receipt</Button>
-                    )}
+                    <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setConditionTarget(detailItem.id); setConditionOpen(true); }} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Approve Transfer</Button>
+                    <Button size="sm" variant="destructive" onClick={() => { setRejectTarget(detailItem.id); setRejectOpen(true); }} disabled={submitting}>Reject</Button>
+                  </div>
+                </>)}
+                {/* From User Accept Handover */}
+                {detailItem.status === 'awaiting_handover' && (user?.id === detailItem.fromUserId || isAdmin()) && (<>
+                  <Separator />
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" className="gap-1 text-sky-600" onClick={() => handleAction(detailItem.id, 'from_user_accept')} disabled={submitting}><Handshake className="h-3.5 w-3.5" /> Accept Handover</Button>
+                  </div>
+                </>)}
+                {/* To User Accept Receipt */}
+                {(detailItem.status === 'storekeeper_approved' || detailItem.status === 'awaiting_handover') && (user?.id === detailItem.toUserId || isAdmin()) && (<>
+                  <Separator />
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(detailItem.id, 'to_user_accept')} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Accept Receipt</Button>
+                  </div>
+                </>)}
+                {/* Cancel — requester or supervisor */}
+                {detailItem.status === 'pending' && (user?.id === detailItem.requestedById || isAdmin() || ['maintenance_supervisor', 'maintenance_manager', 'plant_manager'].includes(user?.role?.slug || '')) && (<>
+                  <Separator />
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="ghost" className="text-red-500" onClick={() => { if (confirm('Cancel this transfer request?')) handleAction(detailItem.id, 'cancel'); }} disabled={submitting}>Cancel Transfer</Button>
                   </div>
                 </>)}
               </TabsContent>
@@ -2154,7 +2411,7 @@ export function RepairToolTransfersPage() {
             <div className="relative">
               <div className="grid grid-cols-2 gap-3">
                 <div><Label>From User *</Label><AsyncSearchableSelect value={createForm.fromUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, fromUserId: v }))} placeholder="Current holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
-                <div><Label>To User *</Label><AsyncSearchableSelect value={createForm.toUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, toUserId: v }))} placeholder="New holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
+                <div><Label>To User *</Label><AsyncSearchableSelect value={createForm.toUserId} onValueChange={(v) => setCreateForm(f => ({ ...f, toUserId: v }))} placeholder="New holder..." searchPlaceholder="Search technicians..." fetchOptions={async () => { const res = await api.get('/api/workers?role=technician'); if (res.success && Array.isArray(res.data)) return res.data.filter((u: any) => u.id !== createForm.fromUserId).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` })); return []; }} /></div>
               </div>
               {createForm.fromUserId && createForm.toUserId && createForm.fromUserId === createForm.toUserId && (
                 <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> From and To users must be different</p>
@@ -2302,7 +2559,7 @@ export function RepairDowntimePage() {
         <StatsCard icon={Activity} count={records.filter((r: any) => !r.downtimeEnd).length} label="Ongoing" color="text-red-600" bgColor="bg-red-50" />
         <StatsCard icon={CheckCircle2} count={records.filter((r: any) => !!r.downtimeEnd).length} label="Completed" color="text-emerald-600" bgColor="bg-emerald-50" />
         <StatsCard icon={AlertTriangle} count={records.filter((r: any) => r.category === 'unplanned').length} label="Unplanned" color="text-orange-600" bgColor="bg-orange-50" />
-        <StatsCard icon={Clock} count={totalMinutes > 0 ? `${(totalMinutes / 60).toFixed(1)}h` : '0h'} label="Total Downtime" color="text-blue-600" bgColor="bg-blue-50" />
+        <StatsCard icon={Clock} count={formatDurationFromMinutes(totalMinutes)} label="Total Downtime" color="text-blue-600" bgColor="bg-blue-50" />
       </div>
 
       {/* Filters */}
@@ -2470,6 +2727,425 @@ export function RepairDowntimePage() {
 // PAGE 5: REPAIR COMPLETION & CLOSURE
 // ============================================================================
 
+// ============================================================================
+// Sub-component: Flexible tool & material return/transfer on WO completion
+// ============================================================================
+// Two separate modals: Return (tools + materials) and Transfer (tools only)
+// Each modal has a Remove (X) button per item to exclude items from the action.
+// ============================================================================
+
+interface ReturnTransferItem {
+  id: string;
+  type: 'tool' | 'material';
+  name: string;
+  code: string;
+  issuedQty: number;
+  returnedQty: number;
+  transferredQty?: number;
+  remainingQty: number;
+  unit: string;
+  requestId: string;
+  lineItemId?: string;
+  toolId?: string;
+}
+
+function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
+  const { user, isAdmin } = useAuthStore();
+  const [allItems, setAllItems] = useState<ReturnTransferItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Return modal
+  const [returnOpen, setReturnOpen] = useState(false);
+  const [returnItems, setReturnItems] = useState<(ReturnTransferItem & { qtyReturn: number; condition: string })[]>([]);
+
+  // Transfer modal
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferItems, setTransferItems] = useState<(ReturnTransferItem & { qtyTransfer: number; toUserId: string; toUserName: string; transferReason: string })[]>([]);
+
+  // Fetch all outstanding tools and materials
+  useEffect(() => {
+    if (!workOrderId) return;
+    setLoading(true);
+    Promise.all([
+      api.get(`/api/repairs/tool-requests?workOrderId=${workOrderId}&limit=999`),
+      api.get(`/api/repairs/material-requests?workOrderId=${workOrderId}&limit=999`),
+    ]).then(([toolRes, matRes]) => {
+      const rows: ReturnTransferItem[] = [];
+
+      if (toolRes.success && toolRes.data) {
+        for (const tr of toolRes.data as any[]) {
+          if (tr.status !== 'issued') continue;
+          if (tr.items && tr.items.length > 0) {
+            for (const item of tr.items) {
+              const issued = item.quantityIssued || 0;
+              const returned = item.quantityReturned || 0;
+              const xfer = item.quantityTransferred || 0;
+              const remaining = issued - returned - xfer;
+              if (remaining <= 0) continue;
+              rows.push({ id: `${tr.id}-${item.id}`, type: 'tool', name: item.toolName || item.tool?.name || 'Unknown Tool', code: item.toolCode || item.tool?.toolCode || '', issuedQty: issued, returnedQty: returned, transferredQty: xfer, remainingQty: remaining, unit: 'pcs', requestId: tr.id, lineItemId: item.id, toolId: item.toolId || tr.toolId || '' });
+            }
+          } else {
+            const issued = tr.quantityIssued || (tr.tool ? 1 : 0);
+            const returned = tr.quantityReturned || 0;
+            const remaining = issued - returned;
+            if (remaining <= 0) continue;
+            rows.push({ id: tr.id, type: 'tool', name: tr.toolName || tr.tool?.name || 'Unknown Tool', code: tr.tool?.toolCode || '', issuedQty: issued, returnedQty: returned, remainingQty: remaining, unit: 'pcs', requestId: tr.id, toolId: tr.toolId || '' });
+          }
+        }
+      }
+
+      if (matRes.success && matRes.data) {
+        for (const mr of matRes.data as any[]) {
+          if (mr.status !== 'issued') continue;
+          const issued = mr.quantityIssued || 0;
+          const returned = mr.quantityReturned || 0;
+          const remaining = issued - returned;
+          if (remaining <= 0) continue;
+          rows.push({ id: mr.id, type: 'material', name: mr.itemName, code: mr.item?.itemCode || '', issuedQty: issued, returnedQty: returned, remainingQty: remaining, unit: mr.unit || 'each', requestId: mr.id });
+        }
+      }
+
+      setAllItems(rows);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [workOrderId]);
+
+  const toolItems = allItems.filter(i => i.type === 'tool');
+  const totalOutstanding = allItems.length;
+  const hasTools = toolItems.length > 0;
+
+  // ── Open Return modal ──
+  const openReturn = () => {
+    setReturnItems(allItems.map(item => ({
+      ...item,
+      qtyReturn: item.remainingQty,
+      condition: 'good' as string,
+    })));
+    setReturnOpen(true);
+  };
+
+  // ── Open Transfer modal ──
+  const openTransfer = () => {
+    setTransferItems(toolItems.map(item => ({
+      ...item,
+      qtyTransfer: item.remainingQty,
+      toUserId: '',
+      toUserName: '',
+      transferReason: '',
+    })));
+    setTransferOpen(true);
+  };
+
+  // ── Remove from return list ──
+  const removeReturnItem = (id: string) => {
+    setReturnItems(prev => prev.filter(i => i.id !== id));
+  };
+
+  // ── Remove from transfer list ──
+  const removeTransferItem = (id: string) => {
+    setTransferItems(prev => prev.filter(i => i.id !== id));
+  };
+
+  // ── Update return item ──
+  const updateReturnItem = (id: string, patch: Record<string, any>) => {
+    setReturnItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
+  };
+
+  // ── Update transfer item ──
+  const updateTransferItem = (id: string, patch: Record<string, any>) => {
+    setTransferItems(prev => prev.map(item => item.id === id ? { ...item, ...patch } : item));
+  };
+
+  // ── Submit returns ──
+  const handleReturnSubmit = async () => {
+    const activeItems = returnItems.filter(i => i.qtyReturn > 0);
+    if (activeItems.length === 0) {
+      toast.error('No items to return');
+      return;
+    }
+    setSubmitting(true);
+    let errors: string[] = [];
+
+    // Process tool returns grouped by requestId
+    const toolReturnMap = new Map<string, { itemId?: string; qtyReturn: number; condition: string }[]>();
+    for (const item of activeItems) {
+      if (item.type !== 'tool') continue;
+      const arr = toolReturnMap.get(item.requestId) || [];
+      arr.push({ itemId: item.lineItemId, qtyReturn: item.qtyReturn, condition: item.condition });
+      toolReturnMap.set(item.requestId, arr);
+    }
+
+    // Process material returns
+    const matReturnMap = new Map<string, { qtyReturn: number }>();
+    for (const item of activeItems) {
+      if (item.type !== 'material') continue;
+      matReturnMap.set(item.requestId, { qtyReturn: item.qtyReturn });
+    }
+
+    // Execute tool returns
+    for (const [requestId, returns] of toolReturnMap) {
+      try {
+        const detailRes = await api.get(`/api/repairs/tool-requests/${requestId}`);
+        if (!detailRes.success) { errors.push(`Tool return failed: ${detailRes.error}`); continue; }
+        const detail = detailRes.data;
+        const payload: Record<string, any> = { action: 'return' };
+        if (detail.items && detail.items.length > 0) {
+          payload.returnedItems = returns.map(r => ({ itemId: r.itemId, quantityReturned: r.qtyReturn, conditionAtReturn: r.condition }));
+        } else {
+          payload.toolConditionAtReturn = returns[0]?.condition || 'good';
+        }
+        const res = await api.post(`/api/repairs/tool-requests/${requestId}`, payload);
+        if (!res.success) errors.push(res.error || `Failed to return tool request`);
+        else if (res.warnings) res.warnings.forEach((w: string) => toast.warning(w));
+      } catch (e: any) { errors.push(`Tool return error: ${e.message}`); }
+    }
+
+    // Execute material returns
+    for (const [requestId, { qtyReturn }] of matReturnMap) {
+      try {
+        const res = await api.post(`/api/repairs/material-requests/${requestId}`, {
+          action: 'record_return', approvedQuantity: qtyReturn, notes: 'Returned by technician on completion',
+        });
+        if (!res.success) errors.push(res.error || `Failed to return material`);
+      } catch (e: any) { errors.push(`Material return error: ${e.message}`); }
+    }
+
+    if (errors.length === 0) {
+      toast.success('All returns submitted — awaiting store keeper confirmation');
+      setReturnOpen(false);
+      // Update allItems to reflect returned quantities
+      setAllItems(prev => prev.map(item => {
+        const returnedItem = returnItems.find(ri => ri.id === item.id);
+        if (returnedItem && returnedItem.qtyReturn > 0) {
+          return { ...item, returnedQty: item.returnedQty + returnedItem.qtyReturn, remainingQty: item.remainingQty - returnedItem.qtyReturn };
+        }
+        return item;
+      }).filter(i => i.remainingQty > 0));
+    } else {
+      errors.forEach(e => toast.error(e));
+    }
+    setSubmitting(false);
+  };
+
+  // ── Submit transfers ──
+  const handleTransferSubmit = async () => {
+    const activeItems = transferItems.filter(i => i.qtyTransfer > 0);
+    if (activeItems.length === 0) {
+      toast.error('No items to transfer');
+      return;
+    }
+    for (const item of activeItems) {
+      if (!item.toUserId) {
+        toast.error(`Select a receiving technician for "${item.name}"`);
+        return;
+      }
+      if (!item.transferReason || item.transferReason.length < 5) {
+        toast.error(`Enter a reason for transferring "${item.name}" (min 5 chars)`);
+        return;
+      }
+    }
+    setSubmitting(true);
+    let errors: string[] = [];
+    for (const item of activeItems) {
+      try {
+        const res = await api.post('/api/repairs/tool-transfers', {
+          toolId: item.toolId,
+          fromUserId: user?.id,
+          toUserId: item.toUserId,
+          reason: item.transferReason,
+          notes: `WO completion transfer: ${item.qtyTransfer}x ${item.name}`,
+        });
+        if (!res.success) errors.push(res.error || `Failed to transfer "${item.name}"`);
+        else toast.success(`Transfer request submitted for "${item.name}"`);
+      } catch (e: any) { errors.push(`Transfer error: ${e.message}`); }
+    }
+    if (errors.length === 0) {
+      toast.success('All transfers processed successfully');
+      setTransferOpen(false);
+      // Track transferred items locally (pending store approval)
+      setAllItems(prev => prev.map(item => {
+        const transferredItem = activeItems.find(ai => ai.id === item.id);
+        if (transferredItem && transferredItem.qtyTransfer > 0) {
+          return { ...item, transferredQty: (item.transferredQty || 0) + transferredItem.qtyTransfer, remainingQty: item.remainingQty - transferredItem.qtyTransfer };
+        }
+        return item;
+      }).filter(i => i.remainingQty > 0));
+    } else {
+      errors.forEach(e => toast.error(e));
+    }
+    setSubmitting(false);
+  };
+
+  if (loading) return <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Checking outstanding items...</div>;
+
+  if (totalOutstanding === 0) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+        <CheckCircle2 className="h-4 w-4 shrink-0" />
+        <span>All tools and materials have been returned. Work order is ready for closure.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-2 text-sm text-amber-700">
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+        <span><strong>{totalOutstanding} outstanding item(s)</strong> — return tools/materials to store or transfer tools to another technician.</span>
+      </div>
+
+      {/* Items summary */}
+      <div className="space-y-2">
+        {allItems.map(item => (
+          <div key={item.id} className="flex items-center gap-2 p-2 rounded-md bg-muted/30 border text-sm">
+            <div className={`h-6 w-6 rounded flex items-center justify-center shrink-0 ${item.type === 'tool' ? 'bg-orange-100 text-orange-700' : 'bg-amber-100 text-amber-700'}`}>
+              {item.type === 'tool' ? <Wrench className="h-3 w-3" /> : <Package className="h-3 w-3" />}
+            </div>
+            <span className="font-medium truncate flex-1">{item.name}</span>
+            {item.code && <span className="text-xs font-mono text-muted-foreground">{item.code}</span>}
+            <span className="text-xs text-muted-foreground whitespace-nowrap">Remaining: <strong>{item.remainingQty}</strong></span>
+            {(item.returnedQty > 0 || (item.transferredQty || 0) > 0) && (
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                (Returned: {item.returnedQty}{(item.transferredQty || 0) > 0 ? ` · Transferred: ${item.transferredQty}` : ''})
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" className="gap-2 bg-amber-600 hover:bg-amber-700 text-white" onClick={openReturn}>
+          <RotateCcw className="h-4 w-4" /> Return All ({totalOutstanding} items)
+        </Button>
+        {hasTools && (
+          <Button variant="outline" className="gap-2 bg-sky-600 hover:bg-sky-700 text-white" onClick={openTransfer}>
+            <ArrowRightLeft className="h-4 w-4" /> Transfer Tools ({toolItems.length})
+          </Button>
+        )}
+      </div>
+
+      {/* ═══════ Return Modal ═══════ */}
+      <ResponsiveDialog open={returnOpen} onOpenChange={setReturnOpen}>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">Return Tools &amp; Materials</h2>
+          <p className="text-sm text-muted-foreground">Set quantity and condition for each item. Click the X button to remove items you don&apos;t want to return.</p>
+        </div>
+        <div className="space-y-3 max-h-96 overflow-y-auto">
+          {returnItems.length === 0 && (
+            <div className="text-sm text-muted-foreground text-center py-4">No items remaining. All items have been removed.</div>
+          )}
+          {returnItems.map(item => (
+            <div key={item.id} className="space-y-2 p-3 bg-muted/30 rounded-lg border">
+              <div className="flex items-center gap-2">
+                <div className={`h-6 w-6 rounded flex items-center justify-center shrink-0 ${item.type === 'tool' ? 'bg-orange-100 text-orange-700' : 'bg-amber-100 text-amber-700'}`}>
+                  {item.type === 'tool' ? <Wrench className="h-3 w-3" /> : <Package className="h-3 w-3" />}
+                </div>
+                <span className="font-medium text-sm truncate flex-1">{item.name}</span>
+                {item.code && <span className="text-xs font-mono text-muted-foreground">{item.code}</span>}
+                <span className="text-xs text-muted-foreground">Available: {item.remainingQty}</span>
+                <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => removeReturnItem(item.id)}><X className="h-3.5 w-3.5" /></Button>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="w-full sm:w-28">
+                  <Label className="text-xs">Qty to Return</Label>
+                  <Input type="number" min={0} max={item.remainingQty} value={item.qtyReturn}
+                    onChange={e => updateReturnItem(item.id, { qtyReturn: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty)) })}
+                    className="h-8" />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-xs">Condition</Label>
+                  <Select value={item.condition} onValueChange={v => updateReturnItem(item.id, { condition: v })}>
+                    <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="good">Good — ready for reissue</SelectItem>
+                      <SelectItem value="fair">Fair — minor wear</SelectItem>
+                      <SelectItem value="poor">Poor — needs service</SelectItem>
+                      <SelectItem value="damaged">Damaged — needs repair</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setReturnOpen(false)}>Cancel</Button>
+          <Button onClick={handleReturnSubmit} disabled={submitting || returnItems.length === 0} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+            {submitting ? 'Processing...' : `Return ${returnItems.filter(i => i.qtyReturn > 0).length} Item(s)`}
+          </Button>
+        </div>
+      </ResponsiveDialog>
+
+      {/* ═══════ Transfer Modal ═══════ */}
+      <ResponsiveDialog open={transferOpen} onOpenChange={setTransferOpen}>
+        <div className="space-y-1.5 mb-4">
+          <h2 className="text-lg font-semibold leading-none tracking-tight">Transfer Tools</h2>
+          <p className="text-sm text-muted-foreground">Select a receiving technician and reason for each tool. Click the X button to remove items you don&apos;t want to transfer.</p>
+        </div>
+        <div className="space-y-3 max-h-96 overflow-y-auto">
+          {transferItems.length === 0 && (
+            <div className="text-sm text-muted-foreground text-center py-4">No tools remaining. All items have been removed.</div>
+          )}
+          {transferItems.map(item => (
+            <div key={item.id} className="space-y-2 p-3 bg-sky-50/50 rounded-lg border border-sky-200">
+              <div className="flex items-center gap-2">
+                <div className="h-6 w-6 rounded flex items-center justify-center shrink-0 bg-orange-100 text-orange-700">
+                  <Wrench className="h-3 w-3" />
+                </div>
+                <span className="font-medium text-sm truncate flex-1">{item.name}</span>
+                {item.code && <span className="text-xs font-mono text-muted-foreground">{item.code}</span>}
+                <span className="text-xs text-muted-foreground">Available: {item.remainingQty}</span>
+                <Button type="button" variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0" onClick={() => removeTransferItem(item.id)}><X className="h-3.5 w-3.5" /></Button>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="w-full sm:w-24">
+                  <Label className="text-xs">Qty</Label>
+                  <Input type="number" min={0} max={item.remainingQty} value={item.qtyTransfer}
+                    onChange={e => updateTransferItem(item.id, { qtyTransfer: Math.max(0, Math.min(parseInt(e.target.value) || 0, item.remainingQty)) })}
+                    className="h-8" />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-xs">Transfer To *</Label>
+                  <AsyncSearchableSelect
+                    value={item.toUserId}
+                    onValueChange={v => updateTransferItem(item.id, { toUserId: v, toUserName: '' })}
+                    placeholder="Search technician..."
+                    searchPlaceholder="Search by name or username..."
+                    fetchOptions={async () => {
+                      const res = await api.get('/api/workers?role=technician');
+                      if (res.success && Array.isArray(res.data)) return res.data.filter((u: any) => u.id !== user?.id).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
+                      return [];
+                    }}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Reason *</Label>
+                <Input
+                  value={item.transferReason}
+                  onChange={e => updateTransferItem(item.id, { transferReason: e.target.value })}
+                  placeholder="Why is this tool being transferred?"
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setTransferOpen(false)}>Cancel</Button>
+          <Button onClick={handleTransferSubmit} disabled={submitting || transferItems.length === 0} className="gap-2 bg-sky-600 hover:bg-sky-700 text-white">
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRightLeft className="h-4 w-4" />}
+            {submitting ? 'Processing...' : `Transfer ${transferItems.filter(i => i.qtyTransfer > 0).length} Tool(s)`}
+          </Button>
+        </div>
+      </ResponsiveDialog>
+    </div>
+  );
+}
+
 export function RepairCompletionPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
@@ -2614,6 +3290,17 @@ export function RepairCompletionPage() {
                   </>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Outstanding Tools & Materials Return Reminder */}
+          <Card className="border-amber-200 bg-amber-50/30">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2"><PackageCheck className="h-4 w-4 text-amber-600" />Outstanding Tools & Materials</CardTitle>
+              <CardDescription className="text-xs">Return or transfer tools and reusable materials before closing this work order</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ToolMaterialReturnPrompt workOrderId={woId} />
             </CardContent>
           </Card>
         </div>
@@ -2788,7 +3475,7 @@ export function RepairAnalyticsPage() {
                 <div className="text-center p-3 bg-green-50 rounded-lg"><p className="text-3xl font-bold text-green-700">{kpi.workOrders?.completionRate}%</p><p className="text-xs text-muted-foreground">Completion Rate</p></div>
                 <div className="text-center p-3 bg-orange-50 rounded-lg"><p className="text-3xl font-bold text-orange-700">{kpi.workOrders?.inProgress}</p><p className="text-xs text-muted-foreground">In Progress</p></div>
                 <div className="text-center p-3 bg-red-50 rounded-lg"><p className="text-3xl font-bold text-red-700">{kpi.workOrders?.overdue}</p><p className="text-xs text-muted-foreground">Overdue</p></div>
-                <div className="text-center p-3 bg-purple-50 rounded-lg"><p className="text-3xl font-bold text-purple-700">{kpi.workOrders?.avgLaborHours || 0}h</p><p className="text-xs text-muted-foreground">Avg Hours</p></div>
+                <div className="text-center p-3 bg-purple-50 rounded-lg"><p className="text-3xl font-bold text-purple-700">{formatDuration(kpi.workOrders?.avgLaborHours || 0)}</p><p className="text-xs text-muted-foreground">Avg Hours</p></div>
               </div>
             </CardContent>
           </Card>
@@ -2824,7 +3511,7 @@ export function RepairAnalyticsPage() {
               <CardHeader><CardTitle className="flex items-center gap-2"><Timer className="h-5 w-5" /> Downtime Analysis</CardTitle></CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><p className="text-sm text-muted-foreground">Total Downtime</p><p className="text-xl font-bold text-red-600">{kpi.downtime?.totalHours || 0}h</p></div>
+                  <div><p className="text-sm text-muted-foreground">Total Downtime</p><p className="text-xl font-bold text-red-600">{formatDuration(kpi.downtime?.totalHours || 0)}</p></div>
                   <div><p className="text-sm text-muted-foreground">Avg per WO</p><p className="text-xl font-bold">{kpi.downtime?.avgMinutesPerWo || 0} min</p></div>
                 </div>
               </CardContent>
@@ -2996,9 +3683,9 @@ export function RepairAnalyticsPage() {
               <>
                 {/* KPI Metrics */}
                 <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                  <StatsCard icon={Timer} count={`${downtimeReport.metrics?.totalDowntimeHours || 0}h`} label="Total Downtime" color="text-red-600" bgColor="bg-red-50" />
-                  <StatsCard icon={Activity} count={`${downtimeReport.metrics?.mtbfHours || 0}h`} label="MTBF" color="text-blue-600" bgColor="bg-blue-50" />
-                  <StatsCard icon={Wrench} count={`${downtimeReport.metrics?.mttrHours || 0}h`} label="MTTR" color="text-orange-600" bgColor="bg-orange-50" />
+                  <StatsCard icon={Timer} count={formatDuration(downtimeReport.metrics?.totalDowntimeHours || 0)} label="Total Downtime" color="text-red-600" bgColor="bg-red-50" />
+                  <StatsCard icon={Activity} count={formatDuration(downtimeReport.metrics?.mtbfHours || 0)} label="MTBF" color="text-blue-600" bgColor="bg-blue-50" />
+                  <StatsCard icon={Wrench} count={formatDuration(downtimeReport.metrics?.mttrHours || 0)} label="MTTR" color="text-orange-600" bgColor="bg-orange-50" />
                   <StatsCard icon={TrendingUp} count={`${downtimeReport.metrics?.availabilityPercent || 100}%`} label="Availability" color="text-emerald-600" bgColor="bg-emerald-50" />
                   <StatsCard icon={AlertTriangle} count={downtimeReport.metrics?.totalEvents || 0} label="Downtime Events" color="text-amber-600" bgColor="bg-amber-50" />
                 </div>
@@ -3021,9 +3708,9 @@ export function RepairAnalyticsPage() {
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-right">{a.events}</TableCell>
-                                <TableCell className="text-right font-semibold text-red-600">{a.totalHours}</TableCell>
-                                <TableCell className="text-right text-blue-600">{a.plannedHours}</TableCell>
-                                <TableCell className="text-right text-red-500">{a.unplannedHours}</TableCell>
+                                <TableCell className="text-right font-semibold text-red-600">{formatDuration(a.totalHours)}</TableCell>
+                                <TableCell className="text-right text-blue-600">{formatDuration(a.plannedHours)}</TableCell>
+                                <TableCell className="text-right text-red-500">{formatDuration(a.unplannedHours)}</TableCell>
                                 <TableCell className="text-right text-amber-600">{a.productionLoss > 0 ? formatCurrency(a.productionLoss) : '—'}</TableCell>
                               </TableRow>
                             ))}
@@ -3047,7 +3734,7 @@ export function RepairAnalyticsPage() {
                               <TableRow key={c.category}>
                                 <TableCell><StatusBadge status={c.category} /></TableCell>
                                 <TableCell className="text-right">{c.events}</TableCell>
-                                <TableCell className="text-right font-medium">{c.totalHours}</TableCell>
+                                <TableCell className="text-right font-medium">{formatDuration(c.totalHours)}</TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
@@ -3083,7 +3770,7 @@ export function RepairAnalyticsPage() {
                             <div key={t.period} className="flex items-center gap-3">
                               <span className="text-xs text-muted-foreground w-24 flex-shrink-0">{t.period}</span>
                               <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden"><div className="h-full rounded-full bg-red-400 transition-all" style={{ width: `${pct}%` }} /></div>
-                              <span className="text-xs font-medium w-16 text-right">{t.totalHours}h</span>
+                              <span className="text-xs font-medium w-16 text-right">{formatDuration(t.totalHours)}</span>
                             </div>
                           );
                         })}
@@ -3154,7 +3841,7 @@ export function RepairAnalyticsPage() {
                                     ))}
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-right text-red-600">{a.totalDowntimeHours}h</TableCell>
+                                <TableCell className="text-right text-red-600">{formatDuration(a.totalDowntimeHours)}</TableCell>
                                 <TableCell className="text-right">{formatCurrency(a.totalRepairCost)}</TableCell>
                                 <TableCell className="text-right font-medium text-orange-600">{a.frequencyPerMonth}</TableCell>
                                 <TableCell className="text-sm text-muted-foreground">
@@ -3452,7 +4139,7 @@ export function SparePartReturnsPage() {
             <p className="text-sm text-muted-foreground">Track reusable parts returned from machines for refurbishment</p>
           </div>
         </div>
-        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Return</Button>}
+        {(user && (hasPermission('spare_part_returns.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Return</Button>}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3524,17 +4211,17 @@ export function SparePartReturnsPage() {
                       <TableCell><OverduePulse isOverdue={false} date={r.createdAt} /></TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                          {r.status === 'pending' && (isAdmin() || hasPermission('inventory.update')) && (
+                          {r.status === 'pending' && (isAdmin() || hasPermission('spare_part_returns.update')) && (
                             <Button size="sm" className="h-7 gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => { setActionTarget({ id: r.id, action: 'inspect' }); setActionForm({ notes: '', refurbishmentNeeded: true, estimatedCost: '', disposalReason: '' }); setActionOpen(true); }}>
                               <Eye className="h-3.5 w-3.5" /> Inspect
                             </Button>
                           )}
-                          {r.status === 'inspected' && r.refurbishmentNeeded && (isAdmin() || hasPermission('inventory.update')) && (
+                          {r.status === 'inspected' && r.refurbishmentNeeded && (isAdmin() || hasPermission('spare_part_returns.update')) && (
                             <Button size="sm" className="h-7 gap-1 bg-violet-600 hover:bg-violet-700 text-white" onClick={() => handleAction(r.id, 'start_refurbishment')}>
                               <Wrench className="h-3.5 w-3.5" /> Start Refurb
                             </Button>
                           )}
-                          {r.status === 'refurbishing' && (isAdmin() || hasPermission('inventory.update')) && (
+                          {r.status === 'refurbishing' && (isAdmin() || hasPermission('spare_part_returns.update')) && (
                             <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(r.id, 'complete_refurbishment')}>
                               <CheckCircle2 className="h-3.5 w-3.5" /> Complete
                             </Button>
@@ -3548,7 +4235,7 @@ export function SparePartReturnsPage() {
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setDetailItem(r); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View Details</DropdownMenuItem>
-                              {(isAdmin() || hasPermission('inventory.update')) && r.status !== 'disposed' && r.status !== 'returned_to_store' && r.status !== 'rejected' && (
+                              {(isAdmin() || hasPermission('spare_part_returns.update')) && r.status !== 'disposed' && r.status !== 'returned_to_store' && r.status !== 'rejected' && (
                                 <DropdownMenuItem className="text-red-600" onClick={() => handleAction(r.id, 'dispose', { disposalReason: 'Disposed as unusable' })}><Ban className="h-4 w-4 mr-2" /> Dispose</DropdownMenuItem>
                               )}
                             </DropdownMenuContent>
@@ -3816,7 +4503,7 @@ export function DamagedToolReportsPage() {
             <p className="text-sm text-muted-foreground">Report and track damaged tools with repair lifecycle</p>
           </div>
         </div>
-        {(user && (hasPermission('work_orders.update') || hasPermission('work_orders.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Report Damage</Button>}
+        {(user && (hasPermission('damaged_tool_reports.create') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> Report Damage</Button>}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -3891,17 +4578,17 @@ export function DamagedToolReportsPage() {
                       <TableCell><OverduePulse isOverdue={false} date={r.createdAt} /></TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
-                          {r.status === 'reported' && (isAdmin() || hasPermission('tools.update')) && (
+                          {r.status === 'reported' && (isAdmin() || hasPermission('damaged_tool_reports.update')) && (
                             <Button size="sm" className="h-7 gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => { setActionTarget({ id: r.id, action: 'assess' }); setActionForm({ notes: '', estimatedCost: '', vendorName: '', reason: '' }); setActionOpen(true); }}>
                               <Search className="h-3.5 w-3.5" /> Assess
                             </Button>
                           )}
-                          {r.status === 'assessed' && (isAdmin() || hasPermission('tools.update')) && (
+                          {r.status === 'assessed' && (isAdmin() || hasPermission('damaged_tool_reports.update')) && (
                             <Button size="sm" className="h-7 gap-1 bg-violet-600 hover:bg-violet-700 text-white" onClick={() => { setActionTarget({ id: r.id, action: 'start_repair' }); setActionForm({ notes: '', estimatedCost: '', vendorName: '', reason: '' }); setActionOpen(true); }}>
                               <Wrench className="h-3.5 w-3.5" /> Start Repair
                             </Button>
                           )}
-                          {r.status === 'repair_in_progress' && (isAdmin() || hasPermission('tools.update')) && (
+                          {r.status === 'repair_in_progress' && (isAdmin() || hasPermission('damaged_tool_reports.update')) && (
                             <Button size="sm" className="h-7 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleAction(r.id, 'complete_repair')}>
                               <CheckCircle2 className="h-3.5 w-3.5" /> Complete
                             </Button>
@@ -3910,7 +4597,7 @@ export function DamagedToolReportsPage() {
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setDetailItem(r); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View</DropdownMenuItem>
-                              {(isAdmin() || hasPermission('tools.update')) && !['repaired', 'written_off', 'replaced'].includes(r.status) && (
+                              {(isAdmin() || hasPermission('damaged_tool_reports.update')) && !['repaired', 'written_off', 'replaced'].includes(r.status) && (
                                 <DropdownMenuItem className="text-red-600" onClick={() => { setActionTarget({ id: r.id, action: 'write_off' }); setActionForm({ notes: '', estimatedCost: '', vendorName: '', reason: '' }); setActionOpen(true); }}><Ban className="h-4 w-4 mr-2" /> Write Off</DropdownMenuItem>
                               )}
                             </DropdownMenuContent>
@@ -4193,8 +4880,8 @@ export function MaintenanceReportsPage() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatsCard icon={Clock} count={reportData.totalRequests ?? 0} label="Total MRs" color="text-blue-600" bgColor="bg-blue-50" />
                 <StatsCard icon={CheckCircle2} count={reportData.convertedToWO ?? 0} label="Converted to WO" color="text-emerald-600" bgColor="bg-emerald-50" />
-                <StatsCard icon={Timer} count={`${reportData.avgTurnaroundHours ?? 0}h`} label="Avg Turnaround" color="text-teal-600" bgColor="bg-teal-50" />
-                <StatsCard icon={TrendingUp} count={`${reportData.avgMrToWoHours ?? 0}h`} label="MR→WO Time" color="text-amber-600" bgColor="bg-amber-50" />
+                <StatsCard icon={Timer} count={formatDuration(reportData.avgTurnaroundHours ?? 0)} label="Avg Turnaround" color="text-teal-600" bgColor="bg-teal-50" />
+                <StatsCard icon={TrendingUp} count={formatDuration(reportData.avgMrToWoHours ?? 0)} label="MR→WO Time" color="text-amber-600" bgColor="bg-amber-50" />
               </div>
               {Array.isArray(reportData.stageBreakdown) && reportData.stageBreakdown.length > 0 && (
                 <Card><CardHeader><CardTitle className="text-base">Stage Breakdown</CardTitle></CardHeader><CardContent>
@@ -4203,7 +4890,7 @@ export function MaintenanceReportsPage() {
                       <div key={i} className="flex items-center gap-3">
                         <div className="w-40 text-sm font-medium truncate">{stage.name}</div>
                         <div className="flex-1"><Progress value={Math.min(100, (stage.avgHours / (reportData.avgTurnaroundHours || 1)) * 100)} className="h-3" /></div>
-                        <div className="w-20 text-sm text-right text-muted-foreground">{stage.avgHours?.toFixed(1)}h avg</div>
+                        <div className="w-20 text-sm text-right text-muted-foreground">{formatDuration(stage.avgHours || 0)} avg</div>
                         <div className="w-16 text-sm text-right text-muted-foreground">{stage.count} items</div>
                       </div>
                     ))}
@@ -4216,7 +4903,7 @@ export function MaintenanceReportsPage() {
                     {Object.entries(reportData.priorityBreakdown).map(([key, val]: [string, any]) => (
                       <div key={key} className="bg-muted/50 rounded-lg p-3 text-center">
                         <p className="text-2xl font-bold">{val.count || 0}</p>
-                        <p className="text-xs text-muted-foreground capitalize">{key} ({val.avgHours?.toFixed(1)}h avg)</p>
+                        <p className="text-xs text-muted-foreground capitalize">{key} ({formatDuration(val.avgHours || 0)} avg)</p>
                       </div>
                     ))}
                   </div>
@@ -4231,7 +4918,7 @@ export function MaintenanceReportsPage() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatsCard icon={ClipboardList} count={reportData.totalWOs ?? 0} label="Total WOs" color="text-blue-600" bgColor="bg-blue-50" />
                 <StatsCard icon={CheckCircle2} count={`${reportData.completionRate ?? 0}%`} label="Completion Rate" color="text-emerald-600" bgColor="bg-emerald-50" />
-                <StatsCard icon={Timer} count={`${reportData.avgActualHours ?? 0}h`} label="Avg Actual Hours" color="text-teal-600" bgColor="bg-teal-50" />
+                <StatsCard icon={Timer} count={formatDuration(reportData.avgActualHours ?? 0)} label="Avg Actual Hours" color="text-teal-600" bgColor="bg-teal-50" />
                 <StatsCard icon={AlertTriangle} count={`${reportData.reworkRate ?? 0}%`} label="Rework Rate" color="text-red-600" bgColor="bg-red-50" />
               </div>
               {Array.isArray(reportData.byType) && reportData.byType.length > 0 && (
@@ -4242,7 +4929,7 @@ export function MaintenanceReportsPage() {
                         <div className="w-32 text-sm font-medium capitalize">{t.type?.replace('_', ' ')}</div>
                         <div className="flex-1"><Progress value={t.count ? (t.count / reportData.totalWOs) * 100 : 0} className="h-3" /></div>
                         <div className="w-20 text-sm text-right">{t.count} WOs</div>
-                        <div className="w-24 text-sm text-right text-muted-foreground">{t.avgHours?.toFixed(1)}h avg</div>
+                        <div className="w-24 text-sm text-right text-muted-foreground">{formatDuration(t.avgHours || 0)} avg</div>
                       </div>
                     ))}
                   </div>
@@ -4272,8 +4959,8 @@ export function MaintenanceReportsPage() {
                         <TableRow key={t.userId}>
                           <TableCell><div className="flex items-center gap-2"><AvatarPlaceholder name={t.name} /><span className="font-medium text-sm">{t.name}</span></div></TableCell>
                           <TableCell className="text-center font-medium">{t.woCount}</TableCell>
-                          <TableCell className="text-center">{t.avgHoursPerWo?.toFixed(1)}h</TableCell>
-                          <TableCell className="text-center">{t.totalHours?.toFixed(1)}h</TableCell>
+                          <TableCell className="text-center">{formatDuration(t.avgHoursPerWo || 0)}</TableCell>
+                          <TableCell className="text-center">{formatDuration(t.totalHours || 0)}</TableCell>
                           <TableCell className="text-center">
                             <Badge variant="outline" className={t.reworkRate > 10 ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}>{t.reworkRate}%</Badge>
                           </TableCell>

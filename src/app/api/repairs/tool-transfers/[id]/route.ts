@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { decrementToolRequestTransfer, checkAndCloseToolRequest } from '@/lib/tool-transfer-helpers';
 
 const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
 
@@ -48,6 +49,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Completed',
         `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to you from ${transfer.fromUser?.fullName ?? 'Unknown'}`,
         'tool_transfer_request', id, 'maintenance-tools');
+
+      // quantityTransferred was already incremented when transfer was submitted.
+      // Just check if the entire request is done now.
+      const activeRequests = await db.repairToolRequest.findMany({
+        where: {
+          status: { in: ['issued', 'returned'] },
+          OR: [{ toolId: transfer.toolId }, { items: { some: { toolId: transfer.toolId } } }],
+        },
+      });
+      for (const req of activeRequests) {
+        await checkAndCloseToolRequest(req.id);
+      }
 
       return NextResponse.json({ success: true, data: { ...completed, autoCompleted: true } });
     }
@@ -148,6 +161,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Rejected',
             `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" from ${transfer.fromUser?.fullName ?? 'Unknown'} was rejected`,
             'tool_transfer_request', id, 'maintenance-tools');
+
+        // Decrement quantityTransferred since transfer was rejected
+        await decrementToolRequestTransfer(transfer.toolId, transfer.fromUserId);
         break;
       }
 
@@ -191,6 +207,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Completed',
               `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to you`,
               'tool_transfer_request', id, 'maintenance-tools');
+          // quantityTransferred was already incremented at submission.
+          // Just check if the entire tool request is done.
+          const activeRequests = await db.repairToolRequest.findMany({
+            where: {
+              status: { in: ['issued', 'returned'] },
+              OR: [{ toolId: transfer.toolId }, { items: { some: { toolId: transfer.toolId } } }],
+            },
+          });
+          for (const req of activeRequests) {
+            await checkAndCloseToolRequest(req.id);
+          }
         }
         break;
       }
@@ -235,6 +262,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Completed',
               `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to you`,
               'tool_transfer_request', id, 'maintenance-tools');
+          // quantityTransferred was already incremented at submission.
+          // Just check if the entire tool request is done.
+          const activeRequests = await db.repairToolRequest.findMany({
+            where: {
+              status: { in: ['issued', 'returned'] },
+              OR: [{ toolId: transfer.toolId }, { items: { some: { toolId: transfer.toolId } } }],
+            },
+          });
+          for (const req of activeRequests) {
+            await checkAndCloseToolRequest(req.id);
+          }
         }
         break;
       }
@@ -258,6 +296,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" has been cancelled`, 'tool_transfer_request', id, 'maintenance-tools');
         await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Cancelled',
             `Transfer of "${transfer.tool?.name ?? 'Unknown Tool'}" has been cancelled`, 'tool_transfer_request', id, 'maintenance-tools');
+
+        // Decrement quantityTransferred since transfer was cancelled
+        await decrementToolRequestTransfer(transfer.toolId, transfer.fromUserId);
         break;
       }
 

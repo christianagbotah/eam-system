@@ -36,7 +36,7 @@ import {
   Tooltip, Legend,
 } from 'recharts';
 import { format } from 'date-fns';
-import { EmptyState, StatusBadge, PriorityBadge, formatDate, formatDateTime, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
+import { EmptyState, StatusBadge, PriorityBadge, formatDate, formatDateTime, LoadingSkeleton, formatCurrency, formatDuration } from '@/components/shared/helpers';
 
 // Shared date range state hook
 const useDateRange = () => {
@@ -196,7 +196,7 @@ export function ReportsMaintenancePage() {
       summary: [
         { label: 'Total Work Orders', value: String(s.totalWOs) },
         { label: 'Completed', value: `${s.completedWOs} (${s.completionRate}%)` },
-        { label: 'Avg Completion Time', value: `${s.avgCompletionHours}h` },
+        { label: 'Avg Completion Time', value: formatDuration(s.avgCompletionHours) },
         { label: 'Avg Cost/WO', value: formatCurrency(s.avgCostPerWO) },
         { label: 'Total Cost', value: formatCurrency(s.totalCost) },
         { label: 'SLA Compliance', value: `${s.slaComplianceRate}%` },
@@ -416,8 +416,8 @@ export function ReportsMaintenancePage() {
                             <TableCell className="font-medium">{tech.userName}</TableCell>
                             <TableCell className="text-right">{tech.assignedCount}</TableCell>
                             <TableCell className="text-right text-emerald-600 font-medium">{tech.completedCount}</TableCell>
-                            <TableCell className="text-right">{tech.avgHoursPerWO}h</TableCell>
-                            <TableCell className="text-right">{tech.totalHours}h</TableCell>
+                            <TableCell className="text-right">{formatDuration(tech.avgHoursPerWO)}</TableCell>
+                            <TableCell className="text-right">{formatDuration(tech.totalHours)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -436,8 +436,8 @@ export function ReportsMaintenancePage() {
                         { label: 'Total Repairs', value: reportData.repairCompletion.totalCompleted },
                         { label: 'Avg Rework Count', value: reportData.repairCompletion.avgReworkCount },
                         { label: 'Rework Rate', value: `${reportData.repairCompletion.reworkRate}%` },
-                        { label: 'Avg Supervisor Review', value: `${reportData.repairCompletion.avgSupervisorReviewTimeHours}h` },
-                        { label: 'Avg Closure Time', value: `${reportData.repairCompletion.avgClosureTimeHours}h` },
+                        { label: 'Avg Supervisor Review', value: formatDuration(reportData.repairCompletion.avgSupervisorReviewTimeHours) },
+                        { label: 'Avg Closure Time', value: formatDuration(reportData.repairCompletion.avgClosureTimeHours) },
                       ].map((item: any, i: number) => (
                         <div key={i} className="text-center p-3 rounded-lg bg-muted/40">
                           <p className="text-lg font-bold">{item.value}</p>

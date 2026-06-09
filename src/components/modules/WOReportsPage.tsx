@@ -27,7 +27,7 @@ import {
   ClipboardList, CalendarDays, Filter, Printer,
 } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/api';
-import { EmptyState, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
+import { EmptyState, LoadingSkeleton, formatCurrency, formatDuration } from '@/components/shared/helpers';
 
 // ============================================================================
 // CONSTANTS
@@ -93,8 +93,8 @@ const exportCSV = (filename: string, headers: string[], rows: string[][]) => {
 };
 
 function formatHours(h: number | null | undefined): string {
-  if (h == null || isNaN(h)) return '-';
-  return `${h.toFixed(1)}h`;
+  if (h == null || isNaN(h)) return '—';
+  return formatDuration(h);
 }
 
 function formatRate(r: number | null | undefined): string {

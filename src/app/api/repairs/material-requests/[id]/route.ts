@@ -148,7 +148,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const { id } = await params;
     const body = await request.json();
-    const { action, approvedQuantity, quantityApproved, notes } = body;
+    const { action, approvedQuantity, quantityApproved, quantityReturned, notes } = body;
 
     const matReq = await db.repairMaterialRequest.findUnique({
       where: { id },
@@ -449,7 +449,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       // ISSUE — handle both reserved and non-reserved stock
       // ──────────────────────────────────────────────
       case 'issue': {
-        if (matReq.status !== 'storekeeper_approved') {
+        if (matReq.status !== 'storekeeper_approved' && matReq.status !== 'picking') {
           return NextResponse.json({ success: false, error: `Cannot issue: current status is ${matReq.status}` }, { status: 400 });
         }
         const qtyToIssue = approvedQuantity ?? quantityApproved ?? matReq.quantityApproved;
@@ -583,7 +583,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         if (matReq.status !== 'issued' && matReq.status !== 'partially_returned') {
           return NextResponse.json({ success: false, error: `Cannot record return: current status is ${matReq.status}` }, { status: 400 });
         }
-        const qtyToReturn = approvedQuantity ?? quantityApproved ?? 0;
+        const qtyToReturn = approvedQuantity ?? quantityApproved ?? quantityReturned ?? 0;
 
         if (qtyToReturn <= 0) {
           return NextResponse.json({ success: false, error: 'Return quantity must be greater than 0' }, { status: 400 });
