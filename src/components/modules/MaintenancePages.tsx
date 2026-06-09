@@ -2823,6 +2823,12 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [dtCategory, setDtCategory] = useState('unplanned');
   const [dtImpactLevel, setDtImpactLevel] = useState('medium');
   const [dtProductionLoss, setDtProductionLoss] = useState('');
+  const [dtDurationMinutes, setDtDurationMinutes] = useState('');
+  // View All Tools modal
+  const [viewAllToolsOpen, setViewAllToolsOpen] = useState(false);
+  const [toolDetailSheet, setToolDetailSheet] = useState<any>(null);
+  // Spare Part Return — linked to material request
+  const [spareReturnLinkedMR, setSpareReturnLinkedMR] = useState<any>(null);
   // Spare Part Return modal
   const [spareReturnOpen, setSpareReturnOpen] = useState(false);
   const [spareReturnSubmitting, setSpareReturnSubmitting] = useState(false);
@@ -2831,6 +2837,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [spareReturnCondition, setSpareReturnCondition] = useState('used');
   const [spareReturnDamageDesc, setSpareReturnDamageDesc] = useState('');
   const [spareReturnNeedsRefurb, setSpareReturnNeedsRefurb] = useState(true);
+  const [spareReturnIsReusable, setSpareReturnIsReusable] = useState(true);
+  const [spareReturnItemId, setSpareReturnItemId] = useState('');
+  const [spareReturnMRId, setSpareReturnMRId] = useState('');
   // Add team member dialog
   const [addTeamMemberOpen, setAddTeamMemberOpen] = useState(false);
   const [newMemberUserId, setNewMemberUserId] = useState('');
@@ -3502,9 +3511,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     setToolXferSubmitting(false);
   };
 
-  const resetDowntimeForm = () => { setDtReason(''); setDtCategory('unplanned'); setDtImpactLevel('medium'); setDtProductionLoss(''); };
+  const resetDowntimeForm = () => { setDtReason(''); setDtCategory('unplanned'); setDtImpactLevel('medium'); setDtProductionLoss(''); setDtDurationMinutes(''); };
   const handleDowntime = async () => {
     if (!dtReason.trim()) { toast.error('Please provide a reason'); return; }
+    if (!dtDurationMinutes || parseFloat(dtDurationMinutes) <= 0) { toast.error('Please enter the downtime duration'); return; }
     setDowntimeSubmitting(true);
     const res = await api.post('/api/repairs/downtime', {
       workOrderId: id,
@@ -3512,15 +3522,30 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       category: dtCategory,
       impactLevel: dtImpactLevel,
       productionLoss: dtProductionLoss ? parseFloat(dtProductionLoss) : undefined,
+      durationMinutes: parseFloat(dtDurationMinutes),
       assetId: wo?.assetId || undefined,
       assetName: wo?.assetName || undefined,
     });
-    if (res.success) { toast.success('Downtime logged successfully'); setDowntimeOpen(false); resetDowntimeForm(); }
+    if (res.success) { toast.success('Downtime logged successfully'); setDowntimeOpen(false); resetDowntimeForm(); fetchWO(); }
     else toast.error(res.error || 'Failed to log downtime');
     setDowntimeSubmitting(false);
   };
 
-  const resetSpareReturnForm = () => { setSpareReturnItemName(''); setSpareReturnQty('1'); setSpareReturnCondition('used'); setSpareReturnDamageDesc(''); setSpareReturnNeedsRefurb(true); };
+  const resetSpareReturnForm = () => { setSpareReturnItemName(''); setSpareReturnQty('1'); setSpareReturnCondition('used'); setSpareReturnDamageDesc(''); setSpareReturnNeedsRefurb(true); setSpareReturnIsReusable(true); setSpareReturnItemId(''); setSpareReturnMRId(''); setSpareReturnLinkedMR(null); };
+
+  const openSpareReturnFromMR = (mr: any) => {
+    setSpareReturnLinkedMR(mr);
+    setSpareReturnItemName(mr.itemName || '');
+    setSpareReturnQty(String(mr.quantityIssued || mr.quantityRequested || 1));
+    setSpareReturnItemId(mr.itemId || '');
+    setSpareReturnMRId(mr.id || '');
+    setSpareReturnCondition('used');
+    setSpareReturnDamageDesc('');
+    setSpareReturnNeedsRefurb(true);
+    setSpareReturnIsReusable(true);
+    setSpareReturnOpen(true);
+  };
+
   const handleSpareReturn = async () => {
     if (!spareReturnItemName.trim()) { toast.error('Please enter the item name'); return; }
     setSpareReturnSubmitting(true);
@@ -3531,8 +3556,16 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       conditionOnReturn: spareReturnCondition,
       damageDescription: spareReturnDamageDesc || undefined,
       refurbishmentNeeded: spareReturnNeedsRefurb,
+      itemId: spareReturnItemId || undefined,
+      materialRequestId: spareReturnMRId || undefined,
+      plantId: wo?.plantId || undefined,
     });
-    if (res.success) { toast.success('Spare part return submitted'); setSpareReturnOpen(false); resetSpareReturnForm(); }
+    if (res.success) {
+      toast.success(spareReturnIsReusable
+        ? 'Material return submitted — pending inspection & refurbishment'
+        : 'Material recorded as consumed (not returnable)');
+      setSpareReturnOpen(false); resetSpareReturnForm(); fetchWO();
+    }
     else toast.error(res.error || 'Failed to submit return');
     setSpareReturnSubmitting(false);
   };
@@ -4747,7 +4780,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       </ResponsiveDialog>
 
       {/* ═══════ Log Downtime Dialog ═══════ */}
-      <ResponsiveDialog open={downtimeOpen} onOpenChange={(open) => { setDowntimeOpen(open); if (!open) resetDowntimeForm(); }} title="Log Downtime" description={`Record downtime for ${wo?.assetName || 'this asset'} on WO ${wo?.woNumber || ''}`} footer={<Button className="w-full bg-red-600 hover:bg-red-700 text-white" disabled={downtimeSubmitting || !dtReason.trim()} onClick={handleDowntime}>{downtimeSubmitting ? 'Saving...' : 'Log Downtime'}</Button>}>
+      <ResponsiveDialog open={downtimeOpen} onOpenChange={(open) => { setDowntimeOpen(open); if (!open) resetDowntimeForm(); }} title="Log Downtime" description={`Record downtime for ${wo?.assetName || 'this asset'} on WO ${wo?.woNumber || ''}`} footer={<Button className="w-full bg-red-600 hover:bg-red-700 text-white" disabled={downtimeSubmitting || !dtReason.trim() || !dtDurationMinutes || parseFloat(dtDurationMinutes) <= 0} onClick={handleDowntime}>{downtimeSubmitting ? 'Saving...' : 'Log Downtime'}</Button>}>
         <div className="space-y-4">
           <div className="p-3 rounded-lg bg-red-50 border border-red-200">
             <p className="text-xs text-red-800 font-medium">⚠️ Downtime Recording</p>
@@ -4767,35 +4800,99 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               </Select>
             </div>
           </div>
-          <div className="space-y-1.5"><Label>Production Loss (₵)</Label><Input type="number" step="0.01" value={dtProductionLoss} onChange={e => setDtProductionLoss(e.target.value)} placeholder="Optional" /></div>
-          <div className="space-y-1.5"><Label>Reason *</Label><Textarea value={dtReason} onChange={e => setDtReason(e.target.value)} placeholder="Describe the downtime reason..." rows={2} /></div>
+          <div className="space-y-1.5">
+            <Label>Duration * <span className="text-xs text-muted-foreground font-normal">How long was the asset down?</span></Label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="relative">
+                <Input type="number" min="1" step="1" value={dtDurationMinutes} onChange={e => setDtDurationMinutes(e.target.value)} placeholder="e.g. 120" className="min-h-[44px] pr-12" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">min</span>
+              </div>
+              {dtDurationMinutes && parseFloat(dtDurationMinutes) > 0 && (
+                <div className="flex items-center text-xs text-muted-foreground bg-muted/50 rounded-lg px-3">
+                  <Clock className="h-3.5 w-3.5 mr-1.5 text-red-500" />
+                  {parseFloat(dtDurationMinutes) >= 60
+                    ? `${Math.floor(parseFloat(dtDurationMinutes) / 60)}h ${Math.round(parseFloat(dtDurationMinutes) % 60)}m`
+                    : `${parseFloat(dtDurationMinutes)}m`}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Production Loss (₵) <span className="text-xs text-muted-foreground font-normal">Estimated monetary loss — optional</span></Label>
+            <Input type="number" step="0.01" value={dtProductionLoss} onChange={e => setDtProductionLoss(e.target.value)} placeholder="e.g. 500.00" />
+          </div>
+          <div className="space-y-1.5"><Label>Reason * <span className="text-xs text-muted-foreground font-normal">Why was the asset down?</span></Label><Textarea value={dtReason} onChange={e => setDtReason(e.target.value)} placeholder="Describe the downtime reason..." rows={2} /></div>
         </div>
       </ResponsiveDialog>
 
       {/* ═══════ Return Spare Part / Material Dialog ═══════ */}
-      <ResponsiveDialog open={spareReturnOpen} onOpenChange={(open) => { setSpareReturnOpen(open); if (!open) resetSpareReturnForm(); }} title="Return Reusable Material" description="Register a reusable part removed from the machine for refurbishment." footer={<Button className="w-full bg-violet-600 hover:bg-violet-700 text-white" disabled={spareReturnSubmitting || !spareReturnItemName.trim()} onClick={handleSpareReturn}>{spareReturnSubmitting ? 'Submitting...' : 'Submit Return'}</Button>}>
+      <ResponsiveDialog open={spareReturnOpen} onOpenChange={(open) => { setSpareReturnOpen(open); if (!open) resetSpareReturnForm(); }} title="Return Material" description={spareReturnLinkedMR ? `Returning material from request — ${spareReturnLinkedMR.itemName}` : 'Register a material removed from the machine for return or disposal.'} footer={<Button className="w-full bg-violet-600 hover:bg-violet-700 text-white" disabled={spareReturnSubmitting || !spareReturnItemName.trim()} onClick={handleSpareReturn}>{spareReturnSubmitting ? 'Submitting...' : spareReturnIsReusable ? 'Submit for Return & Refurbishment' : 'Record as Consumed'}</Button>}>
         <div className="space-y-4">
-          <div className="p-3 rounded-lg bg-violet-50 border border-violet-200">
-            <p className="text-xs text-violet-800 font-medium">♻️ Material Return Lifecycle</p>
-            <p className="text-xs text-violet-700 mt-1">Returned part will be <strong>inspected</strong> → <strong>refurbished</strong> (if needed) → <strong>returned to storeroom</strong>.</p>
-          </div>
-          <div className="space-y-1.5"><Label>Item Name *</Label><Input value={spareReturnItemName} onChange={e => setSpareReturnItemName(e.target.value)} placeholder="Part/material name" /></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5"><Label>Quantity</Label><Input type="number" min="1" value={spareReturnQty} onChange={e => setSpareReturnQty(e.target.value)} /></div>
-            <div className="space-y-1.5"><Label>Condition</Label>
-              <Select value={spareReturnCondition} onValueChange={setSpareReturnCondition}>
-                <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="used">Used</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem><SelectItem value="damaged">Damaged</SelectItem><SelectItem value="worn">Worn</SelectItem>
-                </SelectContent>
-              </Select>
+          {/* Linked material request banner */}
+          {spareReturnLinkedMR && (
+            <div className="p-3 rounded-lg bg-sky-50 border border-sky-200">
+              <p className="text-xs text-sky-800 font-medium">📋 Linked Material Request</p>
+              <div className="flex items-center gap-3 text-xs text-sky-700 mt-1">
+                <span>{spareReturnLinkedMR.itemName}</span>
+                <span>Issued: <strong>{spareReturnLinkedMR.quantityIssued || spareReturnLinkedMR.quantityRequested}</strong></span>
+              </div>
             </div>
+          )}
+
+          {/* Reusable vs Consumed toggle */}
+          <div className="p-3 rounded-lg border space-y-3">
+            <div className="flex items-center gap-3">
+              <Switch id="spareReusable" checked={spareReturnIsReusable} onCheckedChange={(v) => {
+                setSpareReturnIsReusable(!!v);
+                if (!v) setSpareReturnNeedsRefurb(false);
+              }} />
+              <div>
+                <Label htmlFor="spareReusable" className="text-sm font-medium cursor-pointer">Returnable / Reusable</Label>
+                <p className="text-[11px] text-muted-foreground">{spareReturnIsReusable ? 'Part will go through inspection → refurbishment → storeroom return' : 'Part was consumed during repair and cannot be returned'}</p>
+              </div>
+            </div>
+            {spareReturnIsReusable && (
+              <div className="ml-9 p-2.5 rounded-lg bg-violet-50 border border-violet-100">
+                <p className="text-[11px] text-violet-800 font-medium">♻️ Return Lifecycle</p>
+                <div className="flex items-center gap-1.5 mt-1 text-[10px] text-violet-700">
+                  <span className="bg-violet-100 rounded px-1.5 py-0.5">Pending</span>
+                  <ArrowRight className="h-3 w-3" />
+                  <span className="bg-violet-100 rounded px-1.5 py-0.5">Inspect</span>
+                  <ArrowRight className="h-3 w-3" />
+                  <span className="bg-violet-100 rounded px-1.5 py-0.5">Refurbish</span>
+                  <ArrowRight className="h-3 w-3" />
+                  <span className="bg-emerald-100 text-emerald-800 rounded px-1.5 py-0.5">Return to Store</span>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="space-y-1.5"><Label>Damage/Wear Description</Label><Textarea value={spareReturnDamageDesc} onChange={e => setSpareReturnDamageDesc(e.target.value)} placeholder="Describe any damage or wear..." rows={2} /></div>
-          <div className="flex items-center gap-3 p-3 rounded-lg border">
-            <Checkbox id="spareRefurb" checked={spareReturnNeedsRefurb} onCheckedChange={v => setSpareReturnNeedsRefurb(!!v)} />
-            <Label htmlFor="spareRefurb" className="text-sm cursor-pointer">Needs Refurbishment</Label>
+
+          {!spareReturnLinkedMR && (
+            <div className="space-y-1.5"><Label>Item Name *</Label><Input value={spareReturnItemName} onChange={e => setSpareReturnItemName(e.target.value)} placeholder="Part/material name" className="min-h-[44px]" /></div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5"><Label>Quantity</Label><Input type="number" min="1" value={spareReturnQty} onChange={e => setSpareReturnQty(e.target.value)} className="min-h-[44px]" /></div>
+            {spareReturnIsReusable && (
+              <div className="space-y-1.5"><Label>Condition</Label>
+                <Select value={spareReturnCondition} onValueChange={setSpareReturnCondition}>
+                  <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="used">Used</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem><SelectItem value="damaged">Damaged</SelectItem><SelectItem value="worn">Worn</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
+          {spareReturnIsReusable && (
+            <>
+              <div className="space-y-1.5"><Label>Damage/Wear Description</Label><Textarea value={spareReturnDamageDesc} onChange={e => setSpareReturnDamageDesc(e.target.value)} placeholder="Describe any damage or wear..." rows={2} /></div>
+              <div className="flex items-center gap-3 p-3 rounded-lg border">
+                <Checkbox id="spareRefurb" checked={spareReturnNeedsRefurb} onCheckedChange={v => setSpareReturnNeedsRefurb(!!v)} />
+                <Label htmlFor="spareRefurb" className="text-sm cursor-pointer">Needs Refurbishment</Label>
+                <span className="text-[10px] text-muted-foreground ml-auto">{spareReturnNeedsRefurb ? 'Will go through refurb process' : 'Can return directly'}</span>
+              </div>
+            </>
+          )}
         </div>
       </ResponsiveDialog>
 
@@ -5290,7 +5387,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                 <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'issue', { quantityToIssue: mr.quantityApproved || mr.quantityRequested })}><PackageCheck className="h-3 w-3 mr-1" />Issue</Button>
                               )}
                               {mr.status === 'issued' && (
-                                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-amber-600 hover:text-amber-700 border-amber-300 bg-amber-50" onClick={() => handleMatRequestAction(mr.id, 'record_return', { quantityToReturn: mr.quantityIssued })}><RotateCcw className="h-3 w-3 mr-1" />Return</Button>
+                                <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-amber-600 hover:text-amber-700 border-amber-300 bg-amber-50" onClick={() => openSpareReturnFromMR(mr)}><RotateCcw className="h-3 w-3 mr-1" />Return</Button>
                               )}
                             </div>
                           </div>
@@ -5367,33 +5464,97 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-                <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Request Tool</span>
                 </button>
-                <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
-                  <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center"><ArrowRightLeft className="h-4 w-4" /></div>
+                <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-teal-50 transition-colors">
+                  <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center relative"><ArrowRightLeft className="h-4 w-4" />{wo.repairToolRequests?.some((tr: any) => tr.status === 'transferred' || tr.status === 'completed') && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-white" />}</div>
                   <span className="text-xs font-medium">Transfer Tool</span>
                 </button>
-                <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-red-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-red-100 text-red-700 flex items-center justify-center"><Timer className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Log Downtime</span>
                 </button>
-                <button onClick={() => { resetSpareReturnForm(); setSpareReturnOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                <button onClick={() => { resetSpareReturnForm(); setSpareReturnOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center"><RefreshCw className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Return Material</span>
                 </button>
-                <button onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
-                  <div className="h-9 w-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><ArrowUpRight className="h-4 w-4" /></div>
+                <button onClick={() => setViewAllToolsOpen(true)} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-sky-50 transition-colors">
+                  <div className="h-9 w-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">View All Tools</span>
                 </button>
-                <button onClick={() => setActionDialog('complete')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
+                <button onClick={() => setActionDialog('complete')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-emerald-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-green-100 text-green-700 flex items-center justify-center"><CheckCircle2 className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Complete WO</span>
                 </button>
               </div>
             </CardContent>
           </Card>
+
+          {/* View All Tools Modal — shows tool requests + transfers + returns inline */}
+          <ResponsiveDialog open={viewAllToolsOpen} onOpenChange={setViewAllToolsOpen} title="All Tools & Requests" description={`Tool requests, transfers and returns for WO ${wo?.woNumber || ''}`} className="max-w-2xl">
+            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+              {wo.repairToolRequests && wo.repairToolRequests.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{wo.repairToolRequests.length} Tool Request{wo.repairToolRequests.length > 1 ? 's' : ''}</p>
+                  {wo.repairToolRequests.map((tr: any) => {
+                    const toolItems = (tr.items && tr.items.length > 0) ? tr.items : (tr.toolName ? [{ toolName: tr.toolName, toolCode: tr.tool?.toolCode, quantityRequested: 1, quantityIssued: 0, quantityReturned: 0, quantityTransferred: 0 }] : []);
+                    return (
+                      <div key={tr.id} className="p-3 rounded-lg border bg-muted/30 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {tr.requestNumber && <Badge variant="outline" className="font-mono text-[10px] bg-sky-50 text-sky-700 border-sky-200">{tr.requestNumber}</Badge>}
+                            <Badge variant="outline" className={`text-[10px] ${tr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : tr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : tr.status === 'pending_return' ? 'bg-violet-50 text-violet-700 border-violet-200' : tr.status === 'returned' ? 'bg-slate-50 text-slate-600 border-slate-200' : tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : tr.status === 'transferred' ? 'bg-teal-50 text-teal-700 border-teal-200' : tr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-muted'}`}>{tr.status?.replace(/_/g, ' ')}</Badge>
+                          </div>
+                          {tr.urgency && tr.urgency !== 'normal' && <UrgencyBadge urgency={tr.urgency} />}
+                        </div>
+                        {/* Per-item details */}
+                        {toolItems.map((item: any, ii: number) => {
+                          const issued = item.quantityIssued || 0;
+                          const returned = item.quantityReturned || 0;
+                          const transferred = item.quantityTransferred || 0;
+                          const outstanding = Math.max(0, issued - returned - transferred);
+                          return (
+                            <div key={ii} className="pl-3 border-l-2 border-border space-y-1">
+                              <div className="flex items-center gap-2 text-sm">
+                                <span className="font-medium">{item.toolName || 'Tool'}</span>
+                                {item.toolCode && <span className="text-[10px] font-mono text-muted-foreground">{item.toolCode}</span>}
+                              </div>
+                              <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
+                                <span>Requested: <strong>{item.quantityRequested}</strong></span>
+                                {issued > 0 && <span className="text-emerald-600">Issued: <strong>{issued}</strong></span>}
+                                {transferred > 0 && <span className="text-teal-600">Transferred: <strong>{transferred}</strong></span>}
+                                {returned > 0 && <span className="text-slate-500">Returned: <strong>{returned}</strong></span>}
+                                {outstanding > 0 && <span className="text-amber-600 font-medium">Outstanding: {outstanding}</span>}
+                              </div>
+                              {/* Pending return info */}
+                              {item.pendingReturnQty > 0 && (
+                                <div className="p-2 rounded bg-violet-50 border border-violet-200 text-[11px]">
+                                  <span className="text-violet-700 font-medium">⏳ Pending Return: {item.pendingReturnQty}</span>
+                                  {item.pendingReturnCondition && <span className="text-violet-600 ml-2">Condition: {item.pendingReturnCondition}</span>}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground pt-1">
+                          <span>By {tr.requestedBy?.fullName || 'Unknown'}</span><span>·</span>
+                          <span>{formatDateTime(tr.createdAt)}</span>
+                          {tr.reason && <span className="truncate">· {tr.reason}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <Wrench className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No tool requests yet</p>
+                </div>
+              )}
+            </div>
+          </ResponsiveDialog>
 
           {/* Personal Tools On-Site */}
           <Card className="border-0 shadow-sm">
