@@ -7,11 +7,11 @@ const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
 
 /** When a transfer completes, increment quantityTransferred on the matching tool request item */
 async function updateToolRequestItemOnTransfer(toolId: string, fromUserId: string) {
-  // Find an active repair tool request that contains this tool for this user
+  // Find repair tool requests that contain this tool — check both 'issued' and 'returned' statuses
+  // since partial returns may prematurely set status to 'returned'
   const activeRequests = await db.repairToolRequest.findMany({
     where: {
-      status: 'issued',
-      requestedById: fromUserId,
+      status: { in: ['issued', 'returned'] },
       OR: [
         { toolId },
         { items: { some: { toolId } } },
@@ -23,10 +23,10 @@ async function updateToolRequestItemOnTransfer(toolId: string, fromUserId: strin
   for (const req of activeRequests) {
     if (req.toolId === toolId && (!req.items || req.items.length === 0)) {
       // Legacy single-tool request: no items table to update
-      // The request-level status will be handled by the caller
       continue;
     }
     if (req.items && req.items.length > 0) {
+      let updated = false;
       for (const item of req.items) {
         if (item.toolId === toolId) {
           const issued = item.quantityIssued || 0;
@@ -37,23 +37,31 @@ async function updateToolRequestItemOnTransfer(toolId: string, fromUserId: strin
               where: { id: item.id },
               data: { quantityTransferred: { increment: 1 } },
             });
+            updated = true;
           }
         }
       }
-      // Check if ALL items are now fully returned/transferred → close the request
-      const updatedItems = await db.repairToolRequestItem.findMany({ where: { repairToolRequestId: req.id } });
-      let allDone = true;
-      for (const item of updatedItems) {
-        const issued = item.quantityIssued || 0;
-        const ret = item.quantityReturned || 0;
-        const xfer = item.quantityTransferred || 0;
-        if ((ret + xfer) < issued) { allDone = false; break; }
-      }
-      if (allDone) {
-        await db.repairToolRequest.update({
-          where: { id: req.id },
-          data: { status: 'returned', returnedAt: new Date() },
-        });
+      if (updated) {
+        // If status was 'returned' but we just tracked a transfer, reset to 'issued'
+        // so the request doesn't prematurely appear closed
+        if (req.status === 'returned') {
+          await db.repairToolRequest.update({ where: { id: req.id }, data: { status: 'issued' } });
+        }
+        // Re-check: are ALL items now fully returned/transferred?
+        const refreshedItems = await db.repairToolRequestItem.findMany({ where: { repairToolRequestId: req.id } });
+        let allDone = true;
+        for (const item of refreshedItems) {
+          const issued = item.quantityIssued || 0;
+          const ret = item.quantityReturned || 0;
+          const xfer = item.quantityTransferred || 0;
+          if ((ret + xfer) < issued) { allDone = false; break; }
+        }
+        if (allDone) {
+          await db.repairToolRequest.update({
+            where: { id: req.id },
+            data: { status: 'returned', returnedAt: new Date() },
+          });
+        }
       }
     }
   }
