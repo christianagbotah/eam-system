@@ -5436,26 +5436,26 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
           })()}
 
           {/* Materials — with approval pipeline */}
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests?.length || 0} requests</CardDescription></div>
-              <div className="flex items-center gap-2">
+          <Card className="border-0 shadow-sm overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Package className="h-4 w-4 text-amber-600" />Materials & Parts</CardTitle><CardDescription className="text-xs">{wo.repairMaterialRequests?.length || 0} requests</CardDescription></div>
+              <div className="flex items-center gap-1.5 shrink-0">
                 {(wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0) && (
-                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" />View All</Button>
+                  <Button size="sm" variant="outline" className="gap-1.5 hidden sm:flex" onClick={() => navigate('repairs-material-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" /><span className="hidden md:inline">View All</span></Button>
                 )}
-                <Button size="sm" variant="outline" className="gap-1.5" disabled={workActionDisabled} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" />Request Material</Button>
+                <Button size="sm" variant="outline" className="gap-1.5" disabled={workActionDisabled} onClick={() => { setMaterialOpen(true); }}><Plus className="h-3.5 w-3.5" /><span className="hidden sm:inline">Request Material</span></Button>
               </div>
             </CardHeader>
             <CardContent>
               {/* Repair Material Requests — full approval pipeline */}
               {wo.repairMaterialRequests && wo.repairMaterialRequests.length > 0 ? (
                 <div className="space-y-3">
-                  <div className="p-3 rounded-lg bg-muted/50 border">
-                    <div className="flex items-center gap-4 text-[10px] text-muted-foreground mb-1">
+                  <div className="p-3 rounded-lg bg-muted/50 border overflow-hidden">
+                    <div className="flex items-center gap-2 sm:gap-4 text-[10px] text-muted-foreground mb-1 min-w-0">
                       {['Pending', 'Supervisor', 'Store', 'Picking', 'Issued', 'Done'].map(stage => (
-                        <div key={stage} className="flex items-center gap-1 flex-1 justify-center">
-                          <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />
-                          <span className="hidden lg:inline">{stage}</span>
+                        <div key={stage} className="flex items-center gap-1 flex-1 justify-center min-w-0">
+                          <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 shrink-0" />
+                          <span className="hidden lg:inline truncate">{stage}</span>
                         </div>
                       ))}
                     </div>
@@ -5470,14 +5470,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                               <p className="text-sm font-medium truncate">{mr.itemName}</p>
                               {mr.urgency && mr.urgency !== 'normal' && <UrgencyBadge urgency={mr.urgency} />}
                             </div>
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                            <div className="flex items-center gap-2 sm:gap-3 text-xs text-muted-foreground mt-1 flex-wrap">
                               <span>Qty: <strong>{mr.quantityRequested}</strong></span>
                               {mr.quantityApproved > 0 && <span>Approved: <strong className="text-sky-600">{mr.quantityApproved}</strong></span>}
                               {mr.quantityIssued > 0 && <span>Issued: <strong className="text-emerald-600">{mr.quantityIssued}</strong></span>}
                               {mr.unit && <span>{mr.unit}</span>}
                             </div>
                             {/* Pipeline dots */}
-                            <div className="flex items-center gap-1 mt-2">
+                            <div className="flex items-center gap-1 mt-2 overflow-x-auto">
                               {[
                                 { key: 'pending', label: 'Pending' },
                                 { key: 'supervisor_approved', label: 'Sup.' },
@@ -5501,7 +5501,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                                   </div>
                                 );
                               })}
-                              <Badge variant="outline" className={`text-[9px] ml-1 ${
+                              <Badge variant="outline" className={`text-[9px] shrink-0 ml-1 ${
                                 mr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                 mr.status === 'rejected' ? 'bg-red-50 text-red-700 border-red-200' :
                                 mr.status === 'supervisor_approved' ? 'bg-sky-50 text-sky-700 border-sky-200' :
@@ -5554,10 +5554,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
           {/* Tool Requests (from Repair module) */}
           {wo.repairToolRequests && wo.repairToolRequests.length > 0 && (
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4 text-orange-600" />Tool Requests</CardTitle><CardDescription className="text-xs">{wo.repairToolRequests.length} requests</CardDescription></div>
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" />View All</Button>
+          <Card className="border-0 shadow-sm overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <div className="min-w-0"><CardTitle className="text-base flex items-center gap-2"><Wrench className="h-4 w-4 text-orange-600" />Tool Requests</CardTitle><CardDescription className="text-xs">{wo.repairToolRequests.length} requests</CardDescription></div>
+              <Button size="sm" variant="outline" className="gap-1.5 shrink-0" onClick={() => navigate('repairs-tool-requests', { workOrderId: wo.id })}><ArrowUpRight className="h-3.5 w-3.5" /><span className="hidden sm:inline">View All</span></Button>
             </CardHeader>
             <CardContent>
               <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -6378,17 +6378,17 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Team</CardTitle>
               <div className="flex gap-1.5">
-                {canManageTeamDirectly && (
+                {!isWOFinalized && canManageTeamDirectly && (
                   <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddTeamMemberOpen(true)}><UserPlus className="h-3.5 w-3.5" />Add Member</Button>
                 )}
-                {canRequestTeamMember && (
+                {!isWOFinalized && canRequestTeamMember && (
                   <Button size="sm" variant="outline" className="gap-1.5 border-amber-200 text-amber-700 hover:bg-amber-50" onClick={() => setRequestMemberOpen(true)}><UserPlus className="h-3.5 w-3.5" />Request Member</Button>
                 )}
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
               {/* Pending Team Requests (for reviewers — planner/admin) */}
-              {canReviewTeamRequests && (() => {
+              {!isWOFinalized && canReviewTeamRequests && (() => {
                 const pendingReqs = teamRequests.filter((r: any) => r.status === 'pending');
                 if (pendingReqs.length === 0) return null;
                 return (
@@ -6539,7 +6539,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                           {isReadOnlyMember && <Badge variant="outline" className="text-[10px] bg-slate-100 text-slate-600 border-slate-200">Read Only</Badge>}
                         </div>
                       </div>
-                      {canManageTeamDirectly && !isTeamLeader && (
+                      {!isWOFinalized && canManageTeamDirectly && !isTeamLeader && (
                         <Button
                           size="sm"
                           variant="ghost"
