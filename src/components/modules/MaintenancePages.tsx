@@ -2743,6 +2743,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const [tlBreakMinutes, setTlBreakMinutes] = useState('');
   const [tlNotes, setTlNotes] = useState('');
   const [tlLoading, setTlLoading] = useState(false);
+  const [optimisticPausedOnThisWO, setOptimisticPausedOnThisWO] = useState(false);
   const [tlLoggedForUserId, setTlLoggedForUserId] = useState('');
   const [tlError, setTlError] = useState('');
 
@@ -2899,6 +2900,15 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     const res = await api.get<WorkOrder>(`/api/work-orders/${id}`);
     if (res.success && res.data) {
       setWo(res.data);
+      // Reset optimistic paused state only if server timeLogs confirm the state
+      // (hasPausedSession memo will re-evaluate from wo.timeLogs)
+      if (res.data.timeLogs && res.data.timeLogs.length > 0) {
+        const sorted = [...res.data.timeLogs].sort((a: any, b: any) => new Date(a.timestamp || a.createdAt).getTime() - new Date(b.timestamp || b.createdAt).getTime());
+        const lastAction = sorted[sorted.length - 1] as any;
+        setOptimisticPausedOnThisWO(lastAction?.action === 'pause');
+      } else {
+        setOptimisticPausedOnThisWO(false);
+      }
       // Team member requests are now included in the WO response
       if ((res.data as any).teamMemberRequests) {
         setTeamRequests((res.data as any).teamMemberRequests);
@@ -3130,12 +3140,14 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
   // Is there a paused session on THIS WO that can be resumed?
   const hasPausedSession = useMemo(() => {
+    // Optimistic: if we just paused, show immediately
+    if (optimisticPausedOnThisWO) return true;
     if (!wo?.timeLogs || wo.timeLogs.length === 0) return false;
     if (isActiveOnThisWO) return false; // currently running, not paused
     const sorted = [...wo.timeLogs].sort((a, b) => new Date(a.timestamp || a.createdAt).getTime() - new Date(b.timestamp || b.createdAt).getTime());
     const lastAction = sorted[sorted.length - 1];
     return lastAction?.action === 'pause';
-  }, [wo?.timeLogs, isActiveOnThisWO]);
+  }, [wo?.timeLogs, isActiveOnThisWO, optimisticPausedOnThisWO]);
 
   // Quick action handlers for start/pause/resume/complete
   const handleQuickTimeAction = async (action: string, reason?: string) => {
@@ -3157,6 +3169,32 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       toast.success(msgs[action] || `Time ${action} recorded`);
       setPauseDialogOpen(false);
       setPauseReason('');
+
+      // Optimistic update: immediately reflect the action in the UI
+      // so buttons (Start/Pause/Resume) switch without waiting for server re-fetch
+      if (action === 'start' || action === 'resume') {
+        setOptimisticPausedOnThisWO(false);
+        setGlobalActiveSession({
+          workOrderId: id,
+          workOrderNumber: wo?.woNumber || '',
+          workOrderTitle: wo?.title || '',
+          workOrderStatus: wo?.status || '',
+          action,
+          startedAt: new Date().toISOString(),
+          elapsedSeconds: 0,
+          logId: res.data?.id || '',
+          activityType: 'maintenance',
+        });
+      } else if (action === 'pause' || action === 'complete') {
+        setGlobalActiveSession(null);
+        if (action === 'pause') {
+          setOptimisticPausedOnThisWO(true);
+        } else {
+          setOptimisticPausedOnThisWO(false);
+        }
+      }
+
+      // Background sync with server to ensure consistency
       fetchActiveSession();
       fetchWO();
     } else {
