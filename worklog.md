@@ -243,3 +243,21 @@ Stage Summary:
 - When consumed: SparePartReturn gets status="disposed" with disposal info, RepairMaterialRequest gets consumedQty updated and status="closed"
 - When returnable: SparePartReturn gets status="pending" for refurbishment workflow, RepairMaterialRequest gets return qty recorded
 - Both WO details sheet and material requests page will now correctly show updated status after consume action
+---
+Task ID: fix-time-logs-buttons
+Agent: Main Agent
+Task: Fix Time Logs Start/Pause/Resume button state not updating after actions
+
+Work Log:
+- Investigated the flow: handleQuickTimeAction called fetchActiveSession() and fetchWO() without await
+- globalActiveSession (controls button visibility) stayed null until async fetches completed
+- No optimistic state update existed, so buttons remained stuck on "Start Work"
+- Added optimisticPausedOnThisWO state for immediate pause→resume button switch
+- Updated handleQuickTimeAction: start/resume → set globalActiveSession immediately, pause → clear + set optimistic paused, complete → clear both
+- Updated fetchWO to sync optimisticPausedOnThisWO from server timeLogs data
+- Committed and pushed as ae68f4d6
+
+Stage Summary:
+- Button state now updates instantly on action: Start→Pause, Pause→Resume, Resume→Pause, Complete→Start
+- Server data syncs in background to ensure consistency
+- No flicker between optimistic and server state
