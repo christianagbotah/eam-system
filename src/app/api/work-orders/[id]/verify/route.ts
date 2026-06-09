@@ -48,7 +48,7 @@ export async function POST(
     // Add verification comment
     const commentContent = notes
       ? `[Verification] ${notes}${qualityRating ? ` | Quality Rating: ${qualityRating}/5` : ''}`
-      : `[Verification] Verified by ${session.userId}`;
+      : `[Verification] Verified by ${session.fullName}`;
     await db.workOrderComment.create({
       data: {
         workOrderId: id,
