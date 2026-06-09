@@ -57,6 +57,7 @@ const statusColors: Record<string, string> = {
   partially_returned: 'bg-teal-100 text-teal-800',
   fully_returned: 'bg-gray-100 text-gray-800',
   returned: 'bg-gray-100 text-gray-800',
+  pending_return: 'bg-amber-100 text-amber-800',
   rejected: 'bg-red-100 text-red-800',
   transferred: 'bg-emerald-100 text-emerald-800',
   pending_review: 'bg-orange-100 text-orange-800',
@@ -1254,20 +1255,24 @@ export function RepairToolRequestsPage() {
   // ── Return dialog ──
   const openReturnDialog = async () => {
     if (!detailItem) return;
+    if (detailItem.status === 'pending_return') {
+      toast.error('A return is already pending store keeper confirmation');
+      return;
+    }
     let fullDetail = detailItem;
     if (!detailItem.items || detailItem.items.length === 0) {
       const res = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
       if (res.success) fullDetail = res.data;
     }
     const items = getRequestItems(fullDetail);
-    // Only include items that still have remaining qty to return
+    // Only include items that still have remaining qty to return (subtract transferred)
     const form = items.map((i: any) => ({
       itemId: i.id,
       toolName: i.toolName || '',
       toolCode: i.toolCode || '',
       quantityIssued: i.quantityIssued || 0,
-      quantityAlreadyReturned: i.quantityReturned || 0,
-      quantityReturned: (i.quantityIssued || 0) - (i.quantityReturned || 0), // default to remaining
+      quantityAlreadyReturned: (i.quantityReturned || 0) + (i.quantityTransferred || 0),
+      quantityReturned: (i.quantityIssued || 0) - (i.quantityReturned || 0) - (i.quantityTransferred || 0),
       conditionAtReturn: i.conditionAtIssue || 'good',
     })).filter(f => f.quantityReturned > 0);
     setReturnItemsForm(form);
@@ -1287,7 +1292,7 @@ export function RepairToolRequestsPage() {
       returnedItems,
     });
     if (res.success) {
-      toast.success('Tools returned successfully');
+      toast.success('Return submitted — awaiting store keeper confirmation');
       if (res.warnings) res.warnings.forEach((w: string) => toast.warning(w));
       setReturnItemsOpen(false);
       const detailRes = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
@@ -1474,7 +1479,7 @@ export function RepairToolRequestsPage() {
         </div>
         <Select value={filterStatus} onValueChange={setFilterStatus}>
           <SelectTrigger className="w-44"><SelectValue placeholder="Status" /></SelectTrigger>
-          <SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="supervisor_approved">Supervisor Approved</SelectItem><SelectItem value="storekeeper_approved">Store Approved</SelectItem><SelectItem value="issued">Issued</SelectItem><SelectItem value="returned">Returned</SelectItem></SelectContent>
+          <SelectContent><SelectItem value="all">All Statuses</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="supervisor_approved">Supervisor Approved</SelectItem><SelectItem value="storekeeper_approved">Store Approved</SelectItem><SelectItem value="issued">Issued</SelectItem><SelectItem value="pending_return">Pending Return</SelectItem><SelectItem value="returned">Returned</SelectItem></SelectContent>
         </Select>
         <Select value={filterUrgency} onValueChange={setFilterUrgency}>
           <SelectTrigger className="w-36"><SelectValue placeholder="Urgency" /></SelectTrigger>
@@ -1648,10 +1653,18 @@ export function RepairToolRequestsPage() {
                               <span>Issued: <strong className="text-foreground">{item.quantityIssued}</strong></span>
                               {item.quantityReturned > 0 && <span>Returned: <strong className="text-foreground">{item.quantityReturned}</strong></span>}
                               {(item.quantityTransferred || 0) > 0 && <span className="text-sky-600">Transferred: <strong className="text-foreground">{item.quantityTransferred}</strong></span>}
+                              {(item.pendingReturnQty || 0) > 0 && <span className="text-amber-600 font-medium">⏳ Pending Return: <strong className="text-foreground">{item.pendingReturnQty}</strong></span>}
                             </div>
                             {item.issueNotes && (
                               <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1">
                                 <Info className="h-3 w-3 inline mr-1" />{item.issueNotes}
+                              </div>
+                            )}
+                            {/* Pending return condition and notes */}
+                            {(item.pendingReturnQty || 0) > 0 && (
+                              <div className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1 space-y-0.5">
+                                <div>Reported condition: <StatusBadge status={item.pendingReturnCondition || 'good'} /></div>
+                                {item.pendingReturnNotes && <div>Notes: {item.pendingReturnNotes}</div>}
                               </div>
                             )}
                             {(item.conditionAtIssue || item.conditionAtReturn) && (
@@ -1685,7 +1698,8 @@ export function RepairToolRequestsPage() {
                   {((detailItem.status === 'pending' && canApproveAsSupervisor(user)) ||
                     (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) ||
                     (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) ||
-                    hasOutstandingItems(detailItem)) && (<>
+                    (detailItem.status === 'pending_return' && canApproveAsStore(user)) ||
+                    (detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem))) && (<>
                     <Separator />
                     <div className="flex flex-wrap gap-2">
                       {detailItem.status === 'pending' && canApproveAsSupervisor(user) && (<>
@@ -1699,7 +1713,27 @@ export function RepairToolRequestsPage() {
                       {detailItem.status === 'storekeeper_approved' && canApproveAsStore(user) && (
                         <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { setDetailItem(detailItem); openIssueDialog(); }} disabled={submitting}><Wrench className="h-3.5 w-3.5" /> Issue Tools</Button>
                       )}
-                      {hasOutstandingItems(detailItem) && (
+                      {/* ── Store Keeper Return Confirmation ── */}
+                      {detailItem.status === 'pending_return' && canApproveAsStore(user) && (
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" className="gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={async () => {
+                            setSubmitting(true);
+                            const res = await api.post(`/api/repairs/tool-requests/${detailItem.id}`, { action: 'storekeeper_confirm_return' });
+                            if (res.success) {
+                              toast.success('Return confirmed — tools updated in inventory');
+                              if (res.warnings) res.warnings.forEach((w: string) => toast.warning(w));
+                              const detailRes = await api.get(`/api/repairs/tool-requests/${detailItem.id}`);
+                              if (detailRes.success) setDetailItem(detailRes.data);
+                              fetchRequests();
+                            } else {
+                              toast.error(res.error || 'Failed to confirm return');
+                            }
+                            setSubmitting(false);
+                          }} disabled={submitting}><CheckCircle2 className="h-3.5 w-3.5" /> Confirm Return</Button>
+                          <Button size="sm" variant="destructive" onClick={() => { setRejectTarget({ id: detailItem.id, action: 'storekeeper_reject_return' }); setRejectOpen(true); }} disabled={submitting}><XCircle className="h-3.5 w-3.5" /> Reject Return</Button>
+                        </div>
+                      )}
+                      {detailItem.status !== 'pending_return' && hasOutstandingItems(detailItem) && (
                         <div className="flex gap-2">
                           <Button size="sm" className="gap-1 bg-amber-600 hover:bg-amber-700 text-white" onClick={() => { setDetailItem(detailItem); openReturnDialog(); }} disabled={submitting}><RotateCcw className="h-3.5 w-3.5" /> Return Tools</Button>
                           <Button size="sm" className="gap-1 bg-sky-600 hover:bg-sky-700 text-white" onClick={() => { setDetailItem(detailItem); openTransferDialog(); }} disabled={submitting}><ArrowRightLeft className="h-3.5 w-3.5" /> Transfer Tools</Button>
@@ -1994,7 +2028,7 @@ export function RepairToolRequestsPage() {
         </div>
       </ResponsiveDialog>
 
-      <RejectDialog open={rejectOpen} onClose={() => { setRejectOpen(false); setRejectTarget(null); }} onConfirm={(reason) => { if (rejectTarget) handleAction(rejectTarget.id, rejectTarget.action, { notes: reason }); }} title="Reject Tool Request" />
+      <RejectDialog open={rejectOpen} onClose={() => { setRejectOpen(false); setRejectTarget(null); }} onConfirm={(reason) => { if (rejectTarget) handleAction(rejectTarget.id, rejectTarget.action, { notes: reason }); }} title={rejectTarget?.action === 'storekeeper_reject_return' ? 'Reject Tool Return' : 'Reject Tool Request'} />
 
       {/* ═══════ Edit Dialog ═══════ */}
       <ResponsiveDialog open={editOpen} onOpenChange={(v) => { if (!v) setEditOpen(false); }}>
@@ -2877,7 +2911,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
     }
 
     if (errors.length === 0) {
-      toast.success('All returns processed successfully');
+      toast.success('All returns submitted — awaiting store keeper confirmation');
       setReturnOpen(false);
       // Update allItems to reflect returned quantities
       setAllItems(prev => prev.map(item => {

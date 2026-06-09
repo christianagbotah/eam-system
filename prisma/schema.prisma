@@ -204,6 +204,7 @@ model User {
   repairToolReqStoreApproved RepairToolRequest[]     @relation("RepairToolReqStoreApproved")
   repairToolReqIssued        RepairToolRequest[]     @relation("RepairToolReqIssued")
   repairToolReqReturned      RepairToolRequest[]     @relation("RepairToolReqReturned")
+  repairToolReqReturnConfirmed RepairToolRequest[] @relation("RepairToolReqReturnConfirmed")
   toolTransferFrom           ToolTransferRequest[]   @relation("ToolTransferFrom")
   toolTransferTo             ToolTransferRequest[]   @relation("ToolTransferTo")
   toolTransferRequested      ToolTransferRequest[]   @relation("ToolTransferRequested")
@@ -2532,8 +2533,10 @@ model RepairToolRequest {
   storekeeperApprovedAt   DateTime?
   issuedById              String? // → User
   issuedAt                DateTime?
-  returnedById            String? // → User
+  returnedById            String? // → User (technician who submitted return)
   returnedAt              DateTime?
+  returnConfirmedById     String? // → User (store keeper who confirmed)
+  returnConfirmedAt       DateTime?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
@@ -2552,6 +2555,7 @@ model RepairToolRequest {
   storekeeperApprovedBy User? @relation("RepairToolReqStoreApproved", fields: [storekeeperApprovedById], references: [id])
   issuedByUser          User? @relation("RepairToolReqIssued", fields: [issuedById], references: [id])
   returnedByUser        User? @relation("RepairToolReqReturned", fields: [returnedById], references: [id])
+  returnConfirmedByUser User? @relation("RepairToolReqReturnConfirmed", fields: [returnConfirmedById], references: [id])
 
   // Damaged Tool Report relations
   damagedToolReports DamagedToolReport[] @relation("DamagedToolReportToolReq")
@@ -2576,7 +2580,10 @@ model RepairToolRequestItem {
   availabilityStatus    String?   // available, limited, unavailable — set at issue time
   issueNotes            String?   // reason for partial issue or non-issue
   conditionAtIssue      String?   // condition of tool when issued
-  conditionAtReturn     String?   // condition when returned
+  conditionAtReturn     String?   // condition when returned (confirmed by store keeper)
+  pendingReturnQty      Int?      // quantity awaiting store keeper confirmation
+  pendingReturnCondition String?  // condition reported by technician (pending confirmation)
+  pendingReturnNotes    String?   // technician notes about the return
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 

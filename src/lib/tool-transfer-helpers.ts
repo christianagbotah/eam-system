@@ -80,6 +80,10 @@ export async function decrementToolRequestTransfer(toolId: string, fromUserId: s
 
 /** Check if all items in a tool request are fully returned/transferred and close the request */
 export async function checkAndCloseToolRequest(reqId: string) {
+  // Don't close requests that are pending return confirmation
+  const req = await db.repairToolRequest.findUnique({ where: { id: reqId }, select: { status: true } });
+  if (!req || req.status === 'pending_return') return;
+
   const items = await db.repairToolRequestItem.findMany({ where: { repairToolRequestId: reqId } });
   if (items.length === 0) return;
   let allDone = true;
