@@ -5639,7 +5639,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                           <div className="flex items-center gap-2 flex-wrap">
                             {tr.requestNumber && <Badge variant="outline" className="font-mono text-[10px] bg-sky-50 text-sky-700 border-sky-200">{tr.requestNumber}</Badge>}
                             <Badge variant="outline" className={`text-[10px] ${tr.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : tr.status === 'issued' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : tr.status === 'pending_return' ? 'bg-violet-50 text-violet-700 border-violet-200' : tr.status === 'returned' ? 'bg-slate-50 text-slate-600 border-slate-200' : tr.status?.includes('approved') ? 'bg-sky-50 text-sky-700 border-sky-200' : tr.status === 'transferred' ? 'bg-teal-50 text-teal-700 border-teal-200' : tr.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-muted'}`}>{tr.status?.replace(/_/g, ' ')}</Badge>
-                            {isFinalStatus && <span className="text-[10px] text-muted-foreground">✓ Done</span>}
+                            {isFinalStatus && <span className="text-[10px] text-muted-foreground">{tr.status === 'transferred' ? '🔄 Transferred out' : tr.status === 'returned' ? '↩️ Returned' : '✓ Done'}</span>}
                           </div>
                           {tr.urgency && tr.urgency !== 'normal' && <UrgencyBadge urgency={tr.urgency} />}
                         </div>
@@ -6299,31 +6299,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
               </div>
           </ResponsiveDialog>
 
-          {/* Timeline */}
-          <Card className="border-0 shadow-sm">
-            <CardHeader><CardTitle className="text-base">Activity Timeline</CardTitle></CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {wo.statusHistory?.map((h, i) => (
-                  <div key={h.id} className="flex items-center gap-3 text-sm">
-                    <div className="relative flex flex-col items-center">
-                      <div className={`h-3 w-3 rounded-full ${i === 0 ? 'bg-emerald-500 ring-4 ring-emerald-100' : 'bg-emerald-300'}`} />
-                      {i < (wo.statusHistory?.length || 0) - 1 && <div className="w-0.5 h-6 bg-emerald-200" />}
-                    </div>
-                    <div className="flex-1 flex items-center justify-between">
-                      <div>
-                        <span className="font-medium">{h.toStatus.replace(/_/g, ' ')}</span>
-                        {h.reason && <span className="text-muted-foreground"> — {h.reason}</span>}
-                      </div>
-                      <span className="text-muted-foreground text-xs">{formatDateTime(h.createdAt)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-        {/* Right Panel — Details, Cost, Source, Team */}
+          {/* Right Panel — Details, Cost, Source, Team */}
         <div className="space-y-4">
           <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader>

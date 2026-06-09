@@ -54,7 +54,7 @@ export async function incrementToolRequestTransfer(toolId: string, fromUserId: s
 export async function decrementToolRequestTransfer(toolId: string, fromUserId: string) {
   const activeRequests = await db.repairToolRequest.findMany({
     where: {
-      status: { in: ['issued', 'returned'] },
+      status: { in: ['issued', 'returned', 'transferred'] },
       OR: [{ toolId }, { items: { some: { toolId } } }],
     },
     include: { items: true },
@@ -71,6 +71,13 @@ export async function decrementToolRequestTransfer(toolId: string, fromUserId: s
               where: { id: item.id },
               data: { quantityTransferred: { decrement: 1 } },
             });
+            // Reopen the request if it was prematurely closed to 'returned' or 'transferred'
+            if (req.status === 'returned' || req.status === 'transferred') {
+              await db.repairToolRequest.update({
+                where: { id: req.id },
+                data: { status: 'issued', returnedAt: null },
+              });
+            }
           }
         }
       }
@@ -87,16 +94,23 @@ export async function checkAndCloseToolRequest(reqId: string) {
   const items = await db.repairToolRequestItem.findMany({ where: { repairToolRequestId: reqId } });
   if (items.length === 0) return;
   let allDone = true;
+  let hasTransfers = false;
+  let hasReturns = false;
   for (const item of items) {
     const issued = item.quantityIssued || 0;
     const ret = item.quantityReturned || 0;
     const xfer = item.quantityTransferred || 0;
     if ((ret + xfer) < issued) { allDone = false; break; }
+    if (xfer > 0) hasTransfers = true;
+    if (ret > 0) hasReturns = true;
   }
   if (allDone) {
+    // If all items were transferred out (no returns), set status to 'transferred'
+    // If all items were returned, or mixed returns+transfers, set status to 'returned'
+    const newStatus = (hasTransfers && !hasReturns) ? 'transferred' : 'returned';
     await db.repairToolRequest.update({
       where: { id: reqId },
-      data: { status: 'returned', returnedAt: new Date() },
+      data: { status: newStatus, returnedAt: new Date() },
     });
   }
 }
