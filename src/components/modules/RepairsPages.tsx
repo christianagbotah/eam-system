@@ -1685,7 +1685,7 @@ export function RepairToolRequestsPage() {
                   {((detailItem.status === 'pending' && canApproveAsSupervisor(user)) ||
                     (detailItem.status === 'supervisor_approved' && canApproveAsStore(user)) ||
                     (detailItem.status === 'storekeeper_approved' && canApproveAsStore(user)) ||
-                    hasOutstandingItems(detailItem)) && (<>(
+                    hasOutstandingItems(detailItem)) && (<>
                     <Separator />
                     <div className="flex flex-wrap gap-2">
                       {detailItem.status === 'pending' && canApproveAsSupervisor(user) && (<>
