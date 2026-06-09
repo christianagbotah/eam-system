@@ -3895,21 +3895,23 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     'wait-parts': { description: 'Are you sure you want to set this work order to Waiting for Parts?', label: 'Yes, Wait for Parts' },
   };
 
-  // WO is finalized when supervisor has verified (awaiting planner closure) or permanently locked/closed
-  const isWOFinalized = wo.status === 'verified' || wo.status === 'closed' || wo.status === 'cancelled' || wo.isLocked;
+  // WO is finalized when completed/verified/closed/cancelled/locked — all action buttons disabled
+  const isWOFinalized = ['completed', 'verified', 'closed', 'cancelled'].includes(wo.status) || wo.isLocked;
+  const isWOReadOnly = isWOFinalized; // alias for clarity
   const isWOPermanentlyLocked = wo.isLocked || wo.status === 'closed';
   // Edit: planner who created the WO, anyone with assign permissions, or admin can edit
   // Technicians with work_orders.update can only change status (start/complete), NOT edit WO fields
-  const canEdit = !['closed', 'cancelled', 'verified'].includes(wo.status) && (
+  const canEdit = !['completed', 'closed', 'cancelled', 'verified'].includes(wo.status) && (
     canManageTeamDirectly ||
     isAdmin() ||
     (wo.plannerId === user?.id) ||
     (wo.createdById === user?.id && hasPermission('work_orders.create'))
   );
 
-  // Disable work-performing buttons (time log, start, personal tools, materials) for non-workers
-  // Must be declared AFTER isWOFinalized to avoid temporal dead zone error
+  // Disable work-performing buttons (time log, start, personal tools, materials) for non-workers or finalized WOs
   const workActionDisabled = isReadOnly || isWOFinalized || !isWorkerOnThisWO;
+  // Disable ALL interactive buttons for completed/closed WOs
+  const allActionsDisabled = isWOFinalized;
 
   // Format session duration
   const formatSessionDuration = (seconds: number) => {
@@ -5087,8 +5089,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             <CardHeader><CardTitle className="text-base">Comments ({wo.comments?.length || 0})</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="flex gap-2">
-                <Input value={comment} onChange={e => setComment(e.target.value)} placeholder="Add comment..." onKeyDown={e => e.key === 'Enter' && handleComment()} />
-                <Button size="icon" className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0" onClick={handleComment}><MessageSquare className="h-4 w-4" /></Button>
+                <Input value={comment} onChange={e => setComment(e.target.value)} placeholder="Add comment..." disabled={isWOFinalized} onKeyDown={e => e.key === 'Enter' && !isWOFinalized && handleComment()} />
+                <Button size="icon" className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0" disabled={isWOFinalized} onClick={handleComment}><MessageSquare className="h-4 w-4" /></Button>
               </div>
               <ScrollArea className="max-h-64">
                 {wo.comments?.map(c => (
@@ -5512,25 +5514,25 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                             </div>
                             {/* Action buttons */}
                             <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                              {mr.status === 'pending' && isSupervisorOrAdminLocal() && (
+                              {!isWOFinalized && mr.status === 'pending' && isSupervisorOrAdminLocal() && (
                                 <>
                                   <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'supervisor_approve')}><CheckCircle2 className="h-3 w-3 mr-1" />Approve</Button>
                                   <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-red-500 hover:text-red-600 border-red-200" onClick={() => { if (!confirm('Reject this material request?')) return; handleMatRequestAction(mr.id, 'supervisor_reject', { notes: 'Rejected by supervisor' }); }}><XCircle className="h-3 w-3 mr-1" />Reject</Button>
                                 </>
                               )}
-                              {mr.status === 'supervisor_approved' && isStoreOrAdminLocal() && (
+                              {!isWOFinalized && mr.status === 'supervisor_approved' && isStoreOrAdminLocal() && (
                                 <>
                                   <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-teal-600 hover:text-teal-700 border-teal-300 bg-teal-50" onClick={() => handleMatRequestAction(mr.id, 'storekeeper_approve')}><Warehouse className="h-3 w-3 mr-1" />Store Approve</Button>
                                   <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-red-500 hover:text-red-600 border-red-200" onClick={() => { if (!confirm('Reject this material request?')) return; handleMatRequestAction(mr.id, 'storekeeper_reject', { notes: 'Rejected by store' }); }}><XCircle className="h-3 w-3 mr-1" />Reject</Button>
                                 </>
                               )}
-                              {mr.status === 'storekeeper_approved' && isStoreOrAdminLocal() && (
+                              {!isWOFinalized && mr.status === 'storekeeper_approved' && isStoreOrAdminLocal() && (
                                 <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-violet-600 hover:text-violet-700 border-violet-300 bg-violet-50" onClick={() => handleMatRequestPick(mr.id)}><PackageOpen className="h-3 w-3 mr-1" />Pick</Button>
                               )}
-                              {mr.status === 'picking' && isStoreOrAdminLocal() && (
+                              {!isWOFinalized && mr.status === 'picking' && isStoreOrAdminLocal() && (
                                 <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-emerald-600 hover:text-emerald-700 border-emerald-300 bg-emerald-50" onClick={() => handleMatRequestAction(mr.id, 'issue', { quantityToIssue: mr.quantityApproved || mr.quantityRequested })}><PackageCheck className="h-3 w-3 mr-1" />Issue</Button>
                               )}
-                              {mr.status === 'issued' && (
+                              {!isWOFinalized && mr.status === 'issued' && (
                                 <Button size="sm" variant="outline" className="h-7 text-[10px] px-2 text-amber-600 hover:text-amber-700 border-amber-300 bg-amber-50" onClick={() => openSpareReturnFromMR(mr)}><RotateCcw className="h-3 w-3 mr-1" />Return</Button>
                               )}
                             </div>
@@ -5608,30 +5610,40 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-                <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors">
+                {isWOFinalized ? (
+                  <div className="col-span-full text-center py-3">
+                    <p className="text-xs text-muted-foreground">Work order is {wo.status?.replace(/_/g, ' ') || 'closed'} — all actions are disabled</p>
+                  </div>
+                ) : (
+                <>
+                <button onClick={() => { resetToolReqForm(); setToolReqOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-orange-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Request Tool</span>
                 </button>
-                <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-teal-50 transition-colors">
+                <button onClick={() => { resetToolXferForm(); setToolXferOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-teal-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center relative"><ArrowRightLeft className="h-4 w-4" />{wo.repairToolRequests?.some((tr: any) => tr.status === 'transferred' || tr.status === 'completed') && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 border-2 border-white" />}</div>
                   <span className="text-xs font-medium">Transfer Tool</span>
                 </button>
-                <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-red-50 transition-colors">
+                <button onClick={() => { resetDowntimeForm(); setDowntimeOpen(true); }} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-red-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-red-100 text-red-700 flex items-center justify-center"><Timer className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Log Downtime</span>
                 </button>
-                <button onClick={() => openMatReturn()} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors">
+                <button onClick={() => openMatReturn()} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-violet-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center"><RefreshCw className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Return Material</span>
                 </button>
+                </>
+                )}
                 <button onClick={() => setViewAllToolsOpen(true)} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-sky-50 transition-colors">
                   <div className="h-9 w-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center"><Wrench className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">View All Tools</span>
                 </button>
-                <button onClick={() => setActionDialog('complete')} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-emerald-50 transition-colors">
+                {!isWOFinalized && (
+                <button onClick={() => setActionDialog('complete')} disabled={workActionDisabled} className="flex flex-col items-center gap-2 p-3 rounded-lg border hover:bg-emerald-50 transition-colors disabled:opacity-40 disabled:pointer-events-none">
                   <div className="h-9 w-9 rounded-lg bg-green-100 text-green-700 flex items-center justify-center"><CheckCircle2 className="h-4 w-4" /></div>
                   <span className="text-xs font-medium">Complete WO</span>
                 </button>
+                )}
               </div>
             </CardContent>
           </Card>
