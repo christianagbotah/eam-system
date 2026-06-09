@@ -225,3 +225,21 @@ Stage Summary:
 - Task checklist "Done" button now works correctly
 - Users can undo completed/skipped/failed tasks
 - One-click completion + optional notes dialog = much more user-friendly
+---
+Task ID: fix-consumed-status
+Agent: Main Agent
+Task: Fix "Record as Consumed" not updating material request status on WO details and material page
+
+Work Log:
+- Investigated the "Return Material" flow from WO Repair Resources section
+- Found root cause: POST /api/repairs/spare-part-returns was not passing refurbishmentNeeded to DB, and didn't accept isConsumed flag
+- Backend never updated the linked RepairMaterialRequest when material was consumed, leaving status as "issued" forever
+- Fixed backend (spare-part-returns/route.ts): accept isConsumed and refurbishmentNeeded from body, set status to "disposed" when consumed, update linked RepairMaterialRequest with consumedQty/quantityReturned/status
+- Fixed frontend (MaintenancePages.tsx handleSpareReturn): send isConsumed: !spareReturnIsReusable flag
+- Committed and pushed as 9e6978ce
+
+Stage Summary:
+- Backend now properly tracks consumed vs returnable materials
+- When consumed: SparePartReturn gets status="disposed" with disposal info, RepairMaterialRequest gets consumedQty updated and status="closed"
+- When returnable: SparePartReturn gets status="pending" for refurbishment workflow, RepairMaterialRequest gets return qty recorded
+- Both WO details sheet and material requests page will now correctly show updated status after consume action
