@@ -3022,6 +3022,15 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
     });
     // Fetch suggested items
     fetchSuggestedItems();
+    // Background sync: fix any mismatched quantityTransferred on tool request items
+    api.post(`/api/repairs/tool-transfers/sync-quantities`, { workOrderId: id }).then(res => {
+      if (active && res.success && res.data && (res.data as any).synced > 0) {
+        // Re-fetch WO to show corrected transfer quantities
+        api.get<WorkOrder>(`/api/work-orders/${id}`).then(woRes => {
+          if (active && woRes.success && woRes.data) setWo(woRes.data);
+        });
+      }
+    });
     return () => { active = false; };
   }, [id, fetchSuggestedItems]);
 
@@ -4845,13 +4854,13 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             <AsyncSearchableSelect
               value={toolXferToolId}
               onValueChange={(val) => {
-                const cached = woToolOptions.current.find(t => t.id === val);
+                const cached = woToolOptions.current.find(t => t.value === val);
                 setToolXferToolId(val);
                 setToolXferToolName(cached?.name || '');
               }}
               fetchOptions={async () => {
                 // Only show tools from this WO's issued requests (not transferred/returned)
-                const options: { value: string; label: string; id: string; name: string }[] = [];
+                const options: { value: string; label: string; id: string; name: string; toolDbId: string | null }[] = [];
                 if (wo?.repairToolRequests) {
                   for (const tr of wo.repairToolRequests as any[]) {
                     if (!['issued', 'pending_return'].includes(tr.status)) continue;
@@ -4862,7 +4871,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         const transferred = item.quantityTransferred || 0;
                         const outstanding = issued - returned - transferred;
                         if (outstanding > 0) {
-                          const entry = { value: `${tr.id}__${item.id}`, label: `${item.toolName || 'Tool'}${item.toolCode ? ` (${item.toolCode})` : ''} — ${outstanding} available`, id: `${tr.id}__${item.id}`, name: item.toolName || '' };
+                          // Use actual Tool DB ID if available, otherwise fall back to item ID
+                          const actualToolId = item.tool?.id || item.toolId || item.id;
+                          const entry = { value: actualToolId, label: `${item.toolName || 'Tool'}${item.toolCode ? ` (${item.toolCode})` : ''} — ${outstanding} available`, id: `${tr.id}__${item.id}`, name: item.toolName || '', toolDbId: item.tool?.id || item.toolId || null };
                           options.push(entry);
                         }
                       }
@@ -4872,7 +4883,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                       const transferred = tr.quantityTransferred || 0;
                       const outstanding = issued - returned - transferred;
                       if (outstanding > 0) {
-                        options.push({ value: tr.id, label: `${tr.toolName}${tr.tool?.toolCode ? ` (${tr.tool.toolCode})` : ''} — ${outstanding} available`, id: tr.id, name: tr.toolName });
+                        const actualToolId = tr.tool?.id || tr.toolId || tr.id;
+                        options.push({ value: actualToolId, label: `${tr.toolName}${tr.tool?.toolCode ? ` (${tr.tool.toolCode})` : ''} — ${outstanding} available`, id: tr.id, name: tr.toolName, toolDbId: tr.tool?.id || tr.toolId || null });
                       }
                     }
                   }

@@ -14,73 +14,106 @@ import { db } from '@/lib/db';
  * so we only need to check if the entire request is now done.
  */
 
-/** Increment quantityTransferred on matching tool request items when a transfer is submitted */
-export async function incrementToolRequestTransfer(toolId: string, fromUserId: string) {
-  const activeRequests = await db.repairToolRequest.findMany({
+/** Helper: find tool request items matching a tool ID, with fallback by name/code */
+async function findMatchingToolRequestItems(toolId: string): Promise<{ reqId: string; item: any }[]> {
+  const results: { reqId: string; item: any }[] = [];
+
+  // Phase 1: Exact toolId match on items
+  const exactRequests = await db.repairToolRequest.findMany({
     where: {
-      status: { in: ['issued', 'returned'] },
-      OR: [{ toolId }, { items: { some: { toolId } } }],
+      status: { in: ['issued', 'pending_return', 'returned', 'transferred'] },
+      items: { some: { toolId } },
     },
     include: { items: true },
   });
 
-  for (const req of activeRequests) {
-    if (req.toolId === toolId && (!req.items || req.items.length === 0)) continue; // Legacy single-tool
-    if (req.items && req.items.length > 0) {
-      for (const item of req.items) {
-        if (item.toolId === toolId) {
-          const issued = item.quantityIssued || 0;
-          const ret = item.quantityReturned || 0;
-          const xfer = item.quantityTransferred || 0;
-          if ((ret + xfer) < issued) {
-            await db.repairToolRequestItem.update({
-              where: { id: item.id },
-              data: { quantityTransferred: { increment: 1 } },
-            });
-            // Reset request status if prematurely set to 'returned'
-            if (req.status === 'returned') {
-              await db.repairToolRequest.update({ where: { id: req.id }, data: { status: 'issued' } });
-            }
+  for (const req of exactRequests) {
+    for (const item of req.items) {
+      if (item.toolId === toolId) {
+        results.push({ reqId: req.id, item });
+      }
+    }
+  }
+
+  // Phase 2: Fallback — match by tool name or tool code for items where toolId is null
+  if (results.length === 0) {
+    const tool = await db.tool.findUnique({ where: { id: toolId }, select: { name: true, toolCode: true } });
+    if (tool) {
+      const fallbackRequests = await db.repairToolRequest.findMany({
+        where: {
+          status: { in: ['issued', 'pending_return', 'returned', 'transferred'] },
+          items: { some: {
+            toolId: null,
+            OR: [
+              { toolName: tool.name },
+              ...(tool.toolCode ? [{ toolCode: tool.toolCode }] : []),
+            ],
+          }},
+        },
+        include: { items: true },
+      });
+
+      for (const req of fallbackRequests) {
+        for (const item of req.items) {
+          if (item.toolId === null && (
+            item.toolName === tool.name ||
+            (tool.toolCode && item.toolCode === tool.toolCode)
+          )) {
+            results.push({ reqId: req.id, item });
           }
         }
       }
-      // Check if all items are now fully returned/transferred → close the request
-      await checkAndCloseToolRequest(req.id);
     }
+  }
+
+  return results;
+}
+
+/** Helper: reopen a request if it was prematurely closed */
+async function reopenIfClosed(reqId: string) {
+  const req = await db.repairToolRequest.findUnique({ where: { id: reqId }, select: { status: true } });
+  if (req && (req.status === 'returned' || req.status === 'transferred')) {
+    await db.repairToolRequest.update({
+      where: { id: reqId },
+      data: { status: 'issued', returnedAt: null },
+    });
+  }
+}
+
+/** Increment quantityTransferred on matching tool request items when a transfer is submitted */
+export async function incrementToolRequestTransfer(toolId: string, fromUserId: string) {
+  const matches = await findMatchingToolRequestItems(toolId);
+
+  for (const { reqId, item } of matches) {
+    const issued = item.quantityIssued || 0;
+    const ret = item.quantityReturned || 0;
+    const xfer = item.quantityTransferred || 0;
+    if ((ret + xfer) < issued) {
+      await db.repairToolRequestItem.update({
+        where: { id: item.id },
+        data: { quantityTransferred: { increment: 1 } },
+      });
+      // Reopen if prematurely closed
+      await reopenIfClosed(reqId);
+    }
+    // Check if all items are now fully returned/transferred → close the request
+    await checkAndCloseToolRequest(reqId);
   }
 }
 
 /** Decrement quantityTransferred on matching tool request items when a transfer is rejected/cancelled */
 export async function decrementToolRequestTransfer(toolId: string, fromUserId: string) {
-  const activeRequests = await db.repairToolRequest.findMany({
-    where: {
-      status: { in: ['issued', 'returned', 'transferred'] },
-      OR: [{ toolId }, { items: { some: { toolId } } }],
-    },
-    include: { items: true },
-  });
+  const matches = await findMatchingToolRequestItems(toolId);
 
-  for (const req of activeRequests) {
-    if (req.toolId === toolId && (!req.items || req.items.length === 0)) continue;
-    if (req.items && req.items.length > 0) {
-      for (const item of req.items) {
-        if (item.toolId === toolId) {
-          const xfer = item.quantityTransferred || 0;
-          if (xfer > 0) {
-            await db.repairToolRequestItem.update({
-              where: { id: item.id },
-              data: { quantityTransferred: { decrement: 1 } },
-            });
-            // Reopen the request if it was prematurely closed to 'returned' or 'transferred'
-            if (req.status === 'returned' || req.status === 'transferred') {
-              await db.repairToolRequest.update({
-                where: { id: req.id },
-                data: { status: 'issued', returnedAt: null },
-              });
-            }
-          }
-        }
-      }
+  for (const { reqId, item } of matches) {
+    const xfer = item.quantityTransferred || 0;
+    if (xfer > 0) {
+      await db.repairToolRequestItem.update({
+        where: { id: item.id },
+        data: { quantityTransferred: { decrement: 1 } },
+      });
+      // Reopen if prematurely closed
+      await reopenIfClosed(reqId);
     }
   }
 }
