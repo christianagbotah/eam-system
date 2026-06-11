@@ -18,7 +18,8 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';;
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -233,17 +234,21 @@ export function IotDevicesPage() {
         </TableBody></Table>
       </Card>
 
-      <ResponsiveDialog open={!!detailDevice} onOpenChange={() => setDetailDevice(null)}>
-        
+      {/* Detail Side Sheet */}
+      <Sheet open={!!detailDevice} onOpenChange={(open) => { if (!open) setDetailDevice(null); }}>
+        <SheetContent className="sm:max-w-2xl overflow-y-auto p-6 pt-0">
           {detailDevice && (<>
-            <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight flex items-center gap-2">{detailDevice.name}<Badge variant="outline" className={`${statusColor[detailDevice.status] || ''} capitalize ml-2`}>{detailDevice.status}</Badge></h2><p className="text-sm text-muted-foreground font-mono text-xs">{detailDevice.deviceCode || detailDevice.id}</p></div>
+            <SheetHeader className="pt-6 mb-4">
+              <SheetTitle className="flex items-center gap-2">{detailDevice.name}<Badge variant="outline" className={`${statusColor[detailDevice.status] || ''} capitalize`}>{detailDevice.status}</Badge></SheetTitle>
+              <SheetDescription className="font-mono text-xs">{detailDevice.deviceCode || detailDevice.id}</SheetDescription>
+            </SheetHeader>
             {detailLoading ? <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : (<>
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-2 gap-3 text-sm">
               {[['Type', detailDevice.type], ['Protocol', detailDevice.protocol?.toUpperCase()], ['Location', detailDevice.location || '-'], ['Asset', detailDevice.asset?.name || '-'], ['Group', detailDevice.groupId || '-'], ['Last Seen', detailDevice.lastSeen ? timeAgo(detailDevice.lastSeen) : 'Never'], ['Battery', detailDevice.batteryLevel != null ? `${detailDevice.batteryLevel}%` : 'Wired'], ['Signal', signalLabel(detailDevice.signalStrength)], ['Parameter', detailDevice.parameter], ['Last Reading', detailDevice.lastReading != null ? `${detailDevice.lastReading} ${detailDevice.unit}` : 'No data'], ['Threshold', (detailDevice.thresholdMin != null || detailDevice.thresholdMax != null) ? `${detailDevice.thresholdMin ?? '—'} ~ ${detailDevice.thresholdMax ?? '—'} ${detailDevice.unit}` : '-'], ['Readings', `${detailDevice._count?.readings ?? 0}`], ['Alerts', `${detailDevice._count?.alerts ?? 0}`]].map(([label, val]) => (
                 <div key={label} className="flex justify-between p-2 rounded-lg bg-muted/30"><span className="text-muted-foreground">{label as string}</span><span className="font-medium">{label === 'Type' ? <span className="capitalize">{val as string}</span> : val as string}</span></div>
               ))}
             </div>
-            {detailReadings.length > 0 && (<div className="mt-2">
+            {detailReadings.length > 0 && (<div className="mt-4">
               <p className="text-sm font-medium mb-2">Recent Readings</p>
               <ChartContainer config={{ value: { label: detailDevice.parameter, color: '#10b981' } }} className="h-[200px] w-full">
                 <AreaChart data={[...detailReadings].reverse().map((r: any) => ({ hour: new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), value: r.value }))} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
@@ -256,10 +261,10 @@ export function IotDevicesPage() {
               </ChartContainer>
             </div>)}
             </>)}
-            <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">{(hasPermission('iot_devices.delete') || isAdmin()) && <Button variant="outline" onClick={() => handleDelete(detailDevice.id)} className="text-red-600 border-red-200 hover:bg-red-50"><Trash2 className="h-4 w-4 mr-1.5" />Remove Device</Button>}<Button variant="outline" onClick={() => setDetailDevice(null)}>Close</Button></div>
+            <div className="flex gap-2 mt-6">{(hasPermission('iot_devices.delete') || isAdmin()) && <Button variant="outline" onClick={() => handleDelete(detailDevice.id)} className="text-red-600 border-red-200 hover:bg-red-50 ml-auto"><Trash2 className="h-4 w-4 mr-1.5" />Remove Device</Button>}</div>
           </>)}
-        
-      </ResponsiveDialog>
+        </SheetContent>
+      </Sheet>
 
       {/* Edit Device Dialog */}
       <ResponsiveDialog open={!!editDevice} onOpenChange={(open) => { if (!open) { setEditDevice(null); setEditForm({}); } }}>
