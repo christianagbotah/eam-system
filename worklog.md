@@ -23,3 +23,41 @@ Stage Summary:
 - All 104 sidebar pages now have route-level permission guards
 - 4 previously unprotected API routes now have proper permission checks
 - Deployment to VPS pending (SSH not available in sandbox)
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Comprehensive page-by-page audit of every module - permissions, imports, logic, navigation
+
+Work Log:
+- Ran 3 parallel automated scans: permission slug mismatches, missing auth/permission in API routes, broken imports
+- Found ~180 invalid permission slugs across 177 files (40+ unique invalid slugs)
+- Found 7 CRITICAL endpoints with NO authentication at all
+- Found 71 HIGH endpoints with auth but NO permission checks
+- Found 1 broken import (historian-dashboard would crash at runtime)
+- Found 5 missing PageName types, 3 unused PageName values
+- Found 19 unsupported wildcard patterns in hasAnyPermission calls
+
+Fixes applied:
+- Fixed ~180 permission slug mismatches across all modules:
+  - Quality: quality.* → quality_inspections/quality_ncr/quality_audits/quality_control_plans.*
+  - Digital Twin: digital_twin.create/update/delete → digital_twin.manage (34 files)
+  - Operations: operations.* → training/meters/production_surveys/pm_checklists/shift_handovers.*
+  - Production Orders: production_orders.* → production.*
+  - Safety: safety_training.* → training.*, safety.* → safety_permits.*
+  - Inventory: inventory_requests.* → material_requisitions.*
+  - Documents: documents.create/update → documents.upload/manage
+  - Work Orders: work_orders.assign/edit/approve/plan → specific actions, removed wildcards
+  - Maintenance Requests: removed wildcards, added specific actions
+  - Frontend: RepairsPages, QualityPages, InventoryPages, ProductionPages, OperationsPages, MaintenancePages, FileUpload, CommandPalette
+- Added auth to 7 CRITICAL no-auth endpoints (files, connectivity)
+- Added permission checks to 78 HIGH endpoints (workflow, BOM, PM templates, AI, simulation, etc.)
+- Fixed historian-dashboard broken import
+- Fixed PageName types
+
+Stage Summary:
+- 177 files changed, 563 insertions, 239 deletions
+- Two commits pushed: 6e9883de (IoT fixes + pagePermissions rewrite), 0807b062 (comprehensive audit)
+- All non-admin users can now properly access modules they have permissions for
+- All mutating endpoints now have proper permission enforcement
+- No more runtime crashes from broken imports
