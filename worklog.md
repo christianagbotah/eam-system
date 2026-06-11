@@ -86,3 +86,20 @@ Stage Summary:
 - 8 missing permission slugs added across 4 seed files
 - Role bundles updated for safety_officer, inventory_manager, store_keeper, plant_manager, production_manager
 - MUST run `bun run prisma/seed-permissions-only.ts` on VPS after deploying to create the new permission rows in the database
+---
+Task ID: 4
+Agent: Main Agent
+Task: Fix IoT Devices/Rules Add buttons not showing on page
+
+Work Log:
+- Investigated why "Add Device" button not visible on IoT Devices page for admin
+- Root cause: Button was rendered as a CHILD of ResponsiveDialog component, which uses controlled open/onOpenChange props (no DialogTrigger). Children of ResponsiveDialog render inside the dialog body, not as external triggers
+- Fixed IotDevicesPage: moved Button outside ResponsiveDialog, added onClick={() => setCreateOpen(true)}
+- Fixed IotRulesPage: same pattern fix for "Create Rule" button
+- Verified no other pages have the same bug (other pages correctly use title/footer props or external buttons)
+- Committed and pushed: e73789df
+
+Stage Summary:
+- IoT Devices page: "Add Device" button now renders in page header and opens create dialog on click
+- IoT Rules page: "Create Rule" button now renders in page header and opens create dialog on click
+- Both buttons gated by hasPermission('iot_devices.create') || isAdmin() and hasPermission('iot_rules.create') || isAdmin() respectively
