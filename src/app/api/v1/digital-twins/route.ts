@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await requirePermission(request, 'digital_twin.create');
+    const session = await requirePermission(request, 'digital_twin.manage');
     const body = await request.json();
 
     // Validate required fields

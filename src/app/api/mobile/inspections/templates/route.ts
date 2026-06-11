@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!isAdmin(session) && !hasPermission(session, 'quality.create')) {
+    if (!isAdmin(session) && !hasPermission(session, 'quality_inspections.create')) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

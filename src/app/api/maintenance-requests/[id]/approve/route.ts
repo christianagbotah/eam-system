@@ -15,7 +15,7 @@ export async function POST(
     }
 
     // Check permission: maintenance_requests.approve or admin role
-    if (!hasAnyPermission(session, ['maintenance_requests.approve', 'maintenance_requests.*'])) {
+    if (!hasAnyPermission(session, ['maintenance_requests.approve'])) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

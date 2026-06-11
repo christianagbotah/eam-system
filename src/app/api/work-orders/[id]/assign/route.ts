@@ -14,7 +14,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasAnyPermission(session, ['work_orders.assign', 'work_orders.assign_supervisor', 'work_orders.assign_technician', 'work_orders.*'])) {
+    if (!hasAnyPermission(session, ['work_orders.assign_supervisor'])) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

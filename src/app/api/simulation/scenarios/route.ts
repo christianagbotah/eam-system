@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { advancedSimulationService, type SimulationDomain, type SimulationScenario } from '@/services/simulation/advancedSimulation.service';
 
 // GET /api/simulation/scenarios — List scenario presets for a domain
@@ -45,6 +45,10 @@ export async function POST(request: NextRequest) {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!hasPermission(session, 'system_settings.view') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const body = await request.json();

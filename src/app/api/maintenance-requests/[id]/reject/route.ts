@@ -15,7 +15,7 @@ export async function POST(
     }
 
     // Check permission
-    if (!hasAnyPermission(session, ['maintenance_requests.reject', 'maintenance_requests.*'])) {
+    if (!hasAnyPermission(session, ['maintenance_requests.reject'])) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

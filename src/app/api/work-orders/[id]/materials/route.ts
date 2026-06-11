@@ -17,7 +17,7 @@ export async function POST(
 
     const { id } = await params;
 
-    if (!hasAnyPermission(session, ['work_orders.update', 'work_orders.*'])) {
+    if (!hasAnyPermission(session, ['work_orders.update'])) {
       // Even without explicit permission, allow if the user is a team member or assignee
       const woCheck = await db.workOrder.findUnique({
         where: { id },

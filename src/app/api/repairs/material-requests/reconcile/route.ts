@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 
 // POST /api/repairs/material-requests/reconcile
@@ -11,6 +11,10 @@ export async function POST(request: NextRequest) {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    if (!hasPermission(session, 'repair_material_requests.update') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const body = await request.json();

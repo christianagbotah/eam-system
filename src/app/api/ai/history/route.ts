@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!hasPermission(session, 'assets.view') && !hasPermission(session, 'settings.view') && !isAdmin(session)) {
+    if (!hasPermission(session, 'assets.view') && !hasPermission(session, 'system_settings.view') && !isAdmin(session)) {
       return NextResponse.json(
         { success: false, error: 'Insufficient permissions. Required: assets.view or settings.view' },
         { status: 403 },

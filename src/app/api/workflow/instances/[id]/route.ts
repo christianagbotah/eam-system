@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
+import { hasPermission, isAdmin } from '@/lib/auth';
 import { handleApiError } from '@/lib/errors';
 import { WorkflowEngineService } from '@/services/workflow/engine.service';
 
@@ -25,6 +26,9 @@ export async function POST(
 ) {
   try {
     const session = await requireAuth(request);
+    if (!hasPermission(session, 'system_settings.view') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     const { id } = await params;
     const body = await request.json();
     const action = body.action as string;

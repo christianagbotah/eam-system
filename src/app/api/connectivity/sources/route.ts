@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { industrialPollingEngine } from '@/services/connectivity';
 import { createLogger } from '@/lib/logger';
+import { getSession, isAdmin } from '@/lib/auth';
 
 const log = createLogger('API:ConnectivitySources');
 
@@ -56,6 +57,14 @@ export async function GET(request: NextRequest) {
 // POST /api/connectivity/sources — Create a new data source
 export async function POST(request: NextRequest) {
   try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (!isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const body = await request.json();
     const { name, sourceType, connectionConfig, plantId, gatewayId, metadata } = body;
 

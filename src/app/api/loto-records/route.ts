@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
   try {
     const session = getSession(req);
     if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    if (!hasPermission(session, 'safety.create') && !isAdmin(session)) {
+    if (!hasPermission(session, 'safety_permits.create') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

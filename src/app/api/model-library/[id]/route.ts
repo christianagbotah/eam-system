@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { modelPipelineService } from '@/services/modelPipeline.service';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -20,6 +20,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = getSession(req)!;
+    if (!hasPermission(session, 'digital_twin.manage') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     const { id } = await params;
     const body = await req.json();
     const model = await modelPipelineService.updateModelStatus(id, body.status, body);
@@ -35,6 +39,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = getSession(req)!;
+    if (!hasPermission(session, 'digital_twin.manage') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     const { id } = await params;
     await modelPipelineService.deleteModel(id);
     return NextResponse.json({ success: true });

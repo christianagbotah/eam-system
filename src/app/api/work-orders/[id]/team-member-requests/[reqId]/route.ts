@@ -51,7 +51,7 @@ export async function PUT(
 
     // Permission check: only planner, assigner, admin, or users with assign permission can review
     const canReview = isAdmin(session) ||
-      hasAnyPermission(session, ['work_orders.assign', 'work_orders.*']) ||
+      hasAnyPermission(session, ['work_orders.assign_supervisor']) ||
       wo.plannerId === session.userId ||
       wo.assignedBy === session.userId;
 
@@ -311,7 +311,7 @@ export async function DELETE(
 
     // Only the requester can cancel, or admin/planner
     const canCancel = isAdmin(session) ||
-      hasAnyPermission(session, ['work_orders.assign', 'work_orders.*']) ||
+      hasAnyPermission(session, ['work_orders.assign_supervisor']) ||
       teamRequest.requestedBy === session.userId;
 
     if (!canCancel) {

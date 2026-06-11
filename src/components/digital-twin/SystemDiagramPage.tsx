@@ -1040,7 +1040,7 @@ function FlowEditorInner({
   diagramName: string;
 }) {
   const { hasPermission, isAdmin } = useAuthStore();
-  const canEdit = hasPermission('digital_twin.create') || hasPermission('digital_twin.update') || isAdmin();
+  const canEdit = hasPermission('digital_twin.manage') || hasPermission('digital_twin.manage') || isAdmin();
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -1556,7 +1556,7 @@ function FlowEditor(props: Parameters<typeof FlowEditorInner>[0]) {
 
 export default function SystemDiagramPage({ twinId, twinName }: { twinId?: string; twinName?: string } = {}) {
   const { hasPermission, isAdmin, user } = useAuthStore();
-  const canEdit = hasPermission('digital_twin.create') || hasPermission('digital_twin.update') || isAdmin();
+  const canEdit = hasPermission('digital_twin.manage') || hasPermission('digital_twin.manage') || isAdmin();
 
   // List state
   const [diagrams, setDiagrams] = useState<SystemDiagram[]>([]);

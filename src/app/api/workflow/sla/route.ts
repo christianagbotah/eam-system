@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
+import { hasPermission, isAdmin } from '@/lib/auth';
 import { handleApiError } from '@/lib/errors';
 import { SlaService } from '@/services/workflow/sla.service';
 
@@ -25,6 +26,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const session = await requireAuth(request);
+    if (!hasPermission(session, 'system_settings.view') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     const body = await request.json();
 
     const policy = await SlaService.createPolicy({

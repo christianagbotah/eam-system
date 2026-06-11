@@ -43,7 +43,7 @@ export async function PUT(
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'quality.update') && !isAdmin(session)) {
+    if (!hasPermission(session, 'quality_ncr.update') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -116,7 +116,7 @@ export async function DELETE(
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'quality.delete') && !isAdmin(session)) {
+    if (!hasPermission(session, 'quality_ncr.delete') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

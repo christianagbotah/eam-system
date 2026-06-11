@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { createLogger } from '@/lib/logger';
+import { getSession, isAdmin } from '@/lib/auth';
 
 const log = createLogger('API:ConnectivitySourceDetail');
 
@@ -20,6 +21,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 // DELETE /api/connectivity/sources/[id]
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (!isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const { id } = await params;
     const source = await db.telemetryDataSource.findUnique({ where: { id } });
     if (!source) return NextResponse.json({ error: 'Source not found' }, { status: 404 });

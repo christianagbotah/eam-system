@@ -13,7 +13,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasAnyPermission(session, ['maintenance_requests.view', 'maintenance_requests.*'])) {
+    if (!hasAnyPermission(session, ['maintenance_requests.view'])) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

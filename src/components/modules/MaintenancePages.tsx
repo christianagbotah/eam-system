@@ -1929,7 +1929,7 @@ export function WorkOrdersPage() {
 
   // WO IDs that have pending team member requests (for planner/admin indicator badges)
   const [woIdsWithPendingTeamReqs, setWoIdsWithPendingTeamReqs] = useState<Set<string>>(new Set());
-  const isPlannerOrAdmin = isAdmin() || hasPermission('work_orders.assign');
+  const isPlannerOrAdmin = isAdmin() || hasPermission('work_orders.assign_supervisor');
 
   // WO KPI state
   const [woKpi, setWoKpi] = useState<{
@@ -3046,7 +3046,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const canManageTeamDirectly = useMemo(() => {
     if (!wo || !user) return false;
     if (isAdmin()) return true;
-    if (hasPermission('work_orders.assign')) return true;
+    if (hasPermission('work_orders.assign_supervisor')) return true;
     if (hasPermission('work_orders.assign_supervisor') || hasPermission('work_orders.assign_technician')) return true;
     if (wo.plannerId === user.id) return true;
     if (wo.assignedById === user.id) return true;
@@ -3066,7 +3066,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const canReviewTeamRequests = useMemo(() => {
     if (!wo || !user) return false;
     if (isAdmin()) return true;
-    if (hasPermission('work_orders.assign')) return true;
+    if (hasPermission('work_orders.assign_supervisor')) return true;
     if (hasPermission('work_orders.assign_supervisor') || hasPermission('work_orders.assign_technician')) return true;
     if (wo.plannerId === user.id) return true;
     if (wo.assignedById === user.id) return true;

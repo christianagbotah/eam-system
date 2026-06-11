@@ -501,7 +501,7 @@ export function OperationsTimeLogsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">Time Logs</h1><p className="text-muted-foreground mt-1">Track employee work hours, shifts, and labor allocation</p></div>
         <div className="flex items-center gap-2 flex-wrap">
-          {(hasPermission('time_logs.manage') || hasPermission('reports.export') || isAdmin()) && (
+          {(hasPermission('time_logs.update') || hasPermission('reports.export') || isAdmin()) && (
             <Button variant="outline" size="sm" onClick={handleExport}><Download className="h-4 w-4 mr-1" />Export CSV</Button>
           )}
           <Button variant={showSummary ? 'default' : 'outline'} size="sm" onClick={() => setShowSummary(!showSummary)}><BarChart3 className="h-4 w-4 mr-1" />Productivity</Button>

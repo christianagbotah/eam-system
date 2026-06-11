@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/middleware';
+import { hasPermission, isAdmin } from '@/lib/auth';
 import { handleApiError } from '@/lib/errors';
 import { WorkflowDesignerService } from '@/services/workflow/designer.service';
 
@@ -24,7 +25,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireAuth(request);
+    const session = await requireAuth(request);
+    if (!hasPermission(session, 'system_settings.view') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     const { id } = await params;
     const body = await request.json();
 
@@ -49,7 +53,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireAuth(_request);
+    const session = await requireAuth(_request);
+    if (!hasPermission(session, 'system_settings.view') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     const { id } = await params;
     await WorkflowDesignerService.deleteDefinition(id);
     return NextResponse.json({ success: true, message: 'Definition deleted' });

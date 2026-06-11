@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasAnyPermission, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 
 /**
  * POST /api/production-orders/[id]/release
@@ -16,11 +16,7 @@ export async function POST(
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'production_orders.release') && !isAdmin(session)) {
-      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
-    }
-
-    if (!hasAnyPermission(session, ['production_orders.update', 'production_orders.*'])) {
+    if (!hasPermission(session, 'production.update') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

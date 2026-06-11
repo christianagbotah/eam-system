@@ -104,7 +104,7 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasAnyPermission(session, ['work_orders.update', 'work_orders.*'])) {
+    if (!hasAnyPermission(session, ['work_orders.update'])) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

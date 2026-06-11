@@ -42,7 +42,7 @@ export async function PUT(
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'operations.update') && !isAdmin(session)) {
+    if (!hasPermission(session, 'shift_handovers.create') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

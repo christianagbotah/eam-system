@@ -14,7 +14,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasAnyPermission(session, ['maintenance_requests.update', 'maintenance_requests.convert_to_wo', 'maintenance_requests.*'])) {
+    if (!hasAnyPermission(session, ['maintenance_requests.convert_to_wo'])) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

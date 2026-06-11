@@ -91,7 +91,7 @@ export async function POST(
     // Any team member, assignee, or user with permission can add personal tools
     const isTeamMember = wo.teamMembers.some((m) => m.userId === session.userId);
     const isAssignee = wo.assignedTo === session.userId;
-    const hasPerm = hasAnyPermission(session, ['work_orders.update', 'work_orders.*']);
+    const hasPerm = hasAnyPermission(session, ['work_orders.update']);
 
     if (!isTeamMember && !isAssignee && !hasPerm) {
       return NextResponse.json(
@@ -187,7 +187,7 @@ export async function PUT(
     }
 
     // Check permissions: requires work_orders.update permission OR team_leader role on the WO
-    const hasPermission = hasAnyPermission(session, ['work_orders.update', 'work_orders.*']);
+    const hasPermission = hasAnyPermission(session, ['work_orders.update']);
     const isTeamLeader = await db.workOrderTeamMember.findFirst({
       where: {
         workOrderId: id,

@@ -16,7 +16,7 @@ export async function POST(
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'production_orders.complete') && !isAdmin(session)) {
+    if (!hasPermission(session, 'production.update') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

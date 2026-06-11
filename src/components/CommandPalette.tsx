@@ -251,7 +251,7 @@ export default function CommandPalette() {
     ...(hasPermission('work_orders.create') ? [
       { id: 'action-create-wo', label: 'Create Work Order', icon: Plus, group: 'actions' as const, page: 'maintenance-work-orders' as PageName, keywords: ['new', 'wo', 'work order'] },
     ] : []),
-    ...(hasPermission('safety.create') ? [
+    ...(hasPermission('safety_incidents.create') ? [
       { id: 'action-create-incident', label: 'Report Safety Incident', icon: TriangleAlert, group: 'actions' as const, page: 'safety-incidents' as PageName, keywords: ['new', 'safety', 'incident', 'report'] },
     ] : []),
     ...(hasPermission('inventory.create') ? [

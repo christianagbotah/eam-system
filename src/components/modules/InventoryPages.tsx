@@ -153,7 +153,7 @@ export function InventoryPage() {
           <p className="text-muted-foreground text-sm mt-1">Manage spare parts, consumables, and supplies</p>
         </div>
         <div className="flex gap-2">
-          {(hasPermission('inventory.stock_movements') || isAdmin()) && <Button variant="outline" onClick={() => { setMovItemId(''); setMovQty(''); setMovReason(''); setMovType('in'); setMovementOpen(true); }} className="gap-1.5"><ArrowUpDown className="h-4 w-4" />Stock Movement</Button>}
+          {(hasPermission('inventory.manage') || isAdmin()) && <Button variant="outline" onClick={() => { setMovItemId(''); setMovQty(''); setMovReason(''); setMovType('in'); setMovementOpen(true); }} className="gap-1.5"><ArrowUpDown className="h-4 w-4" />Stock Movement</Button>}
           {(hasPermission('inventory.create') || isAdmin()) && <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="h-4 w-4 mr-1.5" />Add Item</Button>}
         </div>
       </div>

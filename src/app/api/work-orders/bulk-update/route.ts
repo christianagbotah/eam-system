@@ -15,7 +15,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasAnyPermission(session, ['work_orders.update', 'work_orders.*'])) {
+    if (!hasAnyPermission(session, ['work_orders.update'])) {
       return NextResponse.json(
         { success: false, error: 'Insufficient permissions for bulk update' },
         { status: 403 }

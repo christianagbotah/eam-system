@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
     // Permission gate: time_logs.view/view_all or admin or supervisor roles
     const canViewAll = isAdmin(session)
-      || hasAnyPermission(session, ['time_logs.view', 'time_logs.manage', 'time_logs.create', 'work_orders.view_all'])
+      || hasAnyPermission(session, ['time_logs.view', 'time_logs.update', 'time_logs.create', 'work_orders.view_all'])
       || session.roles.some(r => ['maintenance_supervisor', 'maintenance_manager', 'maintenance_planner', 'plant_manager', 'hr_manager', 'admin'].includes(r));
 
     const canViewOwn = hasAnyPermission(session, ['time_logs.view', 'time_logs.create', 'work_orders.view_own']);

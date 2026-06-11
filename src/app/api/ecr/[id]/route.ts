@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { bomEngineeringService } from '@/services/bomEngineering.service';
 
 export async function GET(
@@ -28,9 +28,12 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await getCurrentUser(request);
-    if (!user) {
+    const session = getSession(request);
+    if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+    if (!hasPermission(session, 'assets.update') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { id } = await params;
@@ -46,7 +49,7 @@ export async function PATCH(
       return NextResponse.json({ success: false, error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` }, { status: 400 });
     }
 
-    const result = await bomEngineeringService.updateECRStatus(id, status, user.id);
+    const result = await bomEngineeringService.updateECRStatus(id, status, session.userId);
 
     return NextResponse.json({ success: true, data: result });
   } catch (error: unknown) {

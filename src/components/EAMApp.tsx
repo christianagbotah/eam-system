@@ -170,7 +170,7 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   // Observability
   'observability-dashboard': () => import('./modules/ObservabilityPages').then(m => m.ObservabilityDashboard),
   // Historian
-  'historian-dashboard': () => import('./modules/HistorianPages').then(m => m.HistorianDashboard),
+  'historian-dashboard': () => import('./modules/HistorianPages').then(m => m.default),
   // Legacy fallbacks
   'assets': () => import('./modules/AssetPages').then(m => m.AssetsPage),
   'asset-detail': () => import('./modules/AssetPages').then(m => m.AssetsPage),

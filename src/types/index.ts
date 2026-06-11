@@ -606,6 +606,11 @@ export type PageName =
   | 'operations-time-logs'
   | 'operations-shift-handover'
   | 'operations-checklists'
+  | 'technician-timesheet'
+  | 'connectivity'
+  | 'reliability-engineering'
+  | 'observability-dashboard'
+  | 'historian-dashboard'
   // Production (8 subpages)
   | 'production-work-centers'
   | 'production-resource-planning'
@@ -668,10 +673,7 @@ export type PageName =
   | 'assets'
   | 'asset-detail'
   | 'inventory'
-  | 'analytics'
-  | 'safety'
-  | 'quality'
-  | 'production';
+  | 'analytics';
 
 // ============================================================================
 // Digital Twin Component Registry

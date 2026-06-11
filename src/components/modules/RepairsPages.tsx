@@ -328,7 +328,7 @@ function canApproveAsSupervisor(user: any): boolean {
   // Only supervisors, managers, and planners can approve tool/material requests
   const supervisorRoles = ['admin', 'maintenance_manager', 'maintenance_supervisor', 'maintenance_planner', 'plant_manager'];
   const userRoles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
-  return isAdmin() || userRoles.some((slug: string) => supervisorRoles.includes(slug)) || (authUser?.role?.slug && supervisorRoles.includes(authUser.role.slug)) || hasPermission('repairs.approve_supervisor') || hasPermission('repairs.manage');
+  return isAdmin() || userRoles.some((slug: string) => supervisorRoles.includes(slug)) || (authUser?.role?.slug && supervisorRoles.includes(authUser.role.slug)) || hasPermission('repair_material_requests.update');
 }
 
 function canApproveAsStore(user: any): boolean {
@@ -337,13 +337,13 @@ function canApproveAsStore(user: any): boolean {
   // Only store keepers, inventory managers, and admins can do store approval
   const storeRoles = ['admin', 'inventory_manager', 'store_keeper', 'tools_shop_attendant'];
   const userRoles = (authUser?.roles || []).map((r: any) => r.slug).filter(Boolean);
-  return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug)) || (authUser?.role?.slug && storeRoles.includes(authUser.role.slug)) || hasPermission('repairs.approve_store');
+  return isAdmin() || userRoles.some((slug: string) => storeRoles.includes(slug)) || (authUser?.role?.slug && storeRoles.includes(authUser.role.slug)) || hasPermission('repair_material_requests.update');
 }
 
 function canViewAllRepairData(user: any): boolean {
   if (!user) return false;
   const { hasPermission, isAdmin } = useAuthStore.getState();
-  return isAdmin() || hasPermission('repairs.view_all') || hasPermission('work_orders.view_all') || hasPermission('repairs.manage');
+  return isAdmin() || hasPermission('repair_material_requests.view_all') || hasPermission('work_orders.view_all') || hasPermission('repair_material_requests.update');
 }
 
 // ============================================================================
@@ -527,7 +527,7 @@ export function RepairMaterialRequestsPage() {
             <p className="text-sm text-muted-foreground">Request and track materials &amp; spare parts for repair work orders</p>
           </div>
         </div>
-        {(user && (hasPermission('repairs.create') || hasPermission('repairs.manage') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+        {(user && (hasPermission('repair_material_requests.create') || hasPermission('repair_material_requests.update') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -586,7 +586,7 @@ export function RepairMaterialRequestsPage() {
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : filtered.length === 0 ? (
             <EmptyState icon={Package} title="No material requests found" description="Create a new request to get started">
-              {(user && (hasPermission('repairs.create') || hasPermission('repairs.manage') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+              {(user && (hasPermission('repair_material_requests.create') || hasPermission('repair_material_requests.update') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => setCreateOpen(true)} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
@@ -668,7 +668,7 @@ export function RepairMaterialRequestsPage() {
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem onClick={() => { setDetailItem(r); setDetailOpen(true); }}><Eye className="h-4 w-4 mr-2" /> View Details</DropdownMenuItem>
-                              {(hasPermission('repairs.delete') || hasPermission('repairs.manage') || hasPermission('work_orders.update') || isAdmin()) && r.status === 'pending' && r.requestedBy?.id === user?.id && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Ban className="h-4 w-4 mr-2" /> Cancel</DropdownMenuItem>}
+                              {(hasPermission('repair_material_requests.update') || hasPermission('work_orders.update') || isAdmin()) && r.status === 'pending' && r.requestedBy?.id === user?.id && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(r.id)}><Ban className="h-4 w-4 mr-2" /> Cancel</DropdownMenuItem>}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -1460,7 +1460,7 @@ export function RepairToolRequestsPage() {
             <p className="text-sm text-muted-foreground">Request and track tools for repair work orders</p>
           </div>
         </div>
-        {(user && (hasPermission('repairs.create') || hasPermission('repairs.manage') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => { setCreateForm({ workOrderId: '', reason: '', notes: '', urgency: 'medium', items: [emptyItemRow()] }); setCreateOpen(true); }} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+        {(user && (hasPermission('repair_material_requests.create') || hasPermission('repair_material_requests.update') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => { setCreateForm({ workOrderId: '', reason: '', notes: '', urgency: 'medium', items: [emptyItemRow()] }); setCreateOpen(true); }} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
       </div>
 
       {/* Stats Cards */}
@@ -1503,7 +1503,7 @@ export function RepairToolRequestsPage() {
         <CardContent className="p-0">
           {loading ? <LoadingSkeleton /> : filtered.length === 0 ? (
             <EmptyState icon={Wrench} title="No tool requests found" description="Create a new tool request to get started">
-              {(user && (hasPermission('repairs.create') || hasPermission('repairs.manage') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => { setCreateForm({ workOrderId: '', reason: '', notes: '', urgency: 'medium', items: [emptyItemRow()] }); setCreateOpen(true); }} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
+              {(user && (hasPermission('repair_material_requests.create') || hasPermission('repair_material_requests.update') || hasPermission('work_orders.create') || hasPermission('work_orders.update') || isAdmin())) && <Button onClick={() => { setCreateForm({ workOrderId: '', reason: '', notes: '', urgency: 'medium', items: [emptyItemRow()] }); setCreateOpen(true); }} className="gap-2"><Plus className="h-4 w-4" /> New Request</Button>}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">

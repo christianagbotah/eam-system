@@ -66,7 +66,7 @@ export async function DELETE(
     const { id } = await params;
 
     // Check permission: either admin or has attachments.delete permission
-    if (!isAdmin(session) && !hasPermission(session, 'attachments.delete')) {
+    if (!isAdmin(session) && !hasPermission(session, 'documents.delete')) {
       return NextResponse.json(
         { success: false, error: 'Insufficient permissions to delete attachments' },
         { status: 403 }

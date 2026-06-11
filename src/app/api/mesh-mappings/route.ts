@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { componentMappingService } from '@/services/componentMapping.service';
 
 export async function GET(req: NextRequest) {
@@ -27,6 +27,11 @@ export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const session = getSession(req)!;
+    if (!hasPermission(session, 'digital_twin.manage') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     const body = await req.json();
 

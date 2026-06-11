@@ -53,7 +53,7 @@ export async function POST(
     // ─── PERMISSION CHECK ────────────────────────────────────────────────
     // Only admins, users with assign permission, or the original assigner can directly add
     const canDirectAdd = isAdmin(session) ||
-      hasAnyPermission(session, ['work_orders.assign', 'work_orders.*']) ||
+      hasAnyPermission(session, ['work_orders.assign_supervisor']) ||
       wo.assignedBy === session.userId;
 
     if (!canDirectAdd) {

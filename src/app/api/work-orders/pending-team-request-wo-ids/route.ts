@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    const canManage = isAdmin(session) || hasAnyPermission(session, ['work_orders.assign', 'work_orders.*']);
+    const canManage = isAdmin(session) || hasAnyPermission(session, ['work_orders.assign_supervisor']);
     if (!canManage) {
       return NextResponse.json({ success: true, data: [] });
     }

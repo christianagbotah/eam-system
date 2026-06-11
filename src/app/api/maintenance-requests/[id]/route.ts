@@ -100,7 +100,7 @@ export async function PUT(
     }
 
     const hasUpdateAll = hasPermission(session, 'maintenance_requests.update') || isAdmin(session);
-    const canUpdateOwn = hasPermission(session, 'maintenance_requests.update_own') || hasPermission(session, 'maintenance_requests.create');
+    const canUpdateOwn = hasPermission(session, 'maintenance_requests.update') || hasPermission(session, 'maintenance_requests.create');
 
     if (!hasUpdateAll && !canUpdateOwn) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });

@@ -124,7 +124,7 @@ export function FileUpload({ entityType, entityId, canDelete: canDeleteProp }: F
 
   const canDelete = canDeleteProp !== undefined
     ? canDeleteProp
-    : isAdmin() || hasPermission('attachments.delete');
+    : isAdmin() || hasPermission('documents.delete');
 
   // Fetch existing attachments
   const fetchAttachments = useCallback(async () => {

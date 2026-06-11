@@ -4,6 +4,7 @@ import { telemetryBatcher } from '@/services/connectivity';
 import { eventStreamProcessor } from '@/services/connectivity';
 import { edgeGatewayService } from '@/services/connectivity';
 import { createLogger } from '@/lib/logger';
+import { getSession, isAdmin } from '@/lib/auth';
 
 const log = createLogger('API:ConnectivityEngine');
 
@@ -35,6 +36,14 @@ export async function GET() {
 // POST /api/connectivity/engine — Control the engine (stop all, flush, etc.)
 export async function POST(request: Request) {
   try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (!isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const body = await request.json();
     const { action } = body;
 

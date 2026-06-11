@@ -43,7 +43,7 @@ export async function DELETE(
 
     // ─── PERMISSION CHECK ────────────────────────────────────────────────
     const canDirectRemove = isAdmin(session) ||
-      hasAnyPermission(session, ['work_orders.assign', 'work_orders.*']) ||
+      hasAnyPermission(session, ['work_orders.assign_supervisor']) ||
       wo.assignedBy === session.userId;
 
     if (!canDirectRemove) {

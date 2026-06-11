@@ -39,7 +39,7 @@ export async function GET(
 
     // Determine if user can see all requests (admin/planner/assigner)
     const canManageTeam = isAdmin(session) ||
-      hasAnyPermission(session, ['work_orders.assign', 'work_orders.*']) ||
+      hasAnyPermission(session, ['work_orders.assign_supervisor']) ||
       wo.plannerId === session.userId ||
       wo.assignedBy === session.userId;
 
@@ -117,7 +117,7 @@ export async function POST(
     const isTeamMember = wo.teamMembers?.some(tm => tm.userId === session.userId);
     const isAssignee = wo.assignedTo === session.userId;
     const isAdminUser = isAdmin(session);
-    const canManageTeam = hasAnyPermission(session, ['work_orders.assign', 'work_orders.*']) || isAdminUser;
+    const canManageTeam = hasAnyPermission(session, ['work_orders.assign_supervisor']) || isAdminUser;
 
     if (!isTeamMember && !isAssignee && !canManageTeam) {
       return NextResponse.json(

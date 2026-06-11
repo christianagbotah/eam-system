@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { bomEngineeringService } from '@/services/bomEngineering.service';
 
 export async function POST(request: NextRequest) {
@@ -7,6 +7,11 @@ export async function POST(request: NextRequest) {
     const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    const session = getSession(request)!;
+    if (!hasPermission(session, 'inventory.view') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const body = await request.json();

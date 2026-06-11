@@ -161,7 +161,7 @@ export async function POST(
     }
 
     // ── Permission gate ──
-    const canCreate = hasAnyPermission(session, ['work_orders.edit', 'time_logs.create']) || isAdmin(session);
+    const canCreate = hasAnyPermission(session, ['work_orders.update', 'time_logs.create']) || isAdmin(session);
     if (!canCreate) {
       return NextResponse.json({ success: false, error: 'You do not have permission to create time logs' }, { status: 403 });
     }
@@ -460,7 +460,7 @@ export async function DELETE(
     }
 
     // ── Permission gate ──
-    const canDelete = hasAnyPermission(session, ['work_orders.edit', 'time_logs.delete']) || isAdmin(session);
+    const canDelete = hasAnyPermission(session, ['work_orders.update', 'time_logs.delete']) || isAdmin(session);
     if (!canDelete) {
       return NextResponse.json({ success: false, error: 'You do not have permission to delete time logs' }, { status: 403 });
     }

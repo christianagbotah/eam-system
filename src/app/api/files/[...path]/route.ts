@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ObjectStorageService } from '@/services/objectStorage.service';
+import { getSession, isAdmin } from '@/lib/auth';
 
 // GET /api/files/[...path] — download a file
 export async function GET(
@@ -33,6 +34,14 @@ export async function DELETE(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (!isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const { path } = await params;
     const key = path.join('/');
 

@@ -296,7 +296,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!hasPermission(session, 'settings.view') && !hasPermission(session, 'assets.view') && !isAdmin(session)) {
+    if (!hasPermission(session, 'system_settings.view') && !hasPermission(session, 'assets.view') && !isAdmin(session)) {
       return NextResponse.json(
         { success: false, error: 'Insufficient permissions. Required: settings.view or assets.view' },
         { status: 403 },
@@ -350,7 +350,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!hasPermission(session, 'settings.update') && !isAdmin(session)) {
+    if (!hasPermission(session, 'system_settings.update') && !isAdmin(session)) {
       return NextResponse.json(
         { success: false, error: 'Insufficient permissions. Required: settings.update' },
         { status: 403 },

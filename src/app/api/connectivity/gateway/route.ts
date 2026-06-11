@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { edgeGatewayService } from '@/services/connectivity';
 import { createLogger } from '@/lib/logger';
+import { getSession, isAdmin } from '@/lib/auth';
 
 const log = createLogger('API:ConnectivityGateway');
 
@@ -24,6 +25,14 @@ export async function GET(request: NextRequest) {
 // POST /api/connectivity/gateway — Register a new gateway
 export async function POST(request: NextRequest) {
   try {
+    const session = getSession(request);
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (!isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const body = await request.json();
     const gateway = await edgeGatewayService.registerGateway(body);
     return NextResponse.json({ data: gateway }, { status: 201 });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, isAdmin } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { checkAndCloseToolRequest } from '@/lib/tool-transfer-helpers';
 
 // POST /api/repairs/tool-transfers/sync-quantities
@@ -10,6 +10,10 @@ export async function POST(request: NextRequest) {
   try {
     const session = getSession(request);
     if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
+    if (!hasPermission(session, 'repair_tool_transfers.update') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     const body = await request.json().catch(() => ({}));
     const { workOrderId } = body;

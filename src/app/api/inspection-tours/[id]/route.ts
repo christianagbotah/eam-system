@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { cameraSystemService } from '@/services/cameraSystem.service';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = getSession(req)!;
+    if (!hasPermission(session, 'safety_inspections.update') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     const { id } = await params;
     const body = await req.json();
     const tour = await cameraSystemService.updateTour(id, body);
@@ -20,6 +24,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = getSession(req)!;
+    if (!hasPermission(session, 'safety_inspections.manage') && !isAdmin(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     const { id } = await params;
     await cameraSystemService.deleteTour(id);
     return NextResponse.json({ success: true });
