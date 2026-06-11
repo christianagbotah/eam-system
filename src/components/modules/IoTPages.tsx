@@ -169,9 +169,9 @@ export function IotDevicesPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">IoT Devices</h1><p className="text-muted-foreground text-sm mt-1">Register and manage IoT sensors, gateways, and connected devices</p></div>
-        <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
-          {(hasPermission('iot_devices.create') || isAdmin()) && <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Add Device</Button>}
-          
+        {(hasPermission('iot_devices.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Add Device</Button>}
+      </div>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
             <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Register New Device</h2><p className="text-sm text-muted-foreground">Add a new IoT device to the registry.</p></div>
             <div className="grid gap-4 py-2">
               <div className="space-y-2"><Label>Device Name *</Label><Input placeholder="Temperature Sensor - Room X" value={newDevice.name} onChange={e => setNewDevice({ ...newDevice, name: e.target.value })} /></div>
@@ -189,7 +189,6 @@ export function IotDevicesPage() {
             <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Registering...' : 'Register Device'}</Button></div>
           
         </ResponsiveDialog>
-      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {[
@@ -699,9 +698,9 @@ export function IotRulesPage() {
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">IoT Rules</h1><p className="text-muted-foreground text-sm mt-1">Configure automation rules and alert thresholds for IoT sensor data</p></div>
-        <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
-          {(hasPermission('iot_rules.create') || isAdmin()) && <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Create Rule</Button>}
-          
+        {(hasPermission('iot_rules.create') || isAdmin()) && <Button onClick={() => setCreateOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Create Rule</Button>}
+      </div>
+      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
             <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Create Automation Rule</h2><p className="text-sm text-muted-foreground">Define conditions and actions for automated alerts.</p></div>
             <div className="grid gap-4 py-2">
               <div className="space-y-2"><Label>Rule Name *</Label><Input placeholder="High Temperature Alert" value={newRule.name} onChange={e => setNewRule({ ...newRule, name: e.target.value })} /></div>
@@ -721,7 +720,6 @@ export function IotRulesPage() {
             <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Creating...' : 'Create Rule'}</Button></div>
           
         </ResponsiveDialog>
-      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {[
