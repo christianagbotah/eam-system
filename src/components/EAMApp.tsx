@@ -430,6 +430,7 @@ function AppShell() {
     'repairs-spare-part-returns': 'Spare Part Returns',
     'repairs-damaged-tools': 'Damaged Tool Reports',
     'repairs-reports': 'Maintenance Reports',
+    'wo-reports': 'Work Order Reports',
     // IoT
     'iot-devices': 'IoT Devices',
     'iot-monitoring': 'IoT Monitoring',
