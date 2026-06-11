@@ -170,7 +170,7 @@ export function IotDevicesPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">IoT Devices</h1><p className="text-muted-foreground text-sm mt-1">Register and manage IoT sensors, gateways, and connected devices</p></div>
         <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
-          {(hasPermission('iot.create') || isAdmin()) && <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Add Device</Button>}
+          {(hasPermission('iot_devices.create') || isAdmin()) && <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Add Device</Button>}
           
             <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Register New Device</h2><p className="text-sm text-muted-foreground">Add a new IoT device to the registry.</p></div>
             <div className="grid gap-4 py-2">
@@ -228,7 +228,7 @@ export function IotDevicesPage() {
               <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{d.lastSeen ? timeAgo(d.lastSeen) : 'Never'}</TableCell>
               <TableCell className="hidden xl:table-cell">{d.batteryLevel != null ? <div className="flex items-center gap-2"><div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${d.batteryLevel <= 20 ? 'bg-red-500' : d.batteryLevel <= 50 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${d.batteryLevel}%` }} /></div><span className="text-xs font-medium">{d.batteryLevel}%</span></div> : <span className="text-xs text-muted-foreground">Wired</span>}</TableCell>
               <TableCell className="hidden xl:table-cell"><Badge variant="outline" className={`text-xs ${sig === 'Strong' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : sig === 'Good' || sig === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-200' : sig === 'Weak' ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>{sig}</Badge></TableCell>
-              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={e => { e.stopPropagation(); handleViewDetail(d); }}><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem><DropdownMenuItem onClick={e => { e.stopPropagation(); handleEditOpen(d); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem><DropdownMenuItem className="text-red-600" onClick={e => { e.stopPropagation(); handleDelete(d.id); }}><Trash2 className="h-4 w-4 mr-2" />Remove</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell>
+              <TableCell><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={e => e.stopPropagation()}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={e => { e.stopPropagation(); handleViewDetail(d); }}><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem>{(hasPermission('iot_devices.update') || isAdmin()) && <DropdownMenuItem onClick={e => { e.stopPropagation(); handleEditOpen(d); }}><Pencil className="h-4 w-4 mr-2" />Edit</DropdownMenuItem>}{(hasPermission('iot_devices.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={e => { e.stopPropagation(); handleDelete(d.id); }}><Trash2 className="h-4 w-4 mr-2" />Remove</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></TableCell>
             </TableRow>
           ); })}
         </TableBody></Table>
@@ -237,7 +237,7 @@ export function IotDevicesPage() {
       <ResponsiveDialog open={!!detailDevice} onOpenChange={() => setDetailDevice(null)}>
         
           {detailDevice && (<>
-            <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight" className="flex items-center gap-2">{detailDevice.name}<Badge variant="outline" className={`${statusColor[detailDevice.status] || ''} capitalize ml-2`}>{detailDevice.status}</Badge></h2><p className="text-sm text-muted-foreground" className="font-mono text-xs">{detailDevice.deviceCode || detailDevice.id}</p></div>
+            <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight flex items-center gap-2">{detailDevice.name}<Badge variant="outline" className={`${statusColor[detailDevice.status] || ''} capitalize ml-2`}>{detailDevice.status}</Badge></h2><p className="text-sm text-muted-foreground font-mono text-xs">{detailDevice.deviceCode || detailDevice.id}</p></div>
             {detailLoading ? <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div> : (<>
             <div className="grid grid-cols-2 gap-4 text-sm">
               {[['Type', detailDevice.type], ['Protocol', detailDevice.protocol?.toUpperCase()], ['Location', detailDevice.location || '-'], ['Asset', detailDevice.asset?.name || '-'], ['Group', detailDevice.groupId || '-'], ['Last Seen', detailDevice.lastSeen ? timeAgo(detailDevice.lastSeen) : 'Never'], ['Battery', detailDevice.batteryLevel != null ? `${detailDevice.batteryLevel}%` : 'Wired'], ['Signal', signalLabel(detailDevice.signalStrength)], ['Parameter', detailDevice.parameter], ['Last Reading', detailDevice.lastReading != null ? `${detailDevice.lastReading} ${detailDevice.unit}` : 'No data'], ['Threshold', (detailDevice.thresholdMin != null || detailDevice.thresholdMax != null) ? `${detailDevice.thresholdMin ?? '—'} ~ ${detailDevice.thresholdMax ?? '—'} ${detailDevice.unit}` : '-'], ['Readings', `${detailDevice._count?.readings ?? 0}`], ['Alerts', `${detailDevice._count?.alerts ?? 0}`]].map(([label, val]) => (
@@ -257,7 +257,7 @@ export function IotDevicesPage() {
               </ChartContainer>
             </div>)}
             </>)}
-            <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">{(hasPermission('iot.delete') || isAdmin()) && <Button variant="outline" onClick={() => handleDelete(detailDevice.id)} className="text-red-600 border-red-200 hover:bg-red-50"><Trash2 className="h-4 w-4 mr-1.5" />Remove Device</Button>}<Button variant="outline" onClick={() => setDetailDevice(null)}>Close</Button></div>
+            <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">{(hasPermission('iot_devices.delete') || isAdmin()) && <Button variant="outline" onClick={() => handleDelete(detailDevice.id)} className="text-red-600 border-red-200 hover:bg-red-50"><Trash2 className="h-4 w-4 mr-1.5" />Remove Device</Button>}<Button variant="outline" onClick={() => setDetailDevice(null)}>Close</Button></div>
           </>)}
         
       </ResponsiveDialog>
@@ -268,7 +268,7 @@ export function IotDevicesPage() {
           {editDevice && (<>
             <div className="space-y-1.5 mb-4">
               <h2 className="text-lg font-semibold leading-none tracking-tight">Edit Device</h2>
-              <p className="text-sm text-muted-foreground" className="font-mono text-xs">{editDevice.deviceCode || editDevice.id}</p>
+              <p className="text-sm text-muted-foreground font-mono text-xs">{editDevice.deviceCode || editDevice.id}</p>
             </div>
             <div className="grid gap-4 py-2">
               <div className="space-y-2">
@@ -700,7 +700,7 @@ export function IotRulesPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><h1 className="text-2xl font-bold tracking-tight">IoT Rules</h1><p className="text-muted-foreground text-sm mt-1">Configure automation rules and alert thresholds for IoT sensor data</p></div>
         <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
-          {(hasPermission('iot.create') || isAdmin()) && <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Create Rule</Button>}
+          {(hasPermission('iot_rules.create') || isAdmin()) && <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"><Plus className="h-4 w-4 mr-1.5" />Create Rule</Button>}
           
             <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">Create Automation Rule</h2><p className="text-sm text-muted-foreground">Define conditions and actions for automated alerts.</p></div>
             <div className="grid gap-4 py-2">
@@ -762,7 +762,7 @@ export function IotRulesPage() {
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => toggleRule(rule.id)}>{rule.isActive ? <><Pause className="h-4 w-4 mr-2" />Pause</> : <><Play className="h-4 w-4 mr-2" />Activate</>}</DropdownMenuItem>
-                        {(hasPermission('iot.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(rule.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>}
+                        {(hasPermission('iot_rules.delete') || isAdmin()) && <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(rule.id)}><Trash2 className="h-4 w-4 mr-2" />Delete</DropdownMenuItem>}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>

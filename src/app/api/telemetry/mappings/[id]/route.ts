@@ -13,7 +13,7 @@ export async function PATCH(
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'iot.update') && !isAdmin(session)) {
+    if (!hasPermission(session, 'iot_devices.update') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -81,7 +81,7 @@ export async function DELETE(
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
-    if (!hasPermission(session, 'iot.delete') && !isAdmin(session)) {
+    if (!hasPermission(session, 'iot_devices.delete') && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
