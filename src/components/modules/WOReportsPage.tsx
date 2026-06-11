@@ -51,6 +51,14 @@ const SLA_TARGETS: Record<string, number> = {
   low: 8,
 };
 
+// Safe trade name extraction — API may return Trade object {id, name, code} or string
+function tradeName(trade: any): string {
+  if (!trade) return 'Unspecified';
+  if (typeof trade === 'string') return trade;
+  if (typeof trade === 'object' && trade.name) return trade.name;
+  return String(trade);
+}
+
 type ReportData = {
   summary: any;
   downtime: any;
@@ -351,7 +359,7 @@ export function WOReportsPage() {
         const total = s?.totalWOs || 1;
         (reportData.distribution?.byType || []).forEach((d: any) => rows.push(['Type', d.type, String(d.count), `${((d.count/total)*100).toFixed(1)}%`]));
         (reportData.distribution?.byStatus || []).forEach((d: any) => rows.push(['Status', d.status, String(d.count), `${((d.count/total)*100).toFixed(1)}%`]));
-        (reportData.distribution?.byTrade || []).forEach((d: any) => rows.push(['Trade', d.trade, String(d.count), `${((d.count/total)*100).toFixed(1)}%`]));
+        (reportData.distribution?.byTrade || []).forEach((d: any) => rows.push(['Trade', tradeName(d.trade), String(d.count), `${((d.count/total)*100).toFixed(1)}%`]));
         (reportData.distribution?.byPriority || []).forEach((d: any) => rows.push(['Priority', d.priority, String(d.count), `${((d.count/total)*100).toFixed(1)}%`]));
         break;
       }
@@ -362,7 +370,7 @@ export function WOReportsPage() {
         const totalEvts = dtData.reduce((a: number, b: any) => a + b.events, 0);
         headers = ['Trade', 'Events', 'Hours', 'Avg Hours/Event', '% of Total', 'Production Loss'];
         rows = dtData.map((d: any) => [
-          d.trade, String(d.events), String(d.totalHours),
+          tradeName(d.trade), String(d.events), String(d.totalHours),
           d.events > 0 ? (d.totalHours / d.events).toFixed(1) : '0',
           totalHrs > 0 ? `${((d.totalHours / totalHrs) * 100).toFixed(1)}%` : '0%',
           String(d.productionLoss || 0),
@@ -379,7 +387,7 @@ export function WOReportsPage() {
           rows.push([d.priority, 'Priority', String(d.count), String(d.avgHours), String(d.minHours), String(d.maxHours), String(target), `${compliance}%`]);
         });
         (reportData.responseTime?.byTrade || []).forEach((d: any) =>
-          rows.push([d.trade, 'Trade', String(d.count), String(d.avgHours), '-', '-', '-', '-'])
+          rows.push([tradeName(d.trade), 'Trade', String(d.count), String(d.avgHours), '-', '-', '-', '-'])
         );
         break;
       }
@@ -387,7 +395,7 @@ export function WOReportsPage() {
         filename += '-breakdowns';
         const bdTotal = reportData.breakdowns?.total || 1;
         headers = ['Group', 'Type', 'Count', '% of Total'];
-        (reportData.breakdowns?.byTrade || []).forEach((d: any) => rows.push([d.trade, 'Trade', String(d.count), `${((d.count/bdTotal)*100).toFixed(1)}%`]));
+        (reportData.breakdowns?.byTrade || []).forEach((d: any) => rows.push([tradeName(d.trade), 'Trade', String(d.count), `${((d.count/bdTotal)*100).toFixed(1)}%`]));
         (reportData.breakdowns?.byType || []).forEach((d: any) => rows.push([d.type, 'Type', String(d.count), `${((d.count/bdTotal)*100).toFixed(1)}%`]));
         (reportData.breakdowns?.byPriority || []).forEach((d: any) => rows.push([d.priority, 'Priority', String(d.count), `${((d.count/bdTotal)*100).toFixed(1)}%`]));
         break;
@@ -434,7 +442,7 @@ export function WOReportsPage() {
         const totalSpHrs = spData.reduce((a: number, b: any) => a + b.totalHours, 0);
         headers = ['Trade', 'Stoppage Count', 'Total Hours', 'Avg Hours', '% of Total'];
         rows = spData.map((d: any) => [
-          d.trade, String(d.count), String(d.totalHours),
+          tradeName(d.trade), String(d.count), String(d.totalHours),
           d.count > 0 ? (d.totalHours / d.count).toFixed(1) : '0',
           totalSp > 0 ? `${((d.count / totalSp) * 100).toFixed(1)}%` : '0%',
         ]);
@@ -1008,7 +1016,7 @@ export function WOReportsPage() {
                   { key: 'prodLoss', label: 'Production Loss', align: 'right' },
                 ]}
                 rows={(reportData.downtime?.byTrade || []).map((d: any) => ({
-                  trade: <span className="font-medium capitalize">{d.trade}</span>,
+                  trade: <span className="font-medium capitalize">{tradeName(d.trade)}</span>,
                   events: d.events,
                   hours: formatHours(d.totalHours),
                   avgHours: formatHours(d.events > 0 ? d.totalHours / d.events : 0),
@@ -1152,8 +1160,8 @@ export function WOReportsPage() {
                   }),
                   ...(reportData.responseTime?.byTrade || []).map((d: any) => ({
                     group: <span className="font-medium capitalize flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getColorForKey(d.trade, CHART_COLORS[0]) }} />
-                      {d.trade}
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getColorForKey(tradeName(d.trade), CHART_COLORS[0]) }} />
+                      {tradeName(d.trade)}
                     </span>,
                     count: d.count,
                     avgHrs: formatHours(d.avgHours),
@@ -1326,8 +1334,8 @@ export function WOReportsPage() {
                   const total = reportData.breakdowns?.total || 1;
                   return {
                     trade: <span className="font-medium capitalize flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getColorForKey(d.trade, CHART_COLORS[0]) }} />
-                      {d.trade}
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getColorForKey(tradeName(d.trade), CHART_COLORS[0]) }} />
+                      {tradeName(d.trade)}
                     </span>,
                     breakdowns: d.count,
                     pctTotal: `${((d.count / total) * 100).toFixed(1)}%`,
@@ -1874,8 +1882,8 @@ export function WOReportsPage() {
                   const totalHrs = stoppageSummary.totalHrs || 1;
                   return {
                     trade: <span className="font-medium capitalize flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getColorForKey(d.trade, CHART_COLORS[0]) }} />
-                      {d.trade}
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: getColorForKey(tradeName(d.trade), CHART_COLORS[0]) }} />
+                      {tradeName(d.trade)}
                     </span>,
                     count: d.count,
                     totalHours: formatHours(d.totalHours),

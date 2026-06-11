@@ -444,11 +444,7 @@ function DesktopWorkerTable({
                   <TableCell className="px-3 py-2">
                     {worker.trade ? (
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${tradeColor.bg} ${tradeColor.text} ${tradeColor.border}`}>
-                        {worker.trade}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
+                        {typeof worker.trade === 'object' ? worker.trade.name : worker.trade}
                   </TableCell>
                   <TableCell className="px-3 py-2">
                     {worker.department ? (
@@ -544,7 +540,7 @@ function MobileWorkerList({
                   )}
                   {worker.trade && (
                     <span className={`inline-flex items-center px-1.5 py-0 rounded text-[10px] font-medium border ${tradeColor.bg} ${tradeColor.text} ${tradeColor.border}`}>
-                      {worker.trade}
+                      {typeof worker.trade === 'object' ? worker.trade.name : worker.trade}
                     </span>
                   )}
                   {worker.department && (
