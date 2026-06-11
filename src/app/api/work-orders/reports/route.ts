@@ -245,15 +245,18 @@ export async function GET(request: NextRequest) {
     for (const wo of workOrders) {
       const trade = wo.tradeActivity || 'unspecified';
 
-      // Get hours from timeLogs
+      // Get hours from timeLogs (primary), actualHours (fallback), repairCompletion (override)
       let woHours = 0;
       for (const tl of (wo.timeLogs || [])) {
         if (tl.duration && tl.duration > 0) {
           woHours += tl.duration;
         }
       }
-
-      // Also check repairCompletion
+      // Fallback to WO's actualHours when no time logs exist
+      if (woHours === 0 && wo.actualHours && wo.actualHours > 0) {
+        woHours = wo.actualHours;
+      }
+      // Override with repairCompletion if higher (supervisor-verified hours)
       if (wo.repairCompletion && wo.repairCompletion.totalLaborHours > woHours) {
         woHours = wo.repairCompletion.totalLaborHours;
       }
@@ -299,6 +302,9 @@ export async function GET(request: NextRequest) {
       let woHours = 0;
       for (const tl of (wo.timeLogs || [])) {
         if (tl.duration && tl.duration > 0) woHours += tl.duration;
+      }
+      if (woHours === 0 && wo.actualHours && wo.actualHours > 0) {
+        woHours = wo.actualHours;
       }
       if (wo.repairCompletion && wo.repairCompletion.totalLaborHours > woHours) {
         woHours = wo.repairCompletion.totalLaborHours;
