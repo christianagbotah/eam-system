@@ -445,6 +445,10 @@ function DesktopWorkerTable({
                     {worker.trade ? (
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${tradeColor.bg} ${tradeColor.text} ${tradeColor.border}`}>
                         {typeof worker.trade === 'object' ? worker.trade.name : worker.trade}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell className="px-3 py-2">
                     {worker.department ? (
