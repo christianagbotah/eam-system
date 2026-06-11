@@ -37,3 +37,24 @@ Stage Summary:
 - Files modified: tool-transfer-helpers.ts (rewritten), MaintenancePages.tsx (Transfer Tool + auto-sync), new sync-quantities route
 - Key fix: Transfer Tool now sends real Tool ID, backend matches by name/code as fallback
 - Auto-repair: When user opens WO detail, sync endpoint fixes any mismatched quantityTransferred
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix React error #31 - trade object rendered in tables + answer WO reports location question
+
+Work Log:
+- Identified React error #31: "Objects are not valid as a React child (found: object with keys {id, name, code})"
+- Traced to Trade model which has exactly {id, name, code, ...} fields
+- Found WOReportsPage.tsx rendering {d.trade} directly in 4 table cells + CSV export rows
+- Found WorkerAssignmentSelector.tsx rendering {worker.trade} directly in 2 places
+- Added tradeName() helper function to WOReportsPage for safe extraction
+- Fixed all 4 JSX renderings of d.trade to use tradeName()
+- Fixed all 5 CSV export d.trade references to use tradeName()
+- Fixed 3 getColorForKey(d.trade) calls to use tradeName()
+- Fixed 2 WorkerAssignmentSelector.tsx renderings with typeof check
+- Committed and pushed (f4adee95)
+
+Stage Summary:
+- Root cause: API sometimes returns trade as a Trade relation object instead of string
+- WO Reports page is at: Repairs → Analytics → WO Reports tab (WOReportsPage.tsx)
+- All trade field renderings now safely handle both string and object formats
