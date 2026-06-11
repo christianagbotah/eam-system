@@ -4983,7 +4983,7 @@ export function MaintenanceReportsPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatsCard icon={Package} count={reportData.totalMaterialCost ? formatCurrency(reportData.totalMaterialCost) : '₵0'} label="Total Material Cost" color="text-amber-600" bgColor="bg-amber-50" />
-                <StatsCard icon={RefreshCw} count={reportData.sparePartReturns ?? 0} label="Parts Returned" color="text-teal-600" bgColor="bg-teal-50" />
+                <StatsCard icon={RefreshCw} count={reportData.sparePartReturns?.total ?? 0} label="Parts Returned" color="text-teal-600" bgColor="bg-teal-50" />
                 <StatsCard icon={AlertTriangle} count={`${reportData.wasteRate ?? 0}%`} label="Waste Rate" color="text-red-600" bgColor="bg-red-50" />
                 <StatsCard icon={DollarSign} count={reportData.savingsFromReturns ? formatCurrency(reportData.savingsFromReturns) : '₵0'} label="Return Savings" color="text-emerald-600" bgColor="bg-emerald-50" />
               </div>
