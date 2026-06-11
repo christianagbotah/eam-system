@@ -57,7 +57,7 @@ export function formatPercent(value: number | undefined | null, decimals = 1): s
  * - Input: null/NaN → "—"
  */
 export function formatDuration(decimalHours: number | null | undefined): string {
-  if (decimalHours == null || isNaN(decimalHours)) return '—';
+  if (decimalHours == null || isNaN(decimalHours) || !isFinite(decimalHours)) return '—';
   const totalSeconds = Math.round(decimalHours * 3600);
   const dd = Math.floor(totalSeconds / 86400);
   const hh = Math.floor((totalSeconds % 86400) / 3600);

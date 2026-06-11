@@ -316,7 +316,8 @@ export function WOReportsPage() {
     setLoading(true);
     api
       .get<ReportData>(
-        `/api/work-orders/reports?from=${startDate}&to=${endDate}&trade=${tradeFilter || ''}&priority=${priorityFilter || ''}&department=${deptFilter || ''}`
+        `/api/work-orders/reports?from=${startDate}&to=${endDate}&trade=${tradeFilter || ''}&priority=${priorityFilter || ''}&department=${deptFilter || ''}`,
+        { timeout: 60_000 }
       )
       .then((res) => {
         if (res.success && res.data) {
@@ -1064,7 +1065,9 @@ export function WOReportsPage() {
                 <KPICard
                   label="Best Response (Min)"
                   value={formatHours(
-                    (reportData.responseTime?.byPriority || []).reduce((min: number, d: any) => d.minHours < min ? d.minHours : min, Infinity)
+                    (reportData.responseTime?.byPriority || []).length > 0
+                      ? (reportData.responseTime?.byPriority || []).reduce((min: number, d: any) => d.minHours < min ? d.minHours : min, Infinity)
+                      : null
                   )}
                   icon={Activity}
                   color="text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400"
@@ -1072,7 +1075,9 @@ export function WOReportsPage() {
                 <KPICard
                   label="Worst Response (Max)"
                   value={formatHours(
-                    (reportData.responseTime?.byPriority || []).reduce((max: number, d: any) => d.maxHours > max ? d.maxHours : max, 0)
+                    (reportData.responseTime?.byPriority || []).length > 0
+                      ? (reportData.responseTime?.byPriority || []).reduce((max: number, d: any) => d.maxHours > max ? d.maxHours : max, 0)
+                      : null
                   )}
                   icon={AlertTriangle}
                   color="text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400"
