@@ -1,60 +1,25 @@
 ---
 Task ID: 1
 Agent: Main Agent
-Task: Fix "Transferred" status not showing in All Tools & Requests + remove empty Activity Timeline
+Task: Fix IoT Devices page missing action buttons + comprehensive permission system audit
 
 Work Log:
-- Analyzed root cause: `checkAndCloseToolRequest()` in `tool-transfer-helpers.ts` always set status to `'returned'` regardless of whether items were returned or transferred
-- Updated `checkAndCloseToolRequest()` to set `'transferred'` status when all items have `quantityTransferred > 0` and `quantityReturned === 0`
-- Updated `decrementToolRequestTransfer()` to also handle `'transferred'` status and reopen prematurely closed requests (set back to `'issued'`) when transfers are rejected/cancelled
-- Updated "All Tools & Requests" modal to show descriptive labels: "🔄 Transferred out" / "↩️ Returned" instead of generic "✓ Done"
-- Removed empty Activity Timeline section from WO details page (statusHistory is only populated during WO completion flow, so always empty for in-progress WOs)
-- The badge styling for `'transferred'` status (teal color) was already present in the modal — it just never triggered because the backend never set that status
+- Discovered permission slug mismatches: code used `iot.create/update/delete` but seed defines `iot_devices.create/update/delete`
+- Found 12 occurrences across 9 API route files (IoT + Telemetry) with wrong slugs
+- Found 4 IoT API routes with NO permission checks at all (rules, alerts)
+- Found IoTPages.tsx had wrong slugs and missing permission gates on Edit/Remove actions
+- Found duplicate className props causing JSX errors in IoTPages.tsx
+- Found pagePermissions map in EAMApp.tsx had 23 stale legacy entries and 87 unguarded pages
+- Fixed all 12 API route permission slug mismatches
+- Added permission checks to 4 unprotected IoT routes
+- Fixed IoTPages.tsx: corrected slugs, added Edit/Remove permission gates, fixed duplicate classNames
+- Completely rewrote pagePermissions map: 23 legacy removed, 87 new guards added, total 104 entries
+- Verified all permission slugs match seed definitions
 - Committed and pushed to GitHub
 
 Stage Summary:
-- Files modified: `src/lib/tool-transfer-helpers.ts`, `src/components/modules/MaintenancePages.tsx`
-- Key fix: `checkAndCloseToolRequest` now distinguishes between transfer-only and return-only completion
-- Key fix: `decrementToolRequestTransfer` now handles `'transferred'` status and reopens prematurely closed requests
-- Removed: Activity Timeline section (always empty, not useful)
-- Deploy needed: VPS pull + build + restart
-
----
-Task ID: 2
-Agent: Main Agent
-Task: Fix "Transferred: 1" not showing for transferred tool in All Tools & Requests
-
-Work Log:
-- Traced full Transfer Tool flow: select value was `${tr.id}__${item.id}` (request+item ID), NOT the actual Tool DB ID
-- The transfer API does `db.tool.findUnique({ where: { id: toolId } })` which always fails with the composite ID
-- Even when transfers succeeded from other pages, `incrementToolRequestTransfer` could not find matching items when `item.toolId` was null
-- Rewrote tool-transfer-helpers.ts with 2-phase matching: exact toolId first, then fallback by toolName/toolCode
-- Fixed Transfer Tool select to use `item.tool?.id` as value (actual Tool DB ID)
-- Created sync endpoint POST /api/repairs/tool-transfers/sync-quantities to repair existing data
-- Added background auto-sync on WO detail load that re-fetches if records were repaired
-
-Stage Summary:
-- Files modified: tool-transfer-helpers.ts (rewritten), MaintenancePages.tsx (Transfer Tool + auto-sync), new sync-quantities route
-- Key fix: Transfer Tool now sends real Tool ID, backend matches by name/code as fallback
-- Auto-repair: When user opens WO detail, sync endpoint fixes any mismatched quantityTransferred
----
-Task ID: 2
-Agent: Main Agent
-Task: Fix React error #31 - trade object rendered in tables + answer WO reports location question
-
-Work Log:
-- Identified React error #31: "Objects are not valid as a React child (found: object with keys {id, name, code})"
-- Traced to Trade model which has exactly {id, name, code, ...} fields
-- Found WOReportsPage.tsx rendering {d.trade} directly in 4 table cells + CSV export rows
-- Found WorkerAssignmentSelector.tsx rendering {worker.trade} directly in 2 places
-- Added tradeName() helper function to WOReportsPage for safe extraction
-- Fixed all 4 JSX renderings of d.trade to use tradeName()
-- Fixed all 5 CSV export d.trade references to use tradeName()
-- Fixed 3 getColorForKey(d.trade) calls to use tradeName()
-- Fixed 2 WorkerAssignmentSelector.tsx renderings with typeof check
-- Committed and pushed (f4adee95)
-
-Stage Summary:
-- Root cause: API sometimes returns trade as a Trade relation object instead of string
-- WO Reports page is at: Repairs → Analytics → WO Reports tab (WOReportsPage.tsx)
-- All trade field renderings now safely handle both string and object formats
+- 15 files changed, 146 insertions, 58 deletions
+- All IoT permission slugs now match database seed definitions
+- All 104 sidebar pages now have route-level permission guards
+- 4 previously unprotected API routes now have proper permission checks
+- Deployment to VPS pending (SSH not available in sandbox)
