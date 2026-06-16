@@ -1091,7 +1091,7 @@ async function seedAll() {
           description: MACHINE_SPECS.description, manufacturer: MACHINE_SPECS.manufacturer, model: MACHINE_SPECS.model,
           yearManufactured: MACHINE_SPECS.year, condition: 'good', status: 'operational',
           criticality: MACHINE_SPECS.criticality, location: MACHINE_SPECS.location, building: MACHINE_SPECS.building,
-          area: MACHINE_SPECS.area, plantId: plant.id, departmentId: dept?.id,
+          area: MACHINE_SPECS.area, plantId: plant.id, departmentId: dept?.id, categoryId: category!.id,
           purchaseDate: new Date(MACHINE_SPECS.purchaseDate), purchaseCost: MACHINE_SPECS.purchaseCost,
           warrantyExpiry: new Date(MACHINE_SPECS.warrantyExpiry), expectedLifeYears: MACHINE_SPECS.expectedLifeYears,
           currentValue: MACHINE_SPECS.purchaseCost * 0.82, depreciationRate: 0.09,
@@ -1118,7 +1118,7 @@ async function seedAll() {
             name: subsystem.name, assetTag: subsystem.tag, description: subsystem.description,
             condition: 'good', status: 'operational', criticality: subsystem.criticality,
             location: MACHINE_SPECS.location, plantId: plant.id, departmentId: dept?.id,
-            parentId: mainAsset.id, createdById: adminUser!.id,
+            parentId: mainAsset.id, categoryId: category!.id, createdById: adminUser!.id,
           },
         });
       }
@@ -1135,7 +1135,7 @@ async function seedAll() {
                 name: child.name, assetTag: child.tag, description: child.description,
                 condition: 'good', status: 'operational', criticality: child.criticality,
                 location: MACHINE_SPECS.location, plantId: plant.id, departmentId: dept?.id,
-                parentId: ssAsset.id, createdById: adminUser!.id,
+                parentId: ssAsset.id, categoryId: category!.id, createdById: adminUser!.id,
               },
             });
           }
@@ -1332,7 +1332,7 @@ async function seedAll() {
             currentStock: item.minStock + Math.floor(Math.random() * (item.maxStock - item.minStock)),
             minStockLevel: item.minStock, maxStockLevel: item.maxStock,
             unitCost: item.unitCost, supplier: item.supplier, location: item.location,
-            plantId: plant.id, specification: item.specification, createdById: adminUser!.id, isActive: true,
+            plantId: plant.id, specification: item.specification, imageUrls: '[]', createdById: adminUser!.id, isActive: true,
           },
         });
         invCount++;
