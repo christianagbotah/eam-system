@@ -19,6 +19,8 @@ if (content.includes('__EAM_PATCHED__')) {
 
 const patch = `
 // __EAM_PATCHED__ — Error diagnostics injected by build script
+process.env.PORT = process.env.PORT || '3001';
+process.env.HOSTNAME = process.env.HOSTNAME || '0.0.0.0';
 process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + ' --enable-source-maps';
 
 // Bypass V8 ignore-listed frames for full stack traces
