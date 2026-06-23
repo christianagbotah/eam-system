@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
     // Hours by trade activity
     const tradeMap: Record<string, { totalHours: number; woCount: number }> = {};
     workOrders.forEach(wo => {
-      const trade = wo.tradeActivity || 'unspecified';
+      const trade = wo.tradeActivity || 'Unassigned';
       if (!tradeMap[trade]) tradeMap[trade] = { totalHours: 0, woCount: 0 };
       tradeMap[trade].totalHours += (wo.actualHours || wo.estimatedHours || 0);
       tradeMap[trade].woCount += 1;

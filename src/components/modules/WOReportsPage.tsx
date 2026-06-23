@@ -37,7 +37,7 @@ const CHART_COLORS = ['#059669', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#1
 
 const TRADE_COLORS: Record<string, string> = {
   mechanical: '#059669', electrical: '#0ea5e9', civil: '#f59e0b',
-  facility: '#8b5cf6', workshop: '#f97316', other: '#6b7280', unspecified: '#94a3b8',
+  facility: '#8b5cf6', workshop: '#f97316', other: '#6b7280', Unassigned: '#94a3b8',
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -53,7 +53,7 @@ const SLA_TARGETS: Record<string, number> = {
 
 // Safe trade name extraction — API may return Trade object {id, name, code} or string
 function tradeName(trade: any): string {
-  if (!trade) return 'Unspecified';
+  if (!trade) return 'Unassigned';
   if (typeof trade === 'string') return trade;
   if (typeof trade === 'object' && trade.name) return trade.name;
   return String(trade);

@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
     const downtimeByTrade: Record<string, { totalMinutes: number; events: number; productionLoss: number }> = {};
     for (const wo of workOrders) {
       const dtEvents = wo.workOrderDowntimes || [];
-      const trade = wo.tradeActivity || 'unspecified';
+      const trade = wo.tradeActivity || 'Unassigned';
       for (const dt of dtEvents) {
         if (!downtimeByTrade[trade]) downtimeByTrade[trade] = { totalMinutes: 0, events: 0, productionLoss: 0 };
         downtimeByTrade[trade].totalMinutes += dt.durationMinutes;
@@ -154,7 +154,7 @@ export async function GET(request: NextRequest) {
             hours: Math.round(hours * 100) / 100,
             priority: wo.priority,
             type: wo.type,
-            trade: wo.tradeActivity || 'unspecified',
+            trade: wo.tradeActivity || 'Unassigned',
             woId: wo.id,
           });
         }
@@ -209,7 +209,7 @@ export async function GET(request: NextRequest) {
     // Breakdown by trade
     const breakdownByTrade: Record<string, number> = {};
     for (const wo of breakdownWOs) {
-      const t = wo.tradeActivity || 'unspecified';
+      const t = wo.tradeActivity || 'Unassigned';
       breakdownByTrade[t] = (breakdownByTrade[t] || 0) + 1;
     }
     const breakdownByTradeArray = Object.entries(breakdownByTrade)
@@ -243,7 +243,7 @@ export async function GET(request: NextRequest) {
     let grandTotalManHours = 0;
 
     for (const wo of workOrders) {
-      const trade = wo.tradeActivity || 'unspecified';
+      const trade = wo.tradeActivity || 'Unassigned';
 
       // Get hours from timeLogs (primary), actualHours (fallback), repairCompletion (override)
       let woHours = 0;
@@ -499,7 +499,7 @@ export async function GET(request: NextRequest) {
     const stoppagesByReason: Record<string, number> = {};
     for (const wo of workOrders) {
       for (const dt of (wo.workOrderDowntimes || [])) {
-        const reason = dt.reason || 'unspecified';
+        const reason = dt.reason || 'Unassigned';
         stoppagesByReason[reason] = (stoppagesByReason[reason] || 0) + 1;
       }
     }
@@ -524,7 +524,7 @@ export async function GET(request: NextRequest) {
     // Cost by trade
     const costByTrade: Record<string, { labor: number; parts: number; contractor: number; total: number }> = {};
     for (const wo of workOrders) {
-      const t = wo.tradeActivity || 'unspecified';
+      const t = wo.tradeActivity || 'Unassigned';
       if (!costByTrade[t]) costByTrade[t] = { labor: 0, parts: 0, contractor: 0, total: 0 };
       costByTrade[t].labor += wo.laborCost || 0;
       costByTrade[t].parts += wo.partsCost || 0;
@@ -571,7 +571,7 @@ export async function GET(request: NextRequest) {
       woByType[wo.type || 'other'] = (woByType[wo.type || 'other'] || 0) + 1;
       woByStatus[wo.status] = (woByStatus[wo.status] || 0) + 1;
       woByPriority[wo.priority || 'medium'] = (woByPriority[wo.priority || 'medium'] || 0) + 1;
-      woByTrade[wo.tradeActivity || 'unspecified'] = (woByTrade[wo.tradeActivity || 'unspecified'] || 0) + 1;
+      woByTrade[wo.tradeActivity || 'Unassigned'] = (woByTrade[wo.tradeActivity || 'Unassigned'] || 0) + 1;
     }
 
     // ========== BUILD RESPONSE DATA ==========
