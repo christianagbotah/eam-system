@@ -51,7 +51,6 @@ export async function POST(
     }
 
     if (mr.workOrderId) {
-      // Verify the linked WO actually exists (could be stale from failed conversion)
       const linkedWO = await db.workOrder.findUnique({ where: { id: mr.workOrderId } });
       if (linkedWO) {
         return NextResponse.json(
@@ -59,14 +58,13 @@ export async function POST(
           { status: 400 }
         );
       }
-      // Stale link — clear it and allow conversion to proceed
-      await db.maintenanceRequest.update({ where: { id }, data: { workOrderId: null } });
+      // Stale link — clear it inside the transaction below
     }
 
     // Also check if a work order already references this MR (data consistency fallback)
     const existingWO = await db.workOrder.findFirst({ where: { maintenanceRequestId: id } });
     if (existingWO) {
-      // Repair the link and return a helpful message
+      // Repair the link
       await db.maintenanceRequest.update({
         where: { id },
         data: { workOrderId: existingWO.id },
@@ -107,112 +105,73 @@ export async function POST(
     const hasAssignment = assignedTo || (teamMembers && teamMembers.length > 0);
     const woStatus = hasAssignment ? 'assigned' : 'approved';
 
-    // Create the work order
-    const wo = await db.workOrder.create({
-      data: {
-        woNumber,
-        title: title || `WO for ${mr.title}`,
-        description: mr.description,
-        type: workOrderType || 'corrective',
-        priority: priority || mr.priority || 'medium',
-        status: woStatus,
-        maintenanceRequestId: mr.id,
-        assetId: mr.assetId,
-        departmentId: mr.departmentId,
-        plantId: mr.plantId,
-        estimatedHours: estimatedHours ?? mr.estimatedHours,
-        plannedStart: plannedStart ? new Date(plannedStart) : mr.plannedStart,
-        plannedEnd: deliveryDateRequired ? new Date(deliveryDateRequired) : (plannedEnd ? new Date(plannedEnd) : mr.plannedEnd),
-        plannerId: session.userId,
-        assignedTo: assignedTo || null,
-        teamLeaderId: teamLeaderId || null,
-        assignedSupervisorId: assignedSupervisorId || null,
-        assignmentType: assignmentType || (assignedTo ? 'direct' : null),
-        assignedBy: session.userId,
-        failureDescription: failureDescription || null,
-        causeDescription: causeDescription || null,
-        actionDescription: actionDescription || null,
-        tradeActivity: tradeActivity || null,
-        safetyNotes: safetyNotes || null,
-        ppeRequired: ppeRequired || null,
-        notes: notes || null,
-      },
-      include: {
-        assignee: { select: { id: true, fullName: true, username: true } },
-        teamLeader: { select: { id: true, fullName: true, username: true } },
-        assignedSupervisor: { select: { id: true, fullName: true, username: true } },
-        planner: { select: { id: true, fullName: true, username: true } },
-        maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
-      },
-    });
+    // ── Execute all DB writes inside a single transaction ──
+    const wo = await db.$transaction(async (tx) => {
+      // Clear stale workOrderId if present
+      if (mr.workOrderId) {
+        await tx.maintenanceRequest.update({ where: { id }, data: { workOrderId: null } });
+      }
 
-    // Create team member records if provided
-    if (teamMembers && teamMembers.length > 0) {
-      const teamMemberData = teamMembers.map((member: { userId: string; role: string }) => {
-        const isTeamLeader = member.userId === teamLeaderId;
-        return {
-          workOrderId: wo.id,
-          userId: member.userId,
-          role: isTeamLeader ? 'team_leader' : member.role,
-          accessLevel: isTeamLeader ? 'full' : 'read_only',
-          assignedAt: now,
-        };
+      // Create the work order
+      const workOrder = await tx.workOrder.create({
+        data: {
+          woNumber,
+          title: title || `WO for ${mr.title}`,
+          description: mr.description,
+          type: workOrderType || 'corrective',
+          priority: priority || mr.priority || 'medium',
+          status: woStatus,
+          maintenanceRequestId: mr.id,
+          assetId: mr.assetId,
+          departmentId: mr.departmentId,
+          plantId: mr.plantId,
+          estimatedHours: estimatedHours ?? mr.estimatedHours,
+          plannedStart: plannedStart ? new Date(plannedStart) : mr.plannedStart,
+          plannedEnd: deliveryDateRequired ? new Date(deliveryDateRequired) : (plannedEnd ? new Date(plannedEnd) : mr.plannedEnd),
+          plannerId: session.userId,
+          assignedTo: assignedTo || null,
+          teamLeaderId: teamLeaderId || null,
+          assignedSupervisorId: assignedSupervisorId || null,
+          assignmentType: assignmentType || (assignedTo ? 'direct' : null),
+          assignedBy: session.userId,
+          failureDescription: failureDescription || null,
+          causeDescription: causeDescription || null,
+          actionDescription: actionDescription || null,
+          tradeActivity: tradeActivity || null,
+          safetyNotes: safetyNotes || null,
+          ppeRequired: ppeRequired || null,
+          notes: notes || null,
+        },
+        include: {
+          assignee: { select: { id: true, fullName: true, username: true } },
+          teamLeader: { select: { id: true, fullName: true, username: true } },
+          assignedSupervisor: { select: { id: true, fullName: true, username: true } },
+          planner: { select: { id: true, fullName: true, username: true } },
+          maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
+        },
       });
 
-      await db.workOrderTeamMember.createMany({ data: teamMemberData });
-    }
-
-    // Create required parts as material requests if provided
-    if (requiredParts && Array.isArray(requiredParts) && requiredParts.length > 0) {
-      for (const partId of requiredParts) {
-        const part = await db.inventoryItem.findUnique({ where: { id: partId } });
-        if (part) {
-          await db.workOrderMaterial.create({
-            data: {
-              workOrderId: wo.id,
-              itemId: part.id,
-              itemName: part.name,
-              quantity: 0,
-              unitCost: part.unitCost || 0,
-              totalCost: 0,
-              status: 'requested',
-              requestedBy: session.userId,
-            },
-          });
-        }
+      // Create team member records
+      if (teamMembers && teamMembers.length > 0) {
+        const teamMemberData = teamMembers.map((member: { userId: string; role: string }) => {
+          const isTeamLeader = member.userId === teamLeaderId;
+          return {
+            workOrderId: workOrder.id,
+            userId: member.userId,
+            role: isTeamLeader ? 'team_leader' : member.role,
+            accessLevel: isTeamLeader ? 'full' : 'read_only',
+            assignedAt: now,
+          };
+        });
+        await tx.workOrderTeamMember.createMany({ data: teamMemberData });
       }
-    }
 
-    // Create required tools as material references if provided
-    if (requiredTools && Array.isArray(requiredTools) && requiredTools.length > 0) {
-      for (const toolId of requiredTools) {
-        const tool = await db.tool.findUnique({ where: { id: toolId } });
-        if (tool) {
-          await db.workOrderMaterial.create({
-            data: {
-              workOrderId: wo.id,
-              itemName: tool.name,
-              quantity: 1,
-              unitCost: 0,
-              totalCost: 0,
-              status: 'requested',
-              requestedBy: session.userId,
-            },
-          });
-        }
-      }
-    }
-
-    // If assignedTo is provided but not in teamMembers, ensure they're a team member too
-    if (assignedTo && !(teamMembers && teamMembers.some((m: { userId: string }) => m.userId === assignedTo))) {
-      const isTeamLeader = assignedTo === teamLeaderId;
-      const existingMember = await db.workOrderTeamMember.findFirst({
-        where: { workOrderId: wo.id, userId: assignedTo },
-      });
-      if (!existingMember) {
-        await db.workOrderTeamMember.create({
+      // If assignedTo is not in teamMembers, add them
+      if (assignedTo && !(teamMembers && teamMembers.some((m: { userId: string }) => m.userId === assignedTo))) {
+        const isTeamLeader = assignedTo === teamLeaderId;
+        await tx.workOrderTeamMember.create({
           data: {
-            workOrderId: wo.id,
+            workOrderId: workOrder.id,
             userId: assignedTo,
             role: isTeamLeader ? 'team_leader' : 'assistant',
             accessLevel: isTeamLeader ? 'full' : 'read_only',
@@ -220,9 +179,71 @@ export async function POST(
           },
         });
       }
-    }
 
-    // Execute MR status transition via state machine (validates + updates + creates comment)
+      // Create required parts
+      if (requiredParts && Array.isArray(requiredParts) && requiredParts.length > 0) {
+        for (const partId of requiredParts) {
+          const part = await tx.inventoryItem.findUnique({ where: { id: partId } });
+          if (part) {
+            await tx.workOrderMaterial.create({
+              data: {
+                workOrderId: workOrder.id,
+                itemId: part.id,
+                itemName: part.name,
+                quantity: 0,
+                unitCost: part.unitCost || 0,
+                totalCost: 0,
+                status: 'requested',
+                requestedBy: session.userId,
+              },
+            });
+          }
+        }
+      }
+
+      // Create required tools
+      if (requiredTools && Array.isArray(requiredTools) && requiredTools.length > 0) {
+        for (const toolId of requiredTools) {
+          const tool = await tx.tool.findUnique({ where: { id: toolId } });
+          if (tool) {
+            await tx.workOrderMaterial.create({
+              data: {
+                workOrderId: workOrder.id,
+                itemName: tool.name,
+                quantity: 1,
+                unitCost: 0,
+                totalCost: 0,
+                status: 'requested',
+                requestedBy: session.userId,
+              },
+            });
+          }
+        }
+      }
+
+      // Audit log
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'maintenance_request',
+          entityId: id,
+          oldValues: JSON.stringify({}),
+          newValues: JSON.stringify({
+            workOrderId: workOrder.id,
+            woNumber: workOrder.woNumber,
+            assignedTo: assignedTo || null,
+            teamLeaderId: teamLeaderId || null,
+            teamMembersCount: teamMembers?.length || 0,
+            assignmentType: assignmentType || null,
+          }),
+        },
+      });
+
+      return workOrder;
+    }, { timeout: 30000 });
+
+    // ── Post-transaction: state machine transition ──
     const result = await executeTransition(
       'maintenance_request',
       id,
@@ -238,106 +259,54 @@ export async function POST(
     );
 
     if (!result.success) {
-      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+      // State machine failed — the WO was created inside the transaction, so it's persisted.
+      // Return success for the WO creation but warn about the status transition.
+      return NextResponse.json({
+        success: true,
+        data: wo,
+        warning: `Work order created but status transition failed: ${result.error}. The MR status may need manual update.`,
+      }, { status: 201 });
     }
 
-    // Domain-specific audit log
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'maintenance_request',
-        entityId: id,
-        oldValues: JSON.stringify({}),
-        newValues: JSON.stringify({
-          workOrderId: wo.id,
-          woNumber: wo.woNumber,
-          assignedTo: assignedTo || null,
-          teamLeaderId: teamLeaderId || null,
-          teamMembersCount: teamMembers?.length || 0,
-          assignmentType: assignmentType || null,
-        }),
-      },
-    });
+    // ── Notifications (non-critical, fire-and-forget) ──
+    const notifyAsync = (userId: string, type: string, title: string, body: string, entityType: string, entityId: string, path: string, opts?: Record<string, unknown>) =>
+      notifyUser(userId, type, title, body, entityType, entityId, path, opts).catch(() => {});
 
-    // Notify the requester that the MR was converted
     if (mr.requestedBy && mr.requestedBy !== session.userId) {
-      await notifyUser(
-        mr.requestedBy,
-        'mr_converted',
-        'MR Converted to Work Order',
+      await notifyAsync(mr.requestedBy, 'mr_converted', 'MR Converted to Work Order',
         `Your request has been converted to WO ${wo.woNumber} by ${session.fullName}`,
-        'work_order',
-        wo.id,
-        `wo-detail?id=${wo.id}`,
-      );
+        'work_order', wo.id, `wo-detail?id=${wo.id}`);
     }
-
-    // Notify team leader if provided
     if (teamLeaderId && teamLeaderId !== session.userId) {
-      await notifyUser(
-        teamLeaderId,
-        'wo_assigned',
-        'Work Order Team Lead Assignment',
+      await notifyAsync(teamLeaderId, 'wo_assigned', 'Work Order Team Lead Assignment',
         `${session.fullName} assigned you as team leader for ${wo.woNumber}: "${wo.title}"`,
-        'work_order',
-        wo.id,
-        `wo-detail?id=${wo.id}`,
-        { forceSms: true },
-      );
+        'work_order', wo.id, `wo-detail?id=${wo.id}`, { forceSms: true });
     }
-
-    // Notify direct assignee if provided and different from team leader
     if (assignedTo && assignedTo !== session.userId && assignedTo !== teamLeaderId) {
-      await notifyUser(
-        assignedTo,
-        'wo_assigned',
-        'Work Order Assigned',
+      await notifyAsync(assignedTo, 'wo_assigned', 'Work Order Assigned',
         `${session.fullName} assigned ${wo.woNumber} to you: "${wo.title}"`,
-        'work_order',
-        wo.id,
-        `wo-detail?id=${wo.id}`,
-        { forceSms: true },
-      );
+        'work_order', wo.id, `wo-detail?id=${wo.id}`, { forceSms: true });
     }
-
-    // Notify team members
     if (teamMembers && teamMembers.length > 0) {
       for (const member of teamMembers) {
         if (member.userId !== session.userId && member.userId !== assignedTo && member.userId !== teamLeaderId) {
-          await notifyUser(
-            member.userId,
-            'wo_assigned',
-            'Work Order Team Assignment',
+          await notifyAsync(member.userId, 'wo_assigned', 'Work Order Team Assignment',
             `${session.fullName} assigned you to the team for ${wo.woNumber}: "${wo.title}"`,
-            'work_order',
-            wo.id,
-            `wo-detail?id=${wo.id}`,
-            { forceSms: true },
-          );
+            'work_order', wo.id, `wo-detail?id=${wo.id}`, { forceSms: true });
         }
       }
     }
-
-    // Notify supervisor when assignment type is via_supervisor
     if (assignedSupervisorId && assignedSupervisorId !== session.userId) {
-      await notifyUser(
-        assignedSupervisorId,
-        'wo_assigned',
-        'Work Order Pending Your Review',
+      await notifyAsync(assignedSupervisorId, 'wo_assigned', 'Work Order Pending Your Review',
         `${session.fullName} created ${wo.woNumber} and assigned it to your team for review`,
-        'work_order',
-        wo.id,
-        `wo-detail?id=${wo.id}`,
-        { forceSms: true },
-      );
+        'work_order', wo.id, `wo-detail?id=${wo.id}`, { forceSms: true });
     }
 
     return NextResponse.json({ success: true, data: wo }, { status: 201 });
   } catch (error: unknown) {
     // Handle race condition: another request already converted this MR
     if (error && typeof error === 'object' && 'code' in error && (error as { code: string }).code === 'P2002') {
-      const existingWO = await db.workOrder.findFirst({ where: { maintenanceRequestId: id } });
+      const existingWO = await db.workOrder.findFirst({ where: { maintenanceRequestId: (await params).id } });
       const woRef = existingWO ? existingWO.woNumber : 'an existing work order';
       return NextResponse.json(
         { success: false, error: `This request has already been converted to ${woRef}` },
