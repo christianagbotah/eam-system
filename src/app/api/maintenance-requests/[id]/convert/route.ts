@@ -180,9 +180,11 @@ export async function POST(
         });
       }
 
-      // Create required parts
+      // Create required parts (frontend sends Array<{ itemId, quantity }>)
       if (requiredParts && Array.isArray(requiredParts) && requiredParts.length > 0) {
-        for (const partId of requiredParts) {
+        for (const partEntry of requiredParts) {
+          const partId = typeof partEntry === 'object' && partEntry !== null ? (partEntry as { itemId: string }).itemId : partEntry;
+          const partQty = typeof partEntry === 'object' && partEntry !== null ? (partEntry as { quantity: number }).quantity : 1;
           const part = await tx.inventoryItem.findUnique({ where: { id: partId } });
           if (part) {
             await tx.workOrderMaterial.create({
@@ -190,9 +192,9 @@ export async function POST(
                 workOrderId: workOrder.id,
                 itemId: part.id,
                 itemName: part.name,
-                quantity: 0,
+                quantity: partQty || 1,
                 unitCost: part.unitCost || 0,
-                totalCost: 0,
+                totalCost: (partQty || 1) * (part.unitCost || 0),
                 status: 'requested',
                 requestedBy: session.userId,
               },
@@ -201,16 +203,18 @@ export async function POST(
         }
       }
 
-      // Create required tools
+      // Create required tools (frontend sends Array<{ toolId, quantity }>)
       if (requiredTools && Array.isArray(requiredTools) && requiredTools.length > 0) {
-        for (const toolId of requiredTools) {
+        for (const toolEntry of requiredTools) {
+          const toolId = typeof toolEntry === 'object' && toolEntry !== null ? (toolEntry as { toolId: string }).toolId : toolEntry;
+          const toolQty = typeof toolEntry === 'object' && toolEntry !== null ? (toolEntry as { quantity: number }).quantity : 1;
           const tool = await tx.tool.findUnique({ where: { id: toolId } });
           if (tool) {
             await tx.workOrderMaterial.create({
               data: {
                 workOrderId: workOrder.id,
                 itemName: tool.name,
-                quantity: 1,
+                quantity: toolQty || 1,
                 unitCost: 0,
                 totalCost: 0,
                 status: 'requested',
