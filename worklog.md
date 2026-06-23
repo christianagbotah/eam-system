@@ -103,3 +103,19 @@ Stage Summary:
 - IoT Devices page: "Add Device" button now renders in page header and opens create dialog on click
 - IoT Rules page: "Create Rule" button now renders in page header and opens create dialog on click
 - Both buttons gated by hasPermission('iot_devices.create') || isAdmin() and hasPermission('iot_rules.create') || isAdmin() respectively
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Fix MR Convert button still showing after conversion
+
+Work Log:
+- Found root cause: canConvertMR (list), canConvert (detail), and auto-convert trigger only checked status === 'approved' and permissions — never checked mr.workOrderId
+- After a failed conversion that leaves a partial WO (now prevented by transaction), or when state machine fails, MR stays 'approved' with workOrderId set but button still showed
+- Added `!mr.workOrderId` check to all three locations in MaintenancePages.tsx
+- Committed and pushed: bdf18f88
+
+Stage Summary:
+- Convert button now hidden on any MR that has workOrderId set (converted or partially converted)
+- Combined with the transaction fix (already in main), this fully resolves the MR-to-WO conversion bug
+- VPS needs to pull this new commit after current build finishes
