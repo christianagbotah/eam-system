@@ -36,14 +36,12 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    // Check if user is the assigned technician, a team member, or admin
+    // Check if user is the assigned technician, the team leader, or admin
     const isAssignee = wo.assignedTo === session.userId;
-    const isTeamMember = !isAssignee ? await db.workOrderTeamMember.findFirst({
-      where: { workOrderId: id, userId: session.userId },
-    }).then(r => !!r) : false;
-    if (!isAssignee && !isTeamMember && !isAdmin(session)) {
+    const isTeamLeader = wo.teamLeaderId === session.userId;
+    if (!isAssignee && !isTeamLeader && !isAdmin(session)) {
       return NextResponse.json(
-        { success: false, error: 'Only the assigned technician, team member, or admin can complete work' },
+        { success: false, error: 'Only the assigned technician, team leader, or admin can complete work' },
         { status: 403 }
       );
     }
