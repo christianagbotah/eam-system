@@ -329,6 +329,15 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: wo }, { status: 201 });
   } catch (error: unknown) {
+    // Handle race condition: another request already converted this MR
+    if (error && typeof error === 'object' && 'code' in error && (error as { code: string }).code === 'P2002') {
+      const existingWO = await db.workOrder.findFirst({ where: { maintenanceRequestId: id } });
+      const woRef = existingWO ? existingWO.woNumber : 'an existing work order';
+      return NextResponse.json(
+        { success: false, error: `This request has already been converted to ${woRef}` },
+        { status: 409 }
+      );
+    }
     const message = error instanceof Error ? error.message : 'Failed to convert maintenance request';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
