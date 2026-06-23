@@ -119,3 +119,28 @@ Stage Summary:
 - Convert button now hidden on any MR that has workOrderId set (converted or partially converted)
 - Combined with the transaction fix (already in main), this fully resolves the MR-to-WO conversion bug
 - VPS needs to pull this new commit after current build finishes
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Add edit/delete/quantity update to Tools page
+
+Work Log:
+- Found Tools page had Create-only UI, no edit or delete capability
+- API already had PUT (edit) and DELETE (soft-deactivate) endpoints at /api/tools/[id]
+- But API PUT was missing 'quantity' in allowedFields, and POST was missing quantity destructuring
+- Added 'quantity' to both API endpoints' allowed fields
+- Rewrote MaintenanceToolsPage with:
+  - Edit dialog with full form (name, description, category, quantity, condition, status, location, serial number, manufacturer, model, purchase cost, current value, plant, assigned to)
+  - Deactivate confirmation dialog using ConfirmDialog component
+  - Actions dropdown (⋮) on each table row with Edit and Deactivate options
+  - Quantity and Condition columns added to table
+  - Quantity field added to Create form
+  - Shared form renderer (renderToolForm) for consistency between create and edit
+- Committed and pushed: 72f7ba27
+
+Stage Summary:
+- Tools page now supports full CRUD: Create, Read, Update, Delete(soft-deactivate)
+- Users can update quantity, condition, status, and all other tool fields
+- Table shows Qty and Condition columns for quick visibility
+- Deactivate is soft-delete (sets isActive=false, status=retired)
