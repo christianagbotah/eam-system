@@ -57,6 +57,20 @@ export async function POST(
       );
     }
 
+    // Also check if a work order already references this MR (data consistency fallback)
+    const existingWO = await db.workOrder.findFirst({ where: { maintenanceRequestId: id } });
+    if (existingWO) {
+      // Repair the link and return a helpful message
+      await db.maintenanceRequest.update({
+        where: { id },
+        data: { workOrderId: existingWO.id },
+      });
+      return NextResponse.json(
+        { success: false, error: `This request was already converted to work order ${existingWO.woNumber}`, existingWOId: existingWO.id },
+        { status: 409 }
+      );
+    }
+
     // Validate team members if provided
     if (teamMembers && Array.isArray(teamMembers)) {
       for (const member of teamMembers) {
