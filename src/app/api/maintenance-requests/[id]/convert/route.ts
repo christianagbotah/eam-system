@@ -51,10 +51,16 @@ export async function POST(
     }
 
     if (mr.workOrderId) {
-      return NextResponse.json(
-        { success: false, error: 'This request has already been converted to a work order' },
-        { status: 400 }
-      );
+      // Verify the linked WO actually exists (could be stale from failed conversion)
+      const linkedWO = await db.workOrder.findUnique({ where: { id: mr.workOrderId } });
+      if (linkedWO) {
+        return NextResponse.json(
+          { success: false, error: `This request has already been converted to work order ${linkedWO.woNumber}` },
+          { status: 400 }
+        );
+      }
+      // Stale link — clear it and allow conversion to proceed
+      await db.maintenanceRequest.update({ where: { id }, data: { workOrderId: null } });
     }
 
     // Also check if a work order already references this MR (data consistency fallback)
