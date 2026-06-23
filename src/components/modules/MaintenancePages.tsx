@@ -3266,6 +3266,10 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
       fetchWO();
       onUpdate();
       setActionDialog(null);
+      // Re-fetch available transitions for the new status
+      api.get(`/api/work-orders/${id}/transitions`).then(tres => {
+        if (tres.success && tres.data) setAvailableTransitions(tres.data);
+      });
     } else {
       toast.error(res.error || 'Action failed');
     }
