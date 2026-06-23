@@ -174,6 +174,7 @@ export function MaintenanceRequestsPage() {
   // Helper: check if user can convert a specific MR to WO
   const canConvertMR = useCallback((mr: MaintenanceRequest) => {
     return mr.status === 'approved'
+      && !mr.workOrderId
       && hasPermission('maintenance_requests.convert_to_wo')
       && (mr.assignedPlannerId === user?.id || isAdmin() || !mr.assignedPlannerId);
   }, [hasPermission, user, isAdmin]);
@@ -871,7 +872,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
   // Auto-open convert dialog when triggered from the list view
   const autoConvertTriggered = useRef(false);
   useEffect(() => {
-    if (autoOpenConvert && mr && !loading && !autoConvertTriggered.current && mr.status === 'approved') {
+    if (autoOpenConvert && mr && !loading && !autoConvertTriggered.current && mr.status === 'approved' && !mr.workOrderId) {
       autoConvertTriggered.current = true;
       openConvertDialog();
     }
@@ -1070,7 +1071,7 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
   const canApprove = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
   const canReject = mr.status === 'pending' && (isAdminUser || isDeptSupervisor);
   const canAssignPlanner = mr.status === 'approved' && (isAdminUser || isDeptSupervisor) && !mr.assignedPlannerId;
-  const canConvert = mr.status === 'approved' && hasPermission('maintenance_requests.convert_to_wo') && (mr.assignedPlannerId === user?.id || isAdminUser || !mr.assignedPlannerId);
+  const canConvert = mr.status === 'approved' && !mr.workOrderId && hasPermission('maintenance_requests.convert_to_wo') && (mr.assignedPlannerId === user?.id || isAdminUser || !mr.assignedPlannerId);
   // Requester can edit/delete their own pending requests
   const isRequester = mr.requestedBy === user?.id;
   const canEdit = mr.status === 'pending' && (isRequester || isAdminUser);
