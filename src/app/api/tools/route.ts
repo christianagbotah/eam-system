@@ -132,6 +132,7 @@ export async function POST(request: NextRequest) {
       manufacturer,
       model,
       assignedToId,
+      quantity,
     } = body;
 
     if (!name) {
@@ -160,6 +161,7 @@ export async function POST(request: NextRequest) {
         manufacturer: manufacturer || null,
         model: model || null,
         assignedToId: assignedToId || null,
+        quantity: quantity || 1,
         createdById: session.userId,
         plantId: body.plantId || plantScope?.plantId || null,
       },

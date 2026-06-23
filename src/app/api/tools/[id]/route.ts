@@ -74,7 +74,7 @@ export async function PUT(
     const allowedFields = [
       'name', 'description', 'category', 'serialNumber', 'condition',
       'status', 'location', 'purchaseCost', 'currentValue', 'manufacturer',
-      'model', 'assignedToId', 'expectedReturn', 'isActive',
+      'model', 'assignedToId', 'expectedReturn', 'isActive', 'quantity',
     ];
 
     for (const field of allowedFields) {

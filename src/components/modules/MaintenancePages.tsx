@@ -8066,12 +8066,23 @@ export function MaintenanceToolsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', category: '', location: '', serialNumber: '', condition: '', plantId: '', assignedToId: '' });
+  const [form, setForm] = useState({ name: '', category: '', location: '', serialNumber: '', condition: '', plantId: '', assignedToId: '', quantity: '1' });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tools, setTools] = useState<any[]>([]);
   const [kpis, setKpis] = useState({ total: 0, available: 0, checkedOut: 0, inRepair: 0, retired: 0 });
   const { hasPermission, isAdmin } = useAuthStore();
+
+  // Edit state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editSaving, setEditSaving] = useState(false);
+  // Delete state
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const canEdit = hasPermission('tools.update') || isAdmin();
+  const canDelete = hasPermission('tools.delete') || isAdmin();
 
   const loadTools = async () => {
     try {
@@ -8122,11 +8133,11 @@ export function MaintenanceToolsPage() {
     if (!form.name || !form.category) { toast.error('Tool name and category are required'); return; }
     setSaving(true);
     try {
-      const res = await api.post('/api/tools', { ...form });
+      const res = await api.post('/api/tools', { ...form, quantity: parseInt(form.quantity) || 1 });
       if (res.success) {
         toast.success('Tool added successfully');
         setCreateOpen(false);
-        setForm({ name: '', category: '', location: '', serialNumber: '', condition: '', plantId: '', assignedToId: '' });
+        setForm({ name: '', category: '', location: '', serialNumber: '', condition: '', plantId: '', assignedToId: '', quantity: '1' });
         loadTools();
       } else {
         toast.error(res.error || 'Failed to add tool');
@@ -8134,6 +8145,158 @@ export function MaintenanceToolsPage() {
     } catch { toast.error('Failed to add tool'); }
     setSaving(false);
   };
+
+  const openEditDialog = (t: any) => {
+    setEditForm({
+      id: t.id,
+      name: t.name || '',
+      description: t.description || '',
+      category: t.category || '',
+      serialNumber: t.serialNumber || '',
+      condition: t.condition || 'good',
+      status: t.status || 'available',
+      location: t.location || '',
+      plantId: t.plantId || '',
+      assignedToId: t.assignedToId || '',
+      quantity: String(t.quantity ?? 1),
+      purchaseCost: t.purchaseCost != null ? String(t.purchaseCost) : '',
+      currentValue: t.currentValue != null ? String(t.currentValue) : '',
+      manufacturer: t.manufacturer || '',
+      model: t.model || '',
+    });
+    setEditOpen(true);
+  };
+
+  const handleEdit = async () => {
+    if (!editForm.name || !editForm.category) { toast.error('Tool name and category are required'); return; }
+    setEditSaving(true);
+    try {
+      const payload: Record<string, unknown> = {
+        name: editForm.name,
+        description: editForm.description || null,
+        category: editForm.category,
+        serialNumber: editForm.serialNumber || null,
+        condition: editForm.condition,
+        status: editForm.status,
+        location: editForm.location || null,
+        plantId: editForm.plantId || null,
+        assignedToId: editForm.assignedToId || null,
+        quantity: parseInt(editForm.quantity) || 1,
+        purchaseCost: editForm.purchaseCost ? parseFloat(editForm.purchaseCost) : null,
+        currentValue: editForm.currentValue ? parseFloat(editForm.currentValue) : null,
+        manufacturer: editForm.manufacturer || null,
+        model: editForm.model || null,
+      };
+      const res = await api.put(`/api/tools/${editForm.id}`, payload);
+      if (res.success) {
+        toast.success('Tool updated successfully');
+        setEditOpen(false);
+        loadTools();
+      } else {
+        toast.error(res.error || 'Failed to update tool');
+      }
+    } catch { toast.error('Failed to update tool'); }
+    setEditSaving(false);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    setDeleteLoading(true);
+    try {
+      const res = await api.delete(`/api/tools/${deleteId}`);
+      if (res.success) {
+        toast.success('Tool deactivated successfully');
+        setDeleteId(null);
+        loadTools();
+      } else {
+        toast.error(res.error || 'Failed to deactivate tool');
+      }
+    } catch { toast.error('Failed to deactivate tool'); }
+    setDeleteLoading(false);
+  };
+
+  const categoryOptions = [
+    { value: 'Hand Tool', label: 'Hand Tool' },
+    { value: 'Power Tool', label: 'Power Tool' },
+    { value: 'Measurement', label: 'Measurement' },
+    { value: 'Safety', label: 'Safety' },
+    { value: 'Cutting', label: 'Cutting' },
+    { value: 'Welding', label: 'Welding' },
+    { value: 'Lifting', label: 'Lifting' },
+    { value: 'Pneumatic', label: 'Pneumatic' },
+    { value: 'Electrical', label: 'Electrical' },
+  ];
+
+  const renderToolForm = (f: any, setF: (updater: any) => void, showStatus?: boolean) => (
+    <div className="grid gap-4 py-2">
+      <div className="grid gap-2"><Label className="text-xs">Tool Name <span className="text-destructive">*</span></Label><Input placeholder="e.g. Torque Wrench 1/2 inch" value={f.name} onChange={e => setF((p: any) => ({ ...p, name: e.target.value }))} /></div>
+      <div className="grid gap-2"><Label className="text-xs">Description</Label><Textarea placeholder="Optional description..." value={f.description || ''} onChange={e => setF((p: any) => ({ ...p, description: e.target.value }))} rows={2} /></div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-2"><Label className="text-xs">Category <span className="text-destructive">*</span></Label>
+          <SearchableSelect
+            value={f.category}
+            onValueChange={v => setF((p: any) => ({ ...p, category: v }))}
+            options={categoryOptions.map(c => ({ ...c, group: 'Tool Types' }))}
+            placeholder="Select category..."
+            searchPlaceholder="Search categories..."
+            groupBy={false}
+          />
+        </div>
+        <div className="grid gap-2"><Label className="text-xs">Quantity</Label><Input type="number" min="1" value={f.quantity} onChange={e => setF((p: any) => ({ ...p, quantity: e.target.value }))} /></div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-2"><Label className="text-xs">Condition</Label><Select value={f.condition} onValueChange={v => setF((p: any) => ({ ...p, condition: v }))}><SelectTrigger><SelectValue placeholder="Condition" /></SelectTrigger><SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent></Select></div>
+        {showStatus && <div className="grid gap-2"><Label className="text-xs">Status</Label><Select value={f.status} onValueChange={v => setF((p: any) => ({ ...p, status: v }))}><SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="available">Available</SelectItem><SelectItem value="checked_out">Checked Out</SelectItem><SelectItem value="in_repair">In Repair</SelectItem><SelectItem value="transferred">Transferred</SelectItem><SelectItem value="retired">Retired</SelectItem></SelectContent></Select></div>}
+      </div>
+      <div className="grid gap-2"><Label className="text-xs">Location</Label><Input placeholder="e.g. Tool Room A-1" value={f.location || ''} onChange={e => setF((p: any) => ({ ...p, location: e.target.value }))} /></div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-2"><Label className="text-xs">Serial Number</Label><Input placeholder="e.g. SN-2024-001" value={f.serialNumber || ''} onChange={e => setF((p: any) => ({ ...p, serialNumber: e.target.value }))} /></div>
+        <div className="grid gap-2"><Label className="text-xs">Manufacturer</Label><Input placeholder="e.g. Bosch" value={f.manufacturer || ''} onChange={e => setF((p: any) => ({ ...p, manufacturer: e.target.value }))} /></div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-2"><Label className="text-xs">Model</Label><Input placeholder="e.g. GWS 18V-10" value={f.model || ''} onChange={e => setF((p: any) => ({ ...p, model: e.target.value }))} /></div>
+        <div className="grid gap-2"><Label className="text-xs">Purchase Cost</Label><Input type="number" step="0.01" placeholder="0.00" value={f.purchaseCost || ''} onChange={e => setF((p: any) => ({ ...p, purchaseCost: e.target.value }))} /></div>
+      </div>
+      <div className="grid gap-2"><Label className="text-xs">Current Value</Label><Input type="number" step="0.01" placeholder="0.00" value={f.currentValue || ''} onChange={e => setF((p: any) => ({ ...p, currentValue: e.target.value }))} /></div>
+      <div className="grid gap-2"><Label className="text-xs">Plant</Label>
+        <AsyncSearchableSelect
+          value={f.plantId || ''}
+          onValueChange={v => setF((p: any) => ({ ...p, plantId: v }))}
+          fetchOptions={async () => {
+            const res = await api.get('/api/plants');
+            if (res.success && res.data) {
+              return (Array.isArray(res.data) ? res.data : []).map((p: any) => ({
+                value: p.id,
+                label: p.name,
+                group: p.city || p.location || undefined,
+              }));
+            }
+            return [];
+          }}
+          placeholder="Select plant..."
+          searchPlaceholder="Search plants..."
+        />
+      </div>
+      <div className="grid gap-2"><Label className="text-xs">Assigned To</Label>
+        <AsyncSearchableSelect
+          value={f.assignedToId || ''}
+          onValueChange={v => setF((p: any) => ({ ...p, assignedToId: v }))}
+          fetchOptions={async () => {
+            const res = await api.get('/api/users');
+            if (res.success && res.data) {
+              return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
+                value: u.id,
+                label: `${u.fullName || u.username} (${u.username || ''})`,
+              }));
+            }
+            return [];
+          }}
+          placeholder="Select user..."
+          searchPlaceholder="Search users..."
+        />
+      </div>
+    </div>
+  );
 
   return (
     <div className="page-content">
@@ -8148,74 +8311,10 @@ export function MaintenanceToolsPage() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div><CardTitle className="text-base">Tool Inventory</CardTitle><CardDescription className="text-xs">Track tool availability, assignments, and condition</CardDescription></div>
             {(hasPermission('tools.create') || isAdmin()) && (
-              <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
+              <Button size="sm" className="gap-1.5" onClick={() => { setForm({ name: '', category: '', location: '', serialNumber: '', condition: '', plantId: '', assignedToId: '', quantity: '1' }); setCreateOpen(true); }}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
             )}
             <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="Add New Tool" description="Register a new tool in the inventory" footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving}>{saving ? 'Adding...' : 'Add Tool'}</Button></div>}>
-                <div className="grid gap-4 py-2">
-                  <div className="grid gap-2"><Label className="text-xs">Tool Name</Label><Input placeholder="e.g. Torque Wrench 1/2 inch" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="grid gap-2"><Label className="text-xs">Category</Label>
-                      <SearchableSelect
-                        value={form.category}
-                        onValueChange={v => setForm({ ...form, category: v })}
-                        options={[
-                          { value: 'Hand Tool', label: 'Hand Tool', group: 'Tool Types' },
-                          { value: 'Power Tool', label: 'Power Tool', group: 'Tool Types' },
-                          { value: 'Measurement', label: 'Measurement', group: 'Tool Types' },
-                          { value: 'Safety', label: 'Safety', group: 'Tool Types' },
-                          { value: 'Cutting', label: 'Cutting', group: 'Tool Types' },
-                          { value: 'Welding', label: 'Welding', group: 'Tool Types' },
-                          { value: 'Lifting', label: 'Lifting', group: 'Tool Types' },
-                          { value: 'Pneumatic', label: 'Pneumatic', group: 'Tool Types' },
-                          { value: 'Electrical', label: 'Electrical', group: 'Tool Types' },
-                        ]}
-                        placeholder="Select category..."
-                        searchPlaceholder="Search categories..."
-                        groupBy={false}
-                      />
-                    </div>
-                    <div className="grid gap-2"><Label className="text-xs">Condition</Label><Select value={form.condition} onValueChange={v => setForm({ ...form, condition: v })}><SelectTrigger><SelectValue placeholder="Condition" /></SelectTrigger><SelectContent><SelectItem value="new">New</SelectItem><SelectItem value="good">Good</SelectItem><SelectItem value="fair">Fair</SelectItem><SelectItem value="poor">Poor</SelectItem></SelectContent></Select></div>
-                  </div>
-                  <div className="grid gap-2"><Label className="text-xs">Location</Label><Input placeholder="e.g. Tool Room A-1" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} /></div>
-                  <div className="grid gap-2"><Label className="text-xs">Serial Number</Label><Input placeholder="e.g. SN-2024-001" value={form.serialNumber} onChange={e => setForm({ ...form, serialNumber: e.target.value })} /></div>
-                  <div className="grid gap-2"><Label className="text-xs">Plant</Label>
-                    <AsyncSearchableSelect
-                      value={form.plantId}
-                      onValueChange={v => setForm({ ...form, plantId: v })}
-                      fetchOptions={async () => {
-                        const res = await api.get('/api/plants');
-                        if (res.success && res.data) {
-                          return (Array.isArray(res.data) ? res.data : []).map((p: any) => ({
-                            value: p.id,
-                            label: p.name,
-                            group: p.city || p.location || undefined,
-                          }));
-                        }
-                        return [];
-                      }}
-                      placeholder="Select plant..."
-                      searchPlaceholder="Search plants..."
-                    />
-                  </div>
-                  <div className="grid gap-2"><Label className="text-xs">Assigned To</Label>
-                    <AsyncSearchableSelect
-                      value={form.assignedToId}
-                      onValueChange={v => setForm({ ...form, assignedToId: v })}
-                      fetchOptions={async () => {
-                        const res = await api.get('/api/users');
-                        if (res.success && res.data) {
-                          return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
-                            value: u.id,
-                            label: `${u.fullName || u.username} (${u.username || ''})`,
-                          }));
-                        }
-                        return [];
-                      }}
-                      placeholder="Select user..."
-                      searchPlaceholder="Search users..."
-                    />
-                  </div>
-                </div>
+                {renderToolForm(form, setForm)}
             </ResponsiveDialog>
           </div>
           <div className="filter-row flex flex-col sm:flex-row gap-2 mt-3">
@@ -8225,24 +8324,63 @@ export function MaintenanceToolsPage() {
         </CardHeader>
         <CardContent className="pt-0">
           <div className="overflow-x-auto">
-            <Table><TableHeader><TableRow><TableHead className="text-xs">Code</TableHead><TableHead className="text-xs">Tool Name</TableHead><TableHead className="text-xs hidden md:table-cell">Category</TableHead><TableHead className="text-xs hidden lg:table-cell">Location</TableHead><TableHead className="text-xs">Status</TableHead><TableHead className="text-xs hidden md:table-cell">Assigned To</TableHead><TableHead className="text-xs hidden lg:table-cell">Checked Out</TableHead></TableRow></TableHeader><TableBody>
-              {loading && <TableRow><TableCell colSpan={7}><div className="flex items-center justify-center py-8"><div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div></TableCell></TableRow>}
+            <Table><TableHeader><TableRow><TableHead className="text-xs">Code</TableHead><TableHead className="text-xs">Tool Name</TableHead><TableHead className="text-xs hidden md:table-cell">Category</TableHead><TableHead className="text-xs">Qty</TableHead><TableHead className="text-xs hidden lg:table-cell">Location</TableHead><TableHead className="text-xs">Status</TableHead><TableHead className="text-xs hidden md:table-cell">Condition</TableHead><TableHead className="text-xs hidden md:table-cell">Assigned To</TableHead><TableHead className="text-xs w-10"></TableHead></TableRow></TableHeader><TableBody>
+              {loading && <TableRow><TableCell colSpan={9}><div className="flex items-center justify-center py-8"><div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div></TableCell></TableRow>}
               {!loading && filtered.map((t: any) => (
                 <TableRow key={t.id} className="hover:bg-muted/30">
                   <TableCell className="font-mono text-xs">{t.toolCode}</TableCell>
-                  <TableCell className="font-medium text-sm">{t.name}</TableCell>
+                  <TableCell className="font-medium text-sm max-w-[180px] truncate">{t.name}</TableCell>
                   <TableCell className="text-xs hidden md:table-cell">{t.category?.replace(/_/g, ' ')}</TableCell>
+                  <TableCell className="text-xs font-medium">{t.quantity ?? 1}</TableCell>
                   <TableCell className="text-xs hidden lg:table-cell"><div className="flex items-center gap-1"><MapPin className="h-3 w-3 text-muted-foreground" />{t.location || '-'}</div></TableCell>
                   <TableCell><Badge variant="outline" className={`text-[10px] uppercase font-semibold ${toolStatusColors[t.status] || ''}`}>{t.status?.replace(/_/g, ' ')}</Badge></TableCell>
+                  <TableCell className="text-xs hidden md:table-cell capitalize">{t.condition || '-'}</TableCell>
                   <TableCell className="text-xs hidden md:table-cell">{t.assignedTo?.fullName || '-'}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">{formatDate(t.checkedOutAt)}</TableCell>
+                  <TableCell>
+                    {(canEdit || canDelete) && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"><MoreHorizontal className="h-4 w-4" /></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {canEdit && (
+                            <DropdownMenuItem className="text-blue-600 focus:text-blue-600 focus:bg-blue-50" onClick={() => openEditDialog(t)}>
+                              <Pencil className="h-4 w-4 mr-2" />Edit Tool
+                            </DropdownMenuItem>
+                          )}
+                          {canDelete && t.isActive && (
+                            <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => setDeleteId(t.id)}>
+                              <Trash2 className="h-4 w-4 mr-2" />Deactivate
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
-              {!loading && filtered.length === 0 && <TableRow><TableCell colSpan={7}><EmptyState icon={WrenchIcon} title="No tools found" description="Adjust your search or filter criteria" /></TableCell></TableRow>}
+              {!loading && filtered.length === 0 && <TableRow><TableCell colSpan={9}><EmptyState icon={WrenchIcon} title="No tools found" description="Adjust your search or filter criteria" /></TableCell></TableRow>}
             </TableBody></Table>
           </div>
         </CardContent>
       </Card>
+
+      {/* Edit Dialog */}
+      <ResponsiveDialog open={editOpen} onOpenChange={setEditOpen} title="Edit Tool" description={`Editing: ${editForm.toolCode || editForm.name || ''}`} large footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={handleEdit} disabled={editSaving}>{editSaving ? 'Saving...' : 'Save Changes'}</Button></div>}>
+        {renderToolForm(editForm, setEditForm, true)}
+      </ResponsiveDialog>
+
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        open={!!deleteId}
+        onOpenChange={(open) => { if (!open) setDeleteId(null); }}
+        title="Deactivate Tool"
+        description="This will mark the tool as retired and remove any assignment. This action can be undone by editing the tool later."
+        confirmLabel={deleteLoading ? 'Deactivating...' : 'Deactivate'}
+        variant="destructive"
+        onConfirm={handleDelete}
+        loading={deleteLoading}
+      />
     </div>
   );
 }
