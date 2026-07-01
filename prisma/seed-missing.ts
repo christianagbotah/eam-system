@@ -115,6 +115,9 @@ const modulePermissions: Record<string, string[]> = {
   quality_audits: ['view', 'create', 'update', 'delete'],
   quality_control_plans: ['view', 'create', 'update'],
   spc: ['view', 'manage'],
+  repair_material_requests: ['view', 'view_all', 'view_own', 'create', 'update'],
+  repair_tool_requests: ['view', 'view_all', 'view_own', 'create', 'update'],
+  repair_tool_transfers: ['view', 'view_all', 'view_own', 'create', 'update'],
 };
 
 // ============================================================================
