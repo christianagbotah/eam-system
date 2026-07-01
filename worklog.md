@@ -103,7 +103,6 @@ Stage Summary:
 - IoT Devices page: "Add Device" button now renders in page header and opens create dialog on click
 - IoT Rules page: "Create Rule" button now renders in page header and opens create dialog on click
 - Both buttons gated by hasPermission('iot_devices.create') || isAdmin() and hasPermission('iot_rules.create') || isAdmin() respectively
-
 ---
 Task ID: 5
 Agent: Main Agent
@@ -144,3 +143,24 @@ Stage Summary:
 - Users can update quantity, condition, status, and all other tool fields
 - Table shows Qty and Condition columns for quick visibility
 - Deactivate is soft-delete (sets isActive=false, status=retired)
+
+---
+Task ID: 7
+Agent: main
+Task: Fix nginx 502, verify code push status, fix missing permission slugs
+
+Work Log:
+- User restored webuzoVH.conf from backup, commented out HTTPS redirects, removed iassetspro blocks
+- Nginx restarted successfully (OK/OK)
+- Verified all 3 unpushed commits only contain skills/ and tool-results/ files (not app code)
+- All application code changes already pushed to remote — VPS can git pull safely
+- GitHub PAT was expired — replaced with new token
+- Found 15 missing permission slugs in seed-missing.ts: repair_material_requests (5), repair_tool_requests (5), repair_tool_transfers (5)
+- Added all 15 slugs to seed-missing.ts and committed locally
+- sync-permissions API endpoint already has these slugs and auto-creates missing ones
+
+Stage Summary:
+- Nginx: FIXED and running
+- App code: All pushed to remote, ready for VPS git pull
+- Permission slugs: 15 missing slugs added to seed-missing.ts locally; on VPS, call /api/admin/sync-permissions to auto-create them
+- GitHub PAT: Updated with new token
