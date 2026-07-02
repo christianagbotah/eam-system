@@ -239,8 +239,8 @@ function PageSwitcher({ page }: { page: string }) {
     'repairs-spare-part-returns': ['spare_part_returns.view', 'spare_part_returns.view_all', 'spare_part_returns.view_own'],
     'repairs-damaged-tools': ['damaged_tool_reports.view', 'damaged_tool_reports.view_all'],
     'repairs-analytics': ['work_orders.view', 'work_orders.view_own'],
-    'repairs-reports': ['reports.view'],
-    'wo-reports': ['work_orders.view', 'work_orders.view_own'],
+    'repairs-reports': ['reports.view', 'work_orders.view'],
+    'wo-reports': ['reports.view', 'work_orders.view', 'work_orders.view_own'],
     'technician-timesheet': ['time_logs.view', 'time_logs.create', 'work_orders.view', 'work_orders.view_own'],
     // IoT
     'iot-devices': ['iot_devices.view'],
@@ -499,7 +499,7 @@ function AppShell() {
     'repairs-analytics': 'Repairs Analytics',
     'repairs-spare-part-returns': 'Spare Part Returns',
     'repairs-damaged-tools': 'Damaged Tool Reports',
-    'repairs-reports': 'Maintenance Reports',
+    'repairs-reports': 'Repair Lifecycle',
     'wo-reports': 'Work Order Reports',
     // IoT
     'iot-devices': 'IoT Devices',

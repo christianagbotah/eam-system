@@ -4836,8 +4836,8 @@ export function MaintenanceReportsPage() {
         <div className="flex items-center gap-3">
           <div className="p-2 bg-emerald-100 rounded-xl"><BarChart3 className="h-6 w-6 text-emerald-700" /></div>
           <div>
-            <h2 className="text-2xl font-bold tracking-tight">Maintenance Reports</h2>
-            <p className="text-sm text-muted-foreground">Enterprise-grade analytics from request to completion</p>
+            <h2 className="text-2xl font-bold tracking-tight">Repair Lifecycle</h2>
+            <p className="text-sm text-muted-foreground">MR → WO end-to-end turnaround analytics</p>
           </div>
         </div>
         {reportGenerated && reportData && (

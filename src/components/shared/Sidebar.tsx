@@ -185,8 +185,6 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
         { page: 'repairs-spare-part-returns', label: 'Spare Part Returns', icon: Recycle },
         { page: 'repairs-damaged-tools', label: 'Damaged Tools', icon: TriangleAlert },
         { page: 'repairs-analytics', label: 'Analytics', icon: BarChart3 },
-        { page: 'repairs-reports', label: 'Reports', icon: FileText },
-        { page: 'wo-reports', label: 'WO Reports', icon: BarChart3 },
       ],
     },
     {
@@ -276,7 +274,9 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       label: 'Reports', icon: FileBarChart, perm: 'reports.view', moduleCode: 'reports',
       children: [
         { page: 'reports-asset', label: 'Asset Reports', icon: Building2 },
+        { page: 'wo-reports', label: 'Work Order Reports', icon: ClipboardList },
         { page: 'reports-maintenance', label: 'Maintenance Reports', icon: Wrench },
+        { page: 'repairs-reports', label: 'Repair Lifecycle', icon: Activity },
         { page: 'reports-inventory', label: 'Inventory Reports', icon: Package },
         { page: 'reports-production', label: 'Production Reports', icon: Factory },
         { page: 'reports-quality', label: 'Quality Reports', icon: ShieldCheck },
