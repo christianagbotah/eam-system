@@ -164,3 +164,25 @@ Stage Summary:
 - App code: All pushed to remote, ready for VPS git pull
 - Permission slugs: 15 missing slugs added to seed-missing.ts locally; on VPS, call /api/admin/sync-permissions to auto-create them
 - GitHub PAT: Updated with new token
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: Enhance Maintenance Reports page with per-asset/machine tabular forms and export buttons
+
+Work Log:
+- Analyzed ReportsMaintenancePage component (lines 247-947) with 6 tabs: By Asset/Machine, Overview, Technician Productivity, Materials & Costs, Downtime, Detailed Data
+- Identified gaps: Overview tab had only charts without tables; Downtime impact level had only a chart; per-asset rows had no individual export buttons
+- Enhanced AssetWOTable component with per-asset Excel/PDF/Print export buttons (each machine/asset gets its own export)
+- Added tabular summary tables below all 4 charts in Overview tab (Type, Priority, Status, Monthly Trend) with count and percentage columns
+- Added dedicated Overview CSV export handler (previously reused detailed data export)
+- Added tabular summary below Downtime impact level chart with event counts and percentages
+- Enhanced Downtime CSV export to include both category and impact level sections
+- Committed as bfee2f06 and pushed to GitHub
+
+Stage Summary:
+- 1 file changed, 197 insertions, 12 deletions
+- Per-asset expandable rows now have Excel/PDF/Print buttons for individual machine reports
+- All charts now have corresponding tabular data views below them
+- All 6 tabs have consistent export functionality (Excel, PDF, Print)
+- VPS needs: git pull to get the updated code
