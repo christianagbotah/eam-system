@@ -170,10 +170,81 @@ function ExportButtonGroup({ onExportCSV, onExportPDF, onPrint, disabled }: {
 }
 
 // ============================================================================
-// Per-Asset WO Table (expandable)
+// Per-Asset WO Table (expandable with individual export buttons)
 // ============================================================================
 function AssetWOTable({ asset, typeColorMap }: { asset: any; typeColorMap: Record<string, string> }) {
   const [open, setOpen] = useState(false);
+
+  const handleAssetExcel = () => {
+    const headers = ['WO #', 'Title', 'Type', 'Priority', 'Status', 'Assigned To', 'Est Hrs', 'Act Hrs', 'Cost', 'Created'];
+    const rows = asset.workOrders.map((wo: any) => [
+      wo.woNumber, wo.title, wo.type, wo.priority, wo.status,
+      wo.assigneeName || '', String(wo.estimatedHours ?? ''), String(wo.actualHours ?? ''),
+      String(wo.totalCost), wo.createdAt ? formatDate(wo.createdAt) : '',
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${(c ?? '').toString().replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${asset.assetName.replace(/[^a-zA-Z0-9]/g, '_')}-WOs.csv`; a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${asset.assetName} WOs to CSV`);
+  };
+
+  const handleAssetPDF = () => {
+    exportPDF({
+      title: `${asset.assetName} — Work Order Report`,
+      subtitle: `WO Count: ${asset.woCount} | Completion: ${asset.completionRate}% | Cost: ${formatCurrency(asset.totalCost)}`,
+      filename: `${asset.assetName.replace(/[^a-zA-Z0-9]/g, '_')}-WOs`,
+      orientation: 'landscape',
+      summary: [
+        { label: 'Asset/Machine', value: asset.assetName },
+        { label: 'Total WOs', value: String(asset.woCount) },
+        { label: 'Completion Rate', value: `${asset.completionRate}%` },
+        { label: 'Total Cost', value: formatCurrency(asset.totalCost) },
+        { label: 'Total Hours', value: formatDuration(asset.totalActualHours) },
+        { label: 'Total Downtime', value: formatDuration(asset.totalDowntimeMinutes / 60) },
+      ],
+      headers: ['WO #', 'Title', 'Type', 'Priority', 'Status', 'Assigned To', 'Est Hrs', 'Act Hrs', 'Cost'],
+      rows: asset.workOrders.map((wo: any) => [
+        wo.woNumber, wo.title, wo.type, wo.priority, wo.status,
+        wo.assigneeName || '-', String(wo.estimatedHours ?? '-'), String(wo.actualHours ?? '-'),
+        formatCurrency(wo.totalCost),
+      ]),
+    });
+  };
+
+  const handleAssetPrint = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    const html = `
+      <html><head><title>${asset.assetName} — WO Report</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px; }
+        h1 { font-size: 18px; margin-bottom: 4px; }
+        .subtitle { font-size: 12px; color: #666; margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+        th { background: #f5f5f5; font-weight: 600; }
+        .right { text-align: right; }
+        .summary { display: flex; gap: 24px; margin-bottom: 16px; font-size: 12px; }
+        .summary span { font-weight: 600; }
+      </style></head><body>
+      <h1>${asset.assetName}</h1>
+      <div class="subtitle">WO Count: ${asset.woCount} | Completion: ${asset.completionRate}% | Cost: ${formatCurrency(asset.totalCost)} | Downtime: ${formatDuration(asset.totalDowntimeMinutes / 60)}</div>
+      <table>
+        <thead><tr><th>WO #</th><th>Title</th><th>Type</th><th>Priority</th><th>Status</th><th>Assigned To</th><th class="right">Est Hrs</th><th class="right">Act Hrs</th><th class="right">Cost</th><th>Created</th></tr></thead>
+        <tbody>${asset.workOrders.map((wo: any) => `<tr>
+          <td>${wo.woNumber}</td><td>${wo.title}</td><td>${wo.type}</td><td>${wo.priority}</td><td>${wo.status}</td>
+          <td>${wo.assigneeName || '-'}</td><td class="right">${wo.estimatedHours ?? '-'}</td><td class="right">${wo.actualHours ?? '-'}</td>
+          <td class="right">${formatCurrency(wo.totalCost)}</td><td>${wo.createdAt ? formatDate(wo.createdAt) : '-'}</td>
+        </tr>`).join('')}</tbody>
+      </table></body></html>`;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger asChild>
@@ -198,6 +269,21 @@ function AssetWOTable({ asset, typeColorMap }: { asset: any; typeColorMap: Recor
       <CollapsibleContent>
         <tr><td colSpan={6} className="p-0">
           <div className="bg-muted/10 border-y">
+            {/* Per-asset export buttons */}
+            <div className="flex items-center justify-between px-4 pt-3 pb-1">
+              <span className="text-xs font-medium text-muted-foreground">{asset.woCount} work orders for {asset.assetName}</span>
+              <div className="flex items-center gap-1.5">
+                <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleAssetExcel(); }} title="Export this asset to Excel/CSV">
+                  <FileSpreadsheet className="h-3 w-3 mr-1" />Excel
+                </Button>
+                <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleAssetPDF(); }} title="Export this asset to PDF">
+                  <FileDown className="h-3 w-3 mr-1" />PDF
+                </Button>
+                <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleAssetPrint(); }} title="Print this asset report">
+                  <Printer className="h-3 w-3 mr-1" />Print
+                </Button>
+              </div>
+            </div>
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30">
@@ -334,6 +420,27 @@ export function ReportsMaintenancePage() {
   const handleAssetPrint = () => { window.print(); };
 
   // --- OVERVIEW TAB EXPORTS ---
+  const handleOverviewCSV = () => {
+    if (!reportData || !s) return;
+    const rows: string[][] = [];
+    rows.push(['--- Work Orders by Type ---']);
+    rows.push(['Type', 'Count']);
+    (reportData.woByType || []).forEach((t: any) => rows.push([t.type, String(t.count)]));
+    rows.push([]);
+    rows.push(['--- Work Orders by Priority ---']);
+    rows.push(['Priority', 'Count']);
+    (reportData.woByPriority || []).forEach((p: any) => rows.push([p.priority, String(p.count)]));
+    rows.push([]);
+    rows.push(['--- Work Orders by Status ---']);
+    rows.push(['Status', 'Count']);
+    (reportData.woByStatus || []).forEach((st: any) => rows.push([st.status, String(st.count)]));
+    rows.push([]);
+    rows.push(['--- Monthly WO Trend ---']);
+    rows.push(['Month', 'Created', 'Completed']);
+    (reportData.woByMonth || []).forEach((m: any) => rows.push([m.month, String(m.count), String(m.completedCount)]));
+    exportCSV(`maintenance-overview-${startDate}-to-${endDate}`, ['Section', 'Field', 'Value'], rows);
+  };
+
   const handleOverviewPDF = () => {
     if (!reportData || !s) return;
     exportPDF({
@@ -416,11 +523,16 @@ export function ReportsMaintenancePage() {
   // --- DOWNTIME TAB EXPORTS ---
   const handleDowntimeCSV = () => {
     if (!reportData) return;
-    exportCSV(
-      `downtime-analysis-${startDate}-to-${endDate}`,
-      ['Category', 'Events', 'Total Minutes'],
-      (reportData.downtimeAnalysis?.byCategory || []).map((d: any) => [d.category, String(d.count), String(d.totalMinutes)]),
-    );
+    const dt = reportData.downtimeAnalysis || {};
+    const rows: string[][] = [];
+    rows.push(['--- Downtime by Category ---']);
+    rows.push(['Category', 'Events', 'Total Minutes']);
+    (dt.byCategory || []).forEach((d: any) => rows.push([d.category, String(d.count), String(d.totalMinutes)]));
+    rows.push([]);
+    rows.push(['--- Downtime by Impact Level ---']);
+    rows.push(['Impact Level', 'Events']);
+    (dt.byImpactLevel || []).forEach((d: any) => rows.push([d.impactLevel, String(d.count)]));
+    exportCSV(`downtime-analysis-${startDate}-to-${endDate}`, ['Section', 'Field', 'Value'], rows);
   };
   const handleDowntimePDF = () => {
     if (!reportData) return;
@@ -593,14 +705,14 @@ export function ReportsMaintenancePage() {
             {/* Tab 2: Overview */}
             <TabsContent value="overview" className="space-y-6 mt-6">
               <div className="flex items-center justify-end print:hidden">
-                <ExportButtonGroup onExportCSV={handleDataCSV} onExportPDF={handleOverviewPDF} onPrint={() => window.print()} disabled={!reportData} />
+                <ExportButtonGroup onExportCSV={handleOverviewCSV} onExportPDF={handleOverviewPDF} onPrint={() => window.print()} disabled={!reportData} />
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
                   <CardHeader className="pb-3"><CardTitle className="text-base">Work Orders by Type</CardTitle><CardDescription className="text-xs">Distribution of WO types</CardDescription></CardHeader>
                   <CardContent>
                     {(reportData.woByType || []).length > 0 ? (
-                      <ResponsiveContainer width="100%" height={220}>
+                      <ResponsiveContainer width="100%" height={200}>
                         <BarChart data={reportData.woByType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="type" tick={{ fontSize: 11 }} />
@@ -614,6 +726,21 @@ export function ReportsMaintenancePage() {
                         </BarChart>
                       </ResponsiveContainer>
                     ) : <EmptyState icon={BarChart3} title="No type data" description="Work orders will appear here." />}
+                    {/* Tabular summary below chart */}
+                    {(reportData.woByType || []).length > 0 && (
+                      <div className="mt-4 border-t pt-3">
+                        <Table><TableHeader><TableRow><TableHead className="text-xs">Type</TableHead><TableHead className="text-xs text-right">Count</TableHead><TableHead className="text-xs text-right">%</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {reportData.woByType.map((t: any) => (
+                            <TableRow key={t.type} className="hover:bg-muted/30">
+                              <TableCell className="text-sm font-medium capitalize"><Badge variant="outline" className={`${typeColorMap[t.type] || 'bg-slate-100 text-slate-700'} text-white border-0 text-[10px] mr-2`}>{t.type?.toUpperCase()}</Badge>{t.type}</TableCell>
+                              <TableCell className="text-sm text-right font-medium">{t.count}</TableCell>
+                              <TableCell className="text-sm text-right text-muted-foreground">{s?.totalWOs ? Math.round((t.count / s.totalWOs) * 100) : 0}%</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody></Table>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -621,7 +748,7 @@ export function ReportsMaintenancePage() {
                   <CardHeader className="pb-3"><CardTitle className="text-base">Work Orders by Priority</CardTitle><CardDescription className="text-xs">Priority level breakdown</CardDescription></CardHeader>
                   <CardContent>
                     {(reportData.woByPriority || []).length > 0 ? (
-                      <ResponsiveContainer width="100%" height={220}>
+                      <ResponsiveContainer width="100%" height={200}>
                         <BarChart data={reportData.woByPriority} layout="vertical" margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis type="number" tick={{ fontSize: 11 }} />
@@ -635,6 +762,20 @@ export function ReportsMaintenancePage() {
                         </BarChart>
                       </ResponsiveContainer>
                     ) : <EmptyState icon={BarChart3} title="No priority data" description="Work orders will appear here." />}
+                    {(reportData.woByPriority || []).length > 0 && (
+                      <div className="mt-4 border-t pt-3">
+                        <Table><TableHeader><TableRow><TableHead className="text-xs">Priority</TableHead><TableHead className="text-xs text-right">Count</TableHead><TableHead className="text-xs text-right">%</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {reportData.woByPriority.map((p: any) => (
+                            <TableRow key={p.priority} className="hover:bg-muted/30">
+                              <TableCell className="text-sm font-medium capitalize"><PriorityBadge priority={p.priority} /> {p.priority}</TableCell>
+                              <TableCell className="text-sm text-right font-medium">{p.count}</TableCell>
+                              <TableCell className="text-sm text-right text-muted-foreground">{s?.totalWOs ? Math.round((p.count / s.totalWOs) * 100) : 0}%</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody></Table>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -642,7 +783,7 @@ export function ReportsMaintenancePage() {
                   <CardHeader className="pb-3"><CardTitle className="text-base">Work Orders by Status</CardTitle><CardDescription className="text-xs">Current status distribution</CardDescription></CardHeader>
                   <CardContent>
                     {(reportData.woByStatus || []).length > 0 ? (
-                      <ResponsiveContainer width="100%" height={220}>
+                      <ResponsiveContainer width="100%" height={200}>
                         <BarChart data={reportData.woByStatus} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="status" tick={{ fontSize: 10 }} angle={-25} textAnchor="end" height={50} />
@@ -652,6 +793,20 @@ export function ReportsMaintenancePage() {
                         </BarChart>
                       </ResponsiveContainer>
                     ) : <EmptyState icon={BarChart3} title="No status data" description="Work orders will appear here." />}
+                    {(reportData.woByStatus || []).length > 0 && (
+                      <div className="mt-4 border-t pt-3">
+                        <Table><TableHeader><TableRow><TableHead className="text-xs">Status</TableHead><TableHead className="text-xs text-right">Count</TableHead><TableHead className="text-xs text-right">%</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {reportData.woByStatus.map((st: any) => (
+                            <TableRow key={st.status} className="hover:bg-muted/30">
+                              <TableCell className="text-sm font-medium"><StatusBadge status={st.status} /> {st.status}</TableCell>
+                              <TableCell className="text-sm text-right font-medium">{st.count}</TableCell>
+                              <TableCell className="text-sm text-right text-muted-foreground">{s?.totalWOs ? Math.round((st.count / s.totalWOs) * 100) : 0}%</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody></Table>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -659,7 +814,7 @@ export function ReportsMaintenancePage() {
                   <CardHeader className="pb-3"><CardTitle className="text-base">Monthly WO Trend</CardTitle><CardDescription className="text-xs">Created vs completed by month</CardDescription></CardHeader>
                   <CardContent>
                     {(reportData.woByMonth || []).length > 0 ? (
-                      <ResponsiveContainer width="100%" height={220}>
+                      <ResponsiveContainer width="100%" height={200}>
                         <BarChart data={reportData.woByMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="month" tick={{ fontSize: 10 }} />
@@ -671,6 +826,21 @@ export function ReportsMaintenancePage() {
                         </BarChart>
                       </ResponsiveContainer>
                     ) : <EmptyState icon={TrendingUp} title="No monthly data" description="Work orders will appear here over time." />}
+                    {(reportData.woByMonth || []).length > 0 && (
+                      <div className="mt-4 border-t pt-3">
+                        <Table><TableHeader><TableRow><TableHead className="text-xs">Month</TableHead><TableHead className="text-xs text-right">Created</TableHead><TableHead className="text-xs text-right">Completed</TableHead><TableHead className="text-xs text-right">Completion %</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {reportData.woByMonth.map((m: any) => (
+                            <TableRow key={m.month} className="hover:bg-muted/30">
+                              <TableCell className="text-sm font-medium font-mono">{m.month}</TableCell>
+                              <TableCell className="text-sm text-right">{m.count}</TableCell>
+                              <TableCell className="text-sm text-right text-emerald-600 font-medium">{m.completedCount}</TableCell>
+                              <TableCell className="text-sm text-right text-muted-foreground">{m.count > 0 ? Math.round((m.completedCount / m.count) * 100) : 0}%</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody></Table>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -856,7 +1026,7 @@ export function ReportsMaintenancePage() {
                   <CardHeader className="pb-3"><CardTitle className="text-base">Downtime by Impact Level</CardTitle></CardHeader>
                   <CardContent>
                     {(reportData.downtimeAnalysis?.byImpactLevel || []).length > 0 ? (
-                      <ResponsiveContainer width="100%" height={200}>
+                      <ResponsiveContainer width="100%" height={180}>
                         <BarChart data={reportData.downtimeAnalysis.byImpactLevel} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="impactLevel" tick={{ fontSize: 11 }} />
@@ -870,6 +1040,21 @@ export function ReportsMaintenancePage() {
                         </BarChart>
                       </ResponsiveContainer>
                     ) : <EmptyState icon={ShieldAlert} title="No impact data" description="Impact level data will appear here." />}
+                    {/* Tabular summary below chart */}
+                    {(reportData.downtimeAnalysis?.byImpactLevel || []).length > 0 && (
+                      <div className="mt-4 border-t pt-3">
+                        <Table><TableHeader><TableRow><TableHead className="text-xs">Impact Level</TableHead><TableHead className="text-xs text-right">Events</TableHead><TableHead className="text-xs text-right">%</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {reportData.downtimeAnalysis.byImpactLevel.map((il: any) => (
+                            <TableRow key={il.impactLevel} className="hover:bg-muted/30">
+                              <TableCell className="text-sm font-medium capitalize"><PriorityBadge priority={il.impactLevel} /> {il.impactLevel}</TableCell>
+                              <TableCell className="text-sm text-right font-medium">{il.count}</TableCell>
+                              <TableCell className="text-sm text-right text-muted-foreground">{reportData.downtimeAnalysis.totalEvents ? Math.round((il.count / reportData.downtimeAnalysis.totalEvents) * 100) : 0}%</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody></Table>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
