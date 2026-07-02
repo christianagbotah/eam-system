@@ -4956,16 +4956,16 @@ export function MaintenanceReportsPage() {
                     </TableHeader>
                     <TableBody>
                       {reportData.technicians.map((t: any) => (
-                        <TableRow key={t.userId}>
-                          <TableCell><div className="flex items-center gap-2"><AvatarPlaceholder name={t.name} /><span className="font-medium text-sm">{t.name}</span></div></TableCell>
-                          <TableCell className="text-center font-medium">{t.woCount}</TableCell>
-                          <TableCell className="text-center">{formatDuration(t.avgHoursPerWo || 0)}</TableCell>
-                          <TableCell className="text-center">{formatDuration(t.totalHours || 0)}</TableCell>
+                        <TableRow key={t.userId || t.user?.id}>
+                          <TableCell><div className="flex items-center gap-2"><AvatarPlaceholder name={t.user?.fullName || t.name || 'Unknown'} /><span className="font-medium text-sm">{t.user?.fullName || t.name || 'Unknown'}</span></div></TableCell>
+                          <TableCell className="text-center font-medium">{t.closedCount ?? t.woCount ?? 0}</TableCell>
+                          <TableCell className="text-center">{formatDuration(t.avgTimePerWo || t.avgHoursPerWo || 0)}</TableCell>
+                          <TableCell className="text-center">{formatDuration(t.totalTimeLogged || t.totalHours || 0)}</TableCell>
                           <TableCell className="text-center">
-                            <Badge variant="outline" className={t.reworkRate > 10 ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}>{t.reworkRate}%</Badge>
+                            <Badge variant="outline" className={t.reworkRate > 10 ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}>{t.reworkRate ?? 0}%</Badge>
                           </TableCell>
                           <TableCell className="text-center">
-                            <Badge variant="outline" className={t.onTimeRate >= 80 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}>{t.onTimeRate}%</Badge>
+                            <Badge variant="outline" className={(t.timeAccuracy ?? t.onTimeRate ?? 0) >= 80 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}>{t.timeAccuracy ?? t.onTimeRate ?? 0}%</Badge>
                           </TableCell>
                         </TableRow>
                       ))}
