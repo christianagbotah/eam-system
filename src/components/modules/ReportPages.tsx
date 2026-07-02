@@ -23,12 +23,15 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import {
   Activity, AlertTriangle, Boxes, Building2, CheckCircle2, ClipboardCheck, ClipboardList,
   Database, GraduationCap, ShieldAlert, Target, XCircle,
   Wrench, Package, Factory, ShieldCheck, HardHat, TrendingUp,
   FileBarChart, FileSpreadsheet, Download, Plus, Search, Filter, Calendar,
   Eye, Printer, Share, BarChart3, DollarSign, RefreshCw, Clock, Settings,
-  Loader2,
+  Loader2, ChevronDown, ChevronRight,
   ArrowUpDown, FileText, FileDown, Users,
 } from 'lucide-react';
 import {
@@ -145,11 +148,107 @@ export function ReportsAssetPage() {
     </div>
   );
 }
+// ============================================================================
+// Reusable Export Button Group
+// ============================================================================
+function ExportButtonGroup({ onExportCSV, onExportPDF, onPrint, disabled }: {
+  onExportCSV: () => void; onExportPDF: () => void; onPrint: () => void; disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Button variant="outline" size="sm" onClick={onExportCSV} disabled={disabled} title="Export to Excel/CSV">
+        <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Excel
+      </Button>
+      <Button variant="outline" size="sm" onClick={onExportPDF} disabled={disabled} title="Export to PDF">
+        <FileDown className="h-3.5 w-3.5 mr-1" />PDF
+      </Button>
+      <Button variant="outline" size="sm" onClick={onPrint} disabled={disabled} title="Print this report">
+        <Printer className="h-3.5 w-3.5 mr-1" />Print
+      </Button>
+    </div>
+  );
+}
+
+// ============================================================================
+// Per-Asset WO Table (expandable)
+// ============================================================================
+function AssetWOTable({ asset, typeColorMap }: { asset: any; typeColorMap: Record<string, string> }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <TableRow className="cursor-pointer hover:bg-muted/50 bg-muted/20">
+          <TableCell>
+            <div className="flex items-center gap-2">
+              {open ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+              <span className="font-semibold">{asset.assetName}</span>
+            </div>
+          </TableCell>
+          <TableCell className="text-right font-medium">{asset.woCount}</TableCell>
+          <TableCell className="text-right">
+            <span className={asset.completionRate >= 80 ? 'text-emerald-600' : asset.completionRate >= 50 ? 'text-amber-600' : 'text-red-600'}>
+              {asset.completionRate}%
+            </span>
+          </TableCell>
+          <TableCell className="text-right">{formatDuration(asset.totalDowntimeMinutes / 60)}</TableCell>
+          <TableCell className="text-right">{formatDuration(asset.totalActualHours)}</TableCell>
+          <TableCell className="text-right font-medium">{formatCurrency(asset.totalCost)}</TableCell>
+        </TableRow>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <tr><td colSpan={6} className="p-0">
+          <div className="bg-muted/10 border-y">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30">
+                  <TableHead className="text-xs">WO #</TableHead>
+                  <TableHead className="text-xs">Title</TableHead>
+                  <TableHead className="text-xs hidden sm:table-cell">Type</TableHead>
+                  <TableHead className="text-xs">Priority</TableHead>
+                  <TableHead className="text-xs">Status</TableHead>
+                  <TableHead className="text-xs hidden md:table-cell">Assigned To</TableHead>
+                  <TableHead className="text-xs text-right hidden md:table-cell">Est Hrs</TableHead>
+                  <TableHead className="text-xs text-right hidden md:table-cell">Act Hrs</TableHead>
+                  <TableHead className="text-xs text-right hidden lg:table-cell">Cost</TableHead>
+                  <TableHead className="text-xs hidden lg:table-cell">Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {asset.workOrders.map((wo: any) => (
+                  <TableRow key={wo.id} className="hover:bg-muted/20">
+                    <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
+                    <TableCell className="text-sm max-w-[160px] truncate">{wo.title}</TableCell>
+                    <TableCell className="hidden sm:table-cell">
+                      <Badge variant="outline" className={`${typeColorMap[wo.type] || 'bg-slate-100 text-slate-700'} text-white border-0 text-[10px]`}>
+                        {wo.type?.toUpperCase()}
+                      </Badge>
+                    </TableCell>
+                    <TableCell><PriorityBadge priority={wo.priority} /></TableCell>
+                    <TableCell><StatusBadge status={wo.status} /></TableCell>
+                    <TableCell className="text-xs hidden md:table-cell">{wo.assigneeName || '-'}</TableCell>
+                    <TableCell className="text-xs text-right hidden md:table-cell">{wo.estimatedHours ?? '-'}</TableCell>
+                    <TableCell className="text-xs text-right hidden md:table-cell">{wo.actualHours ?? '-'}</TableCell>
+                    <TableCell className="text-xs text-right hidden lg:table-cell">{formatCurrency(wo.totalCost)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground hidden lg:table-cell whitespace-nowrap">{wo.createdAt ? formatDate(wo.createdAt) : '-'}</TableCell>
+                  </TableRow>
+                ))}
+                {asset.workOrders.length === 0 && (
+                  <TableRow><TableCell colSpan={10} className="text-center py-4 text-sm text-muted-foreground">No work orders</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </td></tr>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 export function ReportsMaintenancePage() {
   const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
   const [reportData, setReportData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('assets');
   const [techSort, setTechSort] = useState<'completedCount' | 'avgHoursPerWO' | 'totalHours'>('completedCount');
 
   const fetchReport = useCallback(() => {
@@ -168,6 +267,7 @@ export function ReportsMaintenancePage() {
 
   const s = reportData?.summary;
   const recentWOs = reportData?.recentWorkOrders || [];
+  const workOrdersByAsset = reportData?.workOrdersByAsset || [];
 
   const kpiCards = [
     { label: 'Total Work Orders', value: s?.totalWOs ?? 0, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
@@ -185,27 +285,73 @@ export function ReportsMaintenancePage() {
   // Chart colors
   const CHART_COLORS = ['#059669', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#f97316', '#6366f1'];
 
-  // PDF export handler
-  const handlePdfExport = () => {
+  const reportLabel = `Maintenance Report — ${startDate} to ${endDate}`;
+
+  // ============================================================================
+  // EXPORT HANDLERS PER TAB
+  // ============================================================================
+
+  // --- ASSET TAB EXPORTS ---
+  const handleAssetCSV = () => {
+    if (!reportData) return;
+    const rows: string[][] = [];
+    workOrdersByAsset.forEach((a: any) => {
+      rows.push([a.assetName, '', `WO Count: ${a.woCount}`, `Completion: ${a.completionRate}%`, `Total Cost: ${a.totalCost}`, '']);
+      rows.push(['WO #', 'Title', 'Type', 'Priority', 'Status', 'Assigned To', 'Est Hrs', 'Act Hrs', 'Cost', 'Created']);
+      a.workOrders.forEach((wo: any) => {
+        rows.push([wo.woNumber, wo.title, wo.type, wo.priority, wo.status, wo.assigneeName || '', String(wo.estimatedHours ?? ''), String(wo.actualHours ?? ''), String(wo.totalCost), wo.createdAt ? formatDate(wo.createdAt) : '']);
+      });
+      rows.push([]);
+    });
+    exportCSV(`asset-wos-${startDate}-to-${endDate}`, rows[1] || ['Asset', 'WO #', 'Title', 'Type', 'Priority', 'Status', 'Assigned To', 'Est Hrs', 'Act Hrs', 'Cost', 'Created'], rows.filter(r => r.some(c => c)));
+  };
+
+  const handleAssetPDF = () => {
+    if (!reportData) return;
+    const headers = ['Asset', 'WO #', 'Title', 'Type', 'Priority', 'Status', 'Assigned To', 'Est Hrs', 'Act Hrs', 'Cost'];
+    const rows: string[][] = [];
+    workOrdersByAsset.forEach((a: any) => {
+      a.workOrders.forEach((wo: any) => {
+        rows.push([a.assetName, wo.woNumber, wo.title, wo.type, wo.priority, wo.status, wo.assigneeName || '-', String(wo.estimatedHours ?? '-'), String(wo.actualHours ?? '-'), formatCurrency(wo.totalCost)]);
+      });
+    });
+    exportPDF({
+      title: `Asset/Machine WO Report — ${startDate} to ${endDate}`,
+      subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      filename: `asset-wo-report-${startDate}-to-${endDate}`,
+      orientation: 'landscape',
+      summary: [
+        { label: 'Total Assets/Machines', value: String(workOrdersByAsset.length) },
+        { label: 'Total WOs', value: String(s?.totalWOs ?? 0) },
+        { label: 'Completion Rate', value: `${s?.completionRate ?? 0}%` },
+        { label: 'Total Cost', value: formatCurrency(s?.totalCost) },
+      ],
+      headers,
+      rows,
+    });
+  };
+
+  const handleAssetPrint = () => { window.print(); };
+
+  // --- OVERVIEW TAB EXPORTS ---
+  const handleOverviewPDF = () => {
     if (!reportData || !s) return;
     exportPDF({
-      title: `Maintenance Report - ${startDate} to ${endDate}`,
+      title: reportLabel,
       subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
       filename: `maintenance-report-${startDate}-to-${endDate}`,
       orientation: 'landscape',
       summary: [
-        { label: 'Total Work Orders', value: String(s.totalWOs) },
+        { label: 'Total WOs', value: String(s.totalWOs) },
         { label: 'Completed', value: `${s.completedWOs} (${s.completionRate}%)` },
         { label: 'Avg Completion Time', value: formatDuration(s.avgCompletionHours) },
         { label: 'Avg Cost/WO', value: formatCurrency(s.avgCostPerWO) },
         { label: 'Total Cost', value: formatCurrency(s.totalCost) },
         { label: 'SLA Compliance', value: `${s.slaComplianceRate}%` },
         { label: 'Overdue', value: String(s.overdueWOs) },
-        { label: 'Total MRs', value: String(s.totalMRs) },
-        { label: 'MR Conversion Rate', value: `${s.mrConversionRate}%` },
       ],
       headers: ['WO Number', 'Title', 'Type', 'Priority', 'Status', 'Asset', 'Assigned To', 'Est Hours', 'Actual Hours', 'Total Cost', 'Created'],
-      rows: recentWOs.map((wo: any) => [
+      rows: recentWOs.slice(0, 50).map((wo: any) => [
         wo.woNumber || '', wo.title || '', wo.type || '', wo.priority || '', wo.status || '',
         wo.assetName || '-', wo.assigneeName || '-',
         wo.estimatedHours?.toString() || '-', wo.actualHours?.toString() || '-',
@@ -214,12 +360,92 @@ export function ReportsMaintenancePage() {
     });
   };
 
-  // CSV export handler
-  const handleCsvExport = () => {
+  // --- TECHNICIAN TAB EXPORTS ---
+  const handleTechCSV = () => {
+    if (!reportData) return;
+    const techs = reportData.technicianProductivity || [];
+    exportCSV(
+      `technician-productivity-${startDate}-to-${endDate}`,
+      ['Technician', 'Assigned', 'Completed', 'Avg Hrs/WO', 'Total Hours'],
+      techs.map((t: any) => [t.userName, String(t.assignedCount), String(t.completedCount), String(t.avgHoursPerWO), String(t.totalHours)]),
+    );
+  };
+  const handleTechPDF = () => {
+    if (!reportData) return;
+    const techs = reportData.technicianProductivity || [];
+    exportPDF({
+      title: `Technician Productivity — ${startDate} to ${endDate}`,
+      subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      filename: `technician-productivity-${startDate}-to-${endDate}`,
+      orientation: 'landscape',
+      summary: [
+        { label: 'Total Technicians', value: String(techs.length) },
+        { label: 'Total WOs Assigned', value: String(techs.reduce((s: number, t: any) => s + t.assignedCount, 0)) },
+        { label: 'Total WOs Completed', value: String(techs.reduce((s: number, t: any) => s + t.completedCount, 0)) },
+      ],
+      headers: ['Technician', 'Assigned', 'Completed', 'Avg Hrs/WO', 'Total Hours'],
+      rows: techs.map((t: any) => [t.userName, String(t.assignedCount), String(t.completedCount), String(t.avgHoursPerWO), String(t.totalHours)]),
+    });
+  };
+
+  // --- MATERIALS TAB EXPORTS ---
+  const handleMaterialsCSV = () => {
     if (!reportData) return;
     exportCSV(
-      `maintenance-report-${startDate}-to-${endDate}`,
-      ['WO Number', 'Title', 'Type', 'Priority', 'Status', 'Asset', 'Assigned To', 'Team Leader', 'Estimated Hours', 'Actual Hours', 'Material Cost', 'Labor Cost', 'Total Cost', 'Created Date', 'Completed Date'],
+      `material-consumption-${startDate}-to-${endDate}`,
+      ['Item Name', 'Total Qty', 'Total Cost', 'WO Count'],
+      (reportData.materialConsumption || []).map((m: any) => [m.itemName, String(m.totalQuantity), String(m.totalCost), String(m.woCount)]),
+    );
+  };
+  const handleMaterialsPDF = () => {
+    if (!reportData) return;
+    exportPDF({
+      title: `Material Consumption — ${startDate} to ${endDate}`,
+      subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      filename: `material-consumption-${startDate}-to-${endDate}`,
+      orientation: 'landscape',
+      summary: [
+        { label: 'Total Items', value: String((reportData.materialConsumption || []).length) },
+        { label: 'Total Cost', value: formatCurrency(s?.totalCost) },
+      ],
+      headers: ['Item Name', 'Total Qty', 'Total Cost', 'WO Count'],
+      rows: (reportData.materialConsumption || []).map((m: any) => [m.itemName, String(m.totalQuantity), formatCurrency(m.totalCost), String(m.woCount)]),
+    });
+  };
+
+  // --- DOWNTIME TAB EXPORTS ---
+  const handleDowntimeCSV = () => {
+    if (!reportData) return;
+    exportCSV(
+      `downtime-analysis-${startDate}-to-${endDate}`,
+      ['Category', 'Events', 'Total Minutes'],
+      (reportData.downtimeAnalysis?.byCategory || []).map((d: any) => [d.category, String(d.count), String(d.totalMinutes)]),
+    );
+  };
+  const handleDowntimePDF = () => {
+    if (!reportData) return;
+    const dt = reportData.downtimeAnalysis || {};
+    exportPDF({
+      title: `Downtime Analysis — ${startDate} to ${endDate}`,
+      subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      filename: `downtime-analysis-${startDate}-to-${endDate}`,
+      orientation: 'landscape',
+      summary: [
+        { label: 'Total Events', value: String(dt.totalEvents ?? 0) },
+        { label: 'Total Minutes', value: String(dt.totalMinutes ?? 0) },
+        { label: 'Avg Duration', value: `${dt.avgDurationMinutes ?? 0} min` },
+      ],
+      headers: ['Category', 'Events', 'Total Minutes'],
+      rows: (dt.byCategory || []).map((d: any) => [d.category, String(d.count), String(d.totalMinutes)]),
+    });
+  };
+
+  // --- DETAILED DATA TAB EXPORTS ---
+  const handleDataCSV = () => {
+    if (!reportData) return;
+    exportCSV(
+      `wo-detailed-${startDate}-to-${endDate}`,
+      ['WO Number', 'Title', 'Type', 'Priority', 'Status', 'Asset', 'Assigned To', 'Team Leader', 'Est Hours', 'Act Hours', 'Material Cost', 'Labor Cost', 'Total Cost', 'Created', 'Completed'],
       recentWOs.map((wo: any) => [
         wo.woNumber || '', wo.title || '', wo.type || '', wo.priority || '', wo.status || '',
         wo.assetName || '-', wo.assigneeName || '-', wo.teamLeaderName || '-',
@@ -228,6 +454,28 @@ export function ReportsMaintenancePage() {
         wo.createdAt ? formatDate(wo.createdAt) : '', wo.completedDate ? formatDate(wo.completedDate) : '',
       ]),
     );
+  };
+  const handleDataPDF = () => {
+    if (!reportData || !s) return;
+    exportPDF({
+      title: reportLabel,
+      subtitle: `Generated: ${format(new Date(), 'MMM d, yyyy HH:mm')}`,
+      filename: `maintenance-report-${startDate}-to-${endDate}`,
+      orientation: 'landscape',
+      summary: [
+        { label: 'Total WOs', value: String(s.totalWOs) },
+        { label: 'Completed', value: `${s.completedWOs} (${s.completionRate}%)` },
+        { label: 'Total Cost', value: formatCurrency(s.totalCost) },
+        { label: 'SLA Compliance', value: `${s.slaComplianceRate}%` },
+      ],
+      headers: ['WO #', 'Title', 'Type', 'Priority', 'Status', 'Asset', 'Assigned To', 'Est Hrs', 'Act Hrs', 'Total Cost', 'Created'],
+      rows: recentWOs.slice(0, 200).map((wo: any) => [
+        wo.woNumber || '', wo.title || '', wo.type || '', wo.priority || '', wo.status || '',
+        wo.assetName || '-', wo.assigneeName || '-',
+        wo.estimatedHours?.toString() || '-', wo.actualHours?.toString() || '-',
+        formatCurrency(wo.totalCost), wo.createdAt ? formatDate(wo.createdAt) : '-',
+      ]),
+    });
   };
 
   // Technician sort handler
@@ -239,17 +487,17 @@ export function ReportsMaintenancePage() {
   if (loading && !reportData) return <div className="page-content"><LoadingSkeleton /></div>;
 
   return (
-    <div className="page-content">
+    <div className="page-content" id="maintenance-report-printable">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex items-center justify-between flex-wrap gap-3 print:hidden">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Maintenance Reports</h1>
           <p className="text-muted-foreground mt-1">Comprehensive maintenance analytics with date range filtering and export capabilities</p>
         </div>
       </div>
 
-      {/* Date Range + Actions */}
-      <div className="flex items-center gap-3 flex-wrap">
+      {/* Date Range + Generate */}
+      <div className="flex items-center gap-3 flex-wrap print:hidden">
         <Card className="border border-border/60 shadow-sm"><CardContent className="p-4">
           <DateRangePicker label="Date Range" from={startDate || undefined} to={endDate || undefined} onChange={(f, t) => { setStartDate(f || ''); setEndDate(t || ''); }} />
         </CardContent></Card>
@@ -257,23 +505,17 @@ export function ReportsMaintenancePage() {
           {loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1.5" />}
           Generate Report
         </Button>
-        <Button variant="outline" size="sm" onClick={handlePdfExport} disabled={!reportData}>
-          <FileDown className="h-4 w-4 mr-1.5" />Export PDF
-        </Button>
-        <Button variant="outline" size="sm" onClick={handleCsvExport} disabled={!reportData}>
-          <Download className="h-4 w-4 mr-1.5" />Export CSV
-        </Button>
       </div>
 
       {loading && <LoadingSkeleton />}
       {!loading && reportData && (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 print:grid-cols-3 print:gap-2">
             {kpiCards.map(k => { const I = k.icon; return (
-              <Card key={k.label} className="border border-border/60 shadow-sm"><CardContent className="p-4">
+              <Card key={k.label} className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-4 print:p-2">
                 <div className="flex items-center gap-3">
-                  <div className={`h-10 w-10 rounded-xl ${k.color} flex items-center justify-center shrink-0`}><I className="h-4.5 w-4.5" /></div>
+                  <div className={`h-10 w-10 rounded-xl ${k.color} flex items-center justify-center shrink-0 print:hidden`}><I className="h-4.5 w-4.5" /></div>
                   <div className="min-w-0">
                     <p className="text-xl font-bold truncate">{k.value}</p>
                     <p className="text-[11px] text-muted-foreground truncate">{k.label}</p>
@@ -285,20 +527,76 @@ export function ReportsMaintenancePage() {
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="flex-wrap h-auto gap-1">
+            <TabsList className="flex-wrap h-auto gap-1 print:hidden">
+              <TabsTrigger value="assets" className="text-xs"><Building2 className="h-3.5 w-3.5 mr-1" />By Asset/Machine</TabsTrigger>
               <TabsTrigger value="overview" className="text-xs"><BarChart3 className="h-3.5 w-3.5 mr-1" />Overview</TabsTrigger>
               <TabsTrigger value="technicians" className="text-xs"><Users className="h-3.5 w-3.5 mr-1" />Technician Productivity</TabsTrigger>
               <TabsTrigger value="materials" className="text-xs"><Package className="h-3.5 w-3.5 mr-1" />Materials & Costs</TabsTrigger>
               <TabsTrigger value="downtime" className="text-xs"><Clock className="h-3.5 w-3.5 mr-1" />Downtime</TabsTrigger>
-              <TabsTrigger value="assets" className="text-xs"><Building2 className="h-3.5 w-3.5 mr-1" />Asset Reliability</TabsTrigger>
               <TabsTrigger value="data" className="text-xs"><FileText className="h-3.5 w-3.5 mr-1" />Detailed Data</TabsTrigger>
             </TabsList>
 
-            {/* Tab 1: Overview */}
+            {/* Tab 1: By Asset/Machine (DEFAULT) */}
+            <TabsContent value="assets" className="space-y-4 mt-6">
+              <div className="flex items-center justify-between print:hidden">
+                <div>
+                  <h3 className="text-base font-semibold">Work Orders by Asset / Machine</h3>
+                  <p className="text-xs text-muted-foreground">{workOrdersByAsset.length} assets/machines with work orders — click a row to expand</p>
+                </div>
+                <ExportButtonGroup onExportCSV={handleAssetCSV} onExportPDF={handleAssetPDF} onPrint={handleAssetPrint} disabled={!reportData} />
+              </div>
+
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:grid-cols-4 print:gap-2">
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-3 print:p-1.5 text-center">
+                  <p className="text-lg font-bold">{workOrdersByAsset.length}</p><p className="text-[11px] text-muted-foreground">Assets/Machines</p>
+                </CardContent></Card>
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-3 print:p-1.5 text-center">
+                  <p className="text-lg font-bold">{workOrdersByAsset.reduce((s: number, a: any) => s + a.woCount, 0)}</p><p className="text-[11px] text-muted-foreground">Total WOs</p>
+                </CardContent></Card>
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-3 print:p-1.5 text-center">
+                  <p className="text-lg font-bold text-emerald-600">{formatCurrency(workOrdersByAsset.reduce((s: number, a: any) => s + a.totalCost, 0))}</p><p className="text-[11px] text-muted-foreground">Total Cost</p>
+                </CardContent></Card>
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-3 print:p-1.5 text-center">
+                  <p className="text-lg font-bold">{formatDuration(workOrdersByAsset.reduce((s: number, a: any) => s + a.totalDowntimeMinutes / 60, 0))}</p><p className="text-[11px] text-muted-foreground">Total Downtime</p>
+                </CardContent></Card>
+              </div>
+
+              {/* Per-asset table with expandable rows */}
+              <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto max-h-[700px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-background z-10">
+                        <TableRow>
+                          <TableHead>Asset / Machine</TableHead>
+                          <TableHead className="text-right">WO Count</TableHead>
+                          <TableHead className="text-right">Completion</TableHead>
+                          <TableHead className="text-right">Downtime</TableHead>
+                          <TableHead className="text-right">Total Hours</TableHead>
+                          <TableHead className="text-right">Total Cost</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {workOrdersByAsset.length === 0 ? (
+                          <TableRow><TableCell colSpan={6}><EmptyState icon={Building2} title="No asset data" description="Assets with work orders will appear here." /></TableCell></TableRow>
+                        ) : workOrdersByAsset.map((asset: any) => (
+                          <AssetWOTable key={asset.assetName} asset={asset} typeColorMap={typeColorMap} />
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Tab 2: Overview */}
             <TabsContent value="overview" className="space-y-6 mt-6">
+              <div className="flex items-center justify-end print:hidden">
+                <ExportButtonGroup onExportCSV={handleDataCSV} onExportPDF={handleOverviewPDF} onPrint={() => window.print()} disabled={!reportData} />
+              </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* WO by Type Bar Chart */}
-                <Card className="border border-border/60 shadow-sm">
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
                   <CardHeader className="pb-3"><CardTitle className="text-base">Work Orders by Type</CardTitle><CardDescription className="text-xs">Distribution of WO types</CardDescription></CardHeader>
                   <CardContent>
                     {(reportData.woByType || []).length > 0 ? (
@@ -319,8 +617,7 @@ export function ReportsMaintenancePage() {
                   </CardContent>
                 </Card>
 
-                {/* WO by Priority */}
-                <Card className="border border-border/60 shadow-sm">
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
                   <CardHeader className="pb-3"><CardTitle className="text-base">Work Orders by Priority</CardTitle><CardDescription className="text-xs">Priority level breakdown</CardDescription></CardHeader>
                   <CardContent>
                     {(reportData.woByPriority || []).length > 0 ? (
@@ -341,8 +638,7 @@ export function ReportsMaintenancePage() {
                   </CardContent>
                 </Card>
 
-                {/* WO by Status */}
-                <Card className="border border-border/60 shadow-sm">
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
                   <CardHeader className="pb-3"><CardTitle className="text-base">Work Orders by Status</CardTitle><CardDescription className="text-xs">Current status distribution</CardDescription></CardHeader>
                   <CardContent>
                     {(reportData.woByStatus || []).length > 0 ? (
@@ -359,8 +655,7 @@ export function ReportsMaintenancePage() {
                   </CardContent>
                 </Card>
 
-                {/* Monthly Trend */}
-                <Card className="border border-border/60 shadow-sm">
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
                   <CardHeader className="pb-3"><CardTitle className="text-base">Monthly WO Trend</CardTitle><CardDescription className="text-xs">Created vs completed by month</CardDescription></CardHeader>
                   <CardContent>
                     {(reportData.woByMonth || []).length > 0 ? (
@@ -381,13 +676,16 @@ export function ReportsMaintenancePage() {
               </div>
             </TabsContent>
 
-            {/* Tab 2: Technician Productivity */}
-            <TabsContent value="technicians" className="mt-6">
-              <Card className="border border-border/60 shadow-sm">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Technician Productivity</CardTitle>
-                  <CardDescription className="text-xs">Assigned vs completed WOs, avg hours per WO</CardDescription>
-                </CardHeader>
+            {/* Tab 3: Technician Productivity */}
+            <TabsContent value="technicians" className="mt-6 space-y-6">
+              <div className="flex items-center justify-between print:hidden">
+                <div>
+                  <h3 className="text-base font-semibold">Technician Productivity</h3>
+                  <p className="text-xs text-muted-foreground">Assigned vs completed WOs, avg hours per WO</p>
+                </div>
+                <ExportButtonGroup onExportCSV={handleTechCSV} onExportPDF={handleTechPDF} onPrint={() => window.print()} disabled={!reportData} />
+              </div>
+              <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
                     <Table>
@@ -426,9 +724,8 @@ export function ReportsMaintenancePage() {
                 </CardContent>
               </Card>
 
-              {/* Repair Completion Metrics */}
               {reportData.repairCompletion && (
-                <Card className="border border-border/60 shadow-sm mt-6">
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
                   <CardHeader className="pb-3"><CardTitle className="text-base">Repair Completion Metrics</CardTitle><CardDescription className="text-xs">Quality and timeliness of repair work</CardDescription></CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -450,13 +747,16 @@ export function ReportsMaintenancePage() {
               )}
             </TabsContent>
 
-            {/* Tab 3: Materials & Costs */}
+            {/* Tab 4: Materials & Costs */}
             <TabsContent value="materials" className="mt-6 space-y-6">
-              <Card className="border border-border/60 shadow-sm">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Material Consumption</CardTitle>
-                  <CardDescription className="text-xs">Top materials by cost for the selected period</CardDescription>
-                </CardHeader>
+              <div className="flex items-center justify-between print:hidden">
+                <div>
+                  <h3 className="text-base font-semibold">Material Consumption</h3>
+                  <p className="text-xs text-muted-foreground">Top materials by cost for the selected period</p>
+                </div>
+                <ExportButtonGroup onExportCSV={handleMaterialsCSV} onExportPDF={handleMaterialsPDF} onPrint={() => window.print()} disabled={!reportData} />
+              </div>
+              <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
                     <Table>
@@ -485,35 +785,41 @@ export function ReportsMaintenancePage() {
                 </CardContent>
               </Card>
 
-              {/* Cost Summary Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Card className="border border-border/60 shadow-sm"><CardContent className="p-4 text-center">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 print:grid-cols-3 print:gap-2">
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-4 print:p-2 text-center">
                   <p className="text-2xl font-bold text-emerald-600">{formatCurrency(s?.totalCost)}</p>
                   <p className="text-xs text-muted-foreground">Total Maintenance Cost</p>
                 </CardContent></Card>
-                <Card className="border border-border/60 shadow-sm"><CardContent className="p-4 text-center">
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-4 print:p-2 text-center">
                   <p className="text-2xl font-bold text-sky-600">{formatCurrency(s?.avgCostPerWO)}</p>
                   <p className="text-xs text-muted-foreground">Average Cost per WO</p>
                 </CardContent></Card>
-                <Card className="border border-border/60 shadow-sm"><CardContent className="p-4 text-center">
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-4 print:p-2 text-center">
                   <p className="text-2xl font-bold text-amber-600">{s?.totalWOs ?? 0}</p>
                   <p className="text-xs text-muted-foreground">Total Work Orders</p>
                 </CardContent></Card>
               </div>
             </TabsContent>
 
-            {/* Tab 4: Downtime Analysis */}
+            {/* Tab 5: Downtime Analysis */}
             <TabsContent value="downtime" className="mt-6 space-y-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="flex items-center justify-between print:hidden">
+                <div>
+                  <h3 className="text-base font-semibold">Downtime Analysis</h3>
+                  <p className="text-xs text-muted-foreground">Equipment downtime events and impact assessment</p>
+                </div>
+                <ExportButtonGroup onExportCSV={handleDowntimeCSV} onExportPDF={handleDowntimePDF} onPrint={() => window.print()} disabled={!reportData} />
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:grid-cols-4 print:gap-2">
                 {[
                   { label: 'Total Events', value: reportData.downtimeAnalysis?.totalEvents ?? 0, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
                   { label: 'Total Downtime', value: `${reportData.downtimeAnalysis?.totalMinutes ?? 0} min`, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
                   { label: 'Avg Duration', value: `${reportData.downtimeAnalysis?.avgDurationMinutes ?? 0} min`, icon: TrendingUp, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
                   { label: 'SLA Breaches', value: s?.slaBreachedWOs ?? 0, icon: ShieldAlert, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
                 ].map((k: any) => { const I = k.icon; return (
-                  <Card key={k.label} className="border border-border/60 shadow-sm"><CardContent className="p-4">
+                  <Card key={k.label} className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-4 print:p-2">
                     <div className="flex items-center gap-3">
-                      <div className={`h-9 w-9 rounded-lg ${k.color} flex items-center justify-center shrink-0`}><I className="h-4 w-4" /></div>
+                      <div className={`h-9 w-9 rounded-lg ${k.color} flex items-center justify-center shrink-0 print:hidden`}><I className="h-4 w-4" /></div>
                       <div className="min-w-0">
                         <p className="text-lg font-bold truncate">{k.value}</p>
                         <p className="text-[11px] text-muted-foreground truncate">{k.label}</p>
@@ -524,8 +830,7 @@ export function ReportsMaintenancePage() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* By Category */}
-                <Card className="border border-border/60 shadow-sm">
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
                   <CardHeader className="pb-3"><CardTitle className="text-base">Downtime by Category</CardTitle></CardHeader>
                   <CardContent className="p-0">
                     <div className="overflow-x-auto">
@@ -547,8 +852,7 @@ export function ReportsMaintenancePage() {
                   </CardContent>
                 </Card>
 
-                {/* By Impact Level */}
-                <Card className="border border-border/60 shadow-sm">
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
                   <CardHeader className="pb-3"><CardTitle className="text-base">Downtime by Impact Level</CardTitle></CardHeader>
                   <CardContent>
                     {(reportData.downtimeAnalysis?.byImpactLevel || []).length > 0 ? (
@@ -571,53 +875,16 @@ export function ReportsMaintenancePage() {
               </div>
             </TabsContent>
 
-            {/* Tab 5: Asset Reliability */}
-            <TabsContent value="assets" className="mt-6">
-              <Card className="border border-border/60 shadow-sm">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Top Assets by Work Order Count</CardTitle>
-                  <CardDescription className="text-xs">Assets with most maintenance activity in the period</CardDescription>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Asset</TableHead>
-                          <TableHead className="text-right">WO Count</TableHead>
-                          <TableHead className="text-right">Downtime (min)</TableHead>
-                          <TableHead className="text-right">Total Cost</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(reportData.topAssets || []).length === 0 ? (
-                          <TableRow><TableCell colSpan={4}><EmptyState icon={Building2} title="No asset data" description="Assets with work orders will appear here." /></TableCell></TableRow>
-                        ) : reportData.topAssets.map((asset: any, i: number) => (
-                          <TableRow key={i} className="hover:bg-muted/30">
-                            <TableCell className="font-medium">{asset.assetName}</TableCell>
-                            <TableCell className="text-right">
-                              <Badge variant="outline" className={asset.woCount > 5 ? 'bg-red-50 text-red-700 border-red-200' : asset.woCount > 2 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}>
-                                {asset.woCount}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">{asset.downtimeMinutes} min</TableCell>
-                            <TableCell className="text-right font-medium">{formatCurrency(asset.totalCost)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
             {/* Tab 6: Detailed Data */}
             <TabsContent value="data" className="mt-6">
-              <Card className="border border-border/60 shadow-sm">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Detailed Work Order Data</CardTitle>
-                  <CardDescription className="text-xs">{recentWOs.length} work orders in the selected date range</CardDescription>
-                </CardHeader>
+              <div className="flex items-center justify-between print:hidden mb-4">
+                <div>
+                  <h3 className="text-base font-semibold">Detailed Work Order Data</h3>
+                  <p className="text-xs text-muted-foreground">{recentWOs.length} work orders in the selected date range</p>
+                </div>
+                <ExportButtonGroup onExportCSV={handleDataCSV} onExportPDF={handleDataPDF} onPrint={() => window.print()} disabled={!reportData} />
+              </div>
+              <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
                 <CardContent className="p-0">
                   <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
                     <Table>

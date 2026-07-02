@@ -237,8 +237,87 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.woCount - a.woCount)
       .slice(0, 10);
 
+    // ========== WORK ORDERS BY ASSET ==========
+    const assetWoMap: Record<string, {
+      assetName: string;
+      workOrders: {
+        id: string;
+        woNumber: string;
+        title: string;
+        type: string;
+        priority: string;
+        status: string;
+        assigneeName: string | null;
+        teamLeaderName: string | null;
+        estimatedHours: number | null;
+        actualHours: number | null;
+        materialCost: number;
+        laborCost: number;
+        totalCost: number;
+        createdAt: string;
+        completedDate: string | null;
+        plannedEnd: string | null;
+        downtimeMinutes: number;
+      }[];
+      woCount: number;
+      completedCount: number;
+      totalCost: number;
+      totalDowntimeMinutes: number;
+      totalActualHours: number;
+    }> = {};
+
+    workOrders.forEach(wo => {
+      const name = wo.assetName || 'Unassigned';
+      if (!assetWoMap[name]) {
+        assetWoMap[name] = {
+          assetName: name,
+          workOrders: [],
+          woCount: 0,
+          completedCount: 0,
+          totalCost: 0,
+          totalDowntimeMinutes: 0,
+          totalActualHours: 0,
+        };
+      }
+      const group = assetWoMap[name];
+      group.woCount += 1;
+      group.totalCost += (wo.totalCost || 0);
+      group.totalActualHours += (wo.actualHours || 0);
+      if (wo.status === 'completed' || wo.status === 'closed') group.completedCount += 1;
+      (wo.workOrderDowntimes || []).forEach(dt => {
+        group.totalDowntimeMinutes += (dt.durationMinutes || 0);
+      });
+      group.workOrders.push({
+        id: wo.id,
+        woNumber: wo.woNumber || '',
+        title: wo.title || '',
+        type: wo.type || '',
+        priority: wo.priority || '',
+        status: wo.status || '',
+        assigneeName: wo.assignee?.fullName || null,
+        teamLeaderName: wo.teamLeader?.fullName || null,
+        estimatedHours: wo.estimatedHours,
+        actualHours: wo.actualHours,
+        materialCost: wo.partsCost || 0,
+        laborCost: wo.laborCost || 0,
+        totalCost: wo.totalCost || 0,
+        createdAt: wo.createdAt.toISOString(),
+        completedDate: wo.actualEnd?.toISOString() || null,
+        plannedEnd: wo.plannedEnd?.toISOString() || null,
+        downtimeMinutes: (wo.workOrderDowntimes || []).reduce((sum, dt) => sum + (dt.durationMinutes || 0), 0),
+      });
+    });
+
+    const workOrdersByAsset = Object.values(assetWoMap)
+      .sort((a, b) => b.woCount - a.woCount)
+      .map(a => ({
+        ...a,
+        completionRate: a.woCount > 0 ? Math.round((a.completedCount / a.woCount) * 100) : 0,
+        avgCostPerWO: a.woCount > 0 ? Math.round((a.totalCost / a.woCount) * 100) / 100 : 0,
+      }));
+
     // ========== RECENT WORK ORDERS ==========
-    const recentWorkOrders = workOrders.slice(0, 20).map(wo => ({
+    const recentWorkOrders = workOrders.slice(0, 200).map(wo => ({
       id: wo.id,
       woNumber: wo.woNumber,
       title: wo.title,
@@ -299,6 +378,7 @@ export async function GET(request: NextRequest) {
           avgClosureTimeHours: avgClosureTimeHours,
         },
         topAssets,
+        workOrdersByAsset,
         recentWorkOrders,
       },
     });
