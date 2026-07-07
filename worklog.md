@@ -186,3 +186,23 @@ Stage Summary:
 - All charts now have corresponding tabular data views below them
 - All 6 tabs have consistent export functionality (Excel, PDF, Print)
 - VPS needs: git pull to get the updated code
+---
+Task ID: 9
+Agent: Main Agent
+Task: Create WO workflow PPT presentation with screenshots and download link
+
+Work Log:
+- Started Next.js dev server on port 3000 (connects to remote MySQL DB)
+- Wrote Playwright screenshot script to capture 17 workflow screens
+- Captured screenshots: login, dashboard, MR list, MR detail, WO list, WO detail, tool requests, material requests, tool transfers, completion, analytics, reports, downtime, spare part returns, damaged tools, maintenance dashboard
+- Created python-pptx script to build professional 19-slide presentation
+- Slides structured across 4 phases: Request & Approval, WO Execution, Repair Resources, Completion & Reporting
+- Each screenshot slide has left sidebar with step info + right side screenshot
+- Created download API endpoint at /api/download-presentation
+- PPTX file saved at public/WO-Workflow-Presentation.pptx (7.0MB)
+
+Stage Summary:
+- 17 real app screenshots captured from running sandbox instance
+- Professional 19-slide PPTX presentation created with emerald/dark navy theme
+- Download link available at: /api/download-presentation
+- Static file also at: /WO-Workflow-Presentation.pptx (in public/)
