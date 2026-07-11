@@ -390,7 +390,7 @@ export default function LoginPage() {
 
           {/* Download Presentation Link */}
           <a
-            href="/WO-Workflow-Presentation.pptx?XTransformPort=9999"
+            href="/WO-Workflow-Presentation.pptx"
             download="iAssetsPro-WO-Workflow-Presentation.pptx"
             className="mt-4 flex items-center justify-center gap-2 w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white py-3 rounded-xl font-semibold shadow-lg shadow-amber-500/20 hover:shadow-xl hover:shadow-amber-500/30 transform hover:-translate-y-0.5 transition-all text-sm"
           >
