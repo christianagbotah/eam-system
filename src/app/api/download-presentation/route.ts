@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 
-const FILE_PATH = path.join(process.cwd(), 'public', 'WO-Workflow-Presentation.pptx');
+const FILE_PATH = path.join(process.cwd(), 'public', 'iAssetsPro-WO-Workflow-Presentation.pptx');
 
 export async function GET(request: NextRequest) {
   try {
