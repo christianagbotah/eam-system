@@ -201,3 +201,88 @@ Stage Summary:
 - No Prisma schema changes; no existing response fields removed
 - New nullable fields added alongside existing ones for backward compatibility
 - Dev server compiles without errors
+
+---
+Task ID: 4
+Agent: Main
+Task: Add Equipment History Report — full machine lifecycle report
+
+Work Log:
+- Created API endpoint `GET /api/assets/[id]/history` with optional `from`/`to` date filters
+- Endpoint fetches: Asset with category, all WOs (with assignee, teamLeader, materials, workOrderDowntimes, repairCompletion), all FailureRecords (with component), batch-fetched InventoryItems for material enrichment
+- Computes: summary stats (totalWOs, completionRate, costs, downtime, MTBF, avgCostPerWO, conditionHistory), costByType, costByMonth, costByTrade, downtimeByCategory, partsConsumed aggregation, TCO (purchase cost, maintenance ratio, annual maintenance cost, remaining life)
+- Auth-gated with `reports.view` permission or admin
+- Added `EquipmentHistoryPage` component to ReportPages.tsx (exported)
+- Component features: debounced asset search by name/tag, asset details card with 15 fields, 6 KPI cards (Total WOs, Completion Rate, Total Cost, Total Downtime, MTBF, Failures)
+- 6 tabs: Overview (asset details + cost-by-type pie chart + monthly cost trend line chart), Work Orders (filterable table by status/type), Failure Analysis (failure mode pie chart + severity bar chart + records table), Parts & Materials (consumed parts table), Cost Analysis (labor/parts/contractor breakdown + cost by type table + cost by trade table + stacked monthly bar chart + downtime by category), TCO (6 metric cards + TCO breakdown bar chart)
+- Export buttons: CSV (multi-section with summary, WOs, failures, parts, TCO), PDF (via exportPDF helper), Print
+- Added Recharts imports (LineChart, Line) and new Lucide icons (History, TrendingDown, Timer, Calculator, PackageSearch, Zap, CircleDollarSign, Gauge)
+- Integrated into app: added `equipment-history` to PageName type union, lazy import in EAMApp, permission check, page title, sidebar entry under Reports section
+- All modified files pass ESLint with zero new errors
+- Pre-existing EAMApp `react-hooks/immutability` error (pageTitle accessed before declaration) is unrelated
+
+Stage Summary:
+- API route: `/home/z/my-project/src/app/api/assets/[id]/history/route.ts`
+- Frontend: `EquipmentHistoryPage` added to `/home/z/my-project/src/components/modules/ReportPages.tsx`
+- Integration: types/index.ts, EAMApp.tsx (lazy import + permissions + title), Sidebar.tsx (nav entry)
+- Dev server compiles without errors, no new lint issues introduced
+
+---
+Task ID: 5
+Agent: Main
+Task: Add Budget vs Actual Cost Analysis and Period Comparison to Enterprise Reports
+
+Work Log:
+- Enhanced enterprise API (`/api/reports/enterprise/route.ts`) with two new data sections:
+  - `periodComparison`: Computes metrics for current period, previous period (same duration before current), and same period last year. Returns absolute and percentage changes for totalWOs, totalCost, completionRate, and downtime. Uses `fetchPeriodWOs` helper to query WOs for each time range with `workOrderDowntimes` include.
+  - `costAnalytics.monthlyCostBreakdown`: Groups WOs by YYYY-MM, sums labor/parts/contractor costs separately per month.
+- Enhanced `costAnalytics.byAsset` from top 10 to top 20, added `contractorCost` and `downtimeMinutes` fields, added `assetId` to response.
+- Enhanced frontend `EnterpriseReports.tsx`:
+  - Added `enterpriseData` state and parallel fetch from `/api/reports/enterprise?from=&to=` alongside existing maintenance report fetch.
+  - Added `ArrowUpRight`, `ArrowDownRight` icons and `ComposedChart` Recharts import.
+  - Enhanced "Cost" tab (renamed "Cost Analysis"):
+    - KPI strip now shows Total, Labor, Parts, Contractor costs from enterprise API.
+    - Replaced estimated cost trend chart with actual cost stacked area chart (labor + parts + contractor by month).
+    - Added "Monthly Cost Breakdown" stacked bar chart (labor/parts/contractor).
+    - Added "Cost by Asset (Top 20)" scrollable table with: #, Equipment Name, Tag, Manufacturer, Category, WO Count, Labor, Parts, Contractor, Total.
+    - Material consumption table now has scrollable container.
+  - Added new "Period Comparison" tab with `value="period-comparison"`:
+    - Period labels showing current and previous date ranges.
+    - 4 KPI comparison cards (Total WOs, Total Cost, Completion Rate, Downtime) with arrow indicators and color-coded change badges (green for favorable, red for unfavorable — downtime inverted).
+    - Grouped bar chart: Current vs Previous period by cost category (Labor, Parts, Contractor, Total).
+    - Detailed comparison table (9 metrics): Metric, Current Period, Previous Period, Change, Change %.
+    - Year-over-Year section (conditional): 4 YoY KPI cards, YoY grouped bar chart (violet theme), YoY detail table. Falls back to placeholder card when no historical data exists.
+  - Pre-computed period comparison data in `useMemo` to avoid IIFEs in JSX (which caused parsing issues with TypeScript ESLint).
+
+Stage Summary:
+- API: `/home/z/my-project/src/app/api/reports/enterprise/route.ts` — added `periodComparison` and `monthlyCostBreakdown`, expanded `costByAsset` to top 20
+- Frontend: `/home/z/my-project/src/components/modules/EnterpriseReports.tsx` — enhanced Cost tab, added Period Comparison tab, added enterprise API fetch
+- Both files pass ESLint with zero new errors (existing `react-hooks/preserve-manual-memoization` suppressed at component level)
+- Dev server compiles without errors
+
+---
+Task ID: 6
+Agent: Main
+Task: Build Failure Code / Root Cause Analysis Report
+
+Work Log:
+- Created API endpoint `GET /api/reports/failure-analysis?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- Endpoint fetches FailureRecord with asset, component, and workOrder (including repairCompletion for RCA data)
+- Batch-fetches AssetCategory for category name enrichment
+- Fetches completed WOs with repairCompletion for rework analysis
+- Computes: summary (totalFailures, totalDowntimeMinutes, totalRepairCost, avgDowntimePerFailure, mostCommonMode, mostCommonCause), byFailureMode (with severity distribution), byRootCause (with corrective actions set), bySeverity, byAsset (with dominant mode/cause/MTBF), byComponent, monthlyTrend, paretoModes, paretoCauses, reworkAnalysis (rate + by-asset breakdown)
+- Auth-gated with `reports.view` permission or admin, plant-scoped via getPlantScope/getPlantFilterWhere
+- Added `FailureAnalysisPage` component to ReportPages.tsx (exported)
+- Added `ComposedChart` to recharts imports
+- Component features: date range filter, 6 KPI cards (Total Failures, Total Downtime, Total Repair Cost, Avg Downtime/Failure, Top Failure Mode, Top Root Cause)
+- 6 tabs: Overview (severity pie chart + monthly failure trend line chart + severity table), Failure Modes (horizontal bar chart + detail table with severity breakdown), Root Causes (horizontal bar chart + table with corrective action badges), By Asset (bar chart + detail table with MTBF + component sub-table), Pareto (ComposedChart with bars + cumulative % line for both modes and causes), Rework (3 summary cards + rework-by-asset table)
+- CSV export covering summary, failure modes, root causes, assets, and components
+- Refresh button for data reload
+- Registered page: added `failure-analysis` to PageName type union, lazy import + permissions + title in EAMApp, sidebar entry under Reports with AlertTriangle icon
+- All modified files pass ESLint with zero new errors
+
+Stage Summary:
+- API route: `/home/z/my-project/src/app/api/reports/failure-analysis/route.ts`
+- Frontend: `FailureAnalysisPage` added to `/home/z/my-project/src/components/modules/ReportPages.tsx`
+- Integration: types/index.ts (PageName), EAMApp.tsx (lazy import + permissions + title), Sidebar.tsx (nav entry)
+- Dev server compiles without errors, no new lint issues introduced

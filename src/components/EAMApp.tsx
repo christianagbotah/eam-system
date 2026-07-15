@@ -144,6 +144,8 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   'inventory-receiving': () => import('./modules/InventoryPages').then(m => m.InventoryReceivingPage),
   // Reports
   'reports-asset': () => import('./modules/ReportPages').then(m => m.ReportsAssetPage),
+  'equipment-history': () => import('./modules/ReportPages').then(m => m.EquipmentHistoryPage),
+  'failure-analysis': () => import('./modules/ReportPages').then(m => m.FailureAnalysisPage),
   'reports-maintenance': () => import('./modules/ReportPages').then(m => m.ReportsMaintenancePage),
   'reports-inventory': () => import('./modules/ReportPages').then(m => m.ReportsInventoryPage),
   'reports-production': () => import('./modules/ReportPages').then(m => m.ReportsProductionPage),
@@ -297,6 +299,8 @@ function PageSwitcher({ page }: { page: string }) {
     'inventory-receiving': ['purchase_orders.view'],
     // Reports
     'reports-asset': ['reports.view'],
+    'equipment-history': ['reports.view'],
+    'failure-analysis': ['reports.view'],
     'reports-maintenance': ['reports.view'],
     'reports-inventory': ['reports.view'],
     'reports-production': ['reports.view'],
@@ -556,6 +560,8 @@ function AppShell() {
     'inventory-receiving': 'Receiving',
     // Reports
     'reports-asset': 'Asset Reports',
+    'equipment-history': 'Equipment History',
+    'failure-analysis': 'Failure Analysis',
     'reports-maintenance': 'Maintenance Reports',
     'reports-inventory': 'Inventory Reports',
     'reports-production': 'Production Reports',

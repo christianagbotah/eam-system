@@ -33,10 +33,12 @@ import {
   Eye, Printer, Share, BarChart3, DollarSign, RefreshCw, Clock, Settings,
   Loader2, ChevronDown, ChevronRight,
   ArrowUpDown, FileText, FileDown, Users,
+  History, TrendingDown, Timer, Calculator, PackageSearch, Zap, MapPin,
+  CircleDollarSign, Gauge,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer,
-  Tooltip, Legend,
+  Tooltip, Legend, LineChart, Line, ComposedChart,
 } from 'recharts';
 import { format } from 'date-fns';
 import { EmptyState, StatusBadge, PriorityBadge, formatDate, formatDateTime, LoadingSkeleton, formatCurrency, formatDuration } from '@/components/shared/helpers';
@@ -2214,6 +2216,1229 @@ export function ReportsCustomPage() {
 }
 
 // ============================================================================
+// EQUIPMENT HISTORY REPORT — Full Machine Lifecycle
+// ============================================================================
+
+const EH_CHART_COLORS = ['#059669', '#0ea5e9', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#f97316', '#6366f1', '#ec4899', '#64748b'];
+
+const EH_TYPE_COLORS: Record<string, string> = { preventive: 'bg-emerald-500', corrective: 'bg-amber-500', emergency: 'bg-red-500', inspection: 'bg-sky-500', predictive: 'bg-violet-500', project: 'bg-teal-500' };
+
+const EH_SEVERITY_COLORS: Record<string, string> = { low: 'bg-slate-400', medium: 'bg-sky-500', high: 'bg-amber-500', critical: 'bg-red-500' };
+
+const EH_CONDITION_COLORS: Record<string, string> = { excellent: 'bg-emerald-500', good: 'bg-sky-500', fair: 'bg-amber-500', poor: 'bg-orange-500', critical: 'bg-red-500' };
+
+export function EquipmentHistoryPage() {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [selectedAsset, setSelectedAsset] = useState<any>(null);
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [woFilterStatus, setWoFilterStatus] = useState<string>('all');
+  const [woFilterType, setWoFilterType] = useState<string>('all');
+
+  // Asset search
+  const searchTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSearch = (query: string) => {
+    setSearchQuery(query);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    if (!query.trim()) { setSearchResults([]); return; }
+    searchTimeout.current = setTimeout(() => {
+      api.get<any[]>(`/api/assets?search=${encodeURIComponent(query.trim())}&limit=20`).then(res => {
+        if (res.success && res.data) setSearchResults(res.data);
+        else setSearchResults([]);
+      }).catch(() => setSearchResults([]));
+    }, 300);
+  };
+
+  const handleSelectAsset = (asset: any) => {
+    setSelectedAsset(asset);
+    setSearchResults([]);
+    setSearchQuery('');
+    setLoading(true);
+    setError(null);
+    setData(null);
+    setActiveTab('overview');
+    api.get<any>(`/api/assets/${asset.id}/history`).then(res => {
+      if (res.success && res.data) setData(res.data);
+      else setError(res.error || 'Failed to load history');
+      setLoading(false);
+    }).catch((err: any) => { setError(err.message || 'Network error'); setLoading(false); });
+  };
+
+  // Filtered work orders
+  const filteredWOs = useMemo(() => {
+    if (!data?.workOrders) return [];
+    return data.workOrders.filter((wo: any) => {
+      if (woFilterStatus !== 'all' && wo.status !== woFilterStatus) return false;
+      if (woFilterType !== 'all' && wo.type !== woFilterType) return false;
+      return true;
+    });
+  }, [data, woFilterStatus, woFilterType]);
+
+  const s = data?.summary;
+
+  // KPI cards
+  const kpiCards = [
+    { label: 'Total WOs', value: s?.totalWOs ?? 0, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Completion Rate', value: `${s?.completionRate ?? 0}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Total Cost', value: formatCurrency(s?.totalCost), icon: DollarSign, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Total Downtime', value: `${Math.round((s?.totalDowntimeMinutes ?? 0) / 60)}h`, icon: TrendingDown, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+    { label: 'MTBF', value: `${s?.mtbfDays ?? 0}d`, icon: Timer, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    { label: 'Failures', value: s?.totalFailures ?? 0, icon: AlertTriangle, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400' },
+  ];
+
+  // ── EXPORT HANDLERS ───────────────────────────────────────────────────
+  const handleExportCSV = () => {
+    if (!data || !selectedAsset) return;
+    const rows: string[][] = [];
+    rows.push(['--- Equipment History Report ---']);
+    rows.push(['Asset', selectedAsset.name, 'Tag', selectedAsset.assetTag || '']);
+    rows.push(['Manufacturer', selectedAsset.manufacturer || '', 'Model', selectedAsset.model || '']);
+    rows.push(['Serial #', selectedAsset.serialNumber || '', 'Category', selectedAsset.categoryName || '']);
+    rows.push([]);
+    rows.push(['--- Summary ---']);
+    rows.push(['Total WOs', String(s?.totalWOs ?? 0), 'Completed', String(s?.completedWOs ?? 0), 'Rate', `${s?.completionRate ?? 0}%`]);
+    rows.push(['Total Cost', String(s?.totalCost ?? 0), 'Labor', String(s?.laborCost ?? 0), 'Parts', String(s?.partsCost ?? 0)]);
+    rows.push(['Downtime (min)', String(s?.totalDowntimeMinutes ?? 0), 'MTBF (days)', String(s?.mtbfDays ?? 0), 'Failures', String(s?.totalFailures ?? 0)]);
+    rows.push([]);
+    rows.push(['--- Work Orders ---']);
+    rows.push(['WO #', 'Title', 'Type', 'Priority', 'Status', 'Cost', 'Hours', 'Downtime (min)', 'Assignee', 'Created']);
+    (data.workOrders || []).forEach((wo: any) => rows.push([wo.woNumber, wo.title, wo.type, wo.priority, wo.status, String(wo.totalCost), String(wo.actualHours), String(wo.downtimeMinutes), wo.assigneeName || '', wo.createdAt ? formatDate(wo.createdAt) : '']));
+    rows.push([]);
+    rows.push(['--- Failure Records ---']);
+    rows.push(['Failure Code', 'Mode', 'Severity', 'Downtime (min)', 'Repair Cost', 'Detected', 'Resolved', 'Root Cause']);
+    (data.failureRecords || []).forEach((fr: any) => rows.push([fr.failureCode || '', fr.failureMode, fr.failureSeverity, String(fr.downtimeMinutes), String(fr.repairCost), fr.detectedAt ? formatDate(fr.detectedAt) : '', fr.resolvedAt ? formatDate(fr.resolvedAt) : '', fr.rootCause || '']));
+    rows.push([]);
+    rows.push(['--- Parts Consumed ---']);
+    rows.push(['Item', 'Item Code', 'Qty', 'Cost', 'WO Count', 'Supplier']);
+    (data.partsConsumed || []).forEach((p: any) => rows.push([p.itemName, p.itemCode || '', String(p.totalQuantity), String(p.totalCost), String(p.woCount), p.supplier || '']));
+    rows.push([]);
+    rows.push(['--- TCO ---']);
+    rows.push(['Purchase Cost', String(data.tco?.purchaseCost ?? ''), 'Maintenance Cost', String(data.tco?.totalMaintenanceCost ?? ''), 'Ratio', `${data.tco?.maintenanceCostRatio ?? 0}%`]);
+    exportCSV(`equipment-history-${selectedAsset.name.replace(/[^a-zA-Z0-9]/g, '_')}`, ['Section', 'Field1', 'Value1', 'Field2', 'Value2'], rows);
+  };
+
+  const handlePrint = () => { window.print(); };
+
+  const handleExportPDF = () => {
+    if (!data || !selectedAsset || !s) return;
+    exportPDF({
+      title: `Equipment History — ${selectedAsset.name}`,
+      subtitle: `${selectedAsset.manufacturer || ''} ${selectedAsset.model || ''} | ${selectedAsset.serialNumber || ''} | Category: ${selectedAsset.categoryName || '-'}`,
+      filename: `equipment-history-${selectedAsset.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      orientation: 'landscape',
+      summary: [
+        { label: 'Total Work Orders', value: String(s.totalWOs) },
+        { label: 'Completion Rate', value: `${s.completionRate}%` },
+        { label: 'Total Cost', value: formatCurrency(s.totalCost) },
+        { label: 'Total Downtime', value: `${Math.round(s.totalDowntimeMinutes / 60)} hours` },
+        { label: 'MTBF', value: `${s.mtbfDays} days` },
+        { label: 'Failures', value: String(s.totalFailures) },
+        { label: 'Avg Cost/WO', value: formatCurrency(s.avgCostPerWO) },
+      ],
+      headers: ['WO #', 'Title', 'Type', 'Priority', 'Status', 'Assignee', 'Cost', 'Hours', 'Downtime', 'Created'],
+      rows: (data.workOrders || []).slice(0, 100).map((wo: any) => [wo.woNumber, wo.title, wo.type, wo.priority, wo.status, wo.assigneeName || '-', formatCurrency(wo.totalCost), String(wo.actualHours), `${Math.round(wo.downtimeMinutes)}m`, wo.createdAt ? formatDate(wo.createdAt) : '-']),
+    });
+  };
+
+  // Failure mode distribution for chart
+  const failureModeData = useMemo(() => {
+    const map: Record<string, number> = {};
+    (data?.failureRecords || []).forEach((fr: any) => { map[fr.failureMode] = (map[fr.failureMode] || 0) + 1; });
+    return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  }, [data]);
+
+  // Severity distribution
+  const severityData = useMemo(() => {
+    const map: Record<string, number> = {};
+    (data?.failureRecords || []).forEach((fr: any) => { map[fr.failureSeverity] = (map[fr.failureSeverity] || 0) + 1; });
+    return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  }, [data]);
+
+  const asset = data?.asset;
+
+  return (
+    <div className="page-content" id="equipment-history-printable">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3 print:hidden">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Equipment History</h1>
+          <p className="text-muted-foreground mt-1">Complete maintenance lifecycle report for any asset</p>
+        </div>
+        {data && (
+          <div className="flex items-center gap-1.5">
+            <Button variant="outline" size="sm" onClick={handleExportCSV} title="Export to CSV">
+              <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleExportPDF} title="Export to PDF">
+              <FileDown className="h-3.5 w-3.5 mr-1" />PDF
+            </Button>
+            <Button variant="outline" size="sm" onClick={handlePrint} title="Print">
+              <Printer className="h-3.5 w-3.5 mr-1" />Print
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Asset Search */}
+      <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+        <CardContent className="p-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search assets by name or tag..."
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="pl-9"
+            />
+            {searchResults.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-background border rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                {searchResults.map((a: any) => (
+                  <button
+                    key={a.id}
+                    className="w-full text-left px-4 py-2.5 hover:bg-muted/50 border-b last:border-b-0 flex items-center gap-3"
+                    onClick={() => handleSelectAsset(a)}
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{a.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {a.assetTag || ''} {a.manufacturer || ''} {a.model || ''} — {a.category || 'Uncategorized'}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {selectedAsset && !loading && (
+            <div className="flex items-center gap-2 mt-3">
+              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">
+                {selectedAsset.name}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                {selectedAsset.assetTag && `${selectedAsset.assetTag} · `}{selectedAsset.manufacturer || ''}{selectedAsset.model ? ` ${selectedAsset.model}` : ''}
+              </span>
+              <Button variant="ghost" size="sm" className="h-6 text-xs text-muted-foreground" onClick={() => { setSelectedAsset(null); setData(null); }}>
+                <XCircle className="h-3 w-3 mr-1" />Clear
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Loading State */}
+      {loading && <LoadingSkeleton />}
+
+      {/* Error State */}
+      {error && !loading && (
+        <Card className="border-red-200 bg-red-50/50"><CardContent className="p-6 text-center">
+          <AlertTriangle className="h-8 w-8 text-red-400 mx-auto mb-2" />
+          <p className="text-sm text-red-700">{error}</p>
+        </CardContent></Card>
+      )}
+
+      {/* Main Content */}
+      {data && asset && !loading && !error && (
+        <>
+          {/* KPI Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 print:grid-cols-3 print:gap-2">
+            {kpiCards.map(k => { const I = k.icon; return (
+              <Card key={k.label} className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-4 print:p-2">
+                <div className="flex items-center gap-3">
+                  <div className={`h-10 w-10 rounded-xl ${k.color} flex items-center justify-center shrink-0 print:hidden`}><I className="h-4.5 w-4.5" /></div>
+                  <div className="min-w-0">
+                    <p className="text-xl font-bold truncate">{k.value}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{k.label}</p>
+                  </div>
+                </div>
+              </CardContent></Card>
+            ); })}
+          </div>
+
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="flex-wrap h-auto gap-1 print:hidden">
+              <TabsTrigger value="overview" className="text-xs"><BarChart3 className="h-3.5 w-3.5 mr-1" />Overview</TabsTrigger>
+              <TabsTrigger value="workorders" className="text-xs"><ClipboardList className="h-3.5 w-3.5 mr-1" />Work Orders</TabsTrigger>
+              <TabsTrigger value="failures" className="text-xs"><AlertTriangle className="h-3.5 w-3.5 mr-1" />Failure Analysis</TabsTrigger>
+              <TabsTrigger value="parts" className="text-xs"><PackageSearch className="h-3.5 w-3.5 mr-1" />Parts & Materials</TabsTrigger>
+              <TabsTrigger value="costs" className="text-xs"><DollarSign className="h-3.5 w-3.5 mr-1" />Cost Analysis</TabsTrigger>
+              <TabsTrigger value="tco" className="text-xs"><CircleDollarSign className="h-3.5 w-3.5 mr-1" />TCO</TabsTrigger>
+            </TabsList>
+
+            {/* ─── TAB: Overview ──────────────────────────────────────── */}
+            <TabsContent value="overview" className="space-y-6 mt-6">
+              {/* Asset Details Card */}
+              <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-emerald-600" />
+                    {asset.name}
+                    <Badge variant="outline" className={`ml-2 text-[10px] ${EH_CONDITION_COLORS[asset.condition] || 'bg-slate-100 text-slate-700'} text-white border-0`}>
+                      {(asset.condition || 'N/A').toUpperCase()}
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 text-sm">
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Manufacturer</p><p className="font-medium">{asset.manufacturer || '-'}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Model</p><p className="font-medium">{asset.model || '-'}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Serial Number</p><p className="font-medium font-mono text-xs">{asset.serialNumber || '-'}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Asset Tag</p><p className="font-medium font-mono text-xs">{asset.assetTag || '-'}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Category</p><p className="font-medium">{asset.categoryName || '-'}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Criticality</p><p className="font-medium capitalize">{asset.criticality || '-'}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Status</p><p className="font-medium capitalize">{asset.status || '-'}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Location</p><p className="font-medium">{[asset.location, asset.building, asset.floor, asset.area].filter(Boolean).join(' / ') || '-'}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Purchase Cost</p><p className="font-medium">{formatCurrency(asset.purchaseCost)}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Current Value</p><p className="font-medium">{formatCurrency(asset.currentValue)}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Warranty Expiry</p><p className="font-medium">{asset.warrantyExpiry ? formatDate(asset.warrantyExpiry) : '-'}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Expected Life</p><p className="font-medium">{asset.expectedLifeYears ? `${asset.expectedLifeYears} years` : '-'}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Year Manufactured</p><p className="font-medium">{asset.yearManufactured || '-'}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">First WO</p><p className="font-medium">{s?.firstWODate ? formatDate(s.firstWODate) : '-'}</p></div>
+                    <div><p className="text-xs text-muted-foreground mb-0.5">Last WO</p><p className="font-medium">{s?.lastWODate ? formatDate(s.lastWODate) : '-'}</p></div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Charts Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Cost by Type Pie Chart */}
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Cost by WO Type</CardTitle></CardHeader>
+                  <CardContent>
+                    {(data.costByType || []).length > 0 ? (
+                      <ResponsiveContainer width="100%" height={240}>
+                        <PieChart>
+                          <Pie data={data.costByType} dataKey="totalCost" nameKey="type" cx="50%" cy="50%" outerRadius={90} label={({ type, percent }) => `${type} (${(percent * 100).toFixed(0)}%)`} labelLine={false} fontSize={11}>
+                            {(data.costByType || []).map((_: any, i: number) => <Cell key={i} fill={EH_CHART_COLORS[i % EH_CHART_COLORS.length]} />)}
+                          </Pie>
+                          <Tooltip formatter={(val: number) => formatCurrency(val)} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : <EmptyState icon={PieChart} title="No cost data" description="No work order cost data available." />}
+                  </CardContent>
+                </Card>
+
+                {/* Cost Trend Line Chart */}
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Cost Trend</CardTitle></CardHeader>
+                  <CardContent>
+                    {(data.costByMonth || []).length > 0 ? (
+                      <ResponsiveContainer width="100%" height={240}>
+                        <LineChart data={data.costByMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <Tooltip formatter={(val: number) => formatCurrency(val)} />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                          <Line type="monotone" dataKey="laborCost" name="Labor" stroke="#059669" strokeWidth={2} dot={false} />
+                          <Line type="monotone" dataKey="partsCost" name="Parts" stroke="#0ea5e9" strokeWidth={2} dot={false} />
+                          <Line type="monotone" dataKey="contractorCost" name="Contractor" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : <EmptyState icon={TrendingUp} title="No trend data" description="No monthly cost data available." />}
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+
+            {/* ─── TAB: Work Orders ────────────────────────────────────── */}
+            <TabsContent value="workorders" className="space-y-4 mt-6">
+              <div className="flex items-center gap-2 flex-wrap print:hidden">
+                <Select value={woFilterStatus} onValueChange={setWoFilterStatus}>
+                  <SelectTrigger className="w-36"><SelectValue placeholder="Status" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="assigned">Assigned</SelectItem>
+                    <SelectItem value="closed">Closed</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                    <SelectItem value="draft">Draft</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={woFilterType} onValueChange={setWoFilterType}>
+                  <SelectTrigger className="w-36"><SelectValue placeholder="Type" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="preventive">Preventive</SelectItem>
+                    <SelectItem value="corrective">Corrective</SelectItem>
+                    <SelectItem value="emergency">Emergency</SelectItem>
+                    <SelectItem value="inspection">Inspection</SelectItem>
+                    <SelectItem value="predictive">Predictive</SelectItem>
+                    <SelectItem value="project">Project</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-xs text-muted-foreground ml-auto">{filteredWOs.length} work orders</span>
+              </div>
+
+              <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-background z-10">
+                        <TableRow>
+                          <TableHead className="text-xs">WO #</TableHead>
+                          <TableHead className="text-xs">Title</TableHead>
+                          <TableHead className="text-xs hidden sm:table-cell">Type</TableHead>
+                          <TableHead className="text-xs">Priority</TableHead>
+                          <TableHead className="text-xs">Status</TableHead>
+                          <TableHead className="text-xs hidden md:table-cell">Assignee</TableHead>
+                          <TableHead className="text-xs text-right hidden md:table-cell">Cost</TableHead>
+                          <TableHead className="text-xs text-right hidden lg:table-cell">Hours</TableHead>
+                          <TableHead className="text-xs text-right hidden lg:table-cell">Downtime</TableHead>
+                          <TableHead className="text-xs hidden xl:table-cell">Trade</TableHead>
+                          <TableHead className="text-xs hidden xl:table-cell">Created</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredWOs.length === 0 ? (
+                          <TableRow><TableCell colSpan={11}><EmptyState icon={ClipboardList} title="No work orders" description="No work orders match the selected filters." /></TableCell></TableRow>
+                        ) : filteredWOs.map((wo: any) => (
+                          <TableRow key={wo.id} className="hover:bg-muted/30">
+                            <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
+                            <TableCell className="text-sm max-w-[180px] truncate">{wo.title}</TableCell>
+                            <TableCell className="hidden sm:table-cell">
+                              <Badge variant="outline" className={`${EH_TYPE_COLORS[wo.type] || 'bg-slate-100 text-slate-700'} text-white border-0 text-[10px]`}>{(wo.type || '').toUpperCase()}</Badge>
+                            </TableCell>
+                            <TableCell><PriorityBadge priority={wo.priority} /></TableCell>
+                            <TableCell><StatusBadge status={wo.status} /></TableCell>
+                            <TableCell className="text-xs hidden md:table-cell">{wo.assigneeName || '-'}</TableCell>
+                            <TableCell className="text-xs text-right hidden md:table-cell">{formatCurrency(wo.totalCost)}</TableCell>
+                            <TableCell className="text-xs text-right hidden lg:table-cell">{wo.actualHours || '-'}</TableCell>
+                            <TableCell className="text-xs text-right hidden lg:table-cell">{wo.downtimeMinutes > 0 ? `${Math.round(wo.downtimeMinutes)}m` : '-'}</TableCell>
+                            <TableCell className="text-xs hidden xl:table-cell capitalize">{wo.tradeActivity || '-'}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden xl:table-cell whitespace-nowrap">{wo.createdAt ? formatDate(wo.createdAt) : '-'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* ─── TAB: Failure Analysis ───────────────────────────────── */}
+            <TabsContent value="failures" className="space-y-6 mt-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Failure Mode Distribution */}
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Failure Mode Distribution</CardTitle></CardHeader>
+                  <CardContent>
+                    {failureModeData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={220}>
+                        <PieChart>
+                          <Pie data={failureModeData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`} labelLine={false} fontSize={11}>
+                            {failureModeData.map((_: any, i: number) => <Cell key={i} fill={EH_CHART_COLORS[i % EH_CHART_COLORS.length]} />)}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : <EmptyState icon={Zap} title="No failure data" description="No failure records found for this asset." />}
+                  </CardContent>
+                </Card>
+
+                {/* Severity Distribution */}
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Severity Distribution</CardTitle></CardHeader>
+                  <CardContent>
+                    {severityData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={severityData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <Tooltip />
+                          <Bar dataKey="value" name="Count" radius={[4, 4, 0, 0]}>
+                            {severityData.map((entry: any) => <Cell key={entry.name} fill={EH_SEVERITY_COLORS[entry.name] || EH_CHART_COLORS[0]} />)}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : <EmptyState icon={BarChart3} title="No severity data" description="No failure records found." />}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Failure Records Table */}
+              <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                <CardHeader className="pb-3"><CardTitle className="text-base">Failure Records</CardTitle><CardDescription className="text-xs">{(data.failureRecords || []).length} failure records</CardDescription></CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-background z-10">
+                        <TableRow>
+                          <TableHead className="text-xs">Code</TableHead>
+                          <TableHead className="text-xs">Mode</TableHead>
+                          <TableHead className="text-xs">Severity</TableHead>
+                          <TableHead className="text-xs hidden sm:table-cell">Component</TableHead>
+                          <TableHead className="text-xs text-right hidden sm:table-cell">Downtime</TableHead>
+                          <TableHead className="text-xs text-right hidden md:table-cell">Cost</TableHead>
+                          <TableHead className="text-xs hidden md:table-cell">Detected</TableHead>
+                          <TableHead className="text-xs hidden lg:table-cell">Root Cause</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(data.failureRecords || []).length === 0 ? (
+                          <TableRow><TableCell colSpan={8}><EmptyState icon={ShieldAlert} title="No failures" description="No failure records for this asset." /></TableCell></TableRow>
+                        ) : (data.failureRecords || []).map((fr: any) => (
+                          <TableRow key={fr.id} className="hover:bg-muted/30">
+                            <TableCell className="font-mono text-xs">{fr.failureCode || '-'}</TableCell>
+                            <TableCell className="text-xs capitalize">{fr.failureMode}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={`${EH_SEVERITY_COLORS[fr.failureSeverity] || 'bg-slate-100 text-slate-700'} text-white border-0 text-[10px]`}>
+                                {(fr.failureSeverity || '').toUpperCase()}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs hidden sm:table-cell">{fr.componentName || '-'}</TableCell>
+                            <TableCell className="text-xs text-right hidden sm:table-cell">{fr.downtimeMinutes > 0 ? `${Math.round(fr.downtimeMinutes)}m` : '-'}</TableCell>
+                            <TableCell className="text-xs text-right hidden md:table-cell">{formatCurrency(fr.repairCost)}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden md:table-cell whitespace-nowrap">{fr.detectedAt ? formatDate(fr.detectedAt) : '-'}</TableCell>
+                            <TableCell className="text-xs hidden lg:table-cell max-w-[200px] truncate">{fr.rootCause || '-'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* ─── TAB: Parts & Materials ──────────────────────────────── */}
+            <TabsContent value="parts" className="space-y-4 mt-6">
+              <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                <CardHeader className="pb-3"><CardTitle className="text-base">Parts & Materials Consumed</CardTitle><CardDescription className="text-xs">{(data.partsConsumed || []).length} unique parts used across all work orders</CardDescription></CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-background z-10">
+                        <TableRow>
+                          <TableHead className="text-xs">Item Name</TableHead>
+                          <TableHead className="text-xs hidden sm:table-cell">Item Code</TableHead>
+                          <TableHead className="text-xs text-right">Qty</TableHead>
+                          <TableHead className="text-xs text-right">Total Cost</TableHead>
+                          <TableHead className="text-xs text-right hidden sm:table-cell">WO Count</TableHead>
+                          <TableHead className="text-xs hidden md:table-cell">Supplier</TableHead>
+                          <TableHead className="text-xs hidden lg:table-cell">Last Used</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(data.partsConsumed || []).length === 0 ? (
+                          <TableRow><TableCell colSpan={7}><EmptyState icon={PackageSearch} title="No parts data" description="No materials consumed for this asset." /></TableCell></TableRow>
+                        ) : (data.partsConsumed || []).map((p: any, idx: number) => (
+                          <TableRow key={idx} className="hover:bg-muted/30">
+                            <TableCell className="text-sm font-medium">{p.itemName}</TableCell>
+                            <TableCell className="font-mono text-xs hidden sm:table-cell">{p.itemCode || '-'}</TableCell>
+                            <TableCell className="text-sm text-right">{p.totalQuantity}</TableCell>
+                            <TableCell className="text-sm text-right font-medium">{formatCurrency(p.totalCost)}</TableCell>
+                            <TableCell className="text-sm text-right hidden sm:table-cell">{p.woCount}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden md:table-cell">{p.supplier || '-'}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground hidden lg:table-cell whitespace-nowrap">{p.lastUsedDate ? formatDate(p.lastUsedDate) : '-'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* ─── TAB: Cost Analysis ──────────────────────────────────── */}
+            <TabsContent value="costs" className="space-y-6 mt-6">
+              {/* Cost Breakdown Summary */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-4 text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Labor Cost</p>
+                  <p className="text-lg font-bold text-emerald-600">{formatCurrency(s?.laborCost)}</p>
+                </CardContent></Card>
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-4 text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Parts Cost</p>
+                  <p className="text-lg font-bold text-sky-600">{formatCurrency(s?.partsCost)}</p>
+                </CardContent></Card>
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-4 text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Contractor Cost</p>
+                  <p className="text-lg font-bold text-amber-600">{formatCurrency(s?.contractorCost)}</p>
+                </CardContent></Card>
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-4 text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Total Cost</p>
+                  <p className="text-lg font-bold">{formatCurrency(s?.totalCost)}</p>
+                </CardContent></Card>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Cost by Type */}
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Cost by WO Type</CardTitle></CardHeader>
+                  <CardContent className="p-0">
+                    <div className="max-h-[300px] overflow-y-auto">
+                      <Table>
+                        <TableHeader className="sticky top-0 bg-background z-10"><TableRow><TableHead className="text-xs">Type</TableHead><TableHead className="text-xs text-right">Count</TableHead><TableHead className="text-xs text-right">Total Cost</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {(data.costByType || []).length === 0 ? (
+                            <TableRow><TableCell colSpan={3} className="text-center py-6 text-sm text-muted-foreground">No data</TableCell></TableRow>
+                          ) : (data.costByType || []).map((ct: any) => (
+                            <TableRow key={ct.type} className="hover:bg-muted/30">
+                              <TableCell className="text-sm capitalize">
+                                <Badge variant="outline" className={`${EH_TYPE_COLORS[ct.type] || 'bg-slate-100 text-slate-700'} text-white border-0 text-[10px] mr-2`}>{ct.type?.toUpperCase()}</Badge>{ct.type}
+                              </TableCell>
+                              <TableCell className="text-sm text-right">{ct.count}</TableCell>
+                              <TableCell className="text-sm text-right font-medium">{formatCurrency(ct.totalCost)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Cost by Trade */}
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Cost by Trade / Activity</CardTitle></CardHeader>
+                  <CardContent className="p-0">
+                    <div className="max-h-[300px] overflow-y-auto">
+                      <Table>
+                        <TableHeader className="sticky top-0 bg-background z-10"><TableRow><TableHead className="text-xs">Trade</TableHead><TableHead className="text-xs text-right">Count</TableHead><TableHead className="text-xs text-right">Cost</TableHead><TableHead className="text-xs text-right">Hours</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {(data.costByTrade || []).length === 0 ? (
+                            <TableRow><TableCell colSpan={4} className="text-center py-6 text-sm text-muted-foreground">No data</TableCell></TableRow>
+                          ) : (data.costByTrade || []).map((ct: any) => (
+                            <TableRow key={ct.trade} className="hover:bg-muted/30">
+                              <TableCell className="text-sm capitalize font-medium">{ct.trade}</TableCell>
+                              <TableCell className="text-sm text-right">{ct.count}</TableCell>
+                              <TableCell className="text-sm text-right font-medium">{formatCurrency(ct.totalCost)}</TableCell>
+                              <TableCell className="text-sm text-right">{ct.totalHours}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Monthly Cost Trend */}
+              <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                <CardHeader className="pb-3"><CardTitle className="text-base">Monthly Cost Breakdown</CardTitle></CardHeader>
+                <CardContent>
+                  {(data.costByMonth || []).length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart data={data.costByMonth} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(val: number) => formatCurrency(val)} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="laborCost" name="Labor" stackId="cost" fill="#059669" />
+                        <Bar dataKey="partsCost" name="Parts" stackId="cost" fill="#0ea5e9" />
+                        <Bar dataKey="contractorCost" name="Contractor" stackId="cost" fill="#f59e0b" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <EmptyState icon={BarChart3} title="No monthly data" description="No monthly cost breakdown available." />}
+                </CardContent>
+              </Card>
+
+              {/* Downtime by Category */}
+              {(data.downtimeByCategory || []).length > 0 && (
+                <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                  <CardHeader className="pb-3"><CardTitle className="text-base">Downtime by Category</CardTitle></CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={data.downtimeByCategory} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="category" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(val: number, name: string) => [`${val} min`, name === 'totalMinutes' ? 'Total Min' : name]} />
+                        <Bar dataKey="totalMinutes" name="Total Min" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            {/* ─── TAB: TCO ────────────────────────────────────────────── */}
+            <TabsContent value="tco" className="space-y-6 mt-6">
+              {data.tco && (
+                <>
+                  {/* TCO KPI Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-5">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="h-10 w-10 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400 text-emerald-600 flex items-center justify-center"><Calculator className="h-5 w-5" /></div>
+                        <p className="text-sm text-muted-foreground">Purchase Cost</p>
+                      </div>
+                      <p className="text-2xl font-bold">{formatCurrency(data.tco.purchaseCost)}</p>
+                    </CardContent></Card>
+
+                    <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-5">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="h-10 w-10 rounded-xl bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400 text-sky-600 flex items-center justify-center"><Wrench className="h-5 w-5" /></div>
+                        <p className="text-sm text-muted-foreground">Total Maintenance Cost</p>
+                      </div>
+                      <p className="text-2xl font-bold">{formatCurrency(data.tco.totalMaintenanceCost)}</p>
+                    </CardContent></Card>
+
+                    <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-5">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="h-10 w-10 rounded-xl bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400 text-violet-600 flex items-center justify-center"><Gauge className="h-5 w-5" /></div>
+                        <p className="text-sm text-muted-foreground">Current Value</p>
+                      </div>
+                      <p className="text-2xl font-bold">{formatCurrency(data.tco.currentValue)}</p>
+                    </CardContent></Card>
+
+                    <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-5">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="h-10 w-10 rounded-xl bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400 text-amber-600 flex items-center justify-center"><TrendingUp className="h-5 w-5" /></div>
+                        <p className="text-sm text-muted-foreground">Maintenance / Purchase Ratio</p>
+                      </div>
+                      <p className="text-2xl font-bold">{data.tco.maintenanceCostRatio}%</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {data.tco.maintenanceCostRatio < 25 ? '✓ Healthy — below 25%' : data.tco.maintenanceCostRatio < 50 ? '⚠ Moderate — 25–50%' : '✗ High — over 50%'}
+                      </p>
+                    </CardContent></Card>
+
+                    <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-5">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="h-10 w-10 rounded-xl bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400 text-teal-600 flex items-center justify-center"><Calendar className="h-5 w-5" /></div>
+                        <p className="text-sm text-muted-foreground">Annual Maintenance Cost</p>
+                      </div>
+                      <p className="text-2xl font-bold">{formatCurrency(data.tco.annualMaintenanceCost)}</p>
+                      <p className="text-xs text-muted-foreground mt-1">Based on asset age{asset.yearManufactured ? ` (${new Date().getFullYear() - asset.yearManufactured} years)` : ''}</p>
+                    </CardContent></Card>
+
+                    <Card className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-5">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="h-10 w-10 rounded-xl bg-red-50 dark:bg-red-900/30 dark:text-red-400 text-red-600 flex items-center justify-center"><Clock className="h-5 w-5" /></div>
+                        <p className="text-sm text-muted-foreground">Remaining Life</p>
+                      </div>
+                      <p className="text-2xl font-bold">{data.tco.remainingLife !== null ? `${data.tco.remainingLife} years` : 'N/A'}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {data.tco.remainingLife !== null && asset.expectedLifeYears ? `Expected life: ${asset.expectedLifeYears} years` : 'No expected life data'}
+                      </p>
+                    </CardContent></Card>
+                  </div>
+
+                  {/* TCO Visual Summary */}
+                  <Card className="border border-border/60 shadow-sm print:shadow-none print:border">
+                    <CardHeader className="pb-3"><CardTitle className="text-base">TCO Breakdown</CardTitle></CardHeader>
+                    <CardContent>
+                      {data.tco.purchaseCost ? (
+                        <ResponsiveContainer width="100%" height={200}>
+                          <BarChart data={[
+                            { name: 'Purchase Cost', value: data.tco.purchaseCost, fill: '#059669' },
+                            { name: 'Maintenance Cost', value: data.tco.totalMaintenanceCost, fill: '#f59e0b' },
+                            { name: 'Current Value', value: data.tco.currentValue || 0, fill: '#0ea5e9' },
+                          ].filter(d => d.value > 0)} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                            <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                            <YAxis tick={{ fontSize: 11 }} />
+                            <Tooltip formatter={(val: number) => formatCurrency(val)} />
+                            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                              {[
+                                { name: 'Purchase Cost', fill: '#059669' },
+                                { name: 'Maintenance Cost', fill: '#f59e0b' },
+                                { name: 'Current Value', fill: '#0ea5e9' },
+                              ].filter(d => d.value > 0).map((entry: any, i: number) => <Cell key={i} fill={entry.fill} />)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="flex items-center justify-center h-[200px]">
+                          <p className="text-sm text-muted-foreground">Purchase cost not set — TCO comparison unavailable</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+            </TabsContent>
+          </Tabs>
+        </>
+      )}
+
+      {/* Empty state when no asset selected */}
+      {!selectedAsset && !loading && !error && (
+        <Card className="border border-border/60 shadow-sm">
+          <CardContent className="py-16 text-center">
+            <History className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-1">Select an Asset</h3>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+              Search for an asset by name or tag above to view its complete maintenance lifecycle, including work orders, failures, parts consumed, and total cost of ownership.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// FAILURE ANALYSIS REPORT PAGE
+// ============================================================================
+
+const CHART_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#8b5cf6', '#ec4899', '#6b7280'];
+const SEVERITY_COLORS: Record<string, string> = { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#22c55e' };
+
+export function FailureAnalysisPage() {
+  const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('overview');
+
+  const fetchData = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    api.get<any>(`/api/reports/failure-analysis?from=${startDate}&to=${endDate}`).then(res => {
+      if (res.success && res.data) setData(res.data);
+      else setError(res.error || 'Failed to load data');
+      setLoading(false);
+    }).catch((err: any) => { setError(err.message || 'Network error'); setLoading(false); });
+  }, [startDate, endDate]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const s = data?.summary;
+
+  // KPI cards
+  const kpiCards = [
+    { label: 'Total Failures', value: s?.totalFailures ?? 0, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+    { label: 'Total Downtime', value: `${Math.round((s?.totalDowntimeMinutes ?? 0) / 60)}h`, icon: TrendingDown, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400' },
+    { label: 'Total Repair Cost', value: formatCurrency(s?.totalRepairCost), icon: DollarSign, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+    { label: 'Avg Downtime/Failure', value: `${s?.avgDowntimePerFailure ?? 0}m`, icon: Clock, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+    { label: 'Top Failure Mode', value: s?.mostCommonMode || 'N/A', icon: Zap, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
+    { label: 'Top Root Cause', value: s?.mostCommonCause ? (s.mostCommonCause.length > 20 ? s.mostCommonCause.slice(0, 20) + '…' : s.mostCommonCause) : 'N/A', icon: Target, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  ];
+
+  // Chart data
+  const severityChartData = useMemo(() => (data?.bySeverity || []).map((d: any) => ({ name: d.severity, value: d.count, fill: SEVERITY_COLORS[d.severity] || '#6b7280' })), [data]);
+
+  const monthlyChartData = useMemo(() => (data?.monthlyTrend || []).map((d: any) => ({
+    month: d.month,
+    failures: d.failureCount,
+    downtime: Math.round(d.downtimeMinutes / 60),
+    cost: d.repairCost,
+  })), [data]);
+
+  const handleExportCSV = () => {
+    if (!data) return;
+    const rows: string[][] = [];
+    rows.push(['--- Failure Code / Root Cause Analysis Report ---']);
+    rows.push(['Date Range', startDate, 'to', endDate]);
+    rows.push([]);
+    rows.push(['--- Summary ---']);
+    rows.push(['Total Failures', String(s?.totalFailures ?? 0), 'Total Downtime (min)', String(s?.totalDowntimeMinutes ?? 0), 'Total Repair Cost', String(s?.totalRepairCost ?? 0)]);
+    rows.push(['Avg Downtime/Failure', String(s?.avgDowntimePerFailure ?? 0), 'Top Mode', s?.mostCommonMode || '', 'Top Cause', s?.mostCommonCause || '']);
+    rows.push([]);
+    rows.push(['--- By Failure Mode ---']);
+    rows.push(['Mode', 'Count', 'Downtime (min)', 'Repair Cost', 'Avg Downtime', 'Critical', 'High', 'Medium', 'Low']);
+    (data.byFailureMode || []).forEach((d: any) => rows.push([d.mode, String(d.count), String(d.totalDowntimeMinutes), String(d.totalRepairCost), String(d.avgDowntime), String(d.severityDistribution.critical), String(d.severityDistribution.high), String(d.severityDistribution.medium), String(d.severityDistribution.low)]));
+    rows.push([]);
+    rows.push(['--- By Root Cause ---']);
+    rows.push(['Cause', 'Count', 'Downtime (min)', 'Repair Cost', 'Corrective Actions']);
+    (data.byRootCause || []).forEach((d: any) => rows.push([d.cause, String(d.count), String(d.totalDowntimeMinutes), String(d.totalRepairCost), d.correctiveActions.join('; ')]));
+    rows.push([]);
+    rows.push(['--- By Asset ---']);
+    rows.push(['Asset Name', 'Tag', 'Manufacturer', 'Model', 'Category', 'Criticality', 'Location', 'Failure Count', 'Downtime (min)', 'Repair Cost', 'Dominant Mode', 'Dominant Cause', 'MTBF (days)']);
+    (data.byAsset || []).forEach((d: any) => rows.push([d.assetName, d.assetTag, d.manufacturer, d.model, d.category, d.criticality, d.location, String(d.failureCount), String(d.totalDowntimeMinutes), String(d.totalRepairCost), d.dominantMode, d.dominantCause, String(d.mtbfDays)]));
+    rows.push([]);
+    rows.push(['--- By Component ---']);
+    rows.push(['Component', 'Code', 'Asset', 'Failure Count', 'Repair Cost', 'Most Common Mode']);
+    (data.byComponent || []).forEach((d: any) => rows.push([d.componentName, d.componentCode, d.assetName, String(d.failureCount), String(d.totalRepairCost), d.mostCommonMode]));
+    exportCSV(`failure-analysis-${startDate}-to-${endDate}`, ['Field1', 'Field2', 'Field3', 'Field4', 'Field5', 'Field6', 'Field7', 'Field8', 'Field9', 'Field10', 'Field11', 'Field12', 'Field13'], rows);
+  };
+
+  return (
+    <div className="page-content">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Failure Code / Root Cause Analysis</h1>
+          <p className="text-muted-foreground mt-1">Analyze failure patterns, root causes, and corrective actions</p>
+        </div>
+        {data && (
+          <div className="flex items-center gap-1.5">
+            <Button variant="outline" size="sm" onClick={handleExportCSV} title="Export to CSV">
+              <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={fetchData} title="Refresh">
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Date range filter */}
+      <Card className="border border-border/60 shadow-sm mt-4">
+        <CardContent className="p-4 flex items-end gap-4 flex-wrap">
+          <div className="flex-1 min-w-[160px]">
+            <Label className="text-xs mb-1 block">From</Label>
+            <Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-9" />
+          </div>
+          <div className="flex-1 min-w-[160px]">
+            <Label className="text-xs mb-1 block">To</Label>
+            <Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-9" />
+          </div>
+          <Button size="sm" onClick={fetchData} disabled={loading} className="h-9">Go</Button>
+        </CardContent>
+      </Card>
+
+      {loading && <LoadingSkeleton />}
+      {error && <Card className="mt-4"><CardContent className="py-8 text-center text-destructive">{error}</CardContent></Card>}
+
+      {data && !loading && !error && (
+        <>
+          {/* KPI cards */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-4">
+            {kpiCards.map((kpi) => (
+              <Card key={kpi.label} className="border border-border/60 shadow-sm">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${kpi.color}`}><kpi.icon className="h-4 w-4" /></div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground truncate">{kpi.label}</p>
+                    <p className="text-sm font-semibold truncate">{kpi.value}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
+            <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="failure-modes">Failure Modes</TabsTrigger>
+              <TabsTrigger value="root-causes">Root Causes</TabsTrigger>
+              <TabsTrigger value="by-asset">By Asset</TabsTrigger>
+              <TabsTrigger value="pareto">Pareto</TabsTrigger>
+              <TabsTrigger value="rework">Rework</TabsTrigger>
+            </TabsList>
+
+            {/* ── OVERVIEW TAB ── */}
+            <TabsContent value="overview">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Card className="border border-border/60 shadow-sm">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Severity Distribution</CardTitle></CardHeader>
+                  <CardContent>
+                    {severityChartData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={280}>
+                        <PieChart>
+                          <Pie data={severityChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, value }) => `${name}: ${value}`}>
+                            {severityChartData.map((entry: any, i: number) => <Cell key={i} fill={entry.fill} />)}
+                          </Pie>
+                          <Tooltip />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : <p className="text-sm text-muted-foreground text-center py-8">No failure data</p>}
+                  </CardContent>
+                </Card>
+                <Card className="border border-border/60 shadow-sm">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Monthly Failure Trend</CardTitle></CardHeader>
+                  <CardContent>
+                    {monthlyChartData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={280}>
+                        <LineChart data={monthlyChartData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <Tooltip />
+                          <Legend />
+                          <Line type="monotone" dataKey="failures" stroke="#ef4444" name="Failures" strokeWidth={2} />
+                          <Line type="monotone" dataKey="downtime" stroke="#f97316" name="Downtime (h)" strokeWidth={2} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : <p className="text-sm text-muted-foreground text-center py-8">No trend data</p>}
+                  </CardContent>
+                </Card>
+              </div>
+              {/* Severity table */}
+              <Card className="border border-border/60 shadow-sm mt-4">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">By Severity</CardTitle></CardHeader>
+                <CardContent className="p-0">
+                  <div className="max-h-64 overflow-y-auto">
+                    <Table>
+                      <TableHeader><TableRow><TableHead>Severity</TableHead><TableHead className="text-right">Count</TableHead><TableHead className="text-right">Downtime (min)</TableHead><TableHead className="text-right">Repair Cost</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        {(data.bySeverity || []).map((d: any) => (
+                          <TableRow key={d.severity}>
+                            <TableCell><Badge variant="outline" style={{ borderColor: SEVERITY_COLORS[d.severity], color: SEVERITY_COLORS[d.severity] }}>{d.severity}</Badge></TableCell>
+                            <TableCell className="text-right font-medium">{d.count}</TableCell>
+                            <TableCell className="text-right">{d.totalDowntimeMinutes.toLocaleString()}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(d.totalRepairCost)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* ── FAILURE MODES TAB ── */}
+            <TabsContent value="failure-modes">
+              <Card className="border border-border/60 shadow-sm">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Failure Modes Breakdown</CardTitle></CardHeader>
+                <CardContent>
+                  {(data.byFailureMode || []).length > 0 ? (
+                    <ResponsiveContainer width="100%" height={320}>
+                      <BarChart data={data.byFailureMode} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="mode" tick={{ fontSize: 11 }} width={100} />
+                        <Tooltip />
+                        <Legend />
+                        <Bar dataKey="count" fill="#ef4444" name="Count" />
+                        <Bar dataKey="totalDowntimeMinutes" fill="#f97316" name="Downtime (min)" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <p className="text-sm text-muted-foreground text-center py-8">No failure mode data</p>}
+                </CardContent>
+              </Card>
+              <Card className="border border-border/60 shadow-sm mt-4">
+                <CardContent className="p-0">
+                  <div className="max-h-96 overflow-y-auto">
+                    <Table>
+                      <TableHeader><TableRow><TableHead>Mode</TableHead><TableHead className="text-right">Count</TableHead><TableHead className="text-right">Downtime (min)</TableHead><TableHead className="text-right">Repair Cost</TableHead><TableHead className="text-right">Avg Downtime</TableHead><TableHead>Critical</TableHead><TableHead>High</TableHead><TableHead>Medium</TableHead><TableHead>Low</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        {(data.byFailureMode || []).map((d: any) => (
+                          <TableRow key={d.mode}>
+                            <TableCell className="font-medium">{d.mode}</TableCell>
+                            <TableCell className="text-right">{d.count}</TableCell>
+                            <TableCell className="text-right">{d.totalDowntimeMinutes.toLocaleString()}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(d.totalRepairCost)}</TableCell>
+                            <TableCell className="text-right">{d.avgDowntime}m</TableCell>
+                            <TableCell>{d.severityDistribution.critical}</TableCell>
+                            <TableCell>{d.severityDistribution.high}</TableCell>
+                            <TableCell>{d.severityDistribution.medium}</TableCell>
+                            <TableCell>{d.severityDistribution.low}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* ── ROOT CAUSES TAB ── */}
+            <TabsContent value="root-causes">
+              <Card className="border border-border/60 shadow-sm">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Root Causes</CardTitle></CardHeader>
+                <CardContent>
+                  {(data.byRootCause || []).length > 0 ? (
+                    <ResponsiveContainer width="100%" height={320}>
+                      <BarChart data={(data.byRootCause || []).slice(0, 10)} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="cause" tick={{ fontSize: 10 }} width={200} />
+                        <Tooltip />
+                        <Legend />
+                        <Bar dataKey="count" fill="#8b5cf6" name="Count" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <p className="text-sm text-muted-foreground text-center py-8">No root cause data</p>}
+                </CardContent>
+              </Card>
+              <Card className="border border-border/60 shadow-sm mt-4">
+                <CardContent className="p-0">
+                  <div className="max-h-96 overflow-y-auto">
+                    <Table>
+                      <TableHeader><TableRow><TableHead>Root Cause</TableHead><TableHead className="text-right">Count</TableHead><TableHead className="text-right">Downtime (min)</TableHead><TableHead className="text-right">Repair Cost</TableHead><TableHead>Corrective Actions</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        {(data.byRootCause || []).map((d: any) => (
+                          <TableRow key={d.cause}>
+                            <TableCell className="font-medium max-w-[200px] truncate" title={d.cause}>{d.cause}</TableCell>
+                            <TableCell className="text-right">{d.count}</TableCell>
+                            <TableCell className="text-right">{d.totalDowntimeMinutes.toLocaleString()}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(d.totalRepairCost)}</TableCell>
+                            <TableCell className="max-w-[300px]">
+                              {d.correctiveActions.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">{d.correctiveActions.slice(0, 3).map((a: string, i: number) => <Badge key={i} variant="outline" className="text-xs max-w-[200px] truncate" title={a}>{a.length > 40 ? a.slice(0, 40) + '…' : a}</Badge>)}{d.correctiveActions.length > 3 && <Badge variant="secondary" className="text-xs">+{d.correctiveActions.length - 3}</Badge>}</div>
+                              ) : <span className="text-xs text-muted-foreground">—</span>}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* ── BY ASSET TAB ── */}
+            <TabsContent value="by-asset">
+              <Card className="border border-border/60 shadow-sm">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Failures by Asset</CardTitle></CardHeader>
+                <CardContent>
+                  {(data.byAsset || []).length > 0 ? (
+                    <ResponsiveContainer width="100%" height={320}>
+                      <BarChart data={(data.byAsset || []).slice(0, 15)}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="assetName" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" height={80} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Legend />
+                        <Bar dataKey="failureCount" fill="#ef4444" name="Failures" />
+                        <Bar dataKey="totalDowntimeMinutes" fill="#f97316" name="Downtime (min)" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : <p className="text-sm text-muted-foreground text-center py-8">No asset data</p>}
+                </CardContent>
+              </Card>
+              <Card className="border border-border/60 shadow-sm mt-4">
+                <CardContent className="p-0">
+                  <div className="max-h-96 overflow-y-auto">
+                    <Table>
+                      <TableHeader><TableRow><TableHead>Asset</TableHead><TableHead>Tag</TableHead><TableHead>Manufacturer</TableHead><TableHead>Model</TableHead><TableHead>Category</TableHead><TableHead>Criticality</TableHead><TableHead className="text-right">Failures</TableHead><TableHead className="text-right">Downtime (min)</TableHead><TableHead className="text-right">Repair Cost</TableHead><TableHead>Dominant Mode</TableHead><TableHead>Dominant Cause</TableHead><TableHead className="text-right">MTBF (d)</TableHead></TableRow></TableHeader>
+                      <TableBody>
+                        {(data.byAsset || []).map((d: any) => (
+                          <TableRow key={d.assetId}>
+                            <TableCell className="font-medium">{d.assetName}</TableCell>
+                            <TableCell>{d.assetTag}</TableCell>
+                            <TableCell>{d.manufacturer}</TableCell>
+                            <TableCell>{d.model}</TableCell>
+                            <TableCell>{d.category}</TableCell>
+                            <TableCell><Badge variant="outline" style={{ borderColor: SEVERITY_COLORS[d.criticality], color: SEVERITY_COLORS[d.criticality] }}>{d.criticality}</Badge></TableCell>
+                            <TableCell className="text-right font-medium">{d.failureCount}</TableCell>
+                            <TableCell className="text-right">{d.totalDowntimeMinutes.toLocaleString()}</TableCell>
+                            <TableCell className="text-right">{formatCurrency(d.totalRepairCost)}</TableCell>
+                            <TableCell>{d.dominantMode}</TableCell>
+                            <TableCell className="max-w-[150px] truncate" title={d.dominantCause}>{d.dominantCause}</TableCell>
+                            <TableCell className="text-right">{d.mtbfDays}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+              {/* By Component sub-table */}
+              {(data.byComponent || []).length > 0 && (
+                <Card className="border border-border/60 shadow-sm mt-4">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Failures by Component</CardTitle></CardHeader>
+                  <CardContent className="p-0">
+                    <div className="max-h-64 overflow-y-auto">
+                      <Table>
+                        <TableHeader><TableRow><TableHead>Component</TableHead><TableHead>Code</TableHead><TableHead>Asset</TableHead><TableHead className="text-right">Failures</TableHead><TableHead className="text-right">Repair Cost</TableHead><TableHead>Most Common Mode</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {(data.byComponent || []).map((d: any, i: number) => (
+                            <TableRow key={i}>
+                              <TableCell className="font-medium">{d.componentName}</TableCell>
+                              <TableCell>{d.componentCode}</TableCell>
+                              <TableCell>{d.assetName}</TableCell>
+                              <TableCell className="text-right">{d.failureCount}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(d.totalRepairCost)}</TableCell>
+                              <TableCell>{d.mostCommonMode}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            {/* ── PARETO TAB ── */}
+            <TabsContent value="pareto">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <Card className="border border-border/60 shadow-sm">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Pareto — Failure Modes</CardTitle></CardHeader>
+                  <CardContent>
+                    {(data.paretoModes || []).length > 0 ? (
+                      <ResponsiveContainer width="100%" height={320}>
+                        <ComposedChart data={data.paretoModes}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="mode" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" height={70} />
+                          <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} domain={[0, 100]} unit="%" />
+                          <Tooltip />
+                          <Legend />
+                          <Bar yAxisId="left" dataKey="count" fill="#ef4444" name="Count" />
+                          <Line yAxisId="right" type="monotone" dataKey="cumulativePercent" stroke="#8b5cf6" name="Cumulative %" strokeWidth={2} dot={{ r: 3 }} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    ) : <p className="text-sm text-muted-foreground text-center py-8">No data</p>}
+                  </CardContent>
+                </Card>
+                <Card className="border border-border/60 shadow-sm">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Pareto — Root Causes</CardTitle></CardHeader>
+                  <CardContent>
+                    {(data.paretoCauses || []).length > 0 ? (
+                      <ResponsiveContainer width="100%" height={320}>
+                        <ComposedChart data={(data.paretoCauses || []).slice(0, 12)}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="cause" tick={{ fontSize: 9 }} angle={-40} textAnchor="end" height={80} />
+                          <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} domain={[0, 100]} unit="%" />
+                          <Tooltip />
+                          <Legend />
+                          <Bar yAxisId="left" dataKey="count" fill="#8b5cf6" name="Count" />
+                          <Line yAxisId="right" type="monotone" dataKey="cumulativePercent" stroke="#ef4444" name="Cumulative %" strokeWidth={2} dot={{ r: 3 }} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    ) : <p className="text-sm text-muted-foreground text-center py-8">No data</p>}
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+
+            {/* ── REWORK TAB ── */}
+            <TabsContent value="rework">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Card className="border border-border/60 shadow-sm">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-xs text-muted-foreground">Completed WOs</p>
+                    <p className="text-2xl font-bold mt-1">{data.reworkAnalysis?.totalCompleted ?? 0}</p>
+                  </CardContent>
+                </Card>
+                <Card className="border border-border/60 shadow-sm">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-xs text-muted-foreground">Rework Count</p>
+                    <p className="text-2xl font-bold mt-1 text-orange-600">{data.reworkAnalysis?.reworkCount ?? 0}</p>
+                  </CardContent>
+                </Card>
+                <Card className="border border-border/60 shadow-sm">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-xs text-muted-foreground">Rework Rate</p>
+                    <p className="text-2xl font-bold mt-1 text-red-600">{data.reworkAnalysis?.reworkRate ?? 0}%</p>
+                  </CardContent>
+                </Card>
+              </div>
+              {(data.reworkAnalysis?.reworkByAsset || []).length > 0 && (
+                <Card className="border border-border/60 shadow-sm mt-4">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm">Rework by Asset</CardTitle></CardHeader>
+                  <CardContent className="p-0">
+                    <div className="max-h-64 overflow-y-auto">
+                      <Table>
+                        <TableHeader><TableRow><TableHead>Asset</TableHead><TableHead className="text-right">Rework Count</TableHead><TableHead className="text-right">Total Cost</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                          {(data.reworkAnalysis.reworkByAsset || []).map((d: any, i: number) => (
+                            <TableRow key={i}>
+                              <TableCell className="font-medium">{d.assetName}</TableCell>
+                              <TableCell className="text-right text-orange-600 font-medium">{d.reworkCount}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(d.totalCost)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+          </Tabs>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // SETTINGS SUBPAGES
 // ============================================================================
+
+
 

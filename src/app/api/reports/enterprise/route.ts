@@ -427,39 +427,149 @@ export async function GET(request: NextRequest) {
     const totalContractorCost = Math.round(workOrders.reduce((s, wo) => s + (wo.contractorCost || 0), 0) * 100) / 100;
     const avgCostPerWO = workOrders.length > 0 ? Math.round(totalMaintenanceCost / workOrders.length * 100) / 100 : 0;
 
-    // Cost by asset
-    const costByAssetMap: Record<string, { assetId: string; assetName: string; totalCost: number; laborCost: number; partsCost: number; woCount: number }> = {};
+    // Cost by asset (top 20 with full enrichment)
+    const costByAssetMap: Record<string, { assetId: string; assetName: string; totalCost: number; laborCost: number; partsCost: number; contractorCost: number; woCount: number; downtimeMinutes: number }> = {};
     workOrders.forEach(wo => {
       const key = wo.assetId || 'unassigned';
       const name = wo.assetName || 'Unassigned';
-      if (!costByAssetMap[key]) costByAssetMap[key] = { assetId: wo.assetId || '', assetName: name, totalCost: 0, laborCost: 0, partsCost: 0, woCount: 0 };
+      if (!costByAssetMap[key]) costByAssetMap[key] = { assetId: wo.assetId || '', assetName: name, totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0, woCount: 0, downtimeMinutes: 0 };
       costByAssetMap[key].totalCost += wo.totalCost || 0;
       costByAssetMap[key].laborCost += wo.laborCost || 0;
       costByAssetMap[key].partsCost += wo.partsCost || 0;
+      costByAssetMap[key].contractorCost += wo.contractorCost || 0;
       costByAssetMap[key].woCount++;
+      const woDt = (wo.workOrderDowntimes || []).reduce((s, dt) => s + (dt.durationMinutes || 0), 0);
+      costByAssetMap[key].downtimeMinutes += woDt;
     });
     const costByAsset = Object.values(costByAssetMap)
       .sort((a, b) => b.totalCost - a.totalCost)
-      .slice(0, 10)
+      .slice(0, 20)
       .map(a => {
         const asset = a.assetId ? assetMap.get(a.assetId) : null;
         return {
-          ...a,
+          assetId: a.assetId || null,
+          assetName: a.assetName,
           assetTag: asset?.assetTag || null,
           manufacturer: asset?.manufacturer || null,
           model: asset?.model || null,
-          serialNumber: asset?.serialNumber || null,
           category: asset?.category?.name || null,
           criticality: asset?.criticality || null,
-          condition: asset?.condition || null,
-          location: asset?.location || null,
-          building: asset?.building || null,
-          area: asset?.area || null,
           totalCost: Math.round(a.totalCost * 100) / 100,
           laborCost: Math.round(a.laborCost * 100) / 100,
           partsCost: Math.round(a.partsCost * 100) / 100,
+          contractorCost: Math.round(a.contractorCost * 100) / 100,
+          woCount: a.woCount,
+          downtimeMinutes: a.downtimeMinutes,
         };
       });
+
+    // Monthly cost breakdown (by YYYY-MM, split by labor/parts/contractor)
+    const monthlyCostMap: Record<string, { laborCost: number; partsCost: number; contractorCost: number; totalCost: number; woCount: number }> = {};
+    workOrders.forEach(wo => {
+      const d = new Date(wo.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!monthlyCostMap[key]) monthlyCostMap[key] = { laborCost: 0, partsCost: 0, contractorCost: 0, totalCost: 0, woCount: 0 };
+      monthlyCostMap[key].laborCost += wo.laborCost || 0;
+      monthlyCostMap[key].partsCost += wo.partsCost || 0;
+      monthlyCostMap[key].contractorCost += wo.contractorCost || 0;
+      monthlyCostMap[key].totalCost += wo.totalCost || 0;
+      monthlyCostMap[key].woCount++;
+    });
+    const monthlyCostBreakdown = Object.entries(monthlyCostMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, data]) => ({
+        month,
+        laborCost: Math.round(data.laborCost * 100) / 100,
+        partsCost: Math.round(data.partsCost * 100) / 100,
+        contractorCost: Math.round(data.contractorCost * 100) / 100,
+        totalCost: Math.round(data.totalCost * 100) / 100,
+        woCount: data.woCount,
+      }));
+
+    // ========== 11. PERIOD COMPARISON (MoM / YoY) ==========
+    const currentStart = from ? new Date(from + 'T00:00:00') : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const currentEnd = to ? new Date(to + 'T23:59:59') : new Date(now.getTime());
+    const durationMs = currentEnd.getTime() - currentStart.getTime();
+    const previousStart = new Date(currentStart.getTime() - durationMs);
+    const previousEnd = new Date(currentStart.getTime() - 1);
+    const lastYearStart = new Date(currentStart.getTime() - 365 * 24 * 60 * 60 * 1000);
+    const lastYearEnd = new Date(currentEnd.getTime() - 365 * 24 * 60 * 60 * 1000);
+
+    // Helper: compute period metrics from WOs filtered by date range
+    function computePeriodMetrics(wos: any[]) {
+      const completed = wos.filter(wo => ['completed', 'verified', 'closed'].includes(wo.status));
+      const totalCost = wos.reduce((s, wo) => s + (wo.totalCost || 0), 0);
+      const laborCost = wos.reduce((s, wo) => s + (wo.laborCost || 0), 0);
+      const partsCost = wos.reduce((s, wo) => s + (wo.partsCost || 0), 0);
+      const contractorCost = wos.reduce((s, wo) => s + (wo.contractorCost || 0), 0);
+      const downtimeMinutes = wos.reduce((s, wo) => s + (wo.workOrderDowntimes || []).reduce((ds, dt) => ds + (dt.durationMinutes || 0), 0), 0);
+      return {
+        totalWOs: wos.length,
+        completedWOs: completed.length,
+        completionRate: wos.length > 0 ? Math.round((completed.length / wos.length) * 100 * 10) / 10 : 0,
+        totalCost: Math.round(totalCost * 100) / 100,
+        laborCost: Math.round(laborCost * 100) / 100,
+        partsCost: Math.round(partsCost * 100) / 100,
+        contractorCost: Math.round(contractorCost * 100) / 100,
+        totalDowntimeMinutes: Math.round(downtimeMinutes),
+        avgCostPerWO: wos.length > 0 ? Math.round(totalCost / wos.length * 100) / 100 : 0,
+      };
+    }
+
+    // Helper: fetch WOs for a date range
+    async function fetchPeriodWOs(start: Date, end: Date) {
+      const where: Record<string, unknown> = { ...plantFilter, status: { notIn: ['cancelled'] }, createdAt: { gte: start, lte: end } };
+      if (department) where.departmentId = department;
+      return db.workOrder.findMany({
+        where: Object.keys(where).length > 0 ? where : undefined,
+        include: { workOrderDowntimes: true },
+      });
+    }
+
+    const [prevPeriodWOs, lastYearWOs] = await Promise.all([
+      fetchPeriodWOs(previousStart, previousEnd),
+      fetchPeriodWOs(lastYearStart, lastYearEnd),
+    ]);
+
+    const currentPeriod = computePeriodMetrics(workOrders);
+    const previousPeriod = computePeriodMetrics(prevPeriodWOs);
+    const samePeriodLastYear = computePeriodMetrics(lastYearWOs);
+
+    // Helper: compute change metrics
+    function computeChanges(current: ReturnType<typeof computePeriodMetrics>, compare: ReturnType<typeof computePeriodMetrics>) {
+      const pct = (curr: number, comp: number) => comp !== 0 ? Math.round(((curr - comp) / Math.abs(comp)) * 1000) / 10 : 0;
+      return {
+        totalWOs_change: current.totalWOs - compare.totalWOs,
+        totalWOs_changePercent: pct(current.totalWOs, compare.totalWOs),
+        totalCost_change: Math.round((current.totalCost - compare.totalCost) * 100) / 100,
+        totalCost_changePercent: pct(current.totalCost, compare.totalCost),
+        completionRate_change: Math.round((current.completionRate - compare.completionRate) * 10) / 10,
+        downtime_change: current.totalDowntimeMinutes - compare.totalDowntimeMinutes,
+        downtime_changePercent: pct(current.totalDowntimeMinutes, compare.totalDowntimeMinutes),
+      };
+    }
+
+    const periodComparison = {
+      currentPeriod: {
+        startDate: currentStart.toISOString().split('T')[0],
+        endDate: currentEnd.toISOString().split('T')[0],
+        ...currentPeriod,
+      },
+      previousPeriod: {
+        startDate: previousStart.toISOString().split('T')[0],
+        endDate: previousEnd.toISOString().split('T')[0],
+        ...previousPeriod,
+      },
+      samePeriodLastYear: lastYearWOs.length > 0 ? {
+        startDate: lastYearStart.toISOString().split('T')[0],
+        endDate: lastYearEnd.toISOString().split('T')[0],
+        ...samePeriodLastYear,
+      } : null,
+      changes: {
+        vsPreviousPeriod: computeChanges(currentPeriod, previousPeriod),
+        vsLastYear: lastYearWOs.length > 0 ? computeChanges(currentPeriod, samePeriodLastYear) : null,
+      },
+    };
 
     return NextResponse.json({
       success: true,
@@ -506,7 +616,9 @@ export async function GET(request: NextRequest) {
           byWOType: costByWOType,
           byAsset: costByAsset,
           trend: costTrend,
+          monthlyCostBreakdown,
         },
+        periodComparison,
         plannerEfficiency,
         technicianProductivity,
         slaComplianceByPriority,
