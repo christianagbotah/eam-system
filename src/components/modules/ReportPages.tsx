@@ -138,7 +138,7 @@ export function ReportsAssetPage() {
             <TableRow key={asset.id} className="hover:bg-muted/30">
               <TableCell className="font-medium">{asset.name}</TableCell>
               <TableCell className="font-mono text-xs hidden sm:table-cell">{asset.assetTag || '-'}</TableCell>
-              <TableCell className="text-sm hidden md:table-cell">{asset.category || '-'}</TableCell>
+              <TableCell className="text-sm hidden md:table-cell">{typeof asset.category === 'string' ? asset.category : asset.category?.name || '-'}</TableCell>
               <TableCell><Badge variant="outline" className={conditionColors[asset.condition] || 'bg-slate-100 text-slate-700 border-slate-200'}>{(asset.condition || 'N/A').toUpperCase()}</Badge></TableCell>
               <TableCell className="hidden sm:table-cell"><Badge variant="outline" className={asset.criticality === 'critical' ? 'bg-red-50 text-red-700 border-red-200' : asset.criticality === 'high' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-700 border-slate-200'}>{(asset.criticality || 'N/A').toUpperCase()}</Badge></TableCell>
               <TableCell><Badge variant="outline" className={asset.status === 'active' || asset.status === 'operational' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : asset.status === 'inactive' ? 'bg-slate-100 text-slate-500 border-slate-200' : 'bg-red-50 text-red-700 border-red-200'}>{(asset.status || 'N/A').toUpperCase()}</Badge></TableCell>
@@ -2404,7 +2404,7 @@ export function EquipmentHistoryPage() {
                     <div>
                       <p className="text-sm font-medium">{a.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {a.assetTag || ''} {a.manufacturer || ''} {a.model || ''} — {a.category || 'Uncategorized'}
+                        {a.assetTag || ''} {a.manufacturer || ''} {a.model || ''} — {typeof a.category === 'string' ? a.category : a.category?.name || 'Uncategorized'}
                       </p>
                     </div>
                   </button>
