@@ -275,7 +275,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       children: [
         { page: 'reports-asset', label: 'Asset Reports', icon: Building2 },
         { page: 'equipment-history', label: 'Equipment History', icon: History },
-        { page: 'failure-analysis', label: 'Failure Analysis', icon: AlertTriangle },
+        { page: 'failure-analysis', label: 'Failure Analysis', icon: TriangleAlert },
         { page: 'wo-reports', label: 'Work Order Reports', icon: ClipboardList },
         { page: 'reports-maintenance', label: 'Maintenance Reports', icon: Wrench },
         { page: 'repairs-reports', label: 'Repair Lifecycle', icon: Activity },
