@@ -52,6 +52,72 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     });
 
+    // Fetch enriched asset data for all referenced assets
+    const assetIds = [...new Set(workOrders.map(wo => wo.assetId).filter((id): id is string => !!id))];
+    const assets = assetIds.length > 0 ? await db.asset.findMany({
+      where: { id: { in: assetIds } },
+      include: { category: { select: { name: true } } },
+    }) : [];
+    const assetMap = new Map(assets.map(a => [a.id, a]));
+
+    // Fetch enriched inventory item data for all referenced materials
+    const itemIds = [...new Set(workOrders.flatMap(wo =>
+      (wo.materials || []).map(m => m.itemId).filter((id): id is string => !!id)
+    ))];
+    const inventoryItems = itemIds.length > 0 ? await db.inventoryItem.findMany({
+      where: { id: { in: itemIds } },
+      select: { id: true, itemCode: true, name: true, unitOfMeasure: true, supplier: true, supplierPartNumber: true, binLocation: true, shelfLocation: true, specification: true, currentStock: true },
+    }) : [];
+    const itemMap = new Map(inventoryItems.map(i => [i.id, i]));
+
+    // Helper: get enriched asset details from a work order
+    function getAssetDetails(wo: { assetId?: string | null; assetName?: string | null }) {
+      const asset = wo.assetId ? assetMap.get(wo.assetId) : null;
+      return {
+        assetId: wo.assetId || null,
+        assetName: wo.assetName || asset?.name || 'Unassigned',
+        assetTag: asset?.assetTag || null,
+        manufacturer: asset?.manufacturer || null,
+        model: asset?.model || null,
+        serialNumber: asset?.serialNumber || null,
+        category: asset?.category?.name || null,
+        criticality: asset?.criticality || null,
+        condition: asset?.condition || null,
+        location: asset?.location || null,
+        building: asset?.building || null,
+        floor: asset?.floor || null,
+        area: asset?.area || null,
+        purchaseCost: asset?.purchaseCost || null,
+        currentValue: asset?.currentValue || null,
+      };
+    }
+
+    // Build itemName -> first itemId mapping for material enrichment
+    const itemNameToItemId: Record<string, string> = {};
+    for (const wo of workOrders) {
+      for (const mat of (wo.materials || [])) {
+        if (mat.itemId && mat.itemName && !itemNameToItemId[mat.itemName]) {
+          itemNameToItemId[mat.itemName] = mat.itemId;
+        }
+      }
+    }
+
+    // Helper: get enriched inventory item details
+    function getItemDetails(itemName: string) {
+      const itemId = itemNameToItemId[itemName];
+      const item = itemId ? itemMap.get(itemId) : null;
+      return {
+        itemCode: item?.itemCode || null,
+        unitOfMeasure: item?.unitOfMeasure || null,
+        supplier: item?.supplier || null,
+        supplierPartNumber: item?.supplierPartNumber || null,
+        binLocation: item?.binLocation || null,
+        shelfLocation: item?.shelfLocation || null,
+        specification: item?.specification || null,
+        currentStock: item?.currentStock || null,
+      };
+    }
+
     const now = new Date();
     const openWOs = workOrders.filter(wo => !['completed', 'verified', 'closed', 'cancelled'].includes(wo.status));
     const completedWOs = workOrders.filter(wo => ['completed', 'verified', 'closed'].includes(wo.status));
@@ -129,22 +195,43 @@ export async function GET(request: NextRequest) {
     }));
 
     // ========== 3. DOWNTIME ANALYSIS ==========
+    // Build WO lookup for downtime enrichment
+    const woLookup = new Map(workOrders.map(wo => [wo.id, wo]));
     const allDowntimes = workOrders.flatMap(wo =>
-      (wo.workOrderDowntimes || []).map(dt => ({ ...dt, assetName: wo.assetName, workOrderId: wo.id }))
+      (wo.workOrderDowntimes || []).map(dt => ({ ...dt, assetName: wo.assetName, workOrderId: wo.id, assetId: wo.assetId }))
     );
     const totalDowntimeMinutes = allDowntimes.reduce((sum, dt) => sum + (dt.durationMinutes || 0), 0);
     const totalDowntimeHours = totalDowntimeMinutes / 60;
 
     // By asset
-    const dtAssetMap: Record<string, { totalMinutes: number; count: number }> = {};
+    const dtAssetMap: Record<string, { totalMinutes: number; count: number; assetId: string; assetName: string }> = {};
     allDowntimes.forEach(dt => {
+      const key = dt.assetId || 'unassigned';
       const name = dt.assetName || 'Unknown';
-      if (!dtAssetMap[name]) dtAssetMap[name] = { totalMinutes: 0, count: 0 };
-      dtAssetMap[name].totalMinutes += (dt.durationMinutes || 0);
-      dtAssetMap[name].count += 1;
+      if (!dtAssetMap[key]) dtAssetMap[key] = { totalMinutes: 0, count: 0, assetId: dt.assetId || '', assetName: name };
+      dtAssetMap[key].totalMinutes += (dt.durationMinutes || 0);
+      dtAssetMap[key].count += 1;
     });
     const downtimeByAsset = Object.entries(dtAssetMap)
-      .map(([assetName, data]) => ({ assetName, totalMinutes: data.totalMinutes, totalHours: Math.round(data.totalMinutes / 60 * 100) / 100, count: data.count }))
+      .map(([, data]) => {
+        const asset = data.assetId ? assetMap.get(data.assetId) : null;
+        return {
+          assetId: data.assetId || null,
+          assetName: data.assetName,
+          totalMinutes: data.totalMinutes,
+          totalHours: Math.round(data.totalMinutes / 60 * 100) / 100,
+          count: data.count,
+          manufacturer: asset?.manufacturer || null,
+          model: asset?.model || null,
+          serialNumber: asset?.serialNumber || null,
+          category: asset?.category?.name || null,
+          criticality: asset?.criticality || null,
+          condition: asset?.condition || null,
+          location: asset?.location || null,
+          building: asset?.building || null,
+          area: asset?.area || null,
+        };
+      })
       .sort((a, b) => b.totalMinutes - a.totalMinutes)
       .slice(0, 10);
 
@@ -184,7 +271,7 @@ export async function GET(request: NextRequest) {
         detectedAt: { gte: ninetyDaysAgo },
       },
       include: {
-        asset: { select: { id: true, name: true, assetCode: true } },
+        asset: { select: { id: true, name: true, assetCode: true, assetTag: true, manufacturer: true, model: true, serialNumber: true, criticality: true, condition: true, location: true, building: true, area: true, category: { select: { name: true } } } },
         component: { select: { id: true, name: true, componentCode: true } },
       },
     });
@@ -199,15 +286,26 @@ export async function GET(request: NextRequest) {
 
     const repeatFailures = Object.values(assetFailureMap)
       .filter(a => a.failures.length >= 3)
-      .map(a => ({
-        assetId: a.assetId,
-        assetName: a.assetName,
-        failureCount: a.failures.length,
-        failureModes: [...new Set(a.failures.map(f => f.failureMode))],
-        totalDowntimeMinutes: a.failures.reduce((s, f) => s + (f.downtimeMinutes || 0), 0),
-        totalRepairCost: a.failures.reduce((s, f) => s + (f.repairCost || 0), 0),
-        lastFailureDate: new Date(Math.max(...a.failures.map(f => new Date(f.detectedAt).getTime()))).toISOString(),
-      }))
+      .map(a => {
+        const firstAsset = a.failures[0]?.asset || null;
+        return {
+          assetId: a.assetId,
+          assetName: a.assetName,
+          manufacturer: firstAsset?.manufacturer || null,
+          model: firstAsset?.model || null,
+          serialNumber: firstAsset?.serialNumber || null,
+          category: firstAsset?.category?.name || null,
+          criticality: firstAsset?.criticality || null,
+          location: firstAsset?.location || null,
+          building: firstAsset?.building || null,
+          area: firstAsset?.area || null,
+          failureCount: a.failures.length,
+          failureModes: [...new Set(a.failures.map(f => f.failureMode))],
+          totalDowntimeMinutes: a.failures.reduce((s, f) => s + (f.downtimeMinutes || 0), 0),
+          totalRepairCost: a.failures.reduce((s, f) => s + (f.repairCost || 0), 0),
+          lastFailureDate: new Date(Math.max(...a.failures.map(f => new Date(f.detectedAt).getTime()))).toISOString(),
+        };
+      })
       .sort((a, b) => b.failureCount - a.failureCount)
       .slice(0, 10);
 
@@ -249,6 +347,7 @@ export async function GET(request: NextRequest) {
     const materialConsumption = Object.values(matMap)
       .map(m => ({
         itemName: m.itemName,
+        ...getItemDetails(m.itemName),
         totalQuantity: Math.round(m.totalQuantity * 100) / 100,
         totalCost: Math.round(m.totalCost * 100) / 100,
         woCount: m.woCount.size,
@@ -328,6 +427,40 @@ export async function GET(request: NextRequest) {
     const totalContractorCost = Math.round(workOrders.reduce((s, wo) => s + (wo.contractorCost || 0), 0) * 100) / 100;
     const avgCostPerWO = workOrders.length > 0 ? Math.round(totalMaintenanceCost / workOrders.length * 100) / 100 : 0;
 
+    // Cost by asset
+    const costByAssetMap: Record<string, { assetId: string; assetName: string; totalCost: number; laborCost: number; partsCost: number; woCount: number }> = {};
+    workOrders.forEach(wo => {
+      const key = wo.assetId || 'unassigned';
+      const name = wo.assetName || 'Unassigned';
+      if (!costByAssetMap[key]) costByAssetMap[key] = { assetId: wo.assetId || '', assetName: name, totalCost: 0, laborCost: 0, partsCost: 0, woCount: 0 };
+      costByAssetMap[key].totalCost += wo.totalCost || 0;
+      costByAssetMap[key].laborCost += wo.laborCost || 0;
+      costByAssetMap[key].partsCost += wo.partsCost || 0;
+      costByAssetMap[key].woCount++;
+    });
+    const costByAsset = Object.values(costByAssetMap)
+      .sort((a, b) => b.totalCost - a.totalCost)
+      .slice(0, 10)
+      .map(a => {
+        const asset = a.assetId ? assetMap.get(a.assetId) : null;
+        return {
+          ...a,
+          assetTag: asset?.assetTag || null,
+          manufacturer: asset?.manufacturer || null,
+          model: asset?.model || null,
+          serialNumber: asset?.serialNumber || null,
+          category: asset?.category?.name || null,
+          criticality: asset?.criticality || null,
+          condition: asset?.condition || null,
+          location: asset?.location || null,
+          building: asset?.building || null,
+          area: asset?.area || null,
+          totalCost: Math.round(a.totalCost * 100) / 100,
+          laborCost: Math.round(a.laborCost * 100) / 100,
+          partsCost: Math.round(a.partsCost * 100) / 100,
+        };
+      });
+
     return NextResponse.json({
       success: true,
       data: {
@@ -371,6 +504,7 @@ export async function GET(request: NextRequest) {
           parts: totalPartsCost,
           contractor: totalContractorCost,
           byWOType: costByWOType,
+          byAsset: costByAsset,
           trend: costTrend,
         },
         plannerEfficiency,

@@ -199,8 +199,26 @@ export default function EnterpriseReports() {
     }));
   }, [workOrders]);
 
-  // Repeat failure data
+  // Repeat failure data — enriched from enterprise report API
   const repeatFailures = useMemo(() => {
+    // Prefer API data which has enriched asset details
+    if (reportData?.repeatFailures?.length > 0) {
+      return reportData.repeatFailures.map((a: any) => ({
+        name: a.assetName,
+        count: a.failureCount,
+        latest: a.lastFailureDate,
+        manufacturer: a.manufacturer,
+        model: a.model,
+        assetTag: a.assetTag,
+        category: a.category,
+        criticality: a.criticality,
+        location: a.location,
+        totalDowntimeMinutes: a.totalDowntimeMinutes,
+        totalRepairCost: a.totalRepairCost,
+        failureModes: a.failureModes,
+      }));
+    }
+    // Fallback to client-side computation
     const assetMap: Record<string, { name: string; count: number; latest: string }> = {};
     workOrders.filter(wo => wo.type === 'corrective' && wo.assetName).forEach(wo => {
       const key = wo.assetName!;
@@ -209,21 +227,29 @@ export default function EnterpriseReports() {
       if (wo.createdAt > assetMap[key].latest) assetMap[key].latest = wo.createdAt;
     });
     return Object.values(assetMap).filter(a => a.count >= 3).sort((a, b) => b.count - a.count);
-  }, [workOrders]);
+  }, [workOrders, reportData?.repeatFailures]);
 
-  // Cost by category data
+  // Cost by category data — uses actual costs from enterprise report API
   const costByCategory = useMemo(() => {
+    if (reportData?.costAnalytics?.byWOType) {
+      return reportData.costAnalytics.byWOType.map((d: any) => ({
+        category: (d.type || 'other').charAt(0).toUpperCase() + (d.type || 'other').slice(1),
+        cost: d.totalCost || 0,
+        color: TYPE_COLOR_MAP[d.type] || CHART_COLORS[0],
+      }));
+    }
+    // Fallback to WO data if API doesn't have it yet
     const cats: Record<string, number> = {};
     workOrders.forEach(wo => {
       const cat = wo.type || 'other';
-      cats[cat] = (cats[cat] || 0) + (wo.estimatedHours || 0) * 50; // estimated cost
+      cats[cat] = (cats[cat] || 0) + (wo.totalCost || (wo.estimatedHours || 0) * 50);
     });
     return Object.entries(cats).map(([cat, cost]) => ({
       category: cat.charAt(0).toUpperCase() + cat.slice(1),
       cost,
       color: TYPE_COLOR_MAP[cat] || CHART_COLORS[0],
     }));
-  }, [workOrders]);
+  }, [workOrders, reportData?.costAnalytics?.byWOType]);
 
   if (loading && !reportData) return <div className="page-content"><LoadingSkeleton /></div>;
 
@@ -620,19 +646,29 @@ export default function EnterpriseReports() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>#</TableHead>
-                    <TableHead>Asset Name</TableHead>
-                    <TableHead className="text-right">Failure Count</TableHead>
+                    <TableHead>Equipment</TableHead>
+                    <TableHead className="hidden md:tablecell">Tag</TableHead>
+                    <TableHead className="hidden lg:tablecell">Manufacturer</TableHead>
+                    <TableHead className="text-right">Failures</TableHead>
                     <TableHead className="hidden md:table-cell">Latest Failure</TableHead>
                     <TableHead className="hidden lg:table-cell">Urgency</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {repeatFailures.length === 0 ? (
-                    <TableRow><TableCell colSpan={5}><EmptyState icon={RefreshCw} title="No repeat failures detected" description="Assets with 3+ corrective WOs will appear here." /></TableCell></TableRow>
+                    <TableRow><TableCell colSpan={7}><EmptyState icon={RefreshCw} title="No repeat failures detected" description="Assets with 3+ corrective WOs will appear here." /></TableCell></TableRow>
                   ) : repeatFailures.map((asset, i) => (
                     <TableRow key={asset.name} className="hover:bg-muted/30">
                       <TableCell className="text-muted-foreground">{i + 1}</TableCell>
-                      <TableCell className="font-medium">{asset.name}</TableCell>
+                      <TableCell>
+                        <div>
+                          <span className="font-medium">{asset.name}</span>
+                          {(asset as any).criticality && <Badge variant="outline" className={`ml-2 text-[9px] ${(asset as any).criticality === 'critical' ? 'bg-red-100 text-red-700 border-red-200' : (asset as any).criticality === 'high' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-muted text-muted-foreground'}`}>{(asset as any).criticality}</Badge>}
+                          {(asset as any).failureModes?.length > 0 && <p className="text-[10px] text-muted-foreground mt-0.5">Modes: {(asset as any).failureModes.join(', ')}</p>}
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell font-mono text-xs text-muted-foreground">{(asset as any).assetTag || '-'}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-sm">{(asset as any).manufacturer || '-'}</TableCell>
                       <TableCell className="text-right">
                         <Badge variant={asset.count >= 6 ? 'destructive' : 'outline'} className={asset.count >= 6 ? 'text-[10px]' : `font-mono text-xs ${asset.count >= 5 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
                           {asset.count}
@@ -729,13 +765,15 @@ export default function EnterpriseReports() {
               <CardHeader className="pb-3"><CardTitle className="text-base">Material Consumption by Category</CardTitle></CardHeader>
               <CardContent className="p-0">
                 <Table>
-                  <TableHeader><TableRow><TableHead>Item</TableHead><TableHead className="text-right">Total Qty</TableHead><TableHead className="text-right">Total Cost</TableHead><TableHead className="text-right">WO Count</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>Item</TableHead><TableHead className="hidden md:table-cell">Part #</TableHead><TableHead className="hidden lg:table-cell">Supplier</TableHead><TableHead className="text-right">Total Qty</TableHead><TableHead className="text-right">Total Cost</TableHead><TableHead className="text-right">WO Count</TableHead></TableRow></TableHeader>
                   <TableBody>
                     {(reportData?.materialConsumption || []).length === 0 ? (
-                      <TableRow><TableCell colSpan={4}><EmptyState icon={Package} title="No material data" /></TableCell></TableRow>
+                      <TableRow><TableCell colSpan={6}><EmptyState icon={Package} title="No material data" /></TableCell></TableRow>
                     ) : reportData.materialConsumption.map((mat: any, i: number) => (
                       <TableRow key={i} className="hover:bg-muted/30">
                         <TableCell className="font-medium">{mat.itemName}</TableCell>
+                        <TableCell className="hidden md:table-cell font-mono text-xs text-muted-foreground">{mat.itemCode || '-'}</TableCell>
+                        <TableCell className="hidden lg:table-cell text-sm">{mat.supplier || '-'}</TableCell>
                         <TableCell className="text-right">{mat.totalQuantity}</TableCell>
                         <TableCell className="text-right font-medium">{formatCurrency(mat.totalCost)}</TableCell>
                         <TableCell className="text-right">{mat.woCount}</TableCell>

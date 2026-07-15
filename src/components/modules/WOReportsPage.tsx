@@ -417,22 +417,26 @@ export function WOReportsPage() {
         filename += '-materials';
         const matTotal = reportData.materials?.totalCost || 1;
         const items = reportData.materials?.topItems || [];
-        headers = ['Item Name', 'Total Qty', 'Total Cost', 'WOs Used', '% of Total Cost'];
+        headers = ['Item Name', 'Part #', 'Supplier', 'Unit', 'Total Qty', 'Unit Cost', 'Total Cost', 'WOs Used', '% of Total Cost'];
         rows = items.map((d: any) => [
-          d.name, String(d.totalQty), String(d.totalCost),
+          d.name, d.inventoryItem?.itemCode || '', d.inventoryItem?.supplier || '', d.inventoryItem?.unitOfMeasure || '',
+          String(d.totalQty), String(d.unitCost || ''), String(d.totalCost),
           String(d.woCount), `${((d.totalCost / matTotal) * 100).toFixed(1)}%`,
         ]);
-        rows.push(['TOTAL', String(reportData.materials?.totalQty || 0), String(reportData.materials?.totalCost || 0), '-', '100%']);
+        rows.push(['TOTAL', '', '', '', String(reportData.materials?.totalQty || 0), '', String(reportData.materials?.totalCost || 0), '-', '100%']);
         break;
       }
       case 'failure-rate': {
         filename += '-failure-rate';
-        headers = ['Asset', 'Total WOs', 'Failures', 'Failure Rate', 'MTBF (Days)', 'Risk Level'];
+        headers = ['Equipment', 'Tag', 'Manufacturer', 'Model', 'Category', 'Criticality', 'Location', 'Total WOs', 'Failures', 'Failure Rate', 'MTBF (Days)', 'Risk Level'];
         const assets = reportData.failureRate?.byAsset || [];
         rows = assets.map((d: any) => {
           const mtbf = reportData.failureRate?.mtbf?.find((m: any) => m.assetId === d.assetId);
+          const a = d.asset || {};
           const risk = d.failureRate >= 40 ? 'High' : d.failureRate >= 20 ? 'Medium' : 'Low';
-          return [d.assetName || d.assetId, String(d.totalWOs), String(d.failures), `${d.failureRate}%`, String(mtbf?.mtbfDays || '-'), risk];
+          return [d.assetName || d.assetId, a.assetTag || '', a.manufacturer || '', a.model || '', a.category || '', a.criticality || '',
+            [a.building, a.floor, a.area].filter(Boolean).join('/') || a.location || '',
+            String(d.totalWOs), String(d.failures), `${d.failureRate}%`, String(mtbf?.mtbfDays || '-'), risk];
         });
         break;
       }
@@ -1606,20 +1610,29 @@ export function WOReportsPage() {
                 </ChartCard>
               </div>
 
-              {/* Materials Table */}
+              {/* Materials Table — Enterprise Grade with Part Details */}
               <ReportTable
                 headers={[
                   { key: 'name', label: 'Item Name' },
+                  { key: 'itemCode', label: 'Part #' },
+                  { key: 'supplier', label: 'Supplier' },
+                  { key: 'unit', label: 'Unit' },
                   { key: 'totalQty', label: 'Total Qty', align: 'right' },
+                  { key: 'unitCost', label: 'Unit Cost', align: 'right' },
                   { key: 'totalCost', label: 'Total Cost', align: 'right' },
                   { key: 'woCount', label: 'WOs Used', align: 'right' },
-                  { key: 'pctTotal', label: '% of Total Cost', align: 'right' },
+                  { key: 'pctTotal', label: '% of Total', align: 'right' },
                 ]}
                 rows={(reportData.materials?.topItems || []).map((d: any) => {
                   const totalCost = reportData.materials?.totalCost || 1;
+                  const item = d.inventoryItem;
                   return {
-                    name: <span className="font-medium">{d.name}</span>,
+                    name: <div><span className="font-medium">{d.name}</span>{item?.specification && <p className="text-[10px] text-muted-foreground mt-0.5 max-w-[200px] truncate">{item.specification}</p>}</div>,
+                    itemCode: item?.itemCode ? <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{item.itemCode}</code> : '-',
+                    supplier: item?.supplier || d.supplier || '-',
+                    unit: item?.unitOfMeasure || d.unitOfMeasure || '-',
                     totalQty: d.totalQty,
+                    unitCost: d.unitCost ? formatCurrency(d.unitCost) : '-',
                     totalCost: <span className="font-medium">{formatCurrency(d.totalCost)}</span>,
                     woCount: d.woCount,
                     pctTotal: `${((d.totalCost / totalCost) * 100).toFixed(1)}%`,
@@ -1627,7 +1640,11 @@ export function WOReportsPage() {
                 })}
                 totalRow={{
                   name: <span className="font-bold">TOTAL</span>,
+                  itemCode: '',
+                  supplier: '',
+                  unit: '',
                   totalQty: <span className="font-bold">{reportData.materials?.totalQty ?? 0}</span>,
+                  unitCost: '',
                   totalCost: <span className="font-bold">{formatCurrency(reportData.materials?.totalCost)}</span>,
                   woCount: '-',
                   pctTotal: <span className="font-bold">100%</span>,
@@ -1739,22 +1756,36 @@ export function WOReportsPage() {
                 </ChartCard>
               </div>
 
-              {/* Failure Rate Detail Table */}
+              {/* Failure Rate Detail Table — Enterprise Grade with Asset Details */}
               <ReportTable
                 headers={[
-                  { key: 'asset', label: 'Asset' },
+                  { key: 'asset', label: 'Equipment' },
+                  { key: 'tag', label: 'Tag' },
+                  { key: 'manufacturer', label: 'Manufacturer' },
+                  { key: 'model', label: 'Model' },
+                  { key: 'category', label: 'Category' },
+                  { key: 'criticality', label: 'Crit.' },
+                  { key: 'location', label: 'Location' },
                   { key: 'totalWOs', label: 'Total WOs', align: 'right' },
                   { key: 'failures', label: 'Failures', align: 'right' },
-                  { key: 'failureRate', label: 'Failure Rate', align: 'right' },
-                  { key: 'mtbf', label: 'MTBF (Days)', align: 'right' },
-                  { key: 'riskLevel', label: 'Risk Level', align: 'center' },
+                  { key: 'failureRate', label: 'Fail. Rate', align: 'right' },
+                  { key: 'mtbf', label: 'MTBF (d)', align: 'right' },
+                  { key: 'riskLevel', label: 'Risk', align: 'center' },
                 ]}
                 rows={(reportData.failureRate?.byAsset || []).map((d: any) => {
                   const mtbf = reportData.failureRate?.mtbf?.find((m: any) => m.assetId === d.assetId);
+                  const asset = d.asset || {};
                   const risk = d.failureRate >= 40 ? 'High' : d.failureRate >= 20 ? 'Medium' : 'Low';
                   const riskColor = d.failureRate >= 40 ? 'text-red-600 bg-red-50 dark:bg-red-900/30 border-red-300' : d.failureRate >= 20 ? 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 border-amber-300' : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 border-emerald-300';
+                  const critColor = asset.criticality === 'critical' ? 'text-red-600 font-bold' : asset.criticality === 'high' ? 'text-orange-600 font-medium' : 'text-muted-foreground';
                   return {
                     asset: <span className="font-medium">{d.assetName || d.assetId}</span>,
+                    tag: asset.assetTag ? <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{asset.assetTag}</code> : '-',
+                    manufacturer: asset.manufacturer || '-',
+                    model: asset.model || '-',
+                    category: asset.category || '-',
+                    criticality: asset.criticality ? <span className={critColor}>{asset.criticality}</span> : '-',
+                    location: [asset.building, asset.floor, asset.area].filter(Boolean).join(' / ') || asset.location || '-',
                     totalWOs: d.totalWOs,
                     failures: d.failures,
                     failureRate: <span style={{ color: getSeverityColor(d.failureRate) }} className="font-medium">{formatRate(d.failureRate)}</span>,

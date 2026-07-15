@@ -121,3 +121,83 @@ Stage Summary:
 - Dark premium design with emerald/cyan/violet/amber accent colors
 - Screenshots are 840×610px with minimal right-side dot labels — visual-first, few texts
 - Available at: https://iassetspro.lightworldtech.com/iAssetsPro-WO-Workflow-Presentation.pptx (after VPS deploy)
+
+---
+Task ID: 2
+Agent: Main
+Task: Build Individual Work Order Print/Export PDF Feature
+
+Work Log:
+- Created API endpoint `GET /api/work-orders/[id]/print` supporting both JSON (default) and PDF (`?format=pdf`) responses
+- Endpoint fetches WO with ALL relations (assignee, teamLeader, supervisor, planner, assigner, materials, timeLogs, workOrderDowntimes, repairCompletion, statusHistory, taskExecutions, failureRecords, teamMembers with user, comments, maintenanceRequest, pmSchedule)
+- Fetches Asset separately via wo.assetId (no Prisma relation), includes AssetCategory
+- Batch-fetches InventoryItems for materials to enrich with itemCode, unitOfMeasure, supplier, binLocation, specification, currentStock
+- Fetches CompanyProfile for company info (falls back to hardcoded iAssetsPro)
+- Auth-gated with `work_orders.view`, `work_orders.export`, `reports.export`, `reports.view` permissions or admin
+- Built professional A4 landscape PDF generator (`generateWODetailPDF`) using PDFKit with:
+  - Navy header bar with company name, "WORK ORDER" title, WO number
+  - Status/Priority/Type color-coded badges (green=completed, blue=in_progress, red=critical, orange=high, amber=medium)
+  - Two-column layout: Equipment Information (left) + Work Order Details (right) in bordered boxes
+  - Description & Failure Analysis section (Problem, Failure, Cause, Action)
+  - Safety Information section (Safety Notes, PPE Required)
+  - Task Checklist table (from taskExecutions)
+  - Team Members table
+  - Parts & Materials table with 10 columns (#, Part#, Description, Spec, Qty, Unit, Bin Loc, Unit Cost, Total, Status)
+  - Labor/Time Logs table with 8 columns
+  - Downtime Log table with 7 columns
+  - Failure Records table with 6 columns
+  - Cost Summary box (Labor, Parts, Contractor, TOTAL in company currency)
+  - Completion Details (Findings, Root Cause, Corrective Action, Supervisor/Planner approval dates, Rework Count)
+  - Signature section (Technician, Supervisor, Planner with date lines and pre-filled names)
+  - Page footers with generation datetime, company name, page X of Y
+  - Alternating row colors, emerald section headers with accent bars, graceful handling of all nullable fields
+- Both files pass ESLint with zero errors/warnings
+
+Stage Summary:
+- API route: `/home/z/my-project/src/app/api/work-orders/[id]/print/route.ts`
+- PDF generator: `/home/z/my-project/src/lib/generate-wo-detail-pdf.ts`
+- Usage: `GET /api/work-orders/{id}/print` (JSON) or `GET /api/work-orders/{id}/print?format=pdf` (PDF binary)
+- Dev server running, no new lint errors introduced
+
+---
+Task ID: 1
+Agent: Main
+Task: Enrich 3 main report APIs with full Asset data and InventoryItem data
+
+Work Log:
+- Added asset/inventory enrichment pattern to all 3 report API routes after workOrder fetch
+- Pattern: collect unique assetIds → db.asset.findMany with category include → Map; collect unique itemIds from materials → db.inventoryItem.findMany with select → Map
+- Created reusable helpers in each file: `getAssetDetails(wo)` returns 15 asset fields; `getItemDetails(itemName)` returns 8 inventory fields via itemName→itemId reverse map
+- All new fields are optional (nullable) so existing frontend consumers are not broken
+
+File 1: `/src/app/api/work-orders/reports/route.ts`
+- Enriched `topMaterialsArray` with itemCode, unitOfMeasure, supplier, supplierPartNumber, binLocation, shelfLocation, specification, currentStock
+- Enriched `failureRateByAsset` with manufacturer, model, serialNumber, category, criticality, condition, location, building, area
+- Enriched `mtbfByAsset` with same asset detail fields
+- Added new `topAssets` section (top 10 by WO count with full asset details)
+- Added new `workOrdersByAsset` section (top 20 asset groups with nested WO list and full asset details)
+- Added new `stoppages.byAsset` sub-section (top 10 by downtime with full asset details)
+- Added new `assetsWithDetails` section (full Asset model for every referenced asset)
+
+File 2: `/src/app/api/reports/maintenance/route.ts`
+- Renamed local `assetMap` (Record) to `assetGroupMap` to avoid shadowing the new `assetMap` (Map)
+- Changed topAssets keying from assetName to assetId for proper enrichment lookup
+- Enriched `topAssets` with assetTag, manufacturer, model, serialNumber, category, criticality, condition, location, building, area
+- Enriched `workOrdersByAsset` with same fields, added assetId tracking, enriched each group
+- Enriched `materialConsumption` with itemCode, unitOfMeasure, supplier, supplierPartNumber, binLocation, shelfLocation, specification, currentStock
+- Enriched `recentWorkOrders` with full asset details via `...getAssetDetails(wo)` spread
+
+File 3: `/src/app/api/reports/enterprise/route.ts`
+- Added `woLookup` Map and `assetId` to `allDowntimes` for efficient O(1) asset lookup
+- Enriched `downtimeAnalysis.byAsset` with full asset details (manufacturer, model, serialNumber, category, criticality, condition, location, building, area)
+- Expanded failureRecord include to fetch more asset fields (assetTag, manufacturer, model, serialNumber, criticality, condition, location, building, area, category)
+- Enriched `repeatFailures` with manufacturer, model, serialNumber, category, criticality, location, building, area
+- Enriched `materialConsumption` with itemCode, unitOfMeasure, supplier, supplierPartNumber, binLocation, shelfLocation, specification, currentStock
+- Added new `costByAsset` section (top 10 by total cost with full asset details, labor/parts breakdown)
+- Added `costByAsset` to `costAnalytics` response object
+
+Stage Summary:
+- 3 files modified, all pass TypeScript syntax validation
+- No Prisma schema changes; no existing response fields removed
+- New nullable fields added alongside existing ones for backward compatibility
+- Dev server compiles without errors

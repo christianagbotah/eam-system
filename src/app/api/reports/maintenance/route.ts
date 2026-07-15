@@ -54,6 +54,72 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     });
 
+    // Fetch enriched asset data for all referenced assets
+    const assetIds = [...new Set(workOrders.map(wo => wo.assetId).filter((id): id is string => !!id))];
+    const assets = assetIds.length > 0 ? await db.asset.findMany({
+      where: { id: { in: assetIds } },
+      include: { category: { select: { name: true } } },
+    }) : [];
+    const assetMap = new Map(assets.map(a => [a.id, a]));
+
+    // Fetch enriched inventory item data for all referenced materials
+    const itemIds = [...new Set(workOrders.flatMap(wo =>
+      (wo.materials || []).map(m => m.itemId).filter((id): id is string => !!id)
+    ))];
+    const inventoryItems = itemIds.length > 0 ? await db.inventoryItem.findMany({
+      where: { id: { in: itemIds } },
+      select: { id: true, itemCode: true, name: true, unitOfMeasure: true, supplier: true, supplierPartNumber: true, binLocation: true, shelfLocation: true, specification: true, currentStock: true },
+    }) : [];
+    const itemMap = new Map(inventoryItems.map(i => [i.id, i]));
+
+    // Helper: get enriched asset details from a work order
+    function getAssetDetails(wo: { assetId?: string | null; assetName?: string | null }) {
+      const asset = wo.assetId ? assetMap.get(wo.assetId) : null;
+      return {
+        assetId: wo.assetId || null,
+        assetName: wo.assetName || asset?.name || 'Unassigned',
+        assetTag: asset?.assetTag || null,
+        manufacturer: asset?.manufacturer || null,
+        model: asset?.model || null,
+        serialNumber: asset?.serialNumber || null,
+        category: asset?.category?.name || null,
+        criticality: asset?.criticality || null,
+        condition: asset?.condition || null,
+        location: asset?.location || null,
+        building: asset?.building || null,
+        floor: asset?.floor || null,
+        area: asset?.area || null,
+        purchaseCost: asset?.purchaseCost || null,
+        currentValue: asset?.currentValue || null,
+      };
+    }
+
+    // Build itemName -> first itemId mapping for material enrichment
+    const itemNameToItemId: Record<string, string> = {};
+    for (const wo of workOrders) {
+      for (const mat of (wo.materials || [])) {
+        if (mat.itemId && mat.itemName && !itemNameToItemId[mat.itemName]) {
+          itemNameToItemId[mat.itemName] = mat.itemId;
+        }
+      }
+    }
+
+    // Helper: get enriched inventory item details
+    function getItemDetails(itemName: string) {
+      const itemId = itemNameToItemId[itemName];
+      const item = itemId ? itemMap.get(itemId) : null;
+      return {
+        itemCode: item?.itemCode || null,
+        unitOfMeasure: item?.unitOfMeasure || null,
+        supplier: item?.supplier || null,
+        supplierPartNumber: item?.supplierPartNumber || null,
+        binLocation: item?.binLocation || null,
+        shelfLocation: item?.shelfLocation || null,
+        specification: item?.specification || null,
+        currentStock: item?.currentStock || null,
+      };
+    }
+
     // Fetch all MRs for the date range
     const mrs = await db.maintenanceRequest.findMany({
       where: hasFilter ? baseFilter : undefined,
@@ -160,7 +226,13 @@ export async function GET(request: NextRequest) {
       });
     });
     const materialConsumption = Object.values(matMap)
-      .map(m => ({ itemName: m.itemName, totalQuantity: Math.round(m.totalQuantity * 100) / 100, totalCost: Math.round(m.totalCost * 100) / 100, woCount: m.woCount.size }))
+      .map(m => ({
+        itemName: m.itemName,
+        ...getItemDetails(m.itemName),
+        totalQuantity: Math.round(m.totalQuantity * 100) / 100,
+        totalCost: Math.round(m.totalCost * 100) / 100,
+        woCount: m.woCount.size,
+      }))
       .sort((a, b) => b.totalCost - a.totalCost)
       .slice(0, 20);
 
@@ -223,22 +295,40 @@ export async function GET(request: NextRequest) {
       : 0;
 
     // ========== TOP ASSETS ==========
-    const assetMap: Record<string, { assetName: string; woCount: number; downtimeMinutes: number; totalCost: number }> = {};
+    const assetGroupMap: Record<string, { assetId: string; assetName: string; woCount: number; downtimeMinutes: number; totalCost: number }> = {};
     workOrders.forEach(wo => {
+      const key = wo.assetId || 'unassigned';
       const name = wo.assetName || 'Unassigned';
-      if (!assetMap[name]) assetMap[name] = { assetName: name, woCount: 0, downtimeMinutes: 0, totalCost: 0 };
-      assetMap[name].woCount += 1;
-      assetMap[name].totalCost += (wo.totalCost || 0);
+      if (!assetGroupMap[key]) assetGroupMap[key] = { assetId: wo.assetId || '', assetName: name, woCount: 0, downtimeMinutes: 0, totalCost: 0 };
+      assetGroupMap[key].woCount += 1;
+      assetGroupMap[key].totalCost += (wo.totalCost || 0);
       (wo.workOrderDowntimes || []).forEach(dt => {
-        assetMap[name].downtimeMinutes += (dt.durationMinutes || 0);
+        assetGroupMap[key].downtimeMinutes += (dt.durationMinutes || 0);
       });
     });
-    const topAssets = Object.values(assetMap)
+    const topAssets = Object.values(assetGroupMap)
       .sort((a, b) => b.woCount - a.woCount)
-      .slice(0, 10);
+      .slice(0, 10)
+      .map(a => {
+        const asset = a.assetId ? assetMap.get(a.assetId) : null;
+        return {
+          ...a,
+          assetTag: asset?.assetTag || null,
+          manufacturer: asset?.manufacturer || null,
+          model: asset?.model || null,
+          serialNumber: asset?.serialNumber || null,
+          category: asset?.category?.name || null,
+          criticality: asset?.criticality || null,
+          condition: asset?.condition || null,
+          location: asset?.location || null,
+          building: asset?.building || null,
+          area: asset?.area || null,
+        };
+      });
 
     // ========== WORK ORDERS BY ASSET ==========
     const assetWoMap: Record<string, {
+      assetId: string;
       assetName: string;
       workOrders: {
         id: string;
@@ -267,9 +357,11 @@ export async function GET(request: NextRequest) {
     }> = {};
 
     workOrders.forEach(wo => {
+      const key = wo.assetId || 'unassigned';
       const name = wo.assetName || 'Unassigned';
-      if (!assetWoMap[name]) {
-        assetWoMap[name] = {
+      if (!assetWoMap[key]) {
+        assetWoMap[key] = {
+          assetId: wo.assetId || '',
           assetName: name,
           workOrders: [],
           woCount: 0,
@@ -279,7 +371,7 @@ export async function GET(request: NextRequest) {
           totalActualHours: 0,
         };
       }
-      const group = assetWoMap[name];
+      const group = assetWoMap[key];
       group.woCount += 1;
       group.totalCost += (wo.totalCost || 0);
       group.totalActualHours += (wo.actualHours || 0);
@@ -310,11 +402,24 @@ export async function GET(request: NextRequest) {
 
     const workOrdersByAsset = Object.values(assetWoMap)
       .sort((a, b) => b.woCount - a.woCount)
-      .map(a => ({
-        ...a,
-        completionRate: a.woCount > 0 ? Math.round((a.completedCount / a.woCount) * 100) : 0,
-        avgCostPerWO: a.woCount > 0 ? Math.round((a.totalCost / a.woCount) * 100) / 100 : 0,
-      }));
+      .map(a => {
+        const asset = a.assetId ? assetMap.get(a.assetId) : null;
+        return {
+          ...a,
+          assetTag: asset?.assetTag || null,
+          manufacturer: asset?.manufacturer || null,
+          model: asset?.model || null,
+          serialNumber: asset?.serialNumber || null,
+          category: asset?.category?.name || null,
+          criticality: asset?.criticality || null,
+          condition: asset?.condition || null,
+          location: asset?.location || null,
+          building: asset?.building || null,
+          area: asset?.area || null,
+          completionRate: a.woCount > 0 ? Math.round((a.completedCount / a.woCount) * 100) : 0,
+          avgCostPerWO: a.woCount > 0 ? Math.round((a.totalCost / a.woCount) * 100) / 100 : 0,
+        };
+      });
 
     // ========== RECENT WORK ORDERS ==========
     const recentWorkOrders = workOrders.slice(0, 200).map(wo => ({
@@ -325,6 +430,7 @@ export async function GET(request: NextRequest) {
       priority: wo.priority,
       status: wo.status,
       assetName: wo.assetName,
+      ...getAssetDetails(wo),
       assigneeName: wo.assignee?.fullName || null,
       teamLeaderName: wo.teamLeader?.fullName || null,
       estimatedHours: wo.estimatedHours,

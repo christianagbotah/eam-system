@@ -59,6 +59,72 @@ export async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     });
 
+    // Fetch enriched asset data for all referenced assets
+    const assetIds = [...new Set(workOrders.map(wo => wo.assetId).filter((id): id is string => !!id))];
+    const assets = assetIds.length > 0 ? await db.asset.findMany({
+      where: { id: { in: assetIds } },
+      include: { category: { select: { name: true } } },
+    }) : [];
+    const assetMap = new Map(assets.map(a => [a.id, a]));
+
+    // Fetch enriched inventory item data for all referenced materials
+    const itemIds = [...new Set(workOrders.flatMap(wo =>
+      (wo.materials || []).map(m => m.itemId).filter((id): id is string => !!id)
+    ))];
+    const inventoryItems = itemIds.length > 0 ? await db.inventoryItem.findMany({
+      where: { id: { in: itemIds } },
+      select: { id: true, itemCode: true, name: true, unitOfMeasure: true, supplier: true, supplierPartNumber: true, binLocation: true, shelfLocation: true, specification: true, currentStock: true },
+    }) : [];
+    const itemMap = new Map(inventoryItems.map(i => [i.id, i]));
+
+    // Helper: get enriched asset details from a work order
+    function getAssetDetails(wo: { assetId?: string | null; assetName?: string | null }) {
+      const asset = wo.assetId ? assetMap.get(wo.assetId) : null;
+      return {
+        assetId: wo.assetId || null,
+        assetName: wo.assetName || asset?.name || 'Unassigned',
+        assetTag: asset?.assetTag || null,
+        manufacturer: asset?.manufacturer || null,
+        model: asset?.model || null,
+        serialNumber: asset?.serialNumber || null,
+        category: asset?.category?.name || null,
+        criticality: asset?.criticality || null,
+        condition: asset?.condition || null,
+        location: asset?.location || null,
+        building: asset?.building || null,
+        floor: asset?.floor || null,
+        area: asset?.area || null,
+        purchaseCost: asset?.purchaseCost || null,
+        currentValue: asset?.currentValue || null,
+      };
+    }
+
+    // Build itemName -> first itemId mapping for material enrichment
+    const itemNameToItemId: Record<string, string> = {};
+    for (const wo of workOrders) {
+      for (const mat of (wo.materials || [])) {
+        if (mat.itemId && mat.itemName && !itemNameToItemId[mat.itemName]) {
+          itemNameToItemId[mat.itemName] = mat.itemId;
+        }
+      }
+    }
+
+    // Helper: get enriched inventory item details
+    function getItemDetails(itemName: string) {
+      const itemId = itemNameToItemId[itemName];
+      const item = itemId ? itemMap.get(itemId) : null;
+      return {
+        itemCode: item?.itemCode || null,
+        unitOfMeasure: item?.unitOfMeasure || null,
+        supplier: item?.supplier || null,
+        supplierPartNumber: item?.supplierPartNumber || null,
+        binLocation: item?.binLocation || null,
+        shelfLocation: item?.shelfLocation || null,
+        specification: item?.specification || null,
+        currentStock: item?.currentStock || null,
+      };
+    }
+
     const total = workOrders.length;
     const closedWOs = workOrders.filter(wo => wo.status === 'closed');
     const completedWOs = workOrders.filter(wo => ['completed', 'verified', 'closed'].includes(wo.status));
@@ -374,6 +440,7 @@ export async function GET(request: NextRequest) {
     const topMaterialsArray = Object.values(topMaterials)
       .map(data => ({
         name: data.name,
+        ...getItemDetails(data.name),
         totalQty: Math.round(data.qty * 100) / 100,
         totalCost: Math.round(data.cost * 100) / 100,
         woCount: data.woCount.size,
@@ -413,13 +480,25 @@ export async function GET(request: NextRequest) {
 
     const failureRateByAsset = Object.entries(assetWOs)
       .filter(([, data]) => data.total >= 2) // Only assets with 2+ WOs
-      .map(([assetId, data]) => ({
-        assetId,
-        assetName: data.name,
-        totalWOs: data.total,
-        failures: data.failures,
-        failureRate: Math.round((data.failures / data.total) * 10000) / 100,
-      }))
+      .map(([assetId, data]) => {
+        const asset = assetId !== 'unassigned' ? assetMap.get(assetId) : null;
+        return {
+          assetId: assetId !== 'unassigned' ? assetId : null,
+          assetName: data.name,
+          manufacturer: asset?.manufacturer || null,
+          model: asset?.model || null,
+          serialNumber: asset?.serialNumber || null,
+          category: asset?.category?.name || null,
+          criticality: asset?.criticality || null,
+          condition: asset?.condition || null,
+          location: asset?.location || null,
+          building: asset?.building || null,
+          area: asset?.area || null,
+          totalWOs: data.total,
+          failures: data.failures,
+          failureRate: Math.round((data.failures / data.total) * 10000) / 100,
+        };
+      })
       .sort((a, b) => b.failureRate - a.failureRate)
       .slice(0, 20);
 
@@ -453,9 +532,19 @@ export async function GET(request: NextRequest) {
         const lastDate = assetWOList[0].createdAt;
         const operatingDays = (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24);
         const mtbfDays = data.failures > 0 ? operatingDays / data.failures : 0;
+        const asset = assetId !== 'unassigned' ? assetMap.get(assetId) : null;
         return {
-          assetId,
+          assetId: assetId !== 'unassigned' ? assetId : null,
           assetName: data.name,
+          manufacturer: asset?.manufacturer || null,
+          model: asset?.model || null,
+          serialNumber: asset?.serialNumber || null,
+          category: asset?.category?.name || null,
+          criticality: asset?.criticality || null,
+          condition: asset?.condition || null,
+          location: asset?.location || null,
+          building: asset?.building || null,
+          area: asset?.area || null,
           mtbfDays: Math.round(mtbfDays * 10) / 10,
           mtbfHours: Math.round(mtbfDays * 24 * 10) / 10,
           failureCount: data.failures,
@@ -574,6 +663,143 @@ export async function GET(request: NextRequest) {
       woByTrade[wo.tradeActivity || 'Unassigned'] = (woByTrade[wo.tradeActivity || 'Unassigned'] || 0) + 1;
     }
 
+    // ========== 11. TOP ASSETS ==========
+    const topAssetMap: Record<string, { assetId: string; assetName: string; woCount: number; totalCost: number; downtimeMinutes: number }> = {};
+    for (const wo of workOrders) {
+      const key = wo.assetId || 'unassigned';
+      const name = wo.assetName || 'Unassigned';
+      if (!topAssetMap[key]) topAssetMap[key] = { assetId: wo.assetId || '', assetName: name, woCount: 0, totalCost: 0, downtimeMinutes: 0 };
+      topAssetMap[key].woCount++;
+      topAssetMap[key].totalCost += wo.totalCost || 0;
+      (wo.workOrderDowntimes || []).forEach(dt => {
+        topAssetMap[key].downtimeMinutes += dt.durationMinutes || 0;
+      });
+    }
+    const topAssets = Object.values(topAssetMap)
+      .sort((a, b) => b.woCount - a.woCount)
+      .slice(0, 10)
+      .map(a => {
+        const asset = a.assetId ? assetMap.get(a.assetId) : null;
+        return {
+          ...a,
+          assetTag: asset?.assetTag || null,
+          manufacturer: asset?.manufacturer || null,
+          model: asset?.model || null,
+          serialNumber: asset?.serialNumber || null,
+          category: asset?.category?.name || null,
+          criticality: asset?.criticality || null,
+          condition: asset?.condition || null,
+          location: asset?.location || null,
+          building: asset?.building || null,
+          area: asset?.area || null,
+        };
+      });
+
+    // ========== 12. WORK ORDERS BY ASSET ==========
+    const woByAssetGroupMap: Record<string, { assetId: string; assetName: string; workOrders: any[]; woCount: number; completedCount: number; totalCost: number; totalDowntimeMinutes: number }> = {};
+    for (const wo of workOrders) {
+      const key = wo.assetId || 'unassigned';
+      const name = wo.assetName || 'Unassigned';
+      if (!woByAssetGroupMap[key]) woByAssetGroupMap[key] = { assetId: wo.assetId || '', assetName: name, workOrders: [], woCount: 0, completedCount: 0, totalCost: 0, totalDowntimeMinutes: 0 };
+      const group = woByAssetGroupMap[key];
+      group.woCount++;
+      group.totalCost += wo.totalCost || 0;
+      if (['completed', 'verified', 'closed'].includes(wo.status)) group.completedCount++;
+      const dtMinutes = (wo.workOrderDowntimes || []).reduce((s, dt) => s + (dt.durationMinutes || 0), 0);
+      group.totalDowntimeMinutes += dtMinutes;
+      group.workOrders.push({
+        id: wo.id,
+        woNumber: wo.woNumber || '',
+        title: wo.title || '',
+        type: wo.type || '',
+        priority: wo.priority || '',
+        status: wo.status || '',
+        assigneeName: wo.assignee?.fullName || null,
+        estimatedHours: wo.estimatedHours,
+        actualHours: wo.actualHours,
+        totalCost: wo.totalCost || 0,
+        createdAt: wo.createdAt.toISOString(),
+        downtimeMinutes: dtMinutes,
+      });
+    }
+    const workOrdersByAsset = Object.values(woByAssetGroupMap)
+      .sort((a, b) => b.woCount - a.woCount)
+      .slice(0, 20)
+      .map(a => {
+        const asset = a.assetId ? assetMap.get(a.assetId) : null;
+        return {
+          ...a,
+          assetTag: asset?.assetTag || null,
+          manufacturer: asset?.manufacturer || null,
+          model: asset?.model || null,
+          serialNumber: asset?.serialNumber || null,
+          category: asset?.category?.name || null,
+          criticality: asset?.criticality || null,
+          condition: asset?.condition || null,
+          location: asset?.location || null,
+          building: asset?.building || null,
+          area: asset?.area || null,
+          completionRate: a.woCount > 0 ? Math.round((a.completedCount / a.woCount) * 100) : 0,
+        };
+      });
+
+    // ========== 13. STOPPAGES BY ASSET ==========
+    const stoppageByAssetMap: Record<string, { assetName: string; assetId: string; count: number; totalMinutes: number }> = {};
+    for (const wo of workOrders) {
+      for (const dt of (wo.workOrderDowntimes || [])) {
+        const key = wo.assetId || 'unassigned';
+        const name = wo.assetName || 'Unknown';
+        if (!stoppageByAssetMap[key]) stoppageByAssetMap[key] = { assetName: name, assetId: wo.assetId || '', count: 0, totalMinutes: 0 };
+        stoppageByAssetMap[key].count++;
+        stoppageByAssetMap[key].totalMinutes += dt.durationMinutes || 0;
+      }
+    }
+    const stoppageDataByAsset = Object.entries(stoppageByAssetMap)
+      .map(([assetId, data]) => {
+        const asset = assetId !== 'unassigned' ? assetMap.get(assetId) : null;
+        return {
+          assetId: assetId !== 'unassigned' ? assetId : null,
+          assetName: data.assetName,
+          manufacturer: asset?.manufacturer || null,
+          model: asset?.model || null,
+          serialNumber: asset?.serialNumber || null,
+          category: asset?.category?.name || null,
+          criticality: asset?.criticality || null,
+          condition: asset?.condition || null,
+          location: asset?.location || null,
+          building: asset?.building || null,
+          area: asset?.area || null,
+          count: data.count,
+          totalMinutes: data.totalMinutes,
+          totalHours: Math.round((data.totalMinutes / 60) * 100) / 100,
+        };
+      })
+      .sort((a, b) => b.totalMinutes - a.totalMinutes)
+      .slice(0, 10);
+
+    // ========== 14. ASSETS WITH FULL DETAILS ==========
+    const assetsWithDetails = assets.map(a => ({
+      id: a.id,
+      name: a.name,
+      assetTag: a.assetTag,
+      serialNumber: a.serialNumber || null,
+      manufacturer: a.manufacturer || null,
+      model: a.model || null,
+      yearManufactured: a.yearManufactured || null,
+      condition: a.condition,
+      status: a.status,
+      criticality: a.criticality,
+      location: a.location || null,
+      building: a.building || null,
+      floor: a.floor || null,
+      area: a.area || null,
+      category: a.category?.name || null,
+      purchaseCost: a.purchaseCost || null,
+      currentValue: a.currentValue || null,
+      warrantyExpiry: a.warrantyExpiry?.toISOString() || null,
+      expectedLifeYears: a.expectedLifeYears || null,
+    }));
+
     // ========== BUILD RESPONSE DATA ==========
     const jsonData = {
       success: true,
@@ -649,6 +875,7 @@ export async function GET(request: NextRequest) {
           byTrade: stoppagesByTrade,
           byImpact: stoppagesByImpactArray,
           byReason: stoppagesByReasonArray,
+          byAsset: stoppageDataByAsset,
         },
 
         // 9. Cost Analysis
@@ -668,6 +895,11 @@ export async function GET(request: NextRequest) {
           byPriority: Object.entries(woByPriority).map(([priority, count]) => ({ priority, count })).sort((a, b) => b.count - a.count),
           byTrade: Object.entries(woByTrade).map(([trade, count]) => ({ trade, count })).sort((a, b) => b.count - a.count),
         },
+
+        // 11. Asset Intelligence
+        topAssets,
+        workOrdersByAsset,
+        assetsWithDetails,
       },
     };
 

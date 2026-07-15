@@ -45,7 +45,7 @@ import {
   Package, PackageSearch, ClipboardCheck, ChevronDown, GripVertical, Droplets, RotateCcw,
   FlaskConical, Warehouse, PackageOpen, PackageCheck, Lightbulb,
   ArrowUpRight, ArrowDownRight, CalendarClock, LayoutDashboard, Bell, DollarSign,
-  UserMinus, UserCheck, UserX, Undo2, StopCircle,
+  UserMinus, UserCheck, UserX, Undo2, StopCircle, Printer,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -3980,6 +3980,41 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+        {/* Print Work Order Button */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={async () => {
+                  try {
+                    toast.loading('Generating PDF...', { id: 'print-wo' });
+                    const res = await fetch(`/api/work-orders/${id}/print?format=pdf`);
+                    if (!res.ok) throw new Error('Failed to generate PDF');
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${wo?.woNumber || 'WO'}-Print.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                    toast.success('PDF downloaded successfully', { id: 'print-wo' });
+                  } catch (err: any) {
+                    toast.error(err.message || 'Failed to generate PDF', { id: 'print-wo' });
+                  }
+                }}
+              >
+                <Printer className="h-4 w-4" />
+                <span className="hidden sm:inline">Print WO</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Download professional PDF with equipment details, parts list, labor & signatures</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         {isReadOnly && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
             <Eye className="h-3.5 w-3.5 shrink-0" />
