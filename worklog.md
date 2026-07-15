@@ -100,3 +100,24 @@ Stage Summary:
 - Section dividers use per-step accent colors (emerald for 05, cyan for 06)
 - Stats slide features 4 cards with icons (dashboard, verified, location_on, sync)
 - Module grid shows 4 categories: Asset Management, Maintenance, Operations, Intelligence with colored top borders
+
+---
+Task ID: 4
+Agent: Main
+Task: Convert 33 HTML slides to PPTX and deliver
+
+Work Log:
+- Fixed Playwright browser version mismatch (symlinked 1228 → 1223)
+- Created slide_33.html (closing/thank you) manually (sub-agent missed it)
+- Ran batch_html2pptx.js: all 33 slides converted successfully via Playwright
+- Final PPTX: 4.9 MB, 33 slides, pixel-perfect rendering
+- Only 1 minor warning (slide_31 bounds overflow, non-critical)
+- Dev server too resource-constrained to stay alive for preview download
+- File committed and pushed to GitHub — available on VPS after deployment
+
+Stage Summary:
+- Final PPTX: public/iAssetsPro-WO-Workflow-Presentation.pptx (4.9 MB, 33 slides)
+- 33 slides: 1 cover, 1 platform overview, 1 workflow diagram, 1 capability grid, 6 section dividers, 20 screenshot slides, 1 stats slide, 1 module grid, 1 closing
+- Dark premium design with emerald/cyan/violet/amber accent colors
+- Screenshots are 840×610px with minimal right-side dot labels — visual-first, few texts
+- Available at: https://iassetspro.lightworldtech.com/iAssetsPro-WO-Workflow-Presentation.pptx (after VPS deploy)
