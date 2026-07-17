@@ -434,7 +434,7 @@ export function WOReportsPage() {
           const mtbf = reportData.failureRate?.mtbf?.find((m: any) => m.assetId === d.assetId);
           const a = d.asset || {};
           const risk = d.failureRate >= 40 ? 'High' : d.failureRate >= 20 ? 'Medium' : 'Low';
-          return [d.assetName || d.assetId, a.assetTag || '', a.manufacturer || '', a.model || '', a.category || '', a.criticality || '',
+          return [d.assetName || d.assetId, a.assetTag || '', a.manufacturer || '', a.model || '', typeof a.category === 'string' ? a.category : a.category?.name || '', a.criticality || '',
             [a.building, a.floor, a.area].filter(Boolean).join('/') || a.location || '',
             String(d.totalWOs), String(d.failures), `${d.failureRate}%`, String(mtbf?.mtbfDays || '-'), risk];
         });
@@ -1783,7 +1783,7 @@ export function WOReportsPage() {
                     tag: asset.assetTag ? <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{asset.assetTag}</code> : '-',
                     manufacturer: asset.manufacturer || '-',
                     model: asset.model || '-',
-                    category: asset.category || '-',
+                    category: typeof asset.category === 'string' ? asset.category : asset.category?.name || '-',
                     criticality: asset.criticality ? <span className={critColor}>{asset.criticality}</span> : '-',
                     location: [asset.building, asset.floor, asset.area].filter(Boolean).join(' / ') || asset.location || '-',
                     totalWOs: d.totalWOs,

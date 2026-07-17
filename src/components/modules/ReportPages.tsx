@@ -3299,7 +3299,7 @@ export function FailureAnalysisPage() {
                             <TableCell>{d.assetTag}</TableCell>
                             <TableCell>{d.manufacturer}</TableCell>
                             <TableCell>{d.model}</TableCell>
-                            <TableCell>{d.category}</TableCell>
+                            <TableCell>{d.category?.name || d.category || '-'}</TableCell>
                             <TableCell><Badge variant="outline" style={{ borderColor: SEVERITY_COLORS[d.criticality], color: SEVERITY_COLORS[d.criticality] }}>{d.criticality}</Badge></TableCell>
                             <TableCell className="text-right font-medium">{d.failureCount}</TableCell>
                             <TableCell className="text-right">{d.totalDowntimeMinutes.toLocaleString()}</TableCell>
