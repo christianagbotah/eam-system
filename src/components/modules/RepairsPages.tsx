@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { api, getAuthHeaders } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
+import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -157,12 +158,12 @@ function OverduePulse({ isOverdue, date }: { isOverdue: boolean; date: string })
   );
 }
 
-function StatsCard({ icon: Icon, count, label, color, bgColor, subtext }: {
+function StatsCard({ icon: Icon, count, label, color, bgColor, subtext, onClick }: {
   icon: React.ElementType; count: number | string; label: string;
-  color: string; bgColor: string; subtext?: string;
+  color: string; bgColor: string; subtext?: string; onClick?: () => void;
 }) {
   return (
-    <Card className="group hover:shadow-md transition-shadow">
+    <Card className={`group hover:shadow-md transition-all ${onClick ? 'cursor-pointer active:scale-[0.98]' : ''}`} onClick={onClick}>
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
           <div className={`${bgColor} p-2.5 rounded-lg`}>
@@ -353,6 +354,7 @@ function canViewAllRepairData(user: any): boolean {
 export function RepairMaterialRequestsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
+  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -513,6 +515,10 @@ export function RepairMaterialRequestsPage() {
     return qty * cost;
   }, [createForm.quantityRequested, createForm.unitCost]);
 
+  if (!woEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  }
+
   return (
     <div className="page-content">
       {/* Header */}
@@ -532,10 +538,10 @@ export function RepairMaterialRequestsPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatsCard icon={Clock} count={stats?.byStatus?.pending ?? requests.filter(r => r.status === 'pending').length} label="Pending" color="text-yellow-600" bgColor="bg-yellow-50" />
-        <StatsCard icon={ShieldCheck} count={((stats?.byStatus?.supervisor_approved || 0) + (stats?.byStatus?.storekeeper_approved || 0)) || requests.filter(r => ['supervisor_approved', 'storekeeper_approved'].includes(r.status)).length} label="Awaiting Approval" color="text-sky-600" bgColor="bg-sky-50" />
-        <StatsCard icon={PackageCheck} count={stats?.byStatus?.issued ?? requests.filter(r => r.status === 'issued').length} label="Issued" color="text-emerald-600" bgColor="bg-emerald-50" />
-        <StatsCard icon={AlertTriangle} count={stats?.overdueCount ?? requests.filter(r => r.isOverdue).length} label="Overdue" color="text-red-600" bgColor="bg-red-50" subtext="!" />
+        <StatsCard icon={Clock} count={stats?.byStatus?.pending ?? requests.filter(r => r.status === 'pending').length} label="Pending" color="text-yellow-600" bgColor="bg-yellow-50" onClick={() => { setFilterStatus('pending'); setPage(1); }} />
+        <StatsCard icon={ShieldCheck} count={((stats?.byStatus?.supervisor_approved || 0) + (stats?.byStatus?.storekeeper_approved || 0)) || requests.filter(r => ['supervisor_approved', 'storekeeper_approved'].includes(r.status)).length} label="Awaiting Approval" color="text-sky-600" bgColor="bg-sky-50" onClick={() => { setFilterStatus('supervisor_approved'); setPage(1); }} />
+        <StatsCard icon={PackageCheck} count={stats?.byStatus?.issued ?? requests.filter(r => r.status === 'issued').length} label="Issued" color="text-emerald-600" bgColor="bg-emerald-50" onClick={() => { setFilterStatus('issued'); setPage(1); }} />
+        <StatsCard icon={AlertTriangle} count={stats?.overdueCount ?? requests.filter(r => r.isOverdue).length} label="Overdue" color="text-red-600" bgColor="bg-red-50" subtext="!" onClick={() => { setFilterStatus('all'); setPage(1); }} />
         <StatsCard icon={DollarSign} count={formatCurrency(stats?.totalCost || 0)} label="Total Cost" color="text-teal-600" bgColor="bg-teal-50" />
       </div>
 
@@ -899,6 +905,7 @@ type ToolItemRow = {
 export function RepairToolRequestsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
+  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -1446,6 +1453,10 @@ export function RepairToolRequestsPage() {
     </div>
   );
 
+  if (!woEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  }
+
   return (
     <div className="page-content">
       {/* Header */}
@@ -1465,10 +1476,10 @@ export function RepairToolRequestsPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard icon={Clock} count={stats?.byStatus?.pending ?? requests.filter(r => r.status === 'pending').length} label="Pending" color="text-yellow-600" bgColor="bg-yellow-50" />
-        <StatsCard icon={ShieldCheck} count={((stats?.byStatus?.supervisor_approved || 0) + (stats?.byStatus?.storekeeper_approved || 0)) || requests.filter(r => ['supervisor_approved', 'storekeeper_approved'].includes(r.status)).length} label="Awaiting Approval" color="text-sky-600" bgColor="bg-sky-50" />
-        <StatsCard icon={Wrench} count={stats?.byStatus?.issued ?? requests.filter(r => r.status === 'issued').length} label="Issued / Out" color="text-emerald-600" bgColor="bg-emerald-50" />
-        <StatsCard icon={AlertTriangle} count={stats?.overdueCount ?? requests.filter(r => r.isOverdue).length} label="Overdue" color="text-red-600" bgColor="bg-red-50" subtext="!" />
+        <StatsCard icon={Clock} count={stats?.byStatus?.pending ?? requests.filter(r => r.status === 'pending').length} label="Pending" color="text-yellow-600" bgColor="bg-yellow-50" onClick={() => setFilterStatus('pending')} />
+        <StatsCard icon={ShieldCheck} count={((stats?.byStatus?.supervisor_approved || 0) + (stats?.byStatus?.storekeeper_approved || 0)) || requests.filter(r => ['supervisor_approved', 'storekeeper_approved'].includes(r.status)).length} label="Awaiting Approval" color="text-sky-600" bgColor="bg-sky-50" onClick={() => setFilterStatus('supervisor_approved')} />
+        <StatsCard icon={Wrench} count={stats?.byStatus?.issued ?? requests.filter(r => r.status === 'issued').length} label="Issued / Out" color="text-emerald-600" bgColor="bg-emerald-50" onClick={() => setFilterStatus('issued')} />
+        <StatsCard icon={AlertTriangle} count={stats?.overdueCount ?? requests.filter(r => r.isOverdue).length} label="Overdue" color="text-red-600" bgColor="bg-red-50" subtext="!" onClick={() => setFilterStatus('all')} />
       </div>
 
       {/* Filters */}
@@ -2104,6 +2115,7 @@ export function RepairToolRequestsPage() {
 export function RepairToolTransfersPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
+  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
   const [transfers, setTransfers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -2183,6 +2195,10 @@ export function RepairToolTransfersPage() {
     !searchText || t.tool?.name?.toLowerCase().includes(searchText.toLowerCase()) || t.fromUser?.fullName?.toLowerCase().includes(searchText.toLowerCase()) || t.toUser?.fullName?.toLowerCase().includes(searchText.toLowerCase())
   ), [transfers, searchText]);
 
+  if (!woEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  }
+
   return (
     <div className="page-content">
       {/* Header */}
@@ -2202,10 +2218,10 @@ export function RepairToolTransfersPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard icon={Clock} count={stats?.byStatus?.pending ?? transfers.filter(t => t.status === 'pending').length} label="Pending Review" color="text-yellow-600" bgColor="bg-yellow-50" />
-        <StatsCard icon={Handshake} count={stats?.byStatus?.storekeeper_approved ?? transfers.filter(t => t.status === 'storekeeper_approved').length} label="Awaiting Handover" color="text-sky-600" bgColor="bg-sky-50" />
-        <StatsCard icon={CheckCircle2} count={stats?.byStatus?.transferred ?? transfers.filter(t => t.status === 'transferred').length} label="Completed" color="text-emerald-600" bgColor="bg-emerald-50" />
-        <StatsCard icon={XCircle} count={stats?.byStatus?.rejected ?? transfers.filter(t => t.status === 'rejected').length} label="Rejected" color="text-red-600" bgColor="bg-red-50" />
+        <StatsCard icon={Clock} count={stats?.byStatus?.pending ?? transfers.filter(t => t.status === 'pending').length} label="Pending Review" color="text-yellow-600" bgColor="bg-yellow-50" onClick={() => { setFilterStatus('pending'); setPage(1); }} />
+        <StatsCard icon={Handshake} count={stats?.byStatus?.storekeeper_approved ?? transfers.filter(t => t.status === 'storekeeper_approved').length} label="Awaiting Handover" color="text-sky-600" bgColor="bg-sky-50" onClick={() => { setFilterStatus('storekeeper_approved'); setPage(1); }} />
+        <StatsCard icon={CheckCircle2} count={stats?.byStatus?.transferred ?? transfers.filter(t => t.status === 'transferred').length} label="Completed" color="text-emerald-600" bgColor="bg-emerald-50" onClick={() => { setFilterStatus('transferred'); setPage(1); }} />
+        <StatsCard icon={XCircle} count={stats?.byStatus?.rejected ?? transfers.filter(t => t.status === 'rejected').length} label="Rejected" color="text-red-600" bgColor="bg-red-50" onClick={() => { setFilterStatus('rejected'); setPage(1); }} />
       </div>
 
       {/* Filters */}
@@ -2437,6 +2453,7 @@ export function RepairToolTransfersPage() {
 export function RepairDowntimePage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
+  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -2537,6 +2554,10 @@ export function RepairDowntimePage() {
 
   const totalMinutes = records.reduce((sum: number, r: any) => sum + (r.durationMinutes || 0), 0);
 
+  if (!woEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  }
+
   return (
     <div className="page-content">
       {/* Header */}
@@ -2556,9 +2577,9 @@ export function RepairDowntimePage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard icon={Activity} count={records.filter((r: any) => !r.downtimeEnd).length} label="Ongoing" color="text-red-600" bgColor="bg-red-50" />
-        <StatsCard icon={CheckCircle2} count={records.filter((r: any) => !!r.downtimeEnd).length} label="Completed" color="text-emerald-600" bgColor="bg-emerald-50" />
-        <StatsCard icon={AlertTriangle} count={records.filter((r: any) => r.category === 'unplanned').length} label="Unplanned" color="text-orange-600" bgColor="bg-orange-50" />
+        <StatsCard icon={Activity} count={records.filter((r: any) => !r.downtimeEnd).length} label="Ongoing" color="text-red-600" bgColor="bg-red-50" onClick={() => { setFilterStatus('ongoing'); setPage(1); }} />
+        <StatsCard icon={CheckCircle2} count={records.filter((r: any) => !!r.downtimeEnd).length} label="Completed" color="text-emerald-600" bgColor="bg-emerald-50" onClick={() => { setFilterStatus('completed'); setPage(1); }} />
+        <StatsCard icon={AlertTriangle} count={records.filter((r: any) => r.category === 'unplanned').length} label="Unplanned" color="text-orange-600" bgColor="bg-orange-50" onClick={() => { setFilterCategory('unplanned'); setPage(1); }} />
         <StatsCard icon={Clock} count={formatDurationFromMinutes(totalMinutes)} label="Total Downtime" color="text-blue-600" bgColor="bg-blue-50" />
       </div>
 
@@ -3149,6 +3170,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
 export function RepairCompletionPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
+  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
   const [woId, setWoId] = useState('');
   const [completion, setCompletion] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -3202,6 +3224,10 @@ export function RepairCompletionPage() {
     } else toast.error(res.error || 'Failed');
     setSubmitting(false);
   };
+
+  if (!woEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  }
 
   return (
     <div className="page-content">
@@ -3330,6 +3356,7 @@ export function RepairCompletionPage() {
 // ============================================================================
 
 export function RepairAnalyticsPage() {
+  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
   const [kpi, setKpi] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [reconReport, setReconReport] = useState<any>(null);
@@ -3431,6 +3458,10 @@ export function RepairAnalyticsPage() {
       setPdfLoading(false);
     }
   }, [dateFrom, dateTo, activeAnalyticsTab]);
+
+  if (!woEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  }
 
   if (loading) return <LoadingSkeleton />;
 
@@ -4056,6 +4087,7 @@ const SPARE_RETURN_STAGES: PipelineStage[] = [
 
 export function SparePartReturnsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
+  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
   const [returns, setReturns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -4126,6 +4158,10 @@ export function SparePartReturnsPage() {
     !searchText || r.itemName?.toLowerCase().includes(searchText.toLowerCase()) || r.returnNumber?.toLowerCase().includes(searchText.toLowerCase())
   ), [returns, searchText]);
 
+  if (!woEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  }
+
   return (
     <div className="page-content">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -4143,10 +4179,10 @@ export function SparePartReturnsPage() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard icon={Clock} count={stats?.byStatus?.pending ?? 0} label="Pending Inspection" color="text-yellow-600" bgColor="bg-yellow-50" />
-        <StatsCard icon={Wrench} count={stats?.byStatus?.refurbishing ?? 0} label="Being Refurbished" color="text-blue-600" bgColor="bg-blue-50" />
-        <StatsCard icon={CheckCircle2} count={stats?.byStatus?.refurbished ?? 0} label="Refurbished" color="text-emerald-600" bgColor="bg-emerald-50" />
-        <StatsCard icon={Warehouse} count={stats?.byStatus?.returned_to_store ?? 0} label="Back in Store" color="text-teal-600" bgColor="bg-teal-50" />
+        <StatsCard icon={Clock} count={stats?.byStatus?.pending ?? 0} label="Pending Inspection" color="text-yellow-600" bgColor="bg-yellow-50" onClick={() => { setFilterStatus('pending'); setPage(1); }} />
+        <StatsCard icon={Wrench} count={stats?.byStatus?.refurbishing ?? 0} label="Being Refurbished" color="text-blue-600" bgColor="bg-blue-50" onClick={() => { setFilterStatus('refurbishing'); setPage(1); }} />
+        <StatsCard icon={CheckCircle2} count={stats?.byStatus?.refurbished ?? 0} label="Refurbished" color="text-emerald-600" bgColor="bg-emerald-50" onClick={() => { setFilterStatus('refurbished'); setPage(1); }} />
+        <StatsCard icon={Warehouse} count={stats?.byStatus?.returned_to_store ?? 0} label="Back in Store" color="text-teal-600" bgColor="bg-teal-50" onClick={() => { setFilterStatus('returned_to_store'); setPage(1); }} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -4425,6 +4461,7 @@ const DAMAGE_STAGES: PipelineStage[] = [
 
 export function DamagedToolReportsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
+  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -4490,6 +4527,10 @@ export function DamagedToolReportsPage() {
     !searchText || r.tool?.name?.toLowerCase().includes(searchText.toLowerCase()) || r.reportNumber?.toLowerCase().includes(searchText.toLowerCase()) || r.damageDescription?.toLowerCase().includes(searchText.toLowerCase())
   ), [reports, searchText]);
 
+  if (!woEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  }
+
   return (
     <div className="page-content">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -4507,10 +4548,10 @@ export function DamagedToolReportsPage() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard icon={AlertTriangle} count={stats?.byStatus?.reported ?? 0} label="Reported" color="text-red-600" bgColor="bg-red-50" />
-        <StatsCard icon={Wrench} count={stats?.byStatus?.repair_in_progress ?? 0} label="In Repair" color="text-blue-600" bgColor="bg-blue-50" />
-        <StatsCard icon={CheckCircle2} count={stats?.byStatus?.repaired ?? 0} label="Repaired" color="text-emerald-600" bgColor="bg-emerald-50" />
-        <StatsCard icon={Ban} count={stats?.byStatus?.written_off ?? 0} label="Written Off" color="text-gray-600" bgColor="bg-gray-50" />
+        <StatsCard icon={AlertTriangle} count={stats?.byStatus?.reported ?? 0} label="Reported" color="text-red-600" bgColor="bg-red-50" onClick={() => { setFilterStatus('reported'); setPage(1); }} />
+        <StatsCard icon={Wrench} count={stats?.byStatus?.repair_in_progress ?? 0} label="In Repair" color="text-blue-600" bgColor="bg-blue-50" onClick={() => { setFilterStatus('repair_in_progress'); setPage(1); }} />
+        <StatsCard icon={CheckCircle2} count={stats?.byStatus?.repaired ?? 0} label="Repaired" color="text-emerald-600" bgColor="bg-emerald-50" onClick={() => { setFilterStatus('repaired'); setPage(1); }} />
+        <StatsCard icon={Ban} count={stats?.byStatus?.written_off ?? 0} label="Written Off" color="text-gray-600" bgColor="bg-gray-50" onClick={() => { setFilterStatus('written_off'); setPage(1); }} />
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -4770,6 +4811,7 @@ export function DamagedToolReportsPage() {
 
 export function MaintenanceReportsPage() {
   const { user } = useAuthStore();
+  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
   const [reportType, setReportType] = useState('lifecycle');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -4829,6 +4871,10 @@ export function MaintenanceReportsPage() {
     a.click(); URL.revokeObjectURL(url);
     toast.success('Report exported');
   };
+
+  if (!woEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  }
 
   return (
     <div className="page-content">

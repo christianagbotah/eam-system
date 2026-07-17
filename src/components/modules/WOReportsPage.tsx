@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/api';
 import { EmptyState, LoadingSkeleton, formatCurrency, formatDuration } from '@/components/shared/helpers';
+import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 
 // ============================================================================
 // CONSTANTS
@@ -137,11 +138,14 @@ function formatTimestamp(): string {
 // SUB-COMPONENTS
 // ============================================================================
 
-function KPICard({ label, value, icon: Icon, color, subtitle }: {
-  label: string; value: string | number; icon: React.ElementType; color: string; subtitle?: string;
+function KPICard({ label, value, icon: Icon, color, subtitle, onClick }: {
+  label: string; value: string | number; icon: React.ElementType; color: string; subtitle?: string; onClick?: () => void;
 }) {
   return (
-    <Card className="border border-border/60 shadow-sm">
+    <Card
+      className={`${color ? '' : ''}border border-border/60 shadow-sm cursor-pointer transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98]`}
+      onClick={onClick}
+    >
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
           <div className={`h-10 w-10 rounded-xl ${color} flex items-center justify-center shrink-0`}>
@@ -305,6 +309,11 @@ export function WOReportsPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [pdfLoading, setPdfLoading] = useState(false);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
+
+  // Module visibility
+  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const invEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
+  const dtEnabled = useModuleEnabled(MODULE_CODES.DOWNTIME);
 
   // Filters
   const [tradeFilter, setTradeFilter] = useState('');
@@ -511,14 +520,14 @@ export function WOReportsPage() {
   const kpiCards = useMemo(() => {
     if (!s) return [];
     return [
-      { label: 'Total Work Orders', value: s.totalWOs ?? 0, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-      { label: 'Completion Rate', value: `${s.completionRate ?? 0}%`, icon: Activity, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-      { label: 'Breakdown Rate', value: `${s.breakdownRate ?? 0}%`, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
-      { label: 'Avg Response', value: formatHours(s.avgResponseTime), icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-      { label: 'Total Man Hours', value: formatHours(s.totalManHours), icon: HardHat, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
-      { label: 'Material Cost', value: formatCurrency(s.totalMaterialCost), icon: Package, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
-      { label: 'Total Downtime', value: formatHours(s.totalDowntimeHours), icon: CircleStop, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400' },
-      { label: 'Rework Rate', value: formatRate(s.reworkRate), icon: TrendingDown, color: 'text-rose-600 bg-rose-50 dark:bg-rose-900/30 dark:text-rose-400' },
+      { label: 'Total Work Orders', value: s.totalWOs ?? 0, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400', tab: undefined as string | undefined },
+      { label: 'Completion Rate', value: `${s.completionRate ?? 0}%`, icon: Activity, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400', tab: undefined as string | undefined },
+      { label: 'Breakdown Rate', value: `${s.breakdownRate ?? 0}%`, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400', tab: 'breakdowns' as string | undefined },
+      { label: 'Avg Response', value: formatHours(s.avgResponseTime), icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400', tab: 'response-time' as string | undefined },
+      { label: 'Total Man Hours', value: formatHours(s.totalManHours), icon: HardHat, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400', tab: 'man-hours' as string | undefined },
+      { label: 'Material Cost', value: formatCurrency(s.totalMaterialCost), icon: Package, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400', tab: 'materials' as string | undefined },
+      { label: 'Total Downtime', value: formatHours(s.totalDowntimeHours), icon: CircleStop, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400', tab: 'downtime' as string | undefined },
+      { label: 'Rework Rate', value: formatRate(s.reworkRate), icon: TrendingDown, color: 'text-rose-600 bg-rose-50 dark:bg-rose-900/30 dark:text-rose-400', tab: 'failure-rate' as string | undefined },
     ];
   }, [s]);
 
@@ -611,6 +620,22 @@ export function WOReportsPage() {
     return (
       <div className="page-content">
         <LoadingSkeleton />
+      </div>
+    );
+  }
+
+  if (!woEnabled) {
+    return (
+      <div className="page-content flex items-center justify-center min-h-[50vh]">
+        <div className="text-center space-y-3">
+          <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mx-auto">
+            <FileBarChart className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <h2 className="text-lg font-semibold">Module Not Active</h2>
+          <p className="text-sm text-muted-foreground max-w-md">
+            Work Orders module is not active. Enable it in Settings to view reports.
+          </p>
+        </div>
       </div>
     );
   }
@@ -754,7 +779,7 @@ export function WOReportsPage() {
           {/* Global KPI Strip */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
             {kpiCards.map((k) => (
-              <KPICard key={k.label} {...k} />
+              <KPICard key={k.label} label={k.label} value={k.value} icon={k.icon} color={k.color} onClick={k.tab ? () => setActiveTab(k.tab!) : undefined} />
             ))}
           </div>
 
@@ -764,9 +789,11 @@ export function WOReportsPage() {
               <TabsTrigger value="overview" className="text-xs">
                 <BarChart3 className="h-3.5 w-3.5 mr-1" />Overview
               </TabsTrigger>
+              {dtEnabled && (
               <TabsTrigger value="downtime" className="text-xs">
                 <CircleStop className="h-3.5 w-3.5 mr-1" />Downtime
               </TabsTrigger>
+              )}
               <TabsTrigger value="response-time" className="text-xs">
                 <Timer className="h-3.5 w-3.5 mr-1" />Response Time
               </TabsTrigger>
@@ -776,15 +803,19 @@ export function WOReportsPage() {
               <TabsTrigger value="man-hours" className="text-xs">
                 <HardHat className="h-3.5 w-3.5 mr-1" />Man Hours
               </TabsTrigger>
+              {invEnabled && (
               <TabsTrigger value="materials" className="text-xs">
                 <Boxes className="h-3.5 w-3.5 mr-1" />Materials
               </TabsTrigger>
+              )}
               <TabsTrigger value="failure-rate" className="text-xs">
                 <Gauge className="h-3.5 w-3.5 mr-1" />Failure Rate
               </TabsTrigger>
+              {dtEnabled && (
               <TabsTrigger value="stoppages" className="text-xs">
                 <Pause className="h-3.5 w-3.5 mr-1" />Stoppages
               </TabsTrigger>
+              )}
             </TabsList>
 
             {/* ============================================================= */}
@@ -915,6 +946,7 @@ export function WOReportsPage() {
             {/* ============================================================= */}
             {/* TAB 2: DOWNTIME (PER TRADE) REPORT                            */}
             {/* ============================================================= */}
+            {dtEnabled && (
             <TabsContent value="downtime" className="space-y-6 mt-0">
               <TabSectionHeader title="Downtime Report (Per Trade)" description="Analysis of equipment downtime events, duration, and production impact" />
 
@@ -1044,6 +1076,7 @@ export function WOReportsPage() {
                 `Total production loss: ${formatCurrency(downtimeTotals.productionLoss)}.`,
               ]} />
             </TabsContent>
+            )}
 
             {/* ============================================================= */}
             {/* TAB 3: RESPONSE TIME REPORT                                    */}
@@ -1526,6 +1559,7 @@ export function WOReportsPage() {
             {/* ============================================================= */}
             {/* TAB 6: MATERIAL QUANTITY & COST REPORT                         */}
             {/* ============================================================= */}
+            {invEnabled && (
             <TabsContent value="materials" className="space-y-6 mt-0">
               <TabSectionHeader title="Material Quantity & Cost Report" description="Analysis of material usage, costs, and trends by work order type" />
 
@@ -1658,6 +1692,7 @@ export function WOReportsPage() {
                 `Top material by cost: ${materialsSummary.topItem?.name || 'N/A'}.`,
               ]} />
             </TabsContent>
+            )}
 
             {/* ============================================================= */}
             {/* TAB 7: FAILURE RATE REPORT                                     */}
@@ -1807,6 +1842,7 @@ export function WOReportsPage() {
             {/* ============================================================= */}
             {/* TAB 8: STOPPAGE NUMBER REPORT                                  */}
             {/* ============================================================= */}
+            {dtEnabled && (
             <TabsContent value="stoppages" className="space-y-6 mt-0">
               <TabSectionHeader title="Stoppage Number Report" description="Analysis of production stoppage events by trade, impact level, and reason" />
 

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { exportPDF } from '@/lib/export-pdf';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -72,25 +73,23 @@ const exportCSV = (filename: string, headers: string[], rows: string[][]) => {
 // KPI CARD COMPONENT
 // ============================================================================
 
-function KPICard({ icon: Icon, label, value, subtext, color, bgColor }: {
+function KPICard({ icon: Icon, label, value, subtext, color, bgColor, onClick }: {
   icon: React.ElementType; label: string; value: string | number;
-  subtext?: string; color: string; bgColor: string;
+  subtext?: string; color: string; bgColor: string; onClick?: () => void;
 }) {
   return (
-    <Card className="border border-border/60 shadow-sm hover:shadow-md transition-shadow">
-      <CardContent className="p-4">
-        <div className="flex items-center gap-3">
-          <div className={`${bgColor} p-2.5 rounded-xl flex items-center justify-center shrink-0`}>
-            <Icon className={`h-5 w-5 ${color}`} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xl font-bold tracking-tight">{value}</p>
-            <p className="text-[11px] text-muted-foreground truncate">{label}</p>
-          </div>
-          {subtext && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded ml-auto">{subtext}</span>}
+    <div onClick={onClick} className={`cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98] ${bgColor} rounded-xl p-4 border border-border/60 shadow-sm hover:shadow-md`}>
+      <div className="flex items-center gap-3">
+        <div className="bg-background/70 p-2.5 rounded-xl flex items-center justify-center shrink-0">
+          <Icon className={`h-5 w-5 ${color}`} />
         </div>
-      </CardContent>
-    </Card>
+        <div className="min-w-0">
+          <p className="text-xl font-bold tracking-tight">{value}</p>
+          <p className="text-[11px] text-muted-foreground truncate">{label}</p>
+        </div>
+        {subtext && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded ml-auto">{subtext}</span>}
+      </div>
+    </div>
   );
 }
 
@@ -108,6 +107,9 @@ export default function EnterpriseReports() {
   const [workOrders, setWorkOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('executive');
+
+  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const dtEnabled = useModuleEnabled(MODULE_CODES.DOWNTIME);
 
   const fetchReport = useCallback(() => {
     setLoading(true);
@@ -332,6 +334,18 @@ export default function EnterpriseReports() {
 
   if (loading && !reportData) return <div className="page-content"><LoadingSkeleton /></div>;
 
+  if (!woEnabled) {
+    return (
+      <div className="page-content">
+        <div className="flex flex-col items-center justify-center py-20 gap-3">
+          <ClipboardList className="h-12 w-12 text-muted-foreground" />
+          <p className="text-lg font-medium text-muted-foreground">Work Orders module is not active</p>
+          <p className="text-sm text-muted-foreground">Enable the Work Orders module to access Enterprise Reporting.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="page-content">
       {/* Header */}
@@ -375,7 +389,7 @@ export default function EnterpriseReports() {
           <TabsTrigger value="executive" className="text-xs"><BarChart3 className="h-3.5 w-3.5 mr-1" />Executive</TabsTrigger>
           <TabsTrigger value="wo-analytics" className="text-xs"><ClipboardList className="h-3.5 w-3.5 mr-1" />WO Analytics</TabsTrigger>
           <TabsTrigger value="labor" className="text-xs"><Users className="h-3.5 w-3.5 mr-1" />Labor</TabsTrigger>
-          <TabsTrigger value="downtime" className="text-xs"><AlertTriangle className="h-3.5 w-3.5 mr-1" />Downtime</TabsTrigger>
+          {dtEnabled && <TabsTrigger value="downtime" className="text-xs"><AlertTriangle className="h-3.5 w-3.5 mr-1" />Downtime</TabsTrigger>}
           <TabsTrigger value="repeat" className="text-xs"><RefreshCw className="h-3.5 w-3.5 mr-1" />Repeat Failures</TabsTrigger>
           <TabsTrigger value="cost" className="text-xs"><DollarSign className="h-3.5 w-3.5 mr-1" />Cost Analysis</TabsTrigger>
           <TabsTrigger value="period-comparison" className="text-xs"><ArrowRightLeft className="h-3.5 w-3.5 mr-1" />Period Comparison</TabsTrigger>
@@ -386,7 +400,7 @@ export default function EnterpriseReports() {
         {/* ====== EXECUTIVE SUMMARY ====== */}
         <TabsContent value="executive" className="space-y-6 mt-6">
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
-            {executiveKPIs.map(k => { const I = k.icon; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} subtext={k.subtext} color={k.color} bgColor={k.bgColor} />; })}
+            {executiveKPIs.map(k => { const I = k.icon; const tabMap: Record<string, string | undefined> = { 'WOs Completed (MTD)': 'wo-analytics', 'MTBF': 'downtime', 'MTTR': 'downtime', 'Planned vs Unplanned': 'wo-analytics', 'Total Maint. Cost': 'cost' }; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} subtext={k.subtext} color={k.color} bgColor={k.bgColor} onClick={tabMap[k.label] ? () => setActiveTab(tabMap[k.label]!) : undefined} />; })}
           </div>
 
           {/* Quick Charts */}
@@ -638,7 +652,7 @@ export default function EnterpriseReports() {
         </TabsContent>
 
         {/* ====== DOWNTIME ANALYSIS TAB ====== */}
-        <TabsContent value="downtime" className="space-y-6 mt-6">
+        {dtEnabled && <TabsContent value="downtime" className="space-y-6 mt-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { label: 'Total Events', value: reportData?.downtimeAnalysis?.totalEvents ?? 0, icon: AlertTriangle, color: 'text-red-600', bgColor: 'bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
@@ -712,7 +726,7 @@ export default function EnterpriseReports() {
               </CardContent>
             </Card>
           </div>
-        </TabsContent>
+        </TabsContent>}
 
         {/* ====== REPEAT FAILURE TAB ====== */}
         <TabsContent value="repeat" className="space-y-6 mt-6">
@@ -969,7 +983,7 @@ export default function EnterpriseReports() {
                   const isGoodDowntime = k.label === 'Downtime' ? isDown : isUp;
                   const isBadDowntime = k.label === 'Downtime' ? isUp : isDown;
                   return (
-                    <Card key={k.label} className="border border-border/60 shadow-sm">
+                    <Card key={k.label} className="border border-border/60 shadow-sm cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98] hover:shadow-md">
                       <CardContent className="p-4">
                         <div className="flex items-center gap-2 mb-2">
                           <I className="h-4 w-4 text-muted-foreground" />
@@ -1074,7 +1088,7 @@ export default function EnterpriseReports() {
                       const isGood = k.label === 'Downtime' ? isDown : isUp;
                       const isBad = k.label === 'Downtime' ? isUp : isDown;
                       return (
-                        <Card key={k.label} className="border border-violet-200/60 shadow-sm">
+                        <Card key={k.label} className="border border-violet-200/60 shadow-sm cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98] hover:shadow-md">
                           <CardContent className="p-4">
                             <div className="flex items-center gap-2 mb-2">
                               <span className="text-xs text-violet-600 font-medium">{k.label}</span>
@@ -1213,10 +1227,10 @@ export default function EnterpriseReports() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { label: 'Overall SLA Rate', value: `${s?.slaComplianceRate ?? 0}%`, icon: ShieldAlert, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-              { label: 'Overdue WOs', value: s?.overdueWOs ?? 0, icon: Clock, color: 'text-red-600', bgColor: 'bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+              { label: 'Overdue WOs', value: s?.overdueWOs ?? 0, icon: Clock, color: 'text-red-600', bgColor: 'bg-red-50 dark:bg-red-900/30 dark:text-red-400', onClickTab: 'wo-analytics' as const },
               { label: 'Avg Response', value: `${s?.avgCompletionHours ?? 0}h`, icon: Timer, color: 'text-sky-600', bgColor: 'bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
               { label: 'Breached', value: s?.slaBreachedWOs ?? 0, icon: AlertTriangle, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-            ].map(k => { const I = k.icon; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} color={k.color} bgColor={k.bgColor} />; })}
+            ].map(k => { const I = k.icon; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} color={k.color} bgColor={k.bgColor} onClick={'onClickTab' in k && k.onClickTab ? () => setActiveTab(k.onClickTab) : undefined} />; })}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

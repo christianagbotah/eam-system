@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { format, subDays } from 'date-fns';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
+import { MODULE_CODES } from '@/hooks/useModuleEnabled';
 import { api } from '@/lib/api';
 import { timeAgo, formatCurrency } from '@/components/shared/helpers';
 import type { DashboardStats, PageName } from '@/types';
@@ -387,6 +388,13 @@ export function DashboardPage() {
       })
     : crossModuleData;
 
+  // Module-aware visibility for enhanced KPIs
+  const analyticsEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.ANALYTICS);
+  const safetyEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.SAFETY);
+  const productionEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PRODUCTION);
+  const qualityEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.QUALITY);
+  const pmEnabled = enabledModules.size === 0 || enabledModules.has(MODULE_CODES.PM_SCHEDULES);
+
   return (
     <div className="p-6 lg:p-8 space-y-8 max-w-[1600px] mx-auto">
       {/* ===== Welcome Header ===== */}
@@ -647,50 +655,55 @@ export function DashboardPage() {
       </div>
 
       {/* ===== Enhanced KPIs Row (Manager/Admin only or all) ===== */}
-      {(isManager || isPlanner || isSupervisor) && (
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
-          {/* MTTR Card */}
+      {(isManager || isPlanner || isSupervisor) && (() => {
+        const enhancedCards = [];
+        if (analyticsEnabled) {
+          enhancedCards.push(
+            <KPICard
+              key="mttr"
+              label="MTTR (Avg Repair Time)"
+              value={`${maintenanceKPIs.mttr}h`}
+              sublabel="Mean Time To Repair"
+              color="#f59e0b"
+              bgColor="bg-amber-50 dark:bg-amber-950/30"
+              borderColor="border-amber-100 dark:border-amber-900/40"
+              iconBg="bg-amber-100 dark:bg-amber-900/50"
+              iconColor="text-amber-600 dark:text-amber-400"
+              icon={Timer}
+            />,
+            <KPICard
+              key="mtbf"
+              label="MTBF (Uptime)"
+              value={maintenanceKPIs.mtbf >= 24 ? `${Math.round(maintenanceKPIs.mtbf / 24)}d` : `${maintenanceKPIs.mtbf}h`}
+              sublabel="Mean Time Between Failures"
+              color="#10b981"
+              bgColor="bg-emerald-50 dark:bg-emerald-950/30"
+              borderColor="border-emerald-100 dark:border-emerald-900/40"
+              iconBg="bg-emerald-100 dark:bg-emerald-900/50"
+              iconColor="text-emerald-600 dark:text-emerald-400"
+              icon={Gauge}
+              showRing
+              ringValue={Math.min(100, Math.round(maintenanceKPIs.mtbf / 72 * 100))}
+            />,
+            <KPICard
+              key="planned-ratio"
+              label="Planned Ratio"
+              value={`${maintenanceKPIs.plannedRatio}%`}
+              sublabel={`${maintenanceKPIs.preventiveCount} prev vs ${maintenanceKPIs.reactiveCount} reactive`}
+              color="#14b8a6"
+              bgColor="bg-teal-50 dark:bg-teal-950/30"
+              borderColor="border-teal-100 dark:border-teal-900/40"
+              iconBg="bg-teal-100 dark:bg-teal-900/50"
+              iconColor="text-teal-600 dark:text-teal-400"
+              icon={Target}
+              showRing
+              ringValue={maintenanceKPIs.plannedRatio}
+            />,
+          );
+        }
+        enhancedCards.push(
           <KPICard
-            label="MTTR (Avg Repair Time)"
-            value={`${maintenanceKPIs.mttr}h`}
-            sublabel="Mean Time To Repair"
-            color="#f59e0b"
-            bgColor="bg-amber-50 dark:bg-amber-950/30"
-            borderColor="border-amber-100 dark:border-amber-900/40"
-            iconBg="bg-amber-100 dark:bg-amber-900/50"
-            iconColor="text-amber-600 dark:text-amber-400"
-            icon={Timer}
-          />
-          {/* MTBF Card */}
-          <KPICard
-            label="MTBF (Uptime)"
-            value={maintenanceKPIs.mtbf >= 24 ? `${Math.round(maintenanceKPIs.mtbf / 24)}d` : `${maintenanceKPIs.mtbf}h`}
-            sublabel="Mean Time Between Failures"
-            color="#10b981"
-            bgColor="bg-emerald-50 dark:bg-emerald-950/30"
-            borderColor="border-emerald-100 dark:border-emerald-900/40"
-            iconBg="bg-emerald-100 dark:bg-emerald-900/50"
-            iconColor="text-emerald-600 dark:text-emerald-400"
-            icon={Gauge}
-            showRing
-            ringValue={Math.min(100, Math.round(maintenanceKPIs.mtbf / 72 * 100))}
-          />
-          {/* Planned Maintenance Ratio */}
-          <KPICard
-            label="Planned Ratio"
-            value={`${maintenanceKPIs.plannedRatio}%`}
-            sublabel={`${maintenanceKPIs.preventiveCount} prev vs ${maintenanceKPIs.reactiveCount} reactive`}
-            color="#14b8a6"
-            bgColor="bg-teal-50 dark:bg-teal-950/30"
-            borderColor="border-teal-100 dark:border-teal-900/40"
-            iconBg="bg-teal-100 dark:bg-teal-900/50"
-            iconColor="text-teal-600 dark:text-teal-400"
-            icon={Target}
-            showRing
-            ringValue={maintenanceKPIs.plannedRatio}
-          />
-          {/* Monthly Cost */}
-          <KPICard
+            key="maint-cost"
             label="Maintenance Cost"
             value={formatCurrency(costAnalysis.thisMonthTotal)}
             sublabel={costAnalysis.lastMonthTotal > 0 ? `vs ${formatCurrency(costAnalysis.lastMonthTotal)} last month` : 'This month'}
@@ -701,40 +714,52 @@ export function DashboardPage() {
             iconColor={costTrend > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}
             icon={DollarSign}
             trend={costTrend}
-          />
-        </div>
-      )}
+            onClick={() => navigate('reports-financial' as PageName)}
+          />,
+        );
+        return enhancedCards.length > 0 ? (
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 items-stretch">
+            {enhancedCards}
+          </div>
+        ) : null;
+      })()}
 
       {/* ===== PM Alerts & Compliance Row ===== */}
-      {(isManager || isPlanner) && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
-          {/* PM Overdue */}
+      {(isManager || isPlanner) && (() => {
+        const pmComplianceCards = [];
+        if (pmEnabled) {
+          pmComplianceCards.push(
+            <KPICard
+              key="pm-overdue"
+              label="PM Overdue"
+              value={pmAlerts.overdue}
+              sublabel={pmAlerts.overdue > 0 ? 'Action required' : 'All on schedule'}
+              color={pmAlerts.overdue > 0 ? '#ef4444' : '#10b981'}
+              bgColor={pmAlerts.overdue > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}
+              borderColor={pmAlerts.overdue > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40'}
+              iconBg={pmAlerts.overdue > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50'}
+              iconColor={pmAlerts.overdue > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}
+              icon={CalendarClock}
+              onClick={pmAlerts.overdue > 0 ? () => navigate('pm-schedules') : undefined}
+            />,
+            <KPICard
+              key="pm-due-soon"
+              label="PM Due Soon (7d)"
+              value={pmAlerts.dueSoon}
+              sublabel="Within next 7 days"
+              color="#f59e0b"
+              bgColor="bg-amber-50 dark:bg-amber-950/30"
+              borderColor="border-amber-100 dark:border-amber-900/40"
+              iconBg="bg-amber-100 dark:bg-amber-900/50"
+              iconColor="text-amber-600 dark:text-amber-400"
+              icon={Clock}
+              onClick={() => navigate('pm-schedules')}
+            />,
+          );
+        }
+        pmComplianceCards.push(
           <KPICard
-            label="PM Overdue"
-            value={pmAlerts.overdue}
-            sublabel={pmAlerts.overdue > 0 ? 'Action required' : 'All on schedule'}
-            color={pmAlerts.overdue > 0 ? '#ef4444' : '#10b981'}
-            bgColor={pmAlerts.overdue > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}
-            borderColor={pmAlerts.overdue > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40'}
-            iconBg={pmAlerts.overdue > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50'}
-            iconColor={pmAlerts.overdue > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}
-            icon={CalendarClock}
-            onClick={pmAlerts.overdue > 0 ? () => navigate('pm-schedules') : undefined}
-          />
-          {/* PM Due Soon */}
-          <KPICard
-            label="PM Due Soon (7d)"
-            value={pmAlerts.dueSoon}
-            sublabel="Within next 7 days"
-            color="#f59e0b"
-            bgColor="bg-amber-50 dark:bg-amber-950/30"
-            borderColor="border-amber-100 dark:border-amber-900/40"
-            iconBg="bg-amber-100 dark:bg-amber-900/50"
-            iconColor="text-amber-600 dark:text-amber-400"
-            icon={Clock}
-          />
-          {/* Assets at Risk */}
-          <KPICard
+            key="assets-at-risk"
             label="Assets at Risk"
             value={assetsAtRisk}
             sublabel={`${stats?.assetHealth?.poor || 0} poor, ${stats?.assetHealth?.critical || 0} critical`}
@@ -745,21 +770,31 @@ export function DashboardPage() {
             iconColor="text-orange-600 dark:text-orange-400"
             icon={AlertTriangle}
             onClick={() => navigate('assets')}
-          />
-          {/* Compliance Summary */}
-          <KPICard
-            label="Compliance"
-            value={stats?.safetyAlerts?.overdueInspections || 0}
-            sublabel="Overdue inspections"
-            color={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? '#ef4444' : '#10b981'}
-            bgColor={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}
-            borderColor={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40'}
-            iconBg={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50'}
-            iconColor={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}
-            icon={Shield}
-          />
-        </div>
-      )}
+          />,
+        );
+        if (safetyEnabled) {
+          pmComplianceCards.push(
+            <KPICard
+              key="compliance"
+              label="Compliance"
+              value={stats?.safetyAlerts?.overdueInspections || 0}
+              sublabel="Overdue inspections"
+              color={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? '#ef4444' : '#10b981'}
+              bgColor={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-emerald-50 dark:bg-emerald-950/30'}
+              borderColor={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? 'border-red-100 dark:border-red-900/40' : 'border-emerald-100 dark:border-emerald-900/40'}
+              iconBg={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50'}
+              iconColor={(stats?.safetyAlerts?.overdueInspections || 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}
+              icon={Shield}
+              onClick={() => navigate('safety-inspections')}
+            />,
+          );
+        }
+        return pmComplianceCards.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
+            {pmComplianceCards}
+          </div>
+        ) : null;
+      })()}
 
       {/* ===== Weekly Trends Chart ===== */}
       <Card className="border">

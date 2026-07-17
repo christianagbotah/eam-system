@@ -335,3 +335,73 @@ Stage Summary:
 - New page component at /src/components/modules/MachineAvailabilityPage.tsx
 - Full GTP-style reporting with Recharts visualization
 - Uses MachineAvailabilityData interface matching backend API response shape
+
+---
+Task ID: 4
+Agent: enterprise-reports-agent
+Task: Make EnterpriseReports KPI cards clickable and module-aware
+
+Work Log:
+- Added onClick prop to KPICard with cursor-pointer and hover animations (scale, shadow)
+- Changed KPICard from Card wrapper to div with colored background, inner icon uses bg-background/70 for contrast
+- Executive KPI cards link to relevant tabs (WOs Completed → wo-analytics, MTBF/MTTR → downtime, Planned vs Unplanned → wo-analytics, Total Maint. Cost → cost, Completion Rate stays)
+- SLA "Overdue WOs" card links to wo-analytics tab
+- Per-tab KPI cards (downtime, cost, tools) have interactive hover effects via KPICard update
+- Period comparison KPI Cards and YoY KPI Cards get cursor-pointer + hover scale/shadow styling
+- Imported useModuleEnabled and MODULE_CODES from hooks
+- Added woEnabled gate: shows "Work Orders module is not active" message and returns early if disabled
+- Added dtEnabled gate: conditionally hides Downtime TabsTrigger and TabsContent if downtime module disabled
+- Zero ESLint errors on modified file
+
+Stage Summary:
+- EnterpriseReports: All KPI cards clickable with tab navigation
+- Module gates applied for WO and Downtime modules
+- Hover/active animations on all KPI and period comparison cards
+
+---
+Task ID: 5
+Agent: report-pages-agent
+Task: Make ReportPages KPI cards clickable and module-aware
+
+Work Log:
+- Added module gates to all 9 report page components
+- Added cursor-pointer and hover effects to all KPI cards
+- Tabbed pages: KPI cards switch to relevant detail tabs on click
+- Module mapping: assets, inventory, production, quality, safety, work_orders, downtime
+- Fixed React hooks ordering issues by moving module gates after all hooks
+- All 22 ESLint errors resolved, zero lint errors/warnings
+
+Stage Summary:
+- All 9 report components have module visibility gates
+- Tabbed reports have clickable KPI cards linking to detail tabs
+- Maintenance: "Total Work Orders" & "Overdue" → data tab
+- Equipment History: "Total WOs"/"Total Downtime" → workorders, "Total Cost" → costs, "Failures" → failures
+- Failure Analysis: "Total Failures"/"Top Failure Mode" → failure-modes, "Total Downtime"/"Total Repair Cost" → by-asset
+- Non-tabbed pages (Asset, Inventory, Production, Quality, Safety, Financial) have hover effects on KPI cards
+
+---
+Task ID: 6-8
+Agent: repairs-dashboard-agent
+Task: Make RepairsPages StatsCards clickable and apply module gates to Repairs + Dashboard
+
+Work Log:
+- Added onClick prop to StatsCard component in RepairsPages.tsx with cursor-pointer, active:scale-[0.98] styling
+- Added useModuleEnabled/MODULE_CODES import to RepairsPages.tsx
+- Added module gates (WORK_ORDERS) to all 9 exported page components: RepairMaterialRequestsPage, RepairToolRequestsPage, RepairToolTransfersPage, RepairDowntimePage, RepairCompletionPage, RepairAnalyticsPage, SparePartReturnsPage, DamagedToolReportsPage, MaintenanceReportsPage
+- Made StatsCards clickable with status filtering in 6 list-based pages:
+  - RepairMaterialRequestsPage: Pending→pending, Awaiting Approval→supervisor_approved, Issued→issued
+  - RepairToolRequestsPage: Pending→pending, Awaiting Approval→supervisor_approved, Issued→issued
+  - RepairToolTransfersPage: Pending Review→pending, Awaiting Handover→storekeeper_approved, Completed→transferred, Rejected→rejected
+  - RepairDowntimePage: Ongoing→ongoing, Completed→completed, Unplanned→unplanned (filterCategory)
+  - SparePartReturnsPage: Pending→pending, Refurbishing→refurbishing, Refurbished→refurbished, Back in Store→returned_to_store
+  - DamagedToolReportsPage: Reported→reported, In Repair→repair_in_progress, Repaired→repaired, Written Off→written_off
+- DashboardPages.tsx: Added MODULE_CODES import
+- Added module-aware booleans (analyticsEnabled, safetyEnabled, productionEnabled, qualityEnabled, pmEnabled) derived from existing enabledModules state
+- Enhanced KPIs row: MTTR, MTBF, Planned Ratio hidden when analytics module disabled; Maintenance Cost always visible
+- PM Alerts & Compliance row: PM Overdue/Due Soon hidden when pm_schedules disabled; Compliance hidden when safety disabled
+- Added onClick navigation: Maintenance Cost→reports-financial, PM Due Soon→pm-schedules, Compliance→safety-inspections
+- Zero ESLint errors on both modified files (pre-existing TS error in WOReportsPage.tsx is unrelated)
+
+Stage Summary:
+- RepairsPages: All 9 components have WORK_ORDERS module gate; 6 list pages have clickable StatsCards with status filtering
+- DashboardPages: Module-aware KPI display (analytics, safety, pm_schedules); 3 new clickable navigation cards (Maintenance Cost, PM Due Soon, Compliance)

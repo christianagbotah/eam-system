@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
+import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 
 import {
   ResponsiveContainer,
@@ -191,11 +192,24 @@ const BAR_COLORS = [
 // ---------------------------------------------------------------------------
 
 export function MachineAvailabilityPage() {
+  const assetsEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
+  const dtEnabled = useModuleEnabled(MODULE_CODES.DOWNTIME);
   const [data, setData] = useState<MachineAvailabilityData | null>(null);
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(new Date().getFullYear());
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
   const [tab, setTab] = useState('machine-details');
+
+  if (!assetsEnabled) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-muted-foreground">Asset Management module is not active.</p>
+          <p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules to view machine availability.</p>
+        </div>
+      </div>
+    );
+  }
 
   // Fetch
   useEffect(() => {

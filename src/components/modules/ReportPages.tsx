@@ -42,6 +42,7 @@ import {
 } from 'recharts';
 import { format } from 'date-fns';
 import { EmptyState, StatusBadge, PriorityBadge, formatDate, formatDateTime, LoadingSkeleton, formatCurrency, formatDuration } from '@/components/shared/helpers';
+import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 
 // Shared date range state hook
 const useDateRange = () => {
@@ -79,6 +80,7 @@ const exportCSV = (filename: string, headers: string[], rows: string[][]) => {
 };
 
 export function ReportsAssetPage() {
+  const moduleEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
   const [assets, setAssets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterCondition, setFilterCondition] = useState<string>('all');
@@ -120,10 +122,17 @@ export function ReportsAssetPage() {
   return (
     <div className="page-content">
       <div><h1 className="text-2xl font-bold tracking-tight">Asset Reports</h1><p className="text-muted-foreground mt-1">Comprehensive reports on asset register, conditions, and lifecycle</p></div>
-      {loading ? <LoadingSkeleton /> : (<>
+      {!moduleEnabled ? (
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <p className="text-muted-foreground">This module is not active.</p>
+            <p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules to view this report.</p>
+          </div>
+        </div>
+      ) : loading ? <LoadingSkeleton /> : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {summaryCards.map(k => { const I = k.icon; return (
-            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+            <Card key={k.label} className="cursor-pointer hover:shadow-md transition-all"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
           ); })}
         </div>
         <div className="filter-row flex items-center gap-2 flex-wrap">
@@ -333,6 +342,7 @@ function AssetWOTable({ asset, typeColorMap }: { asset: any; typeColorMap: Recor
 }
 
 export function ReportsMaintenancePage() {
+  const moduleEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
   const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
   const [reportData, setReportData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -600,6 +610,17 @@ export function ReportsMaintenancePage() {
 
   if (loading && !reportData) return <div className="page-content"><LoadingSkeleton /></div>;
 
+  if (!moduleEnabled) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-muted-foreground">This module is not active.</p>
+          <p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules to view this report.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="page-content" id="maintenance-report-printable">
       {/* Header */}
@@ -626,8 +647,8 @@ export function ReportsMaintenancePage() {
         <>
           {/* KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 print:grid-cols-3 print:gap-2">
-            {kpiCards.map(k => { const I = k.icon; return (
-              <Card key={k.label} className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-4 print:p-2">
+            {kpiCards.map(k => { const I = k.icon; const clickTab = k.label === 'Total Work Orders' || k.label === 'Overdue' ? 'data' : undefined; return (
+              <Card key={k.label} className="border border-border/60 shadow-sm print:shadow-none print:border cursor-pointer hover:shadow-md transition-all" onClick={clickTab ? () => setActiveTab(clickTab) : undefined}><CardContent className="p-4 print:p-2">
                 <div className="flex items-center gap-3">
                   <div className={`h-10 w-10 rounded-xl ${k.color} flex items-center justify-center shrink-0 print:hidden`}><I className="h-4.5 w-4.5" /></div>
                   <div className="min-w-0">
@@ -1133,6 +1154,7 @@ export function ReportsMaintenancePage() {
   );
 }
 export function ReportsInventoryPage() {
+  const moduleEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
@@ -1161,6 +1183,17 @@ export function ReportsInventoryPage() {
     { label: 'Out of Stock', value: outOfStock.length, icon: XCircle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
   ];
 
+  if (!moduleEnabled) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-muted-foreground">This module is not active.</p>
+          <p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules to view this report.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="page-content">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -1173,7 +1206,7 @@ export function ReportsInventoryPage() {
       {loading ? <LoadingSkeleton /> : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {summaryCards.map(k => { const I = k.icon; return (
-            <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+            <Card key={k.label} className="cursor-pointer hover:shadow-md transition-all"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
           ); })}
         </div>
         <Card className="border-0 shadow-sm"><Table><TableHeader><TableRow><TableHead>Code</TableHead><TableHead>Name</TableHead><TableHead className="hidden md:table-cell">Category</TableHead><TableHead className="text-right">Stock</TableHead><TableHead className="hidden sm:table-cell text-right">Min Stock</TableHead><TableHead className="text-right">Value</TableHead><TableHead className="hidden lg:table-cell">Status</TableHead></TableRow></TableHeader><TableBody>
@@ -1201,6 +1234,7 @@ export function ReportsInventoryPage() {
   );
 }
 export function ReportsProductionPage() {
+  const moduleEnabled = useModuleEnabled(MODULE_CODES.PRODUCTION);
   const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
   const [orders, setOrders] = useState<any[]>([]);
   const [kpi, setKpi] = useState<any>(null);
@@ -1267,6 +1301,17 @@ export function ReportsProductionPage() {
     { label: 'Avg Yield', value: kpi ? `${kpi.avgYield}%` : '—', icon: TrendingUp, color: 'bg-red-50 text-red-600' },
   ];
 
+  if (!moduleEnabled) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-muted-foreground">This module is not active.</p>
+          <p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules to view this report.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) return <div className="page-content"><LoadingSkeleton /></div>;
 
   return (
@@ -1297,7 +1342,7 @@ export function ReportsProductionPage() {
       ) : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {summaryCards.map(k => { const I = k.icon; return (
-            <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+            <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5 cursor-pointer hover:shadow-md transition-all">
               <div className="flex items-center gap-4">
                 <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
                 <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
@@ -1358,6 +1403,7 @@ export function ReportsProductionPage() {
   );
 }
 export function ReportsQualityPage() {
+  const moduleEnabled = useModuleEnabled(MODULE_CODES.QUALITY);
   const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
   const [inspections, setInspections] = useState<any[]>([]);
   const [ncrs, setNcrs] = useState<any[]>([]);
@@ -1438,6 +1484,17 @@ export function ReportsQualityPage() {
     { label: 'Audit Completion', value: `${auditCompletionRate}%`, icon: CheckCircle2, color: 'bg-red-50 text-red-600' },
   ];
 
+  if (!moduleEnabled) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-muted-foreground">This module is not active.</p>
+          <p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules to view this report.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) return <div className="page-content"><LoadingSkeleton /></div>;
 
   return (
@@ -1468,7 +1525,7 @@ export function ReportsQualityPage() {
       ) : (<>
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {summaryCards.map(k => { const I = k.icon; return (
-            <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+            <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5 cursor-pointer hover:shadow-md transition-all">
               <div className="flex items-center gap-4">
                 <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
                 <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
@@ -1583,6 +1640,7 @@ export function ReportsQualityPage() {
   );
 }
 export function ReportsSafetyPage() {
+  const moduleEnabled = useModuleEnabled(MODULE_CODES.SAFETY);
   const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
   const [incidents, setIncidents] = useState<any[]>([]);
   const [inspections, setInspections] = useState<any[]>([]);
@@ -1689,6 +1747,17 @@ export function ReportsSafetyPage() {
     { label: 'Training Compliance', value: `${trainingCompliance}%`, icon: GraduationCap, color: 'bg-sky-50 text-sky-600' },
   ];
 
+  if (!moduleEnabled) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-muted-foreground">This module is not active.</p>
+          <p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules to view this report.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) return <div className="page-content"><LoadingSkeleton /></div>;
 
   return (
@@ -1716,7 +1785,7 @@ export function ReportsSafetyPage() {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {summaryCards.map(k => { const I = k.icon; return (
-          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5">
+          <div key={k.label} className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm p-5 cursor-pointer hover:shadow-md transition-all">
             <div className="flex items-center gap-4">
               <div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div>
               <div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div>
@@ -1819,6 +1888,10 @@ export function ReportsSafetyPage() {
   );
 }
 export function ReportsFinancialPage() {
+  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const invEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
+  const prodEnabled = useModuleEnabled(MODULE_CODES.PRODUCTION);
+  const moduleEnabled = woEnabled || invEnabled || prodEnabled;
   const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
   const [workOrders, setWorkOrders] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
@@ -1909,6 +1982,17 @@ export function ReportsFinancialPage() {
     { label: 'Avg WO Cost', value: formatCurrency(avgCost), icon: TrendingUp, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
   ];
 
+  if (!moduleEnabled) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-muted-foreground">This module is not active.</p>
+          <p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules to view this report.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) return <div className="page-content"><LoadingSkeleton /></div>;
 
   return (
@@ -1934,7 +2018,7 @@ export function ReportsFinancialPage() {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {summaryCards.map(k => { const I = k.icon; return (
-          <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+          <Card key={k.label} className="cursor-pointer hover:shadow-md transition-all"><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
         ); })}
       </div>
       {monthlyCostData.length > 0 && (
@@ -2228,6 +2312,7 @@ const EH_SEVERITY_COLORS: Record<string, string> = { low: 'bg-slate-400', medium
 const EH_CONDITION_COLORS: Record<string, string> = { excellent: 'bg-emerald-500', good: 'bg-sky-500', fair: 'bg-amber-500', poor: 'bg-orange-500', critical: 'bg-red-500' };
 
 export function EquipmentHistoryPage() {
+  const moduleEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<any>(null);
@@ -2359,6 +2444,17 @@ export function EquipmentHistoryPage() {
 
   const asset = data?.asset;
 
+  if (!moduleEnabled) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-muted-foreground">This module is not active.</p>
+          <p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules to view this report.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="page-content" id="equipment-history-printable">
       {/* Header */}
@@ -2444,8 +2540,8 @@ export function EquipmentHistoryPage() {
         <>
           {/* KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 print:grid-cols-3 print:gap-2">
-            {kpiCards.map(k => { const I = k.icon; return (
-              <Card key={k.label} className="border border-border/60 shadow-sm print:shadow-none print:border"><CardContent className="p-4 print:p-2">
+            {kpiCards.map(k => { const I = k.icon; const clickTab = k.label === 'Total WOs' || k.label === 'Total Downtime' ? 'workorders' : k.label === 'Total Cost' ? 'costs' : k.label === 'Failures' ? 'failures' : undefined; return (
+              <Card key={k.label} className="border border-border/60 shadow-sm print:shadow-none print:border cursor-pointer hover:shadow-md transition-all" onClick={clickTab ? () => setActiveTab(clickTab) : undefined}><CardContent className="p-4 print:p-2">
                 <div className="flex items-center gap-3">
                   <div className={`h-10 w-10 rounded-xl ${k.color} flex items-center justify-center shrink-0 print:hidden`}><I className="h-4.5 w-4.5" /></div>
                   <div className="min-w-0">
@@ -2982,6 +3078,9 @@ const CHART_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#8
 const SEVERITY_COLORS: Record<string, string> = { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#22c55e' };
 
 export function FailureAnalysisPage() {
+  const assetsEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
+  const downtimeEnabled = useModuleEnabled(MODULE_CODES.DOWNTIME);
+  const moduleEnabled = assetsEnabled || downtimeEnabled;
   const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -3050,6 +3149,17 @@ export function FailureAnalysisPage() {
     exportCSV(`failure-analysis-${startDate}-to-${endDate}`, ['Field1', 'Field2', 'Field3', 'Field4', 'Field5', 'Field6', 'Field7', 'Field8', 'Field9', 'Field10', 'Field11', 'Field12', 'Field13'], rows);
   };
 
+  if (!moduleEnabled) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-muted-foreground">This module is not active.</p>
+          <p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules to view this report.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="page-content">
       {/* Header */}
@@ -3092,8 +3202,10 @@ export function FailureAnalysisPage() {
         <>
           {/* KPI cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-4">
-            {kpiCards.map((kpi) => (
-              <Card key={kpi.label} className="border border-border/60 shadow-sm">
+            {kpiCards.map((kpi) => {
+              const clickTab = kpi.label === 'Total Failures' || kpi.label === 'Top Failure Mode' ? 'failure-modes' : kpi.label === 'Total Downtime' || kpi.label === 'Total Repair Cost' ? 'by-asset' : undefined;
+              return (
+              <Card key={kpi.label} className="border border-border/60 shadow-sm cursor-pointer hover:shadow-md transition-all" onClick={clickTab ? () => setActiveTab(clickTab) : undefined}>
                 <CardContent className="p-4 flex items-center gap-3">
                   <div className={`p-2 rounded-lg ${kpi.color}`}><kpi.icon className="h-4 w-4" /></div>
                   <div className="min-w-0">
@@ -3102,7 +3214,8 @@ export function FailureAnalysisPage() {
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
