@@ -646,6 +646,7 @@ export type PageName =
   | 'inventory-receiving'
   // Reports (8 subpages)
   | 'reports-asset'
+  | 'machine-availability'
   | 'equipment-history'
   | 'failure-analysis'
   | 'reports-maintenance'

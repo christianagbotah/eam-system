@@ -286,3 +286,52 @@ Stage Summary:
 - Frontend: `FailureAnalysisPage` added to `/home/z/my-project/src/components/modules/ReportPages.tsx`
 - Integration: types/index.ts (PageName), EAMApp.tsx (lazy import + permissions + title), Sidebar.tsx (nav entry)
 - Dev server compiles without errors, no new lint issues introduced
+
+---
+Task ID: 4
+Agent: backend-agent
+Task: Create GTP-Style Machine Availability API
+
+Work Log:
+- Created /src/app/api/reports/machine-availability/route.ts
+- Implements weekly per-machine metrics: planned time (10,080 mins/week default), stoppages, repair downtime, breakdowns
+- Calculates GTP KPIs: efficiency (actualAvailability/plannedTime × 100), MTTR (repairDT/breakdowns), MTBF (actualAvail/breakdowns), failure rate (100 − efficiency), availability
+- ISO 8601 week calculation using Thursday-based algorithm with Monday–Sunday labeling
+- Repair downtime derived from WorkOrderDowntime records linked to corrective/breakdown/emergency work orders, plus unplanned/breakdown category downtimes
+- Breakdown count from work orders of type 'breakdown' or 'emergency' grouped by assetId and ISO week
+- Weighted average efficiency across all machines per week for weeklyKPIs
+- Includes Pareto analysis (failure rate, NBD, downtime, MTTR) sorted descending with cumulative % for 80/20 analysis
+- Weekly trend data arrays for charting: downtime, breakdowns, MTTR, MTBF, availability, failure rate
+- GTP target thresholds: efficiency ≥ 97%, MTTR < 140 min, MTBF > 4,119 min, failure rate < 2.8%
+- Query params: year (default current), week (1-52), plantId, criticality
+- Auth-gated with reports.view/reports.export/analytics.view permissions or admin
+- Plant-scoped via getPlantScope/getPlantFilterWhere
+- Graceful empty response when no assets or no data
+
+Stage Summary:
+- New API endpoint at /api/reports/machine-availability
+- Returns weekly KPIs, per-machine weekly data with totals, Pareto rankings, trend data, and targets
+- Zero ESLint errors, zero new lint issues
+
+---
+Task ID: 5
+Agent: frontend-agent
+Task: Build GTP-Style Machine Availability & Efficiency frontend page
+
+Work Log:
+- Created MachineAvailabilityPage.tsx with 6 tabs
+- Tab 1: Machine Details weekly register (exact GTP column structure, week selector, KPI strip, CSV export)
+- Tab 2: Efficiency Analysis weekly matrix with conditional formatting (green/amber/red), row averages, column averages
+- Tab 3: Pareto Analysis (4 ComposedCharts with bars + cumulative 80% line for Failure Rate, Breakdowns, Downtime, MTTR)
+- Tab 4: Weekly Trends (6 charts in 2x3 grid — Area, Bar, Line charts with target reference lines)
+- Tab 5: Breakdown Summary table sorted by breakdown count with Critical/Warning/Normal status badges
+- Tab 6: Targets & KPIs executive dashboard with 6 KPI cards (met/missed/trend) and machine comparison table with red highlighting
+- CSV export support for Machine Details tab
+- Responsive design with horizontal scroll tables, sticky headers, mobile-first grid layouts
+- Proper loading skeleton and empty states for each tab
+- Zero ESLint errors
+
+Stage Summary:
+- New page component at /src/components/modules/MachineAvailabilityPage.tsx
+- Full GTP-style reporting with Recharts visualization
+- Uses MachineAvailabilityData interface matching backend API response shape

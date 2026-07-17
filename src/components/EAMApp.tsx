@@ -144,6 +144,7 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   'inventory-receiving': () => import('./modules/InventoryPages').then(m => m.InventoryReceivingPage),
   // Reports
   'reports-asset': () => import('./modules/ReportPages').then(m => m.ReportsAssetPage),
+  'machine-availability': () => import('./modules/MachineAvailabilityPage').then(m => m.MachineAvailabilityPage),
   'equipment-history': () => import('./modules/ReportPages').then(m => m.EquipmentHistoryPage),
   'failure-analysis': () => import('./modules/ReportPages').then(m => m.FailureAnalysisPage),
   'reports-maintenance': () => import('./modules/ReportPages').then(m => m.ReportsMaintenancePage),
@@ -300,6 +301,7 @@ function PageSwitcher({ page }: { page: string }) {
     // Reports
     'reports-asset': ['reports.view'],
     'equipment-history': ['reports.view'],
+    'machine-availability': ['reports.view'],
     'failure-analysis': ['reports.view'],
     'reports-maintenance': ['reports.view'],
     'reports-inventory': ['reports.view'],

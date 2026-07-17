@@ -274,6 +274,7 @@ function SidebarContent({ forceExpanded }: { forceExpanded?: boolean } = {}) {
       label: 'Reports', icon: FileBarChart, perm: 'reports.view', moduleCode: 'reports',
       children: [
         { page: 'reports-asset', label: 'Asset Reports', icon: Building2 },
+        { page: 'machine-availability', label: 'Machine Availability', icon: Activity },
         { page: 'equipment-history', label: 'Equipment History', icon: History },
         { page: 'failure-analysis', label: 'Failure Analysis', icon: TriangleAlert },
         { page: 'wo-reports', label: 'Work Order Reports', icon: ClipboardList },
