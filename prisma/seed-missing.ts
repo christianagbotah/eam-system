@@ -385,6 +385,7 @@ const systemModules = [
   { code: 'assets', name: 'Asset Management', description: 'Asset registry and lifecycle', isCore: true, version: '2.0.0' },
   { code: 'maintenance_requests', name: 'Maintenance Requests', description: 'Submit and manage requests', isCore: true, version: '2.0.0' },
   { code: 'work_orders', name: 'Work Orders', description: 'Plan and track work orders', isCore: true, version: '2.0.0' },
+  { code: 'repairs', name: 'Repairs & Maintenance', description: 'Corrective/emergency repairs, material requests, tool requests, downtime tracking, and completion workflows', isCore: true, version: '2.0.0' },
   { code: 'inventory', name: 'Inventory & Spare Parts', description: 'Spare parts inventory', isCore: true, version: '2.0.0' },
   { code: 'pm_schedules', name: 'PM Schedules', description: 'Preventive maintenance scheduling', isCore: false, version: '2.0.0' },
   { code: 'analytics', name: 'Analytics & KPI', description: 'Analytics and KPI monitoring', isCore: false, version: '1.5.0' },

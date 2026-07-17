@@ -72,6 +72,9 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   refreshModules: async () => {
     // Force re-fetch from API (bypasses cache)
     try {
+      // Ensure repairs module exists in DB (idempotent, admin-only)
+      try { await fetch('/api/modules/ensure-repairs', { method: 'POST', credentials: 'include' }); } catch { /* non-admin or not ready yet */ }
+
       const res = await api.get<any[]>('/api/modules');
       if (res.success && Array.isArray(res.data)) {
         const enabled = new Set<string>();

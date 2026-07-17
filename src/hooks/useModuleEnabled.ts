@@ -46,6 +46,7 @@ export const MODULE_CODES = {
   ASSETS: 'assets',
   MAINTENANCE_REQUESTS: 'maintenance_requests',
   WORK_ORDERS: 'work_orders',
+  REPAIRS: 'repairs',
   INVENTORY: 'inventory',
   PM_SCHEDULES: 'pm_schedules',
   ANALYTICS: 'analytics',
@@ -58,6 +59,9 @@ export const MODULE_CODES = {
   METER_READINGS: 'meter_readings',
   TRAINING: 'training',
   RISK_ASSESSMENT: 'risk_assessment',
+  REPORTS: 'reports',
+  TOOLS: 'tools',
+  BOM: 'bom',
 } as const;
 
 export type ModuleCode = (typeof MODULE_CODES)[keyof typeof MODULE_CODES];

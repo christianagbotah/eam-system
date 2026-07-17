@@ -354,7 +354,7 @@ function canViewAllRepairData(user: any): boolean {
 export function RepairMaterialRequestsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
-  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -515,8 +515,8 @@ export function RepairMaterialRequestsPage() {
     return qty * cost;
   }, [createForm.quantityRequested, createForm.unitCost]);
 
-  if (!woEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
   }
 
   return (
@@ -905,7 +905,7 @@ type ToolItemRow = {
 export function RepairToolRequestsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
-  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -1453,8 +1453,8 @@ export function RepairToolRequestsPage() {
     </div>
   );
 
-  if (!woEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
   }
 
   return (
@@ -2115,7 +2115,7 @@ export function RepairToolRequestsPage() {
 export function RepairToolTransfersPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
-  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [transfers, setTransfers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -2195,8 +2195,8 @@ export function RepairToolTransfersPage() {
     !searchText || t.tool?.name?.toLowerCase().includes(searchText.toLowerCase()) || t.fromUser?.fullName?.toLowerCase().includes(searchText.toLowerCase()) || t.toUser?.fullName?.toLowerCase().includes(searchText.toLowerCase())
   ), [transfers, searchText]);
 
-  if (!woEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
   }
 
   return (
@@ -2453,7 +2453,7 @@ export function RepairToolTransfersPage() {
 export function RepairDowntimePage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
-  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -2554,8 +2554,8 @@ export function RepairDowntimePage() {
 
   const totalMinutes = records.reduce((sum: number, r: any) => sum + (r.durationMinutes || 0), 0);
 
-  if (!woEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
   }
 
   return (
@@ -3170,7 +3170,7 @@ function ToolMaterialReturnPrompt({ workOrderId }: { workOrderId: string }) {
 export function RepairCompletionPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
   const { pageParams } = useNavigationStore();
-  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [woId, setWoId] = useState('');
   const [completion, setCompletion] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -3225,8 +3225,8 @@ export function RepairCompletionPage() {
     setSubmitting(false);
   };
 
-  if (!woEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
   }
 
   return (
@@ -3356,7 +3356,7 @@ export function RepairCompletionPage() {
 // ============================================================================
 
 export function RepairAnalyticsPage() {
-  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [kpi, setKpi] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [reconReport, setReconReport] = useState<any>(null);
@@ -3459,8 +3459,8 @@ export function RepairAnalyticsPage() {
     }
   }, [dateFrom, dateTo, activeAnalyticsTab]);
 
-  if (!woEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
   }
 
   if (loading) return <LoadingSkeleton />;
@@ -4087,7 +4087,7 @@ const SPARE_RETURN_STAGES: PipelineStage[] = [
 
 export function SparePartReturnsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
-  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [returns, setReturns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -4158,8 +4158,8 @@ export function SparePartReturnsPage() {
     !searchText || r.itemName?.toLowerCase().includes(searchText.toLowerCase()) || r.returnNumber?.toLowerCase().includes(searchText.toLowerCase())
   ), [returns, searchText]);
 
-  if (!woEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
   }
 
   return (
@@ -4461,7 +4461,7 @@ const DAMAGE_STAGES: PipelineStage[] = [
 
 export function DamagedToolReportsPage() {
   const { user, hasPermission, isAdmin } = useAuthStore();
-  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<any>(null);
@@ -4527,8 +4527,8 @@ export function DamagedToolReportsPage() {
     !searchText || r.tool?.name?.toLowerCase().includes(searchText.toLowerCase()) || r.reportNumber?.toLowerCase().includes(searchText.toLowerCase()) || r.damageDescription?.toLowerCase().includes(searchText.toLowerCase())
   ), [reports, searchText]);
 
-  if (!woEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
   }
 
   return (
@@ -4811,7 +4811,7 @@ export function DamagedToolReportsPage() {
 
 export function MaintenanceReportsPage() {
   const { user } = useAuthStore();
-  const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [reportType, setReportType] = useState('lifecycle');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -4872,8 +4872,8 @@ export function MaintenanceReportsPage() {
     toast.success('Report exported');
   };
 
-  if (!woEnabled) {
-    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Work Orders module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
+  if (!repairsEnabled) {
+    return (<div className="flex items-center justify-center h-96"><div className="text-center"><p className="text-muted-foreground">Repairs module is not active.</p><p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules.</p></div></div>);
   }
 
   return (

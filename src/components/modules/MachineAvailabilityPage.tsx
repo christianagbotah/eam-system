@@ -193,23 +193,14 @@ const BAR_COLORS = [
 
 export function MachineAvailabilityPage() {
   const assetsEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES);
   const dtEnabled = useModuleEnabled(MODULE_CODES.DOWNTIME);
   const [data, setData] = useState<MachineAvailabilityData | null>(null);
   const [loading, setLoading] = useState(true);
   const [year, setYear] = useState(new Date().getFullYear());
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
   const [tab, setTab] = useState('machine-details');
-
-  if (!assetsEnabled) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <p className="text-muted-foreground">Asset Management module is not active.</p>
-          <p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules to view machine availability.</p>
-        </div>
-      </div>
-    );
-  }
 
   // Fetch
   useEffect(() => {
@@ -274,6 +265,18 @@ export function MachineAvailabilityPage() {
     URL.revokeObjectURL(url);
     toast.success('CSV exported');
   }, [data, selectedWeek]);
+
+  // Module disabled check — AFTER all hooks
+  if (!assetsEnabled && !repairsEnabled) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-muted-foreground">Modules Not Active</p>
+          <p className="text-sm text-muted-foreground mt-1">Enable the Assets or Repairs module in Settings → Modules to view machine availability.</p>
+        </div>
+      </div>
+    );
+  }
 
   // ===================== LOADING =====================
   if (loading) {
@@ -362,13 +365,13 @@ export function MachineAvailabilityPage() {
           {selectedKPI && (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               {[
-                { label: 'Total Machines', value: String(selectedKPI.totalMachines), icon: BarChart3, color: 'text-slate-600' },
-                { label: 'Available', value: String(selectedKPI.availableMachines), icon: Activity, color: 'text-emerald-600' },
-                { label: 'Efficient (≥97%)', value: String(selectedKPI.efficientMachines), icon: Gauge, color: 'text-emerald-600' },
-                { label: 'Weighted Avg Eff.', value: fmt(selectedKPI.weightedAvgEfficiency) + '%', icon: Target, color: selectedKPI.weightedAvgEfficiency >= 97 ? 'text-emerald-600' : selectedKPI.weightedAvgEfficiency >= 90 ? 'text-amber-600' : 'text-red-600' },
-                { label: 'Total Breakdowns', value: String(selectedKPI.totalBreakdowns), icon: AlertTriangle, color: selectedKPI.totalBreakdowns <= (data.targets.breakdownsWeekly ?? 2) ? 'text-emerald-600' : 'text-red-600' },
-              ].map((item) => (
-                <Card key={item.label} className="border border-border/60 shadow-sm">
+                { label: 'Total Machines', value: String(selectedKPI.totalMachines), icon: BarChart3, color: 'text-slate-600', targetTab: 'machine-details' as const },
+                { label: 'Available', value: String(selectedKPI.availableMachines), icon: Activity, color: 'text-emerald-600', targetTab: 'machine-details' as const },
+                { label: 'Efficient (≥97%)', value: String(selectedKPI.efficientMachines), icon: Gauge, color: 'text-emerald-600', targetTab: 'efficiency' as const },
+                { label: 'Weighted Avg Eff.', value: fmt(selectedKPI.weightedAvgEfficiency) + '%', icon: Target, color: selectedKPI.weightedAvgEfficiency >= 97 ? 'text-emerald-600' : selectedKPI.weightedAvgEfficiency >= 90 ? 'text-amber-600' : 'text-red-600', targetTab: 'efficiency' as const },
+                repairsEnabled ? { label: 'Total Breakdowns', value: String(selectedKPI.totalBreakdowns), icon: AlertTriangle, color: selectedKPI.totalBreakdowns <= (data.targets.breakdownsWeekly ?? 2) ? 'text-emerald-600' : 'text-red-600', targetTab: 'breakdown' as const } : null,
+              ].filter(Boolean).map((item) => (
+                <Card key={item.label} className="border border-border/60 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => setTab(item.targetTab)}>
                   <CardContent className="flex items-center gap-3 p-4">
                     <item.icon className={`h-5 w-5 shrink-0 ${item.color}`} />
                     <div className="min-w-0">
@@ -419,7 +422,7 @@ export function MachineAvailabilityPage() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="max-h-[480px] overflow-auto">
-                <table className="w-full min-w-[1200px] text-xs">
+                <table className="w-full min-w-[800px] text-xs">
                   <thead>
                     <tr className="sticky top-0 z-10 bg-background border-b">
                       <th className="px-3 py-2 text-left font-semibold text-muted-foreground">Machine Name</th>
@@ -427,12 +430,12 @@ export function MachineAvailabilityPage() {
                       <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Mfg Year</th>
                       <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Install Year</th>
                       <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Life (yrs)</th>
-                      <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Planned (min)</th>
-                      <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Stoppages (min)</th>
-                      <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Repair DT (min)</th>
-                      <th className="px-3 py-2 text-right font-semibold text-muted-foreground"># BD</th>
+                      {pmEnabled && <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Planned (min)</th>}
+                      {repairsEnabled && dtEnabled && <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Stoppages (min)</th>}
+                      {repairsEnabled && dtEnabled && <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Repair DT (min)</th>}
+                      {repairsEnabled && <th className="px-3 py-2 text-right font-semibold text-muted-foreground"># BD</th>}
                       <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Actual Avail (min)</th>
-                      <th className="px-3 py-2 text-right font-semibold text-muted-foreground">% Downtime</th>
+                      {repairsEnabled && dtEnabled && <th className="px-3 py-2 text-right font-semibold text-muted-foreground">% Downtime</th>}
                       <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Efficiency</th>
                       <th className="px-3 py-2 text-right font-semibold text-muted-foreground">Weighted Eff</th>
                     </tr>
@@ -452,12 +455,12 @@ export function MachineAvailabilityPage() {
                           <td className="px-3 py-2 text-right">{m.mfgYear ?? '—'}</td>
                           <td className="px-3 py-2 text-right">{m.installYear ?? '—'}</td>
                           <td className="px-3 py-2 text-right">{m.machineLife != null ? fmt(m.machineLife, 0) : '—'}</td>
-                          <td className="px-3 py-2 text-right">{w ? fmtInt(w.plannedMins) : '—'}</td>
-                          <td className="px-3 py-2 text-right">{w ? fmtInt(w.stoppagesMins) : '—'}</td>
-                          <td className="px-3 py-2 text-right">{w ? fmtInt(w.repairDowntimeMins) : '—'}</td>
-                          <td className="px-3 py-2 text-right">{w ? String(w.breakdowns) : '—'}</td>
+                          {pmEnabled && <td className="px-3 py-2 text-right">{w ? fmtInt(w.plannedMins) : '—'}</td>}
+                          {repairsEnabled && dtEnabled && <td className="px-3 py-2 text-right">{w ? fmtInt(w.stoppagesMins) : '—'}</td>}
+                          {repairsEnabled && dtEnabled && <td className="px-3 py-2 text-right">{w ? fmtInt(w.repairDowntimeMins) : '—'}</td>}
+                          {repairsEnabled && <td className="px-3 py-2 text-right">{w ? String(w.breakdowns) : '—'}</td>}
                           <td className="px-3 py-2 text-right">{w ? fmtInt(w.actualAvailability) : '—'}</td>
-                          <td className={`px-3 py-2 text-right ${dtColor(pct)} ${dtBg(pct)}`}>{w ? fmt(pct) + '%' : '—'}</td>
+                          {repairsEnabled && dtEnabled && <td className={`px-3 py-2 text-right ${dtColor(pct)} ${dtBg(pct)}`}>{w ? fmt(pct) + '%' : '—'}</td>}
                           <td className={`px-3 py-2 text-right ${effColor(eff)} ${effBg(eff)}`}>{w ? fmt(eff) + '%' : '—'}</td>
                           <td className="px-3 py-2 text-right">{w ? fmt(w.weightedEfficiency) + '%' : '—'}</td>
                         </tr>
@@ -468,13 +471,13 @@ export function MachineAvailabilityPage() {
                   {selectedWeek && (
                     <tfoot>
                       <tr className="sticky bottom-0 z-10 border-t-2 bg-muted/60 font-semibold">
-                        <td className="px-3 py-2" colSpan={5}>TOTALS / AVERAGES</td>
-                        <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.plannedMins ?? 0); }, 0))}</td>
-                        <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.stoppagesMins ?? 0); }, 0))}</td>
-                        <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.repairDowntimeMins ?? 0); }, 0))}</td>
-                        <td className="px-3 py-2 text-right">{data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.breakdowns ?? 0); }, 0)}</td>
+                        <td className="px-3 py-2" colSpan={5 + (pmEnabled ? 1 : 0) + (repairsEnabled && dtEnabled ? 2 : 0) + (repairsEnabled ? 1 : 0)}>TOTALS / AVERAGES</td>
+                        {pmEnabled && <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.plannedMins ?? 0); }, 0))}</td>}
+                        {repairsEnabled && dtEnabled && <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.stoppagesMins ?? 0); }, 0))}</td>}
+                        {repairsEnabled && dtEnabled && <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.repairDowntimeMins ?? 0); }, 0))}</td>}
+                        {repairsEnabled && <td className="px-3 py-2 text-right">{data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.breakdowns ?? 0); }, 0)}</td>}
                         <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.actualAvailability ?? 0); }, 0))}</td>
-                        <td className="px-3 py-2 text-right">{fmt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.pctDowntime ?? 0); }, 0) / (data.machines.length || 1))}%</td>
+                        {repairsEnabled && dtEnabled && <td className="px-3 py-2 text-right">{fmt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.pctDowntime ?? 0); }, 0) / (data.machines.length || 1))}%</td>}
                         <td className={`px-3 py-2 text-right ${effColor(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.efficiency ?? 0); }, 0) / (data.machines.length || 1))}`}>{fmt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.efficiency ?? 0); }, 0) / (data.machines.length || 1))}%</td>
                         <td className="px-3 py-2 text-right">{fmt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.weightedEfficiency ?? 0); }, 0) / (data.machines.length || 1))}%</td>
                       </tr>
@@ -567,6 +570,14 @@ export function MachineAvailabilityPage() {
         {/* TAB 3 — Pareto Analysis (4 charts)                            */}
         {/* ============================================================= */}
         <TabsContent value="pareto" className="space-y-6">
+          {!repairsEnabled ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-12 text-center text-muted-foreground">
+              <BarChart3 className="h-10 w-10" />
+              <p>Repairs module is not active.</p>
+              <p className="text-sm">Enable it in Settings → Modules to view Pareto analysis.</p>
+            </div>
+          ) : (
+          <>
           {data.pareto.failurePareto.length === 0 && data.pareto.nbdPareto.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 py-12 text-center text-muted-foreground">
               <BarChart3 className="h-10 w-10" />
@@ -631,7 +642,7 @@ export function MachineAvailabilityPage() {
           )}
 
           {/* Downtime Pareto */}
-          {data.pareto.dtPareto.length > 0 && (
+          {repairsEnabled && dtEnabled && data.pareto.dtPareto.length > 0 && (
             <Card className="border border-border/60 shadow-sm">
               <CardHeader className="px-4 py-3">
                 <CardTitle className="text-sm font-semibold">Downtime Pareto (Repair Minutes)</CardTitle>
@@ -685,6 +696,8 @@ export function MachineAvailabilityPage() {
               </CardContent>
             </Card>
           )}
+          </>
+          )}
         </TabsContent>
 
         {/* ============================================================= */}
@@ -700,6 +713,7 @@ export function MachineAvailabilityPage() {
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {/* 1. Repair Downtime Trend */}
+            {repairsEnabled && dtEnabled && (
             <Card className="border border-border/60 shadow-sm">
               <CardHeader className="px-4 py-3">
                 <CardTitle className="text-sm font-semibold">Repair Downtime Trend</CardTitle>
@@ -716,8 +730,10 @@ export function MachineAvailabilityPage() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
+            )}
 
             {/* 2. Breakdown Count Trend */}
+            {repairsEnabled && (
             <Card className="border border-border/60 shadow-sm">
               <CardHeader className="px-4 py-3">
                 <CardTitle className="text-sm font-semibold">Breakdown Count Trend</CardTitle>
@@ -734,8 +750,10 @@ export function MachineAvailabilityPage() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
+            )}
 
             {/* 3. MTTR Trend */}
+            {repairsEnabled && (
             <Card className="border border-border/60 shadow-sm">
               <CardHeader className="px-4 py-3">
                 <CardTitle className="text-sm font-semibold">MTTR Trend</CardTitle>
@@ -753,8 +771,10 @@ export function MachineAvailabilityPage() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
+            )}
 
             {/* 4. MTBF Trend */}
+            {repairsEnabled && (
             <Card className="border border-border/60 shadow-sm">
               <CardHeader className="px-4 py-3">
                 <CardTitle className="text-sm font-semibold">MTBF Trend</CardTitle>
@@ -772,6 +792,7 @@ export function MachineAvailabilityPage() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
+            )}
 
             {/* 5. Availability Trend */}
             <Card className="border border-border/60 shadow-sm">
@@ -793,6 +814,7 @@ export function MachineAvailabilityPage() {
             </Card>
 
             {/* 6. Failure Rate Trend */}
+            {repairsEnabled && (
             <Card className="border border-border/60 shadow-sm">
               <CardHeader className="px-4 py-3">
                 <CardTitle className="text-sm font-semibold">Failure Rate Trend</CardTitle>
@@ -810,6 +832,7 @@ export function MachineAvailabilityPage() {
                 </ResponsiveContainer>
               </CardContent>
             </Card>
+            )}
           </div>
         </TabsContent>
 
@@ -817,6 +840,13 @@ export function MachineAvailabilityPage() {
         {/* TAB 5 — Breakdown Summary                                     */}
         {/* ============================================================= */}
         <TabsContent value="breakdown" className="space-y-4">
+          {!repairsEnabled ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-12 text-center text-muted-foreground">
+              <AlertTriangle className="h-10 w-10" />
+              <p>Repairs module is not active.</p>
+              <p className="text-sm">Enable it in Settings → Modules to view breakdown data.</p>
+            </div>
+          ) : (
           <Card className="border border-border/60 shadow-sm">
             <CardHeader className="px-4 py-3">
               <CardTitle className="text-sm font-semibold">Breakdown Summary by Machine</CardTitle>
@@ -879,6 +909,7 @@ export function MachineAvailabilityPage() {
               </div>
             </CardContent>
           </Card>
+          )}
         </TabsContent>
 
         {/* ============================================================= */}
@@ -898,8 +929,9 @@ export function MachineAvailabilityPage() {
                   cur: latestKPI.weightedAvgEfficiency,
                   prev: prevKPI?.weightedAvgEfficiency,
                   higherIsGood: true,
+                  targetTab: 'efficiency' as const,
                 },
-                {
+                repairsEnabled ? {
                   label: 'Avg MTTR',
                   value: fmt(latestKPI.avgMTTR, 0) + ' min',
                   target: '< ' + fmt(data.targets.mttr, 0) + ' min',
@@ -908,8 +940,9 @@ export function MachineAvailabilityPage() {
                   cur: latestKPI.avgMTTR,
                   prev: prevKPI?.avgMTTR,
                   higherIsGood: false,
-                },
-                {
+                  targetTab: 'trends' as const,
+                } : null,
+                repairsEnabled ? {
                   label: 'Avg MTBF',
                   value: fmtInt(latestKPI.avgMTBF) + ' min',
                   target: '> ' + fmtInt(data.targets.mtbf) + ' min',
@@ -918,7 +951,8 @@ export function MachineAvailabilityPage() {
                   cur: latestKPI.avgMTBF,
                   prev: prevKPI?.avgMTBF,
                   higherIsGood: true,
-                },
+                  targetTab: 'trends' as const,
+                } : null,
                 {
                   label: 'Avg Availability',
                   value: fmt(latestKPI.avgAvailability) + '%',
@@ -928,8 +962,9 @@ export function MachineAvailabilityPage() {
                   cur: latestKPI.avgAvailability,
                   prev: prevKPI?.avgAvailability,
                   higherIsGood: true,
+                  targetTab: 'trends' as const,
                 },
-                {
+                repairsEnabled ? {
                   label: 'Total Breakdowns',
                   value: String(latestKPI.totalBreakdowns),
                   target: '≤ ' + String(data.targets.breakdownsWeekly) + '/wk',
@@ -938,8 +973,9 @@ export function MachineAvailabilityPage() {
                   cur: latestKPI.totalBreakdowns,
                   prev: prevKPI?.totalBreakdowns,
                   higherIsGood: false,
-                },
-                {
+                  targetTab: 'breakdown' as const,
+                } : null,
+                repairsEnabled ? {
                   label: 'Avg Failure Rate',
                   value: fmt(100 - latestKPI.weightedAvgEfficiency) + '%',
                   target: '< ' + fmt(data.targets.failureRate) + '%',
@@ -948,8 +984,9 @@ export function MachineAvailabilityPage() {
                   cur: 100 - latestKPI.weightedAvgEfficiency,
                   prev: prevKPI ? 100 - prevKPI.weightedAvgEfficiency : undefined,
                   higherIsGood: false,
-                },
-              ].map((item) => {
+                  targetTab: 'pareto' as const,
+                } : null,
+              ].filter(Boolean).map((item) => {
                 const direction = trendVal(item.cur, item.prev);
                 const trendIsGood =
                   direction === 'flat' ? item.met :
@@ -957,7 +994,8 @@ export function MachineAvailabilityPage() {
                 return (
                   <Card
                     key={item.label}
-                    className={`border shadow-sm ${item.met ? 'border-emerald-200' : 'border-red-200'}`}
+                    className={`border shadow-sm cursor-pointer hover:shadow-md transition-shadow ${item.met ? 'border-emerald-200' : 'border-red-200'}`}
+                    onClick={() => setTab(item.targetTab)}
                   >
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">

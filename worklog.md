@@ -405,3 +405,196 @@ Work Log:
 Stage Summary:
 - RepairsPages: All 9 components have WORK_ORDERS module gate; 6 list pages have clickable StatsCards with status filtering
 - DashboardPages: Module-aware KPI display (analytics, safety, pm_schedules); 3 new clickable navigation cards (Maintenance Cost, PM Due Soon, Compliance)
+
+---
+Task ID: 3
+Agent: WOReportsPage PM/Repairs Separator
+Task: Separate PM and Repairs module filtering in WOReportsPage + API
+
+Work Log:
+- Added `repairsEnabled` and `pmEnabled` module checks using `useModuleEnabled(MODULE_CODES.REPAIRS)` and `useModuleEnabled(MODULE_CODES.PM_SCHEDULES)`
+- Updated module disabled gate: changed from `!woEnabled` to `!repairsEnabled && !pmEnabled` with updated message "Repairs and PM modules are not active"
+- Added `moduleFilter` state (`'all' | 'repairs' | 'pm'`) with Select dropdown in filter controls area
+- Module filter Select options: "All Types", "Repairs Only" (disabled when repairs module off), "PM Only" (disabled when PM module off)
+- Passed `moduleFilter` to API call URL and PDF download URLSearchParams
+- Added guard in fetchReport: skip fetch when moduleFilter's module is disabled
+- Updated filterDescription memo to show "Module: Repairs" or "Module: PM" when filtered
+- Changed filter grid from `lg:grid-cols-5` to `lg:grid-cols-6` to accommodate new module filter
+- Made all KPI cards clickable: "Total Work Orders" → overview tab, "Completion Rate" → overview tab (were previously `undefined`)
+- Added orange "R" badges on Downtime, Breakdowns, Materials, and Stoppages tabs to indicate Repairs module data
+- Added 4 filtered data memos: `filteredByType`, `filteredBreakdownByType`, `filteredMaterialsByType`, `filteredFailureByType`
+- Each filtered memo hides preventive type when pmEnabled=false, hides corrective/emergency types when repairsEnabled=false
+- Updated 4 charts to use filtered data: Overview byType donut, Breakdowns byType bar, Materials byType stacked bar, Failure Rate byType bar
+- Updated API route `/api/work-orders/reports/route.ts`: accepts `moduleFilter` query param, adds `type: { in: [...] }` to woWhere for 'repairs' and 'pm' values
+- Fixed pre-existing missing `)}` closing bracket for stoppage TabsContent conditional render
+- Added `moduleFilter` to PDF download useCallback dependencies
+
+Stage Summary:
+- WOReportsPage now respects PM and Repairs module enablement independently
+- Module filter dropdown lets users view All / Repairs Only / PM Only work orders
+- Charts filter out type slices from disabled modules on the frontend
+- API applies type filter server-side for accurate KPI calculations
+- All 8 KPI cards are now clickable with tab navigation
+- Tab badges indicate which tabs contain Repairs-specific data
+
+---
+Task ID: 4
+Agent: EnterpriseReports PM/Repairs Separator
+Task: Separate PM and Repairs module filtering in EnterpriseReports
+
+Work Log:
+- Added `repairsEnabled` and `pmEnabled` module checks using `useModuleEnabled(MODULE_CODES.REPAIRS)` and `useModuleEnabled(MODULE_CODES.PM_SCHEDULES)`
+- Updated page-level disabled check: now shows "No maintenance modules are active" only when `woEnabled`, `repairsEnabled`, and `pmEnabled` are ALL false
+- Made all KPI cards clickable across all tabs:
+  - Executive KPIs: WOs Completed → wo-analytics, Completion Rate → wo-analytics, MTBF → downtime, MTTR → downtime, Planned vs Unplanned → wo-analytics, Total Maint. Cost → cost
+  - Downtime KPIs: SLA Breaches → sla
+  - Cost KPIs: Total Cost → period-comparison, Labor Cost → labor, Parts Cost → tools, Contractor Cost → labor
+  - Tools KPIs: all → cost
+- Added `filteredWoByType` memo that filters `reportData.woByType` by module visibility (hides preventive if pmEnabled=false, corrective/emergency if repairsEnabled=false)
+- Updated Executive pie chart and WO Analytics bar chart to use `filteredWoByType` with `TYPE_COLOR_MAP` colors
+- Added `filteredWorkOrders` memo that filters the raw work orders array by module visibility
+- Updated SLA data computation to use `filteredWorkOrders` instead of raw `workOrders`
+- Updated SLA Overdue WOs section to use `filteredWorkOrders`
+- Gated Repeat Failures tab trigger on `repairsEnabled`; tab content shows "Repairs module is not active" message when disabled
+- Updated Downtime tab trigger and content to require `dtEnabled && (repairsEnabled || woEnabled)`
+- Verified API route `/api/reports/enterprise/route.ts` does not filter by WO type — frontend handles filtering, no API changes needed
+
+Stage Summary:
+- EnterpriseReports now independently respects PM Schedules, Repairs, and Work Orders module enablement
+- All KPI cards across Executive, Downtime, Cost, Tools, and SLA tabs are clickable with tab navigation
+- WO type distribution charts filter out data from disabled modules
+- SLA computation and overdue WO list respect module filtering
+- Repeat Failures tab gated on Repairs module; Downtime tab requires Downtime + (Repairs or WO) modules
+- No API route changes needed — frontend handles all module-based filtering
+
+---
+Task ID: 5
+Agent: ReportPages Module Filter Updater
+Task: Add PM/Repairs module filtering and KPI card clicks to ReportPages
+
+Work Log:
+- Read entire ReportPages.tsx (3558 lines) to understand all 10 exported report components
+- Identified EquipmentHistoryPage (line 2314), FailureAnalysisPage (line 3080), ReportsMaintenancePage (line 344), ReportsFinancialPage (line 1890) as targets
+- Added `pmEnabled` (MODULE_CODES.PM_SCHEDULES) and `repairsEnabled` (MODULE_CODES.REPAIRS) hooks to EquipmentHistoryPage
+- Updated EquipmentHistoryPage `filteredWOs` useMemo to exclude PM WOs when PM disabled, repair WOs when Repairs disabled
+- Added PM_TYPES=['preventive'] and REPAIR_TYPES=['corrective','emergency'] constants for module-aware filtering
+- Added visual PM/Repair badges next to WO type badges in EquipmentHistoryPage work order table
+- Updated EquipmentHistoryPage WO type filter dropdown to conditionally show preventive/corrective/emergency based on module status
+- Added `getWoModuleLabel()` helper for PM/Repair badge generation
+- Changed EquipmentHistoryPage KPI cards to use `tab` property — all 6 cards now navigate on click (Total WOs→workorders, Completion Rate→workorders, Total Cost→costs, Total Downtime→workorders, MTBF→overview, Failures→failures)
+- Updated FailureAnalysisPage: added `repairsEnabled` check, changed `moduleEnabled` to `repairsEnabled && (assetsEnabled || downtimeEnabled)`
+- Changed FailureAnalysisPage disabled message to "Repairs module is not active"
+- Updated FailureAnalysisPage KPI cards with `tab` property — all 6 cards now navigate (Total Failures→failure-modes, Total Downtime→by-asset, Total Repair Cost→by-asset, Avg Downtime/Failure→overview, Top Failure Mode→failure-modes, Top Root Cause→root-causes)
+- Updated ReportsMaintenancePage: added `pmEnabled`, `repairsEnabled`, `subModuleEnabled` hooks
+- Changed ReportsMaintenancePage module gate to `!moduleEnabled || !subModuleEnabled` with descriptive message
+- Updated ReportsMaintenancePage KPI cards with `tab` property — all 6 cards now navigate (Total WOs→data, Completion Rate→overview, Avg Completion Time→technicians, Avg Cost/WO→materials, SLA Compliance→overview, Overdue→data)
+- Updated ReportsFinancialPage: added `pmEnabled` and `repairsEnabled` hooks, filter WOs by module status after date-range filtering
+- Added PM/Repair badges to Financial page High-Cost WOs table
+- Added PM/Repair badges to AssetWOTable component (used in Maintenance page's By Asset tab)
+- Added PM/Repair badges to Maintenance page Detailed Data tab WO type column
+- Ran lint — no new errors in ReportPages.tsx (all pre-existing errors in other files)
+
+Stage Summary:
+- EquipmentHistoryPage: filters WOs by PM/Repairs module status, shows PM/Repair badges, all KPI cards clickable with tab navigation
+- FailureAnalysisPage: gated on Repairs module, all KPI cards clickable with tab navigation
+- ReportsMaintenancePage: requires work_orders + (pm_schedules OR repairs), all KPI cards clickable
+- ReportsFinancialPage: filters WOs by PM/Repairs module status, shows PM/Repair badges in high-cost WO table
+- AssetWOTable: shows PM/Repair badges on WO type column
+- Maintenance Detailed Data tab: shows PM/Repair badges on WO type column
+- Zero lint errors introduced
+
+---
+Task ID: 6
+Agent: MachineAvailabilityPage Module Filter Updater
+Task: Add PM/Repairs module filtering and KPI card clicks to MachineAvailabilityPage
+
+Work Log:
+- Added `repairsEnabled` (MODULE_CODES.REPAIRS) and `pmEnabled` (MODULE_CODES.PM_SCHEDULES) module hooks alongside existing `assetsEnabled` and `dtEnabled`
+- Updated module disabled check: now requires `!assetsEnabled && !repairsEnabled` (either module being active is sufficient), with updated "Modules Not Active" message
+- Tab 1 (Machine Details) KPI strip: added `targetTab` and `onClick` to navigate to relevant tabs; "Total Breakdowns" card conditionally rendered only when `repairsEnabled`
+- Tab 1 table: conditionally rendered columns — "Planned (min)" requires `pmEnabled`, "Stoppages (min)" / "Repair DT (min)" / "% Downtime" require `repairsEnabled && dtEnabled`, "# BD" requires `repairsEnabled`; dynamic `colSpan` in totals footer row; reduced `min-w` from 1200px to 800px
+- Tab 3 (Pareto Analysis): entire tab gated behind `repairsEnabled` (shows "module not active" message when disabled); Downtime Pareto chart additionally requires `dtEnabled`
+- Tab 4 (Weekly Trends): Repair Downtime Trend requires `repairsEnabled && dtEnabled`; Breakdown Count, MTTR, MTBF, Failure Rate trends require `repairsEnabled`; Availability Trend always shown
+- Tab 5 (Breakdown Summary): entire tab gated behind `repairsEnabled` with "module not active" message
+- Tab 6 (Targets & KPIs): all KPI cards now clickable with `cursor-pointer hover:shadow-md transition-shadow` and `onClick` to navigate to relevant tab; repair-related KPIs (MTTR, MTBF, Total Breakdowns, Failure Rate) conditionally filtered out when `!repairsEnabled`; each card has `targetTab` mapping (efficiency→efficiency, trends→trends, breakdown→breakdown, pareto→pareto)
+- API call unchanged (data is aggregated; filtering handled client-side by conditionally rendering sections)
+
+Stage Summary:
+- MachineAvailabilityPage now respects PM/Repairs/Downtime module boundaries
+- Deactivating Repairs module hides all repair/downtime/breakdown data across all 6 tabs
+- Deactivating PM module hides "Planned (min)" column in machine details table
+- Deactivating Downtime module hides stoppages/repair DT columns and related charts
+- All KPI cards (Tab 1 strip + Tab 6 executive dashboard) are clickable and navigate to their relevant detail tab
+- Paren and brace balance verified (both 0)
+
+---
+Task ID: 8
+Agent: Report APIs Module Filter Updater
+Task: Add moduleFilter support to remaining report APIs
+
+Work Log:
+- Read all 4 target API route files to understand existing query structure
+- Updated `/api/reports/maintenance/route.ts`: Added `moduleFilter` param parsing and type filter to `baseFilter` before WorkOrder query
+- Updated `/api/reports/failure-analysis/route.ts`: Added `moduleFilter` param parsing and type filter to `woWhere` clause for completed WOs query
+- Updated `/api/reports/enterprise/route.ts`: Added `moduleFilter` param parsing and type filter to `woWhere` clause
+- Updated `/api/assets/[id]/history/route.ts`: Added `moduleFilter` param parsing, refactored inline WO where to named `woWhere` variable, added type filter
+- Verified no lint errors in modified files
+
+Stage Summary:
+- 4 API routes now accept optional `moduleFilter` query parameter (`all`, `repairs`, `pm`)
+- `repairs` filters to `type: { in: ['corrective', 'emergency'] }`; `pm` filters to `type: 'preventive'`
+- `all` (default) applies no type filter — existing behavior preserved
+- All existing functionality intact, no breaking changes---
+Task ID: 3-8
+Agent: Main
+Task: Separate PM and Repairs into independent modules with KPI card click-to-detail and module deactivation filtering
+
+Work Log:
+- Added REPAIRS, REPORTS, TOOLS, BOM to MODULE_CODES in useModuleEnabled.ts
+- Created /api/modules/ensure-repairs route to auto-create repairs system module in DB
+- Updated navigationStore.refreshModules to auto-call ensure-repairs on init
+- Updated Sidebar.tsx:
+  - Repairs group now uses moduleCode: 'repairs' (was moduleCodes: ['work_orders', 'maintenance_requests'])
+  - Maintenance group now includes 'pm_schedules' in moduleCodes
+  - PM child pages (schedules, templates, triggers, calendar) have individual moduleCode: 'pm_schedules'
+  - WO pages have moduleCode: 'work_orders'
+  - Added child-level module filtering in sidebar render
+  - Repair Lifecycle report has moduleCode: 'repairs'
+  - WO Reports has moduleCode: 'work_orders'
+- Updated MobileBottomNav.tsx: Added moduleCode to Repairs and PM items, added filtering
+- Updated RepairsPages.tsx: All 9 repair components now check repairsEnabled instead of woEnabled
+- Updated WOReportsPage.tsx (via subagent):
+  - Added repairsEnabled and pmEnabled hooks
+  - Added module filter dropdown (All/Repairs Only/PM Only)
+  - KPI cards clickable → navigate to detail tabs
+  - Charts filter data by enabled modules
+  - Tab badges indicate PM vs Repairs data
+- Updated EnterpriseReports.tsx (via subagent):
+  - Added repairsEnabled and pmEnabled hooks
+  - All KPI cards clickable with tab navigation
+  - WO type distribution filtered by module status
+  - Repeat Failures tab gated on repairsEnabled
+- Updated ReportPages.tsx (via subagent):
+  - EquipmentHistoryPage: PM/Repair badges on WOs, filtered by module
+  - FailureAnalysisPage: Uses repairsEnabled check
+  - ReportsMaintenancePage: Separate pmEnabled/repairsEnabled checks
+  - ReportsFinancialPage: WO data filtered by module
+  - All KPI cards clickable across all report pages
+- Updated MachineAvailabilityPage.tsx (via subagent):
+  - Added repairsEnabled, pmEnabled checks
+  - KPI cards clickable with tab navigation
+  - Fixed conditional hook calls (moved hooks before early return)
+- Updated API routes with moduleFilter support:
+  - /api/work-orders/reports: Accepts moduleFilter (all/repairs/pm)
+  - /api/reports/maintenance: Same
+  - /api/reports/failure-analysis: Same
+  - /api/reports/enterprise: Same
+  - /api/assets/[id]/history: Same
+- Build passes with no errors
+
+Stage Summary:
+- PM (pm_schedules) and Repairs (repairs) are now fully independent modules
+- Deactivating PM hides PM pages, PM data in reports, and preventive WOs
+- Deactivating Repairs hides Repairs sidebar/pages, repair data in reports, and corrective/emergency WOs
+- All KPI cards across all report pages are clickable and navigate to detail tabs
+- The repairs module is auto-created in DB on first app load

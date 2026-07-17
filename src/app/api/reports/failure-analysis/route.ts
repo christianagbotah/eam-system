@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const from = searchParams.get('from');
     const to = searchParams.get('to');
+    const moduleFilter = searchParams.get('moduleFilter') || 'all';
 
     // Resolve plant scope
     const plantScope = await getPlantScope(request, session);
@@ -63,6 +64,11 @@ export async function GET(request: NextRequest) {
     }
     if (Object.keys(plantFilter).length > 0) {
       Object.assign(woWhere, plantFilter);
+    }
+    if (moduleFilter === 'repairs') {
+      (woWhere as Record<string, unknown>).type = { in: ['corrective', 'emergency'] };
+    } else if (moduleFilter === 'pm') {
+      (woWhere as Record<string, unknown>).type = 'preventive';
     }
 
     const completedWOs = await db.workOrder.findMany({

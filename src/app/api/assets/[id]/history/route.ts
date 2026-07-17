@@ -19,6 +19,7 @@ export async function GET(
     const url = new URL(request.url);
     const fromDate = url.searchParams.get('from');
     const toDate = url.searchParams.get('to');
+    const moduleFilter = url.searchParams.get('moduleFilter') || 'all';
 
     // Build optional date filters
     const dateFilter: Record<string, any> = {};
@@ -41,11 +42,17 @@ export async function GET(
     }
 
     // ── 2. Fetch all Work Orders for this asset ───────────────────────────
+    const woWhere: Record<string, any> = {
+      assetId: id,
+      ...(Object.keys(dateFilter).length > 0 ? dateFilter : {}),
+    };
+    if (moduleFilter === 'repairs') {
+      woWhere.type = { in: ['corrective', 'emergency'] };
+    } else if (moduleFilter === 'pm') {
+      woWhere.type = 'preventive';
+    }
     const workOrders = await db.workOrder.findMany({
-      where: {
-        assetId: id,
-        ...(Object.keys(dateFilter).length > 0 ? dateFilter : {}),
-      },
+      where: woWhere,
       include: {
         assignee: { select: { id: true, fullName: true, username: true } },
         teamLeader: { select: { id: true, fullName: true, username: true } },

@@ -109,6 +109,8 @@ export default function EnterpriseReports() {
   const [activeTab, setActiveTab] = useState('executive');
 
   const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES);
   const dtEnabled = useModuleEnabled(MODULE_CODES.DOWNTIME);
 
   const fetchReport = useCallback(() => {
@@ -143,12 +145,12 @@ export default function EnterpriseReports() {
 
   // Executive KPIs
   const executiveKPIs = useMemo(() => [
-    { label: 'WOs Completed (MTD)', value: s?.completedWOs ?? 0, icon: CheckCircle2, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Completion Rate', value: `${s?.completionRate ?? 0}%`, icon: Target, color: 'text-sky-600', bgColor: 'bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400', subtext: s?.completionRate >= 80 ? 'On track' : 'Below target' },
-    { label: 'MTBF', value: `${s?.mtbf ?? 0}h`, icon: Activity, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'MTTR', value: `${s?.avgCompletionHours ?? 0}h`, icon: Timer, color: 'text-teal-600', bgColor: 'bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
-    { label: 'Planned vs Unplanned', value: `${s?.plannedRatio ?? '50:50'}`, icon: TrendingUp, color: 'text-violet-600', bgColor: 'bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
-    { label: 'Total Maint. Cost', value: formatCurrency(s?.totalCost || 0), icon: DollarSign, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'WOs Completed (MTD)', value: s?.completedWOs ?? 0, icon: CheckCircle2, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400', onClick: () => setActiveTab('wo-analytics') },
+    { label: 'Completion Rate', value: `${s?.completionRate ?? 0}%`, icon: Target, color: 'text-sky-600', bgColor: 'bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400', subtext: s?.completionRate >= 80 ? 'On track' : 'Below target', onClick: () => setActiveTab('wo-analytics') },
+    { label: 'MTBF', value: `${s?.mtbf ?? 0}h`, icon: Activity, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400', onClick: () => setActiveTab('downtime') },
+    { label: 'MTTR', value: `${s?.avgCompletionHours ?? 0}h`, icon: Timer, color: 'text-teal-600', bgColor: 'bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400', onClick: () => setActiveTab('downtime') },
+    { label: 'Planned vs Unplanned', value: `${s?.plannedRatio ?? '50:50'}`, icon: TrendingUp, color: 'text-violet-600', bgColor: 'bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400', onClick: () => setActiveTab('wo-analytics') },
+    { label: 'Total Maint. Cost', value: formatCurrency(s?.totalCost || 0), icon: DollarSign, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400', onClick: () => setActiveTab('cost') },
   ], [s]);
 
   // Export handlers
@@ -190,11 +192,32 @@ export default function EnterpriseReports() {
     );
   };
 
+  // Filtered WO type data respecting PM/Repairs module visibility
+  const filteredWoByType = useMemo(() => {
+    const data = reportData?.woByType || [];
+    return data.filter((entry: any) => {
+      const t = entry.type?.toLowerCase();
+      if (t === 'preventive' && !pmEnabled) return false;
+      if ((t === 'corrective' || t === 'emergency') && !repairsEnabled) return false;
+      return true;
+    });
+  }, [reportData?.woByType, pmEnabled, repairsEnabled]);
+
+  // Filtered work orders respecting PM/Repairs module visibility
+  const filteredWorkOrders = useMemo(() => {
+    return workOrders.filter(wo => {
+      const t = wo.type?.toLowerCase();
+      if (t === 'preventive' && !pmEnabled) return false;
+      if ((t === 'corrective' || t === 'emergency') && !repairsEnabled) return false;
+      return true;
+    });
+  }, [workOrders, pmEnabled, repairsEnabled]);
+
   // Client-side SLA data
   const slaData = useMemo(() => {
-    if (!workOrders.length) return [];
+    if (!filteredWorkOrders.length) return [];
     const byType: Record<string, { total: number; breached: number }> = {};
-    workOrders.forEach(wo => {
+    filteredWorkOrders.forEach(wo => {
       const t = wo.type || 'unknown';
       if (!byType[t]) byType[t] = { total: 0, breached: 0 };
       byType[t].total++;
@@ -208,7 +231,7 @@ export default function EnterpriseReports() {
       breached: data.breached,
       breachRate: data.total > 0 ? Math.round((data.breached / data.total) * 100) : 0,
     }));
-  }, [workOrders]);
+  }, [filteredWorkOrders]);
 
   // Repeat failure data — enriched from enterprise report API
   const repeatFailures = useMemo(() => {
@@ -334,13 +357,13 @@ export default function EnterpriseReports() {
 
   if (loading && !reportData) return <div className="page-content"><LoadingSkeleton /></div>;
 
-  if (!woEnabled) {
+  if (!woEnabled && !repairsEnabled && !pmEnabled) {
     return (
       <div className="page-content">
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <ClipboardList className="h-12 w-12 text-muted-foreground" />
-          <p className="text-lg font-medium text-muted-foreground">Work Orders module is not active</p>
-          <p className="text-sm text-muted-foreground">Enable the Work Orders module to access Enterprise Reporting.</p>
+          <p className="text-lg font-medium text-muted-foreground">No maintenance modules are active</p>
+          <p className="text-sm text-muted-foreground">Enable at least one of Work Orders, Repairs, or PM Schedules to access Enterprise Reporting.</p>
         </div>
       </div>
     );
@@ -389,8 +412,8 @@ export default function EnterpriseReports() {
           <TabsTrigger value="executive" className="text-xs"><BarChart3 className="h-3.5 w-3.5 mr-1" />Executive</TabsTrigger>
           <TabsTrigger value="wo-analytics" className="text-xs"><ClipboardList className="h-3.5 w-3.5 mr-1" />WO Analytics</TabsTrigger>
           <TabsTrigger value="labor" className="text-xs"><Users className="h-3.5 w-3.5 mr-1" />Labor</TabsTrigger>
-          {dtEnabled && <TabsTrigger value="downtime" className="text-xs"><AlertTriangle className="h-3.5 w-3.5 mr-1" />Downtime</TabsTrigger>}
-          <TabsTrigger value="repeat" className="text-xs"><RefreshCw className="h-3.5 w-3.5 mr-1" />Repeat Failures</TabsTrigger>
+          {(dtEnabled && (repairsEnabled || woEnabled)) && <TabsTrigger value="downtime" className="text-xs"><AlertTriangle className="h-3.5 w-3.5 mr-1" />Downtime</TabsTrigger>}
+          {repairsEnabled && <TabsTrigger value="repeat" className="text-xs"><RefreshCw className="h-3.5 w-3.5 mr-1" />Repeat Failures</TabsTrigger>}
           <TabsTrigger value="cost" className="text-xs"><DollarSign className="h-3.5 w-3.5 mr-1" />Cost Analysis</TabsTrigger>
           <TabsTrigger value="period-comparison" className="text-xs"><ArrowRightLeft className="h-3.5 w-3.5 mr-1" />Period Comparison</TabsTrigger>
           <TabsTrigger value="tools" className="text-xs"><Package className="h-3.5 w-3.5 mr-1" />Tools & Materials</TabsTrigger>
@@ -400,7 +423,7 @@ export default function EnterpriseReports() {
         {/* ====== EXECUTIVE SUMMARY ====== */}
         <TabsContent value="executive" className="space-y-6 mt-6">
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
-            {executiveKPIs.map(k => { const I = k.icon; const tabMap: Record<string, string | undefined> = { 'WOs Completed (MTD)': 'wo-analytics', 'MTBF': 'downtime', 'MTTR': 'downtime', 'Planned vs Unplanned': 'wo-analytics', 'Total Maint. Cost': 'cost' }; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} subtext={k.subtext} color={k.color} bgColor={k.bgColor} onClick={tabMap[k.label] ? () => setActiveTab(tabMap[k.label]!) : undefined} />; })}
+            {executiveKPIs.map(k => { const I = k.icon; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} subtext={k.subtext} color={k.color} bgColor={k.bgColor} onClick={k.onClick} />; })}
           </div>
 
           {/* Quick Charts */}
@@ -408,11 +431,11 @@ export default function EnterpriseReports() {
             <Card className="border border-border/60 shadow-sm">
               <CardHeader className="pb-3"><CardTitle className="text-base">Work Orders by Type</CardTitle><CardDescription className="text-xs">Distribution across maintenance types</CardDescription></CardHeader>
               <CardContent>
-                {(reportData?.woByType || []).length > 0 ? (
+                {filteredWoByType.length > 0 ? (
                   <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
-                      <Pie data={reportData.woByType} cx="50%" cy="50%" outerRadius={80} dataKey="count" nameKey="type" label={({ type, percent }) => `${type} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                        {(reportData.woByType || []).map((entry: any, i: number) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                      <Pie data={filteredWoByType} cx="50%" cy="50%" outerRadius={80} dataKey="count" nameKey="type" label={({ type, percent }) => `${type} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                        {filteredWoByType.map((entry: any, i: number) => <Cell key={i} fill={TYPE_COLOR_MAP[entry.type] || CHART_COLORS[i % CHART_COLORS.length]} />)}
                       </Pie>
                       <RechartsTooltip />
                       <Legend />
@@ -473,15 +496,15 @@ export default function EnterpriseReports() {
             <Card className="border border-border/60 shadow-sm">
               <CardHeader className="pb-3"><CardTitle className="text-base">WO by Type</CardTitle></CardHeader>
               <CardContent>
-                {(reportData?.woByType || []).length > 0 ? (
+                {filteredWoByType.length > 0 ? (
                   <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={reportData.woByType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                    <BarChart data={filteredWoByType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis dataKey="type" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <RechartsTooltip />
                       <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
-                        {(reportData.woByType || []).map((entry: any, i: number) => <Cell key={i} fill={TYPE_COLOR_MAP[entry.type] || CHART_COLORS[i]} />)}
+                        {filteredWoByType.map((entry: any, i: number) => <Cell key={i} fill={TYPE_COLOR_MAP[entry.type] || CHART_COLORS[i]} />)}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -652,14 +675,14 @@ export default function EnterpriseReports() {
         </TabsContent>
 
         {/* ====== DOWNTIME ANALYSIS TAB ====== */}
-        {dtEnabled && <TabsContent value="downtime" className="space-y-6 mt-6">
+        {(dtEnabled && (repairsEnabled || woEnabled)) && <TabsContent value="downtime" className="space-y-6 mt-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
               { label: 'Total Events', value: reportData?.downtimeAnalysis?.totalEvents ?? 0, icon: AlertTriangle, color: 'text-red-600', bgColor: 'bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
               { label: 'Total Downtime', value: `${reportData?.downtimeAnalysis?.totalMinutes ?? 0} min`, icon: Clock, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
               { label: 'Avg Duration', value: `${reportData?.downtimeAnalysis?.avgDurationMinutes ?? 0} min`, icon: TrendingUp, color: 'text-sky-600', bgColor: 'bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-              { label: 'SLA Breaches', value: s?.slaBreachedWOs ?? 0, icon: ShieldAlert, color: 'text-violet-600', bgColor: 'bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
-            ].map(k => { const I = k.icon; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} color={k.color} bgColor={k.bgColor} />; })}
+              { label: 'SLA Breaches', value: s?.slaBreachedWOs ?? 0, icon: ShieldAlert, color: 'text-violet-600', bgColor: 'bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400', onClick: () => setActiveTab('sla') },
+            ].map(k => { const I = k.icon; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} color={k.color} bgColor={k.bgColor} onClick={'onClick' in k && k.onClick ? k.onClick : undefined} />; })}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -730,6 +753,8 @@ export default function EnterpriseReports() {
 
         {/* ====== REPEAT FAILURE TAB ====== */}
         <TabsContent value="repeat" className="space-y-6 mt-6">
+          {repairsEnabled ? (
+          <>
           <Card className="border border-border/60 shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Assets with Repeat Failures (&gt;3 in 90 days)</CardTitle>
@@ -803,17 +828,25 @@ export default function EnterpriseReports() {
               ) : <EmptyState icon={BarChart3} title="No failure data" />}
             </CardContent>
           </Card>
+          </>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <RefreshCw className="h-10 w-10 text-muted-foreground" />
+              <p className="text-base font-medium text-muted-foreground">Repairs module is not active</p>
+              <p className="text-sm text-muted-foreground">Enable the Repairs module to view repeat failure analysis.</p>
+            </div>
+          )}
         </TabsContent>
 
         {/* ====== COST ANALYTICS TAB ====== */}
         <TabsContent value="cost" className="space-y-6 mt-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: 'Total Cost', value: formatCurrency(enterpriseData?.costAnalytics?.total || s?.totalCost || 0), icon: DollarSign, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-              { label: 'Labor Cost', value: formatCurrency(enterpriseData?.costAnalytics?.labor || 0), icon: Users, color: 'text-sky-600', bgColor: 'bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-              { label: 'Parts Cost', value: formatCurrency(enterpriseData?.costAnalytics?.parts || 0), icon: Package, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-              { label: 'Contractor Cost', value: formatCurrency(enterpriseData?.costAnalytics?.contractor || 0), icon: HardHat, color: 'text-violet-600', bgColor: 'bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
-            ].map(k => { const I = k.icon; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} color={k.color} bgColor={k.bgColor} />; })}
+              { label: 'Total Cost', value: formatCurrency(enterpriseData?.costAnalytics?.total || s?.totalCost || 0), icon: DollarSign, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400', onClick: () => setActiveTab('period-comparison') },
+              { label: 'Labor Cost', value: formatCurrency(enterpriseData?.costAnalytics?.labor || 0), icon: Users, color: 'text-sky-600', bgColor: 'bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400', onClick: () => setActiveTab('labor') },
+              { label: 'Parts Cost', value: formatCurrency(enterpriseData?.costAnalytics?.parts || 0), icon: Package, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400', onClick: () => setActiveTab('tools') },
+              { label: 'Contractor Cost', value: formatCurrency(enterpriseData?.costAnalytics?.contractor || 0), icon: HardHat, color: 'text-violet-600', bgColor: 'bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400', onClick: () => setActiveTab('labor') },
+            ].map(k => { const I = k.icon; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} color={k.color} bgColor={k.bgColor} onClick={'onClick' in k && k.onClick ? k.onClick : undefined} />; })}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1197,11 +1230,11 @@ export default function EnterpriseReports() {
         <TabsContent value="tools" className="space-y-6 mt-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: 'Tool Utilization', value: '78%', icon: Wrench, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-              { label: 'Active Tools', value: '24', icon: HardHat, color: 'text-sky-600', bgColor: 'bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-              { label: 'Stock-out Events', value: reportData?.stockOutEvents ?? '2', icon: AlertTriangle, color: 'text-red-600', bgColor: 'bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
-              { label: 'POs Pending', value: '5', icon: ArrowRightLeft, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-            ].map(k => { const I = k.icon; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} color={k.color} bgColor={k.bgColor} />; })}
+              { label: 'Tool Utilization', value: '78%', icon: Wrench, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400', onClick: () => setActiveTab('cost') },
+              { label: 'Active Tools', value: '24', icon: HardHat, color: 'text-sky-600', bgColor: 'bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400', onClick: () => setActiveTab('cost') },
+              { label: 'Stock-out Events', value: reportData?.stockOutEvents ?? '2', icon: AlertTriangle, color: 'text-red-600', bgColor: 'bg-red-50 dark:bg-red-900/30 dark:text-red-400', onClick: () => setActiveTab('cost') },
+              { label: 'POs Pending', value: '5', icon: ArrowRightLeft, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400', onClick: () => setActiveTab('cost') },
+            ].map(k => { const I = k.icon; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} color={k.color} bgColor={k.bgColor} onClick={'onClick' in k && k.onClick ? k.onClick : undefined} />; })}
           </div>
 
           <Card className="border border-border/60 shadow-sm">
@@ -1265,13 +1298,13 @@ export default function EnterpriseReports() {
             <Card className="border border-border/60 shadow-sm">
               <CardHeader className="pb-3"><CardTitle className="text-base">Overdue Work Orders</CardTitle></CardHeader>
               <CardContent>
-                {workOrders.filter(wo => {
+                {filteredWorkOrders.filter(wo => {
                   if (!wo.plannedStart || ['completed', 'closed'].includes(wo.status)) return false;
                   return new Date(wo.plannedStart) < new Date();
                 }).length > 0 ? (
                   <ScrollArea className="max-h-[280px]">
                     <div className="space-y-2">
-                      {workOrders.filter(wo => {
+                      {filteredWorkOrders.filter(wo => {
                         if (!wo.plannedStart || ['completed', 'closed'].includes(wo.status)) return false;
                         return new Date(wo.plannedStart) < new Date();
                       }).slice(0, 10).map(wo => (

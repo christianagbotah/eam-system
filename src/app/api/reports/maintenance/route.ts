@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
     const departmentId = searchParams.get('departmentId');
     const plantId = searchParams.get('plantId');
+    const moduleFilter = searchParams.get('moduleFilter') || 'all';
 
     // Resolve plant scope
     const plantScope = await getPlantScope(request, session);
@@ -36,6 +37,11 @@ export async function GET(request: NextRequest) {
     if (Object.keys(dateFilter).length > 0) baseFilter.createdAt = dateFilter;
     if (departmentId) baseFilter.departmentId = departmentId;
     if (plantId && !plantScope) baseFilter.plantId = plantId;
+    if (moduleFilter === 'repairs') {
+      (baseFilter as Record<string, unknown>).type = { in: ['corrective', 'emergency'] };
+    } else if (moduleFilter === 'pm') {
+      (baseFilter as Record<string, unknown>).type = 'preventive';
+    }
 
     const hasFilter = Object.keys(baseFilter).length > 0;
 

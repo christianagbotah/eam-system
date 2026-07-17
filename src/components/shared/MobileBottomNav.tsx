@@ -60,6 +60,7 @@ interface MoreItem {
   perm: string;
   permOr?: string[];
   activePages?: PageName[];
+  moduleCode?: string;
 }
 
 // ============================================================================
@@ -104,11 +105,11 @@ const BOTTOM_TABS: NavItem[] = [
 
 const MORE_ITEMS: MoreItem[] = [
   // Repairs & Tools
-  { page: 'repairs-material-requests', label: 'Repairs & Tools', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], activePages: ['repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics', 'repairs-spare-part-returns', 'repairs-damaged-tools', 'technician-timesheet'] },
+  { page: 'repairs-material-requests', label: 'Repairs & Tools', icon: ArrowRightLeft, perm: 'work_orders.view', permOr: ['work_orders.view', 'work_orders.view_own'], activePages: ['repairs-material-requests', 'repairs-tool-requests', 'repairs-tool-transfers', 'repairs-downtime', 'repairs-completion', 'repairs-analytics', 'repairs-spare-part-returns', 'repairs-damaged-tools', 'technician-timesheet'], moduleCode: 'repairs' },
   // Inventory
   { page: 'inventory-items', label: 'Inventory', icon: Package, perm: 'inventory.view', activePages: ['inventory-items', 'inventory-categories', 'inventory-locations', 'inventory-transactions', 'inventory-adjustments', 'inventory-requests', 'inventory-transfers', 'inventory-suppliers', 'inventory-purchase-orders', 'inventory-receiving'] },
   // PM Module
-  { page: 'pm-schedules', label: 'PM Schedules', icon: Clock, perm: 'work_orders.view', activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'] },
+  { page: 'pm-schedules', label: 'PM Schedules', icon: Clock, perm: 'work_orders.view', activePages: ['pm-schedules', 'pm-templates', 'pm-triggers', 'pm-calendar'], moduleCode: 'pm_schedules' },
   // Reports
   { page: 'reports-maintenance', label: 'Reports', icon: FileBarChart, perm: 'reports.view', activePages: ['reports-asset', 'reports-maintenance', 'reports-inventory', 'reports-production', 'reports-quality', 'reports-safety', 'reports-financial', 'reports-custom', 'wo-reports', 'repairs-reports'] },
   // Safety
@@ -176,9 +177,13 @@ export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
       const permOk = item.permOr
         ? item.permOr.some(p => hasPermission(p))
         : hasPermission(item.perm);
-      return permOk;
+      if (!permOk) return false;
+      if (item.moduleCode && enabledModules && enabledModules.size > 0) {
+        return enabledModules.has(item.moduleCode.toLowerCase());
+      }
+      return true;
     });
-  }, [hasPermission]);
+  }, [hasPermission, enabledModules]);
 
   // Don't render at all on desktop
   if (!isMobile) return null;

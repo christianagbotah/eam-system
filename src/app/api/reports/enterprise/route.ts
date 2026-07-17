@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     const from = searchParams.get('from');
     const to = searchParams.get('to');
     const department = searchParams.get('department');
+    const moduleFilter = searchParams.get('moduleFilter') || 'all';
 
     const plantScope = await getPlantScope(request, session);
     const plantFilter = getPlantFilterWhere(plantScope);
@@ -35,6 +36,11 @@ export async function GET(request: NextRequest) {
     };
     if (Object.keys(dateFilter).length > 0) woWhere.createdAt = dateFilter;
     if (department) woWhere.departmentId = department;
+    if (moduleFilter === 'repairs') {
+      (woWhere as Record<string, unknown>).type = { in: ['corrective', 'emergency'] };
+    } else if (moduleFilter === 'pm') {
+      (woWhere as Record<string, unknown>).type = 'preventive';
+    }
 
     // Fetch WOs with joins
     const workOrders = await db.workOrder.findMany({

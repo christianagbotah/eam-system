@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
     const trade = searchParams.get('trade');
     const priority = searchParams.get('priority');
     const format = searchParams.get('format');
+    const moduleFilter = searchParams.get('moduleFilter') || 'all';
 
     const plantScope = await getPlantScope(request, session);
     const plantFilter = getPlantFilterWhere(plantScope);
@@ -41,6 +42,8 @@ export async function GET(request: NextRequest) {
     if (department) woWhere.departmentId = department;
     if (trade) woWhere.tradeActivity = trade;
     if (priority) woWhere.priority = priority;
+    if (moduleFilter === 'repairs') woWhere.type = { in: ['corrective', 'emergency'] };
+    if (moduleFilter === 'pm') woWhere.type = { in: ['preventive'] };
 
     // Fetch all relevant WOs with relations
     const workOrders = await db.workOrder.findMany({

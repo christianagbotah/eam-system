@@ -185,6 +185,14 @@ function ExportButtonGroup({ onExportCSV, onExportPDF, onPrint, disabled }: {
 // ============================================================================
 function AssetWOTable({ asset, typeColorMap }: { asset: any; typeColorMap: Record<string, string> }) {
   const [open, setOpen] = useState(false);
+  const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+
+  const getWoModuleLabel = (type: string): string | null => {
+    if (type === 'preventive') return 'PM';
+    if (type === 'corrective' || type === 'emergency') return 'Repair';
+    return null;
+  };
 
   const handleAssetExcel = () => {
     const headers = ['WO #', 'Title', 'Type', 'Priority', 'Status', 'Assigned To', 'Est Hrs', 'Act Hrs', 'Cost', 'Created'];
@@ -316,9 +324,16 @@ function AssetWOTable({ asset, typeColorMap }: { asset: any; typeColorMap: Recor
                     <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
                     <TableCell className="text-sm max-w-[160px] truncate">{wo.title}</TableCell>
                     <TableCell className="hidden sm:table-cell">
-                      <Badge variant="outline" className={`${typeColorMap[wo.type] || 'bg-slate-100 text-slate-700'} text-white border-0 text-[10px]`}>
-                        {wo.type?.toUpperCase()}
-                      </Badge>
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline" className={`${typeColorMap[wo.type] || 'bg-slate-100 text-slate-700'} text-white border-0 text-[10px]`}>
+                          {wo.type?.toUpperCase()}
+                        </Badge>
+                        {getWoModuleLabel(wo.type) && (
+                          <Badge variant="outline" className={`${getWoModuleLabel(wo.type) === 'PM' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'} text-[9px] px-1.5`}>
+                            {getWoModuleLabel(wo.type)}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell><PriorityBadge priority={wo.priority} /></TableCell>
                     <TableCell><StatusBadge status={wo.status} /></TableCell>
@@ -343,6 +358,9 @@ function AssetWOTable({ asset, typeColorMap }: { asset: any; typeColorMap: Recor
 
 export function ReportsMaintenancePage() {
   const moduleEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const subModuleEnabled = pmEnabled || repairsEnabled;
   const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
   const [reportData, setReportData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -368,12 +386,12 @@ export function ReportsMaintenancePage() {
   const workOrdersByAsset = reportData?.workOrdersByAsset || [];
 
   const kpiCards = [
-    { label: 'Total Work Orders', value: s?.totalWOs ?? 0, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Completion Rate', value: `${s?.completionRate ?? 0}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Avg Completion Time', value: `${s?.avgCompletionHours ?? 0}h`, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Avg Cost / WO', value: formatCurrency(s?.avgCostPerWO), icon: DollarSign, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400' },
-    { label: 'SLA Compliance', value: `${s?.slaComplianceRate ?? 0}%`, icon: ShieldCheck, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
-    { label: 'Overdue', value: s?.overdueWOs ?? 0, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+    { label: 'Total Work Orders', value: s?.totalWOs ?? 0, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400', tab: 'data' as const },
+    { label: 'Completion Rate', value: `${s?.completionRate ?? 0}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400', tab: 'overview' as const },
+    { label: 'Avg Completion Time', value: `${s?.avgCompletionHours ?? 0}h`, icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400', tab: 'technicians' as const },
+    { label: 'Avg Cost / WO', value: formatCurrency(s?.avgCostPerWO), icon: DollarSign, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400', tab: 'materials' as const },
+    { label: 'SLA Compliance', value: `${s?.slaComplianceRate ?? 0}%`, icon: ShieldCheck, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400', tab: 'overview' as const },
+    { label: 'Overdue', value: s?.overdueWOs ?? 0, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400', tab: 'data' as const },
   ];
 
   // WO type colors
@@ -610,12 +628,12 @@ export function ReportsMaintenancePage() {
 
   if (loading && !reportData) return <div className="page-content"><LoadingSkeleton /></div>;
 
-  if (!moduleEnabled) {
+  if (!moduleEnabled || !subModuleEnabled) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <p className="text-muted-foreground">This module is not active.</p>
-          <p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules to view this report.</p>
+          <p className="text-muted-foreground">Maintenance report modules are not active.</p>
+          <p className="text-sm text-muted-foreground mt-1">Enable PM Schedules and/or Repairs modules in Settings → Modules to view this report.</p>
         </div>
       </div>
     );
@@ -647,8 +665,8 @@ export function ReportsMaintenancePage() {
         <>
           {/* KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 print:grid-cols-3 print:gap-2">
-            {kpiCards.map(k => { const I = k.icon; const clickTab = k.label === 'Total Work Orders' || k.label === 'Overdue' ? 'data' : undefined; return (
-              <Card key={k.label} className="border border-border/60 shadow-sm print:shadow-none print:border cursor-pointer hover:shadow-md transition-all" onClick={clickTab ? () => setActiveTab(clickTab) : undefined}><CardContent className="p-4 print:p-2">
+            {kpiCards.map(k => { const I = k.icon; return (
+              <Card key={k.label} className="border border-border/60 shadow-sm print:shadow-none print:border cursor-pointer hover:shadow-md transition-all" onClick={() => k.tab && setActiveTab(k.tab)}><CardContent className="p-4 print:p-2">
                 <div className="flex items-center gap-3">
                   <div className={`h-10 w-10 rounded-xl ${k.color} flex items-center justify-center shrink-0 print:hidden`}><I className="h-4.5 w-4.5" /></div>
                   <div className="min-w-0">
@@ -1121,9 +1139,17 @@ export function ReportsMaintenancePage() {
                             <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
                             <TableCell className="font-medium max-w-[180px] truncate">{wo.title}</TableCell>
                             <TableCell className="hidden md:table-cell">
-                              <Badge variant="outline" className={`${typeColorMap[wo.type] || 'bg-slate-100 text-slate-700'} text-white border-0 text-[10px]`}>
-                                {wo.type?.toUpperCase()}
-                              </Badge>
+                              <div className="flex items-center gap-1">
+                                <Badge variant="outline" className={`${typeColorMap[wo.type] || 'bg-slate-100 text-slate-700'} text-white border-0 text-[10px]`}>
+                                  {wo.type?.toUpperCase()}
+                                </Badge>
+                                {wo.type === 'preventive' && (
+                                  <Badge variant="outline" className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[9px] px-1.5">PM</Badge>
+                                )}
+                                {(wo.type === 'corrective' || wo.type === 'emergency') && (
+                                  <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-200 text-[9px] px-1.5">Repair</Badge>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell><PriorityBadge priority={wo.priority} /></TableCell>
                             <TableCell><StatusBadge status={wo.status} /></TableCell>
@@ -1891,6 +1917,8 @@ export function ReportsFinancialPage() {
   const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
   const invEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
   const prodEnabled = useModuleEnabled(MODULE_CODES.PRODUCTION);
+  const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const moduleEnabled = woEnabled || invEnabled || prodEnabled;
   const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
   const [workOrders, setWorkOrders] = useState<any[]>([]);
@@ -1910,7 +1938,13 @@ export function ReportsFinancialPage() {
       api.get<any>('/api/production-orders/kpi'),
     ]).then(([woRes, assetRes, invRes, invKpiRes, prodKpiRes]) => {
       // Filter WOs by date range client-side
-      const woData = woRes.success && Array.isArray(woRes.data) ? filterByDateRange(woRes.data, startDate, endDate) : [];
+      let woData = woRes.success && Array.isArray(woRes.data) ? filterByDateRange(woRes.data, startDate, endDate) : [];
+      // Filter out PM WOs if PM module is disabled, repair WOs if repairs module is disabled
+      woData = woData.filter((wo: any) => {
+        if (!pmEnabled && wo.type === 'preventive') return false;
+        if (!repairsEnabled && (wo.type === 'corrective' || wo.type === 'emergency')) return false;
+        return true;
+      });
       setWorkOrders(woData);
       if (assetRes.success && Array.isArray(assetRes.data)) setAssets(assetRes.data);
       if (invRes.success && Array.isArray(invRes.data)) setInventory(invRes.data);
@@ -1918,7 +1952,7 @@ export function ReportsFinancialPage() {
       if (prodKpiRes.success && prodKpiRes.data) setProdKpi(prodKpiRes.data);
       setLoading(false);
     });
-  }, [startDate, endDate]);
+  }, [startDate, endDate, pmEnabled, repairsEnabled]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -1974,6 +2008,11 @@ export function ReportsFinancialPage() {
   const highCostWOs = [...workOrders].sort((a, b) => (b.totalCost || 0) - (a.totalCost || 0)).slice(0, 15);
 
   const typeColors: Record<string, string> = { preventive: 'bg-emerald-500', corrective: 'bg-amber-500', emergency: 'bg-red-500', inspection: 'bg-sky-500', predictive: 'bg-violet-500', project: 'bg-teal-500' };
+  const getWoModuleLabel = (type: string): string | null => {
+    if (type === 'preventive') return 'PM';
+    if (type === 'corrective' || type === 'emergency') return 'Repair';
+    return null;
+  };
 
   const summaryCards = [
     { label: 'Maintenance Cost', value: formatCurrency(totalCost), icon: DollarSign, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
@@ -2095,7 +2134,16 @@ export function ReportsFinancialPage() {
               <TableRow key={wo.id} className="hover:bg-muted/30">
                 <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
                 <TableCell className="font-medium max-w-[200px] truncate">{wo.title}</TableCell>
-                <TableCell className="text-xs capitalize hidden sm:table-cell">{(wo.type || '').replace('_', ' ')}</TableCell>
+                <TableCell className="text-xs capitalize hidden sm:table-cell">
+                  <div className="flex items-center gap-1">
+                    <span className="inline-block px-1.5 py-0.5 rounded text-[10px] text-white mr-0.5" style={{ backgroundColor: typeColors[wo.type] ? undefined : '#64748b', background: typeColors[wo.type] || '#64748b' }}>{(wo.type || '').replace('_', ' ').toUpperCase()}</span>
+                    {getWoModuleLabel(wo.type) && (
+                      <Badge variant="outline" className={`${getWoModuleLabel(wo.type) === 'PM' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'} text-[9px] px-1.5`}>
+                        {getWoModuleLabel(wo.type)}
+                      </Badge>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell className="hidden md:table-cell"><PriorityBadge priority={wo.priority} /></TableCell>
                 <TableCell><StatusBadge status={wo.status} /></TableCell>
                 <TableCell className="text-right text-muted-foreground">{formatCurrency(wo.materialCost)}</TableCell>
@@ -2313,6 +2361,8 @@ const EH_CONDITION_COLORS: Record<string, string> = { excellent: 'bg-emerald-500
 
 export function EquipmentHistoryPage() {
   const moduleEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
+  const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<any>(null);
@@ -2352,26 +2402,41 @@ export function EquipmentHistoryPage() {
     }).catch((err: any) => { setError(err.message || 'Network error'); setLoading(false); });
   };
 
+  // PM types and repair types for module filtering
+  const PM_TYPES = ['preventive'];
+  const REPAIR_TYPES = ['corrective', 'emergency'];
+
   // Filtered work orders
   const filteredWOs = useMemo(() => {
     if (!data?.workOrders) return [];
     return data.workOrders.filter((wo: any) => {
       if (woFilterStatus !== 'all' && wo.status !== woFilterStatus) return false;
       if (woFilterType !== 'all' && wo.type !== woFilterType) return false;
+      // Filter out PM WOs if PM module is disabled
+      if (!pmEnabled && PM_TYPES.includes(wo.type)) return false;
+      // Filter out repair WOs if repairs module is disabled
+      if (!repairsEnabled && REPAIR_TYPES.includes(wo.type)) return false;
       return true;
     });
-  }, [data, woFilterStatus, woFilterType]);
+  }, [data, woFilterStatus, woFilterType, pmEnabled, repairsEnabled]);
 
   const s = data?.summary;
 
+  // Helper to get PM/Repair label for a WO type
+  const getWoModuleLabel = (type: string): string | null => {
+    if (PM_TYPES.includes(type)) return 'PM';
+    if (REPAIR_TYPES.includes(type)) return 'Repair';
+    return null;
+  };
+
   // KPI cards
   const kpiCards = [
-    { label: 'Total WOs', value: s?.totalWOs ?? 0, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-    { label: 'Completion Rate', value: `${s?.completionRate ?? 0}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Total Cost', value: formatCurrency(s?.totalCost), icon: DollarSign, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Total Downtime', value: `${Math.round((s?.totalDowntimeMinutes ?? 0) / 60)}h`, icon: TrendingDown, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
-    { label: 'MTBF', value: `${s?.mtbfDays ?? 0}d`, icon: Timer, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
-    { label: 'Failures', value: s?.totalFailures ?? 0, icon: AlertTriangle, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400' },
+    { label: 'Total WOs', value: filteredWOs.length, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400', tab: 'workorders' as const },
+    { label: 'Completion Rate', value: `${s?.completionRate ?? 0}%`, icon: CheckCircle2, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400', tab: 'workorders' as const },
+    { label: 'Total Cost', value: formatCurrency(s?.totalCost), icon: DollarSign, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400', tab: 'costs' as const },
+    { label: 'Total Downtime', value: `${Math.round((s?.totalDowntimeMinutes ?? 0) / 60)}h`, icon: TrendingDown, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400', tab: 'workorders' as const },
+    { label: 'MTBF', value: `${s?.mtbfDays ?? 0}d`, icon: Timer, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400', tab: 'overview' as const },
+    { label: 'Failures', value: s?.totalFailures ?? 0, icon: AlertTriangle, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400', tab: 'failures' as const },
   ];
 
   // ── EXPORT HANDLERS ───────────────────────────────────────────────────
@@ -2540,8 +2605,8 @@ export function EquipmentHistoryPage() {
         <>
           {/* KPI Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 print:grid-cols-3 print:gap-2">
-            {kpiCards.map(k => { const I = k.icon; const clickTab = k.label === 'Total WOs' || k.label === 'Total Downtime' ? 'workorders' : k.label === 'Total Cost' ? 'costs' : k.label === 'Failures' ? 'failures' : undefined; return (
-              <Card key={k.label} className="border border-border/60 shadow-sm print:shadow-none print:border cursor-pointer hover:shadow-md transition-all" onClick={clickTab ? () => setActiveTab(clickTab) : undefined}><CardContent className="p-4 print:p-2">
+            {kpiCards.map(k => { const I = k.icon; return (
+              <Card key={k.label} className="border border-border/60 shadow-sm print:shadow-none print:border cursor-pointer hover:shadow-md transition-all" onClick={() => k.tab && setActiveTab(k.tab)}><CardContent className="p-4 print:p-2">
                 <div className="flex items-center gap-3">
                   <div className={`h-10 w-10 rounded-xl ${k.color} flex items-center justify-center shrink-0 print:hidden`}><I className="h-4.5 w-4.5" /></div>
                   <div className="min-w-0">
@@ -2660,9 +2725,9 @@ export function EquipmentHistoryPage() {
                   <SelectTrigger className="w-36"><SelectValue placeholder="Type" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="preventive">Preventive</SelectItem>
-                    <SelectItem value="corrective">Corrective</SelectItem>
-                    <SelectItem value="emergency">Emergency</SelectItem>
+                    {pmEnabled && <SelectItem value="preventive">Preventive</SelectItem>}
+                    {repairsEnabled && <SelectItem value="corrective">Corrective</SelectItem>}
+                    {repairsEnabled && <SelectItem value="emergency">Emergency</SelectItem>}
                     <SelectItem value="inspection">Inspection</SelectItem>
                     <SelectItem value="predictive">Predictive</SelectItem>
                     <SelectItem value="project">Project</SelectItem>
@@ -2698,7 +2763,14 @@ export function EquipmentHistoryPage() {
                             <TableCell className="font-mono text-xs">{wo.woNumber}</TableCell>
                             <TableCell className="text-sm max-w-[180px] truncate">{wo.title}</TableCell>
                             <TableCell className="hidden sm:table-cell">
-                              <Badge variant="outline" className={`${EH_TYPE_COLORS[wo.type] || 'bg-slate-100 text-slate-700'} text-white border-0 text-[10px]`}>{(wo.type || '').toUpperCase()}</Badge>
+                              <div className="flex items-center gap-1">
+                                <Badge variant="outline" className={`${EH_TYPE_COLORS[wo.type] || 'bg-slate-100 text-slate-700'} text-white border-0 text-[10px]`}>{(wo.type || '').toUpperCase()}</Badge>
+                                {getWoModuleLabel(wo.type) && (
+                                  <Badge variant="outline" className={`${getWoModuleLabel(wo.type) === 'PM' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'} text-[9px] px-1.5`}>
+                                    {getWoModuleLabel(wo.type)}
+                                  </Badge>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell><PriorityBadge priority={wo.priority} /></TableCell>
                             <TableCell><StatusBadge status={wo.status} /></TableCell>
@@ -3080,7 +3152,8 @@ const SEVERITY_COLORS: Record<string, string> = { critical: '#ef4444', high: '#f
 export function FailureAnalysisPage() {
   const assetsEnabled = useModuleEnabled(MODULE_CODES.ASSETS);
   const downtimeEnabled = useModuleEnabled(MODULE_CODES.DOWNTIME);
-  const moduleEnabled = assetsEnabled || downtimeEnabled;
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const moduleEnabled = repairsEnabled && (assetsEnabled || downtimeEnabled);
   const { startDate, setStartDate, endDate, setEndDate } = useDateRange();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -3103,12 +3176,12 @@ export function FailureAnalysisPage() {
 
   // KPI cards
   const kpiCards = [
-    { label: 'Total Failures', value: s?.totalFailures ?? 0, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
-    { label: 'Total Downtime', value: `${Math.round((s?.totalDowntimeMinutes ?? 0) / 60)}h`, icon: TrendingDown, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400' },
-    { label: 'Total Repair Cost', value: formatCurrency(s?.totalRepairCost), icon: DollarSign, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
-    { label: 'Avg Downtime/Failure', value: `${s?.avgDowntimePerFailure ?? 0}m`, icon: Clock, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-    { label: 'Top Failure Mode', value: s?.mostCommonMode || 'N/A', icon: Zap, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400' },
-    { label: 'Top Root Cause', value: s?.mostCommonCause ? (s.mostCommonCause.length > 20 ? s.mostCommonCause.slice(0, 20) + '…' : s.mostCommonCause) : 'N/A', icon: Target, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+    { label: 'Total Failures', value: s?.totalFailures ?? 0, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400', tab: 'failure-modes' as const },
+    { label: 'Total Downtime', value: `${Math.round((s?.totalDowntimeMinutes ?? 0) / 60)}h`, icon: TrendingDown, color: 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400', tab: 'by-asset' as const },
+    { label: 'Total Repair Cost', value: formatCurrency(s?.totalRepairCost), icon: DollarSign, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400', tab: 'by-asset' as const },
+    { label: 'Avg Downtime/Failure', value: `${s?.avgDowntimePerFailure ?? 0}m`, icon: Clock, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400', tab: 'overview' as const },
+    { label: 'Top Failure Mode', value: s?.mostCommonMode || 'N/A', icon: Zap, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400', tab: 'failure-modes' as const },
+    { label: 'Top Root Cause', value: s?.mostCommonCause ? (s.mostCommonCause.length > 20 ? s.mostCommonCause.slice(0, 20) + '…' : s.mostCommonCause) : 'N/A', icon: Target, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400', tab: 'root-causes' as const },
   ];
 
   // Chart data
@@ -3153,7 +3226,7 @@ export function FailureAnalysisPage() {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <p className="text-muted-foreground">This module is not active.</p>
+          <p className="text-muted-foreground">Repairs module is not active.</p>
           <p className="text-sm text-muted-foreground mt-1">Enable it in Settings → Modules to view this report.</p>
         </div>
       </div>
@@ -3203,9 +3276,8 @@ export function FailureAnalysisPage() {
           {/* KPI cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-4">
             {kpiCards.map((kpi) => {
-              const clickTab = kpi.label === 'Total Failures' || kpi.label === 'Top Failure Mode' ? 'failure-modes' : kpi.label === 'Total Downtime' || kpi.label === 'Total Repair Cost' ? 'by-asset' : undefined;
               return (
-              <Card key={kpi.label} className="border border-border/60 shadow-sm cursor-pointer hover:shadow-md transition-all" onClick={clickTab ? () => setActiveTab(clickTab) : undefined}>
+              <Card key={kpi.label} className="border border-border/60 shadow-sm cursor-pointer hover:shadow-md transition-all" onClick={() => kpi.tab && setActiveTab(kpi.tab)}>
                 <CardContent className="p-4 flex items-center gap-3">
                   <div className={`p-2 rounded-lg ${kpi.color}`}><kpi.icon className="h-4 w-4" /></div>
                   <div className="min-w-0">

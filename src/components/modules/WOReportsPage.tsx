@@ -312,6 +312,8 @@ export function WOReportsPage() {
 
   // Module visibility
   const woEnabled = useModuleEnabled(MODULE_CODES.WORK_ORDERS);
+  const repairsEnabled = useModuleEnabled(MODULE_CODES.REPAIRS);
+  const pmEnabled = useModuleEnabled(MODULE_CODES.PM_SCHEDULES);
   const invEnabled = useModuleEnabled(MODULE_CODES.INVENTORY);
   const dtEnabled = useModuleEnabled(MODULE_CODES.DOWNTIME);
 
@@ -319,13 +321,17 @@ export function WOReportsPage() {
   const [tradeFilter, setTradeFilter] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
+  const [moduleFilter, setModuleFilter] = useState<'all' | 'repairs' | 'pm'>('all');
 
   // Fetch report data
   const fetchReport = useCallback(() => {
+    // Don't fetch if the selected module filter's module is disabled
+    if (moduleFilter === 'repairs' && !repairsEnabled) return;
+    if (moduleFilter === 'pm' && !pmEnabled) return;
     setLoading(true);
     api
       .get<ReportData>(
-        `/api/work-orders/reports?from=${startDate}&to=${endDate}&trade=${tradeFilter || ''}&priority=${priorityFilter || ''}&department=${deptFilter || ''}`,
+        `/api/work-orders/reports?from=${startDate}&to=${endDate}&trade=${tradeFilter || ''}&priority=${priorityFilter || ''}&department=${deptFilter || ''}&moduleFilter=${moduleFilter}`,
         { timeout: 60_000 }
       )
       .then((res) => {
@@ -342,7 +348,7 @@ export function WOReportsPage() {
         setLoading(false);
         toast.error('Failed to load report data');
       });
-  }, [startDate, endDate, tradeFilter, priorityFilter, deptFilter]);
+  }, [startDate, endDate, tradeFilter, priorityFilter, deptFilter, moduleFilter, repairsEnabled, pmEnabled]);
 
   // Auto-fetch on mount
   React.useEffect(() => {
@@ -489,6 +495,7 @@ export function WOReportsPage() {
       if (tradeFilter) params.set('trade', tradeFilter);
       if (priorityFilter) params.set('priority', priorityFilter);
       if (deptFilter) params.set('department', deptFilter);
+      if (moduleFilter && moduleFilter !== 'all') params.set('moduleFilter', moduleFilter);
       params.set('format', 'pdf');
 
       const response = await fetch(`/api/work-orders/reports?${params.toString()}`, {
@@ -511,7 +518,7 @@ export function WOReportsPage() {
     } finally {
       setPdfLoading(false);
     }
-  }, [startDate, endDate, tradeFilter, priorityFilter, deptFilter]);
+  }, [startDate, endDate, tradeFilter, priorityFilter, deptFilter, moduleFilter]);
 
   // ============================================================================
   // COMPUTED DATA
@@ -520,8 +527,8 @@ export function WOReportsPage() {
   const kpiCards = useMemo(() => {
     if (!s) return [];
     return [
-      { label: 'Total Work Orders', value: s.totalWOs ?? 0, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400', tab: undefined as string | undefined },
-      { label: 'Completion Rate', value: `${s.completionRate ?? 0}%`, icon: Activity, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400', tab: undefined as string | undefined },
+      { label: 'Total Work Orders', value: s.totalWOs ?? 0, icon: ClipboardList, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400', tab: 'overview' as string | undefined },
+      { label: 'Completion Rate', value: `${s.completionRate ?? 0}%`, icon: Activity, color: 'text-sky-600 bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400', tab: 'overview' as string | undefined },
       { label: 'Breakdown Rate', value: `${s.breakdownRate ?? 0}%`, icon: AlertTriangle, color: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400', tab: 'breakdowns' as string | undefined },
       { label: 'Avg Response', value: formatHours(s.avgResponseTime), icon: Clock, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400', tab: 'response-time' as string | undefined },
       { label: 'Total Man Hours', value: formatHours(s.totalManHours), icon: HardHat, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400', tab: 'man-hours' as string | undefined },
@@ -590,6 +597,46 @@ export function WOReportsPage() {
     return { mostTrade, totalHrs, avgDuration: total > 0 ? totalHrs / total : 0 };
   }, [reportData?.stoppages]);
 
+  // Filter distribution byType based on enabled modules
+  const filteredByType = useMemo(() => {
+    const data = reportData?.distribution?.byType || [];
+    return data.filter((d: any) => {
+      if (d.type === 'preventive') return pmEnabled;
+      if (d.type === 'corrective' || d.type === 'emergency') return repairsEnabled;
+      return true; // other types (predictive, inspection, project) always show
+    });
+  }, [reportData?.distribution?.byType, pmEnabled, repairsEnabled]);
+
+  // Filter breakdowns byType based on enabled modules
+  const filteredBreakdownByType = useMemo(() => {
+    const data = reportData?.breakdowns?.byType || [];
+    return data.filter((d: any) => {
+      if (d.type === 'preventive') return pmEnabled;
+      if (d.type === 'corrective' || d.type === 'emergency') return repairsEnabled;
+      return true;
+    });
+  }, [reportData?.breakdowns?.byType, pmEnabled, repairsEnabled]);
+
+  // Filter materials byType based on enabled modules
+  const filteredMaterialsByType = useMemo(() => {
+    const data = reportData?.materials?.byType || [];
+    return data.filter((d: any) => {
+      if (d.type === 'preventive') return pmEnabled;
+      if (d.type === 'corrective' || d.type === 'emergency') return repairsEnabled;
+      return true;
+    });
+  }, [reportData?.materials?.byType, pmEnabled, repairsEnabled]);
+
+  // Filter failure rate byType based on enabled modules
+  const filteredFailureByType = useMemo(() => {
+    const data = reportData?.failureRate?.byType || [];
+    return data.filter((d: any) => {
+      if (d.type === 'preventive') return pmEnabled;
+      if (d.type === 'corrective' || d.type === 'emergency') return repairsEnabled;
+      return true;
+    });
+  }, [reportData?.failureRate?.byType, pmEnabled, repairsEnabled]);
+
   // Pareto data for breakdowns
   const breakdownParetoData = useMemo(() => {
     const byTrade = reportData?.breakdowns?.byTrade || [];
@@ -609,8 +656,10 @@ export function WOReportsPage() {
     if (tradeFilter && tradeFilter !== 'all') parts.push(`Trade: ${tradeFilter}`);
     if (priorityFilter && priorityFilter !== 'all') parts.push(`Priority: ${priorityFilter}`);
     if (deptFilter) parts.push(`Dept: ${deptFilter}`);
+    if (moduleFilter === 'repairs') parts.push('Module: Repairs');
+    if (moduleFilter === 'pm') parts.push('Module: PM');
     return parts.join(' | ') || 'All data';
-  }, [startDate, endDate, tradeFilter, priorityFilter, deptFilter]);
+  }, [startDate, endDate, tradeFilter, priorityFilter, deptFilter, moduleFilter]);
 
   // ============================================================================
   // RENDER
@@ -624,7 +673,7 @@ export function WOReportsPage() {
     );
   }
 
-  if (!woEnabled) {
+  if (!repairsEnabled && !pmEnabled) {
     return (
       <div className="page-content flex items-center justify-center min-h-[50vh]">
         <div className="text-center space-y-3">
@@ -633,7 +682,7 @@ export function WOReportsPage() {
           </div>
           <h2 className="text-lg font-semibold">Module Not Active</h2>
           <p className="text-sm text-muted-foreground max-w-md">
-            Work Orders module is not active. Enable it in Settings to view reports.
+            Repairs and PM modules are not active. Enable at least one in Settings to view reports.
           </p>
         </div>
       </div>
@@ -672,7 +721,7 @@ export function WOReportsPage() {
             <p className="text-sm font-semibold">Filters</p>
             <Badge variant="outline" className="text-[10px] ml-auto">{filterDescription}</Badge>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
             <div className="sm:col-span-2">
               <Label className="text-xs text-muted-foreground mb-1 block">Date Range</Label>
               <DateRangePicker
@@ -724,6 +773,19 @@ export function WOReportsPage() {
                 onChange={(e) => setDeptFilter(e.target.value)}
                 className="h-10"
               />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Module</Label>
+              <Select value={moduleFilter} onValueChange={(v: 'all' | 'repairs' | 'pm') => setModuleFilter(v)}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="repairs" disabled={!repairsEnabled}>Repairs Only</SelectItem>
+                  <SelectItem value="pm" disabled={!pmEnabled}>PM Only</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <div className="flex items-center gap-2 mt-4 flex-wrap">
@@ -792,6 +854,7 @@ export function WOReportsPage() {
               {dtEnabled && (
               <TabsTrigger value="downtime" className="text-xs">
                 <CircleStop className="h-3.5 w-3.5 mr-1" />Downtime
+                {repairsEnabled && <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1 text-orange-600 border-orange-300">R</Badge>}
               </TabsTrigger>
               )}
               <TabsTrigger value="response-time" className="text-xs">
@@ -799,6 +862,7 @@ export function WOReportsPage() {
               </TabsTrigger>
               <TabsTrigger value="breakdowns" className="text-xs">
                 <Zap className="h-3.5 w-3.5 mr-1" />Breakdowns
+                {repairsEnabled && <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1 text-orange-600 border-orange-300">R</Badge>}
               </TabsTrigger>
               <TabsTrigger value="man-hours" className="text-xs">
                 <HardHat className="h-3.5 w-3.5 mr-1" />Man Hours
@@ -806,6 +870,7 @@ export function WOReportsPage() {
               {invEnabled && (
               <TabsTrigger value="materials" className="text-xs">
                 <Boxes className="h-3.5 w-3.5 mr-1" />Materials
+                {repairsEnabled && <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1 text-orange-600 border-orange-300">R</Badge>}
               </TabsTrigger>
               )}
               <TabsTrigger value="failure-rate" className="text-xs">
@@ -814,6 +879,7 @@ export function WOReportsPage() {
               {dtEnabled && (
               <TabsTrigger value="stoppages" className="text-xs">
                 <Pause className="h-3.5 w-3.5 mr-1" />Stoppages
+                {repairsEnabled && <Badge variant="outline" className="text-[9px] px-1 py-0 ml-1 text-orange-600 border-orange-300">R</Badge>}
               </TabsTrigger>
               )}
             </TabsList>
@@ -828,7 +894,7 @@ export function WOReportsPage() {
                 {/* WO Distribution by Type (Donut) */}
                 <ChartCard title="WO Distribution by Type">
                   <SafeChart
-                    data={reportData.distribution?.byType}
+                    data={filteredByType}
                     emptyIcon={ChartPie}
                     emptyTitle="No type data"
                     emptyDescription="Work order type distribution will appear here."
@@ -836,7 +902,7 @@ export function WOReportsPage() {
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
-                          data={reportData.distribution.byType}
+                          data={filteredByType}
                           cx="50%"
                           cy="50%"
                           innerRadius={55}
@@ -848,7 +914,7 @@ export function WOReportsPage() {
                           labelLine={false}
                           fontSize={11}
                         >
-                          {(reportData.distribution.byType || []).map((_: any, i: number) => (
+                          {(filteredByType || []).map((_: any, i: number) => (
                             <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                           ))}
                         </Pie>
@@ -1240,19 +1306,19 @@ export function WOReportsPage() {
                 {/* Breakdowns by Type (Bar) */}
                 <ChartCard title="Breakdowns by Type">
                   <SafeChart
-                    data={reportData.breakdowns?.byType}
+                    data={filteredBreakdownByType}
                     emptyIcon={BarChart3}
                     emptyTitle="No type data"
                     emptyDescription="Breakdown type data will appear here."
                   >
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={reportData.breakdowns.byType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                      <BarChart data={filteredBreakdownByType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                         <XAxis dataKey="type" tick={{ fontSize: 11 }} />
                         <YAxis tick={{ fontSize: 11 }} />
                         <Tooltip />
                         <Bar dataKey="count" name="Count" radius={[4, 4, 0, 0]}>
-                          {(reportData.breakdowns.byType || []).map((_: any, i: number) => (
+                          {(filteredBreakdownByType || []).map((_: any, i: number) => (
                             <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                           ))}
                         </Bar>
@@ -1575,13 +1641,13 @@ export function WOReportsPage() {
                 {/* Material Cost by WO Type (Stacked Bar) */}
                 <ChartCard title="Material Cost by WO Type">
                   <SafeChart
-                    data={reportData.materials?.byType}
+                    data={filteredMaterialsByType}
                     emptyIcon={Boxes}
                     emptyTitle="No type data"
                     emptyDescription="Material usage by WO type will appear here."
                   >
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={reportData.materials.byType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                      <BarChart data={filteredMaterialsByType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                         <XAxis dataKey="type" tick={{ fontSize: 11 }} />
                         <YAxis tick={{ fontSize: 11 }} />
@@ -1741,19 +1807,19 @@ export function WOReportsPage() {
                 {/* Failure Rate by Type (Bar) */}
                 <ChartCard title="Failure Rate by WO Type">
                   <SafeChart
-                    data={reportData.failureRate?.byType}
+                    data={filteredFailureByType}
                     emptyIcon={BarChart3}
                     emptyTitle="No type data"
                     emptyDescription="Failure rate by type will appear here."
                   >
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={reportData.failureRate.byType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                      <BarChart data={filteredFailureByType} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                         <XAxis dataKey="type" tick={{ fontSize: 11 }} />
                         <YAxis tick={{ fontSize: 11 }} unit="%" />
                         <Tooltip formatter={(value: any) => `${value}%`} />
                         <Bar dataKey="failureRate" name="Failure Rate" radius={[4, 4, 0, 0]}>
-                          {(reportData.failureRate.byType || []).map((_: any, i: number) => (
+                          {(filteredFailureByType || []).map((_: any, i: number) => (
                             <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                           ))}
                         </Bar>
@@ -1978,6 +2044,7 @@ export function WOReportsPage() {
                 `Total hours lost to stoppages: ${formatHours(stoppageSummary.totalHrs)}.`,
               ]} />
             </TabsContent>
+            )}
           </Tabs>
         </>
       )}
