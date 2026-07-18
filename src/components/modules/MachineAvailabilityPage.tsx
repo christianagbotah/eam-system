@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
+import { api } from '@/lib/api';
 
 import {
   ResponsiveContainer,
@@ -205,19 +206,22 @@ export function MachineAvailabilityPage() {
   // Fetch
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/reports/machine-availability?year=${year}`)
-      .then((r) => r.json())
+    api.get<MachineAvailabilityData>(`/api/reports/machine-availability?year=${year}`)
       .then((res) => {
-        if (res.success) {
+        if (res.success && res.data) {
           setData(res.data);
           // default to latest week
           const weeks = res.data.weeklyKPIs.map((k: { week: number }) => k.week);
           setSelectedWeek(weeks.length > 0 ? weeks[weeks.length - 1] : null);
         } else {
-          toast.error('Failed to load machine availability data');
+          console.error('[MachineAvailability] API error:', res.error);
+          toast.error(`Failed to load machine availability data: ${res.error || 'Unknown error'}`);
         }
       })
-      .catch(() => toast.error('Network error'))
+      .catch((err) => {
+        console.error('[MachineAvailability] Network error:', err);
+        toast.error(`Network error: ${err instanceof Error ? err.message : 'Request failed'}`);
+      })
       .finally(() => setLoading(false));
   }, [year]);
 

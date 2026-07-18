@@ -12,8 +12,26 @@ interface UseWebSocketReturn {
 }
 
 /**
+ * Check if the notification service is available by hitting its health endpoint.
+ * Uses the admin port (3005) to avoid socket.io 404 noise on the WS port.
+ */
+async function checkServiceHealth(): Promise<boolean> {
+  try {
+    const res = await fetch('/health?XTransformPort=3005', {
+      method: 'GET',
+      signal: AbortSignal.timeout(3000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * WebSocket hook — connects to the notification service (port 3004) via gateway.
+ * Performs a pre-flight health check before connecting to avoid 404 spam.
  * Gracefully degrades when the service is unavailable.
+ * Periodically re-checks health and connects when the service comes online.
  */
 export function useWebSocket(): UseWebSocketReturn {
   const user = useAuthStore((s) => s.user);
@@ -21,31 +39,32 @@ export function useWebSocket(): UseWebSocketReturn {
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const handlersRef = useRef<Map<string, Set<(...args: unknown[]) => void>>>(new Map());
-  const errorCountRef = useRef(0);
+  const mountedRef = useRef(true);
+  const healthTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectingRef = useRef(false);
 
-  useEffect(() => {
-    if (!isAuthenticated || !user?.id) return;
+  const connectSocket = useCallback((userId: string) => {
+    if (connectingRef.current || socketRef.current?.connected) return;
+    connectingRef.current = true;
 
-    // Connect to WS service via gateway
     const socket = io('/?XTransformPort=3004', {
-      transports: ['polling', 'websocket'],
-      upgrade: true,
+      transports: ['websocket', 'polling'],
+      upgrade: false,
       reconnection: true,
-      reconnectionAttempts: 3,
-      reconnectionDelay: 3000,
-      reconnectionDelayMax: 10000,
-      timeout: 8000,
-      // Don't let socket.io spam console on transport errors
-      tryAllTransports: false,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 5000,
+      reconnectionDelayMax: 30000,
+      timeout: 10000,
     });
 
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      setTimeout(() => setConnected(true), 0);
-      errorCountRef.current = 0;
-      socket.emit('auth', { userId: user.id });
-      socket.emit('subscribe:notifications', user.id);
+      if (!mountedRef.current) return;
+      connectingRef.current = false;
+      setConnected(true);
+      socket.emit('auth', { userId });
+      socket.emit('subscribe:notifications', userId);
 
       // Re-register all stored handlers
       for (const [event, handlers] of handlersRef.current) {
@@ -56,28 +75,66 @@ export function useWebSocket(): UseWebSocketReturn {
     });
 
     socket.on('disconnect', () => {
-      setTimeout(() => setConnected(false), 0);
+      if (!mountedRef.current) return;
+      setConnected(false);
     });
 
     socket.on('connect_error', () => {
-      errorCountRef.current++;
-      // Silent — no console noise. Real-time features simply won't work.
-      setTimeout(() => setConnected(false), 0);
-    });
-
-    return () => {
-      // Clean up all handlers
-      for (const [event, handlers] of handlersRef.current) {
-        for (const handler of handlers) {
-          socket.off(event, handler);
-        }
-      }
-      handlersRef.current.clear();
+      if (!mountedRef.current) return;
+      connectingRef.current = false;
+      // If we fail to connect, destroy socket and retry health check later
       socket.disconnect();
       socketRef.current = null;
       setConnected(false);
+    });
+  }, []);
+
+  const cleanupSocket = useCallback(() => {
+    if (socketRef.current) {
+      for (const [event, handlers] of handlersRef.current) {
+        for (const handler of handlers) {
+          socketRef.current!.off(event, handler);
+        }
+      }
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    connectingRef.current = false;
+    setConnected(false);
+  }, []);
+
+  // Main effect: health check + connection lifecycle
+  useEffect(() => {
+    mountedRef.current = true;
+
+    if (!isAuthenticated || !user?.id) return;
+
+    const userId = user.id;
+
+    const tryConnect = async () => {
+      if (!mountedRef.current) return;
+      const healthy = await checkServiceHealth();
+      if (!mountedRef.current) return;
+
+      if (healthy) {
+        connectSocket(userId);
+      } else {
+        // Service not available — schedule retry in 30s
+        healthTimerRef.current = setTimeout(tryConnect, 30_000);
+      }
     };
-  }, [isAuthenticated, user?.id]);
+
+    tryConnect();
+
+    return () => {
+      mountedRef.current = false;
+      if (healthTimerRef.current) {
+        clearTimeout(healthTimerRef.current);
+        healthTimerRef.current = null;
+      }
+      cleanupSocket();
+    };
+  }, [isAuthenticated, user?.id, connectSocket, cleanupSocket]);
 
   const on = useCallback((event: string, handler: (...args: unknown[]) => void) => {
     if (!handlersRef.current.has(event)) {
