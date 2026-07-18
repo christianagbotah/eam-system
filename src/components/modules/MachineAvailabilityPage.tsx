@@ -232,6 +232,21 @@ export function MachineAvailabilityPage() {
     [data, selectedWeek],
   );
 
+  // Weighted average efficiency for the selected week (used in totals row)
+  const weightedAvgEff = useMemo(() => {
+    if (!data || !selectedWeek) return 100;
+    let totalWE = 0;
+    let totalPM = 0;
+    for (const m of data.machines) {
+      const w = m.weekly.find(x => x.week === selectedWeek);
+      if (w) {
+        totalWE += w.weightedEfficiency;
+        totalPM += w.plannedMins;
+      }
+    }
+    return totalPM > 0 ? totalWE / totalPM : 100;
+  }, [data, selectedWeek]);
+
   // --- CSV Export (Tab 1) ---
   const exportCSV = useCallback(() => {
     if (!data || !selectedWeek) return;
@@ -256,7 +271,7 @@ export function MachineAvailabilityPage() {
         w ? String(w.actualAvailability) : '',
         w ? fmt(w.pctDowntime) : '',
         w ? fmt(w.efficiency) : '',
-        w ? fmt(w.weightedEfficiency) : '',
+        w ? fmt(w.efficiency) : '',
       ]);
     }
     const csv = rows.map((r) => r.join(',')).join('\n');
@@ -466,7 +481,7 @@ export function MachineAvailabilityPage() {
                           <td className="px-3 py-2 text-right">{w ? fmtInt(w.actualAvailability) : '—'}</td>
                           {repairsEnabled && dtEnabled && <td className={`px-3 py-2 text-right ${dtColor(pct)} ${dtBg(pct)}`}>{w ? fmt(pct) + '%' : '—'}</td>}
                           <td className={`px-3 py-2 text-right ${effColor(eff)} ${effBg(eff)}`}>{w ? fmt(eff) + '%' : '—'}</td>
-                          <td className="px-3 py-2 text-right">{w ? fmt(w.weightedEfficiency) + '%' : '—'}</td>
+                          <td className={`px-3 py-2 text-right ${effColor(eff)} ${effBg(eff)}`}>{w ? fmt(eff) + '%' : '—'}</td>
                         </tr>
                       );
                     })}
@@ -483,7 +498,7 @@ export function MachineAvailabilityPage() {
                         <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.actualAvailability ?? 0); }, 0))}</td>
                         {repairsEnabled && dtEnabled && <td className="px-3 py-2 text-right">{fmt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.pctDowntime ?? 0); }, 0) / (data.machines.length || 1))}%</td>}
                         <td className={`px-3 py-2 text-right ${effColor(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.efficiency ?? 0); }, 0) / (data.machines.length || 1))}`}>{fmt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.efficiency ?? 0); }, 0) / (data.machines.length || 1))}%</td>
-                        <td className="px-3 py-2 text-right">{fmt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.weightedEfficiency ?? 0); }, 0) / (data.machines.length || 1))}%</td>
+                        <td className={`px-3 py-2 text-right ${effColor(weightedAvgEff)} ${effBg(weightedAvgEff)}`}>{fmt(weightedAvgEff)}%</td>
                       </tr>
                     </tfoot>
                   )}
