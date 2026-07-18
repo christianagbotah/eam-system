@@ -490,7 +490,7 @@ export function MachineAvailabilityPage() {
                   {selectedWeek && (
                     <tfoot>
                       <tr className="sticky bottom-0 z-10 border-t-2 bg-muted/60 font-semibold">
-                        <td className="px-3 py-2" colSpan={5 + (pmEnabled ? 1 : 0) + (repairsEnabled && dtEnabled ? 2 : 0) + (repairsEnabled ? 1 : 0)}>TOTALS / AVERAGES</td>
+                        <td className="px-3 py-2" colSpan={5}>TOTALS / AVERAGES</td>
                         {pmEnabled && <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.plannedMins ?? 0); }, 0))}</td>}
                         {repairsEnabled && dtEnabled && <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.stoppagesMins ?? 0); }, 0))}</td>}
                         {repairsEnabled && dtEnabled && <td className="px-3 py-2 text-right">{fmtInt(data.machines.reduce((s, m) => { const w = m.weekly.find(x => x.week === selectedWeek); return s + (w?.repairDowntimeMins ?? 0); }, 0))}</td>}
