@@ -3237,7 +3237,7 @@ export function RepairCompletionPage() {
     (async () => {
       const res = await api.get(`/api/work-orders/${woId}/components`);
       if (res.success && Array.isArray(res.data)) {
-        setSelectedComponentIds(res.data.map((c: any) => c.id || c.componentId));
+        setSelectedComponentIds(res.data.map((c: any) => c.componentRegistry?.id || c.componentRegistryId || c.id));
       }
     })();
   }, [woId]);
