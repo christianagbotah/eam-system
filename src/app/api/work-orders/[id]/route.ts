@@ -83,6 +83,14 @@ export async function GET(
         },
         orderBy: { createdAt: 'desc' as const },
       },
+      workOrderComponents: {
+        include: {
+          componentRegistry: {
+            select: { id: true, name: true, componentCode: true, componentType: true, criticality: true, healthScore: true, condition: true },
+          },
+        },
+        orderBy: { createdAt: 'asc' as const },
+      },
     } as const;
 
     // Try full query with teamMemberRequests; fall back to base if table doesn't exist yet
@@ -145,6 +153,9 @@ export async function GET(
     }
     if (!wo.repairMaterialRequests) {
       (wo as Record<string, unknown>).repairMaterialRequests = [];
+    }
+    if (!wo.workOrderComponents) {
+      (wo as Record<string, unknown>).workOrderComponents = [];
     }
 
     return NextResponse.json({ success: true, data: wo });

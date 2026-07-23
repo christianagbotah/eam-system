@@ -1,443 +1,3 @@
-  2385→    }
-  2386→    const res = await api.post('/api/work-orders', payload);
-  2387→    if (res.success) {
-  2388→      toast.success('Work order created');
-  2389→      onSuccess();
-  2390→    } else {
-  2391→      toast.error(res.error || 'Failed');
-  2392→    }
-  2393→    setLoading(false);
-  2394→  };
-  2395→
-  2396→  // ── Render ──
-  2397→  if (isMobile) {
-  2398→    return (
-  2399→      <MobileStepperSheet
-  2400→        open={true}
-  2401→        onOpenChange={() => onSuccess()}
-  2402→        title="Create Work Order"
-  2403→        description="Fill in all details for the new work order."
-  2404→        steps={[
-  2405→          { key: 'details', label: 'Details', icon: ClipboardCheck },
-  2406→          { key: 'resources', label: 'Resources', icon: Users },
-  2407→          { key: 'safety', label: 'Safety', icon: ShieldAlert },
-  2408→        ]}
-  2409→        actionLabel="Create Work Order"
-  2410→        actionLoading={loading}
-  2411→        onAction={handleSubmit}
-  2412→      >
-  2413→        {(stepKey) => stepKey === 'details' ? (
-  2414→          <div className="space-y-3">
-  2415→            <div className="space-y-2">
-  2416→              <Label className="text-xs">Title *</Label>
-  2417→              <Input className="min-h-[44px]" value={form.title} onChange={e => updateField('title', e.target.value)} placeholder="Work order title" />
-  2418→            </div>
-  2419→            <div className="space-y-2">
-  2420→              <Label className="text-xs">Description</Label>
-  2421→              <Textarea value={form.description} onChange={e => updateField('description', e.target.value)} placeholder="Problem description..." rows={2} />
-  2422→            </div>
-  2423→            <div className="grid grid-cols-2 gap-2">
-  2424→              <div className="space-y-1">
-  2425→                <Label className="text-[10px]">Type</Label>
-  2426→                <Select value={form.type} onValueChange={v => updateField('type', v)}>
-  2427→                  <SelectTrigger className="min-h-[44px] text-xs"><SelectValue /></SelectTrigger>
-  2428→                  <SelectContent>
-  2429→                    <SelectItem value="breakdown">Breakdown</SelectItem>
-  2430→                    <SelectItem value="corrective">Corrective</SelectItem>
-  2431→                    <SelectItem value="preventive">Preventive</SelectItem>
-  2432→                    <SelectItem value="emergency">Emergency</SelectItem>
-  2433→                    <SelectItem value="inspection">Inspection</SelectItem>
-  2434→                    <SelectItem value="project">Project</SelectItem>
-  2435→                    <SelectItem value="other">Other</SelectItem>
-  2436→                  </SelectContent>
-  2437→                </Select>
-  2438→              </div>
-  2439→              <div className="space-y-1">
-  2440→                <Label className="text-[10px]">Priority</Label>
-  2441→                <Select value={form.priority} onValueChange={v => updateField('priority', v)}>
-  2442→                  <SelectTrigger className="min-h-[44px] text-xs"><SelectValue /></SelectTrigger>
-  2443→                  <SelectContent>
-  2444→                    <SelectItem value="low">Low</SelectItem>
-  2445→                    <SelectItem value="medium">Medium</SelectItem>
-  2446→                    <SelectItem value="high">High</SelectItem>
-  2447→                    <SelectItem value="critical">Critical</SelectItem>
-  2448→                    <SelectItem value="urgent">Urgent</SelectItem>
-  2449→                    <SelectItem value="emergency">Emergency</SelectItem>
-  2450→                  </SelectContent>
-  2451→                </Select>
-  2452→              </div>
-  2453→            </div>
-  2454→            <div className="space-y-1">
-  2455→              <Label className="text-[10px]">Asset / Machine</Label>
-  2456→              <AsyncSearchableSelect value={form.assetId} onValueChange={v => updateField('assetId', v)}
-  2457→                fetchOptions={async () => { const r = await api.get('/api/assets'); if (r.success && r.data) return (Array.isArray(r.data) ? r.data : []).map((a: any) => ({ value: a.id, label: `${a.name} [${a.assetTag}]`, badge: a.status })); return []; }}
-  2458→                placeholder="Select asset..." searchPlaceholder="Search assets..." />
-  2459→            </div>
-  2460→            {/* Mobile: Component selector */}
-  2461→            {form.assetId && (
-  2462→              <div className="space-y-1">
-  2463→                <Label className="text-[10px]">Components / Parts</Label>
-  2464→                {componentsLoading ? (
-  2465→                  <p className="text-xs text-muted-foreground py-1">Loading...</p>
-  2466→                ) : availableComponents.length === 0 ? (
-  2467→                  <p className="text-xs text-muted-foreground py-1">No components registered</p>
-  2468→                ) : (
-  2469→                  <div className="max-h-28 overflow-y-auto rounded-md border p-1.5 space-y-1">
-  2470→                    {availableComponents.map((comp) => (
-  2471→                      <label key={comp.id} className="flex items-center gap-1.5 py-0.5 px-1 rounded hover:bg-muted/50 cursor-pointer text-xs">
-  2472→                        <Checkbox
-  2473→                          checked={form.componentIds.includes(comp.id)}
-  2474→                          onCheckedChange={(checked) => {
-  2475→                            if (checked) updateField('componentIds', [...form.componentIds, comp.id]);
-  2476→                            else updateField('componentIds', form.componentIds.filter((id: string) => id !== comp.id));
-  2477→                          }}
-  2478→                          className="h-3.5 w-3.5"
-  2479→                        />
-  2480→                        <span className="truncate">{comp.componentCode ? `${comp.componentCode} · ` : ''}{comp.name}</span>
-  2481→                      </label>
-  2482→                    ))}
-  2483→                  </div>
-  2484→                )}
-  2485→              </div>
-  2486→            )}
-  2487→          </div>
-  2488→        ) : stepKey === 'resources' ? (
-  2489→          <div className="space-y-3">
-  2490→            <WorkerAssignmentSelector
-  2491→              selectedWorkerIds={form.selectedWorkerIds}
-  2492→              teamLeaderId={form.teamLeaderId}
-  2493→              onSelectedWorkersChange={(ids) => updateField('selectedWorkerIds', ids)}
-  2494→              onTeamLeaderChange={(id) => updateField('teamLeaderId', id)}
-  2495→              assignType={form.assignType}
-  2496→              onAssignTypeChange={(type) => updateField('assignType', type)}
-  2497→              label="Resource Assignment"
-  2498→            />
-  2499→          </div>
-  2500→        ) : (
-  2501→          <div className="space-y-3">
-  2502→            <div className="space-y-1">
-  2503→              <Label className="text-xs">Safety Notes</Label>
-  2504→              <Textarea value={form.safetyNotes} onChange={e => updateField('safetyNotes', e.target.value)} placeholder="Safety hazards, LOTO requirements..." rows={2} />
-  2505→            </div>
-  2506→            <div className="space-y-1">
-  2507→              <Label className="text-xs">PPE Required</Label>
-  2508→              <Input className="min-h-[44px]" value={form.ppeRequired} onChange={e => updateField('ppeRequired', e.target.value)} placeholder="Safety glasses, gloves, helmet..." />
-  2509→            </div>
-  2510→            <div className="space-y-1">
-  2511→              <Label className="text-xs">Notes</Label>
-  2512→              <Textarea value={form.notes} onChange={e => updateField('notes', e.target.value)} placeholder="Additional notes..." rows={2} />
-  2513→            </div>
-  2514→          </div>
-  2515→        )}
-  2516→      </MobileStepperSheet>
-  2517→    );
-  2518→  }
-  2519→
-  2520→  // Desktop layout — matches convert form structure (4 sections minus request info)
-  2521→  return (
-  2522→    <form id="create-wo-form" onSubmit={handleSubmit} className="space-y-5">
-  2523→      {/* ── Basic Info ── */}
-  2524→      <div className="space-y-3">
-  2525→        <div className="space-y-2">
-  2526→          <Label>Title *</Label>
-  2527→          <Input value={form.title} onChange={e => updateField('title', e.target.value)} placeholder="Work order title" required />
-  2528→        </div>
-  2529→        <div className="space-y-2">
-  2530→          <Label>Description</Label>
-  2531→          <Textarea value={form.description} onChange={e => updateField('description', e.target.value)} placeholder="Problem description..." rows={2} />
-  2532→        </div>
-  2533→        <div className="grid grid-cols-2 gap-3">
-  2534→          <div className="space-y-2">
-  2535→            <Label>Asset / Machine</Label>
-  2536→            <AsyncSearchableSelect
-  2537→              value={form.assetId}
-  2538→              onValueChange={v => updateField('assetId', v)}
-  2539→              fetchOptions={async () => {
-  2540→                const res = await api.get('/api/assets');
-  2541→                if (res.success && res.data) {
-  2542→                  return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
-  2543→                    value: a.id,
-  2544→                    label: `${a.name} [${a.assetTag}]`,
-  2545→                    badge: a.status,
-  2546→                  }));
-  2547→                }
-  2548→                return [];
-  2549→              }}
-  2550→              placeholder="Select asset..."
-  2551→              searchPlaceholder="Search assets by name or tag..."
-  2552→            />
-  2553→          </div>
-  2554→          <div className="space-y-2">
-  2555→            <Label>Department {isDepartmentLocked && <span className="text-xs text-muted-foreground">(auto-filled)</span>}</Label>
-  2556→            {isDepartmentLocked ? (
-  2557→              <div className="flex h-[42px] w-full items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-  2558→                {departmentLabel || form.departmentId}
-  2559→              </div>
-  2560→            ) : (
-  2561→              <AsyncSearchableSelect
-  2562→                value={form.departmentId}
-  2563→                onValueChange={v => updateField('departmentId', v)}
-  2564→                fetchOptions={async () => {
-  2565→                  const res = await api.get('/api/departments');
-  2566→                  if (res.success && res.data) {
-  2567→                    return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
-  2568→                      value: d.id,
-  2569→                      label: d.name,
-  2570→                    }));
-  2571→                  }
-  2572→                  return [];
-  2573→                }}
-  2574→                placeholder="Select department..."
-  2575→                searchPlaceholder="Search departments..."
-  2576→              />
-  2577→            )}
-  2578→          </div>
-  2579→        </div>
-  2580→
-  2581→        {/* Component/Part Selection */}
-  2582→        {form.assetId && (
-  2583→          <div className="space-y-2 mt-2">
-  2584→            <Label className="text-xs">Components / Parts (optional)</Label>
-  2585→            {componentsLoading ? (
-  2586→              <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
-  2587→                <div className="h-4 w-4 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
-  2588→                Loading components...
-  2589→              </div>
-  2590→            ) : availableComponents.length === 0 ? (
-  2591→              <p className="text-xs text-muted-foreground py-1">No components registered for this asset</p>
-  2592→            ) : (
-  2593→              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto rounded-md border p-2">
-  2594→                {availableComponents.map((comp) => (
-  2595→                  <label
-  2596→                    key={comp.id}
-  2597→                    className="flex items-center gap-2 py-1 px-2 rounded-md hover:bg-muted/50 cursor-pointer text-sm"
-  2598→                  >
-  2599→                    <Checkbox
-  2600→                      checked={form.componentIds.includes(comp.id)}
-  2601→                      onCheckedChange={(checked) => {
-  2602→                        if (checked) {
-  2603→                          updateField('componentIds', [...form.componentIds, comp.id]);
-  2604→                        } else {
-  2605→                          updateField('componentIds', form.componentIds.filter((id: string) => id !== comp.id));
-  2606→                        }
-  2607→                      }}
-  2608→                    />
-  2609→                    <span className="truncate">
-  2610→                      {comp.componentCode ? `${comp.componentCode} · ` : ''}{comp.name}
-  2611→                    </span>
-  2612→                    {comp.criticality && comp.criticality !== 'low' && (
-  2613→                      <Badge variant={comp.criticality === 'critical' ? 'destructive' : comp.criticality === 'high' ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0 shrink-0">
-  2614→                        {comp.criticality}
-  2615→                      </Badge>
-  2616→                    )}
-  2617→                  </label>
-  2618→                ))}
-  2619→              </div>
-  2620→            )}
-  2621→            {form.componentIds.length > 0 && (
-  2622→              <p className="text-xs text-muted-foreground">{form.componentIds.length} component(s) selected</p>
-  2623→            )}
-  2624→          </div>
-  2625→        )}
-  2626→      </div>
-  2627→
-  2628→      {/* ── SECTION 2: Work Order Details (purple background) ── */}
-  2629→      <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-4 sm:p-6">
-  2630→        <h3 className="text-sm font-semibold text-purple-800 uppercase tracking-wider flex items-center gap-2 mb-4">
-  2631→          <ClipboardCheck className="h-4 w-4" />Work Order Details
-  2632→        </h3>
-  2633→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-  2634→          <div className="space-y-1.5">
-  2635→            <Label className="text-xs">Work Order Type</Label>
-  2636→            <Select value={form.type} onValueChange={v => updateField('type', v)}>
-  2637→              <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
-  2638→              <SelectContent>
-  2639→                <SelectItem value="breakdown">Breakdown</SelectItem>
-  2640→                <SelectItem value="corrective">Corrective</SelectItem>
-  2641→                <SelectItem value="preventive">Preventive</SelectItem>
-  2642→                <SelectItem value="emergency">Emergency</SelectItem>
-  2643→                <SelectItem value="inspection">Inspection</SelectItem>
-  2644→                <SelectItem value="project">Project</SelectItem>
-  2645→                <SelectItem value="predictive">Predictive</SelectItem>
-  2646→                <SelectItem value="other">Other</SelectItem>
-  2647→              </SelectContent>
-  2648→            </Select>
-  2649→          </div>
-  2650→          <div className="space-y-1.5">
-  2651→            <Label className="text-xs">Priority</Label>
-  2652→            <Select value={form.priority} onValueChange={v => updateField('priority', v)}>
-  2653→              <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
-  2654→              <SelectContent>
-  2655→                <SelectItem value="low">Low</SelectItem>
-  2656→                <SelectItem value="medium">Medium</SelectItem>
-  2657→                <SelectItem value="high">High</SelectItem>
-  2658→                <SelectItem value="critical">Critical</SelectItem>
-  2659→                <SelectItem value="urgent">Urgent</SelectItem>
-  2660→                <SelectItem value="emergency">Emergency</SelectItem>
-  2661→              </SelectContent>
-  2662→            </Select>
-  2663→          </div>
-  2664→          <div className="space-y-1.5">
-  2665→            <Label className="text-xs">Trade Activity</Label>
-  2666→            <Select value={form.tradeActivity} onValueChange={v => updateField('tradeActivity', v)}>
-  2667→              <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
-  2668→              <SelectContent>
-  2669→                <SelectItem value="mechanical">Mechanical</SelectItem>
-  2670→                <SelectItem value="electrical">Electrical</SelectItem>
-  2671→                <SelectItem value="civil">Civil</SelectItem>
-  2672→                <SelectItem value="facility">Facility</SelectItem>
-  2673→                <SelectItem value="workshop">Workshop</SelectItem>
-  2674→                <SelectItem value="instrumentation">Instrumentation</SelectItem>
-  2675→                <SelectItem value="other">Other</SelectItem>
-  2676→              </SelectContent>
-  2677→            </Select>
-  2678→          </div>
-  2679→          <div className="space-y-1.5">
-  2680→            <Label className="text-xs">Est. Hours</Label>
-  2681→            <Input
-  2682→              className="min-h-[44px]"
-  2683→              value={form.estimatedHoursDisplay || form.estimatedHours}
-  2684→              onChange={e => handleEstHoursChange(e.target.value)}
-  2685→              placeholder="2.5 or 2:30"
-  2686→            />
-  2687→            <p className="text-[10px] text-muted-foreground">Supports 2.5 or 2:30 format</p>
-  2688→          </div>
-  2689→          <div className="sm:col-span-2 lg:col-span-4 space-y-1.5">
-  2690→            <Label className="text-xs">Technical Description</Label>
-  2691→            <Textarea
-  2692→              value={form.technicalDescription}
-  2693→              onChange={e => updateField('technicalDescription', e.target.value)}
-  2694→              placeholder="Detailed technical description of the work to be performed..."
-  2695→              rows={3}
-  2696→            />
-  2697→          </div>
-  2698→          <div className="space-y-1.5 sm:col-span-2">
-  2699→            <Label className="text-xs">Scheduled Date</Label>
-  2700→            <DateTimePicker value={form.scheduledDate || undefined} onChange={v => updateField('scheduledDate', v || '')} />
-  2701→          </div>
-  2702→          <div className="space-y-1.5">
-  2703→            <Label className="text-xs">Delivery Date</Label>
-  2704→            <DatePicker value={form.deliveryDate || undefined} onChange={v => updateField('deliveryDate', v || '')} />
-  2705→          </div>
-  2706→        </div>
-  2707→      </div>
-  2708→
-  2709→      {/* ── SECTION 3: Resource Assignment (green background) ── */}
-  2710→      <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 sm:p-6">
-  2711→        <div className="grid gap-4">
-  2712→          <WorkerAssignmentSelector
-  2713→            selectedWorkerIds={form.selectedWorkerIds}
-  2714→            teamLeaderId={form.teamLeaderId}
-  2715→            onSelectedWorkersChange={(ids) => updateField('selectedWorkerIds', ids)}
-  2716→            onTeamLeaderChange={(id) => updateField('teamLeaderId', id)}
-  2717→            assignType={form.assignType}
-  2718→            onAssignTypeChange={(type) => updateField('assignType', type)}
-  2719→            label="Resource Assignment"
-  2720→          />
-  2721→
-  2722→          {/* Required Spare Parts */}
-  2723→          <div className="space-y-2">
-  2724→            <Label className="text-xs flex items-center gap-1"><PackageSearch className="h-3.5 w-3.5" />Required Spare Parts</Label>
-  2725→            <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
-  2726→              {form.requiredParts.length === 0 && <span className="text-sm text-muted-foreground">Select spare parts from inventory...</span>}
-  2727→              {form.requiredParts.map(part => {
-  2728→                const item = inventoryItems.find(i => i.id === part.itemId);
-  2729→                return item ? (
-  2730→                  <div key={part.itemId} className="flex items-center gap-1">
-  2731→                    <Badge variant="secondary" className="gap-1">
-  2732→                      {item.itemName || item.name} <span className="font-semibold">x{part.quantity}</span>
-  2733→                      <button onClick={() => removeFromArray('requiredParts', part.itemId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
-  2734→                    </Badge>
-  2735→                    <Input type="number" min={1} value={part.quantity} onChange={e => updateItemQuantity('requiredParts', part.itemId, Math.max(1, parseInt(e.target.value) || 1))}
-  2736→                      className="h-7 w-14 text-center text-xs px-1" />
-  2737→                  </div>
-  2738→                ) : null;
-  2739→              })}
-  2740→            </div>
-  2741→            <Select onValueChange={v => addToArray('requiredParts', v)}>
-  2742→              <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add spare part..." /></SelectTrigger>
-  2743→              <SelectContent>
-  2744→                {inventoryItems.filter(i => !form.requiredParts.some(p => p.itemId === i.id)).slice(0, 50).map(i => (
-  2745→                  <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
-  2746→                ))}
-  2747→              </SelectContent>
-  2748→            </Select>
-  2749→          </div>
-  2750→
-  2751→          {/* Required Tools */}
-  2752→          <div className="space-y-2">
-  2753→            <Label className="text-xs flex items-center gap-1"><Hammer className="h-3.5 w-3.5" />Required Tools</Label>
-  2754→            <div className="flex flex-wrap items-center gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
-  2755→              {form.requiredTools.length === 0 && <span className="text-sm text-muted-foreground">Select tools...</span>}
-  2756→              {form.requiredTools.map(tool => {
-  2757→                const toolItem = toolsData.find(t => t.id === tool.toolId);
-  2758→                return toolItem ? (
-  2759→                  <div key={tool.toolId} className="flex items-center gap-1">
-  2760→                    <Badge variant="secondary" className="gap-1">
-  2761→                      {toolItem.toolName || toolItem.name} <span className="font-semibold">x{tool.quantity}</span>
-  2762→                      <button onClick={() => removeFromArray('requiredTools', tool.toolId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
-  2763→                    </Badge>
-  2764→                    <Input type="number" min={1} value={tool.quantity} onChange={e => updateItemQuantity('requiredTools', tool.toolId, Math.max(1, parseInt(e.target.value) || 1))}
-  2765→                      className="h-7 w-14 text-center text-xs px-1" />
-  2766→                  </div>
-  2767→                ) : null;
-  2768→              })}
-  2769→            </div>
-  2770→            <Select onValueChange={v => addToArray('requiredTools', v)}>
-  2771→              <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add tool..." /></SelectTrigger>
-  2772→              <SelectContent>
-  2773→                {toolsData.filter(t => !form.requiredTools.some(to => to.toolId === t.id)).slice(0, 50).map(t => (
-  2774→                  <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
-  2775→                ))}
-  2776→              </SelectContent>
-  2777→            </Select>
-  2778→          </div>
-  2779→        </div>
-  2780→      </div>
-  2781→
-  2782→      {/* ── SECTION 4: Safety Notes (amber background) ── */}
-  2783→      <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 sm:p-6">
-  2784→        <h3 className="text-sm font-semibold text-amber-800 uppercase tracking-wider flex items-center gap-2 mb-4">
-  2785→          <ShieldAlert className="h-4 w-4" />Safety Notes
-  2786→        </h3>
-  2787→        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-  2788→          <div className="sm:col-span-2 space-y-1.5">
-  2789→            <Label className="text-xs">Safety Notes</Label>
-  2790→            <Textarea
-  2791→              value={form.safetyNotes}
-  2792→              onChange={e => updateField('safetyNotes', e.target.value)}
-  2793→              placeholder="Any safety hazards, precautions, or lockout/tagout requirements..."
-  2794→              rows={3}
-  2795→            />
-  2796→          </div>
-  2797→          <div className="sm:col-span-2 space-y-1.5">
-  2798→            <Label className="text-xs flex items-center gap-1"><HardHat className="h-3.5 w-3.5" />PPE Required</Label>
-  2799→            <Input
-  2800→              className="min-h-[44px]"
-  2801→              value={form.ppeRequired}
-  2802→              onChange={e => updateField('ppeRequired', e.target.value)}
-  2803→              placeholder="e.g. Safety glasses, gloves, helmet, hearing protection"
-  2804→            />
-  2805→          </div>
-  2806→          <div className="sm:col-span-2 space-y-1.5">
-  2807→            <Label className="text-xs">General Notes</Label>
-  2808→            <Textarea
-  2809→              value={form.notes}
-  2810→              onChange={e => updateField('notes', e.target.value)}
-  2811→              placeholder="Any additional notes or special instructions..."
-  2812→              rows={2}
-  2813→            />
-  2814→          </div>
-  2815→        </div>
-  2816→      </div>
-  2817→    </form>
-  2818→  );
-  2819→}
-  2820→
-  2821→// ============================================================================
-  2822→// WORK ORDER DETAIL PAGE — Enhanced with Team Management, Personal Tools, Role-Based UI
-  2823→// ============================================================================
-  2824→
   2825→export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => void }) {
   2826→  const [wo, setWo] = useState<WorkOrder | null>(null);
   2827→  const [loading, setLoading] = useState(true);
@@ -1998,5 +1558,445 @@
   4382→            </div>
   4383→
   4384→            {/* ── SECTION 3: Resource Assignment (green background) ── */}
+  4385→            <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 sm:p-6">
+  4386→              <div className="grid gap-4">
+  4387→                <WorkerAssignmentSelector
+  4388→                  selectedWorkerIds={editForm.selectedWorkerIds || []}
+  4389→                  teamLeaderId={editForm.teamLeaderId || ''}
+  4390→                  onSelectedWorkersChange={(ids) => editUpdateField('selectedWorkerIds', ids)}
+  4391→                  onTeamLeaderChange={(id) => editUpdateField('teamLeaderId', id)}
+  4392→                  assignType={editForm.assignType || 'technician'}
+  4393→                  onAssignTypeChange={(type) => editUpdateField('assignType', type)}
+  4394→                  label="Resource Assignment"
+  4395→                />
+  4396→
+  4397→                {/* Required Spare Parts */}
+  4398→                <div className="space-y-2">
+  4399→                  <Label className="text-xs flex items-center gap-1"><PackageSearch className="h-3.5 w-3.5" />Required Spare Parts</Label>
+  4400→                  <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+  4401→                    {(editForm.requiredParts || []).length === 0 && <span className="text-sm text-muted-foreground">Select spare parts from inventory...</span>}
+  4402→                    {(editForm.requiredParts || []).map((partId: string) => {
+  4403→                      const item = editInventoryItems.find(i => i.id === partId);
+  4404→                      return item ? (
+  4405→                        <Badge key={partId} variant="secondary" className="gap-1">
+  4406→                          {item.itemName || item.name}
+  4407→                          <button onClick={() => editRemoveFromArray('requiredParts', partId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+  4408→                        </Badge>
+  4409→                      ) : null;
+  4410→                    })}
+  4411→                  </div>
+  4412→                  <Select onValueChange={v => editAddToArray('requiredParts', v)}>
+  4413→                    <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add spare part..." /></SelectTrigger>
+  4414→                    <SelectContent>
+  4415→                      {editInventoryItems.filter(i => !(editForm.requiredParts || []).includes(i.id)).slice(0, 50).map(i => (
+  4416→                        <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
+  4417→                      ))}
+  4418→                    </SelectContent>
+  4419→                  </Select>
+  4420→                </div>
+  4421→
+  4422→                {/* Required Tools */}
+  4423→                <div className="space-y-2">
+  4424→                  <Label className="text-xs flex items-center gap-1"><Hammer className="h-3.5 w-3.5" />Required Tools</Label>
+  4425→                  <div className="flex flex-wrap gap-1.5 min-h-[44px] p-2 border rounded-md bg-white">
+  4426→                    {(editForm.requiredTools || []).length === 0 && <span className="text-sm text-muted-foreground">Select tools...</span>}
+  4427→                    {(editForm.requiredTools || []).map((toolId: string) => {
+  4428→                      const tool = editToolsData.find(t => t.id === toolId);
+  4429→                      return tool ? (
+  4430→                        <Badge key={toolId} variant="secondary" className="gap-1">
+  4431→                          {tool.toolName || tool.name}
+  4432→                          <button onClick={() => editRemoveFromArray('requiredTools', toolId)} className="ml-0.5 min-h-[44px] min-w-[44px] flex items-center justify-center hover:text-red-600"><X className="h-3 w-3" /></button>
+  4433→                        </Badge>
+  4434→                      ) : null;
+  4435→                    })}
+  4436→                  </div>
+  4437→                  <Select onValueChange={v => editAddToArray('requiredTools', v)}>
+  4438→                    <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Add tool..." /></SelectTrigger>
+  4439→                    <SelectContent>
+  4440→                      {editToolsData.filter(t => !(editForm.requiredTools || []).includes(t.id)).slice(0, 50).map(t => (
+  4441→                        <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
+  4442→                      ))}
+  4443→                    </SelectContent>
+  4444→                  </Select>
+  4445→                </div>
+  4446→              </div>
+  4447→            </div>
+  4448→
+  4449→            {/* ── SECTION 4: Safety Notes (amber background) ── */}
+  4450→            <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-4 sm:p-6">
+  4451→              <h3 className="text-sm font-semibold text-amber-800 uppercase tracking-wider flex items-center gap-2 mb-4">
+  4452→                <ShieldAlert className="h-4 w-4" />Safety Notes
+  4453→              </h3>
+  4454→              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+  4455→                <div className="sm:col-span-2 space-y-1.5">
+  4456→                  <Label className="text-xs">Safety Notes</Label>
+  4457→                  <Textarea
+  4458→                    value={editForm.safetyNotes || ''}
+  4459→                    onChange={e => editUpdateField('safetyNotes', e.target.value)}
+  4460→                    placeholder="Any safety hazards, precautions, or lockout/tagout requirements..."
+  4461→                    rows={3}
+  4462→                  />
+  4463→                </div>
+  4464→                <div className="sm:col-span-2 space-y-1.5">
+  4465→                  <Label className="text-xs flex items-center gap-1"><HardHat className="h-3.5 w-3.5" />PPE Required</Label>
+  4466→                  <Input
+  4467→                    className="min-h-[44px]"
+  4468→                    value={editForm.ppeRequired || ''}
+  4469→                    onChange={e => editUpdateField('ppeRequired', e.target.value)}
+  4470→                    placeholder="e.g. Safety glasses, gloves, helmet, hearing protection"
+  4471→                  />
+  4472→                </div>
+  4473→                <div className="sm:col-span-2 space-y-1.5">
+  4474→                  <Label className="text-xs">General Notes</Label>
+  4475→                  <Textarea
+  4476→                    value={editForm.notes || ''}
+  4477→                    onChange={e => editUpdateField('notes', e.target.value)}
+  4478→                    placeholder="Any additional notes or special instructions..."
+  4479→                    rows={2}
+  4480→                  />
+  4481→                </div>
+  4482→              </div>
+  4483→            </div>
+  4484→
+  4485→          </div>
+  4486→      </ResponsiveDialog>
+  4487→      ) : (
+  4488→      /* ==================== MOBILE: Edit WO Stepper bottom sheet ==================== */
+  4489→      <MobileStepperSheet
+  4490→        open={editOpen}
+  4491→        onOpenChange={setEditOpen}
+  4492→        title="Edit Work Order"
+  4493→        description="Update work order details."
+  4494→        steps={[
+  4495→          { key: 'details', label: 'Details', icon: ClipboardCheck },
+  4496→          { key: 'resources', label: 'Resources', icon: Users },
+  4497→          { key: 'safety', label: 'Safety', icon: ShieldAlert },
+  4498→        ]}
+  4499→        actionLabel="Save Changes"
+  4500→        actionLoading={actionLoading}
+  4501→        onAction={handleEditWO}
+  4502→        headerExtra={wo?.maintenanceRequest ? (
+  4503→          <div className="bg-blue-50 rounded-xl p-4 space-y-3">
+  4504→            <div className="grid grid-cols-2 gap-3">
+  4505→              <div>
+  4506→                <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Request #</p>
+  4507→                <p className="text-sm font-bold text-blue-900 mt-0.5">{(wo as any).maintenanceRequest?.requestNumber}</p>
+  4508→              </div>
+  4509→              <div>
+  4510→                <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Machine</p>
+  4511→                <p className="text-sm font-bold text-blue-900 mt-0.5 truncate">{(wo as any).maintenanceRequest?.asset?.name || wo.assetName || '-'}</p>
+  4512→              </div>
+  4513→              <div>
+  4514→                <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Category</p>
+  4515→                <p className="text-sm font-bold text-blue-900 mt-0.5 capitalize">{(wo as any).maintenanceRequest?.category || '-'}</p>
+  4516→              </div>
+  4517→              <div>
+  4518→                <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider">Breakdown</p>
+  4519→                <Badge variant={(wo as any).maintenanceRequest?.machineDownStatus ? 'destructive' : 'secondary'} className="text-xs">
+  4520→                  {(wo as any).maintenanceRequest?.machineDownStatus ? 'Yes' : 'No'}
+  4521→                </Badge>
+  4522→              </div>
+  4523→            </div>
+  4524→            <div>
+  4525→              <p className="text-[10px] font-semibold uppercase text-blue-500 tracking-wider mb-1.5">Problem Description</p>
+  4526→              <div className="bg-muted/50 rounded-xl p-3 text-sm text-foreground whitespace-pre-wrap max-h-32 overflow-y-auto">
+  4527→                {(wo as any).maintenanceRequest?.description || 'No description provided.'}
+  4528→              </div>
+  4529→            </div>
+  4530→            <div className="grid grid-cols-2 gap-3">
+  4531→              <div className="bg-muted/50 rounded-xl p-3">
+  4532→                <p className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">Requested By</p>
+  4533→                <p className="text-sm font-medium mt-0.5">{(wo as any).maintenanceRequest?.requester?.fullName || '-'}</p>
+  4534→              </div>
+  4535→              <div className="bg-muted/50 rounded-xl p-3">
+  4536→                <p className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">Date Sent</p>
+  4537→                <p className="text-sm font-medium mt-0.5">{(wo as any).maintenanceRequest?.createdAt ? formatDateTime((wo as any).maintenanceRequest.createdAt) : '-'}</p>
+  4538→              </div>
+  4539→            </div>
+  4540→          </div>
+  4541→        ) : undefined}
+  4542→      >
+  4543→        {(stepKey) => stepKey === 'details' ? (
+  4544→          <div className="space-y-4">
+  4545→            <div className="space-y-2">
+  4546→              <Label className="text-xs">Title *</Label>
+  4547→              <Input className="min-h-[44px]" value={editForm.title || ''} onChange={e => editUpdateField('title', e.target.value)} placeholder="Work order title" />
+  4548→            </div>
+  4549→            <div className="space-y-2">
+  4550→              <Label className="text-xs">Description</Label>
+  4551→              <Textarea value={editForm.description || ''} onChange={e => editUpdateField('description', e.target.value)} placeholder="Problem description..." rows={2} />
+  4552→            </div>
+  4553→            <div className="grid grid-cols-2 gap-2">
+  4554→              <div className="space-y-1">
+  4555→                <Label className="text-[10px]">Type</Label>
+  4556→                <Select value={editForm.type || 'corrective'} onValueChange={v => editUpdateField('type', v)}>
+  4557→                  <SelectTrigger className="min-h-[44px] text-xs"><SelectValue /></SelectTrigger>
+  4558→                  <SelectContent>
+  4559→                    <SelectItem value="breakdown">Breakdown</SelectItem>
+  4560→                    <SelectItem value="corrective">Corrective</SelectItem>
+  4561→                    <SelectItem value="preventive">Preventive</SelectItem>
+  4562→                    <SelectItem value="emergency">Emergency</SelectItem>
+  4563→                    <SelectItem value="inspection">Inspection</SelectItem>
+  4564→                    <SelectItem value="project">Project</SelectItem>
+  4565→                    <SelectItem value="other">Other</SelectItem>
+  4566→                  </SelectContent>
+  4567→                </Select>
+  4568→              </div>
+  4569→              <div className="space-y-1">
+  4570→                <Label className="text-[10px]">Priority</Label>
+  4571→                <Select value={editForm.priority || 'medium'} onValueChange={v => editUpdateField('priority', v)}>
+  4572→                  <SelectTrigger className="min-h-[44px] text-xs"><SelectValue /></SelectTrigger>
+  4573→                  <SelectContent>
+  4574→                    <SelectItem value="low">Low</SelectItem>
+  4575→                    <SelectItem value="medium">Medium</SelectItem>
+  4576→                    <SelectItem value="high">High</SelectItem>
+  4577→                    <SelectItem value="critical">Critical</SelectItem>
+  4578→                    <SelectItem value="urgent">Urgent</SelectItem>
+  4579→                    <SelectItem value="emergency">Emergency</SelectItem>
+  4580→                  </SelectContent>
+  4581→                </Select>
+  4582→              </div>
+  4583→            </div>
+  4584→            <div className="space-y-1">
+  4585→              <Label className="text-[10px]">Trade Activity</Label>
+  4586→              <Select value={editForm.tradeActivity || 'mechanical'} onValueChange={v => editUpdateField('tradeActivity', v)}>
+  4587→                <SelectTrigger className="min-h-[44px] text-xs"><SelectValue /></SelectTrigger>
+  4588→                <SelectContent>
+  4589→                  <SelectItem value="mechanical">Mechanical</SelectItem>
+  4590→                  <SelectItem value="electrical">Electrical</SelectItem>
+  4591→                  <SelectItem value="civil">Civil</SelectItem>
+  4592→                  <SelectItem value="facility">Facility</SelectItem>
+  4593→                  <SelectItem value="workshop">Workshop</SelectItem>
+  4594→                  <SelectItem value="instrumentation">Instrumentation</SelectItem>
+  4595→                  <SelectItem value="other">Other</SelectItem>
+  4596→                </SelectContent>
+  4597→              </Select>
+  4598→            </div>
+  4599→            <div className="grid grid-cols-2 gap-2">
+  4600→              <div className="space-y-1">
+  4601→                <Label className="text-[10px]">Est. Hours</Label>
+  4602→                <Input className="min-h-[44px]" value={editForm.estimatedHoursDisplay || editForm.estimatedHours || ''} onChange={e => editHandleEstHoursChange(e.target.value)} placeholder="2.5 or 2:30" />
+  4603→              </div>
+  4604→              <div className="space-y-1">
+  4605→                <Label className="text-[10px]">Scheduled</Label>
+  4606→                <DateTimePicker value={editForm.scheduledDate || undefined} onChange={v => editUpdateField('scheduledDate', v || '')} />
+  4607→              </div>
+  4608→            </div>
+  4609→            <div className="space-y-2">
+  4610→              <Label className="text-xs">Technical Description</Label>
+  4611→              <Textarea className="rounded-xl min-h-[100px]" value={editForm.technicalDescription || ''} onChange={e => editUpdateField('technicalDescription', e.target.value)} placeholder="Detailed technical description..." rows={3} />
+  4612→            </div>
+  4613→          </div>
+  4614→        ) : stepKey === 'resources' ? (
+  4615→          <div className="space-y-4">
+  4616→            <WorkerAssignmentSelector
+  4617→              selectedWorkerIds={editForm.selectedWorkerIds || []}
+  4618→              teamLeaderId={editForm.teamLeaderId || ''}
+  4619→              onSelectedWorkersChange={(ids) => editUpdateField('selectedWorkerIds', ids)}
+  4620→              onTeamLeaderChange={(id) => editUpdateField('teamLeaderId', id)}
+  4621→              assignType={editForm.assignType || 'technician'}
+  4622→              onAssignTypeChange={(type) => editUpdateField('assignType', type)}
+  4623→              label="Resource Assignment"
+  4624→            />
+  4625→            <Accordion type="multiple" className="space-y-2">
+  4626→              <AccordionItem value="parts" className="border rounded-xl px-1">
+  4627→                <AccordionTrigger className="text-xs font-medium py-3 px-2">
+  4628→                  <span className="flex items-center gap-1.5"><PackageSearch className="h-3.5 w-3.5" />Spare Parts {(editForm.requiredParts || []).length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5">{(editForm.requiredParts || []).length}</Badge>}</span>
+  4629→                </AccordionTrigger>
+  4630→                <AccordionContent className="px-2 pb-3 space-y-2">
+  4631→                  {(editForm.requiredParts || []).length > 0 && (
+  4632→                    <div className="flex flex-wrap gap-1.5">
+  4633→                      {(editForm.requiredParts || []).map((partId: string) => {
+  4634→                        const item = editInventoryItems.find(i => i.id === partId);
+  4635→                        return item ? (
+  4636→                          <Badge key={partId} variant="secondary" className="gap-1">
+  4637→                            {item.itemName || item.name}
+  4638→                            <button onClick={() => editRemoveFromArray('requiredParts', partId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
+  4639→                          </Badge>
+  4640→                        ) : null;
+  4641→                      })}
+  4642→                    </div>
+  4643→                  )}
+  4644→                  <Select onValueChange={v => editAddToArray('requiredParts', v)}>
+  4645→                    <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="+ Add spare part..." /></SelectTrigger>
+  4646→                    <SelectContent>
+  4647→                      {editInventoryItems.filter(i => !(editForm.requiredParts || []).includes(i.id)).slice(0, 50).map(i => (
+  4648→                        <SelectItem key={i.id} value={i.id}>{i.itemName || i.name}{i.itemCode ? ` [${i.itemCode}]` : ''}</SelectItem>
+  4649→                      ))}
+  4650→                    </SelectContent>
+  4651→                  </Select>
+  4652→                </AccordionContent>
+  4653→              </AccordionItem>
+  4654→              <AccordionItem value="tools" className="border rounded-xl px-1">
+  4655→                <AccordionTrigger className="text-xs font-medium py-3 px-2">
+  4656→                  <span className="flex items-center gap-1.5"><Hammer className="h-3.5 w-3.5" />Tools {(editForm.requiredTools || []).length > 0 && <Badge variant="secondary" className="text-[10px] px-1.5">{(editForm.requiredTools || []).length}</Badge>}</span>
+  4657→                </AccordionTrigger>
+  4658→                <AccordionContent className="px-2 pb-3 space-y-2">
+  4659→                  {(editForm.requiredTools || []).length > 0 && (
+  4660→                    <div className="flex flex-wrap gap-1.5">
+  4661→                      {(editForm.requiredTools || []).map((toolId: string) => {
+  4662→                        const tool = editToolsData.find(t => t.id === toolId);
+  4663→                        return tool ? (
+  4664→                          <Badge key={toolId} variant="secondary" className="gap-1">
+  4665→                            {tool.toolName || tool.name}
+  4666→                            <button onClick={() => editRemoveFromArray('requiredTools', toolId)} className="ml-0.5 h-5 w-5 flex items-center justify-center rounded-full hover:bg-red-100 hover:text-red-600"><X className="h-3 w-3" /></button>
+  4667→                          </Badge>
+  4668→                        ) : null;
+  4669→                      })}
+  4670→                    </div>
+  4671→                  )}
+  4672→                  <Select onValueChange={v => editAddToArray('requiredTools', v)}>
+  4673→                    <SelectTrigger className="h-11 rounded-xl"><SelectValue placeholder="+ Add tool..." /></SelectTrigger>
+  4674→                    <SelectContent>
+  4675→                      {editToolsData.filter(t => !(editForm.requiredTools || []).includes(t.id)).slice(0, 50).map(t => (
+  4676→                        <SelectItem key={t.id} value={t.id}>{t.toolName || t.name}{t.toolCode ? ` [${t.toolCode}]` : ''}</SelectItem>
+  4677→                      ))}
+  4678→                    </SelectContent>
+  4679→                  </Select>
+  4680→                </AccordionContent>
+  4681→              </AccordionItem>
+  4682→            </Accordion>
+  4683→          </div>
+  4684→        ) : stepKey === 'safety' ? (
+  4685→          <div className="space-y-4">
+  4686→            <div className="bg-amber-50 rounded-xl p-4">
+  4687→              <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5 mb-3">
+  4688→                <ShieldAlert className="h-4 w-4" />Safety Information
+  4689→              </p>
+  4690→              <div className="space-y-3">
+  4691→                <div className="space-y-1.5">
+  4692→                  <Label className="text-xs font-medium">Safety Notes</Label>
+  4693→                  <Textarea
+  4694→                    className="rounded-xl min-h-[100px]"
+  4695→                    value={editForm.safetyNotes || ''}
+  4696→                    onChange={e => editUpdateField('safetyNotes', e.target.value)}
+  4697→                    placeholder="Hazards, precautions, lockout/tagout..."
+  4698→                    rows={3}
+  4699→                  />
+  4700→                </div>
+  4701→                <div className="space-y-1.5">
+  4702→                  <Label className="text-xs font-medium flex items-center gap-1"><HardHat className="h-3.5 w-3.5" />PPE Required</Label>
+  4703→                  <Input
+  4704→                    className="h-12 rounded-xl"
+  4705→                    value={editForm.ppeRequired || ''}
+  4706→                    onChange={e => editUpdateField('ppeRequired', e.target.value)}
+  4707→                    placeholder="Safety glasses, gloves, helmet..."
+  4708→                  />
+  4709→                </div>
+  4710→                <div className="space-y-1.5">
+  4711→                  <Label className="text-xs font-medium">General Notes</Label>
+  4712→                  <Textarea
+  4713→                    className="rounded-xl min-h-[80px]"
+  4714→                    value={editForm.notes || ''}
+  4715→                    onChange={e => editUpdateField('notes', e.target.value)}
+  4716→                    placeholder="Additional notes or instructions..."
+  4717→                    rows={2}
+  4718→                  />
+  4719→                </div>
+  4720→              </div>
+  4721→            </div>
+  4722→          </div>
+  4723→        ) : null}
+  4724→      </MobileStepperSheet>
+  4725→      )}
+  4726→
+  4727→      {/* Time Log Dialog — Enterprise */}
+  4728→      <ResponsiveDialog open={timeLogOpen} onOpenChange={(open) => { setTimeLogOpen(open); if (!open) setTlError(''); }} title="Log Time" description="Record time spent on this work order." footer={<Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white" disabled={tlLoading || !!tlError} onClick={handleTimeLog}>{tlLoading ? 'Saving...' : 'Save Time Log'}</Button>}>
+  4729→          <div className="space-y-4">
+  4730→            {/* Team member selector — only team leader or admin */}
+  4731→            {canLogForOthers && (wo?.teamMembers?.length > 0 || wo?.assignedToId) && (
+  4732→              <div className="space-y-1.5">
+  4733→                <Label>Log For</Label>
+  4734→                <Select value={tlLoggedForUserId || undefined} onValueChange={(v) => setTlLoggedForUserId(v === '__self__' ? '' : v)}>
+  4735→                  <SelectTrigger className="min-h-[44px]"><SelectValue placeholder="Self (my own time)" /></SelectTrigger>
+  4736→                  <SelectContent>
+  4737→                    <SelectItem value="__self__">Self (my own time)</SelectItem>
+  4738→                    {wo.teamMembers?.map((tm: any) => (
+  4739→                      tm.userId !== user?.id && (
+  4740→                        <SelectItem key={tm.userId} value={tm.userId}>
+  4741→                          {tm.user?.fullName || tm.userName || 'Unknown'}
+  4742→                        </SelectItem>
+  4743→                      )
+  4744→                    ))}
+  4745→                    {wo.assignedToId && wo.assignedToId !== user?.id && !wo.teamMembers?.some((tm: any) => tm.userId === wo.assignedToId) && (
+  4746→                      <SelectItem key={wo.assignedToId} value={wo.assignedToId}>
+  4747→                        {wo.assignee?.fullName || 'Assignee'}
+  4748→                      </SelectItem>
+  4749→                    )}
+  4750→                  </SelectContent>
+  4751→                </Select>
+  4752→                {tlLoggedForUserId && (
+  4753→                  <p className="text-xs text-amber-600">This will be logged as team time for the selected member.</p>
+  4754→                )}
+  4755→              </div>
+  4756→            )}
+  4757→            <div className="space-y-1.5">
+  4758→              <Label>Activity Type</Label>
+  4759→              <Select value={tlActivityType} onValueChange={setTlActivityType}>
+  4760→                <SelectTrigger className="min-h-[44px]"><SelectValue /></SelectTrigger>
+  4761→                <SelectContent>
+  4762→                  <SelectItem value="maintenance"><span className="flex items-center gap-2"><Wrench className="h-3.5 w-3.5" /> Maintenance</span></SelectItem>
+  4763→                  <SelectItem value="inspection"><span className="flex items-center gap-2"><Search className="h-3.5 w-3.5" /> Inspection</span></SelectItem>
+  4764→                  <SelectItem value="testing"><span className="flex items-center gap-2"><FlaskConical className="h-3.5 w-3.5" /> Testing</span></SelectItem>
+  4765→                  <SelectItem value="travel"><span className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5" /> Travel</span></SelectItem>
+  4766→                  <SelectItem value="standby"><span className="flex items-center gap-2"><Hourglass className="h-3.5 w-3.5" /> Standby</span></SelectItem>
+  4767→                  <SelectItem value="other"><span className="flex items-center gap-2"><MoreHorizontal className="h-3.5 w-3.5" /> Other</span></SelectItem>
+  4768→                </SelectContent>
+  4769→              </Select>
+  4770→            </div>
+  4771→            <div className="grid grid-cols-2 gap-3">
+  4772→              <div className="space-y-1.5">
+  4773→                <Label>Start Time <span className="text-red-500">*</span></Label>
+  4774→                <DateTimePicker
+  4775→                  value={tlStartTime || undefined}
+  4776→                  onChange={v => { setTlStartTime(v || ''); setTlError(''); }}
+  4777→                  minDate={tlConstraints.minDate}
+  4778→                  minTime={tlConstraints.minTime}
+  4779→                  error={!tlStartTime ? undefined : tlError?.includes('Start date') || tlError?.includes('Start time') ? tlError : undefined}
+  4780→                />
+  4781→                <p className="text-[10px] text-muted-foreground">
+  4782→                  {tlConstraints.minDate && <>Min: {tlConstraints.minDate}{tlConstraints.minTime ? ` ${tlConstraints.minTime}` : ''}</>}
+  4783→                </p>
+  4784→              </div>
+  4785→              <div className="space-y-1.5">
+  4786→                <Label>End Time</Label>
+  4787→                <DateTimePicker
+  4788→                  value={tlEndTime || undefined}
+  4789→                  onChange={v => { setTlEndTime(v || ''); setTlError(''); }}
+  4790→                  minDate={tlStartTime ? tlStartTime.slice(0, 10) : tlConstraints.minDate}
+  4791→                  minTime={tlStartTime && tlStartTime.slice(0, 10) === tlConstraints.minDate ? tlConstraints.minTime : tlStartTime ? tlStartTime.slice(11, 16) : undefined}
+  4792→                  error={tlError?.includes('End time') ? tlError : undefined}
+  4793→                />
+  4794→                <p className="text-[10px] text-muted-foreground">Leave blank if ongoing</p>
+  4795→              </div>
+  4796→            </div>
+  4797→            {/* Auto-calculated duration preview */}
+  4798→            {tlStartTime && tlEndTime && (
+  4799→              <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
+  4800→                <div className="flex items-center gap-2">
+  4801→                  <Clock className="h-4 w-4 text-emerald-600" />
+  4802→                  <span className="text-sm font-medium text-emerald-800">
+  4803→                    Duration: {
+  4804→                      (() => {
+  4805→                        const ms = new Date(tlEndTime).getTime() - new Date(tlStartTime).getTime();
+  4806→                        const totalMin = ms / 60000 - (parseInt(tlBreakMinutes) || 0);
+  4807→                        const h = Math.floor(Math.max(0, totalMin) / 60);
+  4808→                        const m = Math.floor(Math.max(0, totalMin) % 60);
+  4809→                        return `${h}h ${m}m`;
+  4810→                      })()
+  4811→                    }
+  4812→                  </span>
+  4813→                </div>
+  4814→                <p className="text-[10px] text-emerald-600 mt-0.5">Auto-calculated from start/end times</p>
+  4815→              </div>
+  4816→            )}
+  4817→            <div className="space-y-1.5">
+  4818→              <Label>Break (minutes)</Label>
+  4819→              <Input className="min-h-[44px]" type="number" min="0" max="480" value={tlBreakMinutes} onChange={e => setTlBreakMinutes(e.target.value)} placeholder="0" />
+  4820→            </div>
+  4821→            <div className="space-y-1.5">
+  4822→              <Label>Notes</Label>
+  4823→              <Textarea value={tlNotes} onChange={e => setTlNotes(e.target.value)} placeholder="What was done during this time..." rows={2} />
+  4824→            </div>
 
-[showing lines 2385-4384 of 9227; use offset=4385 with limit to continue reading]
+[showing lines 2825-4824 of 9227; use offset=4825 with limit to continue reading]
