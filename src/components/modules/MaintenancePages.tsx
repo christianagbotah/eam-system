@@ -2223,9 +2223,14 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     safetyNotes: '',
     ppeRequired: '',
     notes: '',
+    componentIds: [] as string[],
   });
   const [loading, setLoading] = useState(false);
   const [departmentLabel, setDepartmentLabel] = useState('');
+
+  // Component selection state
+  const [availableComponents, setAvailableComponents] = useState<Array<{id: string; name: string; componentCode?: string; componentType?: string; criticality?: string}>>([]);
+  const [componentsLoading, setComponentsLoading] = useState(false);
 
   // Dropdown data
   const [departments, setDepartments] = useState<any[]>([]);
@@ -2250,6 +2255,33 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
   }, [user?.department]);
 
   const isDepartmentLocked = !isAdmin() && !!user?.department;
+
+  // Load components when asset changes
+  useEffect(() => {
+    if (form.assetId) {
+      setComponentsLoading(true);
+      api.get(`/api/component-registry?assetId=${form.assetId}`)
+        .then((res: any) => {
+          if (res.success && Array.isArray(res.data)) {
+            setAvailableComponents(res.data.map((c: any) => ({
+              id: c.id,
+              name: c.name || c.componentName,
+              componentCode: c.componentCode,
+              componentType: c.componentType,
+              criticality: c.criticality,
+            })));
+          } else {
+            setAvailableComponents([]);
+          }
+        })
+        .catch(() => setAvailableComponents([]))
+        .finally(() => setComponentsLoading(false));
+      // Reset selection when asset changes
+      updateField('componentIds', []);
+    } else {
+      setAvailableComponents([]);
+    }
+  }, [form.assetId]);
 
   // Load dropdown data when form opens
   useEffect(() => {
@@ -2336,6 +2368,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
       notes: form.notes || undefined,
       requiredParts: form.requiredParts.length > 0 ? form.requiredParts : undefined,
       requiredTools: form.requiredTools.length > 0 ? form.requiredTools : undefined,
+      componentIds: form.componentIds.length > 0 ? form.componentIds : undefined,
     };
     // Build team members from selected workers
     if (form.selectedWorkerIds.length > 0) {
@@ -2517,6 +2550,52 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
             )}
           </div>
         </div>
+
+        {/* Component/Part Selection */}
+        {form.assetId && (
+          <div className="space-y-2 mt-2">
+            <Label className="text-xs">Components / Parts (optional)</Label>
+            {componentsLoading ? (
+              <div className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+                <div className="h-4 w-4 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
+                Loading components...
+              </div>
+            ) : availableComponents.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-1">No components registered for this asset</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto rounded-md border p-2">
+                {availableComponents.map((comp) => (
+                  <label
+                    key={comp.id}
+                    className="flex items-center gap-2 py-1 px-2 rounded-md hover:bg-muted/50 cursor-pointer text-sm"
+                  >
+                    <Checkbox
+                      checked={form.componentIds.includes(comp.id)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          updateField('componentIds', [...form.componentIds, comp.id]);
+                        } else {
+                          updateField('componentIds', form.componentIds.filter((id: string) => id !== comp.id));
+                        }
+                      }}
+                    />
+                    <span className="truncate">
+                      {comp.componentCode ? `${comp.componentCode} · ` : ''}{comp.name}
+                    </span>
+                    {comp.criticality && comp.criticality !== 'low' && (
+                      <Badge variant={comp.criticality === 'critical' ? 'destructive' : comp.criticality === 'high' ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0 shrink-0">
+                        {comp.criticality}
+                      </Badge>
+                    )}
+                  </label>
+                ))}
+              </div>
+            )}
+            {form.componentIds.length > 0 && (
+              <p className="text-xs text-muted-foreground">{form.componentIds.length} component(s) selected</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── SECTION 2: Work Order Details (purple background) ── */}
