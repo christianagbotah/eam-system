@@ -1,530 +1,3 @@
-     1→generator client {
-     2→  provider      = "prisma-client-js"
-     3→  engineType    = "library"
-     4→  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
-     5→}
-     6→
-     7→datasource db {
-     8→  provider = "mysql"
-     9→}
-    10→
-    11→// ============================================================================
-    12→// 1. CORE RBAC SYSTEM
-    13→// ============================================================================
-    14→
-    15→model Role {
-    16→  id          String   @id @default(cuid())
-    17→  name        String
-    18→  slug        String   @unique
-    19→  description String?
-    20→  level       Int      @default(0) // hierarchy level (higher = more privileges)
-    21→  isSystem    Boolean  @default(false) // cannot be deleted
-    22→  createdAt   DateTime @default(now())
-    23→  updatedAt   DateTime @updatedAt
-    24→
-    25→  userRoles       UserRole[]
-    26→  rolePermissions RolePermission[]
-    27→
-    28→  @@map("roles")
-    29→}
-    30→
-    31→model Permission {
-    32→  id          String   @id @default(cuid())
-    33→  slug        String   @unique // e.g. "work_orders.view"
-    34→  name        String // e.g. "View Work Orders"
-    35→  module      String // e.g. "work_orders"
-    36→  action      String // view, create, update, delete, approve, assign, execute, export
-    37→  description String?
-    38→  createdAt   DateTime @default(now())
-    39→  updatedAt   DateTime @updatedAt
-    40→
-    41→  rolePermissions RolePermission[]
-    42→  userPermissions UserPermission[]
-    43→
-    44→  @@map("permissions")
-    45→}
-    46→
-    47→model RolePermission {
-    48→  id           String   @id @default(cuid())
-    49→  roleId       String
-    50→  permissionId String
-    51→  createdAt    DateTime @default(now())
-    52→
-    53→  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-    54→  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-    55→
-    56→  @@unique([roleId, permissionId])
-    57→  @@map("role_permissions")
-    58→}
-    59→
-    60→model User {
-    61→  id                      String    @id @default(cuid())
-    62→  username                String    @unique
-    63→  email                   String    @unique
-    64→  passwordHash            String
-    65→  fullName                String
-    66→  staffId                 String?   @unique
-    67→  phone                   String?
-    68→  avatar                  String?
-    69→  department              String?
-    70→  status                  String    @default("active") // active, inactive
-    71→  isVendorAdmin           Boolean   @default(false)
-    72→  resetToken              String?
-    73→  resetTokenExpires       DateTime?
-    74→  notificationPreferences Json? // notification preferences (channels, types, quiet hours)
-    75→  preferences             Json? // user display/notification/datetime preferences
-    76→  createdAt               DateTime  @default(now())
-    77→  updatedAt               DateTime  @updatedAt
-    78→
-    79→  // RBAC relations
-    80→  userRoles   UserRole[]
-    81→  directPerms UserPermission[]
-    82→  plantAccess UserPlant[]
-    83→
-    84→  // Department supervision
-    85→  deptSupervised Department[] @relation("DeptSupervisor")
-    86→
-    87→  // Maintenance Request relations
-    88→  mrRequested  MaintenanceRequest[] @relation("MRRequester")
-    89→  mrSupervised MaintenanceRequest[] @relation("MRSupervisor")
-    90→  mrApproved   MaintenanceRequest[] @relation("MRApprover")
-    91→  mrPlanned    MaintenanceRequest[] @relation("MRPlanner")
-    92→
-    93→  // Work Order relations
-    94→  woAssigned   WorkOrder[] @relation("WOAssignedTo")
-    95→  woTeamLeader WorkOrder[] @relation("WOTeamLeader")
-    96→  woSupervised WorkOrder[] @relation("WOSupervisor")
-    97→  woAssignedBy WorkOrder[] @relation("WOAssignedBy")
-    98→  woPlanned    WorkOrder[] @relation("WOPlanner")
-    99→  woLocked     WorkOrder[] @relation("WOLocker")
-   100→
-   101→  // Work Order sub-table relations
-   102→  woTeamMembers              WorkOrderTeamMember[]
-   103→  woTeamMembersAdded         WorkOrderTeamMember[] @relation("TMAddedBy")
-   104→  woTeamMemberReqsRequested  WoTeamMemberRequest[] @relation("TMReqRequestedBy") // as requester
-   105→  woTeamMemberReqsAsTarget   WoTeamMemberRequest[] // as requested user (to be added)
-   106→  woTeamMemberReqsReviewed   WoTeamMemberRequest[] @relation("TMReqReviewedBy")
-   107→  woTimeLogs           WorkOrderTimeLog[]
-   108→  woComments           WorkOrderComment[]
-   109→  woMaterialsRequested WorkOrderMaterial[]   @relation("WOMatRequested")
-   110→  woMaterialsApproved  WorkOrderMaterial[]   @relation("WOMatApproved")
-   111→  woMaterialsIssued    WorkOrderMaterial[]   @relation("WOMatIssued")
-   112→
-   113→  // Audit
-   114→  auditLogs     AuditLog[]
-   115→  notifications Notification[]
-   116→
-   117→  // Asset Management relations
-   118→  assetsCreated         Asset[]                     @relation("AssetCreatedBy")
-   119→  assetsAssigned        Asset[]                     @relation("AssetAssignedTo")
-   120→  inventoryItemsCreated InventoryItem[]             @relation("InventoryItemCreatedBy")
-   121→  stockMovements        StockMovement[]
-   122→  pmSchedulesAssigned   PmSchedule[]                @relation("PmScheduleAssignedTo")
-   123→  pmSchedulesCreated    PmSchedule[]                @relation("PmScheduleCreatedBy")
-   124→  pmTemplatesCreated    PmTemplate[]                @relation("PmTemplateCreatedBy")
-   125→  woStatusHistory       WorkOrderStatusHistory[]
-   126→  mrComments            MaintenanceRequestComment[]
-   127→
-   128→  // Tool Management relations
-   129→  toolsAssigned    Tool[]            @relation("ToolAssignedTo")
-   130→  toolsCreated     Tool[]            @relation("ToolCreatedBy")
-   131→  toolTransactions ToolTransaction[] @relation("ToolTxnPerformedBy")
-   132→  toolTxnsFrom     ToolTransaction[] @relation("ToolTxnFromUser")
-   133→  toolTxnsTo       ToolTransaction[] @relation("ToolTxnToUser")
-   134→
-   135→  // IoT Management relations
-   136→  iotDevicesCreated IotDevice[]    @relation("IotDeviceCreatedBy")
-   137→  iotRulesCreated   IotAlertRule[] @relation("IotRuleCreatedBy")
-   138→
-   139→  // Real-Time Industrial Telemetry relations (Phase C)
-   140→  telemetrySources     TelemetryDataSource[] @relation("TelemetrySourceCreatedBy")
-   141→  alarmRules           AlarmRule[]           @relation("AlarmRuleCreatedBy")
-   142→  alarmsAcknowledged   AlarmEvent[]          @relation("AlarmAcknowledgedBy")
-   143→
-   144→  // Inventory Sub-module relations
-   145→  invLocationsCreated    InventoryLocation[]   @relation("InvLocationCreatedBy")
-   146→  invAdjustmentsApproved InventoryAdjustment[] @relation("InvAdjApprovedBy")
-   147→  invAdjustmentsCreated  InventoryAdjustment[] @relation("InvAdjCreatedBy")
-   148→  invRequestsRequested   InventoryRequest[]    @relation("InvReqRequestedBy")
-   149→  invRequestsApproved    InventoryRequest[]    @relation("InvReqApprovedBy")
-   150→  invTransfersRequested  InventoryTransfer[]   @relation("InvTransferRequestedBy")
-   151→  invTransfersApproved   InventoryTransfer[]   @relation("InvTransferApprovedBy")
-   152→  suppliersCreated       Supplier[]            @relation("SupplierCreatedBy")
-   153→  poCreated              PurchaseOrder[]       @relation("POCreatedBy")
-   154→  poApproved             PurchaseOrder[]       @relation("POApprovedBy")
-   155→  receivingReceived      ReceivingRecord[]     @relation("ReceivingReceivedBy")
-   156→
-   157→  // Safety Module relations
-   158→  safetyIncidentsReported     SafetyIncident[] @relation("SafetyIncidentReportedBy")
-   159→  safetyIncidentsInvestigated SafetyIncident[] @relation("SafetyIncidentInvestigatedBy")
-   160→  safetyPermitsRequested      SafetyPermit[]   @relation("SafetyPermitRequestedBy")
-   161→  safetyPermitsApproved       SafetyPermit[]   @relation("SafetyPermitApprovedBy")
-   162→
-   163→  // Quality Module relations
-   164→  qualityInspections  QualityInspection[]    @relation("QIInspectedBy")
-   165→  ncrs                NonConformanceReport[] @relation("NCRRaisedBy")
-   166→  qualityAudits       QualityAudit[]         @relation("QAuditedBy")
-   167→  spcProcessesCreated SpcProcess[]           @relation("SpcProcessCreatedBy")
-   168→
-   169→  // Digital Twin relation
-   170→  digitalTwinsCreated   DigitalTwin[]      @relation("DigitalTwinCreatedBy")
-   171→  assetModelsCreated    AssetModel[]       @relation("AssetModelUploadedBy")
-   172→  scenesCreated         DigitalTwinScene[] @relation("SceneCreatedBy")
-   173→  systemDiagramsCreated SystemDiagram[]    @relation("SystemDiagramCreatedBy")
-   174→  SystemDiagramUpdates SystemDiagram[] @relation("SystemDiagramUpdatedBy")
-   175→
-   176→  // Twin Annotation relation
-   177→  twinAnnotations TwinAnnotation[]
-   178→
-   179→  // Operations Module relations
-   180→  meterReadings      MeterReading[]  @relation("MeterReadingReadBy")
-   181→  shiftHandoversFrom ShiftHandover[] @relation("ShiftHandoverFrom")
-   182→  shiftHandoversTo   ShiftHandover[] @relation("ShiftHandoverTo")
-   183→
-   184→  // Chat relations
-   185→  chatMessages             ChatMessage[]
-   186→  conversationParticipants ConversationParticipant[]
-   187→
-   188→  // Session Management
-   189→  sessions Session[]
-   190→
-   191→  // Trade / Skill relations
-   192→  primaryTrade String?
-   193→  userSkills   UserSkill[]
-   194→
-   195→  // Repair module relations
-   196→  downtimeLogged      WorkOrderDowntime[]      @relation("DowntimeCreatedBy")
-   197→  repairMatReqRequested      RepairMaterialRequest[] @relation("RepairMatReqRequested")
-   198→  repairMatReqSupApproved    RepairMaterialRequest[] @relation("RepairMatReqSupApproved")
-   199→  repairMatReqStoreApproved  RepairMaterialRequest[] @relation("RepairMatReqStoreApproved")
-   200→  repairMatReqIssued         RepairMaterialRequest[] @relation("RepairMatReqIssued")
-   201→  repairMatReqReturned       RepairMaterialRequest[] @relation("RepairMatReqReturned")
-   202→  repairToolReqRequested     RepairToolRequest[]     @relation("RepairToolReqRequested")
-   203→  repairToolReqSupApproved   RepairToolRequest[]     @relation("RepairToolReqSupApproved")
-   204→  repairToolReqStoreApproved RepairToolRequest[]     @relation("RepairToolReqStoreApproved")
-   205→  repairToolReqIssued        RepairToolRequest[]     @relation("RepairToolReqIssued")
-   206→  repairToolReqReturned      RepairToolRequest[]     @relation("RepairToolReqReturned")
-   207→  repairToolReqReturnConfirmed RepairToolRequest[] @relation("RepairToolReqReturnConfirmed")
-   208→  toolTransferFrom           ToolTransferRequest[]   @relation("ToolTransferFrom")
-   209→  toolTransferTo             ToolTransferRequest[]   @relation("ToolTransferTo")
-   210→  toolTransferRequested      ToolTransferRequest[]   @relation("ToolTransferRequested")
-   211→  toolTransferStoreApproved  ToolTransferRequest[]   @relation("ToolTransferStoreApproved")
-   212→  repairCompSupApproved      RepairCompletion[]      @relation("RepairCompSupApproved")
-   213→  repairCompPlannerClosed    RepairCompletion[]      @relation("RepairCompPlannerClosed")
-   214→
-   215→  // Spare Part Return relations
-   216→  sparePartReturnsRequested  SparePartReturn[]       @relation("SparePartReturnRequested")
-   217→  sparePartReturnsInspected  SparePartReturn[]       @relation("SparePartReturnInspected")
-   218→  sparePartReturnsRefurbished SparePartReturn[]      @relation("SparePartReturnRefurbished")
-   219→  sparePartReturnsStored     SparePartReturn[]       @relation("SparePartReturnStored")
-   220→  sparePartReturnsDisposed   SparePartReturn[]       @relation("SparePartReturnDisposed")
-   221→
-   222→  // Damaged Tool Report relations
-   223→  damagedToolReportsFiled    DamagedToolReport[]     @relation("DamagedToolReported")
-   224→  damagedToolReportsAsTech   DamagedToolReport[]     @relation("DamagedToolTechnician")
-   225→  damagedToolReportsRepaired DamagedToolReport[]     @relation("DamagedToolRepaired")
-   226→  damagedToolReportsWrittenOff DamagedToolReport[]   @relation("DamagedToolWrittenOff")
-   227→
-   228→  // Attachment relations
-   229→  attachments Attachment[]
-   230→
-   231→  // Digital Twin Phase 1 relations
-   232→  twinAuditLogs       TwinAuditLog[]     @relation("TwinAuditUser")
-   233→  modelVersionUploads ModelVersion[]     @relation("ModelVersionUploaded")
-   234→  failureReports      FailureRecord[]    @relation("FailureReported")
-   235→  predictiveModels    PredictiveModel[]  @relation("PredictiveCreatedBy")
-   236→  predictionAcknowledged PredictionAlert[] @relation("PredictionAcknowledged")
-   237→
-   238→  // Component Maintenance Intelligence relations
-   239→  conditionRecordings      ComponentConditionReading[]  @relation("ConditionRecorded")
-   240→  maintenancePerformed     ComponentMaintenanceHistory[] @relation("MaintenancePerformed")
-   241→  inspectionRecords        ComponentInspectionRecord[]   @relation("InspectionRecorded")
-   242→  lubricationPerformed     ComponentLubricationRecord[]  @relation("LubricationPerformed")
-   243→  replacementPerformed     ComponentReplacementHistory[] @relation("ReplacementPerformed")
-   244→
-   245→  // Work Instruction relations
-   246→  workInstructionsCreated  WorkInstruction[]       @relation("WICreatedBy")
-   247→
-   248→  // Work Order Task Execution relations
-   249→  woTasksCompleted WorkOrderTaskExecution[] @relation("TaskCompletedBy")
-   250→
-   251→  // Time Log relations (team leader logging for members)
-   252→  timeLogsLoggedForOthers WorkOrderTimeLog[] @relation("TimeLogLoggedBy")
-   253→
-   254→  // Enterprise Model Library relations (Phase A)
-   255→  uploadedModels  ModelLibrary[]          @relation("ModelUploadedBy")
-   256→  meshMappings    MeshComponentMapping[]  @relation("MappingCreatedBy")
-   257→  tours           InspectionTour[]        @relation("TourCreatedBy")
-   258→  bookmarks       AssetViewBookmark[]     @relation("BookmarkCreatedBy")
-   259→  processingJobs  ModelProcessingJob[]   @relation("JobQueuedBy")
-   260→
-   261→  // Engineering BOM & Assembly Intelligence relations (Phase B)
-   262→  bomRevisionsApproved BomRevision[]        @relation("BomRevApprovedBy")
-   263→  bomRevisionsCreated  BomRevision[]        @relation("BomRevCreatedBy")
-   264→  altPartsApproved     AlternatePart[]      @relation("AltPartApprovedBy")
-   265→  altPartsCreated      AlternatePart[]      @relation("AltPartCreatedBy")
-   266→  spareAnalyses        CriticalSpareAnalysis[] @relation("SpareAnalyzedBy")
-   267→  ecrRequested         EngineeringChangeRequest[] @relation("EcrRequestedBy")
-   268→  ecrReviewed          EngineeringChangeRequest[] @relation("EcrReviewedBy")
-   269→  ecrApproved          EngineeringChangeRequest[] @relation("EcrApprovedBy")
-   270→  ecrCreated           EngineeringChangeRequest[] @relation("EcrCreatedBy")
-   271→  failureModesCreated FailureMode[]           @relation("FailureModeCreatedBy")
-   272→  rcmAnalysesApproved  RcmAnalysis[]            @relation("RcmApprovedBy")
-   273→  rcmAnalysesCreated   RcmAnalysis[]            @relation("RcmCreatedBy")
-   274→  weibullAnalyses       WeibullAnalysis[]        @relation("WeibullAnalyzedBy")
-   275→  downtimeAnalyses      DowntimeAnalysis[]       @relation("DowntimeCreatedBy")
-   276→  rulAnalyses           RemainingUsefulLife[]     @relation("RulAnalyzedBy")
-   277→
-   278→  // Work Package relations
-   279→  wpCreated       WorkPackage[] @relation("WPCreatedBy")
-   280→  wpAssigned      WorkPackage[] @relation("WPAssignedTo")
-   281→
-   282→  // Industrial Connectivity (Phase 1)
-   283→  gatewaysCreated EdgeGateway[] @relation("GatewayCreatedBy")
-   284→
-   285→  @@map("users")
-   286→}
-   287→
-   288→model UserRole {
-   289→  id        String   @id @default(cuid())
-   290→  userId    String
-   291→  roleId    String
-   292→  createdAt DateTime @default(now())
-   293→
-   294→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-   295→  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
-   296→
-   297→  @@unique([userId, roleId])
-   298→  @@map("user_roles")
-   299→}
-   300→
-   301→model UserPermission {
-   302→  id           String    @id @default(cuid())
-   303→  userId       String
-   304→  permissionId String
-   305→  isGranted    Boolean   @default(true)
-   306→  expiresAt    DateTime?
-   307→  grantedBy    String? // userId of the granter
-   308→  createdAt    DateTime  @default(now())
-   309→
-   310→  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-   311→  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-   312→
-   313→  @@unique([userId, permissionId])
-   314→  @@map("user_permissions")
-   315→}
-   316→
-   317→// ============================================================================
-   318→// 2. MODULE SUBSCRIPTION SYSTEM (3-tier)
-   319→// ============================================================================
-   320→
-   321→model SystemModule {
-   322→  id               String    @id @default(cuid())
-   323→  code             String    @unique
-   324→  name             String
-   325→  description      String?
-   326→  version          String    @default("1.0.0")
-   327→  isCore           Boolean   @default(false)
-   328→  isSystemLicensed Boolean   @default(false) // vendor-level license flag
-   329→  licenseKey       String?
-   330→  validFrom        DateTime?
-   331→  validUntil       DateTime?
-   332→  createdAt        DateTime  @default(now())
-   333→  updatedAt        DateTime  @updatedAt
-   334→
-   335→  companyModules CompanyModule[]
-   336→
-   337→  @@map("system_modules")
-   338→}
-   339→
-   340→model CompanyModule {
-   341→  id               String    @id @default(cuid())
-   342→  systemModuleId   String
-   343→  companyId        String? // tenant/company reference (optional for single-company setup)
-   344→  isActive         Boolean   @default(false) // licensed by vendor
-   345→  isEnabled        Boolean   @default(false) // activated by company
-   346→  licensedAt       DateTime?
-   347→  licensedBy       String?
-   348→  activatedAt      DateTime?
-   349→  activatedBy      String?
-   350→  activationLocked Boolean   @default(false) // prevent deactivation once locked
-   351→  createdAt        DateTime  @default(now())
-   352→  updatedAt        DateTime  @updatedAt
-   353→
-   354→  systemModule SystemModule @relation(fields: [systemModuleId], references: [id], onDelete: Cascade)
-   355→
-   356→  @@unique([systemModuleId, companyId])
-   357→  @@map("company_modules")
-   358→}
-   359→
-   360→// ============================================================================
-   361→// 3. PLANT / ORGANIZATION
-   362→// ============================================================================
-   363→
-   364→model Plant {
-   365→  id        String   @id @default(cuid())
-   366→  name      String
-   367→  code      String   @unique
-   368→  location  String?
-   369→  country   String?
-   370→  city      String?
-   371→  isActive  Boolean  @default(true)
-   372→  createdAt DateTime @default(now())
-   373→  updatedAt DateTime @updatedAt
-   374→
-   375→  departments    Department[]
-   376→  plantAccess    UserPlant[]
-   377→  assets         Asset[]
-   378→  inventoryItems InventoryItem[]
-   379→  models         ModelLibrary[] @relation("ModelPlant")
-   380→
-   381→  // Engineering BOM & Assembly Intelligence relations (Phase B)
-   382→  changeRequests EngineeringChangeRequest[] @relation("EcrPlant")
-   383→
-   384→  // Work Package relations
-   385→  workPackages WorkPackage[] @relation("WPPlant")
-   386→
-   387→  // Real-Time Industrial Telemetry relations (Phase C)
-   388→  telemetrySources TelemetryDataSource[] @relation("TelemetryPlant")
-   389→
-   390→  // Industrial Connectivity (Phase 1)
-   391→  gateways EdgeGateway[] @relation("GatewayPlant")
-   392→
-   393→  @@map("plants")
-   394→}
-   395→
-   396→model Department {
-   397→  id           String   @id @default(cuid())
-   398→  name         String
-   399→  code         String
-   400→  plantId      String
-   401→  parentId     String? // self-reference for sub-departments
-   402→  supervisorId String? // → User
-   403→  createdAt    DateTime @default(now())
-   404→  updatedAt    DateTime @updatedAt
-   405→
-   406→  plant       Plant        @relation(fields: [plantId], references: [id], onDelete: Cascade)
-   407→  parent      Department?  @relation("DeptHierarchy", fields: [parentId], references: [id])
-   408→  children    Department[] @relation("DeptHierarchy")
-   409→  supervisor  User?        @relation("DeptSupervisor", fields: [supervisorId], references: [id])
-   410→  assets      Asset[]
-   411→  pmSchedules PmSchedule[]
-   412→
-   413→  @@map("departments")
-   414→}
-   415→
-   416→model UserPlant {
-   417→  id          String   @id @default(cuid())
-   418→  userId      String
-   419→  plantId     String
-   420→  accessLevel String   @default("read") // read, write, admin
-   421→  isPrimary   Boolean  @default(false)
-   422→  createdAt   DateTime @default(now())
-   423→
-   424→  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-   425→  plant Plant @relation(fields: [plantId], references: [id], onDelete: Cascade)
-   426→
-   427→  @@unique([userId, plantId])
-   428→  @@map("user_plants")
-   429→}
-   430→
-   431→// ============================================================================
-   432→// 4. MAINTENANCE REQUESTS
-   433→// ============================================================================
-   434→
-   435→model MaintenanceRequest {
-   436→  id                String    @id @default(cuid())
-   437→  requestNumber     String    @unique // format MR-YYYYMM-NNNN
-   438→  title             String
-   439→  description       String?
-   440→  priority          String    @default("medium") // low, medium, high, urgent
-   441→  category          String? // mechanical, electrical, hydraulic, etc.
-   442→  status            String    @default("pending") // pending, in_progress, approved, rejected, converted
-   443→  workflowStatus    String    @default("pending") // pending, supervisor_review, approved, rejected, assigned_to_planner, work_order_created, technician_completed, planner_confirmed, satisfactory, supervisor_rejected, closed
-   444→  machineDownStatus Boolean?  @default(false)
-   445→  assetId           String?
-   446→  assetName         String?
-   447→  location          String?
-   448→  departmentId      String?
-   449→  requestedBy       String // → User
-   450→  supervisorId      String? // → User
-   451→  approvedBy        String? // → User
-   452→  assignedPlannerId String? // → User
-   453→  workOrderId       String?   @unique // → WorkOrder
-   454→  plantId           String?
-   455→  plannedStart      DateTime?
-   456→  plannedEnd        DateTime?
-   457→  estimatedHours    Float?
-   458→  slaHours          Float?
-   459→  escalationLevel   Int       @default(0) // 0=none, 1=supervisor, 2=manager
-   460→  lastEscalatedAt   DateTime?
-   461→  notes             String?
-   462→  createdAt         DateTime  @default(now())
-   463→  updatedAt         DateTime  @updatedAt
-   464→
-   465→  // Asset relation
-   466→  asset Asset? @relation("MRAsset", fields: [assetId], references: [id])
-   467→
-   468→  // User relations
-   469→  requester       User? @relation("MRRequester", fields: [requestedBy], references: [id])
-   470→  supervisor      User? @relation("MRSupervisor", fields: [supervisorId], references: [id])
-   471→  approver        User? @relation("MRApprover", fields: [approvedBy], references: [id])
-   472→  assignedPlanner User? @relation("MRPlanner", fields: [assignedPlannerId], references: [id])
-   473→
-   474→  // Work Order relation
-   475→  workOrder WorkOrder?
-   476→
-   477→  // Comments
-   478→  comments MaintenanceRequestComment[]
-   479→
-   480→  @@index([plantId])
-   481→  @@index([status])
-   482→  @@index([priority])
-   483→  @@index([departmentId])
-   484→  @@index([createdAt])
-   485→  @@index([status, priority])
-   486→  @@index([plantId, workflowStatus])
-   487→  @@map("maintenance_requests")
-   488→}
-   489→
-   490→// ============================================================================
-   491→// 5. WORK ORDERS
-   492→// ============================================================================
-   493→
-   494→model WorkOrder {
-   495→  id                   String    @id @default(cuid())
-   496→  woNumber             String    @unique // format WO-YYYYMM-NNNN
-   497→  title                String
-   498→  description          String?
-   499→  type                 String    @default("corrective") // preventive, corrective, predictive, inspection, project, emergency
-   500→  priority             String    @default("medium") // low, medium, high, critical
-   501→  status               String    @default("draft") // draft, requested, approved, planned, assigned, in_progress, waiting_parts, on_hold, completed, verified, closed, cancelled
-   502→  maintenanceRequestId String?   @unique
-   503→  pmScheduleId         String? // → PmSchedule (auto-generated WOs link back)
-   504→  assetId              String?
-   505→  assetName            String?
-   506→  departmentId         String?
-   507→  assignedTo           String? // → User
-   508→  teamLeaderId         String? // → User
-   509→  assignedSupervisorId String? // → User
-   510→  assignedBy           String? // → User
-   511→  assignmentType       String? // direct, via_supervisor
-   512→  plannerId            String? // → User
-   513→  estimatedHours       Float?
-   514→  actualHours          Float?
-   515→  plannedStart         DateTime?
-   516→  plannedEnd           DateTime?
-   517→  actualStart          DateTime?
-   518→  actualEnd            DateTime?
-   519→  totalCost            Float     @default(0)
-   520→  laborCost            Float     @default(0)
-   521→  partsCost            Float     @default(0)
-   522→  contractorCost       Float     @default(0)
-   523→  failureDescription   String?
-   524→  causeDescription     String?
-   525→  actionDescription    String?
-   526→  tradeActivity        String? // mechanical, electrical, civil, facility, workshop, other
-   527→  safetyNotes          String? // Safety precautions / LOTO requirements
    528→  ppeRequired          String? // PPE requirements
    529→  plantId              String?
    530→  notes                String?
@@ -1998,5 +1471,532 @@
   1998→  completedById String
   1999→  status        String   @default("pass") // pass, fail, na
   2000→  responses     String   @db.Text // JSON text { itemId: { status, notes } } .Text
+  2001→  notes         String?
+  2002→  completedAt   DateTime @default(now())
+  2003→
+  2004→  @@map("checklist_responses")
+  2005→}
+  2006→
+  2007→model Survey {
+  2008→  id             String   @id @default(cuid())
+  2009→  title          String
+  2010→  description    String?
+  2011→  type           String // satisfaction, safety, quality, general
+  2012→  status         String   @default("active") // active, closed
+  2013→  targetGroup    String? // all, department, specific
+  2014→  questions      String   @db.Text // JSON text array .Text
+  2015→  responses      String   @db.Text // JSON text array (summary) .Text
+  2016→  totalResponses Int      @default(0)
+  2017→  createdById    String
+  2018→  createdAt      DateTime @default(now())
+  2019→  updatedAt      DateTime @updatedAt
+  2020→
+  2021→  @@map("surveys")
+  2022→}
+  2023→
+  2024→// ============================================================================
+  2025→// 22. MAINTENANCE EXTENDED
+  2026→// ============================================================================
+  2027→
+  2028→model CalibrationRecord {
+  2029→  id                String    @id @default(cuid())
+  2030→  calibrationNumber String    @unique // CAL-YYYYMM-NNNN
+  2031→  title             String
+  2032→  description       String?
+  2033→  assetId           String?
+  2034→  instrumentName    String?
+  2035→  serialNumber      String?
+  2036→  calibrationDate   DateTime
+  2037→  nextDueDate       DateTime?
+  2038→  status            String    @default("calibrated") // calibrated, out_of_calibration, due
+  2039→  standardUsed      String?
+  2040→  result            String? // pass, fail, adjusted
+  2041→  asFound           String?   @db.Text // JSON text .Text
+  2042→  asLeft            String?   @db.Text // JSON text .Text
+  2043→  uncertainty       Float?
+  2044→  performedById     String?
+  2045→  approvedById      String?
+  2046→  notes             String?
+  2047→  createdAt         DateTime  @default(now())
+  2048→  updatedAt         DateTime  @updatedAt
+  2049→
+  2050→  @@map("calibration_records")
+  2051→}
+  2052→
+  2053→model RiskAssessment {
+  2054→  id               String    @id @default(cuid())
+  2055→  assessmentNumber String    @unique // RA-YYYYMM-NNNN
+  2056→  title            String
+  2057→  description      String?
+  2058→  assetId          String?
+  2059→  departmentId     String?
+  2060→  assessmentDate   DateTime
+  2061→  nextReview       DateTime?
+  2062→  status           String    @default("open") // open, in_progress, completed, reviewed
+  2063→  likelihood       Int? // 1-5
+  2064→  consequence      Int? // 1-5
+  2065→  riskLevel        String? // low, medium, high, extreme
+  2066→  hazards          String    @db.Text // JSON text array .Text
+  2067→  controls         String    @db.Text // JSON text array .Text
+  2068→  residualRisk     String?
+  2069→  assessorId       String?
+  2070→  reviewerId       String?
+  2071→  notes            String?
+  2072→  createdAt        DateTime  @default(now())
+  2073→  updatedAt        DateTime  @updatedAt
+  2074→
+  2075→  @@map("risk_assessments")
+  2076→}
+  2077→
+  2078→// ============================================================================
+  2079→// LOTO (Lock-Out/Tag-Out) Records
+  2080→// ============================================================================
+  2081→model LotoRecord {
+  2082→  id           String  @id @default(cuid())
+  2083→  lotoNumber   String  @unique // LOTO-YYYYMM-NNNN
+  2084→  title        String
+  2085→  description  String?
+  2086→  assetId      String?
+  2087→  departmentId String?
+  2088→  plantId      String?
+  2089→  workOrderId  String? // linked WO if applicable
+  2090→
+  2091→  // LOTO type and scope
+  2092→  lotoType         String  @default("routine") // routine, emergency, planned_maintenance, shutdown
+  2093→  energySource     String // electrical, mechanical, hydraulic, pneumatic, thermal, chemical, other
+  2094→  energySourceDesc String? // specific description of the energy source
+  2095→
+  2096→  // Requester info
+  2097→  requestedById    String?
+  2098→  requestDate      DateTime  @default(now())
+  2099→  scheduledDate    DateTime?
+  2100→  requiredFromDate DateTime?
+  2101→  requiredToDate   DateTime?
+  2102→
+  2103→  // Approval workflow
+  2104→  supervisorId            String?
+  2105→  supervisorApprovedAt    DateTime?
+  2106→  safetyOfficerId         String?
+  2107→  safetyOfficerApprovedAt DateTime?
+  2108→
+  2109→  // Execution
+  2110→  status          String    @default("pending") // pending, approved, in_progress, completed, cancelled, expired
+  2111→  startedAt       DateTime?
+  2112→  completedAt     DateTime?
+  2113→  cancelledAt     DateTime?
+  2114→  cancelledReason String?
+  2115→
+  2116→  // LOTO details (JSON arrays)
+  2117→  isolationPoints  String    @db.Text // JSON array of isolation point descriptions .Text
+  2118→  lockDevices      String    @db.Text // JSON array of lock device IDs/descriptions .Text
+  2119→  tagNumbers       String    @db.Text // JSON array of tag numbers .Text
+  2120→  verifiedBy       String?   @db.Text // JSON array of verifier names .Text
+  2121→  verificationDate DateTime?
+  2122→
+  2123→  // Workers affected
+  2124→  affectedWorkers String? @db.Text // JSON array of worker names/IDs .Text
+  2125→  workerCount     Int?
+  2126→
+  2127→  // Sign-off
+  2128→  appliedBy String? // who applied the lock
+  2129→  removedBy String? // who removed the lock
+  2130→  removedAt DateTime?
+  2131→
+  2132→  notes     String?
+  2133→  createdAt DateTime @default(now())
+  2134→  updatedAt DateTime @updatedAt
+  2135→
+  2136→  @@map("loto_records")
+  2137→}
+  2138→
+  2139→// ============================================================================
+  2140→// 23. ASSET EXTENDED
+  2141→// ============================================================================
+  2142→
+  2143→model BillOfMaterial {
+  2144→  id            String   @id @default(cuid())
+  2145→  parentId      String // → Asset (parent assembly)
+  2146→  childAssetId  String // → Asset (component)
+  2147→  partNumber    String?
+  2148→  quantity      Float    @default(1)
+  2149→  unit          String   @default("each")
+  2150→  specification String?  @db.Text
+  2151→  status        String   @default("active") // active, pending, obsolete, under_review
+  2152→  revision      String?
+  2153→  notes         String?
+  2154→  createdAt     DateTime @default(now())
+  2155→
+  2156→  parent     Asset @relation("BomParent", fields: [parentId], references: [id], onDelete: Cascade)
+  2157→  childAsset Asset @relation("BomChild", fields: [childAssetId], references: [id], onDelete: Cascade)
+  2158→
+  2159→  revisions      BomRevision[]
+  2160→  changeRequests EngineeringChangeRequest[]
+  2161→
+  2162→  @@unique([parentId, childAssetId])
+  2163→  @@map("bill_of_materials")
+  2164→}
+  2165→
+  2166→model DigitalTwin {
+  2167→  id            String    @id @default(cuid())
+  2168→  assetId       String    @unique
+  2169→  name          String
+  2170→  description   String?
+  2171→  type          String    @default("other") // pump, motor, compressor, valve, heat_exchanger, other
+  2172→  parameters    String    @db.Text // JSON text of key parameters .Text
+  2173→  connections   String    @db.Text // JSON text of connections .Text
+  2174→  specification String?   @db.Text // JSON text of specs
+  2175→  healthScore   Int       @default(0) // 0-100
+  2176→  syncInterval  String    @default("5min") // real_time, 1min, 5min, 15min
+  2177→  lastSynced    DateTime?
+  2178→  isActive      Boolean   @default(true)
+  2179→  createdById   String
+  2180→  createdAt     DateTime  @default(now())
+  2181→  updatedAt     DateTime  @updatedAt
+  2182→
+  2183→  asset     Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  2184→  createdBy User               @relation("DigitalTwinCreatedBy", fields: [createdById], references: [id])
+  2185→  scenes    DigitalTwinScene[]
+  2186→  componentRegistry ComponentRegistry[] @relation("RegistryTwin")
+  2187→  tours     InspectionTour[]
+  2188→
+  2189→  @@index([assetId])
+  2190→  @@index([createdById])
+  2191→  @@index([isActive])
+  2192→  @@map("digital_twins")
+  2193→}
+  2194→
+  2195→// ============================================================================
+  2196→// 25.5 DIGITAL TWIN SPATIAL & VISUALIZATION
+  2197→// ============================================================================
+  2198→
+  2199→model AssetModel {
+  2200→  id           String   @id @default(cuid())
+  2201→  assetId      String // → Asset
+  2202→  name         String // model display name
+  2203→  fileName     String // file name on disk
+  2204→  filePath     String // relative path
+  2205→  fileType     String // glb, gltf, fbx, obj, step
+  2206→  fileSize     Int // bytes
+  2207→  format       String   @default("glb") // glb, gltf
+  2208→  boundingBox  String?  @db.Text // JSON: {minX, minY, minZ, maxX, maxY, maxZ}
+  2209→  meshCount    Int      @default(0)
+  2210→  vertexCount  Int      @default(0)
+  2211→  thumbnailUrl String? // preview image
+  2212→  uploadedById String
+  2213→  isActive     Boolean  @default(true)
+  2214→  createdAt    DateTime @default(now())
+  2215→  updatedAt    DateTime @updatedAt
+  2216→
+  2217→  asset      Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  2218→  uploadedBy User               @relation("AssetModelUploadedBy", fields: [uploadedById], references: [id])
+  2219→  bindings   AssetMeshBinding[]
+  2220→  scenes     DigitalTwinScene[]
+  2221→  versions   ModelVersion[]     @relation("ModelVersions")
+  2222→
+  2223→  @@index([assetId])
+  2224→  @@index([uploadedById])
+  2225→  @@map("asset_models")
+  2226→}
+  2227→
+  2228→model AssetMeshBinding {
+  2229→  id            String   @id @default(cuid())
+  2230→  modelId       String // → AssetModel
+  2231→  assetId       String // → Asset (component asset)
+  2232→  meshName      String // name of the mesh in the 3D model
+  2233→  meshPath      String? // path in scene graph (e.g. "Pump/Motor/Rotor")
+  2234→  meshType      String   @default("component") // component, assembly, subassembly, auxiliary
+  2235→  isClickable   Boolean  @default(true)
+  2236→  isVisible     Boolean  @default(true)
+  2237→  colorOverride String? // hex color to override mesh material
+  2238→  opacity       Float? // 0.0 to 1.0
+  2239→  explodeOffset String?  @db.Text // JSON: {x, y, z} for exploded view offset
+  2240→  metadata      String?  @db.Text // JSON for extra properties
+  2241→  sortOrder     Int      @default(0)
+  2242→  createdAt     DateTime @default(now())
+  2243→  updatedAt     DateTime @updatedAt
+  2244→
+  2245→  model    AssetModel    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  2246→  asset    Asset         @relation("MeshBoundAsset", fields: [assetId], references: [id])
+  2247→  hotspots TwinHotspot[]
+  2248→
+  2249→  @@unique([modelId, meshName])
+  2250→  @@index([modelId])
+  2251→  @@index([assetId])
+  2252→  @@map("asset_mesh_bindings")
+  2253→}
+  2254→
+  2255→model DigitalTwinScene {
+  2256→  id                    String   @id @default(cuid())
+  2257→  twinId                String // → DigitalTwin
+  2258→  modelId               String // → AssetModel
+  2259→  name                  String
+  2260→  description           String?
+  2261→  sceneType             String   @default("3d") // 3d, floor_plan, schematic
+  2262→  environment           String   @default("warehouse") // warehouse, outdoor, clean_room, industrial
+  2263→  backgroundColor       String   @default("#1a1a2e")
+  2264→  groundPlane           Boolean  @default(true)
+  2265→  gridEnabled           Boolean  @default(true)
+  2266→  ambientLight          Float    @default(0.6)
+  2267→  directionalLight      Float    @default(0.8)
+  2268→  defaultCameraPosition String?  @db.Text // JSON: {x, y, z}
+  2269→  defaultCameraTarget   String?  @db.Text // JSON: {x, y, z}
+  2270→  isActive              Boolean  @default(true)
+  2271→  createdById           String
+  2272→  createdAt             DateTime @default(now())
+  2273→  updatedAt             DateTime @updatedAt
+  2274→
+  2275→  twin          DigitalTwin        @relation(fields: [twinId], references: [id], onDelete: Cascade)
+  2276→  model         AssetModel         @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  2277→  modelFile     ModelLibrary?      @relation(fields: [modelFileId], references: [id])
+  2278→  modelFileId   String?
+  2279→  createdBy     User               @relation("SceneCreatedBy", fields: [createdById], references: [id])
+  2280→  hotspots      TwinHotspot[]
+  2281→  annotations   TwinAnnotation[]
+  2282→  cameraPresets TwinCameraPreset[]
+  2283→  bookmarks     AssetViewBookmark[]
+  2284→
+  2285→  @@index([twinId])
+  2286→  @@index([modelId])
+  2287→  @@index([createdById])
+  2288→  @@index([modelFileId])
+  2289→  @@map("digital_twin_scenes")
+  2290→}
+  2291→
+  2292→model TwinHotspot {
+  2293→  id              String   @id @default(cuid())
+  2294→  sceneId         String // → DigitalTwinScene
+  2295→  bindingId       String? // → AssetMeshBinding (optional)
+  2296→  assetId         String? // → Asset (linked asset for data)
+  2297→  label           String
+  2298→  description     String?
+  2299→  position        String   @db.Text // JSON: {x, y, z}
+  2300→  icon            String   @default("info") // info, warning, danger, maintenance, sensor
+  2301→  color           String   @default("#3b82f6")
+  2302→  isAlwaysVisible Boolean  @default(false)
+  2303→  isPulsing       Boolean  @default(false)
+  2304→  dataPoint       String? // iot device code, kpi metric, etc.
+  2305→  sortOrder       Int      @default(0)
+  2306→  isActive        Boolean  @default(true)
+  2307→  createdAt       DateTime @default(now())
+  2308→  updatedAt       DateTime @updatedAt
+  2309→
+  2310→  scene   DigitalTwinScene  @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  2311→  binding AssetMeshBinding? @relation(fields: [bindingId], references: [id], onDelete: Cascade)
+  2312→  asset   Asset?            @relation("HotspotAsset", fields: [assetId], references: [id])
+  2313→
+  2314→  @@index([sceneId])
+  2315→  @@index([assetId])
+  2316→  @@index([bindingId])
+  2317→  @@map("twin_hotspots")
+  2318→}
+  2319→
+  2320→model TwinCameraPreset {
+  2321→  id                 String   @id @default(cuid())
+  2322→  sceneId            String // → DigitalTwinScene
+  2323→  name               String
+  2324→  description        String?
+  2325→  position           String   @db.Text // JSON: {x, y, z}
+  2326→  target             String   @db.Text // JSON: {x, y, z}
+  2327→  fov                Float    @default(50)
+  2328→  transitionDuration Float    @default(1.0) // seconds for camera animation
+  2329→  sortOrder          Int      @default(0)
+  2330→  createdAt          DateTime @default(now())
+  2331→
+  2332→  scene DigitalTwinScene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  2333→
+  2334→  @@index([sceneId])
+  2335→  @@map("twin_camera_presets")
+  2336→}
+  2337→
+  2338→model TwinAnnotation {
+  2339→  id        String   @id @default(cuid())
+  2340→  sceneId   String // → DigitalTwinScene
+  2341→  assetId   String? // → Asset
+  2342→  title     String
+  2343→  content   String   @db.Text
+  2344→  authorId  String
+  2345→  type      String   @default("note") // note, warning, maintenance_log, inspection
+  2346→  priority  String   @default("low") // low, medium, high, critical
+  2347→  color     String   @default("#fbbf24")
+  2348→  position  String   @db.Text // JSON: {x, y, z}
+  2349→  isPinned  Boolean  @default(true)
+  2350→  createdAt DateTime @default(now())
+  2351→  updatedAt DateTime @updatedAt
+  2352→
+  2353→  scene  DigitalTwinScene @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  2354→  author User             @relation(fields: [authorId], references: [id])
+  2355→
+  2356→  @@index([sceneId])
+  2357→  @@index([authorId])
+  2358→  @@index([assetId])
+  2359→  @@map("twin_annotations")
+  2360→}
+  2361→
+  2362→model SystemDiagram {
+  2363→  id           String   @id @default(cuid())
+  2364→  plantId      String?
+  2365→  name         String
+  2366→  description  String?
+  2367→  type         String   @default("process") // piping, electrical, process, hvac, control, safety
+  2368→  nodes        String   @db.Text // JSON array of nodes
+  2369→  edges        String   @db.Text // JSON array of edges
+  2370→  viewport     String?  @db.Text // JSON: {x, y, zoom}
+  2371→  thumbnailUrl String?
+  2372→  version      Int      @default(1)
+  2373→  isTemplate   Boolean  @default(false)
+  2374→  updatedById  String?
+  2375→  isActive     Boolean  @default(true)
+  2376→  createdById  String
+  2377→  createdAt    DateTime @default(now())
+  2378→  updatedAt    DateTime @updatedAt
+  2379→
+  2380→  createdByIdUser User @relation("SystemDiagramCreatedBy", fields: [createdById], references: [id])
+  2381→  updatedByIdUser User? @relation("SystemDiagramUpdatedBy", fields: [updatedById], references: [id])
+  2382→
+  2383→  @@index([plantId])
+  2384→  @@index([createdById])
+  2385→  @@index([type])
+  2386→  @@map("system_diagrams")
+  2387→}
+  2388→
+  2389→// ============================================================================
+  2390→// CHAT / MESSAGING
+  2391→// ============================================================================
+  2392→
+  2393→model Conversation {
+  2394→  id        String   @id @default(cuid())
+  2395→  name      String
+  2396→  type      String   @default("direct") // direct, group
+  2397→  createdAt DateTime @default(now())
+  2398→  updatedAt DateTime @updatedAt
+  2399→
+  2400→  participants ConversationParticipant[]
+  2401→  messages     ChatMessage[]
+  2402→
+  2403→  @@map("conversations")
+  2404→}
+  2405→
+  2406→model ConversationParticipant {
+  2407→  id         String    @id @default(cuid())
+  2408→  userId     String
+  2409→  convoId    String    @map("conversationId")
+  2410→  joinedAt   DateTime  @default(now())
+  2411→  lastReadAt DateTime?
+  2412→
+  2413→  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  2414→  convo Conversation @relation(fields: [convoId], references: [id], onDelete: Cascade)
+  2415→
+  2416→  @@unique([userId, convoId])
+  2417→  @@map("conversation_participants")
+  2418→}
+  2419→
+  2420→// ============================================================================
+  2421→// SESSION MANAGEMENT
+  2422→// ============================================================================
+  2423→
+  2424→model Session {
+  2425→  id          String   @id @default(cuid())
+  2426→  token       String   @unique
+  2427→  userId      String
+  2428→  roles       String   @db.Text // JSON array of role slugs .Text
+  2429→  permissions String   @db.Text // JSON array of permission slugs .Text
+  2430→  expiresAt   DateTime
+  2431→  createdAt   DateTime @default(now())
+  2432→  lastSeen    DateTime @default(now())
+  2433→
+  2434→  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  2435→
+  2436→  @@map("sessions")
+  2437→}
+  2438→
+  2439→model ChatMessage {
+  2440→  id          String   @id @default(cuid())
+  2441→  convoId     String   @map("conversationId")
+  2442→  senderId    String
+  2443→  content     String
+  2444→  messageType String   @default("text") // text, system
+  2445→  createdAt   DateTime @default(now())
+  2446→
+  2447→  convo  Conversation @relation(fields: [convoId], references: [id], onDelete: Cascade)
+  2448→  sender User         @relation(fields: [senderId], references: [id])
+  2449→
+  2450→  @@map("chat_messages")
+  2451→}
+  2452→
+  2453→// ============================================================================
+  2454→// REPAIRS MODULE — Work Order Management Extensions
+  2455→// ============================================================================
+  2456→
+  2457→model RepairMaterialRequest {
+  2458→  id                          String    @id @default(cuid())
+  2459→  workOrderId                 String
+  2460→  itemId                      String? // → InventoryItem
+  2461→  itemName                    String
+  2462→  quantityRequested           Float
+  2463→  quantityApproved            Float     @default(0)
+  2464→  quantityIssued              Float     @default(0)
+  2465→  quantityReturned            Float     @default(0)
+  2466→  unit                        String    @default("each")
+  2467→  unitCost                    Float?
+  2468→  estimatedCost               Float     @default(0)
+  2469→  urgency                     String    @default("normal") // low, normal, high, critical
+  2470→  reason                      String
+  2471→  notes                       String?
+  2472→  plantId                     String?
+  2473→  source                      String    @default("technician") // planner_suggested, technician, template
+  2474→  status                      String    @default("pending") // pending, supervisor_approved, store_approved, picking, issued, returned, closed, rejected
+  2475→  supervisorApprovedQuantity  Float? // qty approved by supervisor (may differ from requested)
+  2476→  storekeeperApprovedQuantity Float? // qty approved by storekeeper (may differ from supervisor qty)
+  2477→  stockReserved               Boolean   @default(false) // whether stock was reserved at storekeeper approval
+  2478→  requestedById               String // → User
+  2479→  supervisorApprovedById      String?
+  2480→  supervisorApprovedAt        DateTime?
+  2481→  storekeeperApprovedById     String?
+  2482→  storekeeperApprovedAt       DateTime?
+  2483→  issuedById                  String? // → User
+  2484→  issuedAt                    DateTime?
+  2485→  returnedById                String? // → User
+  2486→  returnedAt                  DateTime?
+  2487→  consumedQty                 Float? // amount actually consumed during repair
+  2488→  wastedQty                   Float? // amount wasted/discarded
+  2489→  pickedAt                    DateTime? // when store picked the items
+  2490→  pickedBy                    String? // who picked the items
+  2491→  createdAt                   DateTime  @default(now())
+  2492→  updatedAt                   DateTime  @updatedAt
+  2493→
+  2494→  // WorkOrder relation
+  2495→  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  2496→
+  2497→  // InventoryItem relation
+  2498→  item InventoryItem? @relation(fields: [itemId], references: [id])
+  2499→
+  2500→  // User relations
+  2501→  requestedBy           User  @relation("RepairMatReqRequested", fields: [requestedById], references: [id])
+  2502→  supervisorApprovedBy  User? @relation("RepairMatReqSupApproved", fields: [supervisorApprovedById], references: [id])
+  2503→  storekeeperApprovedBy User? @relation("RepairMatReqStoreApproved", fields: [storekeeperApprovedById], references: [id])
+  2504→  issuedByUser          User? @relation("RepairMatReqIssued", fields: [issuedById], references: [id])
+  2505→  returnedByUser        User? @relation("RepairMatReqReturned", fields: [returnedById], references: [id])
+  2506→
+  2507→  // Spare Part Return relations
+  2508→  sparePartReturns SparePartReturn[] @relation("SparePartReturnMatReq")
+  2509→
+  2510→  @@map("repair_material_requests")
+  2511→}
+  2512→
+  2513→// 2. RepairToolRequest — Tool requests from technicians
+  2514→model RepairToolRequest {
+  2515→  id                      String    @id @default(cuid())
+  2516→  requestNumber           String?   @unique // format TR-YYYYMM-NNNN (nullable for backward compat with existing rows)
+  2517→  workOrderId             String
+  2518→  toolId                  String? // → Tool
+  2519→  toolName                String
+  2520→  reason                  String
+  2521→  notes                   String?
+  2522→  plantId                 String?
+  2523→  source                  String    @default("technician") // planner_suggested, technician
+  2524→  status                  String    @default("pending") // pending, supervisor_approved, storekeeper_approved, issued, returned, rejected
+  2525→  urgency                 String    @default("normal") // low, normal, high, critical
+  2526→  rejectionReason         String?
+  2527→  toolConditionAtIssue    String? // new, good, fair, poor — captured at issue time
 
-[showing lines 1-2000 of 4919; use offset=2001 with limit to continue reading]
+[showing lines 528-2527 of 4919; use offset=2528 with limit to continue reading]
