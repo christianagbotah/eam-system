@@ -2277,7 +2277,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
         .catch(() => setAvailableComponents([]))
         .finally(() => setComponentsLoading(false));
       // Reset selection when asset changes
-      updateField('componentIds', []);
+      setForm(f => ({ ...f, componentIds: [] }));
     } else {
       setAvailableComponents([]);
     }
@@ -2457,6 +2457,33 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
                 fetchOptions={async () => { const r = await api.get('/api/assets'); if (r.success && r.data) return (Array.isArray(r.data) ? r.data : []).map((a: any) => ({ value: a.id, label: `${a.name} [${a.assetTag}]`, badge: a.status })); return []; }}
                 placeholder="Select asset..." searchPlaceholder="Search assets..." />
             </div>
+            {/* Mobile: Component selector */}
+            {form.assetId && (
+              <div className="space-y-1">
+                <Label className="text-[10px]">Components / Parts</Label>
+                {componentsLoading ? (
+                  <p className="text-xs text-muted-foreground py-1">Loading...</p>
+                ) : availableComponents.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-1">No components registered</p>
+                ) : (
+                  <div className="max-h-28 overflow-y-auto rounded-md border p-1.5 space-y-1">
+                    {availableComponents.map((comp) => (
+                      <label key={comp.id} className="flex items-center gap-1.5 py-0.5 px-1 rounded hover:bg-muted/50 cursor-pointer text-xs">
+                        <Checkbox
+                          checked={form.componentIds.includes(comp.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) updateField('componentIds', [...form.componentIds, comp.id]);
+                            else updateField('componentIds', form.componentIds.filter((id: string) => id !== comp.id));
+                          }}
+                          className="h-3.5 w-3.5"
+                        />
+                        <span className="truncate">{comp.componentCode ? `${comp.componentCode} · ` : ''}{comp.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ) : stepKey === 'resources' ? (
           <div className="space-y-3">
