@@ -191,6 +191,7 @@ export async function POST(request: NextRequest) {
       assignedSupervisorId,
       requiredParts,
       requiredTools,
+      componentIds,
     } = body;
 
     if (!title) {
@@ -261,6 +262,11 @@ export async function POST(request: NextRequest) {
         teamLeader: { select: { id: true, fullName: true } },
         assignedSupervisor: { select: { id: true, fullName: true } },
         maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
+        workOrderComponents: {
+          include: {
+            componentRegistry: { select: { id: true, name: true, componentCode: true, componentType: true, criticality: true } },
+          },
+        },
       },
     });
 
@@ -449,6 +455,26 @@ export async function POST(request: NextRequest) {
           suggestedTools: JSON.stringify(suggestedToolsArr),
         },
       });
+    }
+
+    // ── Link components if provided ──
+    if (componentIds && Array.isArray(componentIds) && componentIds.length > 0) {
+      // Validate all component IDs exist and belong to the asset
+      const components = await db.componentRegistry.findMany({
+        where: { id: { in: componentIds } },
+        select: { id: true },
+      });
+      const validIds = components.map(c => c.id);
+      const validComponentIds = componentIds.filter((id: string) => validIds.includes(id));
+
+      if (validComponentIds.length > 0) {
+        await db.workOrderComponent.createMany({
+          data: validComponentIds.map((cid: string) => ({
+            workOrderId: wo.id,
+            componentRegistryId: cid,
+          })),
+        });
+      }
     }
 
     // If created from a maintenance request, update the MR status
