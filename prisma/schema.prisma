@@ -586,6 +586,9 @@ model WorkOrder {
   // Damaged Tool Report relations
   damagedToolReports DamagedToolReport[]
 
+  // Work Order - Component tracking
+  workOrderComponents WorkOrderComponent[]
+
   @@index([plantId])
   @@index([workPackageId])
   @@index([status])
@@ -2457,6 +2460,7 @@ model ChatMessage {
 model RepairMaterialRequest {
   id                          String    @id @default(cuid())
   workOrderId                 String
+  componentRegistryId         String? // → ComponentRegistry (which component needed this material)
   itemId                      String? // → InventoryItem
   itemName                    String
   quantityRequested           Float
@@ -2494,6 +2498,9 @@ model RepairMaterialRequest {
   // WorkOrder relation
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
 
+  // ComponentRegistry relation (which component needed this material)
+  componentRegistry ComponentRegistry? @relation("RepairMatReqComponent", fields: [componentRegistryId], references: [id])
+
   // InventoryItem relation
   item InventoryItem? @relation(fields: [itemId], references: [id])
 
@@ -2507,6 +2514,7 @@ model RepairMaterialRequest {
   // Spare Part Return relations
   sparePartReturns SparePartReturn[] @relation("SparePartReturnMatReq")
 
+  @@index([componentRegistryId])
   @@map("repair_material_requests")
 }
 
@@ -2862,6 +2870,10 @@ model ComponentRegistry {
   spareAnalysis         CriticalSpareAnalysis?
   weibullAnalyses        WeibullAnalysis[]
   rulEstimate            RemainingUsefulLife?
+
+  // Work Order - Component tracking
+  workOrderComponents     WorkOrderComponent[]
+  repairMaterialRequests  RepairMaterialRequest[] @relation("RepairMatReqComponent")
 
   @@unique([componentCode])
   @@index([parentId])
@@ -4915,4 +4927,24 @@ model SystemConfig {
   createdAt DateTime @default(now())
 
   @@map("system_configs")
+}
+
+// ============================================================================
+// WORK ORDER - COMPONENT TRACKING (Links WOs to specific parts/components)
+// ============================================================================
+
+model WorkOrderComponent {
+  id                   String   @id @default(cuid())
+  workOrderId          String
+  componentRegistryId  String
+  notes                String?  @db.Text
+  createdAt            DateTime @default(now())
+
+  workOrder          WorkOrder          @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  componentRegistry  ComponentRegistry  @relation(fields: [componentRegistryId], references: [id], onDelete: Cascade)
+
+  @@unique([workOrderId, componentRegistryId])
+  @@index([workOrderId])
+  @@index([componentRegistryId])
+  @@map("work_order_components")
 }

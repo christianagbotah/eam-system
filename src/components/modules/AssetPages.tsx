@@ -76,14 +76,17 @@ export function AssetsPage() {
   const emptyForm = { name: '', assetTag: '', serialNumber: '', categoryId: '', manufacturer: '', model: '', yearManufactured: '', condition: 'new', status: 'operational', criticality: 'medium', location: '', building: '', floor: '', area: '', plantId: '', departmentId: '', assignedToId: '', parentId: '', description: '', purchaseDate: '', purchaseCost: '', expectedLifeYears: '' };
   const [form, setForm] = useState(emptyForm);
 
+  const [showAllAssets, setShowAllAssets] = useState(false);
+
   const loadData = useCallback(() => {
-    Promise.all([api.get<any[]>('/api/assets'), api.get<any[]>('/api/asset-categories'), api.get<any[]>('/api/plants')]).then(([aRes, cRes, pRes]) => {
+    const query = showAllAssets ? '' : '?topLevelOnly=true';
+    Promise.all([api.get<any[]>(`/api/assets${query}`), api.get<any[]>('/api/asset-categories'), api.get<any[]>('/api/plants')]).then(([aRes, cRes, pRes]) => {
       if (aRes.success && aRes.data) setAssets(Array.isArray(aRes.data) ? aRes.data : []);
       if (cRes.success && cRes.data) setCategories(Array.isArray(cRes.data) ? cRes.data : []);
       if (pRes.success && pRes.data) setPlantList(Array.isArray(pRes.data) ? pRes.data : []);
       setLoading(false);
     });
-  }, []);
+  }, [showAllAssets]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -176,6 +179,10 @@ export function AssetsPage() {
           <SelectTrigger className="w-[160px]"><SelectValue placeholder="Criticality" /></SelectTrigger>
           <SelectContent><SelectItem value="all">All Criticality</SelectItem><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent>
         </Select>
+        <div className="flex items-center gap-2 ml-auto">
+          <label className="text-xs text-muted-foreground whitespace-nowrap">Show sub-components</label>
+          <Switch checked={showAllAssets} onCheckedChange={setShowAllAssets} />
+        </div>
       </div>
 
       <Card className="border-0 shadow-sm dark:bg-card overflow-hidden">

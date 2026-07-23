@@ -137,6 +137,7 @@ export async function GET(request: NextRequest) {
             returnedByUser: { select: { id: true, fullName: true } },
             workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
             item: { select: { id: true, itemCode: true, name: true, currentStock: true, unitOfMeasure: true } },
+            componentRegistry: { select: { id: true, name: true, componentCode: true } },
           },
           orderBy: { createdAt: 'desc' },
           skip: (page - 1) * limit,
@@ -191,7 +192,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { workOrderId, itemId, itemName, quantityRequested, unit, unitCost, reason, notes, urgency } = body;
+    const { workOrderId, itemId, itemName, quantityRequested, unit, unitCost, reason, notes, urgency, componentRegistryId } = body;
 
     if (!workOrderId || !itemName || !quantityRequested || !reason) {
       return NextResponse.json({ success: false, error: 'workOrderId, itemName, quantityRequested, and reason are required' }, { status: 400 });
@@ -247,11 +248,13 @@ export async function POST(request: NextRequest) {
         notes: notes || null,
         status: 'pending',
         requestedById: session.userId,
+        componentRegistryId: componentRegistryId || null,
       },
       include: {
         requestedBy: { select: { id: true, fullName: true } },
         workOrder: { select: { id: true, woNumber: true, title: true } },
         item: { select: { id: true, itemCode: true, name: true, currentStock: true } },
+        componentRegistry: { select: { id: true, name: true, componentCode: true } },
       },
     });
 

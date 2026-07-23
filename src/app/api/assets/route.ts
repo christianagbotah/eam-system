@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
     const searchPlantId = searchParams.get('plantId');
     const departmentId = searchParams.get('departmentId');
     const search = searchParams.get('search');
+    const topLevelOnly = searchParams.get('topLevelOnly') === 'true';
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '50', 10);
 
@@ -52,6 +53,7 @@ export async function GET(request: NextRequest) {
     if (criticality) where.criticality = criticality;
     if (categoryId) where.categoryId = categoryId;
     if (departmentId) where.departmentId = departmentId;
+    if (topLevelOnly) where.parentId = null;
     if (search) {
       where.OR = [
         { name: { contains: search } },

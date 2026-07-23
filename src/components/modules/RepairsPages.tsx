@@ -3180,12 +3180,26 @@ export function RepairCompletionPage() {
   const [reworkDialogOpen, setReworkDialogOpen] = useState(false);
   const [reworkReasonValue, setReworkReasonValue] = useState('');
 
+  // Component/part selection
+  const [availableComponents, setAvailableComponents] = useState<any[]>([]);
+  const [selectedComponentIds, setSelectedComponentIds] = useState<string[]>([]);
+  const [componentSearch, setComponentSearch] = useState('');
+  const [componentsLoading, setComponentsLoading] = useState(false);
+
   // Auto-load WO from pageParams (e.g. navigating from WO detail)
   useEffect(() => {
     if (pageParams?.workOrderId && !woId) {
       setWoId(pageParams.workOrderId);
     }
   }, []);
+
+  const filteredComponents = useMemo(() => {
+    if (!componentSearch) return availableComponents;
+    const q = componentSearch.toLowerCase();
+    return availableComponents.filter((c: any) =>
+      c.name?.toLowerCase().includes(q) || c.componentCode?.toLowerCase().includes(q)
+    );
+  }, [availableComponents, componentSearch]);
 
   const fetchCompletion = useCallback(async () => {
     if (!woId) return;
@@ -3200,6 +3214,33 @@ export function RepairCompletionPage() {
   useEffect(() => {
     if (woId) fetchCompletion();
   }, [woId, fetchCompletion]);
+
+  // Fetch available components when assetId is known
+  useEffect(() => {
+    const assetId = completion?.workOrder?.assetId;
+    if (!assetId) return;
+    (async () => {
+      setComponentsLoading(true);
+      const res = await api.get(`/api/component-registry?assetId=${assetId}`);
+      if (res.success && Array.isArray(res.data)) {
+        setAvailableComponents(res.data);
+      } else {
+        setAvailableComponents([]);
+      }
+      setComponentsLoading(false);
+    })();
+  }, [completion?.workOrder?.assetId]);
+
+  // Fetch already-linked components for this WO
+  useEffect(() => {
+    if (!woId) return;
+    (async () => {
+      const res = await api.get(`/api/work-orders/${woId}/components`);
+      if (res.success && Array.isArray(res.data)) {
+        setSelectedComponentIds(res.data.map((c: any) => c.id || c.componentId));
+      }
+    })();
+  }, [woId]);
 
   const handleSubmit = async (action: string) => {
     if (!woId) return;
@@ -3220,6 +3261,10 @@ export function RepairCompletionPage() {
     });
     if (res.success) {
       toast.success('Action completed');
+      // Save linked components
+      if (woId && selectedComponentIds.length >= 0) {
+        await api.put(`/api/work-orders/${woId}/components`, { componentIds: selectedComponentIds });
+      }
       fetchCompletion();
     } else toast.error(res.error || 'Failed');
     setSubmitting(false);
@@ -3285,6 +3330,49 @@ export function RepairCompletionPage() {
           <Card>
             <CardHeader><CardTitle>Completion Details</CardTitle></CardHeader>
             <CardContent className="space-y-4">
+              <div className='space-y-2'>
+                <Label className='text-sm font-medium'>Parts/Components Worked On</Label>
+                <Input
+                  placeholder='Search components...'
+                  value={componentSearch}
+                  onChange={e => setComponentSearch(e.target.value)}
+                  className='max-w-sm'
+                />
+                <div className='border rounded-lg max-h-64 overflow-y-auto p-2 space-y-1'>
+                  {componentsLoading ? (
+                    <div className='text-sm text-muted-foreground p-2'>Loading components...</div>
+                  ) : filteredComponents.length === 0 ? (
+                    <div className='text-sm text-muted-foreground p-2'>No components registered for this machine</div>
+                  ) : (
+                    filteredComponents.map((comp: any) => (
+                      <label key={comp.id} className='flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer'>
+                        <input
+                          type='checkbox'
+                          checked={selectedComponentIds.includes(comp.id)}
+                          onChange={() => {
+                            setSelectedComponentIds(prev =>
+                              prev.includes(comp.id) ? prev.filter(id => id !== comp.id) : [...prev, comp.id]
+                            );
+                          }}
+                          className='rounded border-muted-foreground/30'
+                        />
+                        <div className='flex-1 min-w-0'>
+                          <div className='text-sm font-medium truncate'>{comp.name}</div>
+                          <div className='text-xs text-muted-foreground'>
+                            {comp.componentCode}{comp.componentType ? ` · ${comp.componentType}` : ''}
+                          </div>
+                        </div>
+                        <Badge variant={comp.criticality === 'critical' ? 'destructive' : comp.criticality === 'high' ? 'default' : 'secondary'} className='text-[10px]'>
+                          {comp.criticality}
+                        </Badge>
+                      </label>
+                    ))
+                  )}
+                </div>
+                {selectedComponentIds.length > 0 && (
+                  <p className='text-xs text-muted-foreground'>{selectedComponentIds.length} component(s) selected</p>
+                )}
+              </div>
               <div><Label>Completion Notes</Label><Textarea value={form.completionNotes} onChange={(e) => setForm({ ...form, completionNotes: e.target.value })} placeholder="Describe work completed..." rows={3} /></div>
               <div className="grid md:grid-cols-2 gap-4">
                 <div><Label>Findings</Label><Textarea value={form.findings} onChange={(e) => setForm({ ...form, findings: e.target.value })} /></div>

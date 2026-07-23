@@ -119,6 +119,20 @@ export const api = {
     }),
   delete: <T = any>(endpoint: string, opts?: RequestInit & { timeout?: number }) =>
     apiFetch<T>(endpoint, { ...opts, method: 'DELETE' }),
+  /** Raw fetch returning the Response (for blob/binary downloads). Auth headers are injected. */
+  getRaw: (endpoint: string, opts?: RequestInit & { timeout?: number }) => {
+    const url = `${API_BASE}${endpoint}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), opts?.timeout || DEFAULT_TIMEOUT_MS);
+    if (opts?.signal) {
+      opts.signal.addEventListener('abort', () => controller.abort(opts.signal?.reason));
+    }
+    return fetch(url, {
+      ...opts,
+      headers: { ...getAuthHeaders(), ...(opts?.headers as Record<string, string> || {}) },
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
+  },
 };
 
 /**

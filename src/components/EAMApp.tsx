@@ -88,6 +88,7 @@ const pageLoaders: Record<string, () => Promise<PageComponent>> = {
   'repairs-spare-part-returns': () => import('./modules/RepairsPages').then(m => m.SparePartReturnsPage),
   'repairs-damaged-tools': () => import('./modules/RepairsPages').then(m => m.DamagedToolReportsPage),
   'repairs-reports': () => import('./modules/RepairsPages').then(m => m.MaintenanceReportsPage),
+  'repairs-detail-report': () => import('./modules/RepairDetailReportPage').then(m => m.default),
   'wo-reports': () => import('./modules/WOReportsPage').then(m => m.WOReportsPage),
   // IoT
   'iot-devices': () => import('./modules/IoTPages').then(m => m.IotDevicesPage),
@@ -243,6 +244,7 @@ function PageSwitcher({ page }: { page: string }) {
     'repairs-damaged-tools': ['damaged_tool_reports.view', 'damaged_tool_reports.view_all'],
     'repairs-analytics': ['work_orders.view', 'work_orders.view_own'],
     'repairs-reports': ['reports.view', 'work_orders.view'],
+    'repairs-detail-report': ['reports.view', 'work_orders.view'],
     'wo-reports': ['reports.view', 'work_orders.view', 'work_orders.view_own'],
     'technician-timesheet': ['time_logs.view', 'time_logs.create', 'work_orders.view', 'work_orders.view_own'],
     // IoT
@@ -506,6 +508,7 @@ function AppShell() {
     'repairs-spare-part-returns': 'Spare Part Returns',
     'repairs-damaged-tools': 'Damaged Tool Reports',
     'repairs-reports': 'Repair Lifecycle',
+    'repairs-detail-report': 'Repair Detail Report',
     'wo-reports': 'Work Order Reports',
     // IoT
     'iot-devices': 'IoT Devices',
