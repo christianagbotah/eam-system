@@ -124,6 +124,9 @@ export async function GET(request: NextRequest) {
             },
             orderBy: { timestamp: 'desc' },
           },
+          _count: {
+            select: { workOrderComponents: true },
+          },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,

@@ -207,3 +207,22 @@ Work Log:
 Stage Summary:
 - Files changed: src/app/api/work-orders/route.ts, src/components/modules/MaintenancePages.tsx, src/components/modules/RepairsPages.tsx, src/app/route.ts → src/app/api/wf-presentation/route.ts
 - End-to-end component tracking now works: WO creation → WO detail → Repair completion → Detailed report with Excel export
+
+---
+Task ID: 9
+Agent: Main Agent
+Task: Add component visibility to WO detail page and list API
+
+Work Log:
+- Added `workOrderComponents` with `componentRegistry` include to GET /api/work-orders/[id] (WO detail)
+- Added fallback safety for missing `workOrderComponents` array
+- Added `_count: { select: { workOrderComponents: true } }` to GET /api/work-orders (WO list)
+- Added "Linked Components" card to WODetailPage right panel (between Details and Cost Summary)
+- Card shows component name, code, criticality badge, and health score percentage
+- Scrollable max-h-48 with overflow-y-auto
+- Verified dev server compiles and returns 200
+
+Stage Summary:
+- Files changed: src/app/api/work-orders/[id]/route.ts, src/app/api/work-orders/route.ts, src/components/modules/MaintenancePages.tsx
+- WO detail now shows linked components with visual indicators
+- WO list API now returns `_count.workOrderComponents` for badge display

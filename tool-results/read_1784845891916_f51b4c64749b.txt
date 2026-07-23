@@ -1,41 +1,3 @@
-  6450→                              users = Array.isArray(fallbackRes.data) ? fallbackRes.data : [];
-  6451→                            }
-  6452→                          }
-  6453→                          return users.map((u: any) => ({
-  6454→                            value: u.id,
-  6455→                            label: u.primaryTrade
-  6456→                              ? `${u.fullName} — ${u.primaryTrade}${u.department ? ` (${u.department})` : ''}`
-  6457→                              : `${u.fullName}${u.department ? ` (${u.department})` : ''}`,
-  6458→                            ...(tradeFilter && u.primaryTrade?.toLowerCase() !== tradeFilter.toLowerCase() ? { group: 'Other trades' } : {}),
-  6459→                          }));
-  6460→                        }
-  6461→                      } catch { /* ignore */ }
-  6462→                      return [];
-  6463→                    }}
-  6464→                    placeholder="Search technicians..."
-  6465→                    searchPlaceholder="Search by name or trade..."
-  6466→                  />
-  6467→                  <p className="text-xs text-muted-foreground">Choose the best available technician for this trade</p>
-  6468→                </div>
-  6469→              </div>
-  6470→          </ResponsiveDialog>
-  6471→
-  6472→          {/* Right Panel — Details, Cost, Source, Team */}
-  6473→        <div className="space-y-4">
-  6474→          <Card className="border-0 shadow-sm">
-  6475→            <CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader>
-  6476→            <CardContent className="space-y-3 text-sm">
-  6477→              <div className="flex justify-between"><span className="text-muted-foreground">Type</span><span className="font-medium capitalize">{wo.type.replace('_', ' ')}</span></div>
-  6478→              <Separator />
-  6479→              <div className="flex justify-between"><span className="text-muted-foreground">Asset</span><span className="font-medium">{wo.assetName || '-'}</span></div>
-  6480→              <Separator />
-  6481→              <div className="flex justify-between"><span className="text-muted-foreground">Assigned To</span><span className="font-medium">{wo.assignee?.fullName || (wo.teamMembers?.length > 0 ? `Team (${wo.teamMembers.length} member${wo.teamMembers.length !== 1 ? 's' : ''})` : 'Unassigned')}</span></div>
-  6482→              <Separator />
-  6483→              <div className="flex justify-between"><span className="text-muted-foreground">Est. Hours</span><span className="font-medium">{formatDuration(wo.estimatedHours || 0)}</span></div>
-  6484→              <Separator />
-  6485→              <div className="flex justify-between"><span className="text-muted-foreground">Actual Hours</span><span className="font-medium">{formatDuration(wo.actualHours || 0)}</span></div>
-  6486→              <Separator />
-  6487→              <div className="flex justify-between"><span className="text-muted-foreground">Created By</span><span className="font-medium">{wo.creator?.fullName || '-'}</span></div>
   6488→              <Separator />
   6489→              <div className="flex justify-between"><span className="text-muted-foreground">Created</span><span className="font-medium">{formatDateTime(wo.createdAt)}</span></div>
   6490→              {wo.plannedStart && (
@@ -1998,5 +1960,43 @@
   8447→    <div className="page-content">
   8448→      <div><h1 className="text-2xl font-bold tracking-tight">Tools</h1><p className="text-muted-foreground mt-1">Manage maintenance tool inventory, assignments, and condition tracking</p></div>
   8449→      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+  8450→        {kpiCards.map(k => { const I = k.icon; return (
+  8451→          <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+  8452→        ); })}
+  8453→      </div>
+  8454→      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+  8455→        <CardHeader className="pb-3">
+  8456→          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+  8457→            <div><CardTitle className="text-base">Tool Inventory</CardTitle><CardDescription className="text-xs">Track tool availability, assignments, and condition</CardDescription></div>
+  8458→            {(hasPermission('tools.create') || isAdmin()) && (
+  8459→              <Button size="sm" className="gap-1.5" onClick={() => { setForm({ name: '', category: '', location: '', serialNumber: '', condition: '', plantId: '', assignedToId: '', quantity: '1' }); setCreateOpen(true); }}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
+  8460→            )}
+  8461→            <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="Add New Tool" description="Register a new tool in the inventory" footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving}>{saving ? 'Adding...' : 'Add Tool'}</Button></div>}>
+  8462→                {renderToolForm(form, setForm)}
+  8463→            </ResponsiveDialog>
+  8464→          </div>
+  8465→          <div className="filter-row flex flex-col sm:flex-row gap-2 mt-3">
+  8466→            <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="Search tools, locations..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} /></div>
+  8467→            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="available">Available</SelectItem><SelectItem value="checked_out">Checked Out</SelectItem><SelectItem value="in_repair">In Repair</SelectItem><SelectItem value="retired">Retired</SelectItem></SelectContent></Select>
+  8468→          </div>
+  8469→        </CardHeader>
+  8470→        <CardContent className="pt-0">
+  8471→          <div className="overflow-x-auto">
+  8472→            <Table><TableHeader><TableRow><TableHead className="text-xs">Code</TableHead><TableHead className="text-xs">Tool Name</TableHead><TableHead className="text-xs hidden md:table-cell">Category</TableHead><TableHead className="text-xs">Qty</TableHead><TableHead className="text-xs hidden lg:table-cell">Location</TableHead><TableHead className="text-xs">Status</TableHead><TableHead className="text-xs hidden md:table-cell">Condition</TableHead><TableHead className="text-xs hidden md:table-cell">Assigned To</TableHead><TableHead className="text-xs w-10"></TableHead></TableRow></TableHeader><TableBody>
+  8473→              {loading && <TableRow><TableCell colSpan={9}><div className="flex items-center justify-center py-8"><div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" /></div></TableCell></TableRow>}
+  8474→              {!loading && filtered.map((t: any) => (
+  8475→                <TableRow key={t.id} className="hover:bg-muted/30">
+  8476→                  <TableCell className="font-mono text-xs">{t.toolCode}</TableCell>
+  8477→                  <TableCell className="font-medium text-sm max-w-[180px] truncate">{t.name}</TableCell>
+  8478→                  <TableCell className="text-xs hidden md:table-cell">{t.category?.replace(/_/g, ' ')}</TableCell>
+  8479→                  <TableCell className="text-xs font-medium">{t.quantity ?? 1}</TableCell>
+  8480→                  <TableCell className="text-xs hidden lg:table-cell"><div className="flex items-center gap-1"><MapPin className="h-3 w-3 text-muted-foreground" />{t.location || '-'}</div></TableCell>
+  8481→                  <TableCell><Badge variant="outline" className={`text-[10px] uppercase font-semibold ${toolStatusColors[t.status] || ''}`}>{t.status?.replace(/_/g, ' ')}</Badge></TableCell>
+  8482→                  <TableCell className="text-xs hidden md:table-cell capitalize">{t.condition || '-'}</TableCell>
+  8483→                  <TableCell className="text-xs hidden md:table-cell">{t.assignedTo?.fullName || '-'}</TableCell>
+  8484→                  <TableCell>
+  8485→                    {(canEdit || canDelete) && (
+  8486→                      <DropdownMenu>
+  8487→                        <DropdownMenuTrigger asChild>
 
-[showing lines 6450-8449 of 9227; use offset=8450 with limit to continue reading]
+[showing lines 6488-8487 of 9227; use offset=8488 with limit to continue reading]

@@ -6496,6 +6496,44 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </CardContent>
           </Card>
 
+          {/* Linked Components */}
+          {wo.workOrderComponents && wo.workOrderComponents.length > 0 && (
+            <Card className="border-0 shadow-sm">
+              <CardHeader><CardTitle className="text-base">Linked Components</CardTitle></CardHeader>
+              <CardContent className="space-y-2">
+                <div className="max-h-48 overflow-y-auto space-y-1.5">
+                  {wo.workOrderComponents.map((woc: any) => {
+                    const comp = woc.componentRegistry;
+                    if (!comp) return null;
+                    return (
+                      <div key={woc.id} className="flex items-center justify-between text-sm py-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Wrench className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          <span className="truncate font-medium">{comp.name}</span>
+                          {comp.componentCode && (
+                            <span className="text-xs text-muted-foreground font-mono shrink-0">{comp.componentCode}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {comp.criticality && comp.criticality !== 'low' && (
+                            <Badge variant={comp.criticality === 'critical' ? 'destructive' : comp.criticality === 'high' ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">
+                              {comp.criticality}
+                            </Badge>
+                          )}
+                          {comp.healthScore != null && (
+                            <span className={`text-[10px] font-medium ${comp.healthScore >= 80 ? 'text-emerald-600' : comp.healthScore >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
+                              {comp.healthScore}%
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Cost Summary */}
           <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Cost Summary</CardTitle></CardHeader>

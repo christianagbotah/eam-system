@@ -1,23 +1,3 @@
-  6450→                              users = Array.isArray(fallbackRes.data) ? fallbackRes.data : [];
-  6451→                            }
-  6452→                          }
-  6453→                          return users.map((u: any) => ({
-  6454→                            value: u.id,
-  6455→                            label: u.primaryTrade
-  6456→                              ? `${u.fullName} — ${u.primaryTrade}${u.department ? ` (${u.department})` : ''}`
-  6457→                              : `${u.fullName}${u.department ? ` (${u.department})` : ''}`,
-  6458→                            ...(tradeFilter && u.primaryTrade?.toLowerCase() !== tradeFilter.toLowerCase() ? { group: 'Other trades' } : {}),
-  6459→                          }));
-  6460→                        }
-  6461→                      } catch { /* ignore */ }
-  6462→                      return [];
-  6463→                    }}
-  6464→                    placeholder="Search technicians..."
-  6465→                    searchPlaceholder="Search by name or trade..."
-  6466→                  />
-  6467→                  <p className="text-xs text-muted-foreground">Choose the best available technician for this trade</p>
-  6468→                </div>
-  6469→              </div>
   6470→          </ResponsiveDialog>
   6471→
   6472→          {/* Right Panel — Details, Cost, Source, Team */}
@@ -1998,5 +1978,25 @@
   8447→    <div className="page-content">
   8448→      <div><h1 className="text-2xl font-bold tracking-tight">Tools</h1><p className="text-muted-foreground mt-1">Manage maintenance tool inventory, assignments, and condition tracking</p></div>
   8449→      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+  8450→        {kpiCards.map(k => { const I = k.icon; return (
+  8451→          <Card key={k.label}><CardContent className="p-5"><div className="flex items-center gap-4"><div className={`h-11 w-11 rounded-xl ${k.color} flex items-center justify-center`}><I className="h-5 w-5" /></div><div><p className="text-2xl font-bold">{k.value}</p><p className="text-xs text-muted-foreground">{k.label}</p></div></div></CardContent></Card>
+  8452→        ); })}
+  8453→      </div>
+  8454→      <Card className="bg-card text-card-foreground border border-border/60 rounded-xl shadow-sm">
+  8455→        <CardHeader className="pb-3">
+  8456→          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+  8457→            <div><CardTitle className="text-base">Tool Inventory</CardTitle><CardDescription className="text-xs">Track tool availability, assignments, and condition</CardDescription></div>
+  8458→            {(hasPermission('tools.create') || isAdmin()) && (
+  8459→              <Button size="sm" className="gap-1.5" onClick={() => { setForm({ name: '', category: '', location: '', serialNumber: '', condition: '', plantId: '', assignedToId: '', quantity: '1' }); setCreateOpen(true); }}><Plus className="h-3.5 w-3.5" />Add Tool</Button>
+  8460→            )}
+  8461→            <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="Add New Tool" description="Register a new tool in the inventory" footer={<div className="flex gap-2"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={saving}>{saving ? 'Adding...' : 'Add Tool'}</Button></div>}>
+  8462→                {renderToolForm(form, setForm)}
+  8463→            </ResponsiveDialog>
+  8464→          </div>
+  8465→          <div className="filter-row flex flex-col sm:flex-row gap-2 mt-3">
+  8466→            <div className="relative flex-1"><Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" /><Input placeholder="Search tools, locations..." className="pl-8 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} /></div>
+  8467→            <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="available">Available</SelectItem><SelectItem value="checked_out">Checked Out</SelectItem><SelectItem value="in_repair">In Repair</SelectItem><SelectItem value="retired">Retired</SelectItem></SelectContent></Select>
+  8468→          </div>
+  8469→        </CardHeader>
 
-[showing lines 6450-8449 of 9227; use offset=8450 with limit to continue reading]
+[showing lines 6470-8469 of 9227; use offset=8470 with limit to continue reading]
