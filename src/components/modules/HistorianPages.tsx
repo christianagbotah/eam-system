@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { api } from '@/lib/api';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
@@ -211,9 +212,8 @@ export default function HistorianDashboard() {
   const fetchDashboard = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/historian/dashboard?view=full');
-      const json = await res.json();
-      if (json.success) setDashboard(json.data);
+      const res = await api.get('/api/historian/dashboard?view=full');
+      if (res.success) setDashboard(res.data);
     } catch (e) {
       console.error('Failed to load dashboard', e);
     } finally {
@@ -685,20 +685,15 @@ function TrendViewer({ tagMonitor }: { tagMonitor: TagMonitor[] }) {
       const to = new Date();
       const interval = autoInterval(timeRange);
 
-      const res = await fetch('/api/historian/aggregate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          operation: 'multi-source',
-          sourceIds: [selectedSource],
-          from: from.toISOString(),
-          to: to.toISOString(),
-          interval,
-        }),
+      const res = await api.post('/api/historian/aggregate', {
+        operation: 'multi-source',
+        sourceIds: [selectedSource],
+        from: from.toISOString(),
+        to: to.toISOString(),
+        interval,
       });
-      const json = await res.json();
-      if (json.success) {
-        const data = (json.data as Array<{ timestamp: string; sourceId: string; avg: number | null }>)
+      if (res.success) {
+        const data = (res.data as Array<{ timestamp: string; sourceId: string; avg: number | null }>)
           .filter(d => d.sourceId === selectedSource && d.avg !== null)
           .map(d => ({
             time: new Date(d.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
@@ -806,20 +801,15 @@ function ComparisonView({ tagMonitor }: { tagMonitor: TagMonitor[] }) {
       const to = new Date();
       const interval = autoInterval(timeRange);
 
-      const res = await fetch('/api/historian/aggregate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          operation: 'multi-source',
-          sourceIds: selectedSources,
-          from: from.toISOString(),
-          to: to.toISOString(),
-          interval,
-        }),
+      const res = await api.post('/api/historian/aggregate', {
+        operation: 'multi-source',
+        sourceIds: selectedSources,
+        from: from.toISOString(),
+        to: to.toISOString(),
+        interval,
       });
-      const json = await res.json();
-      if (json.success) {
-        const raw = json.data as Array<{ timestamp: string; sourceId: string; avg: number | null }>;
+      if (res.success) {
+        const raw = res.data as Array<{ timestamp: string; sourceId: string; avg: number | null }>;
         // Pivot: one row per timestamp with columns per source
         const timeMap = new Map<string, Record<string, number | null>>();
         for (const d of raw) {
@@ -935,18 +925,13 @@ function CalculatedMetrics({ tagMonitor }: { tagMonitor: TagMonitor[] }) {
       const from = new Date(Date.now() - range.ms);
       const to = new Date();
 
-      const res = await fetch('/api/historian/aggregate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          operation: 'stats-single',
-          sourceId: selectedSource,
-          from: from.toISOString(),
-          to: to.toISOString(),
-        }),
+      const res = await api.post('/api/historian/aggregate', {
+        operation: 'stats-single',
+        sourceId: selectedSource,
+        from: from.toISOString(),
+        to: to.toISOString(),
       });
-      const json = await res.json();
-      if (json.success) setMetrics(json.data);
+      if (res.success) setMetrics(res.data);
     } catch (e) {
       console.error('Failed to fetch metrics', e);
     } finally {
@@ -1037,12 +1022,11 @@ function DownsamplingStatusCard() {
     async function load() {
       try {
         const [pRes, dRes] = await Promise.all([
-          fetch('/api/historian/downsample/policies'),
-          fetch('/api/historian/downsample'),
+          api.get('/api/historian/downsample/policies'),
+          api.get('/api/historian/downsample'),
         ]);
-        const [pJson, dJson] = await Promise.all([pRes.json(), dRes.json()]);
-        if (pJson.success) setPolicies(pJson.data);
-        if (dJson.success) setDownsampleStatus([]);
+        if (pRes.success) setPolicies(pRes.data);
+        if (dRes.success) setDownsampleStatus([]);
       } catch (e) {
         console.error(e);
       } finally {
@@ -1055,9 +1039,8 @@ function DownsamplingStatusCard() {
   const runDownsample = async () => {
     setRunningJob(true);
     try {
-      const res = await fetch('/api/historian/downsample', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-      const json = await res.json();
-      if (json.success) alert(`Downsampling complete: ${json.data.sourcesProcessed} sources processed`);
+      const res = await api.post('/api/historian/downsample', {});
+      if (res.success) alert(`Downsampling complete: ${res.data.sourcesProcessed} sources processed`);
     } catch (e) { console.error(e); }
     finally { setRunningJob(false); }
   };
@@ -1127,9 +1110,8 @@ function RetentionPolicyCard() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch('/api/historian/retention');
-        const json = await res.json();
-        if (json.success) setPolicies(json.data);
+        const res = await api.get('/api/historian/retention');
+        if (res.success) setPolicies(res.data);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     }
@@ -1139,13 +1121,8 @@ function RetentionPolicyCard() {
   const runCleanupAll = async () => {
     setRunningCleanup(true);
     try {
-      const res = await fetch('/api/historian/retention', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'execute-all' }),
-      });
-      const json = await res.json();
-      if (json.success) alert(`Cleanup complete: ${json.data.totalDeleted} records deleted`);
+      const res = await api.post('/api/historian/retention', { action: 'execute-all' });
+      if (res.success) alert(`Cleanup complete: ${res.data.totalDeleted} records deleted`);
     } catch (e) { console.error(e); }
     finally { setRunningCleanup(false); }
   };
@@ -1227,11 +1204,10 @@ function AnomalyWindows() {
       const params = new URLSearchParams({ limit: String(limit), offset: String(page * limit) });
       if (severityFilter !== 'all') params.set('severity', severityFilter);
 
-      const res = await fetch(`/api/historian/anomalies?${params}`);
-      const json = await res.json();
-      if (json.success) {
-        setAnomalies(json.data.data);
-        setTotal(json.data.pagination.total);
+      const res = await api.get(`/api/historian/anomalies?${params}`);
+      if (res.success) {
+        setAnomalies(res.data.data);
+        setTotal(res.data.pagination.total);
       }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }

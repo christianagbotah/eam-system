@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
+import { api } from '@/lib/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -559,15 +560,15 @@ export function ConnectivityPage() {
     setLoading(true);
     try {
       const [sourcesRes, gatewaysRes, engineRes, eventsRes] = await Promise.all([
-        fetch('/api/connectivity/sources?limit=50').then(r => r.json()),
-        fetch('/api/connectivity/gateway?limit=50').then(r => r.json()),
-        fetch('/api/connectivity/engine').then(r => r.json()),
-        fetch('/api/connectivity/stream?limit=20').then(r => r.json()),
+        api.get('/api/connectivity/sources?limit=50'),
+        api.get('/api/connectivity/gateway?limit=50'),
+        api.get('/api/connectivity/engine'),
+        api.get('/api/connectivity/stream?limit=20'),
       ]);
 
       setSources(sourcesRes.data || []);
       setGateways(gatewaysRes.data || []);
-      setEngineData(engineRes || null);
+      setEngineData(engineRes.data || null);
       setEvents(eventsRes.data || []);
     } catch (err) {
       console.error('Failed to fetch connectivity data:', err);

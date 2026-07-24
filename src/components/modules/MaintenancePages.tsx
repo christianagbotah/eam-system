@@ -3057,12 +3057,8 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   const handleRejectSuggestedItem = async (itemType: 'part' | 'tool', itemId: string) => {
     if (!confirm(`Remove this suggested ${itemType}?`)) return;
     try {
-      const res = await fetch(`/api/work-orders/${id}/suggested-items?XTransformPort=3000`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'reject_item', itemType, itemId }),
-      });
-      if (res.ok) {
+      const res = await api.put(`/api/work-orders/${id}/suggested-items`, { action: 'reject_item', itemType, itemId });
+      if (res.success) {
         fetchSuggestedItems();
         fetchWO();
       }
@@ -3071,14 +3067,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
 
   const handleSendToStore = async () => {
     try {
-      const res = await fetch(`/api/work-orders/${id}/suggested-items?XTransformPort=3000`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'send_to_store' }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        toast.success(data.message || 'Items sent to store');
+      const res = await api.put(`/api/work-orders/${id}/suggested-items`, { action: 'send_to_store' });
+      if (res.success) {
+        toast.success(res.data?.message || 'Items sent to store');
         fetchSuggestedItems();
         fetchWO();
       }
@@ -4097,7 +4088,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                 onClick={async () => {
                   try {
                     toast.loading('Generating PDF...', { id: 'print-wo' });
-                    const res = await fetch(`/api/work-orders/${id}/print?format=pdf`);
+                    const res = await api.getRaw(`/api/work-orders/${id}/print?format=pdf`);
                     if (!res.ok) throw new Error('Failed to generate PDF');
                     const blob = await res.blob();
                     const url = URL.createObjectURL(blob);
@@ -6821,15 +6812,7 @@ export function PmSchedulesPage() {
 
   // Background PM check: fire-and-forget trigger on page load
   useEffect(() => {
-    const token = localStorage.getItem('eam_token');
-    fetch('/api/pm-schedules/check-due', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({}),
-    }).catch(() => { /* silent — background task */ });
+    api.post('/api/pm-schedules/check-due', {}).catch(() => { /* silent — background task */ });
   }, []);
 
   const resetForm = () => {

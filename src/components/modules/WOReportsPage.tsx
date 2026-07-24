@@ -24,7 +24,7 @@ import {
   FileBarChart, Download, RefreshCw, BarChart3, DollarSign, Zap,
   ShieldAlert, Factory, HardHat, Users, Boxes, Loader2, FileDown,
   Hammer, CircleStop, Gauge, ChartPie, ArrowDownUp, Pause, Construction,
-  ClipboardList, CalendarDays, Filter, Printer,
+  ClipboardList, CalendarDays, Filter, Printer, Cpu,
 } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/api';
 import { EmptyState, LoadingSkeleton, formatCurrency, formatDuration } from '@/components/shared/helpers';
@@ -875,6 +875,9 @@ export function WOReportsPage() {
               )}
               <TabsTrigger value="failure-rate" className="text-xs">
                 <Gauge className="h-3.5 w-3.5 mr-1" />Failure Rate
+              </TabsTrigger>
+              <TabsTrigger value="components" className="text-xs">
+                <Cpu className="h-3.5 w-3.5 mr-1" />Components
               </TabsTrigger>
               {dtEnabled && (
               <TabsTrigger value="stoppages" className="text-xs">
@@ -1906,7 +1909,88 @@ export function WOReportsPage() {
             </TabsContent>
 
             {/* ============================================================= */}
-            {/* TAB 8: STOPPAGE NUMBER REPORT                                  */}
+            {/* TAB 8: COMPONENT-LEVEL COST ANALYSIS                        */}
+            {/* ============================================================= */}
+            <TabsContent value="components" className="space-y-6 mt-0">
+              <TabSectionHeader title="Component Cost Analysis" description="Maintenance cost breakdown at the component level — identify which components drive the most repair spend" />
+
+              {(reportData.componentCosts || []).length === 0 ? (
+                <EmptyState icon={Cpu} title="No component data" description="Component-linked work orders will appear here once components are assigned to work orders during creation or completion." />
+              ) : (
+                <>
+                  {/* KPI Strip */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <KPICard label="Components Serviced" value={(reportData.componentCosts || []).length} icon={Cpu} color="text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400" />
+                    <KPICard label="Total Component Cost" value={formatCurrency((reportData.componentCosts || []).reduce((s: number, c: any) => s + c.totalCost, 0))} icon={DollarSign} color="text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400" />
+                    <KPICard label="Avg Cost/Component" value={formatCurrency((reportData.componentCosts || []).length > 0 ? (reportData.componentCosts || []).reduce((s: number, c: any) => s + c.totalCost, 0) / (reportData.componentCosts || []).length : 0)} icon={BarChart3} color="text-violet-600 bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400" />
+                    <KPICard label="Most Repaired" value={(() => { const sorted = [...(reportData.componentCosts || [])].sort((a: any, b: any) => b.woCount - a.woCount); return sorted[0]?.componentName || '-'; })()} icon={Wrench} color="text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-400" />
+                  </div>
+
+                  {/* Component Cost Table */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm font-semibold">Cost by Component (Top 20)</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="max-h-96 overflow-y-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs">Code</TableHead>
+                              <TableHead className="text-xs">Component</TableHead>
+                              <TableHead className="text-xs">Asset</TableHead>
+                              <TableHead className="text-xs">Criticality</TableHead>
+                              <TableHead className="text-xs text-right">WOs</TableHead>
+                              <TableHead className="text-xs text-right">Total Cost</TableHead>
+                              <TableHead className="text-xs text-right">Parts</TableHead>
+                              <TableHead className="text-xs text-right">Labor</TableHead>
+                              <TableHead className="text-xs text-right">Avg/WO</TableHead>
+                              <TableHead className="text-xs text-right">Failures</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(reportData.componentCosts || []).map((c: any, i: number) => (
+                              <TableRow key={c.componentId || i}>
+                                <TableCell className="text-xs font-mono">{c.componentCode || '-'}</TableCell>
+                                <TableCell className="text-xs font-medium">{c.componentName}</TableCell>
+                                <TableCell className="text-xs">
+                                  <div>{c.assetName}</div>
+                                  {c.assetTag && <div className="text-muted-foreground">{c.assetTag}</div>}
+                                </TableCell>
+                                <TableCell className="text-xs">
+                                  <Badge variant={c.criticality === 'high' || c.criticality === 'critical' ? 'destructive' : c.criticality === 'medium' ? 'default' : 'secondary'} className="text-[10px]">
+                                    {c.criticality || 'low'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-xs text-right">{c.woCount}</TableCell>
+                                <TableCell className="text-xs text-right font-medium">{formatCurrency(c.totalCost)}</TableCell>
+                                <TableCell className="text-xs text-right">{formatCurrency(c.partsCost)}</TableCell>
+                                <TableCell className="text-xs text-right">{formatCurrency(c.laborCost)}</TableCell>
+                                <TableCell className="text-xs text-right">{formatCurrency(c.avgCostPerWO)}</TableCell>
+                                <TableCell className="text-xs text-right">
+                                  {c.failureCount > 0 ? (
+                                    <Badge variant="destructive" className="text-[10px]">{c.failureCount}</Badge>
+                                  ) : (c.woCount > 0 ? '0' : '-')}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <SummaryFooter notes={[
+                    `${(reportData.componentCosts || []).length} components tracked across ${(reportData.componentCosts || []).reduce((s: number, c: any) => s + c.woCount, 0)} work orders.`,
+                    `Total component repair cost: ${formatCurrency((reportData.componentCosts || []).reduce((s: number, c: any) => s + c.totalCost, 0))}.`,
+                    `Components are linked to work orders during WO creation or repair completion.`,
+                  ]} />
+                </>
+              )}
+            </TabsContent>
+
+            {/* ============================================================= */}
+            {/* TAB 9: STOPPAGE NUMBER REPORT                                  */}
             {/* ============================================================= */}
             {dtEnabled && (
             <TabsContent value="stoppages" className="space-y-6 mt-0">

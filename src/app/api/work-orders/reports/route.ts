@@ -80,6 +80,85 @@ export async function GET(request: NextRequest) {
     }) : [];
     const itemMap = new Map(inventoryItems.map(i => [i.id, i]));
 
+    // Fetch component registry data for component-level cost analysis
+    const woIds = workOrders.map(wo => wo.id);
+    const woComponents = woIds.length > 0 ? await db.workOrderComponent.findMany({
+      where: { workOrderId: { in: woIds } },
+      include: {
+        componentRegistry: {
+          include: { asset: { select: { name: true, assetTag: true } } },
+        },
+      },
+    }) : [];
+    // Build component cost aggregation
+    const componentCostMap = new Map<string, {
+      componentId: string;
+      componentCode: string;
+      componentName: string;
+      componentType: string;
+      criticality: string;
+      assetName: string;
+      assetTag: string;
+      woCount: number;
+      totalCost: number;
+      laborCost: number;
+      partsCost: number;
+      contractorCost: number;
+      lastRepairDate: Date | null;
+      failureCount: number;
+    }>();
+    const woMap = new Map(workOrders.map(wo => [wo.id, wo]));
+    for (const woc of woComponents) {
+      const comp = woc.componentRegistry;
+      if (!comp) continue;
+      const key = comp.id;
+      const wo = woMap.get(woc.workOrderId);
+      if (!wo) continue;
+      const existing = componentCostMap.get(key);
+      const woTotalCost = (wo.laborCost || 0) + (wo.partsCost || 0) + (wo.contractorCost || 0);
+      const isFailure = ['emergency', 'corrective'].includes(wo.type || '');
+      if (existing) {
+        existing.woCount++;
+        existing.totalCost += woTotalCost;
+        existing.laborCost += wo.laborCost || 0;
+        existing.partsCost += wo.partsCost || 0;
+        existing.contractorCost += wo.contractorCost || 0;
+        if (isFailure) existing.failureCount++;
+        if (wo.completedAt && (!existing.lastRepairDate || wo.completedAt > existing.lastRepairDate)) {
+          existing.lastRepairDate = wo.completedAt;
+        }
+      } else {
+        componentCostMap.set(key, {
+          componentId: comp.id,
+          componentCode: comp.componentCode || '',
+          componentName: comp.name || 'Unknown',
+          componentType: comp.componentType || 'component',
+          criticality: comp.criticality || 'low',
+          assetName: comp.asset?.name || wo.assetName || 'Unknown',
+          assetTag: comp.asset?.assetTag || '',
+          woCount: 1,
+          totalCost: woTotalCost,
+          laborCost: wo.laborCost || 0,
+          partsCost: wo.partsCost || 0,
+          contractorCost: wo.contractorCost || 0,
+          lastRepairDate: wo.completedAt,
+          failureCount: isFailure ? 1 : 0,
+        });
+      }
+    }
+    const componentCosts = Array.from(componentCostMap.values())
+      .map(c => ({
+        ...c,
+        totalCost: Math.round(c.totalCost * 100) / 100,
+        laborCost: Math.round(c.laborCost * 100) / 100,
+        partsCost: Math.round(c.partsCost * 100) / 100,
+        contractorCost: Math.round(c.contractorCost * 100) / 100,
+        avgCostPerWO: c.woCount > 0 ? Math.round((c.totalCost / c.woCount) * 100) / 100 : 0,
+        lastRepairDate: c.lastRepairDate?.toISOString() || null,
+      }))
+      .sort((a, b) => b.totalCost - a.totalCost)
+      .slice(0, 20);
+
     // Helper: get enriched asset details from a work order
     function getAssetDetails(wo: { assetId?: string | null; assetName?: string | null }) {
       const asset = wo.assetId ? assetMap.get(wo.assetId) : null;
@@ -903,6 +982,9 @@ export async function GET(request: NextRequest) {
         topAssets,
         workOrdersByAsset,
         assetsWithDetails,
+
+        // 12. Component-Level Cost Analysis
+        componentCosts,
       },
     };
 

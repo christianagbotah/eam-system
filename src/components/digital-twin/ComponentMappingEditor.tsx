@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { api } from '@/lib/api';
 import {
   Link2, Plus, Trash2, X, RefreshCw,
   Package, Cpu, Droplets, Wrench, BookOpen, ClipboardCheck,
@@ -63,10 +64,11 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
       const params = new URLSearchParams({ modelId, limit: '100' });
       if (typeFilter !== 'all') params.set('mappingType', typeFilter);
       if (search) params.set('search', search);
-      const res = await fetch(`/api/mesh-mappings?${params}`);
-      const data = await res.json();
-      setMappings(data.data || []);
-      setTypeCounts(data.typeCounts || {});
+      const res = await api.get(`/api/mesh-mappings?${params}`);
+      if (res.success) {
+        setMappings(res.data?.data || []);
+        setTypeCounts(res.data?.typeCounts || {});
+      }
     } catch (err) {
       console.error('Failed to fetch mappings:', err);
     } finally {
@@ -77,11 +79,7 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
   const handleCreate = async () => {
     if (!addForm.meshName || !addForm.targetId) return;
     try {
-      await fetch('/api/mesh-mappings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(addForm),
-      });
+      await api.post('/api/mesh-mappings', addForm);
       setShowAddForm(false);
       setAddForm({ meshName: '', meshPath: '', mappingType: 'component', targetId: '', targetName: '' });
       fetchMappings();
@@ -91,7 +89,7 @@ export function ComponentMappingEditor({ modelId, availableMeshes = [], onMappin
   };
 
   const handleDelete = async (id: string) => {
-    await fetch(`/api/mesh-mappings/${id}`, { method: 'DELETE' });
+    await api.delete(`/api/mesh-mappings/${id}`);
     fetchMappings();
   };
 

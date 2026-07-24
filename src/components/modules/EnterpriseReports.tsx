@@ -32,6 +32,7 @@ import {
   FileDown, Download, RefreshCw, Loader2, Calendar, Target, Zap,
   ShieldAlert, Eye, ArrowUpDown, PieChart as PieChartIcon, Gauge,
   HardHat, Timer, Layers, ArrowRightLeft, Filter, ArrowUpRight, ArrowDownRight,
+  Cpu,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line,
@@ -955,6 +956,39 @@ export default function EnterpriseReports() {
                           <TableCell className="text-right">{formatCurrency(a.partsCost)}</TableCell>
                           <TableCell className="text-right">{formatCurrency(a.contractorCost)}</TableCell>
                           <TableCell className="text-right font-semibold">{formatCurrency(a.totalCost)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Cost by Component */}
+            <Card className="border border-border/60 shadow-sm lg:col-span-2">
+              <CardHeader className="pb-3"><CardTitle className="text-base">Cost by Component (Top 15)</CardTitle></CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-background z-10"><TableRow><TableHead>Component</TableHead><TableHead className="hidden md:table-cell">Code</TableHead><TableHead className="hidden lg:table-cell">Asset</TableHead><TableHead className="hidden xl:table-cell">Criticality</TableHead><TableHead className="text-right">WO Count</TableHead><TableHead className="text-right">Labor</TableHead><TableHead className="text-right">Parts</TableHead><TableHead className="text-right font-semibold">Total</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {(enterpriseData?.costAnalytics?.byComponent || []).length === 0 ? (
+                        <TableRow><TableCell colSpan={8}><EmptyState icon={Cpu} title="No component cost data" description="Component-linked work order costs will appear here." /></TableCell></TableRow>
+                      ) : enterpriseData.costAnalytics.byComponent.map((c: any, i: number) => (
+                        <TableRow key={c.componentId || i} className="hover:bg-muted/30">
+                          <TableCell className="font-medium">{c.componentName}</TableCell>
+                          <TableCell className="hidden md:table-cell font-mono text-xs text-muted-foreground">{c.componentCode || '-'}</TableCell>
+                          <TableCell className="hidden lg:table-cell text-sm">
+                            <div>{c.assetName}</div>
+                            {c.assetTag && <div className="text-muted-foreground text-xs">{c.assetTag}</div>}
+                          </TableCell>
+                          <TableCell className="hidden xl:table-cell">
+                            <Badge variant={c.criticality === 'high' || c.criticality === 'critical' ? 'destructive' : c.criticality === 'medium' ? 'default' : 'secondary'} className="text-[9px]">{c.criticality || 'low'}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right"><Badge variant="outline" className="font-mono text-xs">{c.woCount}</Badge></TableCell>
+                          <TableCell className="text-right">{formatCurrency(c.laborCost)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(c.partsCost)}</TableCell>
+                          <TableCell className="text-right font-semibold">{formatCurrency(c.totalCost)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

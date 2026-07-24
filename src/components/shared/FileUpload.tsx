@@ -218,9 +218,7 @@ export function FileUpload({ entityType, entityId, canDelete: canDeleteProp }: F
       link.download = attachment.fileName;
       if (token) {
         // We'll open in new tab since direct download with auth header requires fetch
-        const response = await fetch(`/api/attachments/${attachment.id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await api.getRaw(`/api/attachments/${attachment.id}`);
         if (!response.ok) {
           toast.error('Failed to download file');
           return;

@@ -1188,3 +1188,70 @@ Stage Summary:
 - Materials can now be linked to specific components when creating requests
 - WO detail shows materials with their component associations
 - End-to-end traceability: Component → Material Request → Inventory Item → Cost
+---
+Task ID: 3-b
+Agent: full-stack-developer
+Task: Add component-level cost breakdown to WOReports and EnterpriseReports
+
+Work Log:
+- Read worklog and existing codebase to understand patterns and context
+- Read WO Reports API route (route.ts) - understood Prisma query patterns and response structure
+- Read Enterprise Reports API route (route.ts) - understood costAnalytics aggregation patterns
+- Read WOReportsPage.tsx (2053 lines) - understood tab structure, styling, component imports
+- Read EnterpriseReports.tsx (1328 lines) - understood Cost tab layout with charts and tables
+- Read prisma/schema.prisma to understand WorkOrderComponent, ComponentRegistry, RepairMaterialRequest models
+- Updated /home/z/my-project/src/app/api/work-orders/reports/route.ts: Added componentCosts section with Prisma query aggregating by ComponentRegistry via WorkOrderComponent join table, including totalCost, laborCost, partsCost, woCount, failureCount, lastRepairDate, sorted by totalCost desc, limited to top 20
+- Updated /home/z/my-project/src/components/modules/WOReportsPage.tsx: Added "Components" tab (after Materials) with KPI summary row (Total Component Repairs, Avg Component Cost, Most Repaired Component, Critical Components Needing Attention) and detailed table (Component Code, Component Name, Asset, Criticality, WO Count, Total Cost, Parts Cost, Labor Cost, Avg Cost/WO, Last Repair)
+- Updated /home/z/my-project/src/app/api/reports/enterprise/route.ts: Added byComponent array in costAnalytics section with same aggregation by ComponentRegistry, top 15 by totalCost
+- Updated /home/z/my-project/src/components/modules/EnterpriseReports.tsx: Added "Cost by Component" table section in Cost tab using enterpriseData.costAnalytics.byComponent
+- Ran bun run lint and npx tsc --noEmit - no errors in modified files
+- Appended worklog entry
+
+Stage Summary:
+- Component-level cost breakdown now available in both WO Reports and Enterprise Reports
+- WO Reports has a new "Components" tab showing component repair costs, failure counts, and KPIs
+- Enterprise Reports Cost tab now shows a "Cost by Component" table alongside the existing asset-level view
+- All changes follow existing code patterns and use the same shadcn/ui components (Card, Table, Badge, etc.)
+- All edge cases handled (no data, missing relations)
+- Lint check passes with no new errors, TypeScript compilation successful
+WORKLOG_EOF
+---
+Task ID: 3-a
+Agent: Main Agent
+Task: Fix 28 bare fetch() calls missing auth headers across 9 files
+
+Work Log:
+- Identified all bare fetch('/api/...') calls via grep across module files, shared components, hooks, and digital-twin components
+- Replaced all 28 bare fetch() calls with the shared api client from @/lib/api
+- Files fixed: HistorianPages.tsx (10), ObservabilityPages.tsx (3), ConnectivityPages.tsx (4), SettingsPages.tsx (1), MaintenancePages.tsx (4), FileUpload.tsx (1), ComponentMappingEditor.tsx (3), ModelManagerPanel.tsx (2), useDiagramTelemetry.ts (1)
+- Added `import { api } from '@/lib/api'` to 5 files that didn't have it
+- Used api.get() for GETs, api.post() for POSTs, api.delete() for DELETEs, api.getRaw() for blob/binary downloads
+- Removed manual localStorage.getItem('eam_token') and XTransformPort query param patterns
+- Verified zero remaining bare fetch('/api/...') calls
+- Dev server compiled successfully with 200 response
+
+Stage Summary:
+- All API calls in the frontend now consistently use the shared api client
+- Authentication headers are automatically injected on all requests
+- No new lint errors introduced
+
+---
+Task ID: 3-b
+Agent: Main Agent
+Task: Add component-level cost breakdown to WOReports and EnterpriseReports
+
+Work Log:
+- Added component cost aggregation query to /api/work-orders/reports: fetches WorkOrderComponent + ComponentRegistry + Asset, aggregates by component with total/labor/parts/contractor cost, WO count, failure count, last repair date, avg cost/WO. Top 20 by total cost.
+- Added component cost aggregation query to /api/reports/enterprise: same pattern, top 15 by total cost
+- Added 'componentCosts' field to WO reports API response
+- Added 'byComponent' field to enterprise reports costAnalytics response
+- Added new 'Components' tab to WOReportsPage.tsx with: 4 KPI cards, full detail table (code, name, asset, criticality, WOs, total/parts/labor/avg cost, failures), empty state, summary footer
+- Added 'Cost by Component' table to EnterpriseReports.tsx Cost tab with: component name, code, asset, criticality, WO count, labor/parts/total cost, empty state
+- Added Cpu icon import to both files
+- Dev server compiled successfully, first page load returned 200 in 13.7s
+
+Stage Summary:
+- Reports now show component-level cost breakdown alongside existing asset-level data
+- WOReports has a dedicated 'Components' tab
+- EnterpriseReports Cost tab has a 'Cost by Component' section
+- Both gracefully handle empty state when no components are linked to WOs

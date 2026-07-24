@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { api } from '@/lib/api';
 import type { TelemetrySnapshot } from '@/services/diagramTelemetry.service';
 
 interface UseDiagramTelemetryOptions {
@@ -36,12 +37,11 @@ export function useDiagramTelemetry({
     setError(null);
 
     try {
-      const res = await fetch(`/api/telemetry/overlay?diagramId=${diagramId}`);
-      if (!res.ok) throw new Error('Failed to fetch telemetry');
+      const res = await api.get(`/api/telemetry/overlay?diagramId=${diagramId}`);
+      if (!res.success) throw new Error('Failed to fetch telemetry');
 
-      const data = await res.json();
-      if (data.success) {
-        setSnapshots(data.data?.snapshots || []);
+      if (res.success) {
+        setSnapshots(res.data?.snapshots || []);
         setLastUpdated(new Date().toISOString());
       }
     } catch (err) {

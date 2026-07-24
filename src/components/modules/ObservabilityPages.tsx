@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { api } from '@/lib/api';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
@@ -261,25 +262,14 @@ export function ObservabilityDashboard() {
   const fetchData = useCallback(async () => {
     try {
       const [healthRes, logsRes, tracesRes] = await Promise.all([
-        fetch('/api/observability/health'),
-        fetch('/api/observability/logs?limit=100&level=' + (logFilter === 'all' ? 'info' : logFilter === 'warn' ? 'warn' : logFilter === 'error' ? 'error' : 'info')),
-        fetch('/api/observability/traces?limit=20'),
+        api.get('/api/observability/health'),
+        api.get('/api/observability/logs?limit=100&level=' + (logFilter === 'all' ? 'info' : logFilter === 'warn' ? 'warn' : logFilter === 'error' ? 'error' : 'info')),
+        api.get('/api/observability/traces?limit=20'),
       ]);
 
-      if (healthRes.ok) {
-        const healthJson = await healthRes.json();
-        if (healthJson.success) setHealthData(healthJson.data);
-      }
-
-      if (logsRes.ok) {
-        const logsJson = await logsRes.json();
-        if (logsJson.success) setLogs(logsJson.data.entries || []);
-      }
-
-      if (tracesRes.ok) {
-        const tracesJson = await tracesRes.json();
-        if (tracesJson.success) setTraces(tracesJson.data.traces || []);
-      }
+      if (healthRes.success) setHealthData(healthRes.data);
+      if (logsRes.success) setLogs(logsRes.data?.entries || []);
+      if (tracesRes.success) setTraces(tracesRes.data?.traces || []);
     } catch {
       // Silently handle fetch errors
     } finally {

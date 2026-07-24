@@ -4197,10 +4197,7 @@ export function SettingsBackupPage() {
   const handleBackup = async () => {
     setBackingUp(true);
     try {
-      const response = await fetch('/api/backups', {
-        method: 'POST',
-        headers: { ...getAuthHeaders() },
-      });
+      const response = await api.getRaw('/api/backups', { method: 'POST' });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));

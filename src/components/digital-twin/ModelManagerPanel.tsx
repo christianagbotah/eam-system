@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { api } from '@/lib/api';
 import {
   Upload, Search, MoreVertical, Eye, Trash2, RefreshCw,
   CheckCircle2, XCircle, Loader2, HardDrive, Box,
@@ -59,10 +60,11 @@ export function ModelManagerPanel({ onSelectModel, onClose }: ModelManagerPanelP
       if (search) params.set('search', search);
       if (formatFilter !== 'all') params.set('format', formatFilter);
       if (statusFilter !== 'all') params.set('status', statusFilter);
-      const res = await fetch(`/api/model-library?${params}`);
-      const data = await res.json();
-      setModels(data.data || []);
-      setStats(data.stats || null);
+      const res = await api.get(`/api/model-library?${params}`);
+      if (res.success) {
+        setModels(res.data?.data || []);
+        setStats(res.data?.stats || null);
+      }
     } catch (err) {
       console.error('Failed to fetch models:', err);
     } finally {
@@ -73,7 +75,7 @@ export function ModelManagerPanel({ onSelectModel, onClose }: ModelManagerPanelP
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this model? This cannot be undone.')) return;
     try {
-      await fetch(`/api/model-library/${id}`, { method: 'DELETE' });
+      await api.delete(`/api/model-library/${id}`);
       fetchModels();
     } catch (err) {
       console.error('Failed to delete model:', err);

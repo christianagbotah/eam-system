@@ -469,6 +469,63 @@ export async function GET(request: NextRequest) {
         };
       });
 
+    // Cost by component (top 15)
+    const woIds = workOrders.map(wo => wo.id);
+    const woComponents = woIds.length > 0 ? await db.workOrderComponent.findMany({
+      where: { workOrderId: { in: woIds } },
+      include: {
+        componentRegistry: {
+          include: { asset: { select: { name: true, assetTag: true } } },
+        },
+      },
+    }) : [];
+    const woMapEnt = new Map(workOrders.map(wo => [wo.id, wo]));
+    const componentCostMapEnt = new Map<string, { componentId: string; componentCode: string; componentName: string; criticality: string; assetName: string; assetTag: string; woCount: number; totalCost: number; laborCost: number; partsCost: number; contractorCost: number }>();
+    for (const woc of woComponents) {
+      const comp = woc.componentRegistry;
+      if (!comp) continue;
+      const wo = woMapEnt.get(woc.workOrderId);
+      if (!wo) continue;
+      const existing = componentCostMapEnt.get(comp.id);
+      if (existing) {
+        existing.woCount++;
+        existing.totalCost += wo.totalCost || 0;
+        existing.laborCost += wo.laborCost || 0;
+        existing.partsCost += wo.partsCost || 0;
+        existing.contractorCost += wo.contractorCost || 0;
+      } else {
+        componentCostMapEnt.set(comp.id, {
+          componentId: comp.id,
+          componentCode: comp.componentCode || '',
+          componentName: comp.name || 'Unknown',
+          criticality: comp.criticality || 'low',
+          assetName: comp.asset?.name || wo.assetName || 'Unknown',
+          assetTag: comp.asset?.assetTag || '',
+          woCount: 1,
+          totalCost: wo.totalCost || 0,
+          laborCost: wo.laborCost || 0,
+          partsCost: wo.partsCost || 0,
+          contractorCost: wo.contractorCost || 0,
+        });
+      }
+    }
+    const costByComponent = Array.from(componentCostMapEnt.values())
+      .sort((a, b) => b.totalCost - a.totalCost)
+      .slice(0, 15)
+      .map(c => ({
+        componentId: c.componentId,
+        componentCode: c.componentCode,
+        componentName: c.componentName,
+        criticality: c.criticality,
+        assetName: c.assetName,
+        assetTag: c.assetTag,
+        woCount: c.woCount,
+        totalCost: Math.round(c.totalCost * 100) / 100,
+        laborCost: Math.round(c.laborCost * 100) / 100,
+        partsCost: Math.round(c.partsCost * 100) / 100,
+        contractorCost: Math.round(c.contractorCost * 100) / 100,
+      }));
+
     // Monthly cost breakdown (by YYYY-MM, split by labor/parts/contractor)
     const monthlyCostMap: Record<string, { laborCost: number; partsCost: number; contractorCost: number; totalCost: number; woCount: number }> = {};
     workOrders.forEach(wo => {
@@ -639,6 +696,7 @@ export async function GET(request: NextRequest) {
           contractor: totalContractorCost,
           byWOType: costByWOType,
           byAsset: costByAsset,
+          byComponent: costByComponent,
           trend: costTrend,
           monthlyCostBreakdown,
         },
