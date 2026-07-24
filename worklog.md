@@ -1074,4 +1074,44 @@ Tool ──1:N──> ToolTransaction
 4. **RepairDetailReport is the only report showing components** — via `Component/Part` and `Component Code` columns, but many rows show `(No component specified)`.
 5. **EnterpriseReports Tools tab has hardcoded KPIs** — not connected to real tool/inventory data.
 6. **Material requests link inventory items to WOs** but **not to components** — no way to track which component consumed which material.
-7. **Spare part returns track serial numbers and refurbishment** but lack component association — returned parts aren't linked back to the component they came from.
+7. **Spare part returns track serial numbers and refurbishment** but lack component association — returned parts aren't linked back to the component they came from.---
+Task: Add PO line items support to InventoryPurchaseOrdersPage
+Agent: Main Agent
+Date: 2025-01-01T00:00:00Z
+
+**Changes Made to `/home/z/my-project/src/components/modules/InventoryPages.tsx`**
+
+1. **Added `lineItems` state** — array of `{ itemId, quantity, unitCost, description }` to track PO line items in the creation form.
+
+2. **Added line item management functions** — `addLineItem`, `removeLineItem`, `updateLineItem` for CRUD operations on the line items array.
+
+3. **Added computed values** — `inventoryItemOptions` (useMemo mapping inventory items to `{value, label}` with name, itemCode, and unitCost), `lineItemTotal` (sum of qty x unitCost for all line items), and `expandedPo` state for table row expansion.
+
+4. **Modified `handleCreate`** — now validates that at least one line item exists with an itemId and quantity, maps line items to API format (`itemId`, `quantity`, `unitCost`, `description`), passes `items` array to the POST body, and resets `lineItems` to `[]` on success.
+
+5. **Added `handleDialogClose`** — wraps `setCreateOpen` and resets `lineItems` when dialog closes, preventing stale data on reopen.
+
+6. **Updated PO table rows** — made rows clickable with a chevron indicator. Clicking a PO row expands/collapses sub-rows showing each line item name, itemCode, quantity x unitCost = total. Uses React.Fragment to group parent and child rows.
+
+7. **Added line items section in creation dialog** — placed after Notes textarea, before footer buttons. Includes header row with label and Add Item button, empty state, scrollable list of line items with SearchableSelect/qty/cost/remove, auto-fill unitCost from selected item, computed total, responsive layout.
+
+**No lint errors introduced** — verified with `bun run lint`.
+---
+## Fix: Diagram-Asset Association
+Date: 2026-07-24
+
+Task: Fix broken diagram-asset association
+
+Problem: SystemDiagram model had no assetId field, so diagrams created from asset detail page were not linked to any asset
+
+Changes:
+
+  1. prisma/schema.prisma: Added assetId String? field, asset relation, @@index([assetId]) to SystemDiagram; added systemDiagrams[] to Asset
+
+  2. src/app/api/system-diagrams/route.ts: Added assetId to GET filter and POST create data
+
+  3. src/components/modules/AssetDetailPage.tsx: Added assetId query param to fetch URL, assetId: id to POST body, fixed useCallback deps
+
+DB: Added assetId column+index directly to SQLite, regenerated Prisma client
+
+Lint: All changed files pass ESLint

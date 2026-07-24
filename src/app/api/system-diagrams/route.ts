@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
+    const assetId = searchParams.get('assetId');
     const search = searchParams.get('search');
     const type = searchParams.get('type') || searchParams.get('diagramType');
     let page = parseInt(searchParams.get('page') || '1', 10);
@@ -28,6 +29,10 @@ export async function GET(request: NextRequest) {
         { name: { contains: search } },
         { description: { contains: search } },
       ];
+    }
+
+    if (assetId) {
+      where.assetId = assetId;
     }
 
     if (type) {
@@ -88,6 +93,7 @@ export async function POST(request: NextRequest) {
       edges,
       viewport,
       plantId,
+      assetId,
       isTemplate: bodyIsTemplate,
     } = body;
     const type = bodyType || diagramType;
@@ -122,6 +128,7 @@ export async function POST(request: NextRequest) {
         edges: JSON.stringify(edges),
         viewport: viewport ? JSON.stringify(viewport) : null,
         plantId: typeof plantId === 'string' ? plantId : null,
+        assetId: typeof assetId === 'string' ? assetId : null,
         isTemplate,
         createdById: session.userId,
       },

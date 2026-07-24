@@ -1230,11 +1230,11 @@ export default function EnterpriseReports() {
         <TabsContent value="tools" className="space-y-6 mt-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: 'Tool Utilization', value: '78%', icon: Wrench, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400', onClick: () => setActiveTab('cost') },
-              { label: 'Active Tools', value: '24', icon: HardHat, color: 'text-sky-600', bgColor: 'bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400', onClick: () => setActiveTab('cost') },
-              { label: 'Stock-out Events', value: reportData?.stockOutEvents ?? '2', icon: AlertTriangle, color: 'text-red-600', bgColor: 'bg-red-50 dark:bg-red-900/30 dark:text-red-400', onClick: () => setActiveTab('cost') },
-              { label: 'POs Pending', value: '5', icon: ArrowRightLeft, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400', onClick: () => setActiveTab('cost') },
-            ].map(k => { const I = k.icon; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} color={k.color} bgColor={k.bgColor} onClick={'onClick' in k && k.onClick ? k.onClick : undefined} />; })}
+              { label: 'Tool Utilization', value: `${reportData?.toolKpis?.utilizationRate ?? 0}%`, icon: Wrench, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+              { label: 'Active Tools', value: reportData?.toolKpis?.activeTools ?? 0, icon: HardHat, color: 'text-sky-600', bgColor: 'bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+              { label: 'Stock-out Events', value: reportData?.toolKpis?.stockOutEvents ?? 0, icon: AlertTriangle, color: 'text-red-600', bgColor: 'bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+              { label: 'POs Pending', value: reportData?.toolKpis?.pendingPOs ?? 0, icon: ArrowRightLeft, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+            ].map(k => { const I = k.icon; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} color={k.color} bgColor={k.bgColor} />; })}
           </div>
 
           <Card className="border border-border/60 shadow-sm">
@@ -1253,6 +1253,21 @@ export default function EnterpriseReports() {
               ) : <EmptyState icon={Package} title="No consumption data" />}
             </CardContent>
           </Card>
+
+          {(reportData?.toolUtilization || []).length > 0 && (
+            <Card className="border border-border/60 shadow-sm">
+              <CardHeader className="pb-3"><CardTitle className="text-base">Tool Utilization Details</CardTitle></CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto rounded border">
+                  <Table><TableHeader><TableRow><TableHead>Tool</TableHead><TableHead className="text-right">Requests</TableHead><TableHead className="text-right hidden sm:table-cell">Checkouts</TableHead><TableHead className="text-right hidden md:table-cell">Avg Hours</TableHead><TableHead className="text-right">Total Hours</TableHead></TableRow></TableHeader><TableBody>
+                    {reportData.toolUtilization.map((t: any, i: number) => (
+                      <TableRow key={i}><TableCell className="font-medium">{t.toolName}</TableCell><TableCell className="text-right">{t.requestCount}</TableCell><TableCell className="text-right hidden sm:table-cell">{t.totalCheckouts}</TableCell><TableCell className="text-right hidden md:table-cell">{t.avgCheckoutHours}h</TableCell><TableCell className="text-right font-medium">{Math.round(t.totalHours * 10) / 10}h</TableCell></TableRow>
+                    ))}
+                  </TableBody></Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* ====== SLA COMPLIANCE TAB ====== */}

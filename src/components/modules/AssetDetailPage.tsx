@@ -104,10 +104,10 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   // Reload diagrams
   const reloadDiagrams = useCallback(() => {
-    api.get(`/api/system-diagrams?limit=100`).then(res => {
+    api.get(`/api/system-diagrams?assetId=${id}&limit=100`).then(res => {
       if (res.success && res.data) setDiagrams(Array.isArray(res.data) ? res.data : []);
     }).catch(() => {});
-  }, []);
+  }, [id]);
 
   // Lazy load tab data when tab changes
   // NOTE: loadedTabsRef is a ref (not state) to avoid infinite re-render loops.
@@ -226,6 +226,7 @@ export function AssetDetailPage({ id }: { id: string }) {
         nodes: [],
         edges: [],
         isTemplate: false,
+        assetId: id,
       });
       if (res.success) {
         toast.success('System diagram created successfully');

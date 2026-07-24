@@ -943,6 +943,8 @@ model Asset {
   assetModels         AssetModel[]
   maintenanceRequests MaintenanceRequest[] @relation("MRAsset")
 
+  systemDiagrams       SystemDiagram[]
+
   // Component Registry / Predictive Maintenance relations
   registryComponents ComponentRegistry[] @relation("RegistryAsset")
   failureRecords     FailureRecord[]     @relation("FailureAsset")
@@ -2365,6 +2367,7 @@ model TwinAnnotation {
 model SystemDiagram {
   id           String   @id @default(cuid())
   plantId      String?
+  assetId      String?
   name         String
   description  String?
   type         String   @default("process") // piping, electrical, process, hvac, control, safety
@@ -2380,10 +2383,12 @@ model SystemDiagram {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  asset               Asset?               @relation(fields: [assetId], references: [id])
   createdByIdUser User @relation("SystemDiagramCreatedBy", fields: [createdById], references: [id])
   updatedByIdUser User? @relation("SystemDiagramUpdatedBy", fields: [updatedById], references: [id])
 
   @@index([plantId])
+  @@index([assetId])
   @@index([createdById])
   @@index([type])
   @@map("system_diagrams")

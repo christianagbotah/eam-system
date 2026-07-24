@@ -577,6 +577,23 @@ export async function GET(request: NextRequest) {
       },
     };
 
+    // ========== TOOL & INVENTORY KPIs ==========
+    const [toolCountResult, stockOutResult, pendingPOResult] = await Promise.all([
+      db.tool.count({ where: { status: 'available' } }),
+      db.inventoryItem.count({ where: { currentStock: { lte: 0 } } }),
+      db.purchaseOrder.count({ where: { status: { in: ['draft', 'submitted'] } } }),
+    ]);
+    const totalToolsResult = await db.tool.count();
+    const toolUtilizationRate = totalToolsResult > 0
+      ? Math.round(((totalToolsResult - toolCountResult) / totalToolsResult) * 100)
+      : 0;
+    const toolKpis = {
+      utilizationRate: toolUtilizationRate,
+      activeTools: toolCountResult,
+      stockOutEvents: stockOutResult,
+      pendingPOs: pendingPOResult,
+    };
+
     return NextResponse.json({
       success: true,
       data: {
@@ -613,6 +630,7 @@ export async function GET(request: NextRequest) {
         },
         repeatFailures,
         toolUtilization,
+        toolKpis,
         materialConsumption,
         costAnalytics: {
           total: totalMaintenanceCost,

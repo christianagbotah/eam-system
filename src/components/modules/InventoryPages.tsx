@@ -1459,6 +1459,30 @@ export function InventoryPurchaseOrdersPage() {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [inventoryItems, setInventoryItems] = useState<any[]>([]);
   const [form, setForm] = useState({ supplier: '', priority: '', expectedDate: '', notes: '' });
+  const [lineItems, setLineItems] = useState<{ itemId: string; quantity: string; unitCost: string; description: string }[]>([]);
+
+  const addLineItem = () => setLineItems([...lineItems, { itemId: '', quantity: '1', unitCost: '0', description: '' }]);
+  const removeLineItem = (idx: number) => setLineItems(lineItems.filter((_, i) => i !== idx));
+  const updateLineItem = (idx: number, field: string, value: string) => {
+    const updated = [...lineItems];
+    updated[idx] = { ...updated[idx], [field]: value };
+    setLineItems(updated);
+  };
+
+  const inventoryItemOptions = useMemo(() =>
+    inventoryItems.map((it: any) => ({
+      value: it.id,
+      label: `${it.name} (${it.itemCode}) - ${formatCurrency(it.unitCost || 0)}/unit`,
+    })),
+    [inventoryItems]
+  );
+
+  const lineItemTotal = useMemo(() =>
+    lineItems.reduce((sum, li) => sum + (parseFloat(li.quantity) || 0) * (parseFloat(li.unitCost) || 0), 0),
+    [lineItems]
+  );
+
+  const [expandedPo, setExpandedPo] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -1492,18 +1516,32 @@ export function InventoryPurchaseOrdersPage() {
 
   const handleCreate = async () => {
     if (!form.supplier || !form.priority) { toast.error('Supplier and priority are required'); return; }
+    if (lineItems.length === 0) { toast.error('At least one line item is required'); return; }
+    const validItems = lineItems.filter(li => li.itemId && li.quantity);
+    if (validItems.length === 0) { toast.error('Please select an item and quantity for at least one line item'); return; }
     setCreating(true);
     try {
+      const items = validItems.map(li => ({
+        itemId: li.itemId,
+        quantity: parseFloat(li.quantity) || 0,
+        unitCost: parseFloat(li.unitCost) || 0,
+        description: li.description || undefined,
+      }));
       const res = await api.post('/api/purchase-orders', {
         supplierId: form.supplier,
         priority: form.priority,
         expectedDelivery: form.expectedDate || null,
         notes: form.notes || null,
-        items: [],
+        items,
       });
-      if (res.success) { toast.success('Purchase order created successfully'); setCreateOpen(false); setForm({ supplier: '', priority: '', expectedDate: '', notes: '' }); fetchOrders(); }
+      if (res.success) { toast.success('Purchase order created successfully'); setCreateOpen(false); setForm({ supplier: '', priority: '', expectedDate: '', notes: '' }); setLineItems([]); fetchOrders(); }
       else toast.error(res.error || 'Failed to create PO');
     } catch { toast.error('Failed to create PO'); } finally { setCreating(false); }
+  };
+
+  const handleDialogClose = (open: boolean) => {
+    setCreateOpen(open);
+    if (!open) { setLineItems([]); }
   };
 
   const handleAction = async (id: string, action: 'approve') => {
@@ -1535,23 +1573,37 @@ export function InventoryPurchaseOrdersPage() {
             {loading ? (<TableRow><TableCell colSpan={8} className="h-48 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></TableCell></TableRow>) : filtered.length === 0 ? (
               <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={ShoppingCart} title="No purchase orders found" description="Try adjusting your search or filters." /></TableCell></TableRow>
             ) : filtered.map((po: any) => (
-              <TableRow key={po.id} className="hover:bg-muted/30">
-                <TableCell className="font-mono text-sm font-medium">{po.poNumber}</TableCell>
-                <TableCell className="font-medium">{po.supplier?.name || '-'}</TableCell>
-                <TableCell className="hidden sm:table-cell">{po.items?.length || 0}</TableCell>
-                <TableCell className="hidden sm:table-cell font-medium">{formatCurrency(po.totalAmount)}</TableCell>
-                <TableCell className="hidden md:table-cell"><PriorityBadge priority={po.priority} /></TableCell>
-                <TableCell><Badge variant="outline" className={poStatusColors[po.status]}>{po.status?.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
-                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(po.createdAt)}</TableCell>
-                <TableCell className="hidden lg:table-cell">
-                  {(hasPermission('inventory.update') || isAdmin()) && po.status === 'draft' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(po.id, 'approve')}>Approve</Button>}
-                </TableCell>
-              </TableRow>
+              <React.Fragment key={po.id}>
+                <TableRow className="hover:bg-muted/30 cursor-pointer" onClick={() => setExpandedPo(expandedPo === po.id ? null : po.id)}>
+                  <TableCell className="font-mono text-sm font-medium"><div className="flex items-center gap-1.5"><ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${expandedPo === po.id ? 'rotate-90' : ''}`} />{po.poNumber}</div></TableCell>
+                  <TableCell className="font-medium">{po.supplier?.name || '-'}</TableCell>
+                  <TableCell className="hidden sm:table-cell">{po.items?.length || 0}</TableCell>
+                  <TableCell className="hidden sm:table-cell font-medium">{formatCurrency(po.totalAmount)}</TableCell>
+                  <TableCell className="hidden md:table-cell"><PriorityBadge priority={po.priority} /></TableCell>
+                  <TableCell><Badge variant="outline" className={poStatusColors[po.status]}>{po.status?.replace(/_/g, ' ').toUpperCase()}</Badge></TableCell>
+                  <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">{formatDate(po.createdAt)}</TableCell>
+                  <TableCell className="hidden lg:table-cell" onClick={e => e.stopPropagation()}>
+                    {(hasPermission('inventory.update') || isAdmin()) && po.status === 'draft' && <Button size="sm" variant="outline" className="h-7 text-xs mr-1" onClick={() => handleAction(po.id, 'approve')}>Approve</Button>}
+                  </TableCell>
+                </TableRow>
+                {expandedPo === po.id && po.items?.length > 0 && po.items.map((item: any, i: number) => (
+                  <TableRow key={`${po.id}-item-${i}`} className="bg-muted/20 hover:bg-muted/30">
+                    <TableCell className="pl-12 text-xs text-muted-foreground" colSpan={3}>
+                      <div className="flex items-center gap-2"><Box className="h-3 w-3" /><span className="font-medium text-foreground">{item.inventoryItem?.name || item.description || 'Item'}</span>{item.inventoryItem?.itemCode && <span className="text-muted-foreground">({item.inventoryItem.itemCode})</span>}</div>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell text-xs">
+                      <span className="text-muted-foreground">{item.quantity} × {formatCurrency(item.unitCost)}</span>
+                      <span className="ml-1 font-medium">= {formatCurrency((item.quantity || 0) * (item.unitCost || 0))}</span>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell" /><TableCell className="hidden lg:table-cell" /><TableCell className="hidden lg:table-cell" /><TableCell className="hidden lg:table-cell" />
+                  </TableRow>
+                ))}
+              </React.Fragment>
             ))}
           </TableBody></Table>
         </div>
       </Card>
-      <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
+      <ResponsiveDialog open={createOpen} onOpenChange={handleDialogClose}>
         
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Purchase Order</h2><p className="text-sm text-muted-foreground">Create a new purchase order for inventory items.</p></div>
           <div className="grid gap-4 py-2">
@@ -1578,9 +1630,52 @@ export function InventoryPurchaseOrdersPage() {
               <DatePicker label="Expected Date" value={form.expectedDate || undefined} onChange={v => setForm({ ...form, expectedDate: v || '' })} />
             </div>
             <div className="space-y-2"><Label>Notes</Label><Textarea placeholder="Additional notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} /></div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Line Items *</Label>
+                <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={addLineItem}><Plus className="h-3.5 w-3.5 mr-1" />Add Item</Button>
+              </div>
+              {lineItems.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-4 border border-dashed rounded-md">No line items added. Click &quot;Add Item&quot; to get started.</p>
+              )}
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {lineItems.map((li, idx) => (
+                  <div key={idx} className="grid grid-cols-1 sm:grid-cols-[1fr_80px_100px_32px] gap-2 items-end">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Item</Label>
+                      <SearchableSelect
+                        value={li.itemId}
+                        onValueChange={v => {
+                          updateLineItem(idx, 'itemId', v);
+                          const selectedItem = inventoryItems.find((it: any) => it.id === v);
+                          if (selectedItem) updateLineItem(idx, 'unitCost', String(selectedItem.unitCost || 0));
+                        }}
+                        options={inventoryItemOptions}
+                        placeholder="Select item..."
+                        searchPlaceholder="Search items..."
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Qty</Label>
+                      <Input type="number" min="1" step="1" value={li.quantity} onChange={e => updateLineItem(idx, 'quantity', e.target.value)} className="h-8 text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Unit Cost</Label>
+                      <Input type="number" min="0" step="0.01" value={li.unitCost} onChange={e => updateLineItem(idx, 'unitCost', e.target.value)} className="h-8 text-sm" />
+                    </div>
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeLineItem(idx)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                  </div>
+                ))}
+              </div>
+              {lineItems.length > 0 && (
+                <div className="flex justify-end pt-1 border-t">
+                  <span className="text-sm font-semibold">Total: {formatCurrency(lineItemTotal)}</span>
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => handleDialogClose(false)}>Cancel</Button>
             <Button onClick={handleCreate} disabled={creating} className="bg-emerald-600 hover:bg-emerald-700 text-white">{creating ? 'Creating...' : 'Create PO'}</Button>
           </div>
         
