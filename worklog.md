@@ -1255,3 +1255,51 @@ Stage Summary:
 - WOReports has a dedicated 'Components' tab
 - EnterpriseReports Cost tab has a 'Cost by Component' section
 - Both gracefully handle empty state when no components are linked to WOs
+
+---
+Task ID: 7-c
+Agent: Fix Agent
+Task: Fix bare fetch calls in MaintenancePages.tsx
+
+Work Log:
+- Scanned entire MaintenancePages.tsx (9278 lines) for bare `fetch(` calls using multiple search patterns (rg, PCRE2 lookbehind, manual grep)
+- Result: ZERO bare `fetch(` calls found — all API calls already use `api.get()`, `api.post()`, `api.put()`, `api.delete()`
+- Confirmed `import { api } from '@/lib/api'` already present at line 7
+- No changes required
+
+Stage Summary:
+- File already fully migrated to use the shared API client
+- No code changes needed
+- No remaining bare fetch calls in MaintenancePages.tsx
+
+---
+Task ID: 7-d
+Agent: Fix Agent for ObservabilityPages.tsx
+Task: Find and fix ALL bare `fetch(` calls in ObservabilityPages.tsx
+
+Work Log:
+- Searched entire file (762 lines) for bare `fetch(` calls using multiple regex patterns
+- Found ZERO bare `fetch(` calls — all HTTP requests already use `api.get()`
+- Confirmed `import { api } from '@/lib/api';` already present on line 4
+- Three `api.get()` calls confirmed on lines 265-267 (health, logs, traces endpoints)
+- The `\bfetch\b` matches were only in comments (lines 274, 280), not actual code
+
+Stage Summary:
+- No changes needed — file was already fully migrated to api.* methods
+- ObservabilityPages.tsx is clean: no bare fetch calls exist
+
+---
+Task ID: 7-b
+Agent: Fix Agent for ConnectivityPages.tsx
+Task: Find and fix ALL bare fetch calls in ConnectivityPages.tsx
+
+Work Log:
+- Read entire ConnectivityPages.tsx (806 lines) in two chunks
+- Searched for all occurrences of fetch in the file
+- Found ZERO bare fetch calls — all 4 HTTP requests already use api.get() (lines 563-566)
+- Confirmed import { api } from @/lib/api already present at line 4
+- The word fetch only appears in: function name fetchAll (line 559), error log string (line 574), and function call references (lines 581-582)
+
+Stage Summary:
+- No changes needed — file was already fully migrated to api.* methods
+- ConnectivityPages.tsx is clean: no bare fetch calls exist
