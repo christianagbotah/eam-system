@@ -105,6 +105,7 @@ export async function GET(request: NextRequest) {
         where,
         include: {
           workOrder: { select: { id: true, woNumber: true, title: true, status: true } },
+          component: { select: { id: true, componentCode: true, name: true, criticality: true } },
           item: { select: { id: true, itemCode: true, name: true, currentStock: true, unitOfMeasure: true } },
           requestedBy: { select: { id: true, fullName: true, username: true, avatar: true } },
           inspectedBy: { select: { id: true, fullName: true } },
@@ -144,6 +145,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       workOrderId,
+      componentId,
       materialRequestId,
       itemId,
       itemName,
@@ -161,6 +163,14 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'workOrderId and itemName are required' },
         { status: 400 },
       );
+    }
+
+    // Validate componentId if provided
+    if (componentId) {
+      const comp = await db.componentRegistry.findUnique({ where: { id: componentId } });
+      if (!comp) {
+        return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
+      }
     }
 
     // Verify work order exists
@@ -195,6 +205,7 @@ export async function POST(request: NextRequest) {
       data: {
         returnNumber,
         workOrderId,
+        componentId: componentId || null,
         materialRequestId: materialRequestId || null,
         itemId: itemId || null,
         itemName,
@@ -214,6 +225,7 @@ export async function POST(request: NextRequest) {
       },
       include: {
         workOrder: { select: { id: true, woNumber: true, title: true } },
+        component: { select: { id: true, componentCode: true, name: true, criticality: true, assetId: true } },
         item: { select: { id: true, itemCode: true, name: true } },
         requestedBy: { select: { id: true, fullName: true, username: true } },
       },

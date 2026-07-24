@@ -25,6 +25,7 @@ export async function GET(
             asset: { select: { id: true, name: true, assetTag: true } },
           },
         },
+        component: { select: { id: true, componentCode: true, name: true, criticality: true, assetId: true } },
         materialRequest: { select: { id: true, itemName: true, quantity: true } },
         item: { select: { id: true, itemCode: true, name: true, currentStock: true, unitOfMeasure: true, binLocation: true } },
         requestedBy: { select: { id: true, fullName: true, username: true, avatar: true } },
@@ -80,7 +81,7 @@ export async function PUT(
     }
 
     // Build update data (only allow certain fields)
-    const allowedFields = ['itemName', 'partSerialNumber', 'quantity', 'conditionOnReturn', 'damageDescription', 'refurbishmentNotes', 'estimatedRefurbCost'];
+    const allowedFields = ['itemName', 'partSerialNumber', 'quantity', 'conditionOnReturn', 'damageDescription', 'refurbishmentNotes', 'estimatedRefurbCost', 'componentId'];
     const updateData: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -97,6 +98,7 @@ export async function PUT(
       data: updateData,
       include: {
         workOrder: { select: { id: true, woNumber: true, title: true } },
+        component: { select: { id: true, componentCode: true, name: true, criticality: true } },
         item: { select: { id: true, itemCode: true, name: true } },
         requestedBy: { select: { id: true, fullName: true } },
       },

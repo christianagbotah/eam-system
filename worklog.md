@@ -1323,3 +1323,27 @@ Stage Summary:
 - 5 client-side files fixed across the codebase
 - All client-side API calls now go through the shared api client with correct auth headers
 - Zero bare fetch() calls remain in client-side code
+---
+Task ID: 9
+Agent: Main Agent
+Task: Add spare part returns component association
+
+Work Log:
+- Added `componentId String?` field to SparePartReturn model in prisma/schema.prisma
+- Added `component ComponentRegistry?` relation with name "SparePartReturnComponent"
+- Added `@@index([componentId])` and `sparePartReturns` relation on ComponentRegistry
+- Updated POST /api/repairs/spare-part-returns: accepts componentId, validates it, stores it, returns component in response
+- Updated GET /api/repairs/spare-part-returns list: includes component in response
+- Updated GET /api/repairs/spare-part-returns/[id]: includes component in response
+- Updated PUT /api/repairs/spare-part-returns/[id]: added componentId to allowedFields, includes component in response
+- Added `componentId` to createForm state in RepairsPages.tsx SparePartReturnsSection
+- Added `AsyncSearchableSelect` for component that filters by WO's asset when WO is selected
+- Added Component column to spare part returns table
+- Added component display in detail sheet
+- Dev server compiled successfully: GET / 200 in 25.3s
+
+Stage Summary:
+- Spare part returns can now be optionally associated with a specific component
+- Component selector filters by the WO's asset for context-aware selection
+- Component shown in list table, detail sheet, and create/edit flows
+- Schema change is additive (nullable column) — no data migration needed

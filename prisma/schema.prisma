@@ -2710,6 +2710,7 @@ model SparePartReturn {
   id                  String    @id @default(cuid())
   returnNumber        String    @unique // format SPR-YYYYMM-NNNN
   workOrderId         String    // → WorkOrder
+  componentId         String?   // → ComponentRegistry
   materialRequestId   String?   // → RepairMaterialRequest
   itemId              String?   // → InventoryItem
   itemName            String
@@ -2739,6 +2740,7 @@ model SparePartReturn {
   updatedAt           DateTime  @updatedAt
 
   workOrder       WorkOrder?             @relation(fields: [workOrderId], references: [id])
+  component       ComponentRegistry?     @relation("SparePartReturnComponent", fields: [componentId], references: [id])
   materialRequest RepairMaterialRequest? @relation("SparePartReturnMatReq", fields: [materialRequestId], references: [id])
   item            InventoryItem?         @relation("SparePartReturnItem", fields: [itemId], references: [id])
   requestedBy     User                   @relation("SparePartReturnRequested", fields: [requestedById], references: [id])
@@ -2751,6 +2753,7 @@ model SparePartReturn {
   @@index([status])
   @@index([plantId])
   @@index([itemId])
+  @@index([componentId])
   @@map("spare_part_returns")
 }
 
@@ -2879,6 +2882,7 @@ model ComponentRegistry {
   // Work Order - Component tracking
   workOrderComponents     WorkOrderComponent[]
   repairMaterialRequests  RepairMaterialRequest[] @relation("RepairMatReqComponent")
+  sparePartReturns        SparePartReturn[] @relation("SparePartReturnComponent")
 
   @@unique([componentCode])
   @@index([parentId])

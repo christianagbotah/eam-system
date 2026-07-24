@@ -4189,7 +4189,7 @@ export function SparePartReturnsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createForm, setCreateForm] = useState({
-    workOrderId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1',
+    workOrderId: '', componentId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1',
     conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false,
     refurbishmentNotes: '', estimatedRefurbCost: '', notes: '',
   });
@@ -4218,7 +4218,7 @@ export function SparePartReturnsPage() {
     if (!createForm.workOrderId || !createForm.itemName) { toast.error('Work Order and Item Name are required'); return; }
     setSubmitting(true);
     const res = await api.post('/api/repairs/spare-part-returns', {
-      workOrderId: createForm.workOrderId, itemId: createForm.itemId || undefined,
+      workOrderId: createForm.workOrderId, componentId: createForm.componentId || undefined, itemId: createForm.itemId || undefined,
       itemName: createForm.itemName, partSerialNumber: createForm.partSerialNumber || undefined,
       quantity: parseFloat(createForm.quantity) || 1, conditionOnReturn: createForm.conditionOnReturn,
       damageDescription: createForm.damageDescription || undefined,
@@ -4229,7 +4229,7 @@ export function SparePartReturnsPage() {
     });
     if (res.success) {
       toast.success('Spare part return created'); setCreateOpen(false);
-      setCreateForm({ workOrderId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1', conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false, refurbishmentNotes: '', estimatedRefurbCost: '', notes: '' });
+      setCreateForm({ workOrderId: '', componentId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1', conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false, refurbishmentNotes: '', estimatedRefurbCost: '', notes: '' });
       fetchReturns();
     } else toast.error(res.error || 'Failed');
     setSubmitting(false);
@@ -4305,6 +4305,7 @@ export function SparePartReturnsPage() {
                     <TableHead>Return #</TableHead>
                     <TableHead>Part</TableHead>
                     <TableHead>WO #</TableHead>
+                    <TableHead>Component</TableHead>
                     <TableHead>Condition</TableHead>
                     <TableHead>Qty</TableHead>
                     <TableHead>Status</TableHead>
@@ -4321,6 +4322,7 @@ export function SparePartReturnsPage() {
                         {r.partSerialNumber && <div className="text-xs text-muted-foreground">SN: {r.partSerialNumber}</div>}
                       </TableCell>
                       <TableCell><Badge variant="outline" className="font-mono text-xs">{r.workOrder?.woNumber}</Badge></TableCell>
+                      <TableCell>{r.component ? <span className="text-sm">{r.component.name}</span> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={r.conditionOnReturn === 'good' || r.conditionOnReturn === 'new' ? 'bg-emerald-100 text-emerald-800' : r.conditionOnReturn === 'damaged' || r.conditionOnReturn === 'worn' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}>
                           {r.conditionOnReturn?.replace('_', ' ')}
@@ -4425,7 +4427,20 @@ export function SparePartReturnsPage() {
               const res = await api.get(`/api/work-orders?search=${q}&status=in_progress,assigned,planned&limit=20`);
               if (res.success) return (res.data || []).map((wo: any) => ({ value: wo.id, label: `${wo.woNumber} - ${wo.title}` }));
               return [];
-            }} value={createForm.workOrderId} onChange={v => setCreateForm(p => ({ ...p, workOrderId: v }))} />
+            }} value={createForm.workOrderId} onChange={v => setCreateForm(p => ({ ...p, workOrderId: v, componentId: '' }))} />
+          </div>
+          <div className="space-y-2">
+            <Label>Component <span className="text-xs text-muted-foreground">(optional)</span></Label>
+            <AsyncSearchableSelect placeholder={createForm.workOrderId ? 'Search components...' : 'Select a Work Order first'} fetchOptions={async (q) => {
+              if (!createForm.workOrderId) return [];
+              const woRes = await api.get(`/api/work-orders/${createForm.workOrderId}`);
+              const assetId = woRes.data?.assetId;
+              const params = new URLSearchParams({ search: q, limit: '30' });
+              if (assetId) params.set('assetId', assetId);
+              const res = await api.get(`/api/component-registry?${params}`);
+              if (res.success) return (res.data || []).map((c: any) => ({ value: c.id, label: `${c.componentCode} - ${c.name}${c.criticality ? ` [${c.criticality}]` : ''}` }));
+              return [];
+            }} value={createForm.componentId} onChange={v => setCreateForm(p => ({ ...p, componentId: v }))} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
@@ -4490,6 +4505,7 @@ export function SparePartReturnsPage() {
                     <div><Label className="text-xs text-muted-foreground">Condition</Label><p className="text-sm mt-1 capitalize">{detailItem.conditionOnReturn?.replace('_', ' ')}</p></div>
                     <div><Label className="text-xs text-muted-foreground">Quantity</Label><p className="text-sm mt-1 font-medium">{detailItem.quantity}</p></div>
                     <div><Label className="text-xs text-muted-foreground">WO #</Label><p className="text-sm mt-1 font-mono">{detailItem.workOrder?.woNumber}</p></div>
+                    {detailItem.component && <div><Label className="text-xs text-muted-foreground">Component</Label><p className="text-sm mt-1">{detailItem.component.name} <span className="text-muted-foreground">({detailItem.component.componentCode})</span></p></div>}
                   </div>
                   <Separator />
                   <div className="space-y-2">
