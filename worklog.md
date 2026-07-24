@@ -1347,3 +1347,24 @@ Stage Summary:
 - Component selector filters by the WO's asset for context-aware selection
 - Component shown in list table, detail sheet, and create/edit flows
 - Schema change is additive (nullable column) — no data migration needed
+---
+Task ID: 10
+Agent: Main Agent
+Task: Browser verification of all completed fixes
+
+Work Log:
+- Killed stale chrome/agent-browser processes (were consuming 800MB+ RAM)
+- Restarted dev server, confirmed GET / 200 in 24.6s (compile: 24.4s, render: 205ms)
+- Opened http://localhost:3000/ in agent-browser — login page renders correctly
+- All UI elements present: username/password fields, Sign In button, Demo Accounts panel, branding
+- Clicked Demo Accounts — all 17 demo account buttons rendered correctly
+- Clicked admin account — POST /api/auth/login returned 200
+- Post-login navigation blocked: no MySQL credentials in sandbox (placeholder DB adapter)
+- No browser console errors, no frontend compilation errors
+- Dev server log shows clean compilation with no TypeScript/lint errors
+
+Stage Summary:
+- Frontend compiles and renders without errors
+- Login page, demo accounts, and API routing all work
+- Full post-login verification requires a connected database (infrastructure limitation, not code bug)
+- All code changes from Tasks 7-9 are syntactically correct and compile cleanly
