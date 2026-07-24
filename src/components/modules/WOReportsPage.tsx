@@ -26,7 +26,6 @@ import {
   Hammer, CircleStop, Gauge, ChartPie, ArrowDownUp, Pause, Construction,
   ClipboardList, CalendarDays, Filter, Printer, Cpu,
 } from 'lucide-react';
-import { getAuthHeaders } from '@/lib/api';
 import { EmptyState, LoadingSkeleton, formatCurrency, formatDuration } from '@/components/shared/helpers';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
 
@@ -498,9 +497,7 @@ export function WOReportsPage() {
       if (moduleFilter && moduleFilter !== 'all') params.set('moduleFilter', moduleFilter);
       params.set('format', 'pdf');
 
-      const response = await fetch(`/api/work-orders/reports?${params.toString()}`, {
-        headers: getAuthHeaders(),
-      });
+      const response = await api.getRaw(`/api/work-orders/reports?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to generate PDF');
 
       const blob = await response.blob();

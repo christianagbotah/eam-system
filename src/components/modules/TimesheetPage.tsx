@@ -516,9 +516,7 @@ export function TimesheetPage() {
         params.set('userId', selectedUserId || user?.id || '');
       }
 
-      const response = await fetch(`/api/time-logs?${params}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('eam_token')}` },
-      });
+      const response = await api.getRaw(`/api/time-logs?${params}`);
 
       if (!response.ok) {
         toast.error('Export failed');

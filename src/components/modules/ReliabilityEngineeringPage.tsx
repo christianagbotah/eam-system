@@ -39,7 +39,7 @@ import { formatDuration } from '@/components/shared/helpers';
 const API_BASE = '/api/reliability';
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem('auth-token');
+  const token = localStorage.getItem('eam_token');
   const res = await fetch(url, {
     ...options,
     headers: {

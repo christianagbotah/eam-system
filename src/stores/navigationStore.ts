@@ -73,7 +73,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
     // Force re-fetch from API (bypasses cache)
     try {
       // Ensure repairs module exists in DB (idempotent, admin-only)
-      try { await fetch('/api/modules/ensure-repairs', { method: 'POST', credentials: 'include' }); } catch { /* non-admin or not ready yet */ }
+      try { await api.post('/api/modules/ensure-repairs', {}); } catch { /* non-admin or not ready yet */ }
 
       const res = await api.get<any[]>('/api/modules');
       if (res.success && Array.isArray(res.data)) {

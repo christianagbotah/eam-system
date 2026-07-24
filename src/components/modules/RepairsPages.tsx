@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
-import { api, getAuthHeaders } from '@/lib/api';
+import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 import { useModuleEnabled, MODULE_CODES } from '@/hooks/useModuleEnabled';
@@ -3528,9 +3528,7 @@ export function RepairAnalyticsPage() {
       if (activeAnalyticsTab && activeAnalyticsTab !== 'overview') params.set('reportType', activeAnalyticsTab);
       params.set('format', 'pdf');
 
-      const response = await fetch(`/api/repairs/reports?${params.toString()}`, {
-        headers: getAuthHeaders(),
-      });
+      const response = await api.getRaw(`/api/repairs/reports?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to generate PDF');
 
       const blob = await response.blob();
