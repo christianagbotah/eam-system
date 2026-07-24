@@ -372,7 +372,7 @@ export function RepairMaterialRequestsPage() {
   const [qtyTarget, setQtyTarget] = useState<{ id: string; action: string; max: number; field: string } | null>(null);
   const [workOrderIdFilter, setWorkOrderIdFilter] = useState('');
   const [pagination, setPagination] = useState<{ page: number; totalPages: number; total: number } | null>(null);
-  const [createForm, setCreateForm] = useState({ workOrderId: '', itemName: '', itemId: '', quantityRequested: '', unit: 'each', unitCost: '', reason: '', notes: '', urgency: 'medium' });
+  const [createForm, setCreateForm] = useState({ workOrderId: '', itemName: '', itemId: '', componentRegistryId: '', quantityRequested: '', unit: 'each', unitCost: '', reason: '', notes: '', urgency: 'medium' });
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [reconcileTarget, setReconcileTarget] = useState<any>(null);
   const [reconcileForm, setReconcileForm] = useState({ consumedQty: '', wastedQty: '', notes: '' });
@@ -429,13 +429,14 @@ export function RepairMaterialRequestsPage() {
     setSubmitting(true);
     const res = await api.post('/api/repairs/material-requests', {
       workOrderId: createForm.workOrderId, itemId: createForm.itemId || undefined,
+      componentRegistryId: createForm.componentRegistryId || undefined,
       itemName: createForm.itemName, quantityRequested: parseFloat(createForm.quantityRequested),
       unit: createForm.unit, unitCost: createForm.unitCost ? parseFloat(createForm.unitCost) : undefined,
       reason: createForm.reason, notes: createForm.notes || undefined, urgency: createForm.urgency,
     });
     if (res.success) {
       toast.success('Material request created'); setCreateOpen(false);
-      setCreateForm({ workOrderId: '', itemName: '', itemId: '', quantityRequested: '', unit: 'each', unitCost: '', reason: '', notes: '', urgency: 'medium' });
+      setCreateForm({ workOrderId: '', itemName: '', itemId: '', componentRegistryId: '', quantityRequested: '', unit: 'each', unitCost: '', reason: '', notes: '', urgency: 'medium' });
       fetchRequests();
     } else toast.error(res.error || 'Failed');
     setSubmitting(false);
@@ -615,6 +616,7 @@ export function RepairMaterialRequestsPage() {
                       onClick={() => { setDetailItem(r); setDetailOpen(true); }}>
                       <TableCell>
                         <div className="font-medium text-sm">{r.itemName}</div>
+                        {r.componentRegistry && <div className="text-[11px] text-muted-foreground font-mono">{r.componentRegistry.componentCode || r.componentRegistry.name}</div>}
                         <div className="text-xs text-muted-foreground">{r.unit} · {formatCurrency(r.unitCost || 0)}/unit</div>
                       </TableCell>
                       <TableCell><Badge variant="outline" className="font-mono text-xs">{r.workOrder?.woNumber}</Badge></TableCell>
@@ -810,8 +812,9 @@ export function RepairMaterialRequestsPage() {
         
           <div className="space-y-1.5 mb-4"><h2 className="text-lg font-semibold leading-none tracking-tight">New Material Request</h2><p className="text-sm text-muted-foreground">Request materials/spare parts for a work order</p></div>
           <div className="space-y-4">
-            <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v }))} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
+            <div><Label>Work Order *</Label><AsyncSearchableSelect value={createForm.workOrderId} onValueChange={(v) => setCreateForm(f => ({ ...f, workOrderId: v, componentRegistryId: '' }))} placeholder="Select work order..." searchPlaceholder="Search work orders..." fetchOptions={async () => { const res = await api.get('/api/work-orders?limit=999'); if (res.success && Array.isArray(res.data)) return res.data.map((w: any) => ({ value: w.id, label: `${w.woNumber} — ${w.title}` })); return []; }} /></div>
             <div><Label>Item Name *</Label><AsyncSearchableSelect value={createForm.itemId} onValueChange={(v) => { const item = inventoryItemsCache.current.find((i: any) => i.id === v); setCreateForm(f => ({ ...f, itemId: v, itemName: item ? (item.name + (item.itemCode ? ` (${item.itemCode})` : '')) : '' })); }} placeholder="Search inventory items..." searchPlaceholder="Search by name or code..." fetchOptions={fetchInventoryItems} /></div>
+            <div><Label>Component <span className="text-xs text-muted-foreground">(optional)</span></Label><AsyncSearchableSelect value={createForm.componentRegistryId} onValueChange={(v) => setCreateForm(f => ({ ...f, componentRegistryId: v }))} placeholder="Select component..." searchPlaceholder="Search components..." fetchOptions={async () => { if (!createForm.workOrderId) return []; try { const res = await api.get(`/api/work-orders/${createForm.workOrderId}`); if (res.success && res.data?.assetId) { const compRes = await api.get(`/api/component-registry?assetId=${res.data.assetId}`); if (compRes.success && Array.isArray(compRes.data)) return compRes.data.map((c: any) => ({ value: c.id, label: `${c.componentCode || ''} ${c.name}`.trim() })); } } catch {} return []; }} /></div>
             <div className="grid grid-cols-3 gap-3">
               <div><Label>Quantity *</Label><Input type="number" value={createForm.quantityRequested} onChange={(e) => setCreateForm({ ...createForm, quantityRequested: e.target.value })} /></div>
               <div><Label>Unit</Label><Select value={createForm.unit} onValueChange={(v) => setCreateForm({ ...createForm, unit: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="each">Each</SelectItem><SelectItem value="kg">Kg</SelectItem><SelectItem value="meter">Meter</SelectItem><SelectItem value="set">Set</SelectItem><SelectItem value="liter">Liter</SelectItem></SelectContent></Select></div>

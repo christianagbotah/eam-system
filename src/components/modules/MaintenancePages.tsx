@@ -6534,6 +6534,36 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             </Card>
           )}
 
+          {/* Materials by Component */}
+          {wo.materials && wo.materials.length > 0 && (
+            <Card className="border-0 shadow-sm">
+              <CardHeader><CardTitle className="text-base flex items-center gap-2"><PackageOpen className="h-4 w-4" />Materials & Parts</CardTitle></CardHeader>
+              <CardContent className="space-y-2">
+                <div className="max-h-64 overflow-y-auto space-y-1.5">
+                  {wo.materials.map((mat: any) => (
+                    <div key={mat.id} className="flex items-start justify-between text-sm py-1 gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-medium truncate">{mat.itemName}</span>
+                          {mat.componentRegistry && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono">{mat.componentRegistry.componentCode || mat.componentRegistry.name}</Badge>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          Req: {mat.quantityRequested} · Issued: {mat.quantityIssued} · Returned: {mat.quantityReturned}
+                          {mat.unitCost != null && mat.quantityIssued > 0 && <span className="ml-2">Cost: {formatCurrency(mat.unitCost * mat.quantityIssued)}</span>}
+                        </div>
+                      </div>
+                      <Badge variant={mat.status === 'issued' || mat.status === 'closed' ? 'default' : mat.status === 'rejected' ? 'destructive' : 'secondary'} className="text-[10px] px-1.5 py-0 shrink-0">
+                        {mat.status?.replace(/_/g, ' ')}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Cost Summary */}
           <Card className="border-0 shadow-sm">
             <CardHeader><CardTitle className="text-base">Cost Summary</CardTitle></CardHeader>

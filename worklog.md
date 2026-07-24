@@ -1115,3 +1115,76 @@ Changes:
 DB: Added assetId column+index directly to SQLite, regenerated Prisma client
 
 Lint: All changed files pass ESLint
+---
+Task ID: 2-a
+Agent: main
+Task: Fix PO creation UI - add line items
+
+Work Log:
+- Added lineItems state, addLineItem/removeLineItem/updateLineItem functions to InventoryPurchaseOrdersPage
+- Added line items section to PO creation dialog with SearchableSelect for inventory items, quantity, unit cost inputs
+- Auto-fills unitCost when item is selected from dropdown
+- Added computed total display in dialog
+- Made PO table rows expandable to show line item sub-rows
+- Modified handleCreate to pass items array to API, validate at least 1 item
+
+Stage Summary:
+- PO creation now supports adding multiple inventory items with quantities and costs
+- PO table shows expandable line item details
+- API already supported items - only UI was missing
+
+---
+Task ID: 2-b
+Agent: subagent (full-stack-developer)
+Task: Fix diagram-asset association
+
+Work Log:
+- Added assetId String? field to SystemDiagram model in schema
+- Added asset relation and @@index([assetId])
+- Added systemDiagrams[] to Asset model
+- Updated POST /api/system-diagrams to accept and store assetId
+- Updated GET /api/system-diagrams to filter by assetId query param
+- Updated AssetDetailPage diagram fetch to pass assetId filter
+- Updated AssetDetailPage diagram create to pass assetId
+- Fixed useCallback dependency array
+
+Stage Summary:
+- Diagrams are now properly linked to assets
+- Diagrams tab on asset detail shows only that asset's diagrams
+- New diagrams created from asset detail are automatically linked
+
+---
+Task ID: 2-c
+Agent: main
+Task: Fix Enterprise Reports Tools tab - connect to real data
+
+Work Log:
+- Added toolKpis section to /api/reports/enterprise API
+- Queries real data: tool utilization rate, active tools, stock-out events, pending POs
+- Updated EnterpriseReports.tsx Tools tab KPIs to use reportData.toolKpis
+- Removed hardcoded values (78%, 24, 2, 5)
+- Added Tool Utilization Details table showing per-tool request/checkout/hours data
+
+Stage Summary:
+- Enterprise Reports Tools tab now shows real-time data from the database
+- 4 KPI cards + detailed tool utilization table
+
+---
+Task ID: 2-d
+Agent: main
+Task: Add component-level material/cost tracking
+
+Work Log:
+- Added componentRegistry to materials include in WO detail API (both GET and PUT handlers)
+- Added 'Materials & Parts' card to WO detail panel showing all materials with component badges
+- Each material shows: name, component code badge, req/issued/returned quantities, cost, status
+- Added componentRegistryId field to material request create form in RepairsPages
+- Added Component selector (AsyncSearchableSelect) that loads components from WO's asset
+- Component clears when WO changes
+- componentRegistryId sent in create payload
+- Component info displayed in material requests table rows
+
+Stage Summary:
+- Materials can now be linked to specific components when creating requests
+- WO detail shows materials with their component associations
+- End-to-end traceability: Component → Material Request → Inventory Item → Cost

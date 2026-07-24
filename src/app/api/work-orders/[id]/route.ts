@@ -53,6 +53,7 @@ export async function GET(
           requester: { select: { id: true, fullName: true } },
           approver: { select: { id: true, fullName: true } },
           issuer: { select: { id: true, fullName: true } },
+          componentRegistry: { select: { id: true, name: true, componentCode: true } },
         },
         orderBy: { createdAt: 'desc' as const },
       },
@@ -251,6 +252,7 @@ export async function PUT(
         materials: {
           include: {
             requester: { select: { id: true, fullName: true } },
+            componentRegistry: { select: { id: true, name: true, componentCode: true } },
           },
           orderBy: { createdAt: 'desc' },
         },
