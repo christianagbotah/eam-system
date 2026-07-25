@@ -346,7 +346,7 @@ export function MachineAvailabilityPage() {
         <div>
           <h1 className="text-xl font-bold tracking-tight md:text-2xl">Machine Availability &amp; Efficiency</h1>
           <p className="text-sm text-muted-foreground">
-            GTP-style weekly machine register &mdash; Year {data.year}
+            Weekly machine register &mdash; Year {data.year}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -377,7 +377,7 @@ export function MachineAvailabilityPage() {
         </TabsList>
 
         {/* ============================================================= */}
-        {/* TAB 1 — Machine Details (GTP Weekly Register)                 */}
+        {/* TAB 1 — Machine Details (Weekly Register)                 */}
         {/* ============================================================= */}
         <TabsContent value="machine-details" className="space-y-4">
           {/* KPI Strip */}

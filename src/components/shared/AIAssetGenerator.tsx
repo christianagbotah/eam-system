@@ -301,7 +301,7 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
             <div className="space-y-2">
               <Label className="text-sm font-medium">Additional Context (optional)</Label>
               <Textarea
-                placeholder="e.g., Used at GTP Ghana Tema Factory, 8-color configuration, manufactured 2021 by Stork Prints, model RD-I Plus 1850..."
+                placeholder="e.g., Used at Ghana Tema Factory, 8-color configuration, manufactured 2021 by Stork Prints, model RD-I Plus 1850..."
                 value={additionalContext}
                 onChange={e => setAdditionalContext(e.target.value)}
                 rows={3}

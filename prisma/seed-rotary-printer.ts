@@ -2,7 +2,7 @@
  * Seed Script: Rotary Screen Printing Machine
  * 
  * Creates a complete asset record for a Rotary Screen Printing Machine 
- * as used at GTP Ghana (Ghana Textile Printing Company).
+ * as used at Ghana Textile Printing Company.
  * 
  * Includes:
  * - Main asset with full specifications
@@ -62,11 +62,11 @@ const db = new PrismaClient({
 const MACHINE_SPECS = {
   name: 'Rotary Screen Printing Machine',
   tag: 'RSPM-001',
-  serial: 'GTP-RSPM-2021-001',
+  serial: 'RSPM-2021-001',
   manufacturer: 'Stork Prints (-now SPGPrints)',
   model: 'RD-I Plus 1850',
   year: 2021,
-  description: 'Rotary screen printing machine for textile fabric printing. 8-color IR drying, auto registration, paste circulation. Primary production at GTP Ghana Tema.',
+  description: 'Rotary screen printing machine for textile fabric printing. 8-color IR drying, auto registration, paste circulation. Primary production at Ghana Tema.',
   criticality: 'critical',
   location: 'Printing Hall A',
   building: 'Main Production Building',
@@ -345,7 +345,7 @@ const INVENTORY_ITEMS = [
 // Digital Twin parameters
 const DIGITAL_TWIN_CONFIG = {
   name: 'RSPM-001 Digital Twin',
-  description: 'Real-time digital twin of Rotary Screen Printing Machine RSPM-001 at GTP Ghana Tema Factory. Monitors 6 sub-systems with 8 printing stations, drying system, and drive system.',
+  description: 'Real-time digital twin of Rotary Screen Printing Machine RSPM-001 at Ghana Tema Factory. Monitors 6 sub-systems with 8 printing stations, drying system, and drive system.',
   type: 'other',
   parameters: JSON.stringify({
     machineSpeed: { unit: 'm/min', min: 0, max: 80, normal: 40, alarmHigh: 75 },
@@ -451,7 +451,7 @@ const SYSTEM_DIAGRAM = {
 async function seedRotaryPrinter() {
   console.log('🏭 ═══════════════════════════════════════════════════════════════');
   console.log('   ROTARY SCREEN PRINTING MACHINE - COMPREHENSIVE SEED');
-  console.log('   Target: GTP Ghana Tema Factory');
+  console.log('   Target: Ghana Tema Factory');
   console.log('════════════════════════════════════════════════════════════════\n');
 
   // ── 1. Find or create prerequisites ──

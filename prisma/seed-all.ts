@@ -461,11 +461,11 @@ const rolePermissionBundles: Record<string, string[]> = {
 const MACHINE_SPECS = {
   name: 'Rotary Screen Printing Machine',
   tag: 'RSPM-001',
-  serial: 'GTP-RSPM-2021-001',
+  serial: 'RSPM-2021-001',
   manufacturer: 'Stork Prints (now SPGPrints)',
   model: 'RD-I Plus 1850',
   year: 2021,
-  description: 'Rotary screen printing machine for textile fabric printing. 8-color configuration with infrared drying, automatic registration, and paste circulation system. Primary production machine at GTP Ghana Tema Factory.',
+  description: 'Rotary screen printing machine for textile fabric printing. 8-color configuration with infrared drying, automatic registration, and paste circulation system. Primary production machine at Ghana Tema Factory.',
   criticality: 'critical',
   location: 'Printing Hall A',
   building: 'Main Production Building',
@@ -1355,7 +1355,7 @@ async function seedAll() {
         data: {
           assetId: mainAsset.id,
           name: 'RSPM-001 Digital Twin',
-          description: 'Real-time digital twin of Rotary Screen Printing Machine RSPM-001 at GTP Ghana Tema Factory.',
+          description: 'Real-time digital twin of Rotary Screen Printing Machine RSPM-001 at Ghana Tema Factory.',
           type: 'other',
           parameters: JSON.stringify({
             machineSpeed: { unit: 'm/min', min: 0, max: 80, normal: 40, alarmHigh: 75 },

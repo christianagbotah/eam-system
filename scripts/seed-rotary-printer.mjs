@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * ============================================================================
- * Seed Script Part 1: Rotary Screen Printing Machine — GTP Ghana
+ * Seed Script Part 1: Rotary Screen Printing Machine — Ghana
  * ============================================================================
  * Creates:
  *   1. Asset categories (PM → RSP / FLAT under existing ME)
@@ -70,7 +70,7 @@ const IDS = {
 async function main() {
   console.log('════════════════════════════════════════════════════════════════');
   console.log('  SEED PART 1 — Rotary Screen Printing Machine (RSP-001)');
-  console.log('  GTP Ghana · Tema Factory');
+  console.log('  Ghana · Tema Factory');
   console.log('════════════════════════════════════════════════════════════════\n');
 
   // ── 0. Resolve existing "ME" category ─────────────────────────────────────
@@ -167,14 +167,14 @@ async function main() {
       name: 'Rotary Screen Printing Machine - Line 1',
       description: desc(
         'Stork RSMP Rotary Screen Printing Machine, 12-color, 1850 mm width. ' +
-        'Primary textile printing line at GTP Ghana Tema Factory for woven and knitted fabrics.'
+        'Primary textile printing line at Ghana Tema Factory for woven and knitted fabrics.'
       ),
       categoryId: catRSP.id,
       plantId: IDS.plant_TEM001,
       departmentId: IDS.dept_PROD,
       manufacturer: 'Stork Prints',
       model: 'R/SMP 12-Color',
-      serialNumber: 'STK-RSMP-2019-GTP001',
+      serialNumber: 'STK-RSMP-2019-001',
       yearManufactured: 2019,
       condition: 'good',
       status: 'operational',
