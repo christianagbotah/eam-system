@@ -30,36 +30,19 @@ import {
   Search, Plus, RefreshCw, AlertTriangle, CheckCircle, XCircle,
   ChevronDown, ChevronUp, Info, Zap, HeartPulse, Target,
 } from 'lucide-react';
-import { useAuthStore } from '@/stores/authStore';
+import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatDuration } from '@/components/shared/helpers';
 
-// ── API HELPER ──────────────────────────────────────────────────────────────
+// ── API BASE ──────────────────────────────────────────────────────────────
 
 const API_BASE = '/api/reliability';
-
-async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem('eam_token');
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options?.headers,
-    },
-  });
-  const json = await res.json();
-  if (!json.success) {
-    throw new Error(json.error || json.message || 'API request failed');
-  }
-  return json.data as T;
-}
 
 // ── SHARED FETCH HELPERS ──────────────────────────────────────────────────
 
 const fetchAssetOptions = async () => {
-  const assets = await apiFetch<any[]>('/api/assets?limit=500');
-  return assets.map((a: any) => ({ value: a.id, label: (a.name || a.assetTag) + (a.serialNumber ? ` — ${a.serialNumber}` : '') }));
+  const res = await api.get<any[]>('/api/assets?limit=500');
+  return res.map((a: any) => ({ value: a.id, label: (a.name || a.assetTag) + (a.serialNumber ? ` — ${a.serialNumber}` : '') }));
 };
 
 // ── TYPES ───────────────────────────────────────────────────────────────────
@@ -179,7 +162,6 @@ const criticalityColors: Record<string, string> = {
 // ── MAIN COMPONENT ──────────────────────────────────────────────────────────
 
 export default function ReliabilityEngineeringPage() {
-  const { user, hasPermission, isAdmin } = useAuthStore();
   const [activeTab, setActiveTab] = useState('overview');
 
   return (
@@ -267,7 +249,7 @@ function ReliabilityOverview({ onNavigate }: { onNavigate: (tab: string) => void
   const loadCriticality = async () => {
     try {
       setLoading(true);
-      const data = await apiFetch<{ rankings: CriticalityItem[]; summary: Record<string, unknown> }>(
+      const data = await api.get<{ rankings: CriticalityItem[]; summary: Record<string, unknown> }>(
         `${API_BASE}/criticality/route`
       );
       setRankings(data.rankings || []);
@@ -461,7 +443,7 @@ function FailureModesTab() {
       if (search) params.set('search', search);
       if (categoryFilter !== 'all') params.set('category', categoryFilter);
       if (severityFilter !== 'all') params.set('severity', severityFilter);
-      const data = await apiFetch<{ items: FailureMode[] }>(`${API_BASE}/failure-modes/route?${params}`);
+      const data = await api.get<{ items: FailureMode[] }>(`${API_BASE}/failure-modes/route?${params}`);
       setModes(data.items || []);
     } catch (err) {
       console.error(err);
@@ -475,10 +457,7 @@ function FailureModesTab() {
 
   const handleCreate = async () => {
     try {
-      await apiFetch(`${API_BASE}/failure-modes/route`, {
-        method: 'POST',
-        body: JSON.stringify(form),
-      });
+      await api.post(`${API_BASE}/failure-modes/route`, form);
       toast.success('Failure mode created');
       setDialogOpen(false);
       setForm({ name: '', code: '', description: '', category: 'mechanical', severity: 'medium', detectionMethod: '' });
@@ -490,7 +469,7 @@ function FailureModesTab() {
 
   const viewDetail = async (id: string) => {
     try {
-      const data = await apiFetch<FailureMode>(`${API_BASE}/failure-modes/${id}/route`);
+      const data = await api.get<FailureMode>(`${API_BASE}/failure-modes/${id}/route`);
       setSelectedMode(data);
       setDetailOpen(true);
     } catch (err) {
@@ -500,7 +479,7 @@ function FailureModesTab() {
 
   const handleDelete = async (id: string) => {
     try {
-      await apiFetch(`${API_BASE}/failure-modes/${id}/route`, { method: 'DELETE' });
+      await api.del(`${API_BASE}/failure-modes/${id}/route`);
       toast.success('Failure mode deleted');
       setDetailOpen(false);
       loadModes();
@@ -705,7 +684,7 @@ function RcmAnalysisTab() {
     if (!assetId) { setLoading(false); return; }
     try {
       setLoading(true);
-      const data = await apiFetch<{ items: RcmAnalysis[] }>(`${API_BASE}/rcm/route?assetId=${assetId}`);
+      const data = await api.get<{ items: RcmAnalysis[] }>(`${API_BASE}/rcm/route?assetId=${assetId}`);
       setAnalyses(data.items || []);
     } catch (err) {
       console.error(err);
@@ -720,10 +699,7 @@ function RcmAnalysisTab() {
   const handleCreate = async () => {
     try {
       setRunning(true);
-      await apiFetch(`${API_BASE}/rcm/route`, {
-        method: 'POST',
-        body: JSON.stringify(form),
-      });
+      await api.post(`${API_BASE}/rcm/route`, form);
       toast.success('RCM analysis created');
       setDialogOpen(false);
       setForm({ assetId: '', name: '', description: '', methodology: 'full' });
@@ -857,7 +833,7 @@ function WeibullTab() {
     if (!componentId) { setLoading(false); return; }
     try {
       setLoading(true);
-      const data = await apiFetch<WeibullAnalysisItem[]>(`${API_BASE}/weibull-engineering/route?componentId=${componentId}`);
+      const data = await api.get<WeibullAnalysisItem[]>(`${API_BASE}/weibull-engineering/route?componentId=${componentId}`);
       setAnalyses(data || []);
     } catch (err) {
       console.error(err);
@@ -872,10 +848,7 @@ function WeibullTab() {
   const handleRunAnalysis = async () => {
     try {
       setRunning(true);
-      const result = await apiFetch<WeibullAnalysisItem>(`${API_BASE}/weibull-engineering/route`, {
-        method: 'POST',
-        body: JSON.stringify({ componentId }),
-      });
+      const result = await api.post<WeibullAnalysisItem>(`${API_BASE}/weibull-engineering/route`, { componentId });
       toast.success('Weibull analysis completed');
       loadAnalyses();
       // Show result
@@ -1082,7 +1055,7 @@ function DowntimeTab() {
     if (!assetId) { setLoading(false); return; }
     try {
       setLoading(true);
-      const data = await apiFetch<DowntimeAnalysis[]>(`${API_BASE}/downtime/route?assetId=${assetId}`);
+      const data = await api.get<DowntimeAnalysis[]>(`${API_BASE}/downtime/route?assetId=${assetId}`);
       setAnalyses(data || []);
     } catch (err) {
       console.error(err);
@@ -1097,13 +1070,10 @@ function DowntimeTab() {
   const handleCompute = async () => {
     try {
       setRunning(true);
-      const result = await apiFetch<DowntimeAnalysis>(`${API_BASE}/downtime/route`, {
-        method: 'POST',
-        body: JSON.stringify({
-          assetId: form.assetId,
-          periodStart: form.periodStart,
-          periodEnd: form.periodEnd,
-        }),
+      const result = await api.post<DowntimeAnalysis>(`${API_BASE}/downtime/route`, {
+        assetId: form.assetId,
+        periodStart: form.periodStart,
+        periodEnd: form.periodEnd,
       });
       toast.success('Downtime analysis computed');
       setAssetId(form.assetId);
@@ -1250,7 +1220,7 @@ function RulTab() {
     try {
       setLoading(true);
       setNotFound(false);
-      const data = await apiFetch<RulData | null>(`${API_BASE}/rul/route?componentId=${componentId}`);
+      const data = await api.get<RulData | null>(`${API_BASE}/rul/route?componentId=${componentId}`);
       setRulData(data);
       setNotFound(!data);
     } catch (err) {
@@ -1265,10 +1235,7 @@ function RulTab() {
   const handleCompute = async () => {
     try {
       setRunning(true);
-      const result = await apiFetch<RulData>(`${API_BASE}/rul/route`, {
-        method: 'POST',
-        body: JSON.stringify({ componentId }),
-      });
+      const result = await api.post<RulData>(`${API_BASE}/rul/route`, { componentId });
       toast.success('RUL estimate computed');
       setRulData(result);
       setNotFound(false);

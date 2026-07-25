@@ -4190,7 +4190,7 @@ export function SparePartReturnsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [createForm, setCreateForm] = useState({
     workOrderId: '', componentId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1',
-    conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false,
+    conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false, isConsumed: false,
     refurbishmentNotes: '', estimatedRefurbCost: '', notes: '',
   });
   const [actionOpen, setActionOpen] = useState(false);
@@ -4223,13 +4223,14 @@ export function SparePartReturnsPage() {
       quantity: parseFloat(createForm.quantity) || 1, conditionOnReturn: createForm.conditionOnReturn,
       damageDescription: createForm.damageDescription || undefined,
       refurbishmentNeeded: createForm.refurbishmentNeeded,
+      isConsumed: createForm.isConsumed,
       refurbishmentNotes: createForm.refurbishmentNotes || undefined,
       estimatedRefurbCost: createForm.estimatedRefurbCost ? parseFloat(createForm.estimatedRefurbCost) : undefined,
       notes: createForm.notes || undefined,
     });
     if (res.success) {
       toast.success('Spare part return created'); setCreateOpen(false);
-      setCreateForm({ workOrderId: '', componentId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1', conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false, refurbishmentNotes: '', estimatedRefurbCost: '', notes: '' });
+      setCreateForm({ workOrderId: '', componentId: '', itemId: '', itemName: '', partSerialNumber: '', quantity: '1', conditionOnReturn: 'used', damageDescription: '', refurbishmentNeeded: false, isConsumed: false, refurbishmentNotes: '', estimatedRefurbCost: '', notes: '' });
       fetchReturns();
     } else toast.error(res.error || 'Failed');
     setSubmitting(false);
@@ -4480,6 +4481,10 @@ export function SparePartReturnsPage() {
             <input type="checkbox" id="createRefurb" checked={createForm.refurbishmentNeeded} onChange={e => setCreateForm(p => ({ ...p, refurbishmentNeeded: e.target.checked }))} className="h-4 w-4" />
             <Label htmlFor="createRefurb">Needs Refurbishment</Label>
           </div>
+          <div className="flex items-center gap-3 p-3 rounded-lg border">
+            <input type="checkbox" id="createConsumed" checked={createForm.isConsumed} onChange={e => setCreateForm(p => ({ ...p, isConsumed: e.target.checked }))} className="h-4 w-4" />
+            <Label htmlFor="createConsumed">Part was consumed / non-reusable <span className="text-xs text-muted-foreground">(not eligible for refurbishment)</span></Label>
+          </div>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" disabled={submitting} onClick={handleCreate}>Submit Return</Button>
@@ -4514,6 +4519,10 @@ export function SparePartReturnsPage() {
                       <div className="bg-muted/50 rounded-lg p-2 text-center">
                         <p className="text-sm font-medium">{detailItem.refurbishmentNeeded ? 'Yes' : 'No'}</p>
                         <p className="text-[10px] text-muted-foreground">Needed</p>
+                      </div>
+                      <div className="bg-muted/50 rounded-lg p-2 text-center">
+                        <p className="text-sm font-medium">{detailItem.isConsumed ? 'Yes' : 'No'}</p>
+                        <p className="text-[10px] text-muted-foreground">Consumed</p>
                       </div>
                       <div className="bg-muted/50 rounded-lg p-2 text-center">
                         <p className="text-sm font-medium">{detailItem.estimatedRefurbCost ? formatCurrency(detailItem.estimatedRefurbCost) : '—'}</p>

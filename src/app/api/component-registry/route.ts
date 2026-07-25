@@ -10,13 +10,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'digital_twin.view') && !isAdmin(session)) {
+    // Allow component search by assetId for any authenticated user (e.g. technicians creating WO materials/returns)
+    const { searchParams } = new URL(request.url);
+    const assetIdParam = searchParams.get('assetId');
+    if (!hasPermission(session, 'digital_twin.view') && !isAdmin(session) && !assetIdParam) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
-    const { searchParams } = new URL(request.url);
     const twinId = searchParams.get('twinId');
-    const assetId = searchParams.get('assetId');
+    const assetId = assetIdParam;
     const parentId = searchParams.get('parentId');
     const componentType = searchParams.get('componentType');
     const criticality = searchParams.get('criticality');
