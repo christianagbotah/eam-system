@@ -20,8 +20,9 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog'
-import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';;
+} from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -61,6 +62,7 @@ export function InventoryPage() {
   const [movLoading, setMovLoading] = useState(false);
   // Stock movements list
   const [selectedMovItemId, setSelectedMovItemId] = useState<string | null>(null);
+  const [movementsSheetOpen, setMovementsSheetOpen] = useState(false);
   const [stockMovements, setStockMovements] = useState<any[]>([]);
   // KPI data from API
   const [kpi, setKpi] = useState<{
@@ -138,6 +140,7 @@ export function InventoryPage() {
 
   const loadMovements = useCallback((itemId: string) => {
     setSelectedMovItemId(itemId);
+    setMovementsSheetOpen(true);
     api.get<any[]>(`/api/inventory/${itemId}/stock-movements`).then(res => {
       if (res.success && res.data) setStockMovements(Array.isArray(res.data) ? res.data : []);
     });
@@ -453,47 +456,43 @@ export function InventoryPage() {
         
       </ResponsiveDialog>
 
-      {/* Stock Movements Section */}
-      {selectedMovItemId && (
-        <Card className="border-0 shadow-sm dark:bg-card">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div><CardTitle className="text-base">Stock Movements</CardTitle><CardDescription className="text-xs">For item: {items.find(it => it.id === selectedMovItemId)?.name || selectedMovItemId}</CardDescription></div>
-            <Button size="sm" variant="ghost" onClick={() => { setSelectedMovItemId(null); setStockMovements([]); }}><X className="h-4 w-4" /></Button>
-          </CardHeader>
-          <CardContent>
-            {stockMovements.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No stock movements found for this item.</p>
-            ) : (
-              <div className="max-h-64 overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Type</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead className="hidden sm:table-cell">Previous</TableHead>
-                      <TableHead className="hidden sm:table-cell">New</TableHead>
-                      <TableHead className="hidden md:table-cell">Reason</TableHead>
-                      <TableHead>Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {stockMovements.map(m => (
-                      <TableRow key={m.id}>
-                        <TableCell><Badge variant="outline" className={`text-[10px] ${m.type === 'in' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : m.type === 'out' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{m.type === 'in' ? 'Stock In' : m.type === 'out' ? 'Stock Out' : 'Adjustment'}</Badge></TableCell>
-                        <TableCell className="text-right font-medium">{m.type === 'out' ? '-' : '+'}{m.quantity}</TableCell>
-                        <TableCell className="hidden sm:table-cell">{m.previousStock ?? '-'}</TableCell>
-                        <TableCell className="hidden sm:table-cell font-medium">{m.newStock ?? '-'}</TableCell>
-                        <TableCell className="hidden md:table-cell text-sm text-muted-foreground max-w-[200px] truncate">{m.reason || '-'}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{formatDateTime(m.createdAt)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {/* Stock Movements Sheet */}
+      <Sheet open={movementsSheetOpen} onOpenChange={(open) => { if (!open) { setMovementsSheetOpen(false); setSelectedMovItemId(null); setStockMovements([]); } }}>
+        <SheetContent className="sm:max-w-lg w-full overflow-y-auto">
+          <SheetHeader className="mb-4">
+            <SheetTitle className="flex items-center gap-2"><History className="h-5 w-5 text-emerald-600" /> Stock Movements</SheetTitle>
+            <SheetDescription>For item: {items.find(it => it.id === selectedMovItemId)?.name || selectedMovItemId}</SheetDescription>
+          </SheetHeader>
+          {stockMovements.length === 0 ? (
+            <EmptyState icon={History} title="No stock movements" description="No stock movements found for this item." />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead>Previous</TableHead>
+                  <TableHead>New</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {stockMovements.map(m => (
+                  <TableRow key={m.id}>
+                    <TableCell><Badge variant="outline" className={`text-[10px] ${m.type === 'in' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : m.type === 'out' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{m.type === 'in' ? 'Stock In' : m.type === 'out' ? 'Stock Out' : 'Adjustment'}</Badge></TableCell>
+                    <TableCell className="text-right font-medium">{m.type === 'out' ? '-' : '+'}{m.quantity}</TableCell>
+                    <TableCell>{m.previousStock ?? '-'}</TableCell>
+                    <TableCell className="font-medium">{m.newStock ?? '-'}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{m.reason || '-'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatDateTime(m.createdAt)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
