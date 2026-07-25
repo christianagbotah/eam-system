@@ -82,3 +82,4 @@ db/*.db-journal
 .env.local
 .env.production
 .github-token
+tool-results/
