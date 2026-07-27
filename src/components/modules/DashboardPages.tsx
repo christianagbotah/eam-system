@@ -987,7 +987,7 @@ export function DashboardPage() {
                   </div>
                   <ChevronRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />
                 </button>
-              ))
+              ))}
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
