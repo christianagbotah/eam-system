@@ -95,7 +95,7 @@ export async function POST(
         quantity: qtyRequested,
         unitCost: resolvedUnitCost,
         totalCost: (calculatedTotal ?? estimatedCost) || null,
-        status: 'pending_approval',
+        status: 'requested',
         requestedBy: session.userId,
       },
       include: {

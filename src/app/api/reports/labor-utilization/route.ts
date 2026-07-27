@@ -99,19 +99,27 @@ export async function GET(request: NextRequest) {
         }
       });
 
-      // Time logs - only count for the assignee
-      if (wo.assignedTo && wo.timeLogs) {
-        wo.timeLogs.forEach(tl => {
-          if (tl.duration && tl.duration > 0) {
-            techMap[wo.assignedTo].totalWorkedHours += tl.duration;
-            techMap[wo.assignedTo].timeLogCount += 1;
-          }
-        });
-      }
+      // Worked hours — use timeLogs sum if available, else fall back to actualHours.
+      // Avoid double-counting by adding both sources.
+      if (wo.assignedTo) {
+        let timeLogsHours = 0;
+        let timeLogCount = 0;
+        if (wo.timeLogs) {
+          wo.timeLogs.forEach(tl => {
+            if (tl.duration && tl.duration > 0) {
+              timeLogsHours += tl.duration;
+              timeLogCount += 1;
+            }
+          });
+        }
 
-      // Also add actualHours from WO
-      if (wo.assignedTo && wo.actualHours) {
-        techMap[wo.assignedTo].totalWorkedHours += wo.actualHours;
+        if (timeLogsHours > 0) {
+          techMap[wo.assignedTo].totalWorkedHours += timeLogsHours;
+          techMap[wo.assignedTo].timeLogCount += timeLogCount;
+        } else if (wo.actualHours) {
+          // Fall back to WO-level actualHours when no detailed time logs exist
+          techMap[wo.assignedTo].totalWorkedHours += wo.actualHours;
+        }
       }
     });
 

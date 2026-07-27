@@ -29,9 +29,11 @@ export async function GET(request: NextRequest) {
     const windowStart = new Date(now.getTime() - timeWindowDays * 24 * 60 * 60 * 1000);
 
     const frFilter: Record<string, unknown> = {
-      ...plantFilter,
       detectedAt: { gte: windowStart },
     };
+    if (plantFilter && Object.keys(plantFilter).length > 0) {
+      frFilter.asset = { ...plantFilter };
+    }
     if (from) frFilter.detectedAt = { ...(frFilter.detectedAt as Record<string, unknown> || {}), gte: new Date(from + 'T00:00:00') };
     if (to) {
       const existing = frFilter.detectedAt as Record<string, unknown> || {};

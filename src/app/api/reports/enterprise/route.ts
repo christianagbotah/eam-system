@@ -271,11 +271,14 @@ export async function GET(request: NextRequest) {
 
     // ========== 4. REPEAT FAILURE ANALYSIS ==========
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const frEnterpriseFilter: Record<string, unknown> = {
+      detectedAt: { gte: ninetyDaysAgo },
+    };
+    if (plantFilter && Object.keys(plantFilter).length > 0) {
+      frEnterpriseFilter.asset = { ...plantFilter };
+    }
     const failureRecords = await db.failureRecord.findMany({
-      where: {
-        ...plantFilter,
-        detectedAt: { gte: ninetyDaysAgo },
-      },
+      where: frEnterpriseFilter,
       include: {
         asset: { select: { id: true, name: true, assetCode: true, assetTag: true, manufacturer: true, model: true, serialNumber: true, criticality: true, condition: true, location: true, building: true, area: true, category: { select: { name: true } } } },
         component: { select: { id: true, name: true, componentCode: true } },

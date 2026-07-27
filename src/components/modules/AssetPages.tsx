@@ -85,6 +85,9 @@ export function AssetsPage() {
       if (cRes.success && cRes.data) setCategories(Array.isArray(cRes.data) ? cRes.data : []);
       if (pRes.success && pRes.data) setPlantList(Array.isArray(pRes.data) ? pRes.data : []);
       setLoading(false);
+    }).catch(() => {
+      setLoading(false);
+      toast.error('Failed to load asset data');
     });
   }, [showAllAssets]);
 

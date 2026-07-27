@@ -85,7 +85,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // Submit completion (technician)
     if (action === 'submit' || action === undefined) {
       // Only WO assignee or team leader can submit completion
-      const isAssignee = wo.assignedToId === session.userId;
+      const isAssignee = wo.assignedTo === session.userId;
       const isTeamLeader = wo.teamLeaderId === session.userId;
       const isTeamMember = wo.teamMembers?.some((m) => m.userId === session.userId) || false;
       if (!isAssignee && !isTeamLeader && !isTeamMember && !isAdmin(session)) {

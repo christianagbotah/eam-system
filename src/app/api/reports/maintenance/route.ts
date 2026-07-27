@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     const baseFilter: Record<string, unknown> = { ...plantFilter };
     if (Object.keys(dateFilter).length > 0) baseFilter.createdAt = dateFilter;
     if (departmentId) baseFilter.departmentId = departmentId;
-    if (plantId && !plantScope) baseFilter.plantId = plantId;
+    if (plantId && !plantScope.isScoped) baseFilter.plantId = plantId;
     if (moduleFilter === 'repairs') {
       (baseFilter as Record<string, unknown>).type = { in: ['corrective', 'emergency'] };
     } else if (moduleFilter === 'pm') {
@@ -126,9 +126,13 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    // Fetch all MRs for the date range
+    // Fetch all MRs for the date range (strip WO-specific type filter since MR has no type field)
+    const mrFilter: Record<string, unknown> = { ...plantFilter };
+    if (Object.keys(dateFilter).length > 0) mrFilter.createdAt = dateFilter;
+    if (departmentId) mrFilter.departmentId = departmentId;
+    if (plantId && !plantScope.isScoped) mrFilter.plantId = plantId;
     const mrs = await db.maintenanceRequest.findMany({
-      where: hasFilter ? baseFilter : undefined,
+      where: Object.keys(mrFilter).length > 0 ? mrFilter : undefined,
       include: {
         requester: { select: { id: true, fullName: true } },
       },

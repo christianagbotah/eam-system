@@ -412,9 +412,12 @@ export function RepairMaterialRequestsPage() {
       api.get(`/api/repairs/material-requests?${params}`),
       api.get('/api/repairs/material-requests?stats=true'),
     ]);
-    if (listRes.success) setRequests(listRes.data || []);
-    if (listRes.pagination) setPagination(listRes.pagination);
-    else toast.error(listRes.error || 'Failed to load');
+    if (listRes.success) {
+      setRequests(listRes.data || []);
+      if (listRes.pagination) setPagination(listRes.pagination);
+    } else {
+      toast.error(listRes.error || 'Failed to load');
+    }
     if (statsRes.success) setStats(statsRes.data);
     setLoading(false);
   }, [filterStatus, filterUrgency, page, workOrderIdFilter]);

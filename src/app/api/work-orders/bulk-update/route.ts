@@ -83,9 +83,9 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Perform bulk update (only on non-locked WOs)
+    // Perform bulk update (only on non-locked WOs, and never on terminal statuses)
     const result = await db.workOrder.updateMany({
-      where: { id: { in: ids } },
+      where: { id: { in: ids }, status: { notIn: ['verified', 'closed', 'cancelled'] } },
       data: updateData,
     });
 

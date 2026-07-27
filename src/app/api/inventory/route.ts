@@ -24,8 +24,7 @@ export async function GET(request: NextRequest) {
     if (category) where.category = category;
     if (lowStock === 'true') {
       // Items where currentStock <= minStockLevel
-      where.currentStock = { lte: 100000 };
-      // We'll filter after query since Prisma doesn't support comparing two fields
+      // In-memory filter handles the comparison (Prisma can't compare two columns)
     }
     if (search) {
       where.OR = [
@@ -143,8 +142,8 @@ export async function POST(request: NextRequest) {
         binLocation: binLocation || null,
         shelfLocation: shelfLocation || null,
         plantId,
-        specification: specification || null,
-        imageUrls: imageUrls || null,
+        specification: specification || '',
+        imageUrls: imageUrls || '[]',
         createdById: session.userId,
       },
       include: {

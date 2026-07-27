@@ -40,6 +40,7 @@ import {
   Activity, UserCheck, AlertCircle, Eye, MoreHorizontal, Layers,
   Factory, Hammer, HardHat, Play, Pause, Square, RefreshCw, X,
   ChevronDown, GripHorizontal, Workflow, CalendarClock, Truck, DollarSign,
+  ShieldCheck,
 } from 'lucide-react';
 
 import {
@@ -69,7 +70,7 @@ const KANBAN_COLUMNS = [
   { key: 'approved', label: 'Approved', color: 'bg-sky-100 border-sky-200 text-sky-800', icon: CheckCircle2 },
   { key: 'assigned', label: 'Assigned', color: 'bg-violet-100 border-violet-200 text-violet-800', icon: UserCheck },
   { key: 'in_progress', label: 'In Progress', color: 'bg-amber-100 border-amber-200 text-amber-800', icon: Play },
-  { key: 'pending_review', label: 'Pending Review', color: 'bg-orange-100 border-orange-200 text-orange-800', icon: Eye },
+  { key: 'verified', label: 'Verified', color: 'bg-orange-100 border-orange-200 text-orange-800', icon: ShieldCheck },
   { key: 'completed', label: 'Completed', color: 'bg-emerald-100 border-emerald-200 text-emerald-800', icon: CheckCircle2 },
 ] as const;
 
@@ -79,7 +80,7 @@ const PRIORITY_CONFIG: Record<string, { label: string; color: string; bgColor: s
   low: { label: 'Low', color: 'text-slate-600', bgColor: 'bg-slate-100 border-slate-300' },
   medium: { label: 'Medium', color: 'text-sky-700', bgColor: 'bg-sky-100 border-sky-300' },
   high: { label: 'High', color: 'text-amber-700', bgColor: 'bg-amber-100 border-amber-300' },
-  urgent: { label: 'Urgent', color: 'text-red-700', bgColor: 'bg-red-100 border-red-300' },
+  critical: { label: 'Critical', color: 'text-red-700', bgColor: 'bg-red-100 border-red-300' },
 };
 
 function PriorityBadge({ priority }: { priority: string }) {
@@ -89,7 +90,7 @@ function PriorityBadge({ priority }: { priority: string }) {
 
 function SLAIndicator({ createdAt, priority }: { createdAt: string; priority: string }) {
   const hours = useMemo(() => {
-    const slaMap: Record<string, number> = { low: 72, medium: 48, high: 24, urgent: 8 };
+    const slaMap: Record<string, number> = { low: 72, medium: 48, high: 24, critical: 8 };
     const sla = slaMap[priority] || 48;
     return differenceInHours(new Date(createdAt), new Date()) + sla;
   }, [createdAt, priority]);
@@ -316,9 +317,32 @@ export default function PlannerWorkbench() {
     const grouped: Record<string, any[]> = {};
     KANBAN_COLUMNS.forEach(col => { grouped[col.key] = []; });
     filteredWOs.forEach(wo => {
-      const status = wo.status === 'in_progress' ? 'in_progress' : wo.status === 'pending_review' ? 'pending_review' : wo.status === 'completed' ? 'completed' : wo.status === 'assigned' ? 'assigned' : wo.status === 'approved' ? 'approved' : null;
+      // Map all real schema statuses to the appropriate kanban column.
+      // Real statuses: draft, requested, approved, planned, assigned, in_progress,
+      //                waiting_parts, on_hold, completed, verified, closed, cancelled
+      const status = (() => {
+        switch (wo.status) {
+          case 'approved':
+          case 'requested':
+          case 'planned':
+            return 'approved';
+          case 'assigned':
+            return 'assigned';
+          case 'in_progress':
+          case 'waiting_parts':
+          case 'on_hold':
+            return 'in_progress';
+          case 'verified':
+            return 'verified';
+          case 'completed':
+          case 'closed':
+            return 'completed';
+          default:
+            // draft, cancelled, or unknown — not shown in kanban
+            return null;
+        }
+      })();
       if (status && grouped[status]) grouped[status].push(wo);
-      else if (grouped['approved']) grouped['approved'].push(wo); // fallback
     });
     return grouped;
   }, [filteredWOs]);
@@ -367,8 +391,8 @@ export default function PlannerWorkbench() {
     inProgress: workOrders.filter(wo => wo.status === 'in_progress').length,
     awaitingMR: approvedMRs.length,
     overdue: workOrders.filter(wo => {
-      if (!wo.plannedStart || ['completed', 'closed'].includes(wo.status)) return false;
-      return new Date(wo.plannedStart) < new Date();
+      if (!wo.plannedEnd || ['completed', 'closed'].includes(wo.status)) return false;
+      return new Date(wo.plannedEnd) < new Date();
     }).length,
     completed: workOrders.filter(wo => wo.status === 'completed').length,
   }), [workOrders, approvedMRs]);
@@ -561,9 +585,9 @@ export default function PlannerWorkbench() {
             endpoint = `/api/work-orders/${woId}/start`;
             statusLabel = 'In Progress';
             break;
-          case 'pending_review':
-            endpoint = `/api/work-orders/${woId}/complete`;
-            statusLabel = 'Pending Review';
+          case 'verified':
+            endpoint = `/api/work-orders/${woId}/verify`;
+            statusLabel = 'Verified';
             break;
           case 'completed':
             endpoint = `/api/work-orders/${woId}/complete`;
@@ -683,7 +707,7 @@ export default function PlannerWorkbench() {
                           <SelectItem value="low">Low</SelectItem>
                           <SelectItem value="medium">Med</SelectItem>
                           <SelectItem value="high">High</SelectItem>
-                          <SelectItem value="urgent">Urgent</SelectItem>
+                          <SelectItem value="critical">Critical</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -745,7 +769,7 @@ export default function PlannerWorkbench() {
                     <SelectItem value="low">Low</SelectItem>
                     <SelectItem value="medium">Medium</SelectItem>
                     <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="urgent">Urgent</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
                   </SelectContent>
                 </Select>
                 {selectedWOs.length > 0 && (
@@ -1259,7 +1283,7 @@ export default function PlannerWorkbench() {
                   <SelectItem value="low">Low</SelectItem>
                   <SelectItem value="medium">Medium</SelectItem>
                   <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="urgent">Urgent</SelectItem>
+                  <SelectItem value="critical">Critical</SelectItem>
                 </SelectContent>
               </Select>
             </div>

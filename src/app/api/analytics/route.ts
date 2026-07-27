@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { getPlantScope, getPlantFilterWhere } from '@/lib/plant-scope';
@@ -37,11 +38,11 @@ export async function GET(request: NextRequest) {
       : 0;
 
     const pmSchedulesTotal = hasModel(db, 'pmSchedule')
-      ? await db.pmSchedule.count({ where: { ...pf, isActive: true } }).catch(() => 0)
+      ? await db.pmSchedule.count({ where: { asset: { ...pf }, isActive: true } }).catch(() => 0)
       : 0;
 
     const pmOverdue = hasModel(db, 'pmSchedule')
-      ? await db.pmSchedule.count({ where: { ...pf, isActive: true, nextDueDate: { lte: new Date() } } }).catch(() => 0)
+      ? await db.pmSchedule.count({ where: { asset: { ...pf }, isActive: true, nextDueDate: { lte: new Date() } } }).catch(() => 0)
       : 0;
 
     const woByStatus = hasModel(db, 'workOrder')
@@ -85,19 +86,40 @@ export async function GET(request: NextRequest) {
     const totalCost = hasModel(db, 'workOrder')
       ? await db.workOrder.aggregate({
           _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
-          where: pf,
+          where: { ...pf, createdAt: { gte: startDate } },
         }).catch(() => ({ _sum: { totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0 } }))
       : { _sum: { totalCost: 0, laborCost: 0, partsCost: 0, contractorCost: 0 } };
 
-    const inventoryValue = hasModel(db, 'inventoryItem')
-      ? await db.inventoryItem.aggregate({ _sum: { unitCost: true }, where: { ...pf, isActive: true } }).catch(() => ({ _sum: { unitCost: 0 } }))
-      : { _sum: { unitCost: 0 } };
+    // Merge plant filter into raw SQL where clause if scoped (for inventory value KPI)
+    const plantSqlFilter = plantScope.isScoped && plantScope.plantId
+      ? Prisma.sql` AND plantId = ${plantScope.plantId}`
+      : Prisma.sql``;
+
+    const inventoryValueRaw = hasModel(db, 'inventoryItem')
+      ? await db.$queryRaw<{ value: number | bigint }[]>(
+          Prisma.sql`SELECT COALESCE(SUM(currentStock * unitCost), 0) AS value FROM inventory_items WHERE isActive = true${plantSqlFilter}`
+        )
+          .then((rows: any) => Number(rows?.[0]?.value ?? 0))
+          .catch(() => 0)
+      : 0;
+    const inventoryValue = inventoryValueRaw;
 
     const lowStockCount = hasModel(db, 'inventoryItem')
       ? await db.inventoryItem.count({
           where: { ...pf, isActive: true, currentStock: { lte: db.inventoryItem.fields.minStockLevel } },
         }).catch(() => 0)
       : 0;
+
+    // MTBF — Mean Time Between Failures (real computation).
+    // Count breakdown/failure work orders in the period (corrective or emergency type)
+    // then divide the period (hours) by that count.
+    const failureCountInPeriod = hasModel(db, 'workOrder')
+      ? await db.workOrder.count({
+          where: { ...pf, type: { in: ['corrective', 'emergency'] }, createdAt: { gte: startDate } },
+        }).catch(() => 0)
+      : 0;
+    const periodHours = parseInt(period) * 24;
+    const mtbf = failureCountInPeriod > 0 ? Math.round(periodHours / failureCountInPeriod) : 0;
 
     // Get daily trend
     const recentWOs = hasModel(db, 'workOrder')
@@ -130,7 +152,6 @@ export async function GET(request: NextRequest) {
     const assetUtilization = totalAssets > 0 ? Math.round((operational / totalAssets) * 100) : 0;
     const pmOnTime = Math.max(0, pmSchedulesTotal - pmOverdue);
     const pmComplianceRate = pmSchedulesTotal > 0 ? Math.round((pmOnTime / pmSchedulesTotal) * 100) : 100;
-    const mtbf = totalCompletedWOs > 5 ? 168 : 0;
 
     // SLA
     const completedWOs = hasModel(db, 'workOrder')
@@ -189,7 +210,7 @@ export async function GET(request: NextRequest) {
           totalLaborCost: Number(totalCost?._sum?.laborCost || 0),
           totalPartsCost: Number(totalCost?._sum?.partsCost || 0),
           totalContractorCost: Number(totalCost?._sum?.contractorCost || 0),
-          inventoryValue: Number(inventoryValue?._sum?.unitCost || 0),
+          inventoryValue: Number(inventoryValue || 0),
           lowStockItems: lowStockCount,
           overduePMs: pmOverdue,
         },

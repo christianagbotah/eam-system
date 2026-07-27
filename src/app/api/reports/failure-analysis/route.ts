@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!hasAnyPermission(session, ['reports.view']) && !isAdmin(session)) {
+    if (!hasAnyPermission(session, ['reports.view', 'reports.export', 'analytics.view']) && !isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions: reports.view required' }, { status: 403 });
     }
 
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
       const woDateFilter: Record<string, unknown> = {};
       if (from) woDateFilter.gte = new Date(from + 'T00:00:00');
       if (to) woDateFilter.lte = new Date(to + 'T23:59:59');
-      (woWhere as Record<string, unknown>).completedAt = woDateFilter;
+      (woWhere as Record<string, unknown>).actualEnd = woDateFilter;
     }
     if (Object.keys(plantFilter).length > 0) {
       Object.assign(woWhere, plantFilter);

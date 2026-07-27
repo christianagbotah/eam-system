@@ -1408,3 +1408,130 @@ Stage Summary:
 - Component search permission bypass for assetId-based lookups
 - UI improvements (mobile, empty states, footer) handled by subagent
 - All changes committed and pushed
+
+---
+Task ID: 12
+Agent: Main Agent
+Task: Fix 11 confirmed bugs across EAM API routes (analytics, dashboard, KPI, inventory, repairs, work-orders, reports)
+
+Work Log:
+
+- FIX 1: src/app/api/analytics/route.ts
+  - Routed `db.pmSchedule` plant filter through `asset: { ...pf }` (PmSchedule has no plantId; it goes via Asset)
+  - Replaced inventory value KPI `_sum: { unitCost: true }` with `db.$queryRaw` aggregating `SUM(currentStock * unitCost)` (was just summing unit cost, not multiplied by stock)
+  - Removed hardcoded MTBF constant (`totalCompletedWOs > 5 ? 168 : 0`); now computes real MTBF as `periodHours / failureCountInPeriod` where failureCountInPeriod = count of corrective/emergency WOs in the period
+  - Added `createdAt: { gte: startDate }` to the totalCost aggregate so cost KPIs respect the selected period
+  - Imported `Prisma` from `@prisma/client` and added a `plantSqlFilter` Prisma.sql fragment mirroring the dashboard route pattern
+  - Updated the response to use the new numeric `inventoryValue` instead of `inventoryValue._sum.unitCost`
+
+- FIX 2: src/app/api/dashboard/stats/route.ts
+  - Routed `db.pmSchedule` plant filter through `asset: { ...plantFilter }` for both due-soon and overdue PM queries
+  - Changed `completedTodayWO` filter from `updatedAt: { gte: todayStart }` to `actualEnd: { gte: todayStart }` (the timestamp that actually represents completion)
+  - Added a separate weekly trend fetch keyed on `actualEnd` for completed WOs (was previously only counting created WOs by day). Wired the result through as `weeklyCompletedWoResult` and exposed it on `weeklyTrends.completedWorkOrders`
+
+- FIX 3: src/app/api/reporting/kpis/route.ts
+  - Added permission gate: returns 403 if user is not admin and lacks both `reports.view` and `analytics.view` permissions
+  - Imported `isAdmin` and `hasPermission` from `@/lib/auth`
+
+- FIX 4: src/app/api/inventory/route.ts
+  - Changed `specification: specification || null` to `specification: specification || ''` (column is NOT NULL `@db.Text`)
+  - Changed `imageUrls: imageUrls || null` to `imageUrls: imageUrls || '[]'` (column is NOT NULL `@db.Text`, expects JSON array string)
+
+- FIX 5: src/app/api/repairs/completion/[workOrderId]/route.ts
+  - Changed `wo.assignedToId === session.userId` to `wo.assignedTo === session.userId` (the WorkOrder schema field is `assignedTo`, not `assignedToId`)
+
+- FIX 6: src/app/api/work-orders/bulk-update/route.ts
+  - Added `status: { notIn: ['verified', 'closed', 'cancelled'] }` to the `updateMany` where clause so bulk updates cannot mutate terminal-state work orders
+
+- FIX 7: src/app/api/work-orders/[id]/route.ts
+  - Wrapped the team-member deleteMany + createMany pair in `db.$transaction([...])` so the operation is atomic (no partial state if createMany fails)
+  - Build the createMany payload conditionally so the transaction array stays valid when there are no members to create
+
+- FIX 8: src/app/api/work-orders/[id]/materials/route.ts
+  - Changed `status: 'pending_approval'` to `status: 'requested'` (valid WorkOrderMaterial statuses are `requested, approved, issued, returned`; `pending_approval` was always invalid)
+
+- FIX 9: src/app/api/work-orders/[id]/time-logs/route.ts
+  - Renamed the local `const isAdmin = session.roles.includes('admin')` to `const isAdminUser` and updated the single usage in the DELETE handler — previously the local boolean shadowed the imported `isAdmin` function from `@/lib/auth`
+
+- FIX 10: src/app/api/reports/labor-utilization/route.ts
+  - Removed the double-counting pattern that added both `wo.timeLogs` durations AND `wo.actualHours` to `totalWorkedHours`
+  - Now sums timeLogs first; uses that sum if > 0, otherwise falls back to `wo.actualHours` as a coarse estimate
+
+- FIX 11: src/app/api/inventory/route.ts
+  - Removed the `where.currentStock = { lte: 100000 }` magic-number filter from the `lowStock` branch — the in-memory `currentStock <= minStockLevel` filter that already runs after the query is the correct check
+  - Kept the branch with a comment so the lowStock flag is still readable
+
+- FIX 12: Already covered by FIX 3 (same file, same permission gate).
+
+Stage Summary:
+- Files changed (10): src/app/api/analytics/route.ts, src/app/api/dashboard/stats/route.ts, src/app/api/reporting/kpis/route.ts, src/app/api/inventory/route.ts, src/app/api/repairs/completion/[workOrderId]/route.ts, src/app/api/work-orders/bulk-update/route.ts, src/app/api/work-orders/[id]/route.ts, src/app/api/work-orders/[id]/materials/route.ts, src/app/api/work-orders/[id]/time-logs/route.ts, src/app/api/reports/labor-utilization/route.ts
+- ESLint: no new errors introduced in any of the edited files (all remaining lint errors are in pre-existing prisma prebuilt client and root-level JS scripts, untouched here)
+- All 11 confirmed bugs addressed with minimal, surgical edits
+
+---
+Task ID: 13
+Agent: Frontend Bug-Fix Agent
+Task: Fix 4 frontend bugs in EAM system modules (PlannerWorkbench, EnterpriseReports, AssetPages, RepairsPages)
+
+Work Log:
+
+- FIX 1: src/components/modules/PlannerWorkbench.tsx
+  - Imported `ShieldCheck` icon from lucide-react for the new verified column
+  - Replaced the non-existent `pending_review` kanban column with `verified` (icon: ShieldCheck, label: "Verified", keeping the orange styling)
+  - Rewrote the WO-status → kanban-column mapping with a proper switch statement that handles every real WorkOrder schema status:
+      draft         → (hidden, not in any column)
+      requested     → approved column
+      approved      → approved column
+      planned       → approved column
+      assigned      → assigned column
+      in_progress   → in_progress column
+      waiting_parts → in_progress column
+      on_hold       → in_progress column
+      verified      → verified column
+      completed     → completed column
+      closed        → completed column
+      cancelled     → (hidden, not in any column)
+    Removed the old buggy "fallback to approved column" branch that was masking unmapped statuses
+  - Removed the dead `case 'pending_review':` arm in the drag-to-column endpoint switch and added `case 'verified':` that calls the existing `/api/work-orders/[id]/verify` endpoint
+  - Renamed `urgent` → `critical` in PRIORITY_CONFIG (matching the WorkOrder schema which uses `low, medium, high, critical`)
+  - Updated the SLAIndicator priority→hours map: `urgent: 8` → `critical: 8`
+  - Updated all three `<SelectItem value="urgent">Urgent</SelectItem>` priority dropdowns to `<SelectItem value="critical">Critical</SelectItem>` (MR filter, WO filter, create-WO form)
+  - Fixed the overdue stats calculation to use `wo.plannedEnd` instead of `wo.plannedStart` (an open WO is overdue when its planned END is in the past, not its planned start)
+
+- FIX 2: src/components/modules/EnterpriseReports.tsx
+  - Migrated six data fields from `reportData` (basic maintenance API) to `enterpriseData` (enterprise API), since the enterprise API is the correct source for each:
+      reportData?.repeatFailures      → enterpriseData?.repeatFailures        (lines 240, 241, 265)
+      reportData?.costAnalytics       → enterpriseData?.costAnalytics         (lines 269, 270, 287)
+      reportData?.toolKpis            → enterpriseData?.toolKpis              (lines 1267-1270)
+      reportData?.toolUtilization     → enterpriseData?.toolUtilization       (lines 1291, 1297)
+      s?.mtbf (s = reportData?.summary) → enterpriseData?.mtbf              (lines 151, 168)
+      s?.plannedRatio                  → enterpriseData?.plannedRatio         (line 153)
+    The maintenance API's `summary` object never actually returned `mtbf`, `plannedRatio`, `repeatFailures`, `costAnalytics`, `toolKpis`, or `toolUtilization`, so all six reads were silently undefined when sourced from reportData
+  - Updated the `executiveKPIs` useMemo dependency array from `[s]` to `[s, enterpriseData]` so the KPI cards re-render when enterpriseData loads
+  - Added `critical: 4` to the client-side `slaHours` map (low: 72, medium: 48, high: 24, urgent: 8, critical: 4) so `critical`-priority work orders get a proper SLA threshold instead of falling back to the default 48h
+  - Fixed the Overdue Work Orders filter in the SLA tab to use `wo.plannedEnd` instead of `wo.plannedStart` (both the count check and the list render, plus the date label)
+
+- FIX 3: src/components/modules/AssetPages.tsx
+  - Added `.catch(() => { setLoading(false); toast.error('Failed to load asset data'); })` to the `loadData` Promise.all chain
+  - Previously, if any of the three parallel GETs (assets, asset-categories, plants) threw, the promise rejected unhandled and `setLoading(false)` was never called — leaving the page stuck on the loading skeleton forever
+  - `toast` was already imported from sonner, so no new import was needed
+
+- FIX 4: src/components/modules/RepairsPages.tsx
+  - Fixed the if/else toast logic in `fetchRequests` (was around lines 415-417):
+      BEFORE:
+        if (listRes.success) setRequests(listRes.data || []);
+        if (listRes.pagination) setPagination(listRes.pagination);
+        else toast.error(listRes.error || 'Failed to load');
+      AFTER:
+        if (listRes.success) {
+          setRequests(listRes.data || []);
+          if (listRes.pagination) setPagination(listRes.pagination);
+        } else {
+          toast.error(listRes.error || 'Failed to load');
+        }
+  - The original `else` was bound to the `if (listRes.pagination)` check, so any successful list response without a pagination object would trigger a spurious "Failed to load" error toast. The `else` is now correctly bound to the `if (listRes.success)` success check.
+
+Stage Summary:
+- Files changed (4): src/components/modules/PlannerWorkbench.tsx, src/components/modules/EnterpriseReports.tsx, src/components/modules/AssetPages.tsx, src/components/modules/RepairsPages.tsx
+- ESLint: `bunx eslint` on the four modified files reports zero errors and zero warnings (all remaining lint problems in the repo are in pre-existing untouched files — MaintenancePages, root-level JS scripts, prisma prebuilt client, etc.)
+- All four bugs addressed with surgical, minimal edits — no behavior changes beyond the reported fixes

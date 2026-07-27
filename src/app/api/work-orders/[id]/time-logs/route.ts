@@ -497,9 +497,9 @@ export async function DELETE(
     // Permission: creator, team leader, or admin
     const isCreator = timeLog.userId === session.userId;
     const isTeamLeader = timeLog.workOrder.teamLeaderId === session.userId;
-    const isAdmin = session.roles.includes('admin');
+    const isAdminUser = session.roles.includes('admin');
 
-    if (!isCreator && !isTeamLeader && !isAdmin) {
+    if (!isCreator && !isTeamLeader && !isAdminUser) {
       return NextResponse.json({ success: false, error: 'Only the creator, team leader, or admin can delete time logs' }, { status: 403 });
     }
 

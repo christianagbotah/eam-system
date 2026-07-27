@@ -167,6 +167,7 @@ export async function GET(request: NextRequest) {
       inventoryPendingRequests,
       // Weekly trends (raw SQL)
       weeklyWoResult,
+      weeklyCompletedWoResult,
       weeklyMrResult,
       weeklyProdResult,
       // ===== Enhanced KPIs =====
@@ -252,7 +253,7 @@ export async function GET(request: NextRequest) {
         where: { ...plantFilter, createdAt: { gte: todayStart } },
       }), 0),
       safe(db.workOrder.count({
-        where: { ...plantFilter, updatedAt: { gte: todayStart }, status: 'completed' },
+        where: { ...plantFilter, actualEnd: { gte: todayStart }, status: 'completed' },
       }), 0),
       safe(db.workOrder.count({
         where: { ...plantFilter, createdAt: { gte: todayStart } },
@@ -332,6 +333,8 @@ export async function GET(request: NextRequest) {
       safe(db.inventoryRequest.count({ where: { ...plantFilter, status: { in: ['pending', 'partially_fulfilled'] } } }), 0),
       // Weekly trends: work orders created per day (MySQL-compatible, with plant filter)
       safe(db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM work_orders WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)${plantSqlFilter} GROUP BY DATE(createdAt) ORDER BY day`), []),
+      // Weekly trends: work orders completed per day (by actualEnd, separate fetch)
+      safe(db.$queryRaw(Prisma.sql`SELECT DATE(actualEnd) as day, COUNT(*) as count FROM work_orders WHERE actualEnd >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) AND status = 'completed'${plantSqlFilter} GROUP BY DATE(actualEnd) ORDER BY day`), []),
       // Weekly trends: maintenance requests created per day (MySQL-compatible, with plant filter)
       safe(db.$queryRaw(Prisma.sql`SELECT DATE(createdAt) as day, COUNT(*) as count FROM maintenance_requests WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)${plantSqlFilter} GROUP BY DATE(createdAt) ORDER BY day`), []),
       // Weekly trends: production orders created per day (MySQL-compatible, with plant filter)
@@ -347,18 +350,18 @@ export async function GET(request: NextRequest) {
       // Preventive vs corrective count for planned ratio
       safe(db.workOrder.count({ where: { ...plantFilter, type: 'preventive' } }), 0),
       safe(db.workOrder.count({ where: { ...plantFilter, type: { in: ['corrective', 'emergency'] } } }), 0),
-      // PM schedules due (nextDueDate within 7 days)
+      // PM schedules due (nextDueDate within 7 days) — plant filter routes through asset relation
       safe(db.pmSchedule.count({
         where: {
-          ...plantFilter,
+          asset: { ...plantFilter },
           isActive: true,
           nextDueDate: { lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
         },
       }), 0),
-      // PM schedules overdue
+      // PM schedules overdue — plant filter routes through asset relation
       safe(db.pmSchedule.count({
         where: {
-          ...plantFilter,
+          asset: { ...plantFilter },
           isActive: true,
           nextDueDate: { lt: new Date() },
         },
@@ -504,6 +507,7 @@ export async function GET(request: NextRequest) {
     // Build weekly trend arrays
     const weeklyTrends = {
       workOrders: fillTrendArray(weeklyWoResult as { day: string; count: number }[]),
+      completedWorkOrders: fillTrendArray(weeklyCompletedWoResult as { day: string; count: number }[]),
       maintenanceRequests: fillTrendArray(weeklyMrResult as { day: string; count: number }[]),
       productionOrders: fillTrendArray(weeklyProdResult as { day: string; count: number }[]),
     };

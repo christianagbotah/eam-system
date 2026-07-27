@@ -47,28 +47,28 @@ export async function GET(request: NextRequest) {
           status: { notIn: ['closed', 'cancelled'] },
         },
       }),
-      // Avg completion time (hours) — actual labor hours from RepairCompletion
-      db.repairCompletion.aggregate({ ...(Object.keys(plantWhere).length > 0 ? { where: plantWhere } : {}), _avg: { totalLaborHours: true } }),
+      // Avg completion time (hours) — actual labor hours from RepairCompletion (route through workOrder for plant filter)
+      db.repairCompletion.aggregate({ ...(Object.keys(plantWhere).length > 0 ? { where: { workOrder: plantWhere } } : {}), _avg: { totalLaborHours: true } }),
       // Material requests by status
       db.repairMaterialRequest.groupBy({ by: ['status'], ...(Object.keys(plantWhere).length > 0 ? { where: plantWhere } : {}), _count: true }),
       // Tool requests by status
       db.repairToolRequest.groupBy({ by: ['status'], ...(Object.keys(plantWhere).length > 0 ? { where: plantWhere } : {}), _count: true }),
       // Transfer requests by status
       db.toolTransferRequest.groupBy({ by: ['status'], ...(Object.keys(plantWhere).length > 0 ? { where: plantWhere } : {}), _count: true }),
-      // Total downtime minutes
-      db.workOrderDowntime.aggregate({ ...(Object.keys(plantWhere).length > 0 ? { where: plantWhere } : {}), _sum: { durationMinutes: true } }),
+      // Total downtime minutes (route through workOrder for plant filter)
+      db.workOrderDowntime.aggregate({ ...(Object.keys(plantWhere).length > 0 ? { where: { workOrder: plantWhere } } : {}), _sum: { durationMinutes: true } }),
       // Avg downtime per WO
-      db.workOrderDowntime.aggregate({ ...(Object.keys(plantWhere).length > 0 ? { where: plantWhere } : {}), _avg: { durationMinutes: true } }),
-      // Rework stats
+      db.workOrderDowntime.aggregate({ ...(Object.keys(plantWhere).length > 0 ? { where: { workOrder: plantWhere } } : {}), _avg: { durationMinutes: true } }),
+      // Rework stats (route through workOrder for plant filter)
       db.repairCompletion.aggregate({
         _count: true,
         _avg: { reworkCount: true },
         _sum: { reworkCount: true },
-        where: { ...plantWhere, reworkCount: { gt: 0 } },
+        where: { ...(Object.keys(plantWhere).length > 0 ? { workOrder: plantWhere } : {}), reworkCount: { gt: 0 } },
       }),
-      // Recent completions (last 30 days)
+      // Recent completions (last 30 days, route through workOrder for plant filter)
       db.repairCompletion.findMany({
-        where: { ...plantWhere, supervisorApprovedAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
+        where: { ...(Object.keys(plantWhere).length > 0 ? { workOrder: plantWhere } : {}), supervisorApprovedAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } },
         include: { workOrder: { select: { woNumber: true, title: true, priority: true } } },
         orderBy: { supervisorApprovedAt: 'desc' },
         take: 10,

@@ -25,7 +25,10 @@ export async function GET(request: NextRequest) {
     const plantScope = await getPlantScope(request, session);
     const plantFilter = getPlantFilterWhere(plantScope);
 
-    const dtFilter: Record<string, unknown> = { ...plantFilter };
+    const dtFilter: Record<string, unknown> = {};
+    if (plantFilter && Object.keys(plantFilter).length > 0) {
+      dtFilter.workOrder = { ...plantFilter };
+    }
     if (from) dtFilter.downtimeStart = { ...(dtFilter.downtimeStart as Record<string, unknown> || {}), gte: new Date(from + 'T00:00:00') };
     if (to) {
       const existing = dtFilter.downtimeStart as Record<string, unknown> || {};

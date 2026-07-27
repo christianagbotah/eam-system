@@ -148,11 +148,11 @@ export default function EnterpriseReports() {
   const executiveKPIs = useMemo(() => [
     { label: 'WOs Completed (MTD)', value: s?.completedWOs ?? 0, icon: CheckCircle2, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400', onClick: () => setActiveTab('wo-analytics') },
     { label: 'Completion Rate', value: `${s?.completionRate ?? 0}%`, icon: Target, color: 'text-sky-600', bgColor: 'bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400', subtext: s?.completionRate >= 80 ? 'On track' : 'Below target', onClick: () => setActiveTab('wo-analytics') },
-    { label: 'MTBF', value: `${s?.mtbf ?? 0}h`, icon: Activity, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400', onClick: () => setActiveTab('downtime') },
+    { label: 'MTBF', value: `${enterpriseData?.mtbf ?? 0}h`, icon: Activity, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400', onClick: () => setActiveTab('downtime') },
     { label: 'MTTR', value: `${s?.avgCompletionHours ?? 0}h`, icon: Timer, color: 'text-teal-600', bgColor: 'bg-teal-50 dark:bg-teal-900/30 dark:text-teal-400', onClick: () => setActiveTab('downtime') },
-    { label: 'Planned vs Unplanned', value: `${s?.plannedRatio ?? '50:50'}`, icon: TrendingUp, color: 'text-violet-600', bgColor: 'bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400', onClick: () => setActiveTab('wo-analytics') },
+    { label: 'Planned vs Unplanned', value: `${enterpriseData?.plannedRatio ?? '50:50'}`, icon: TrendingUp, color: 'text-violet-600', bgColor: 'bg-violet-50 dark:bg-violet-900/30 dark:text-violet-400', onClick: () => setActiveTab('wo-analytics') },
     { label: 'Total Maint. Cost', value: formatCurrency(s?.totalCost || 0), icon: DollarSign, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400', onClick: () => setActiveTab('cost') },
-  ], [s]);
+  ], [s, enterpriseData]);
 
   // Export handlers
   const handlePdfExport = () => {
@@ -165,7 +165,7 @@ export default function EnterpriseReports() {
       summary: [
         { label: 'Total WOs', value: String(s.totalWOs) },
         { label: 'Completed', value: `${s.completedWOs} (${s.completionRate}%)` },
-        { label: 'MTBF', value: formatDuration(s.mtbf ?? 0) },
+        { label: 'MTBF', value: formatDuration(enterpriseData?.mtbf ?? 0) },
         { label: 'MTTR', value: formatDuration(s.avgCompletionHours ?? 0) },
         { label: 'Total Cost', value: formatCurrency(s.totalCost) },
         { label: 'SLA Compliance', value: `${s.slaComplianceRate ?? 'N/A'}%` },
@@ -223,7 +223,7 @@ export default function EnterpriseReports() {
       if (!byType[t]) byType[t] = { total: 0, breached: 0 };
       byType[t].total++;
       const hours = (new Date().getTime() - new Date(wo.createdAt).getTime()) / 3600000;
-      const slaHours: Record<string, number> = { low: 72, medium: 48, high: 24, urgent: 8 };
+      const slaHours: Record<string, number> = { low: 72, medium: 48, high: 24, urgent: 8, critical: 4 };
       if (hours > (slaHours[wo.priority] || 48) && !['completed', 'closed'].includes(wo.status)) byType[t].breached++;
     });
     return Object.entries(byType).map(([type, data]) => ({
@@ -237,8 +237,8 @@ export default function EnterpriseReports() {
   // Repeat failure data — enriched from enterprise report API
   const repeatFailures = useMemo(() => {
     // Prefer API data which has enriched asset details
-    if (reportData?.repeatFailures?.length > 0) {
-      return reportData.repeatFailures.map((a: any) => ({
+    if (enterpriseData?.repeatFailures?.length > 0) {
+      return enterpriseData.repeatFailures.map((a: any) => ({
         name: a.assetName,
         count: a.failureCount,
         latest: a.lastFailureDate,
@@ -262,12 +262,12 @@ export default function EnterpriseReports() {
       if (wo.createdAt > assetMap[key].latest) assetMap[key].latest = wo.createdAt;
     });
     return Object.values(assetMap).filter(a => a.count >= 3).sort((a, b) => b.count - a.count);
-  }, [workOrders, reportData?.repeatFailures]);
+  }, [workOrders, enterpriseData?.repeatFailures]);
 
   // Cost by category data — uses actual costs from enterprise report API
   const costByCategory = useMemo(() => {
-    if (reportData?.costAnalytics?.byWOType) {
-      return reportData.costAnalytics.byWOType.map((d: any) => ({
+    if (enterpriseData?.costAnalytics?.byWOType) {
+      return enterpriseData.costAnalytics.byWOType.map((d: any) => ({
         category: (d.type || 'other').charAt(0).toUpperCase() + (d.type || 'other').slice(1),
         cost: d.totalCost || 0,
         color: TYPE_COLOR_MAP[d.type] || CHART_COLORS[0],
@@ -284,7 +284,7 @@ export default function EnterpriseReports() {
       cost,
       color: TYPE_COLOR_MAP[cat] || CHART_COLORS[0],
     }));
-  }, [workOrders, reportData?.costAnalytics?.byWOType]);
+  }, [workOrders, enterpriseData?.costAnalytics?.byWOType]);
 
   // Pre-compute period comparison data for the tab
   const periodCompData = useMemo(() => {
@@ -1264,10 +1264,10 @@ export default function EnterpriseReports() {
         <TabsContent value="tools" className="space-y-6 mt-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: 'Tool Utilization', value: `${reportData?.toolKpis?.utilizationRate ?? 0}%`, icon: Wrench, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
-              { label: 'Active Tools', value: reportData?.toolKpis?.activeTools ?? 0, icon: HardHat, color: 'text-sky-600', bgColor: 'bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
-              { label: 'Stock-out Events', value: reportData?.toolKpis?.stockOutEvents ?? 0, icon: AlertTriangle, color: 'text-red-600', bgColor: 'bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
-              { label: 'POs Pending', value: reportData?.toolKpis?.pendingPOs ?? 0, icon: ArrowRightLeft, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
+              { label: 'Tool Utilization', value: `${enterpriseData?.toolKpis?.utilizationRate ?? 0}%`, icon: Wrench, color: 'text-emerald-600', bgColor: 'bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400' },
+              { label: 'Active Tools', value: enterpriseData?.toolKpis?.activeTools ?? 0, icon: HardHat, color: 'text-sky-600', bgColor: 'bg-sky-50 dark:bg-sky-900/30 dark:text-sky-400' },
+              { label: 'Stock-out Events', value: enterpriseData?.toolKpis?.stockOutEvents ?? 0, icon: AlertTriangle, color: 'text-red-600', bgColor: 'bg-red-50 dark:bg-red-900/30 dark:text-red-400' },
+              { label: 'POs Pending', value: enterpriseData?.toolKpis?.pendingPOs ?? 0, icon: ArrowRightLeft, color: 'text-amber-600', bgColor: 'bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400' },
             ].map(k => { const I = k.icon; return <KPICard key={k.label} icon={I} label={k.label} value={k.value} color={k.color} bgColor={k.bgColor} />; })}
           </div>
 
@@ -1288,13 +1288,13 @@ export default function EnterpriseReports() {
             </CardContent>
           </Card>
 
-          {(reportData?.toolUtilization || []).length > 0 && (
+          {(enterpriseData?.toolUtilization || []).length > 0 && (
             <Card className="border border-border/60 shadow-sm">
               <CardHeader className="pb-3"><CardTitle className="text-base">Tool Utilization Details</CardTitle></CardHeader>
               <CardContent>
                 <div className="overflow-x-auto rounded border">
                   <Table><TableHeader><TableRow><TableHead>Tool</TableHead><TableHead className="text-right">Requests</TableHead><TableHead className="text-right hidden sm:table-cell">Checkouts</TableHead><TableHead className="text-right hidden md:table-cell">Avg Hours</TableHead><TableHead className="text-right">Total Hours</TableHead></TableRow></TableHeader><TableBody>
-                    {reportData.toolUtilization.map((t: any, i: number) => (
+                    {enterpriseData.toolUtilization.map((t: any, i: number) => (
                       <TableRow key={i}><TableCell className="font-medium">{t.toolName}</TableCell><TableCell className="text-right">{t.requestCount}</TableCell><TableCell className="text-right hidden sm:table-cell">{t.totalCheckouts}</TableCell><TableCell className="text-right hidden md:table-cell">{t.avgCheckoutHours}h</TableCell><TableCell className="text-right font-medium">{Math.round(t.totalHours * 10) / 10}h</TableCell></TableRow>
                     ))}
                   </TableBody></Table>
@@ -1348,20 +1348,20 @@ export default function EnterpriseReports() {
               <CardHeader className="pb-3"><CardTitle className="text-base">Overdue Work Orders</CardTitle></CardHeader>
               <CardContent>
                 {filteredWorkOrders.filter(wo => {
-                  if (!wo.plannedStart || ['completed', 'closed'].includes(wo.status)) return false;
-                  return new Date(wo.plannedStart) < new Date();
+                  if (!wo.plannedEnd || ['completed', 'closed'].includes(wo.status)) return false;
+                  return new Date(wo.plannedEnd) < new Date();
                 }).length > 0 ? (
                   <ScrollArea className="max-h-[280px]">
                     <div className="space-y-2">
                       {filteredWorkOrders.filter(wo => {
-                        if (!wo.plannedStart || ['completed', 'closed'].includes(wo.status)) return false;
-                        return new Date(wo.plannedStart) < new Date();
+                        if (!wo.plannedEnd || ['completed', 'closed'].includes(wo.status)) return false;
+                        return new Date(wo.plannedEnd) < new Date();
                       }).slice(0, 10).map(wo => (
                         <div key={wo.id} className="flex items-center gap-3 p-2 rounded-lg border border-red-100 bg-red-50/30">
                           <Badge variant="destructive" className="text-[10px]">OVERDUE</Badge>
                           <span className="font-mono text-xs">{wo.woNumber}</span>
                           <span className="text-xs truncate flex-1">{wo.title}</span>
-                          <span className="text-[10px] text-muted-foreground">{wo.plannedStart ? formatDate(wo.plannedStart) : ''}</span>
+                          <span className="text-[10px] text-muted-foreground">{wo.plannedEnd ? formatDate(wo.plannedEnd) : ''}</span>
                         </div>
                       ))}
                     </div>

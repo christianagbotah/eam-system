@@ -267,22 +267,27 @@ export async function PUT(
       },
     });
 
-    // Handle team members update (relational)
+    // Handle team members update (relational) — wrapped in a transaction so
+    // delete + create happen atomically (no partial state if create fails).
     if (body.teamMembers && Array.isArray(body.teamMembers)) {
-      // Delete existing team members
-      await db.workOrderTeamMember.deleteMany({ where: { workOrderId: id } });
-      // Create new team members
-      if (body.teamMembers.length > 0) {
-        const now = new Date();
-        const teamMemberData = body.teamMembers.map((member: { userId: string; role: string }) => ({
-          workOrderId: id,
-          userId: member.userId,
-          role: member.role,
-          accessLevel: member.role === 'team_leader' ? 'full' : 'read_only',
-          assignedAt: now,
-        }));
-        await db.workOrderTeamMember.createMany({ data: teamMemberData });
-      }
+      const now = new Date();
+      const teamMemberData = body.teamMembers.map((member: { userId: string; role: string }) => ({
+        workOrderId: id,
+        userId: member.userId,
+        role: member.role,
+        accessLevel: member.role === 'team_leader' ? 'full' : 'read_only',
+        assignedAt: now,
+      }));
+
+      await db.$transaction([
+        // Delete existing team members
+        db.workOrderTeamMember.deleteMany({ where: { workOrderId: id } }),
+        // Create new team members (only if there are any to create)
+        ...(teamMemberData.length > 0
+          ? [db.workOrderTeamMember.createMany({ data: teamMemberData })]
+          : []),
+      ]);
+
       // Reload with updated team members
       updated.teamMembers = await db.workOrderTeamMember.findMany({
         where: { workOrderId: id },

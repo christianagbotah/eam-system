@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getSession, isAdmin, hasPermission } from '@/lib/auth';
 import { IndustrialKpiService } from '@/services/industrialKpi.service';
 
 // GET /api/reporting/kpis?metric=dashboard|oee|reliability|backlog&plantId=...&days=...
@@ -8,6 +8,15 @@ export async function GET(request: NextRequest) {
     const session = getSession(request);
     if (!session) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+    }
+
+    // Permission check — must have reports.view or analytics.view, or be admin
+    if (
+      !isAdmin(session) &&
+      !hasPermission(session, 'reports.view') &&
+      !hasPermission(session, 'analytics.view')
+    ) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
