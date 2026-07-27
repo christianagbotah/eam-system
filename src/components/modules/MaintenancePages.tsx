@@ -1925,8 +1925,9 @@ export function WorkOrdersPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const { hasPermission, isAdmin, user } = useAuthStore();
-  const navigate = useNavigationStore(s => s.navigate);
+  const { navigate, pageParams } = useNavigationStore();
 
   // WO IDs that have pending team member requests (for planner/admin indicator badges)
   const [woIdsWithPendingTeamReqs, setWoIdsWithPendingTeamReqs] = useState<Set<string>>(new Set());
@@ -1943,6 +1944,20 @@ export function WorkOrdersPage() {
     trend: { thisMonth: number; lastMonth: number; changePercent: number };
     openByAge: Record<string, number>;
   } | null>(null);
+
+  // Apply initial filters from navigation params (e.g. dashboard deep links)
+  useEffect(() => {
+    if (!pageParams) return;
+    if (pageParams.status) {
+      setFilterStatus(pageParams.status);
+    }
+    if (pageParams.overdue === 'true') {
+      setOverdueOnly(true);
+    }
+    if (pageParams.id) {
+      setDetailId(pageParams.id);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredWOs = useMemo(() => {
     if (!searchText.trim()) return workOrders;
@@ -1989,6 +2004,7 @@ export function WorkOrdersPage() {
     const params = new URLSearchParams();
     if (filterStatus !== 'all') params.set('status', filterStatus);
     if (filterPriority !== 'all') params.set('priority', filterPriority);
+    if (overdueOnly) params.set('overdue', 'true');
     api.get<WorkOrder[]>(`/api/work-orders?${params}`).then(res => {
       if (active) {
         if (res.success && res.data) setWorkOrders(res.data);
@@ -1996,7 +2012,7 @@ export function WorkOrdersPage() {
       }
     });
     return () => { active = false; };
-  }, [filterStatus, filterPriority, refreshKey]);
+  }, [filterStatus, filterPriority, overdueOnly, refreshKey]);
 
   const handleRefresh = useCallback(() => setRefreshKey(k => k + 1), []);
 
@@ -2087,15 +2103,22 @@ export function WorkOrdersPage() {
       {/* Stats Bar - Pill style */}
       <div className="flex gap-2 flex-wrap">
         {[
-          { label: 'Total', value: statusCounts.total, className: 'bg-slate-100 text-slate-700 border-slate-200' },
-          { label: 'In Progress', value: statusCounts.inProgress, className: 'bg-amber-50 text-amber-700 border-amber-200' },
-          { label: 'Completed', value: statusCounts.completed, className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-          { label: 'Pending', value: statusCounts.assigned, className: 'bg-sky-50 text-sky-700 border-sky-200' },
-          { label: 'Overdue', value: statusCounts.overdue, className: 'bg-red-50 text-red-700 border-red-200' },
+          { label: 'Total', value: statusCounts.total, className: 'bg-slate-100 text-slate-700 border-slate-200', status: 'all' },
+          { label: 'In Progress', value: statusCounts.inProgress, className: 'bg-amber-50 text-amber-700 border-amber-200', status: 'in_progress' },
+          { label: 'Completed', value: statusCounts.completed, className: 'bg-emerald-50 text-emerald-700 border-emerald-200', status: 'completed' },
+          { label: 'Pending', value: statusCounts.assigned, className: 'bg-sky-50 text-sky-700 border-sky-200', status: 'assigned' },
+          { label: 'Overdue', value: statusCounts.overdue, className: 'bg-red-50 text-red-700 border-red-200', overdue: true },
         ].map(s => (
-          <div key={s.label} className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${s.className} transition-colors`}>
+          <button
+            key={s.label}
+            onClick={() => {
+              if (s.overdue) { setOverdueOnly(!overdueOnly); setFilterStatus('all'); }
+              else { setFilterStatus(s.status); setOverdueOnly(false); }
+            }}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${s.className} transition-colors cursor-pointer hover:opacity-80 ${(s.overdue ? overdueOnly : filterStatus === s.status) ? 'ring-2 ring-offset-1 ring-primary/30' : ''}`}
+          >
             {s.value} {s.label}
-          </div>
+          </button>
         ))}
       </div>
 
@@ -2129,6 +2152,13 @@ export function WorkOrdersPage() {
             <SelectItem value="emergency">Emergency</SelectItem>
           </SelectContent>
         </Select>
+        {overdueOnly && (
+          <Badge variant="destructive" className="gap-1.5 cursor-pointer" onClick={() => { setOverdueOnly(false); }}>
+            <AlertTriangle className="h-3 w-3" />
+            Overdue Filter Active
+            <X className="h-3 w-3" />
+          </Badge>
+        )}
       </div>
 
       {loading ? <LoadingSkeleton /> : (

@@ -69,8 +69,11 @@ export function AssetsPage() {
   const { hasPermission, isAdmin } = useAuthStore();
 
   // If navigated here with an asset ID, open detail view
+  // If navigated with condition='at_risk', pre-filter to poor/critical condition
+  const [atRiskFilter, setAtRiskFilter] = useState(false);
   useEffect(() => {
     if (pageParams?.id && !detailId) setDetailId(pageParams.id);
+    if (pageParams?.condition === 'at_risk') setAtRiskFilter(true);
   }, [pageParams]);
 
   const emptyForm = { name: '', assetTag: '', serialNumber: '', categoryId: '', manufacturer: '', model: '', yearManufactured: '', condition: 'new', status: 'operational', criticality: 'medium', location: '', building: '', floor: '', area: '', plantId: '', departmentId: '', assignedToId: '', parentId: '', description: '', purchaseDate: '', purchaseCost: '', expectedLifeYears: '' };
@@ -97,11 +100,13 @@ export function AssetsPage() {
     return assets.filter(a => {
       if (searchText) { const q = searchText.toLowerCase(); if (!a.name.toLowerCase().includes(q) && !a.assetTag.toLowerCase().includes(q)) return false; }
       if (statusFilter !== 'all' && a.status !== statusFilter) return false;
-      if (conditionFilter !== 'all' && a.condition !== conditionFilter) return false;
+      if (atRiskFilter) {
+        if (a.condition !== 'poor' && a.condition !== 'critical' && a.condition !== 'out_of_service') return false;
+      } else if (conditionFilter !== 'all' && a.condition !== conditionFilter) return false;
       if (criticalityFilter !== 'all' && a.criticality !== criticalityFilter) return false;
       return true;
     });
-  }, [assets, searchText, statusFilter, conditionFilter, criticalityFilter]);
+  }, [assets, searchText, statusFilter, conditionFilter, criticalityFilter, atRiskFilter]);
 
   const stats = useMemo(() => ({
     total: assets.length,
@@ -186,6 +191,13 @@ export function AssetsPage() {
           <label className="text-xs text-muted-foreground whitespace-nowrap">Show sub-components</label>
           <Switch checked={showAllAssets} onCheckedChange={setShowAllAssets} />
         </div>
+        {atRiskFilter && (
+          <Badge variant="destructive" className="gap-1.5 cursor-pointer" onClick={() => setAtRiskFilter(false)}>
+            <AlertTriangle className="h-3 w-3" />
+            At Risk Filter Active
+            <X className="h-3 w-3" />
+          </Badge>
+        )}
       </div>
 
       <Card className="border-0 shadow-sm dark:bg-card overflow-hidden">

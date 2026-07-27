@@ -43,17 +43,25 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '20', 10);
     const search = searchParams.get('search');
+    const overdue = searchParams.get('overdue');
 
     // Resolve plant scope (validates X-Plant-ID against user's plant access)
     const plantScope = await getPlantScope(request, session);
 
     // Build where clause with role-based filtering
     const where: Record<string, unknown> = {};
-    if (status) where.status = status;
+    if (status) {
+      const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
+      where.status = statuses.length > 1 ? { in: statuses } : statuses[0];
+    }
     if (priority) where.priority = priority;
     if (type) where.type = type;
     if (search) {
       where.title = { contains: search };
+    }
+    if (overdue === 'true') {
+      where.plannedEnd = { lt: new Date() };
+      where.status = { notIn: ['completed', 'verified', 'closed', 'cancelled'] };
     }
 
     const hasViewAll = hasPermission(session, 'work_orders.view') || hasPermission(session, 'work_orders.view_all') || isAdmin(session);
