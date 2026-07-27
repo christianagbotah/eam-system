@@ -274,7 +274,7 @@ export function DashboardPage() {
   ];
 
   // Cross-module values
-  const assetsAtRisk = (stats?.assetHealth?.poor || 0) + (stats?.assetHealth?.critical || 0);
+  const assetsAtRisk = stats?.assetHealth?.atRisk || 0;
   const safetyIncidents = stats?.safetyAlerts?.openIncidents || 0;
   const activeProduction = stats?.production?.activeOrders || 0;
   const iotAlerts = stats?.iotStatus?.alertCount || 0;
@@ -297,13 +297,13 @@ export function DashboardPage() {
   const primaryKPICards = [
     {
       label: 'Active Work Orders', value: activeWOs,
-      sublabel: `${stats?.createdTodayWO || 0} created today`,
+      sublabel: 'In progress, assigned, on hold',
       color: '#10b981', bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
       borderColor: 'border-emerald-100 dark:border-emerald-900/40',
       iconBg: 'bg-emerald-100 dark:bg-emerald-900/50', iconColor: 'text-emerald-600 dark:text-emerald-400',
       icon: Wrench, permission: 'work_orders.view',
       barData: stats?.weeklyTrends?.workOrders || [0, 0, 0, 0, 0, 0, 0],
-      onClick: () => navigate('maintenance-work-orders', { status: 'in_progress,assigned,approved,requested,waiting_parts,on_hold' }),
+      onClick: () => navigate('maintenance-work-orders', { status: 'in_progress,assigned,waiting_parts,on_hold' }),
     },
     {
       label: 'Completion Rate', value: `${completionRate}%`,
@@ -326,14 +326,14 @@ export function DashboardPage() {
       onClick: overdueWOs > 0 ? () => navigate('maintenance-work-orders', { overdue: 'true' }) : undefined,
     },
     {
-      label: 'Pending Requests', value: pendingReqs,
+      label: 'Pending & Approved', value: pendingReqs,
       sublabel: `${stats?.newTodayPending || 0} new today`,
       color: '#f59e0b', bgColor: 'bg-amber-50 dark:bg-amber-950/30',
       borderColor: 'border-amber-100 dark:border-amber-900/40',
       iconBg: 'bg-amber-100 dark:bg-amber-900/50', iconColor: 'text-amber-600 dark:text-amber-400',
       icon: ClipboardList, permission: 'maintenance_requests.view',
       barData: stats?.weeklyTrends?.maintenanceRequests || [0, 0, 0, 0, 0, 0, 0],
-      onClick: () => navigate('maintenance-requests', { status: 'pending,approved', autoOpen: 'first' }),
+      onClick: () => navigate('maintenance-requests', { status: 'pending,approved' }),
     },
   ];
 
@@ -373,11 +373,11 @@ export function DashboardPage() {
 
   const crossModuleData = [
     { label: 'Assets', value: stats?.assetHealth?.total || 0, detail: `${assetsAtRisk} at risk`, color: 'bg-orange-500', textColor: 'text-orange-600 dark:text-orange-400', bgColor: 'bg-orange-50 dark:bg-orange-950/30', borderColor: 'border-orange-100 dark:border-orange-900/40', page: 'assets' as PageName, params: assetsAtRisk > 0 ? { condition: 'at_risk' } : undefined },
-    { label: 'Safety', value: safetyIncidents, detail: `${stats?.safetyAlerts?.overdueInspections || 0} overdue`, color: 'bg-red-500', textColor: 'text-red-600 dark:text-red-400', bgColor: 'bg-red-50 dark:bg-red-950/30', borderColor: 'border-red-100 dark:border-red-900/40', page: 'safety-incidents' as PageName },
-    { label: 'Production', value: activeProduction, detail: `${stats?.production?.completionRate || 0}% done`, color: 'bg-cyan-500', textColor: 'text-cyan-600 dark:text-cyan-400', bgColor: 'bg-cyan-50 dark:bg-cyan-950/30', borderColor: 'border-cyan-100 dark:border-cyan-900/40', page: 'production-orders' as PageName },
+    { label: 'Safety', value: safetyIncidents, detail: `${stats?.safetyAlerts?.overdueInspections || 0} inspections overdue`, color: 'bg-red-500', textColor: 'text-red-600 dark:text-red-400', bgColor: 'bg-red-50 dark:bg-red-950/30', borderColor: 'border-red-100 dark:border-red-900/40', page: 'safety-incidents' as PageName },
+    { label: 'Production', value: activeProduction, detail: `${stats?.production?.overdueOrders || 0} overdue`, color: 'bg-cyan-500', textColor: 'text-cyan-600 dark:text-cyan-400', bgColor: 'bg-cyan-50 dark:bg-cyan-950/30', borderColor: 'border-cyan-100 dark:border-cyan-900/40', page: 'production-orders' as PageName },
     { label: 'IoT', value: stats?.iotStatus?.totalDevices || 0, detail: `${stats?.iotStatus?.offlineCount || 0} offline`, color: 'bg-violet-500', textColor: 'text-violet-600 dark:text-violet-400', bgColor: 'bg-violet-50 dark:bg-violet-950/30', borderColor: 'border-violet-100 dark:border-violet-900/40', page: 'iot-devices' as PageName },
-    { label: 'Quality', value: qualityIssues, detail: `${stats?.quality?.pendingAudits || 0} audits`, color: 'bg-pink-500', textColor: 'text-pink-600 dark:text-pink-400', bgColor: 'bg-pink-50 dark:bg-pink-950/30', borderColor: 'border-pink-100 dark:border-pink-900/40', page: 'quality-ncr' as PageName },
-    { label: 'Inventory', value: lowStockItems, detail: `${stats?.inventoryAlerts?.pendingRequests || 0} reqs`, color: 'bg-amber-500', textColor: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-100 dark:border-amber-900/40', page: 'inventory-items' as PageName, params: lowStockItems > 0 ? { filter: 'low_stock' } : undefined },
+    { label: 'Quality', value: qualityIssues, detail: `${stats?.quality?.failedInspections || 0} failed inspections`, color: 'bg-pink-500', textColor: 'text-pink-600 dark:text-pink-400', bgColor: 'bg-pink-50 dark:bg-pink-950/30', borderColor: 'border-pink-100 dark:border-pink-900/40', page: 'quality-ncr' as PageName },
+    { label: 'Inventory', value: lowStockItems, detail: `${stats?.inventoryAlerts?.pendingRequests || 0} pending reqs`, color: 'bg-amber-500', textColor: 'text-amber-600 dark:text-amber-400', bgColor: 'bg-amber-50 dark:bg-amber-950/30', borderColor: 'border-amber-100 dark:border-amber-900/40', page: 'inventory-items' as PageName, params: lowStockItems > 0 ? { filter: 'low_stock' } : undefined },
   ];
 
   // Filter cross-module cards to only show enabled modules
@@ -440,7 +440,7 @@ export function DashboardPage() {
           <ChevronRight className="h-3.5 w-3.5 text-emerald-400/50 shrink-0" />
         </button>
         {/* Always visible: Pending Tasks */}
-        <button onClick={() => navigate('maintenance-requests', { status: 'pending,approved', autoOpen: 'first' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
+        <button onClick={() => navigate('maintenance-requests', { status: 'pending,approved' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
           <div className="h-9 w-9 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0">
             <ClipboardList className="h-4 w-4 text-amber-600 dark:text-amber-400" />
           </div>
@@ -451,7 +451,7 @@ export function DashboardPage() {
           <ChevronRight className="h-3.5 w-3.5 text-amber-400/50 shrink-0" />
         </button>
         {/* Always visible: Completed This Week */}
-        <button onClick={() => navigate('maintenance-work-orders', { status: 'completed,verified' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
+        <button onClick={() => navigate('maintenance-work-orders', { status: 'completed,verified', assignedTo: 'me' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-teal-100 dark:border-teal-900/40 bg-teal-50 dark:bg-teal-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
           <div className="h-9 w-9 rounded-lg bg-teal-100 dark:bg-teal-900/50 flex items-center justify-center shrink-0">
             <CheckCircle2 className="h-4 w-4 text-teal-600 dark:text-teal-400" />
           </div>
@@ -479,7 +479,7 @@ export function DashboardPage() {
         {/* Supervisor: Team Workload */}
         {isSupervisor && (
           <>
-            <button onClick={() => navigate('maintenance-requests', { status: 'pending,approved', autoOpen: 'first' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-orange-100 dark:border-orange-900/40 bg-orange-50 dark:bg-orange-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
+            <button onClick={() => navigate('maintenance-requests', { status: 'pending,in_progress' })} className="flex items-center gap-3 px-4 py-3.5 rounded-xl border border-orange-100 dark:border-orange-900/40 bg-orange-50 dark:bg-orange-950/30 transition-all hover:shadow-sm cursor-pointer text-left hover:scale-[1.02] active:scale-[0.98] w-full">
               <div className="h-9 w-9 rounded-lg bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center shrink-0">
                 <ClipboardCheck className="h-4 w-4 text-orange-600 dark:text-orange-400" />
               </div>
@@ -614,7 +614,7 @@ export function DashboardPage() {
       {/* ===== Pending Requests Alert (Supervisor/Admin) ===== */}
       {(isSupervisor || isManager) && pendingReqs > 0 && (
         <button
-          onClick={() => navigate('maintenance-requests', { status: 'pending,approved', autoOpen: 'first' })}
+          onClick={() => navigate('maintenance-requests', { status: 'pending,approved' })}
           className="w-full flex items-center gap-4 px-5 py-4 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 hover:shadow-md hover:border-amber-300 dark:hover:border-amber-800/50 transition-all duration-300 cursor-pointer group"
         >
           <div className="h-11 w-11 rounded-xl bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
@@ -622,7 +622,7 @@ export function DashboardPage() {
           </div>
           <div className="flex-1 min-w-0 text-left">
             <div className="flex items-center gap-2">
-              <p className="text-sm font-bold text-amber-800 dark:text-amber-200">{pendingReqs} Pending Maintenance Request{pendingReqs > 1 ? 's' : ''}</p>
+              <p className="text-sm font-bold text-amber-800 dark:text-amber-200">{pendingReqs} Pending & Approved Request{pendingReqs > 1 ? 's' : ''}</p>
               <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
             </div>
             <p className="text-xs text-amber-600/70 dark:text-amber-400/70 mt-0.5">Click to review and approve requests from your team</p>
@@ -975,10 +975,10 @@ export function DashboardPage() {
           <CardContent className="pt-0 space-y-5">
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: 'Pending Approvals', value: pendingApprovals, color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-950/30', border: 'border-orange-100 dark:border-orange-900/40', page: 'maintenance-requests' as PageName, params: { status: 'pending,approved' } },
+                { label: 'Pending Approvals', value: pendingApprovals, color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-950/30', border: 'border-orange-100 dark:border-orange-900/40', page: 'maintenance-requests' as PageName, params: { status: 'pending,in_progress' } },
                 { label: 'Total Requests', value: stats?.totalRequests || 0, color: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 dark:bg-sky-950/30', border: 'border-sky-100 dark:border-sky-900/40', page: 'maintenance-requests' as PageName },
                 { label: 'Approved', value: stats?.approvedRequests || 0, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/30', border: 'border-emerald-100 dark:border-emerald-900/40', page: 'maintenance-requests' as PageName, params: { status: 'approved' } },
-                { label: 'Converted to WO', value: stats?.convertedRequests || 0, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-950/30', border: 'border-teal-100 dark:border-teal-900/40', page: 'maintenance-work-orders' as PageName },
+                { label: 'Converted to WO', value: stats?.convertedRequests || 0, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-950/30', border: 'border-teal-100 dark:border-teal-900/40', page: 'maintenance-requests' as PageName, params: { status: 'converted' } },
               ].map(item => (
                 <button key={item.label} onClick={() => navigate(item.page, (item as any).params)} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${item.border} ${item.bg} transition-all hover:shadow-sm cursor-pointer text-left w-full hover:scale-[1.02] active:scale-[0.98]`}>
                   <div className="flex-1 min-w-0">
@@ -1002,7 +1002,7 @@ export function DashboardPage() {
               </div>
               <div className="flex justify-between text-[10px] text-muted-foreground">
                 <span>{completedWOs} completed</span>
-                <span>{totalWOs - completedWOs} remaining</span>
+                <span>{totalWOs - completedWOs} not completed</span>
               </div>
             </div>
           </CardContent>

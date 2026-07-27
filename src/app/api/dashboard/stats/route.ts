@@ -142,6 +142,7 @@ export async function GET(request: NextRequest) {
       recentRequests,
       recentWorkOrders,
       // Asset health
+      assetsAtRiskCount,
       assetPoorCount,
       assetCriticalCount,
       assetTotalCount,
@@ -240,12 +241,12 @@ export async function GET(request: NextRequest) {
           status: { in: ['pending', 'in_progress'] },
         },
       }), 0),
-      // Overdue WOs (past planned end and not completed/closed/cancelled)
+      // Overdue WOs — must match WO list API filter exactly
       safe(db.workOrder.count({
         where: {
           ...plantFilter,
           plannedEnd: { lt: new Date() },
-          status: { notIn: ['completed', 'closed', 'cancelled'] },
+          status: { notIn: ['completed', 'verified', 'closed', 'cancelled'] },
         },
       }), 0),
       // Today's counts for trends
@@ -276,9 +277,10 @@ export async function GET(request: NextRequest) {
           assigner: { select: { id: true, fullName: true } },
         },
       }), []),
-      // Asset health: poor condition
+      // Assets at risk: poor condition OR critical criticality (single query avoids double-counting)
+      safe(db.asset.count({ where: { isActive: true, ...plantFilter, OR: [{ condition: 'poor' }, { criticality: 'critical' }] } }), 0),
+      // Separate counts for sublabel
       safe(db.asset.count({ where: { condition: 'poor', isActive: true, ...plantFilter } }), 0),
-      // Asset health: critical criticality
       safe(db.asset.count({ where: { criticality: 'critical', isActive: true, ...plantFilter } }), 0),
       // Asset total
       safe(db.asset.count({ where: { isActive: true, ...plantFilter } }), 0),
@@ -319,7 +321,7 @@ export async function GET(request: NextRequest) {
       // IoT: active/new alerts
       safe(db.iotAlert.count({ where: { ...plantFilter, status: 'active' } }), 0),
       // Quality: open NCRs (open + investigating + root_cause_found + corrective_action)
-      safe(db.nonConformanceReport.count({ where: { ...plantFilter, status: { in: ['open', 'investigating'] } } }), 0),
+      safe(db.nonConformanceReport.count({ where: { ...plantFilter, status: { in: ['open', 'investigating', 'root_cause_found', 'corrective_action'] } } }), 0),
       // Quality: failed inspections
       safe(db.qualityInspection.count({ where: { ...plantFilter, status: 'failed' } }), 0),
       // Quality: pending audits (planned + in_progress)
@@ -366,15 +368,15 @@ export async function GET(request: NextRequest) {
           nextDueDate: { lt: new Date() },
         },
       }), 0),
-      // This month cost
+      // This month cost (exclude draft & cancelled — matches by-category filter)
       safe(db.workOrder.aggregate({
-        where: { ...plantFilter, createdAt: { gte: thisMonthStart }, status: { notIn: ['cancelled'] } },
+        where: { ...plantFilter, createdAt: { gte: thisMonthStart }, status: { notIn: ['cancelled', 'draft'] } },
         _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
         _count: true,
       }), emptyAggregate),
-      // Last month cost
+      // Last month cost (exclude draft & cancelled — matches by-category filter)
       safe(db.workOrder.aggregate({
-        where: { ...plantFilter, createdAt: { gte: lastMonthStart, lte: lastMonthEnd }, status: { notIn: ['cancelled'] } },
+        where: { ...plantFilter, createdAt: { gte: lastMonthStart, lte: lastMonthEnd }, status: { notIn: ['cancelled', 'draft'] } },
         _sum: { totalCost: true, laborCost: true, partsCost: true, contractorCost: true },
         _count: true,
       }), emptyAggregate),
@@ -392,9 +394,9 @@ export async function GET(request: NextRequest) {
           status: { in: ['assigned', 'in_progress', 'waiting_parts', 'on_hold'] },
         },
       }), 0),
-      // My pending tasks (MRs I submitted that are pending, or WOs assigned to me in assigned status)
+      // My pending tasks (MRs I submitted that are pending/approved — matches nav filter)
       safe(db.maintenanceRequest.count({
-        where: { ...plantFilter, requestedBy: session.userId, status: { in: ['pending', 'in_progress', 'approved'] } },
+        where: { ...plantFilter, requestedBy: session.userId, status: { in: ['pending', 'approved'] } },
       }), 0),
       // My completed this week
       safe(db.workOrder.count({
@@ -415,10 +417,10 @@ export async function GET(request: NextRequest) {
             where: { ...plantFilter, status: { in: ['pending', 'in_progress'] } },
           }), 0)
         : Promise.resolve(0),
-      // Team active WOs (for supervisors)
+      // Team active WOs (for supervisors — consistent with myActiveWOs definition)
       isAdm || session.roles.includes('maintenance_supervisor')
         ? safe(db.workOrder.count({
-            where: { ...plantFilter, status: { in: ['assigned', 'in_progress', 'waiting_parts'] } },
+            where: { ...plantFilter, status: { in: ['assigned', 'in_progress', 'waiting_parts', 'on_hold'] } },
           }), 0)
         : Promise.resolve(0),
       // Planning queue (for planners)
@@ -461,16 +463,16 @@ export async function GET(request: NextRequest) {
       safe(db.notification.count({
         where: { userId: session.userId, isRead: false },
       }), 0),
-      // WO type breakdown for donut chart
-      safe(db.workOrder.count({ where: { ...plantFilter, type: 'preventive' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, type: 'corrective' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, type: 'emergency' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, type: 'inspection' } }), 0),
-      safe(db.workOrder.count({ where: { ...plantFilter, type: 'predictive' } }), 0),
-      // Priority breakdown for MR
-      safe(db.maintenanceRequest.count({ where: { ...plantFilter, priority: { in: ['high', 'urgent'] } } }), 0),
-      safe(db.maintenanceRequest.count({ where: { ...plantFilter, priority: 'medium' } }), 0),
-      safe(db.maintenanceRequest.count({ where: { ...plantFilter, priority: 'low' } }), 0),
+      // WO type breakdown for donut chart (role-filtered to match status chart)
+      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'preventive' } }), 0),
+      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'corrective' } }), 0),
+      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'emergency' } }), 0),
+      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'inspection' } }), 0),
+      safe(db.workOrder.count({ where: { ...plantFilter, ...Object.keys(woWhere).length > 0 ? woWhere : {}, type: 'predictive' } }), 0),
+      // Priority breakdown for MR (role-filtered to match status chart)
+      safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: { in: ['high', 'urgent'] } } }), 0),
+      safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: 'medium' } }), 0),
+      safe(db.maintenanceRequest.count({ where: { ...plantFilter, ...Object.keys(mrWhere).length > 0 ? mrWhere : {}, priority: 'low' } }), 0),
       // Role-based: pending + approved requests (actionable by current user, no plant filter)
       safe(db.maintenanceRequest.count({ where: pendingMrWhere }), 0),
       // Role-based: new today (pending + approved created today, no plant filter)
@@ -487,9 +489,9 @@ export async function GET(request: NextRequest) {
       woStats[w.status] = w._count.status;
     });
 
-    // Active WOs = in_progress + waiting_parts
+    // Active WOs — consistent definition across all cards: in_progress + assigned + waiting_parts + on_hold
     const activeWorkOrders =
-      (woStats['in_progress'] || 0) + (woStats['waiting_parts'] || 0);
+      (woStats['in_progress'] || 0) + (woStats['assigned'] || 0) + (woStats['waiting_parts'] || 0) + (woStats['on_hold'] || 0);
 
     // Completed WOs
     const completedWorkOrders = woStats['completed'] || 0;
@@ -618,6 +620,7 @@ export async function GET(request: NextRequest) {
 
         // ===== Cross-Module KPIs =====
         assetHealth: {
+          atRisk: assetsAtRiskCount,
           poor: assetPoorCount,
           critical: assetCriticalCount,
           total: assetTotalCount,
@@ -694,7 +697,7 @@ export async function GET(request: NextRequest) {
         // Planner KPIs
         plannerKPIs: {
           planningQueue: planningQueueWOs,
-          pmSchedulesDue: pmSchedulesDue,
+          pmSchedulesDue: pmSchedulesDue - pmSchedulesOverdue,
           pendingTeamRequests,
         },
         // Pending team requests detail
