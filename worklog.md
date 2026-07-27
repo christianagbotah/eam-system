@@ -1535,3 +1535,53 @@ Stage Summary:
 - Files changed (4): src/components/modules/PlannerWorkbench.tsx, src/components/modules/EnterpriseReports.tsx, src/components/modules/AssetPages.tsx, src/components/modules/RepairsPages.tsx
 - ESLint: `bunx eslint` on the four modified files reports zero errors and zero warnings (all remaining lint problems in the repo are in pre-existing untouched files — MaintenancePages, root-level JS scripts, prisma prebuilt client, etc.)
 - All four bugs addressed with surgical, minimal edits — no behavior changes beyond the reported fixes
+---
+Task ID: 1
+Agent: Main Agent
+Task: Link all dashboard cards and counted records to their detailed filtered list views
+
+Work Log:
+- Explored full dashboard architecture: KPICard component, cross-module overview, personal KPIs, operations summary, quick actions, recent activity panels
+- Found 6 occurrences of invalid `navigate('work-orders')` — valid page key is `'maintenance-work-orders'`
+- Found all dashboard cards were non-clickable `<div>` elements with no navigation
+- Found WorkOrdersPage had NO `pageParams` support (couldn't receive filter params from URL)
+- Found AssetsPage had partial `pageParams` support (only `id`, no condition filter)
+- Found WO API didn't support multi-status or overdue query params
+
+Changes Made:
+
+**DashboardPages.tsx (16 edits):**
+1. Fixed 6 `navigate('work-orders')` → `navigate('maintenance-work-orders')` (lines 306, 326, 346, 349, 352, 1189)
+2. Active WOs card → navigates with `status=in_progress,assigned,approved,requested,waiting_parts,on_hold`
+3. Overdue card → navigates with `overdue=true`
+4. Quick actions: "My Active WOs" passes `assignedTo: 'me'`; all WO quick actions use correct page key
+5. Cross-module overview: all 6 cards (Assets, Safety, Production, IoT, Quality, Inventory) now clickable `<button>` elements with chevron icons, navigating to their respective pages with filter params
+6. Personal KPI pills: My Active WOs → WO page (assignedTo=me), Pending Tasks → MR page (pending,approved), Done This Week → WO page (completed,verified)
+7. Role-specific pills: Tools Out → maintenance-tools, Pending Approvals → MR (pending,approved), Team Active WOs → WO page, Planning Queue → planner-workbench, PMs Due → pm-schedules
+8. Operations Summary mini-cards: Pending Approvals → MR (pending,approved), Total Requests → MR, Approved → MR (approved), Converted to WO → WO page
+9. All clickable cards have hover:scale and active:scale animations + ChevronRight indicators
+
+**MaintenancePages.tsx (WorkOrdersPage):**
+1. Added `pageParams` consumption via `useNavigationStore()`
+2. Added `overdueOnly` state + useEffect to read `pageParams.overdue`, `pageParams.status`, `pageParams.id`
+3. Fetch effect now sends `overdue=true` API param when `overdueOnly` is set
+4. Stats bar pills changed from `<div>` to `<button>` with click handlers — clicking Total/In Progress/Completed/Pending sets status filter, clicking Overdue toggles overdue filter
+5. Active filter indicator with ring highlight on selected pill
+6. Overdue filter active badge (destructive) with X to clear
+
+**API: work-orders/route.ts:**
+1. Added `overdue=true` query param — filters WOs where `plannedEnd < now()` and `status notIn [completed, verified, closed, cancelled]`
+2. Enhanced `status` param to support comma-separated values (e.g. `?status=in_progress,assigned`) using `{ in: [...] }`
+
+**AssetPages.tsx:**
+1. Added `atRiskFilter` state + `pageParams.condition === 'at_risk'` handler
+2. Updated `filteredAssets` useMemo to filter by `condition in [poor, critical, out_of_service]` when atRiskFilter is active
+3. Added "At Risk Filter Active" destructive badge with X to clear
+
+Stage Summary:
+- All dashboard cards are now clickable and navigate to filtered detail views
+- 6 critical invalid navigation bugs fixed (work-orders → maintenance-work-orders)
+- WO API now supports overdue filter and multi-status filtering
+- WorkOrdersPage accepts pageParams for status, overdue, and id
+- AssetsPage accepts pageParams for condition=at_risk
+- TypeScript compiles clean, ESLint passes on source files
