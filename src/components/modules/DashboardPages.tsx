@@ -434,8 +434,8 @@ export function DashboardPage() {
             <Wrench className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">My Active WOs</p>
-            <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{myKPIs.activeWorkOrders}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{isManager ? 'Active WOs' : 'My Active WOs'}</p>
+            <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{isManager ? activeWOs : myKPIs.activeWorkOrders}</p>
           </div>
           <ChevronRight className="h-3.5 w-3.5 text-emerald-400/50 shrink-0" />
         </button>
