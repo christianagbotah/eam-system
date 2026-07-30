@@ -296,14 +296,14 @@ export function DashboardPage() {
   // Primary KPI cards (always visible)
   const primaryKPICards = [
     {
-      label: 'Active Work Orders', value: activeWOs,
-      sublabel: 'In progress, assigned, on hold',
+      label: isManager ? 'Active Work Orders' : 'My Active WOs', value: isManager ? activeWOs : myKPIs.activeWorkOrders,
+      sublabel: isManager ? 'In progress, assigned, on hold' : 'Assigned to me',
       color: '#10b981', bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
       borderColor: 'border-emerald-100 dark:border-emerald-900/40',
       iconBg: 'bg-emerald-100 dark:bg-emerald-900/50', iconColor: 'text-emerald-600 dark:text-emerald-400',
       icon: Wrench, permission: 'work_orders.view',
       barData: stats?.weeklyTrends?.workOrders || [0, 0, 0, 0, 0, 0, 0],
-      onClick: () => navigate('maintenance-work-orders', { status: 'in_progress,assigned,waiting_parts,on_hold' }),
+      onClick: isManager ? () => navigate('maintenance-work-orders', { status: 'in_progress,assigned,waiting_parts,on_hold' }) : () => navigate('maintenance-work-orders', { status: 'in_progress,assigned,waiting_parts,on_hold', assignedTo: 'me' }),
     },
     {
       label: 'Completion Rate', value: `${completionRate}%`,
@@ -323,7 +323,7 @@ export function DashboardPage() {
       iconBg: overdueWOs > 0 ? 'bg-red-100 dark:bg-red-900/50' : 'bg-emerald-100 dark:bg-emerald-900/50',
       iconColor: overdueWOs > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400',
       icon: AlertTriangle, permission: 'work_orders.view',
-      onClick: overdueWOs > 0 ? () => navigate('maintenance-work-orders', { overdue: 'true' }) : undefined,
+      onClick: () => navigate('maintenance-work-orders', { overdue: 'true' }),
     },
     {
       label: 'Pending & Approved', value: pendingReqs,
@@ -782,7 +782,7 @@ export function DashboardPage() {
             iconBg="bg-orange-100 dark:bg-orange-900/50"
             iconColor="text-orange-600 dark:text-orange-400"
             icon={AlertTriangle}
-            onClick={() => navigate('assets')}
+            onClick={() => navigate('assets', { condition: 'at_risk' })}
           />,
         );
         if (safetyEnabled) {
