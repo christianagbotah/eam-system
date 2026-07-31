@@ -1603,3 +1603,30 @@ Stage Summary:
 - Fixed 2 compilation errors: missing } and missing X import
 - Dashboard now compiles and renders successfully
 - All dashboard card-to-detail-list deep linking is functional
+"
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix dashboard KPI card data inconsistency and missing navigation links
+
+Work Log:
+- Analyzed DashboardPages.tsx using Python (ripgrep cannot handle the 10,000+ char lines)
+- Identified root cause of "My Active WOs" (0) vs "Active Work Orders" (1) inconsistency: different data scopes - personal vs global
+- Identified "Overdue" card had conditional onClick (only navigated when count > 0)
+- Identified "Assets at Risk" card navigated to assets page without passing condition: at_risk filter
+- Applied 3 fixes to DashboardPages.tsx:
+  1. Made primary "Active Work Orders" card dynamic: shows myKPIs.activeWorkOrders for non-managers, activeWOs for managers (matches personal KPI section)
+  2. Changed "Overdue" card onClick to always navigate (removed overdueWOs > 0 conditional)
+  3. Changed "Assets at Risk" card onClick to pass { condition: 'at_risk' } for proper filtered navigation
+- Verified all Operations Summary mini-cards already have proper navigation
+- Verified Pending Requests alert banner already navigates correctly
+- Verified personal KPI buttons (My Active WOs, Pending Tasks, Done This Week) all have proper navigation
+- ESLint check passed with no errors
+- Dev server OOMs in sandbox (resource constraint), but code changes verified correct via Python string analysis
+
+Stage Summary:
+- Files changed: src/components/modules/DashboardPages.tsx (3 edits)
+- Fix 1: Primary KPI card label/value now dynamic based on isManager role
+- Fix 2: Overdue card always clickable (navigates to overdue WO list)
+- Fix 3: Assets at Risk card navigates with at_risk condition filter
+- No WO page changes needed - API already scopes data by user role
