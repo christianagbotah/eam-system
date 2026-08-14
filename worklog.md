@@ -1657,3 +1657,31 @@ Stage Summary:
 - Tool/material semantics corrected (tools → RepairToolRequest, parts → WorkOrderMaterial)
 - PlannerWorkbench now shows proper planning dialog with MR data defaults
 - 75 automated tests written and passing
+
+---
+Task ID: sync-verify
+Agent: Main Agent
+Task: Verify Phase 1 MR→WO Enterprise Hardening code is in sync between local and remote
+
+Work Log:
+- Audited all 11 Phase 1 deliverables against worklog claims
+- repairPlanning.service.ts: 557 lines, confirmed present at src/services/
+- plant-scope.ts: confirmed fail-closed with denyAccess sentinel
+- state-machine.ts: confirmed external Prisma.TransactionClient support
+- Convert route: 62-line thin controller delegating to domain service
+- WO Assign route: two paths (direct + via_supervisor), plant-scope, transactional
+- WO POST route: transactional, tools→RepairToolRequest, no state-machine bypass
+- ConvertMRToWODialog.tsx: 772 lines, used by PlannerWorkbench
+- Prisma schema: @@unique([workOrderId, userId]), @unique on maintenanceRequestId (line 542 verified correct)
+- Tests: 75/75 pass across 3 files (1300 lines)
+- ESLint: zero errors/warnings on all Phase 1 source files
+- next build: full TypeScript compilation succeeded, zero errors
+- Agent Browser: login page renders correctly, no hydration errors
+- Dev server OOMs in sandbox (known constraint) but successfully compiles and serves 200 before OOM
+- limit=999: 14 files still have it (only 3 in Phase 1 scope were fixed per spec)
+
+Stage Summary:
+- All Phase 1 deliverables verified IN SYNC
+- No discrepancies found between worklog claims and actual file contents
+- Prisma schema line 542 initially appeared corrupted in Python repr() output but actual file content is correct
+- Build, tests, lint, and browser render all pass
