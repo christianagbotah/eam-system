@@ -256,6 +256,20 @@ export async function POST(request: NextRequest) {
     const wo = await db.workOrder.findUnique({ where: { id: workOrderId } });
     if (!wo) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
 
+    // Validate requester is on the WO's execution team
+    if (workOrderId) {
+      const woTeam = await db.workOrderTeamMember.findFirst({
+        where: { workOrderId, userId: session.userId },
+      });
+      const isAssignee = wo.assignedTo === session.userId;
+      if (!woTeam && !isAssignee && !isAdmin(session)) {
+        return NextResponse.json(
+          { success: false, error: 'You are not a member of this work order\'s execution team' },
+          { status: 403 },
+        );
+      }
+    }
+
     // Validate items and check tool availability
     const warnings: string[] = [];
     const validatedItems: Array<{

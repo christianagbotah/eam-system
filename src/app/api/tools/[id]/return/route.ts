@@ -29,42 +29,48 @@ export async function POST(
     }
 
     const previousAssigneeId = tool.assignedToId;
+    const previousStatus = tool.status;
 
-    const updated = await db.tool.update({
-      where: { id },
-      data: {
-        status: 'available',
-        assignedToId: null,
-        checkedOutAt: null,
-        expectedReturn: null,
-      },
-      include: {
-        assignedTo: { select: { id: true, fullName: true, username: true } },
-        createdBy: { select: { id: true, fullName: true, username: true } },
-      },
-    });
+    // Wrap tool update + transaction record + audit log in a single transaction
+    const updated = await db.$transaction(async (tx) => {
+      const updatedTool = await tx.tool.update({
+        where: { id },
+        data: {
+          status: 'available',
+          assignedToId: null,
+          checkedOutAt: null,
+          expectedReturn: null,
+        },
+        include: {
+          assignedTo: { select: { id: true, fullName: true, username: true } },
+          createdBy: { select: { id: true, fullName: true, username: true } },
+        },
+      });
 
-    // Create transaction record
-    await db.toolTransaction.create({
-      data: {
-        toolId: id,
-        type: 'return',
-        fromUserId: previousAssigneeId,
-        notes: notes || null,
-        performedById: session.userId,
-      },
-    });
+      // Create transaction record
+      await tx.toolTransaction.create({
+        data: {
+          toolId: id,
+          type: 'return',
+          fromUserId: previousAssigneeId,
+          notes: notes || null,
+          performedById: session.userId,
+        },
+      });
 
-    // Create audit log
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'tool',
-        entityId: id,
-        oldValues: JSON.stringify({ status: tool.status, assignedToId: previousAssigneeId }),
-        newValues: JSON.stringify({ status: 'available', assignedToId: null }),
-      },
+      // Create audit log
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'tool',
+          entityId: id,
+          oldValues: JSON.stringify({ status: previousStatus, assignedToId: previousAssigneeId }),
+          newValues: JSON.stringify({ status: 'available', assignedToId: null }),
+        },
+      });
+
+      return updatedTool;
     });
 
     return NextResponse.json({ success: true, data: updated });

@@ -182,7 +182,11 @@ export async function POST(
       pauseReason,
     } = body;
 
-    const VALID_PAUSE_REASONS = ['break', 'switch_wo', 'waiting_parts', 'other'];
+    const VALID_PAUSE_REASONS = [
+      'break', 'waiting_parts', 'waiting_tools', 'waiting_shutdown',
+      'waiting_permit', 'assistance_required', 'production_unavailable',
+      'safety_hold', 'shift_end', 'other',
+   ];
     if (pauseReason && !VALID_PAUSE_REASONS.includes(pauseReason)) {
       return NextResponse.json(
         { success: false, error: `Invalid pause reason. Must be one of: ${VALID_PAUSE_REASONS.join(', ')}` },
@@ -268,13 +272,29 @@ export async function POST(
     // A user can only have ONE active (running) work order at a time.
     // Active = last time log action is 'start' or 'resume' (not 'pause' or 'complete').
     if ((action === 'start' || action === 'resume') && !effectiveIsTeamLog) {
+      // Same-WO concurrent session prevention
+      const activeSessionOnThisWo = await db.workOrderTimeLog.findFirst({
+        where: {
+          workOrderId: id,
+          userId: effectiveUserId,
+          action: { in: ['start', 'resume'] },
+          endTime: null,
+        },
+      });
+      if (activeSessionOnThisWo) {
+        return NextResponse.json(
+          { success: false, error: 'You already have an active work session on this WO. Pause or complete it first.' },
+          { status: 409 },
+        );
+      }
+
+      // Global: prevent active session on a DIFFERENT WO
       const latestGlobalLog = await db.workOrderTimeLog.findFirst({
         where: { userId: effectiveUserId },
         orderBy: { timestamp: 'desc' },
         include: { workOrder: { select: { id: true, woNumber: true } } },
       });
       if (latestGlobalLog && (latestGlobalLog.action === 'start' || latestGlobalLog.action === 'resume')) {
-        // User has an active session — check if it's on a DIFFERENT WO
         if (latestGlobalLog.workOrderId !== id) {
           return NextResponse.json({
             success: false,

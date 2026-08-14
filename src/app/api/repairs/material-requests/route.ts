@@ -34,16 +34,13 @@ export async function GET(request: NextRequest) {
 
     const where: Record<string, unknown> = {};
 
-    // Apply plant scope filter (best-effort — skip if plant-scope module errors)
-    if (session) {
-      try {
-        const plantScope = await getPlantScope(request, session);
-        if (plantScope) {
-          applyPlantScope(where, plantScope);
-        }
-      } catch {
-        // Plant scope not available — skip filter
-      }
+    // Apply plant scope filter (fail-closed)
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (plantScope.isScoped) {
+      applyPlantScope(where, plantScope);
     }
 
     if (workOrderId) where.workOrderId = workOrderId;
@@ -111,17 +108,9 @@ export async function GET(request: NextRequest) {
             })),
           },
         });
-      } catch (dbError: unknown) {
-        // Table may not exist on VPS yet
-        return NextResponse.json({
-          success: true,
-          data: {
-            total: 0,
-            byStatus: { pending: 0, supervisorApproved: 0, storekeeperApproved: 0, issued: 0, returned: 0, rejected: 0 },
-            overdueCount: 0,
-            urgency: [],
-          },
-        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Failed to load material request stats';
+        return NextResponse.json({ success: false, error: message }, { status: 500 });
       }
     }
 
@@ -168,13 +157,9 @@ export async function GET(request: NextRequest) {
         data: enriched,
         pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
       });
-    } catch (dbError: unknown) {
-      // Table may not exist on VPS yet — return empty list instead of error
-      return NextResponse.json({
-        success: true,
-        data: [],
-        pagination: { page, limit, total: 0, totalPages: 0 },
-      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to load material requests';
+      return NextResponse.json({ success: false, error: message }, { status: 500 });
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load material requests';
@@ -204,6 +189,18 @@ export async function POST(request: NextRequest) {
     // Verify WO exists
     const wo = await db.workOrder.findUnique({ where: { id: workOrderId } });
     if (!wo) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+
+    // Validate requester is on the WO's execution team
+    const woTeam = await db.workOrderTeamMember.findFirst({
+      where: { workOrderId, userId: session.userId },
+    });
+    const isAssignee = wo.assignedTo === session.userId;
+    if (!woTeam && !isAssignee && !isAdmin(session)) {
+      return NextResponse.json(
+        { success: false, error: 'You are not a member of this work order\'s execution team' },
+        { status: 403 },
+      );
+    }
 
     // Check inventory availability and validate stock levels
     let currentStock: number | null = null;

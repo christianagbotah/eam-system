@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { getPlantScope } from '@/lib/plant-scope';
 
 // 24-hour threshold for overdue detection
 const OVERDUE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
@@ -9,6 +10,9 @@ const OVERDUE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 // GET /api/repairs/material-requests/[id]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
     const { id } = await params;
     const matReq = await db.repairMaterialRequest.findUnique({
       where: { id },
@@ -20,7 +24,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         returnedByUser: { select: { id: true, fullName: true } },
         workOrder: {
           select: {
-            id: true, woNumber: true, title: true, status: true,
+            id: true, woNumber: true, title: true, status: true, plantId: true,
             assignedSupervisor: { select: { id: true, fullName: true } },
             planner: { select: { id: true, fullName: true } },
           },
@@ -30,6 +34,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     });
 
     if (!matReq) return NextResponse.json({ success: false, error: 'Material request not found' }, { status: 404 });
+
+    // Plant scope validation (through linked work order)
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    if (plantScope.isScoped && plantScope.plantId && matReq.workOrder?.plantId && matReq.workOrder.plantId !== plantScope.plantId) {
+      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+    }
 
     // Compute overdue flag: pending requests older than 24 hours
     const enriched = {
@@ -315,53 +326,63 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
 
         const qty = approvedQuantity ?? quantityApproved ?? matReq.quantityApproved;
-        let stockReserved = false;
 
-        // Reserve stock: deduct from inventory via an 'adjustment' movement
-        if (matReq.itemId) {
-          const invItem = await db.inventoryItem.findUnique({ where: { id: matReq.itemId } });
-          if (invItem) {
-            if (invItem.currentStock < qty) {
-              return NextResponse.json({
-                success: false,
-                error: `Insufficient stock to reserve. Available: ${invItem.currentStock}, Required: ${qty}`,
-              }, { status: 400 });
+        try {
+          updated = await db.$transaction(async (tx) => {
+            let stockReserved = false;
+
+            // Reserve stock: deduct from inventory via an 'adjustment' movement
+            if (matReq.itemId) {
+              const invItem = await tx.inventoryItem.findUnique({ where: { id: matReq.itemId } });
+              if (invItem) {
+                if (invItem.currentStock < qty) {
+                  throw new Error(`INSUFFICIENT_STOCK:Available: ${invItem.currentStock}, Required: ${qty}`);
+                }
+                // Deduct stock as reservation
+                await tx.inventoryItem.update({
+                  where: { id: matReq.itemId },
+                  data: { currentStock: { decrement: qty } },
+                });
+                // Create reservation stock movement of type 'adjustment'
+                await tx.stockMovement.create({
+                  data: {
+                    itemId: matReq.itemId,
+                    type: 'adjustment',
+                    quantity: qty,
+                    previousStock: invItem.currentStock,
+                    newStock: invItem.currentStock - qty,
+                    reason: `Stock reserved for WO ${matReq.workOrder.woNumber} — ${matReq.itemName}`,
+                    referenceType: 'work_order',
+                    referenceId: matReq.workOrderId,
+                    performedById: session.userId,
+                    notes: `Reservation: ${qty} ${matReq.unit} reserved for material request ${id.substring(0, 8)}`,
+                  },
+                });
+                stockReserved = true;
+              }
             }
-            // Deduct stock as reservation
-            await db.inventoryItem.update({
-              where: { id: matReq.itemId },
-              data: { currentStock: { decrement: qty } },
-            });
-            // Create reservation stock movement of type 'adjustment'
-            await db.stockMovement.create({
+
+            return tx.repairMaterialRequest.update({
+              where: { id },
               data: {
-                itemId: matReq.itemId,
-                type: 'adjustment',
-                quantity: qty,
-                previousStock: invItem.currentStock,
-                newStock: invItem.currentStock - qty,
-                reason: `Stock reserved for WO ${matReq.workOrder.woNumber} — ${matReq.itemName}`,
-                referenceType: 'work_order',
-                referenceId: matReq.workOrderId,
-                performedById: session.userId,
-                notes: `Reservation: ${qty} ${matReq.unit} reserved for material request ${id.substring(0, 8)}`,
+                status: 'storekeeper_approved',
+                storekeeperApprovedById: session.userId,
+                storekeeperApprovedAt: now,
+                storekeeperApprovedQuantity: qty !== matReq.quantityApproved ? qty : null,
+                quantityApproved: qty,
+                stockReserved,
               },
             });
-            stockReserved = true;
+          });
+        } catch (txError: unknown) {
+          if (txError instanceof Error && txError.message.startsWith('INSUFFICIENT_STOCK:')) {
+            return NextResponse.json({
+              success: false,
+              error: `Insufficient stock to reserve. ${txError.message.replace('INSUFFICIENT_STOCK:', '')}`,
+            }, { status: 400 });
           }
+          throw txError;
         }
-
-        updated = await db.repairMaterialRequest.update({
-          where: { id },
-          data: {
-            status: 'storekeeper_approved',
-            storekeeperApprovedById: session.userId,
-            storekeeperApprovedAt: now,
-            storekeeperApprovedQuantity: qty !== matReq.quantityApproved ? qty : null,
-            quantityApproved: qty,
-            stockReserved,
-          },
-        });
 
         // Audit trail for storekeeper approval with reservation details
         await db.auditLog.create({
@@ -376,7 +397,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               approvedQuantity: qty,
               previousApprovedQuantity: matReq.quantityApproved,
               quantityChanged: qty !== matReq.quantityApproved,
-              stockReserved,
+              stockReserved: updated.stockReserved,
               itemId: matReq.itemId || null,
             }),
           },
@@ -454,69 +475,78 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
         const qtyToIssue = approvedQuantity ?? quantityApproved ?? matReq.quantityApproved;
 
-        // If stock was already reserved at storekeeper approval, just create the issue record.
-        // If not reserved (no itemId or no reservation happened), deduct stock now.
-        if (matReq.itemId) {
-          const invItem = await db.inventoryItem.findUnique({ where: { id: matReq.itemId } });
+        try {
+          updated = await db.$transaction(async (tx) => {
+            // If stock was already reserved at storekeeper approval, just create the issue record.
+            // If not reserved (no itemId or no reservation happened), deduct stock now.
+            if (matReq.itemId) {
+              const invItem = await tx.inventoryItem.findUnique({ where: { id: matReq.itemId } });
 
-          if (matReq.stockReserved) {
-            // Stock was already deducted during reservation — just record the issuance
-            if (invItem) {
-              await db.stockMovement.create({
-                data: {
-                  itemId: matReq.itemId,
-                  type: 'out',
-                  quantity: qtyToIssue,
-                  previousStock: invItem.currentStock,
-                  newStock: invItem.currentStock, // already deducted during reservation
-                  reason: `Issued for WO ${matReq.workOrder.woNumber} (from reserved stock)`,
-                  referenceType: 'work_order',
-                  referenceId: matReq.workOrderId,
-                  performedById: session.userId,
-                  notes: `Issuance from reserved stock for material request ${id.substring(0, 8)}` + (notes ? ` — ${notes}` : ''),
-                },
-              });
-            }
-          } else {
-            // Stock was NOT reserved — deduct now
-            if (invItem) {
-              if (invItem.currentStock < qtyToIssue) {
-                return NextResponse.json({
-                  success: false,
-                  error: `Insufficient stock. Available: ${invItem.currentStock}, Requested: ${qtyToIssue}`,
-                }, { status: 400 });
+              if (matReq.stockReserved) {
+                // Stock was already deducted during reservation — just record the issuance
+                if (invItem) {
+                  await tx.stockMovement.create({
+                    data: {
+                      itemId: matReq.itemId,
+                      type: 'out',
+                      quantity: qtyToIssue,
+                      previousStock: invItem.currentStock,
+                      newStock: invItem.currentStock, // already deducted during reservation
+                      reason: `Issued for WO ${matReq.workOrder.woNumber} (from reserved stock)`,
+                      referenceType: 'work_order',
+                      referenceId: matReq.workOrderId,
+                      performedById: session.userId,
+                      notes: `Issuance from reserved stock for material request ${id.substring(0, 8)}` + (notes ? ` — ${notes}` : ''),
+                    },
+                  });
+                }
+              } else {
+                // Stock was NOT reserved — deduct now
+                if (invItem) {
+                  if (invItem.currentStock < qtyToIssue) {
+                    throw new Error(`INSUFFICIENT_STOCK:Available: ${invItem.currentStock}, Requested: ${qtyToIssue}`);
+                  }
+                  await tx.inventoryItem.update({
+                    where: { id: matReq.itemId },
+                    data: { currentStock: { decrement: qtyToIssue } },
+                  });
+                  await tx.stockMovement.create({
+                    data: {
+                      itemId: matReq.itemId,
+                      type: 'out',
+                      quantity: qtyToIssue,
+                      previousStock: invItem.currentStock,
+                      newStock: invItem.currentStock - qtyToIssue,
+                      reason: `Issued for WO ${matReq.workOrder.woNumber}`,
+                      referenceType: 'work_order',
+                      referenceId: matReq.workOrderId,
+                      performedById: session.userId,
+                      notes: notes || null,
+                    },
+                  });
+                }
               }
-              await db.inventoryItem.update({
-                where: { id: matReq.itemId },
-                data: { currentStock: { decrement: qtyToIssue } },
-              });
-              await db.stockMovement.create({
-                data: {
-                  itemId: matReq.itemId,
-                  type: 'out',
-                  quantity: qtyToIssue,
-                  previousStock: invItem.currentStock,
-                  newStock: invItem.currentStock - qtyToIssue,
-                  reason: `Issued for WO ${matReq.workOrder.woNumber}`,
-                  referenceType: 'work_order',
-                  referenceId: matReq.workOrderId,
-                  performedById: session.userId,
-                  notes: notes || null,
-                },
-              });
             }
-          }
-        }
 
-        updated = await db.repairMaterialRequest.update({
-          where: { id },
-          data: {
-            status: 'issued',
-            quantityIssued: qtyToIssue,
-            issuedById: session.userId,
-            issuedAt: now,
-          },
-        });
+            return tx.repairMaterialRequest.update({
+              where: { id },
+              data: {
+                status: 'issued',
+                quantityIssued: qtyToIssue,
+                issuedById: session.userId,
+                issuedAt: now,
+              },
+            });
+          });
+        } catch (txError: unknown) {
+          if (txError instanceof Error && txError.message.startsWith('INSUFFICIENT_STOCK:')) {
+            return NextResponse.json({
+              success: false,
+              error: `Insufficient stock. ${txError.message.replace('INSUFFICIENT_STOCK:', '')}`,
+            }, { status: 400 });
+          }
+          throw txError;
+        }
 
         // Audit trail for issuance
         await db.auditLog.create({
@@ -599,40 +629,43 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           }, { status: 400 });
         }
 
-        // Add back to inventory
-        if (matReq.itemId && qtyToReturn > 0) {
-          const invItem = await db.inventoryItem.findUnique({ where: { id: matReq.itemId } });
-          if (invItem) {
-            await db.inventoryItem.update({
-              where: { id: matReq.itemId },
-              data: { currentStock: { increment: qtyToReturn } },
-            });
-            await db.stockMovement.create({
-              data: {
-                itemId: matReq.itemId,
-                type: 'in',
-                quantity: qtyToReturn,
-                previousStock: invItem.currentStock,
-                newStock: invItem.currentStock + qtyToReturn,
-                reason: `Returned from WO ${matReq.workOrder.woNumber}`,
-                referenceType: 'work_order',
-                referenceId: matReq.workOrderId,
-                performedById: session.userId,
-                notes: `Return #${Math.floor(previousReturned) + 1}: ${qtyToReturn} ${matReq.unit}` + (notes ? ` — ${notes}` : ''),
-              },
-            });
-          }
-        }
-
         const newStatus = cumulativeReturn >= matReq.quantityIssued ? 'fully_returned' : 'partially_returned';
-        updated = await db.repairMaterialRequest.update({
-          where: { id },
-          data: {
-            status: newStatus,
-            quantityReturned: cumulativeReturn,
-            returnedById: session.userId,
-            returnedAt: now,
-          },
+
+        updated = await db.$transaction(async (tx) => {
+          // Add back to inventory
+          if (matReq.itemId && qtyToReturn > 0) {
+            const invItem = await tx.inventoryItem.findUnique({ where: { id: matReq.itemId } });
+            if (invItem) {
+              await tx.inventoryItem.update({
+                where: { id: matReq.itemId },
+                data: { currentStock: { increment: qtyToReturn } },
+              });
+              await tx.stockMovement.create({
+                data: {
+                  itemId: matReq.itemId,
+                  type: 'in',
+                  quantity: qtyToReturn,
+                  previousStock: invItem.currentStock,
+                  newStock: invItem.currentStock + qtyToReturn,
+                  reason: `Returned from WO ${matReq.workOrder.woNumber}`,
+                  referenceType: 'work_order',
+                  referenceId: matReq.workOrderId,
+                  performedById: session.userId,
+                  notes: `Return #${Math.floor(previousReturned) + 1}: ${qtyToReturn} ${matReq.unit}` + (notes ? ` — ${notes}` : ''),
+                },
+              });
+            }
+          }
+
+          return tx.repairMaterialRequest.update({
+            where: { id },
+            data: {
+              status: newStatus,
+              quantityReturned: cumulativeReturn,
+              returnedById: session.userId,
+              returnedAt: now,
+            },
+          });
         });
 
         // Audit trail for return with cumulative tracking

@@ -38,41 +38,47 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Target user not found' }, { status: 400 });
     }
 
-    const updated = await db.tool.update({
-      where: { id },
-      data: {
-        status: 'checked_out',
-        assignedToId,
-        checkedOutAt: new Date(),
-        expectedReturn: expectedReturn ? new Date(expectedReturn) : null,
-      },
-      include: {
-        assignedTo: { select: { id: true, fullName: true, username: true } },
-        createdBy: { select: { id: true, fullName: true, username: true } },
-      },
-    });
+    // Wrap tool update + transaction record + audit log in a single transaction
+    const previousStatus = tool.status;
+    const updated = await db.$transaction(async (tx) => {
+      const updatedTool = await tx.tool.update({
+        where: { id },
+        data: {
+          status: 'checked_out',
+          assignedToId,
+          checkedOutAt: new Date(),
+          expectedReturn: expectedReturn ? new Date(expectedReturn) : null,
+        },
+        include: {
+          assignedTo: { select: { id: true, fullName: true, username: true } },
+          createdBy: { select: { id: true, fullName: true, username: true } },
+        },
+      });
 
-    // Create transaction record
-    await db.toolTransaction.create({
-      data: {
-        toolId: id,
-        type: 'checkout',
-        toUserId: assignedToId,
-        notes: body.notes || null,
-        performedById: session.userId,
-      },
-    });
+      // Create transaction record
+      await tx.toolTransaction.create({
+        data: {
+          toolId: id,
+          type: 'checkout',
+          toUserId: assignedToId,
+          notes: body.notes || null,
+          performedById: session.userId,
+        },
+      });
 
-    // Create audit log
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'tool',
-        entityId: id,
-        oldValues: JSON.stringify({ status: tool.status }),
-        newValues: JSON.stringify({ status: 'checked_out', assignedToId }),
-      },
+      // Create audit log
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'tool',
+          entityId: id,
+          oldValues: JSON.stringify({ status: previousStatus }),
+          newValues: JSON.stringify({ status: 'checked_out', assignedToId }),
+        },
+      });
+
+      return updatedTool;
     });
 
     return NextResponse.json({ success: true, data: updated });

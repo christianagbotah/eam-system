@@ -498,7 +498,7 @@ model WorkOrder {
   description          String?
   type                 String    @default("corrective") // preventive, corrective, predictive, inspection, project, emergency
   priority             String    @default("medium") // low, medium, high, critical
-  status               String    @default("draft") // draft, requested, approved, planned, assigned, in_progress, waiting_parts, on_hold, completed, verified, closed, cancelled
+  status               String    @default("draft") // draft, requested, approved, planned, assigned, in_progress, waiting_parts, waiting_tools, waiting_shutdown, waiting_permit, on_hold, pending_handover, completed, verified, closed, cancelled
   maintenanceRequestId String?   @unique
   pmScheduleId         String? // → PmSchedule (auto-generated WOs link back)
   assetId              String?
@@ -589,6 +589,9 @@ model WorkOrder {
   // Work Order - Component tracking
   workOrderComponents WorkOrderComponent[]
 
+  shiftHandovers ShiftHandover[]
+  toolTransactions ToolTransaction[] @relation("WOToolTransaction")
+
   @@index([plantId])
   @@index([workPackageId])
   @@index([status])
@@ -662,6 +665,7 @@ model WorkOrderTimeLog {
   activityType String   @default("maintenance") // maintenance, travel, inspection, testing, standby, other
   breakMinutes Int      @default(0) // break/lunch minutes deducted from duration
   pauseReason  String?  // break, switch_wo, waiting_parts, other — reason for pausing
+  sessionId   String?
 
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -794,8 +798,12 @@ model AuditLog {
   entityId   String?
   oldValues  String?  @db.Text // JSON string of previous field values
   newValues  String?  @db.Text // JSON string of new field values
-  ipAddress  String?
-  createdAt  DateTime @default(now())
+  ipAddress     String?
+  userAgent     String?
+  sessionId     String?
+  plantId       String?
+  departmentId  String?
+  createdAt     DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1371,12 +1379,15 @@ model ToolTransaction {
   notes         String?
   performedById String // who did the action
   createdAt     DateTime @default(now())
+  workOrderId   String?
 
   tool        Tool  @relation(fields: [toolId], references: [id], onDelete: Cascade)
   performedBy User  @relation("ToolTxnPerformedBy", fields: [performedById], references: [id])
   fromUser    User? @relation("ToolTxnFromUser", fields: [fromUserId], references: [id])
   toUser      User? @relation("ToolTxnToUser", fields: [toUserId], references: [id])
+  workOrder   WorkOrder? @relation("WOToolTransaction", fields: [workOrderId], references: [id])
 
+  @@index([workOrderId])
   @@map("tool_transactions")
 }
 
@@ -1956,6 +1967,7 @@ model ShiftHandover {
   fromShift       String?
   toShift         String?
   departmentId    String?
+  workOrderId     String?
   handedOverById  String
   receivedById    String?
   status          String   @default("pending") // pending, confirmed
@@ -1969,7 +1981,9 @@ model ShiftHandover {
 
   handedOverBy User  @relation("ShiftHandoverFrom", fields: [handedOverById], references: [id])
   receivedBy   User? @relation("ShiftHandoverTo", fields: [receivedById], references: [id])
+  workOrder    WorkOrder? @relation(fields: [workOrderId], references: [id])
 
+  @@index([workOrderId])
   @@map("shift_handovers")
 }
 

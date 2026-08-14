@@ -98,6 +98,7 @@ export async function POST(
       select: {
         id: true,
         woNumber: true,
+        assignedTo: true,
         assignedBy: true,
         plannerId: true,
         isLocked: true,

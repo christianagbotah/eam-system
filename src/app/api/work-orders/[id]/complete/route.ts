@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getSession, hasPermission, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { executeTransition } from '@/lib/state-machine';
 import { calculateNextDueDate, isAutoCalculableFrequency } from '@/lib/pm-utils';
+import { checkReadiness } from '@/services/workOrderReadiness.service';
+import { extractAuditContext, buildAuditData } from '@/lib/audit-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -31,20 +33,56 @@ export async function POST(
       contractorCost,
     } = body;
 
-    const wo = await db.workOrder.findUnique({ where: { id } });
+    const wo = await db.workOrder.findUnique({
+      where: { id },
+      include: { teamMembers: { select: { userId: true, role: true } } },
+    });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    // Check if user is the assigned technician, the team leader, or admin
-    const isAssignee = wo.assignedTo === session.userId;
-    const isTeamLeader = wo.teamLeaderId === session.userId;
-    if (!isAssignee && !isTeamLeader && !isAdmin(session)) {
-      return NextResponse.json(
-        { success: false, error: 'Only the assigned technician, team leader, or admin can complete work' },
-        { status: 403 }
-      );
+    // ── P2L: Readiness check before completion ──
+    const readiness = await checkReadiness(id, 'complete');
+    if (!readiness.ready) {
+      return NextResponse.json({
+        success: false,
+        error: 'Work order is not ready for completion',
+        blockers: readiness.blockers,
+      }, { status: 422 });
     }
+
+    // ── Team Execution Governance: completion authority ──
+    // Count team members excluding the assignedTo user if they're also a member
+    const teamMemberIds = (wo.teamMembers || [])
+      .map((m) => m.userId)
+      .filter((uid) => uid !== wo.assignedTo);
+    const distinctTeamCount = new Set(teamMemberIds).size;
+    const isMultiTech = distinctTeamCount >= 2;
+
+    const isAssignee = wo.assignedTo === session.userId;
+    const isTeamLeaderByMember = wo.teamMembers?.some((m) => m.userId === session.userId && m.role === 'team_leader') || false;
+    const isTeamLeader = wo.teamLeaderId === session.userId || isTeamLeaderByMember;
+    const isManagerOverride = isAdmin(session) || hasRole(session, 'maintenance_manager');
+
+    if (isMultiTech) {
+      // Multi-tech WO: only team leader or admin/manager can complete
+      if (!isTeamLeader && !isManagerOverride) {
+        return NextResponse.json(
+          { success: false, error: 'For multi-technician work orders, only the team leader can complete work' },
+          { status: 403 }
+        );
+      }
+    } else {
+      // Single-tech WO: only the assigned technician or admin/manager can complete
+      if (!isAssignee && !isManagerOverride) {
+        return NextResponse.json(
+          { success: false, error: 'Only the assigned technician can complete this work order' },
+          { status: 403 }
+        );
+      }
+    }
+
+    const isAdminOverride = isManagerOverride && !isAssignee && !(isMultiTech && isTeamLeader);
 
     const now = new Date();
 
@@ -107,19 +145,22 @@ export async function POST(
       });
     }
 
-    // Domain-specific audit log (status change handled by state machine via WorkOrderStatusHistory)
+    // ── P2R: Domain-specific audit log with full context ──
+    const auditCtx = extractAuditContext(request);
     await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'work_order',
-        entityId: id,
-        oldValues: JSON.stringify({ actualEnd: null, actualHours: wo.actualHours }),
-        newValues: JSON.stringify({
+      data: buildAuditData(
+        'update',
+        'work_order',
+        id,
+        session.userId,
+        { actualEnd: null, actualHours: wo.actualHours },
+        {
           actualEnd: now.toISOString(),
           actualHours,
-        }),
-      },
+          ...(isAdminOverride ? { adminOverride: true } : {}),
+        },
+        auditCtx,
+      ),
     });
 
     // Notify supervisors and planner (force SMS for critical workflow step)
@@ -161,23 +202,24 @@ export async function POST(
             },
           });
 
-          // Audit log for schedule update
+          // Audit log for schedule update (with audit context)
           await db.auditLog.create({
-            data: {
-              userId: session.userId,
-              action: 'update',
-              entityType: 'pm_schedule',
-              entityId: pmSchedule.id,
-              oldValues: JSON.stringify({
+            data: buildAuditData(
+              'update',
+              'pm_schedule',
+              pmSchedule.id,
+              session.userId,
+              {
                 lastCompletedDate: pmSchedule.lastCompletedDate,
                 nextDueDate: pmSchedule.nextDueDate,
-              }),
-              newValues: JSON.stringify({
+              },
+              {
                 lastCompletedDate: now.toISOString(),
                 nextDueDate: newNextDueDate?.toISOString() ?? null,
                 reason: `PM WO ${wo.woNumber} completed`,
-              }),
-            },
+              },
+              auditCtx,
+            ),
           });
         }
       } catch (pmErr) {

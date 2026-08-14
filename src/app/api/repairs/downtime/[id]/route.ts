@@ -1,16 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 
 // GET /api/repairs/downtime/[id]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
     const { id } = await params;
     const record = await db.workOrderDowntime.findUnique({
       where: { id },
-      include: { workOrder: { select: { id: true, woNumber: true, title: true, status: true } } },
+      include: { workOrder: { select: { id: true, woNumber: true, title: true, status: true, plantId: true } } },
     });
     if (!record) return NextResponse.json({ success: false, error: 'Downtime record not found' }, { status: 404 });
+
+    // Plant scope validation
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    const recordPlantId = record.plantId || record.workOrder?.plantId;
+    if (plantScope.isScoped && plantScope.plantId && recordPlantId && recordPlantId !== plantScope.plantId) {
+      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+    }
+
     return NextResponse.json({ success: true, data: record });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load downtime record';

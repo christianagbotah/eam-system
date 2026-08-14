@@ -84,51 +84,55 @@ export async function POST(request: NextRequest) {
     const wasteRate = issuedQty > 0 ? (resolvedWastedQty / issuedQty) * 100 : 0;
     const now = new Date();
 
-    // Update the material request with reconciliation data
-    const updated = await db.repairMaterialRequest.update({
-      where: { id },
-      data: {
-        consumedQty,
-        wastedQty: resolvedWastedQty > 0 ? resolvedWastedQty : null,
-        quantityReturned: returnedQty,
-        // If all consumed/wasted, mark as closed; otherwise mark as issued (partially reconciled)
-        status: (consumedQty + resolvedWastedQty >= issuedQty) ? 'closed' : 'issued',
-        // Append reconciliation notes
-        notes: matReq.notes
-          ? `${matReq.notes}\n[${now.toISOString()}] RECONCILIATION by ${session.userId}: consumed=${consumedQty}, wasted=${resolvedWastedQty}, returned=${returnedQty}${notes ? ` — ${notes}` : ''}`
-          : `[${now.toISOString()}] RECONCILIATION by ${session.userId}: consumed=${consumedQty}, wasted=${resolvedWastedQty}, returned=${returnedQty}${notes ? ` — ${notes}` : ''}`,
-      },
-      include: {
-        requestedBy: { select: { id: true, fullName: true, username: true } },
-        workOrder: { select: { id: true, woNumber: true, title: true } },
-        item: { select: { id: true, itemCode: true, name: true, currentStock: true } },
-      },
-    });
+    // Update material request + return excess stock in a single transaction
+    const { updated, returnedToInventory } = await db.$transaction(async (tx) => {
+      const req = await tx.repairMaterialRequest.update({
+        where: { id },
+        data: {
+          consumedQty,
+          wastedQty: resolvedWastedQty > 0 ? resolvedWastedQty : null,
+          quantityReturned: returnedQty,
+          status: (consumedQty + resolvedWastedQty >= issuedQty) ? 'closed' : 'issued',
+          notes: matReq.notes
+            ? `${matReq.notes}\n[${now.toISOString()}] RECONCILIATION by ${session.userId}: consumed=${consumedQty}, wasted=${resolvedWastedQty}, returned=${returnedQty}${notes ? ` — ${notes}` : ''}`
+            : `[${now.toISOString()}] RECONCILIATION by ${session.userId}: consumed=${consumedQty}, wasted=${resolvedWastedQty}, returned=${returnedQty}${notes ? ` — ${notes}` : ''}`,
+        },
+        include: {
+          requestedBy: { select: { id: true, fullName: true, username: true } },
+          workOrder: { select: { id: true, woNumber: true, title: true } },
+          item: { select: { id: true, itemCode: true, name: true, currentStock: true } },
+        },
+      });
 
-    // Return excess to inventory (if any)
-    if (returnedQty > 0 && matReq.itemId) {
-      const invItem = await db.inventoryItem.findUnique({ where: { id: matReq.itemId } });
-      if (invItem) {
-        await db.inventoryItem.update({
-          where: { id: matReq.itemId },
-          data: { currentStock: { increment: returnedQty } },
-        });
-        await db.stockMovement.create({
-          data: {
-            itemId: matReq.itemId,
-            type: 'in',
-            quantity: returnedQty,
-            previousStock: invItem.currentStock,
-            newStock: invItem.currentStock + returnedQty,
-            reason: `Reconciliation return from WO ${matReq.workOrder.woNumber} — ${matReq.itemName}`,
-            referenceType: 'work_order',
-            referenceId: matReq.workOrderId,
-            performedById: session.userId,
-            notes: `Reconciliation: ${consumedQty} consumed, ${resolvedWastedQty} wasted, ${returnedQty} returned`,
-          },
-        });
+      let didReturn = false;
+      // Return excess to inventory (if any)
+      if (returnedQty > 0 && matReq.itemId) {
+        const invItem = await tx.inventoryItem.findUnique({ where: { id: matReq.itemId } });
+        if (invItem) {
+          await tx.inventoryItem.update({
+            where: { id: matReq.itemId },
+            data: { currentStock: { increment: returnedQty } },
+          });
+          await tx.stockMovement.create({
+            data: {
+              itemId: matReq.itemId,
+              type: 'in',
+              quantity: returnedQty,
+              previousStock: invItem.currentStock,
+              newStock: invItem.currentStock + returnedQty,
+              reason: `Reconciliation return from WO ${matReq.workOrder.woNumber} — ${matReq.itemName}`,
+              referenceType: 'work_order',
+              referenceId: matReq.workOrderId,
+              performedById: session.userId,
+              notes: `Reconciliation: ${consumedQty} consumed, ${resolvedWastedQty} wasted, ${returnedQty} returned`,
+            },
+          });
+          didReturn = true;
+        }
       }
-    }
+
+      return { updated: req, returnedToInventory: didReturn };
+    });
 
     // Audit trail
     await db.auditLog.create({
@@ -150,7 +154,6 @@ export async function POST(request: NextRequest) {
         }),
       },
     });
-
     // Notify requester about reconciliation
     await notifyUser(
       matReq.requestedById,
@@ -190,7 +193,7 @@ export async function POST(request: NextRequest) {
       reconciledBy: session.userId,
       reconciledAt: now.toISOString(),
       notes: notes || null,
-      returnedToInventory: returnedQty > 0 && !!matReq.itemId,
+      returnedToInventory: returnedToInventory,
     };
 
     return NextResponse.json({

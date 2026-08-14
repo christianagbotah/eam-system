@@ -3,6 +3,8 @@ import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { executeTransition } from '@/lib/state-machine';
+import { checkReadiness } from '@/services/workOrderReadiness.service';
+import { emitReliabilityEvent } from '@/lib/reliability-events';
 
 export async function POST(
   request: NextRequest,
@@ -23,11 +25,21 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { notes } = body;
+    const { notes, failureMode, failureCause, correctiveAction } = body;
 
     const wo = await db.workOrder.findUnique({ where: { id } });
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+    }
+
+    // ── P2O: Readiness check before closure ──
+    const readiness = await checkReadiness(id, 'close');
+    if (!readiness.ready) {
+      return NextResponse.json({
+        success: false,
+        error: 'Work order is not ready for closure',
+        blockers: readiness.blockers,
+      }, { status: 422 });
     }
 
     const now = new Date();
@@ -51,6 +63,12 @@ export async function POST(
     if (!result.success) {
       return NextResponse.json({ success: false, error: result.error }, { status: 400 });
     }
+
+    // ── P2O: Immutability on close — lock the WO ──
+    await db.workOrder.update({
+      where: { id },
+      data: { isLocked: true, lockedBy: session.userId, lockedAt: now, lockReason: 'Planner closeout' },
+    });
 
     // Add closing comment if notes provided
     if (notes) {
@@ -112,6 +130,18 @@ export async function POST(
         { forceSms: true },
       );
     }
+
+    // ── P2P: Fire reliability event after planner closeout ──
+    emitReliabilityEvent({
+      workOrderId: id,
+      assetId: wo.assetId || undefined,
+      failureMode,
+      failureCause,
+      correctiveAction,
+      downtimeMinutes: wo.downtimeMinutes ?? undefined,
+      repairCost: wo.totalCost ?? undefined,
+      performedById: session.userId,
+    }).catch(() => {}); // Fire-and-forget
 
     // Re-fetch with includes to return full object (state machine returns plain record)
     const updated = await db.workOrder.findUnique({

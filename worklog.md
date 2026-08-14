@@ -1685,3 +1685,521 @@ Stage Summary:
 - No discrepancies found between worklog claims and actual file contents
 - Prisma schema line 542 initially appeared corrupted in Python repr() output but actual file content is correct
 - Build, tests, lint, and browser render all pass
+
+---
+Task ID: P2A
+Agent: Main Agent
+Task: Phase 2A - Audit existing execution implementation
+
+Work Log:
+- Launched 3 parallel exploration agents to audit WO APIs, Repairs/Tool/Material APIs, UI, and Prisma/State Machine
+- P2A-1: Audited 30+ WO execution route files
+- P2A-2: Audited 35+ repairs/tool/material/inventory route files
+- P2A-3: Audited RepairsPages.tsx (5240 lines), MaintenancePages.tsx (9308 lines), PlannerWorkbench.tsx
+- P2A-4: Audited Prisma schema + state machine transition rules
+
+Gap Map Summary:
+
+CRITICAL (14):
+1. Repairs completion does direct db.workOrder.update({status}) bypassing state machine
+2. Tool checkout/return/transfer/repair routes lack transactions
+3. Material request stock operations lack transactions
+4-6. 6 detail GET endpoints missing session/plant-scope checks
+7. Tool repair allows any tool→in_repair bypassing damaged-tool workflow
+8. completed→closed bypasses supervisor verification (state machine allows it directly)
+9. 5 new states missing: waiting_tools, waiting_shutdown, waiting_permit, pending_handover, verified
+10. 12 missing state machine transitions
+11. Two parallel completion paths (Repairs 3-step vs WO direct complete)
+12. ShiftHandover has no WO link
+13. ToolTransaction has no WO link
+14. AuditLog lacks userAgent/deviceId/sessionId fields
+
+MODERATE (9):
+- Fail-open plant scope in material requests
+- No WO team membership validation on tool/material/downtime creation
+- Missing notifications on many routes
+- GET endpoint with side effects (tool-transfer auto-complete)
+- Duplicate completion logic
+- Missing transactions in tool-request issue/return loops
+- Shift handover KPI counts ignore plant scope
+- Reports routes lack RBAC beyond authentication
+- Inventory KPI route lacks RBAC
+
+MINOR (8):
+- Duplicate sequence number generation (7 files)
+- Duplicate management role checks (20+ files)
+- Duplicate store-keeper query pattern
+- Inconsistent urgency validation (medium allowed on edit not create)
+- Syntax error in downtime audit log
+- Production data migration endpoint still present
+- In-memory backfill flag in tool-requests
+- Inconsistent admin check pattern
+
+DUPLICATE LOGIC (8 clusters across 30+ files)
+- Sequence number generation
+- Management role checks
+- Store-keeper notification queries
+- Urgency sorting + overdue detection
+- Tool checkout/return/transfer/repair pattern
+- Ownership check pattern
+- Stats endpoint pattern
+- Overdue threshold
+
+Stage Summary:
+- Comprehensive gap map produced across 4 parallel audits
+- 14 critical, 9 moderate, 8 minor issues identified
+- 8 duplicate logic clusters mapped
+- Foundation work needed: state machine, domain service, schema changes
+
+---
+Task ID: P2B-C
+Agent: full-stack-developer
+Task: Phase 2B (state machine) and 2C (domain service foundation)
+
+Work Log:
+- Read worklog (1753 lines) for Phase 1 and Phase 2A audit context
+- Applied 7 Prisma schema edits to prisma/schema.prisma:
+  1. WorkOrder status comment: added waiting_tools, waiting_shutdown, waiting_permit, pending_handover, verified to status enum comment
+  2. AuditLog: added userAgent, sessionId, plantId, departmentId fields after ipAddress
+  3. ShiftHandover: added workOrderId field + WorkOrder relation + @@index([workOrderId])
+  4. ToolTransaction: added workOrderId field + WOToolTransaction relation + @@index([workOrderId])
+  5. WorkOrder model: added shiftHandovers and toolTransactions relation arrays
+  6. WorkOrderTimeLog: added sessionId field for concurrent session guard
+- Applied 3 state machine edits to src/lib/state-machine.ts:
+  1. REMOVED completed → closed transition (was line 106) — canonical path now enforced: completed → verified → closed
+  2. REMOVED closed → in_progress rework transition (was line 112) — rework only from completed or verified
+  3. ADDED 16 new transitions:
+     - 3 waiting_tools transitions (in_progress↔waiting_tools, waiting_tools→cancelled)
+     - 3 waiting_shutdown transitions (in_progress↔waiting_shutdown, waiting_shutdown→cancelled)
+     - 3 waiting_permit transitions (in_progress↔waiting_permit, waiting_permit→cancelled)
+     - 3 pending_handover transitions (in_progress↔pending_handover, pending_handover→cancelled)
+     - 2 verification+closure transitions (completed→verified, verified→closed)
+     - 2 rework transitions (completed→in_progress with reason, verified→in_progress with reason)
+- prisma db push SKIPPED: sandbox database is SQLite (file:) with MySQL provider schema (@db.Text incompatibility). Ran prisma generate instead — passed clean.
+- Ran Phase 1 tests: 75/75 passed (3 test files, 50ms total)
+- Created src/services/workExecution.service.ts domain service stub with 5 exported functions:
+  - startWork() — assigned → in_progress
+  - submitCompletion() — in_progress → completed
+  - supervisorVerify() — completed → verified
+  - requestRework() — completed|verified → in_progress (with reason)
+  - plannerClose() — verified → closed
+- ESLint: zero errors on state-machine.ts and workExecution.service.ts
+
+Stage Summary:
+- Files changed: prisma/schema.prisma, src/lib/state-machine.ts, src/services/workExecution.service.ts (new)
+- Critical state machine fix: completed→closed direct path removed, canonical path (completed→verified→closed) enforced
+- 5 new waiting/holding states fully wired with transitions
+- Rework restricted to completed/verified only (closed→in_progress removed)
+- ShiftHandover and ToolTransaction now linkable to WorkOrders
+- AuditLog enriched with userAgent, sessionId, plantId, departmentId
+- WorkOrderTimeLog sessionId added for concurrent session guard
+- All 75 Phase 1 tests still passing
+- ESLint clean on all modified files
+---
+Task ID: P2-critical-fixes
+Agent: full-stack-developer
+Task: Phase 2 Critical Security and Data-Integrity Fixes
+
+Work Log:
+- FIX 1: Repairs completion route bypassing state machine
+  - File: src/app/api/repairs/completion/[workOrderId]/route.ts
+  - Added `import { executeTransition } from '@/lib/state-machine'`
+  - `submit` action: Wrapped repairCompletion.upsert + WO status change in db.$transaction, replaced direct db.workOrder.update({status:'completed'}) + db.workOrderStatusHistory.create with executeTransition('work_order', workOrderId, 'completed', session, { tx, extraData: { actualEnd, actualHours } })
+  - `supervisor_approve` action: Wrapped in db.$transaction, replaced direct db.workOrder.update({status:'verified'}) + history create with executeTransition('work_order', workOrderId, 'verified', session, { tx })
+  - `supervisor_request_rework` action: Wrapped in db.$transaction, replaced direct db.workOrder.update({status:'in_progress'}) + history create with executeTransition('work_order', workOrderId, 'in_progress', session, { tx, reason: reworkReason })
+  - `planner_close` action: Converted from batch transaction (db.$transaction([...])) to callback transaction (db.$transaction(async (tx) => {...})), replaced direct db.workOrder.update({status:'closed', ...}) + history create with executeTransition('work_order', workOrderId, 'closed', session, { tx, extraData: { isLocked, lockedBy, lockedAt, lockReason, laborCost, partsCost } })
+  - All 4 direct db.workOrder.update({ data: { status: ... } }) calls eliminated
+  - All direct db.workOrderStatusHistory.create calls eliminated (now handled by state machine)
+
+- FIX 2: Missing session/plant-scope on 5 detail GET endpoints
+  - src/app/api/repairs/downtime/[id]/route.ts: Added session check + getPlantScope import + plant scope validation (uses record.plantId || record.workOrder?.plantId)
+  - src/app/api/repairs/material-requests/[id]/route.ts: Added session check + getPlantScope import + plant scope validation (uses matReq.workOrder?.plantId, added plantId to WO select)
+  - src/app/api/repairs/tool-requests/[id]/route.ts: Added session check + getPlantScope import + plant scope validation (uses toolReq.plantId)
+  - src/app/api/repairs/tool-transfers/[id]/route.ts: Added session check + getPlantScope import + plant scope validation (uses transfer.plantId || transfer.tool?.plantId, added plantId to tool select)
+  - src/app/api/shift-handovers/[id]/route.ts: Added getPlantScope import + plant scope validation (uses handover.workOrder?.plantId, added workOrder include with plantId select)
+
+- FIX 3: WO complete route (src/app/api/work-orders/[id]/complete/route.ts)
+  - Already uses executeTransition('work_order', id, 'completed', session, {...}) — no change needed
+
+- FIX 4: WO verify and close routes
+  - src/app/api/work-orders/[id]/verify/route.ts: Already uses executeTransition('work_order', id, 'verified', session, {...}) — no change needed
+  - src/app/api/work-orders/[id]/close/route.ts: Already uses executeTransition('work_order', id, 'closed', session, {...}) — no change needed
+
+- FIX 5: Tool checkout/return routes — added transactions
+  - src/app/api/tools/[id]/checkout/route.ts: Wrapped tool.update + toolTransaction.create + auditLog.create in db.$transaction(async (tx) => {...})
+  - src/app/api/tools/[id]/return/route.ts: Wrapped tool.update + toolTransaction.create + auditLog.create in db.$transaction(async (tx) => {...})
+
+- ESLint: All 8 modified files pass with zero errors/warnings
+
+Stage Summary:
+- Files changed: 8 route files
+- FIX 1: 4 state machine bypasses eliminated, all WO status changes in repairs completion now go through executeTransition with proper transaction scope
+- FIX 2: 5 detail GET endpoints hardened with session auth + plant-scope validation (fail-closed)
+- FIX 3-4: WO complete/verify/close routes already compliant (no changes needed)
+- FIX 5: 2 tool routes wrapped in db.$transaction for atomicity
+- All changes pass ESLint clean
+---
+Task ID: P2D-M
+Agent: full-stack-developer
+Task: Phase 2D (Team Execution Governance) and P2M (Completion Authority)
+
+Work Log:
+- Read worklog (1841 lines) for Phase 1, 2A, 2B-C, and 2-critical-fixes context
+- Analyzed 4 route files for team governance gaps
+
+- FIX 1: Repairs completion route — submit authority (src/app/api/repairs/completion/[workOrderId]/route.ts)
+  - Added `role` to teamMembers select in WO fetch (was `userId` only)
+  - Replaced permissive `isAssignee || isTeamLeader || isTeamMember || isAdmin` check with team-governance logic:
+    - Counts team members excluding assignedTo user
+    - Single-tech WO (0-1 other members): only assigned technician or admin/manager can submit
+    - Multi-tech WO (2+ other members): ONLY team leader (role='team_leader' or teamLeaderId match) or admin/manager can submit
+    - Assistants (role='assistant') can NO LONGER submit completion for multi-tech WOs
+  - Added `adminOverride: true` flag in audit log when admin/manager submits on behalf of team
+
+- FIX 2: WO complete route — completion authority (src/app/api/work-orders/[id]/complete/route.ts)
+  - Added `hasRole` to auth imports
+  - Changed WO fetch to include `teamMembers: { select: { userId: true, role: true } }`
+  - Replaced permissive `isAssignee || isTeamLeader || isAdmin` check with same team-governance logic:
+    - Single-tech: only assigned technician or admin/manager
+    - Multi-tech: only team leader or admin/manager
+  - Added `adminOverride: true` flag in audit log when admin/manager completes on behalf of team
+
+- VERIFY 3: Time logging authority (src/app/api/work-orders/[id]/time-logs/route.ts)
+  - Already correctly implemented: team members log own time (default path), team leaders/admins can log for others (loggedForUserId branch at lines 241-264), non-leaders logging for others get 403
+  - No changes needed
+
+- VERIFY 4: Start-work authority (src/app/api/work-orders/[id]/start/route.ts)
+  - Already correctly restricted: only assigned technician, team leader (teamLeaderId), or admin can start WO
+  - Assistants (team members without leadership role) cannot start a WO
+  - No changes needed
+
+- ESLint: both modified files pass with zero errors/warnings
+
+Stage Summary:
+- Files changed: 2 route files (repairs completion, WO complete)
+- Files verified: 2 route files (time-logs, start) — already correct
+- Critical fix: assistants can no longer submit/complete multi-tech WOs
+- Team-governance logic: single-tech vs multi-tech WO detection via WorkOrderTeamMember count
+- Admin/manager override preserved with explicit audit trail (adminOverride flag)
+- ESLint clean on all modified files
+---
+Task ID: P2J
+Agent: full-stack-developer
+Task: Work Order Readiness Engine (Phase 2J)
+
+Work Log:
+- Created src/services/workOrderReadiness.service.ts
+- Defined exported types: ReadinessCheckResult, ReadinessItem, ReadinessCheckType
+- Implemented checkReadiness(workOrderId, checkType, tx?) — main exported function
+- Single-query WO fetch with all needed relations (teamMembers, teamMemberRequests, timeLogs, repairToolRequests+items, repairMaterialRequests, repairCompletion, assignee+plantAccess)
+- Start blockers: NO_TEAM (no assignedTo + no team members), NO_PLANT_ACCESS (assignee lacks UserPlant for WO's plantId)
+- Completion blockers: ACTIVE_TIMERS (start/resume logs with null endTime), TOOLS_ISSUED (issued tool items with pendingReturnQty > 0), UNRECONCILED_MATERIALS (issued/picking materials where consumedQty+wastedQty < quantityIssued), PENDING_ASSISTANCE (approved/pending team member requests whose requestedUserId not yet in teamMembers)
+- Verification blockers: NO_COMPLETION_REPORT (repairCompletion is null), OPEN_TOOL_CUSTODY, OPEN_MATERIAL_RECONCILIATION (reused from shared sub-checks)
+- Closure blockers: NOT_VERIFIED (status !== 'verified'), OPEN_TOOL_CUSTODY, OPEN_MATERIAL_RECONCILIATION, INCOMPLETE_COST (totalCost=0 and laborCost+partsCost+contractorCost=0)
+- Shared sub-checks extracted: checkToolCustody() and checkMaterialReconciliation()
+- Uses tx parameter when provided, falls back to db from @/lib/db
+- ESLint: zero errors/warnings
+
+Stage Summary:
+- Files created: src/services/workOrderReadiness.service.ts
+- 8 distinct blocker codes implemented across 4 lifecycle transitions
+- Single efficient query fetches all needed data
+- Transaction-safe via optional tx parameter
+- ESLint clean
+---
+Task ID: P2H
+Agent: full-stack-developer
+Task: Harden Tool Request workflow (Phase 2H)
+
+Work Log:
+- Read worklog (1908 lines) for Phase 1, 2A-J context
+- Analyzed 4 route files for tool request workflow gaps
+
+- FIX 1: WO team membership validation on tool request creation (src/app/api/repairs/tool-requests/route.ts)
+  - Added validation after session/permission checks, before creating request
+  - Checks WorkOrderTeamMember for userId + workOrderId, checks if user is assignedTo, or isAdmin
+  - Returns 403 with clear message if user is not on the WO execution team
+
+- FIX 2: Tool transfer GET side effect removal (src/app/api/repairs/tool-transfers/[id]/route.ts)
+  - Removed auto-complete mutation logic from GET handler (was updating tool status, creating transactions, sending notifications on read)
+  - GET handler now purely reads and returns transfer data
+  - Added new `confirm_receipt` POST action that performs the same completion logic
+  - `confirm_receipt` validates both fromUserAcceptedAt and toUserAcceptedAt are set before proceeding
+  - Note: `from_user_accept` and `to_user_accept` actions still have inline auto-complete logic (existing behavior preserved — they are POST actions, not GET)
+
+- FIX 3: Urgency validation inconsistency (src/app/api/repairs/tool-requests/[id]/route.ts)
+  - Changed PUT handler VALID_URGENCIES from ['low', 'normal', 'medium', 'high', 'critical'] to ['low', 'normal', 'high', 'critical']
+  - Now matches POST handler validation (no 'medium' allowed)
+
+- FIX 4 (SKIPPED): Calibration check on tool issue
+  - Checked Prisma schema: Tool model does NOT have a `calibrationDueDate` field
+  - No change made; calibration enforcement requires schema migration first
+
+- FIX 5: Tool repair state validation (src/app/api/tools/[id]/repair/route.ts)
+  - Added whitelist check: only 'available', 'checked_out', 'in_repair' statuses can transition to repair
+  - Returns clear error message for invalid source status (e.g., 'transferred', 'retired')
+  - Preserved existing 'already in repair' check as secondary guard
+
+- ESLint: All 3 modified route files pass with zero new errors
+
+Stage Summary:
+- Files changed: 3 route files
+- FIX 1: Team membership validation prevents unauthorized tool requests
+- FIX 2: GET handler is now side-effect-free; confirm_receipt POST action replaces it
+- FIX 3: Urgency values consistent between create and edit
+- FIX 4: Skipped (no calibrationDueDate in schema)
+- FIX 5: Repair transition whitelist blocks invalid source states
+- ESLint clean on all modified files
+---
+Task ID: P2I
+Agent: full-stack-developer
+Task: Harden Material Request workflow (Phase 2I)
+
+Work Log:
+- Read worklog (1953 lines) for Phase 1, 2A-J context
+- Analyzed 3 route files for material request workflow gaps
+
+- FIX 1: Fail-open plant scope in material requests list route (src/app/api/repairs/material-requests/route.ts)
+  - Replaced try/catch that silently swallowed getPlantScope errors with fail-closed pattern
+  - Now calls getPlantScope directly, checks denyAccess → returns 403, checks isScoped → applies filter
+  - Stats catch block: changed from returning empty success data to returning 500 with error message
+  - List catch block: changed from returning empty success data to returning 500 with error message
+
+- FIX 2: WO team membership validation on material request creation (src/app/api/repairs/material-requests/route.ts)
+  - Added validation after WO existence check, before inventory check
+  - Checks WorkOrderTeamMember for userId + workOrderId, checks if user is assignedTo, or isAdmin
+  - Returns 403 with clear message if user is not on the WO execution team
+  - Same pattern as tool requests (Phase 2H FIX 1)
+
+- FIX 3: Wrap stock operations in transactions (src/app/api/repairs/material-requests/[id]/route.ts)
+  - storekeeper_approve: wrapped inventory deduction + StockMovement + material request update in db.$transaction()
+    - Uses INSUFFICIENT_STOCK: prefix for validation errors caught and converted to 400 responses
+  - issue: wrapped stock deduction + StockMovement + material request update in db.$transaction()
+    - Handles both reserved (just create movement) and non-reserved (deduct + create movement) paths
+    - Same INSUFFICIENT_STOCK: error pattern for 400 conversion
+  - record_return: wrapped stock increment + StockMovement + material request update in db.$transaction()
+  - All validation checks (status, cumulative returns) remain outside transactions for early exit
+
+- FIX 4: Reconcile route transaction wrapping (src/app/api/repairs/material-requests/reconcile/route.ts)
+  - Wrapped material request update + stock increment + StockMovement in db.$transaction()
+  - Transaction returns both updated record and whether stock was actually returned
+  - returnedToInventory flag now uses transaction result instead of static boolean expression
+
+- ESLint: All 3 modified route files pass with zero errors/warnings
+
+Stage Summary:
+- Files changed: 3 route files (material-requests/route.ts, [id]/route.ts, reconcile/route.ts)
+- FIX 1: Fail-open plant scope → fail-closed with proper 403/500 error propagation
+- FIX 2: Team membership validation prevents unauthorized material requests
+- FIX 3: storekeeper_approve, issue, record_return all use db.$transaction() for atomicity
+- FIX 4: reconcile route uses db.$transaction() for atomic material request update + stock return
+- Validation errors inside transactions use INSUFFICIENT_STOCK: prefix pattern for proper 400 responses
+- ESLint clean on all modified files
+---
+Task ID: P2F-G
+Agent: full-stack-developer
+Task: Harden Time & Labor (P2F) and Assistance Request (P2G) workflows
+
+Work Log:
+- Read worklog (1997 lines) for Phase 1, 2A-J context
+- Analyzed 3 route files for time & labor and assistance request workflow gaps
+
+- FIX 1 (P2F-1): Pause reason validation (src/app/api/work-orders/[id]/time-logs/route.ts)
+  - Expanded VALID_PAUSE_REASONS from 4 to 10 per spec
+  - Old: ['break', 'switch_wo', 'waiting_parts', 'other']
+  - New: ['break', 'waiting_parts', 'waiting_tools', 'waiting_shutdown', 'waiting_permit', 'assistance_required', 'production_unavailable', 'safety_hold', 'shift_end', 'other']
+  - Removed 'switch_wo' (not in spec), added 7 standard EAM pause reasons
+
+- FIX 2 (P2F-2): Same-WO concurrent session prevention (src/app/api/work-orders/[id]/time-logs/route.ts)
+  - Added query before existing global WO check: finds active (action in start|resume, endTime=null) time log for user+this WO
+  - Returns 409 with clear message if user already has an active session on this specific WO
+  - Existing global cross-WO prevention preserved unchanged
+
+- FIX 3 (P2F-3): Edit prohibition after verification/closure — NO ACTION NEEDED
+  - No PUT handler exists for time-logs (only GET, POST, DELETE)
+  - POST handler (lines 232-234) already blocks creating time logs on verified/closed WOs
+  - DELETE handler (lines 492-495) already blocks deleting time logs on verified/closed WOs
+
+- FIX 4 (P2G-4): WoTeamMemberRequest flow verification
+  - POST creates with proper fields (reason, role, requestedTrade, requestedUserId): ✅
+  - PUT approve creates WorkOrderTeamMember with accessLevel='read_only', addedVia='request': ✅
+  - Approver permission validates admin, assign_supervisor, plannerId, assignedBy: ✅
+  - Notifications sent to new team member and requester: ✅
+  - No urgency field in WoTeamMemberRequest schema (would need migration): noted
+  - BUG: assignedTo missing from POST select — fixed below
+
+- FIX 5 (P2G-5): Team membership validation (src/app/api/work-orders/[id]/team-member-requests/route.ts)
+  - Added 'assignedTo: true' to WO select in POST handler
+  - Existing isAssignee check (wo.assignedTo === session.userId) was always false because assignedTo was not selected
+  - Now full validation chain works correctly: team member OR assignee OR admin/planner
+
+- ESLint: All 3 route files pass with zero errors/warnings
+
+Stage Summary:
+- Files changed: 2 route files (time-logs/route.ts, team-member-requests/route.ts)
+- FIX 1: VALID_PAUSE_REASONS expanded from 4 to 10 standard EAM pause reasons
+- FIX 2: Same-WO concurrent session prevention returns 409 for duplicate active sessions
+- FIX 3: No action needed (no PUT handler; POST/DELETE already enforce)
+- FIX 4: WoTeamMemberRequest flow verified complete; urgency field needs schema migration
+- FIX 5: assignedTo select bug fixed — isAssignee check now works correctly
+- ESLint clean on all modified files
+---
+Task ID: P2K-LNO
+Agent: full-stack-developer
+Task: Implement Shift Handover (P2K), Canonical Completion (P2L), Supervisor Verification (P2N), Planner Closeout (P2O)
+
+Work Log:
+- Read worklog (2045 lines) for Phase 1, 2A-J context
+- Analyzed 6 route/service files for workflow integration gaps
+
+- P2K-1: WO linkage in shift handover POST (src/app/api/shift-handovers/route.ts)
+  - Accept optional `workOrderId` in POST body
+  - Validate WO exists and is in non-terminal status (draft, assigned, in_progress, waiting_parts, waiting_tools, waiting_permit, pending_handover, completed, verified)
+  - Validate user is on WO team (assignedTo, team member, or admin)
+  - Set workOrderId on created record, include workOrder in response
+
+- P2K-2: WO filter in shift handover GET (src/app/api/shift-handovers/route.ts)
+  - Added `workOrderId` query param parsing and filtering in GET handler
+
+- P2K-3: Handover validation TODO (src/services/workExecution.service.ts)
+  - Added TODO comment about pending_handover → in_progress transition requiring confirmed ShiftHandover
+
+- P2L-3: Readiness check in WO complete route (src/app/api/work-orders/[id]/complete/route.ts)
+  - Imported checkReadiness from workOrderReadiness.service
+  - Added readiness check (type='complete') before executeTransition, returns 422 with blockers if not ready
+
+- P2L-4: Readiness check in repairs completion submit (src/app/api/repairs/completion/[workOrderId]/route.ts)
+  - Imported checkReadiness
+  - Added readiness check (type='complete') inside the 'submit' action branch before team governance
+
+- P2N-5: Readiness check in WO verify route (src/app/api/work-orders/[id]/verify/route.ts)
+  - Imported checkReadiness
+  - Added readiness check (type='verify') for non-rework actions only
+  - Rework actions skip readiness check (they return to in_progress)
+
+- P2N-6: Rework counter increment in verify route (src/app/api/work-orders/[id]/verify/route.ts)
+  - Added support for body.action='rework' to transition completed → in_progress
+  - Rework requires reason (returns 400 if missing)
+  - Uses RepairCompletion.upsert to increment reworkCount and set reworkReason
+  - Full rework path: comment, audit log, SMS notification to assigned technician
+  - Verify path unchanged for non-rework actions
+
+- P2O-7: Readiness check in WO close route (src/app/api/work-orders/[id]/close/route.ts)
+  - Imported checkReadiness
+  - Added readiness check (type='close') before executeTransition, returns 422 with blockers
+
+- P2O-8: Immutability on close (src/app/api/work-orders/[id]/close/route.ts)
+  - After successful transition to 'closed', explicitly locks WO via db.workOrder.update
+  - Sets isLocked=true, lockedBy, lockedAt, lockReason='Planner closeout'
+
+- ESLint: All 6 modified files pass with zero errors/warnings
+
+Stage Summary:
+- Files changed: 6 (shift-handovers/route.ts, workExecution.service.ts, complete/route.ts, completion/[workOrderId]/route.ts, verify/route.ts, close/route.ts)
+- P2K: Shift handovers now support optional WO linkage with team + status validation; GET supports workOrderId filter
+- P2L: Both WO complete and repairs completion submit now enforce readiness checks (active timers, tool custody, material reconciliation, pending assistance)
+- P2N: Verify route enforces readiness check and supports rework action with RepairCompletion counter
+- P2O: Close route enforces readiness check (verified status required) and explicitly locks WO on close
+- ESLint clean on all modified files
+---
+Task ID: P2PQR
+Agent: full-stack-developer
+Task: Implement P2P (Reliability Feedback), P2Q (Notification Queue), P2R (Audit Context)
+
+Work Log:
+- Read worklog (2103 lines) for Phase 1, 2A-O context
+- Analyzed complete/route.ts, close/route.ts, notifications.ts, prisma schema
+
+- P2R-1: Created audit-helpers.ts (src/lib/audit-helpers.ts)
+  - `extractAuditContext(request, additional?)` — extracts IP (x-forwarded-for/x-real-ip), User-Agent, session cookie
+  - `buildAuditData(action, entityType, entityId, userId, oldValues?, newValues?, context?)` — returns complete audit log data object
+  - Drop-in replacement for direct db.auditLog.create calls
+
+- P2R-2: Updated WO complete route (src/app/api/work-orders/[id]/complete/route.ts)
+  - Imported extractAuditContext and buildAuditData
+  - Replaced 2 direct db.auditLog.create calls with buildAuditData
+  - WO completion and PM schedule audit logs now include IP, User-Agent, session ID
+
+- P2Q-1: Created repair-notifications.ts (src/lib/repair-notifications.ts)
+  - 16 event types covering full repairs lifecycle
+  - `sendRepairNotification(payload)` — fire-and-forget with error logging
+  - `sendRepairNotificationMulti(userIds, payload)` — broadcast to multiple users
+  - forceSms for rework_requested and tool_overdue events
+
+- P2P-1: Created reliability-events.ts (src/lib/reliability-events.ts)
+  - `emitReliabilityEvent(event)` — upserts FailureRecord when WO is closed
+  - Adapted to schema: FailureRecord.componentId required, Asset lacks lastMaintenanceDate
+
+- P2P-2: Integrated reliability event into planner closeout (src/app/api/work-orders/[id]/close/route.ts)
+  - Fires emitReliabilityEvent after successful WO close (fire-and-forget)
+  - Accepts failureMode, failureCause, correctiveAction from request body
+
+- ESLint: All 5 files pass with zero errors/warnings
+
+Stage Summary:
+- Files created: 3 (src/lib/audit-helpers.ts, src/lib/repair-notifications.ts, src/lib/reliability-events.ts)
+- Files modified: 2 (src/app/api/work-orders/[id]/complete/route.ts, src/app/api/work-orders/[id]/close/route.ts)
+- P2R: Audit context (IP, User-Agent, session) now captured on WO completion and PM schedule advancement
+- P2Q: 16 repair lifecycle notification events with templates, fire-and-forget dispatch, multi-user broadcast
+- P2P: Reliability event emitter integrated into planner closeout for FailureRecord upsert
+- ESLint clean on all files
+
+---
+Task ID: P2T-U
+Agent: full-stack-developer
+Task: Create Supervisor Inbox (P2T) and Planner Closeout Inbox (P2U) APIs
+
+Work Log:
+- Analyzed Prisma schema for WorkOrder model (repairCompletion relation, no completedAt field)
+- Confirmed WoTeamMemberRequest lacks plantId — filters via workOrder relation
+- Confirmed RepairToolRequest and RepairMaterialRequest have plantId — direct filtering
+- Confirmed WorkOrder.repairCompletion relation exists for reworkCount queries
+
+- P2T: Created /api/work-orders/supervisor-inbox (GET)
+  - 7 inbox categories: awaitingVerification, reworkJobs, pendingAssistance, pendingToolApprovals, pendingMaterialApprovals, slaRisks, criticalActive
+  - Permission gate: work_orders.view | work_orders.view_all | work_orders.assign_supervisor | admin
+  - Plant scope via applyPlantScope (WorkOrder) and getPlantFilterWhere (WoTeamMemberRequest nested)
+  - Rework jobs filtered via repairCompletion: { reworkCount: { gt: 0 } }
+
+- P2U: Created /api/work-orders/planner-inbox (GET)
+  - 6 inbox categories: awaitingCloseout, awaitingSupervisor, highCostJobs, repeatFailures, resourceDelays, overdue
+  - Permission gate: work_orders.view | work_orders.view_all | admin
+  - Repeat failures: in-memory asset count from WOs updated in last 90 days (no completedAt field, uses updatedAt)
+  - High-cost threshold: totalCost > $5,000
+
+- ESLint: Both files pass with zero errors
+
+Stage Summary:
+- Files created: 2 (src/app/api/work-orders/supervisor-inbox/route.ts, src/app/api/work-orders/planner-inbox/route.ts)
+- P2T: Supervisor inbox with 7 category counts, plant-scoped, auth-gated
+- P2U: Planner closeout inbox with 6 category counts including repeat failure detection
+- ESLint clean on both files
+
+---
+Task ID: P2X
+Agent: full-stack-developer
+Task: Create Phase 2X test suite for iAssetsPro EAM workExecution
+
+Work Log:
+- Read worklog (2176 lines) and analyzed Phase 2 source files for test targets
+- Analyzed: state-machine.ts, workOrderReadiness.service.ts, audit-helpers.ts, repair-notifications.ts, reliability-events.ts, workExecution.service.ts, complete/route.ts, close/route.ts, verify/route.ts
+- Studied existing repairPlanning.service.test.ts pattern for consistency
+- Created src/services/__tests__/workExecution.test.ts with 50 tests across 9 describe blocks:
+  - State Machine (10 tests): All 8 new waiting-state transitions + canonical completed→verified→closed path
+  - Completion Authority (6 tests): Single-tech/multi-tech governance, admin override, rework requires reason
+  - Readiness Engine (8 tests): NO_TEAM, ACTIVE_TIMERS, TOOLS_ISSUED, UNRECONCILED_MATERIALS, NO_COMPLETION_REPORT, NOT_VERIFIED, closure allowed, warnings separate
+  - Time Logging (5 tests): Valid/invalid pause reasons, concurrent session prevention, post-closure edit rejection, team leader delegation
+  - Plant Scope (4 tests): Cross-plant denial for WO execution, tool requests, material requests, 403 response
+  - Audit Context (5 tests): IP extraction (x-forwarded-for, x-real-ip), User-Agent, buildAuditData structure, session cookie, unknown fallback
+  - Repair Notifications (5 tests): Template resolution with actor/details, forceSms for rework_requested and tool_overdue, multi-user broadcast, unknown event safety
+  - Reliability Events (4 tests): FailureRecord upsert with full data, create/update payload verification, missing componentId skip, no failure data skip
+  - Type Contracts (3 tests): SessionContext fields, checkReadiness types, readiness result structure
+- Used vi.hoisted for all mocks, importOriginal for state-machine and readiness service (to test real logic with mocked DB)
+- Fixed notifyUser parameter index (options at call[7], not call[4])
+- All 50 tests passing, 0 lint errors in test file
+- No regressions in existing test suite (2 pre-existing failures in observability-persistence.test.ts)
+
+Stage Summary:
+- File created: src/services/__tests__/workExecution.test.ts
+- 50 tests covering all 37 required test cases plus 13 additional coverage tests
+- Tests validate: state machine transitions, completion authority, readiness engine, time logging governance, plant scope, audit context, repair notifications, reliability events

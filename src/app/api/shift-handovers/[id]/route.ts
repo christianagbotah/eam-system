@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 
 export async function GET(
   request: NextRequest,
@@ -19,11 +20,19 @@ export async function GET(
       include: {
         handedOverBy: { select: { id: true, fullName: true, username: true } },
         receivedBy: { select: { id: true, fullName: true, username: true } },
+        workOrder: { select: { id: true, plantId: true } },
       },
     });
 
     if (!handover) {
       return NextResponse.json({ success: false, error: 'Shift handover not found' }, { status: 404 });
+    }
+
+    // Plant scope validation (through linked work order)
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    if (plantScope.isScoped && plantScope.plantId && handover.workOrder?.plantId && handover.workOrder.plantId !== plantScope.plantId) {
+      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
 
     return NextResponse.json({ success: true, data: handover });

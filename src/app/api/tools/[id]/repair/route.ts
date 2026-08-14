@@ -24,6 +24,9 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Tool not found' }, { status: 404 });
     }
 
+    if (!['available', 'checked_out', 'in_repair'].includes(tool.status)) {
+      return NextResponse.json({ success: false, error: `Tool cannot be sent for repair from status: ${tool.status}` }, { status: 400 });
+    }
     if (tool.status === 'in_repair') {
       return NextResponse.json({ success: false, error: 'Tool is already in repair' }, { status: 400 });
     }

@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
+import { getPlantScope } from '@/lib/plant-scope';
 
 const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
 
 // GET /api/repairs/tool-requests/[id]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
     const { id } = await params;
     const toolReq = await db.repairToolRequest.findUnique({
       where: { id },
@@ -28,6 +32,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       },
     });
     if (!toolReq) return NextResponse.json({ success: false, error: 'Tool request not found' }, { status: 404 });
+
+    // Plant scope validation
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    if (plantScope.isScoped && plantScope.plantId && toolReq.plantId && toolReq.plantId !== plantScope.plantId) {
+      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+    }
 
     // Add isOverdue flag
     const overdueThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -669,7 +680,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ success: false, error: 'You can only edit your own requests' }, { status: 403 });
     }
 
-    const VALID_URGENCIES = ['low', 'normal', 'medium', 'high', 'critical'];
+    const VALID_URGENCIES = ['low', 'normal', 'high', 'critical'];
     const resolvedUrgency = VALID_URGENCIES.includes(urgency) ? urgency : toolReq.urgency;
 
     // If items are provided, update line items

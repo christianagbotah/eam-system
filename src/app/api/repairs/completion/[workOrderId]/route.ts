@@ -3,6 +3,8 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { createAuditLog } from '@/lib/audit';
+import { executeTransition } from '@/lib/state-machine';
+import { checkReadiness } from '@/services/workOrderReadiness.service';
 
 // GET /api/repairs/completion/[workOrderId]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ workOrderId: string }> }) {
@@ -65,7 +67,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const wo = await db.workOrder.findUnique({
       where: { id: workOrderId },
-      include: { assignedSupervisor: { select: { id: true, fullName: true } }, planner: { select: { id: true, fullName: true } }, assignee: { select: { id: true, fullName: true } }, teamMembers: { select: { userId: true } } },
+      include: { assignedSupervisor: { select: { id: true, fullName: true } }, planner: { select: { id: true, fullName: true } }, assignee: { select: { id: true, fullName: true } }, teamMembers: { select: { userId: true, role: true } } },
     });
     if (!wo) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
 
@@ -84,13 +86,42 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     // Submit completion (technician)
     if (action === 'submit' || action === undefined) {
-      // Only WO assignee or team leader can submit completion
-      const isAssignee = wo.assignedTo === session.userId;
-      const isTeamLeader = wo.teamLeaderId === session.userId;
-      const isTeamMember = wo.teamMembers?.some((m) => m.userId === session.userId) || false;
-      if (!isAssignee && !isTeamLeader && !isTeamMember && !isAdmin(session)) {
-        return NextResponse.json({ success: false, error: 'Only the assigned technician, team leader, or team member can submit completion' }, { status: 403 });
+      // ── P2L: Readiness check before completion ──
+      const readiness = await checkReadiness(workOrderId, 'complete');
+      if (!readiness.ready) {
+        return NextResponse.json({
+          success: false,
+          error: 'Work order is not ready for completion',
+          blockers: readiness.blockers,
+        }, { status: 422 });
       }
+
+      // ── Team Execution Governance: completion authority ──
+      // Count team members excluding the assignedTo user if they're also a member
+      const teamMemberIds = (wo.teamMembers || [])
+        .map((m) => m.userId)
+        .filter((uid) => uid !== wo.assignedTo);
+      const distinctTeamCount = new Set(teamMemberIds).size;
+      const isMultiTech = distinctTeamCount >= 2;
+
+      const isAssignee = wo.assignedTo === session.userId;
+      const isTeamLeaderByMember = wo.teamMembers?.some((m) => m.userId === session.userId && m.role === 'team_leader') || false;
+      const isTeamLeader = wo.teamLeaderId === session.userId || isTeamLeaderByMember;
+      const isManagerOverride = isAdmin(session) || hasRole(session, 'maintenance_manager');
+
+      if (isMultiTech) {
+        // Multi-tech WO: only team leader or admin/manager can submit
+        if (!isTeamLeader && !isManagerOverride) {
+          return NextResponse.json({ success: false, error: 'For multi-technician work orders, only the team leader can submit completion' }, { status: 403 });
+        }
+      } else {
+        // Single-tech WO: only the assigned technician or admin/manager can submit
+        if (!isAssignee && !isManagerOverride) {
+          return NextResponse.json({ success: false, error: 'Only the assigned technician can submit completion for this work order' }, { status: 403 });
+        }
+      }
+
+      const isAdminOverride = isManagerOverride && !isAssignee && !(isMultiTech && isTeamLeader);
 
       // Calculate totals from time logs
       const timeLogs = await db.workOrderTimeLog.findMany({ where: { workOrderId } });
@@ -109,52 +140,55 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const downtimes = await db.workOrderDowntime.findMany({ where: { workOrderId } });
       const calculatedDowntime = downtimes.reduce((sum, d) => sum + (d.durationMinutes || 0), 0);
 
-      const completion = await db.repairCompletion.upsert({
-        where: { workOrderId },
-        create: {
-          workOrderId,
-          completionNotes: completionNotes || null,
-          findings: findings || null,
-          rootCause: rootCause || null,
-          correctiveAction: correctiveAction || null,
-          materialsUsedSummary: materialsUsedSummary || '[]',
-          toolsUsedSummary: toolsUsedSummary || '[]',
-          totalLaborHours: totalLaborHours || calculatedLaborHours,
-          totalMaterialCost: totalMaterialCost || 0,
-          totalToolCost: totalToolCost || 0,
-          totalDowntimeMinutes: totalDowntimeMinutes || calculatedDowntime,
-          supervisorStatus: 'pending_review',
-          plannerStatus: 'pending_closure',
-        },
-        update: {
-          completionNotes: completionNotes || undefined,
-          findings: findings || undefined,
-          rootCause: rootCause || undefined,
-          correctiveAction: correctiveAction || undefined,
-          materialsUsedSummary: materialsUsedSummary || undefined,
-          toolsUsedSummary: toolsUsedSummary || undefined,
-          totalLaborHours: totalLaborHours || calculatedLaborHours,
-          totalMaterialCost: totalMaterialCost || undefined,
-          totalToolCost: totalToolCost || undefined,
-          totalDowntimeMinutes: totalDowntimeMinutes || calculatedDowntime,
-          ...(reworkReason ? { reworkReason, reworkCount: { increment: 1 } } : {}),
-          supervisorStatus: 'pending_review',
-        },
-        include: {
-          supervisorApprovedBy: { select: { id: true, fullName: true } },
-          workOrder: { select: { id: true, woNumber: true } },
-        },
-      });
+      // Wrap completion upsert + WO status transition in a single transaction
+      const completion = await db.$transaction(async (tx) => {
+        const upserted = await tx.repairCompletion.upsert({
+          where: { workOrderId },
+          create: {
+            workOrderId,
+            completionNotes: completionNotes || null,
+            findings: findings || null,
+            rootCause: rootCause || null,
+            correctiveAction: correctiveAction || null,
+            materialsUsedSummary: materialsUsedSummary || '[]',
+            toolsUsedSummary: toolsUsedSummary || '[]',
+            totalLaborHours: totalLaborHours || calculatedLaborHours,
+            totalMaterialCost: totalMaterialCost || 0,
+            totalToolCost: totalToolCost || 0,
+            totalDowntimeMinutes: totalDowntimeMinutes || calculatedDowntime,
+            supervisorStatus: 'pending_review',
+            plannerStatus: 'pending_closure',
+          },
+          update: {
+            completionNotes: completionNotes || undefined,
+            findings: findings || undefined,
+            rootCause: rootCause || undefined,
+            correctiveAction: correctiveAction || undefined,
+            materialsUsedSummary: materialsUsedSummary || undefined,
+            toolsUsedSummary: toolsUsedSummary || undefined,
+            totalLaborHours: totalLaborHours || calculatedLaborHours,
+            totalMaterialCost: totalMaterialCost || undefined,
+            totalToolCost: totalToolCost || undefined,
+            totalDowntimeMinutes: totalDowntimeMinutes || calculatedDowntime,
+            ...(reworkReason ? { reworkReason, reworkCount: { increment: 1 } } : {}),
+            supervisorStatus: 'pending_review',
+          },
+          include: {
+            supervisorApprovedBy: { select: { id: true, fullName: true } },
+            workOrder: { select: { id: true, woNumber: true } },
+          },
+        });
 
-      // Update WO status to completed
-      await db.workOrder.update({
-        where: { id: workOrderId },
-        data: { status: 'completed', actualEnd: now, actualHours: completion.totalLaborHours },
-      });
+        // Delegate WO status change to state machine (in_progress → completed)
+        const transitionResult = await executeTransition('work_order', workOrderId, 'completed', session, {
+          tx,
+          extraData: { actualEnd: now, actualHours: upserted.totalLaborHours },
+        });
+        if (!transitionResult.success) {
+          throw new Error(transitionResult.error);
+        }
 
-      // Create status history
-      await db.workOrderStatusHistory.create({
-        data: { workOrderId, fromStatus: wo.status, toStatus: 'completed', performedById: session.userId, notes: 'Technician submitted completion' },
+        return upserted;
       });
 
       // Notify supervisor (force SMS for critical workflow step)
@@ -163,7 +197,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
 
       await createAuditLog(session.userId, 'RepairCompletion', 'submit_completion', completion.id, {
-        newValues: { workOrderId, status: 'completed' },
+        newValues: { workOrderId, status: 'completed', ...(isAdminOverride ? { adminOverride: true } : {}) },
       });
 
       return NextResponse.json({
@@ -181,14 +215,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       if (!completion) return NextResponse.json({ success: false, error: 'Completion record not found. Submit completion first.' }, { status: 400 });
       if (completion.supervisorStatus !== 'pending_review') return NextResponse.json({ success: false, error: `Cannot approve: supervisor status is ${completion.supervisorStatus}` }, { status: 400 });
 
-      completion = await db.repairCompletion.update({
-        where: { workOrderId },
-        data: { supervisorStatus: 'approved', supervisorApprovedById: session.userId, supervisorApprovedAt: now, supervisorReviewNotes: supervisorReviewNotes || null },
-      });
+      // Wrap completion update + WO status transition in a single transaction
+      completion = await db.$transaction(async (tx) => {
+        const updated = await tx.repairCompletion.update({
+          where: { workOrderId },
+          data: { supervisorStatus: 'approved', supervisorApprovedById: session.userId, supervisorApprovedAt: now, supervisorReviewNotes: supervisorReviewNotes || null },
+        });
 
-      // Update WO status to verified
-      await db.workOrder.update({ where: { id: workOrderId }, data: { status: 'verified' } });
-      await db.workOrderStatusHistory.create({ data: { workOrderId, fromStatus: wo.status, toStatus: 'verified', performedById: session.userId, notes: 'Supervisor approved completion' } });
+        // Delegate WO status change to state machine (completed → verified)
+        const transitionResult = await executeTransition('work_order', workOrderId, 'verified', session, { tx });
+        if (!transitionResult.success) {
+          throw new Error(transitionResult.error);
+        }
+
+        return updated;
+      });
 
       // Notify planner (force SMS for critical workflow step)
       if (wo.plannerId) {
@@ -210,14 +251,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       if (!completion) return NextResponse.json({ success: false, error: 'Completion record not found' }, { status: 400 });
       if (completion.supervisorStatus !== 'pending_review') return NextResponse.json({ success: false, error: `Cannot request rework: status is ${completion.supervisorStatus}` }, { status: 400 });
 
-      completion = await db.repairCompletion.update({
-        where: { workOrderId },
-        data: { supervisorStatus: 'rework_requested', reworkReason, supervisorReviewNotes, reworkCount: { increment: 1 } },
-      });
+      // Wrap completion update + WO status transition in a single transaction
+      completion = await db.$transaction(async (tx) => {
+        const updated = await tx.repairCompletion.update({
+          where: { workOrderId },
+          data: { supervisorStatus: 'rework_requested', reworkReason, supervisorReviewNotes, reworkCount: { increment: 1 } },
+        });
 
-      // Set WO back to in_progress
-      await db.workOrder.update({ where: { id: workOrderId }, data: { status: 'in_progress' } });
-      await db.workOrderStatusHistory.create({ data: { workOrderId, fromStatus: wo.status, toStatus: 'in_progress', performedById: session.userId, notes: `Rework requested: ${reworkReason}` } });
+        // Delegate WO status change to state machine (completed → in_progress, requires reason)
+        const transitionResult = await executeTransition('work_order', workOrderId, 'in_progress', session, {
+          tx,
+          reason: reworkReason,
+        });
+        if (!transitionResult.success) {
+          throw new Error(transitionResult.error);
+        }
+
+        return updated;
+      });
 
       // Notify technician (force SMS for critical workflow step)
       if (wo.assignedTo) {
@@ -238,29 +289,31 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       if (completion.supervisorStatus !== 'approved') return NextResponse.json({ success: false, error: 'Cannot close: supervisor has not approved yet' }, { status: 400 });
 
       // Perform planner_close with WO immutability (lock)
-      const [updatedCompletion] = await db.$transaction([
-        // Update completion record
-        db.repairCompletion.update({
+      // Wrap completion update + state machine transition in a single transaction
+      const laborCost = completion.totalLaborHours * (Number(process.env.DEFAULT_LABOR_RATE_HOURS) || 50);
+      const updatedCompletion = await db.$transaction(async (tx) => {
+        const updated = await tx.repairCompletion.update({
           where: { workOrderId },
           data: { plannerStatus: 'closed', plannerClosedById: session.userId, plannerClosedAt: now, closureNotes: closureNotes || null },
-        }),
-        // Close WO and LOCK it (immutability)
-        db.workOrder.update({
-          where: { id: workOrderId },
-          data: {
-            status: 'closed',
+        });
+
+        // Delegate WO status change to state machine (verified → closed) with lock + cost data
+        const transitionResult = await executeTransition('work_order', workOrderId, 'closed', session, {
+          tx,
+          extraData: {
             isLocked: true,
             lockedBy: session.userId,
             lockedAt: now,
             lockReason: 'Closed by planner — work order is now immutable',
-            laborCost: completion.totalLaborHours * (Number(process.env.DEFAULT_LABOR_RATE_HOURS) || 50),
+            laborCost,
             partsCost: completion.totalMaterialCost,
           },
-        }),
-      ]);
+        });
+        if (!transitionResult.success) {
+          throw new Error(transitionResult.error);
+        }
 
-      await db.workOrderStatusHistory.create({
-        data: { workOrderId, fromStatus: wo.status, toStatus: 'closed', performedById: session.userId, notes: 'Planner closed work order — locked for immutability' },
+        return updated;
       });
 
       // Notify all parties (force SMS for critical workflow step)

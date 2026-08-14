@@ -3,17 +3,21 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { decrementToolRequestTransfer, checkAndCloseToolRequest } from '@/lib/tool-transfer-helpers';
+import { getPlantScope } from '@/lib/plant-scope';
 
 const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
 
 // GET /api/repairs/tool-transfers/[id]
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const session = getSession(request);
+    if (!session) return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
+
     const { id } = await params;
     const transfer = await db.toolTransferRequest.findUnique({
       where: { id },
       include: {
-        tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, location: true, condition: true } },
+        tool: { select: { id: true, toolCode: true, name: true, status: true, category: true, location: true, condition: true, plantId: true } },
         fromUser: { select: { id: true, fullName: true, username: true, department: true } },
         toUser: { select: { id: true, fullName: true, username: true, department: true } },
         requestedBy: { select: { id: true, fullName: true } },
@@ -22,47 +26,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     });
     if (!transfer) return NextResponse.json({ success: false, error: 'Transfer request not found' }, { status: 404 });
 
-    // Auto-complete check: if both parties accepted but status is still awaiting_handover
-    if (transfer.status === 'awaiting_handover' && transfer.fromUserAcceptedAt && transfer.toUserAcceptedAt) {
-      const now = new Date();
-      await db.tool.update({
-        where: { id: transfer.toolId },
-        data: { assignedToId: transfer.toUserId, status: 'checked_out' },
-      });
-      await db.toolTransaction.create({
-        data: {
-          toolId: transfer.toolId, type: 'transfer',
-          fromUserId: transfer.fromUserId, toUserId: transfer.toUserId,
-          notes: `Transfer completed: ${transfer.reason}${transfer.toolConditionAtTransfer ? ` (condition: ${transfer.toolConditionAtTransfer})` : ''}`,
-          performedById: transfer.requestedById,
-        },
-      });
-      const completed = await db.toolTransferRequest.update({
-        where: { id },
-        data: { status: 'transferred', transferredAt: now },
-      });
-
-      // Notify both parties of completion
-      await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Transfer Completed',
-        `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to ${transfer.toUser?.fullName ?? 'Unknown'}`,
-        'tool_transfer_request', id, 'maintenance-tools');
-      await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Completed',
-        `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to you from ${transfer.fromUser?.fullName ?? 'Unknown'}`,
-        'tool_transfer_request', id, 'maintenance-tools');
-
-      // quantityTransferred was already incremented when transfer was submitted.
-      // Just check if the entire request is done now.
-      const activeRequests = await db.repairToolRequest.findMany({
-        where: {
-          status: { in: ['issued', 'returned'] },
-          OR: [{ toolId: transfer.toolId }, { items: { some: { toolId: transfer.toolId } } }],
-        },
-      });
-      for (const req of activeRequests) {
-        await checkAndCloseToolRequest(req.id);
-      }
-
-      return NextResponse.json({ success: true, data: { ...completed, autoCompleted: true } });
+    // Plant scope validation
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    const recordPlantId = transfer.plantId || transfer.tool?.plantId;
+    if (plantScope.isScoped && plantScope.plantId && recordPlantId && recordPlantId !== plantScope.plantId) {
+      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
 
     return NextResponse.json({ success: true, data: transfer });
@@ -273,6 +242,51 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           for (const req of activeRequests) {
             await checkAndCloseToolRequest(req.id);
           }
+        }
+        break;
+      }
+
+      case 'confirm_receipt': {
+        if (transfer.status !== 'awaiting_handover') return NextResponse.json({ success: false, error: `Cannot confirm receipt: status is ${transfer.status}` }, { status: 400 });
+        if (!transfer.fromUserAcceptedAt || !transfer.toUserAcceptedAt) {
+          return NextResponse.json({ success: false, error: 'Both parties must accept handover before confirming receipt' }, { status: 400 });
+        }
+
+        updated = await db.tool.update({
+          where: { id: transfer.toolId },
+          data: { assignedToId: transfer.toUserId, status: 'checked_out' },
+        });
+        await db.toolTransaction.create({
+          data: {
+            toolId: transfer.toolId, type: 'transfer',
+            fromUserId: transfer.fromUserId, toUserId: transfer.toUserId,
+            notes: `Transfer completed: ${transfer.reason}${transfer.toolConditionAtTransfer ? ` (condition: ${transfer.toolConditionAtTransfer})` : ''}`,
+            performedById: transfer.requestedById,
+          },
+        });
+        updated = await db.toolTransferRequest.update({
+          where: { id },
+          data: { status: 'transferred', transferredAt: now },
+        });
+
+        // Notify both parties of completion
+        await notifyUser(transfer.fromUserId, 'tool_transfer_request', 'Tool Transfer Completed',
+          `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to ${transfer.toUser?.fullName ?? 'Unknown'}`,
+          'tool_transfer_request', id, 'maintenance-tools');
+        await notifyUser(transfer.toUserId, 'tool_transfer_request', 'Tool Transfer Completed',
+          `"${transfer.tool?.name ?? 'Unknown Tool'}" has been successfully transferred to you from ${transfer.fromUser?.fullName ?? 'Unknown'}`,
+          'tool_transfer_request', id, 'maintenance-tools');
+
+        // quantityTransferred was already incremented when transfer was submitted.
+        // Just check if the entire request is done now.
+        const confirmActiveRequests = await db.repairToolRequest.findMany({
+          where: {
+            status: { in: ['issued', 'returned'] },
+            OR: [{ toolId: transfer.toolId }, { items: { some: { toolId: transfer.toolId } } }],
+          },
+        });
+        for (const req of confirmActiveRequests) {
+          await checkAndCloseToolRequest(req.id);
         }
         break;
       }
