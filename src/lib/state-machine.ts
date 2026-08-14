@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 
 // ============================================================================
@@ -255,9 +256,13 @@ export async function checkTransition(
   fromStatus: string | null,
   toStatus: string,
   session: SessionLike,
+  tx?: Prisma.TransactionClient,
 ): Promise<TransitionCheck> {
+  // Use the provided transaction client, or fall back to the default db
+  const client = tx ?? db;
+
   // Look up the matching transition rule
-  let rule = await db.statusTransition.findFirst({
+  let rule = await client.statusTransition.findFirst({
     where: {
       entityType,
       toStatus,
@@ -271,7 +276,7 @@ export async function checkTransition(
     const seeded = await ensureTransitionsSeeded();
     if (seeded) {
       // Retry the lookup after seeding
-      rule = await db.statusTransition.findFirst({
+      rule = await client.statusTransition.findFirst({
         where: {
           entityType,
           toStatus,
@@ -337,20 +342,30 @@ export async function executeTransition(
   options?: {
     reason?: string;
     extraData?: Record<string, unknown>;
+    /**
+     * An external Prisma transaction client. When provided, all DB
+     * operations are executed within this transaction instead of creating
+     * a new one — enabling callers to compose multiple operations
+     * (e.g. WO creation + MR transition) atomically.
+     */
+    tx?: Prisma.TransactionClient;
   },
 ): Promise<ExecuteResult> {
+  // Use the provided transaction client, or fall back to the default db
+  const tx = options?.tx;
+
   // --- 1. Determine the current status of the entity ---
   let currentStatus: string | null = null;
 
   if (entityType === 'work_order') {
-    const wo = await db.workOrder.findUnique({
+    const wo = await (tx ?? db).workOrder.findUnique({
       where: { id: entityId },
       select: { status: true },
     });
     if (!wo) return { success: false, error: `Work order "${entityId}" not found.` };
     currentStatus = wo.status;
   } else {
-    const mr = await db.maintenanceRequest.findUnique({
+    const mr = await (tx ?? db).maintenanceRequest.findUnique({
       where: { id: entityId },
       select: { status: true },
     });
@@ -359,7 +374,7 @@ export async function executeTransition(
   }
 
   // --- 2. Validate the transition ---
-  const check = await checkTransition(entityType, currentStatus, toStatus, session);
+  const check = await checkTransition(entityType, currentStatus, toStatus, session, tx);
   if (!check.allowed) {
     return { success: false, error: check.reason };
   }
@@ -381,7 +396,8 @@ export async function executeTransition(
   try {
     // --- 4. Perform the update + audit trail ---
     if (entityType === 'work_order') {
-      await db.$transaction(async (tx) => {
+      if (tx) {
+        // Use the caller's transaction directly
         // Update the work order
         await tx.workOrder.update({
           where: { id: entityId },
@@ -398,10 +414,30 @@ export async function executeTransition(
             notes: options?.reason ?? null,
           },
         });
-      });
+      } else {
+        // Create our own transaction (backward compatible)
+        await db.$transaction(async (innerTx) => {
+          // Update the work order
+          await innerTx.workOrder.update({
+            where: { id: entityId },
+            data: updatePayload,
+          });
+
+          // Create a status history audit entry
+          await innerTx.workOrderStatusHistory.create({
+            data: {
+              workOrderId: entityId,
+              fromStatus: currentStatus,
+              toStatus,
+              performedById: session.userId,
+              notes: options?.reason ?? null,
+            },
+          });
+        });
+      }
 
       // Return the updated record
-      const updated = await db.workOrder.findUnique({ where: { id: entityId } });
+      const updated = await (tx ?? db).workOrder.findUnique({ where: { id: entityId } });
       return {
         success: true,
         data: updated as unknown as Record<string, unknown>,
@@ -409,7 +445,8 @@ export async function executeTransition(
     }
 
     // --- Maintenance request path ---
-    await db.$transaction(async (tx) => {
+    if (tx) {
+      // Use the caller's transaction directly
       // Handle conversion logic: when a maintenance request is being converted
       // to a work order, the maintenanceRequestId link may need updating.
       if (toStatus === 'converted') {
@@ -436,10 +473,40 @@ export async function executeTransition(
           }`,
         },
       });
-    });
+    } else {
+      // Create our own transaction (backward compatible)
+      await db.$transaction(async (innerTx) => {
+        // Handle conversion logic: when a maintenance request is being converted
+        // to a work order, the maintenanceRequestId link may need updating.
+        if (toStatus === 'converted') {
+          // If the caller provided a workOrderId in extraData, link it
+          if (options?.extraData?.workOrderId) {
+            (updatePayload as Record<string, unknown>).workOrderId =
+              options.extraData.workOrderId;
+          }
+        }
+
+        // Update the maintenance request
+        await innerTx.maintenanceRequest.update({
+          where: { id: entityId },
+          data: updatePayload,
+        });
+
+        // Create an audit comment recording the status change
+        await innerTx.maintenanceRequestComment.create({
+          data: {
+            maintenanceRequestId: entityId,
+            userId: session.userId,
+            content: `[Status Change] ${currentStatus ?? 'initial'} → ${toStatus}${
+              options?.reason ? ` | Reason: ${options.reason}` : ''
+            }`,
+          },
+        });
+      });
+    }
 
     // Return the updated record
-    const updated = await db.maintenanceRequest.findUnique({
+    const updated = await (tx ?? db).maintenanceRequest.findUnique({
       where: { id: entityId },
     });
     return {

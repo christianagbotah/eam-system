@@ -1,8 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { getSession, hasAnyPermission } from '@/lib/auth';
-import { notifyUser } from '@/lib/notifications';
+import { getSession, hasAnyPermission, isAdmin as isAdminCheck } from '@/lib/auth';
 import { executeTransition } from '@/lib/state-machine';
+import { notifyUser } from '@/lib/notifications';
+import type { Prisma } from '@prisma/client';
+
+type TeamMemberInput = {
+  userId: string;
+  role?: string;
+};
+
+type AssignmentBody = {
+  assignedTo?: string;
+  teamLeaderId?: string;
+  assignedSupervisorId?: string;
+  assignmentType?: 'direct' | 'via_supervisor';
+  teamMembers?: TeamMemberInput[];
+};
 
 export async function POST(
   request: NextRequest,
@@ -19,111 +33,328 @@ export async function POST(
     }
 
     const { id } = await params;
-    const body = await request.json();
-    const { assignedTo, teamLeaderId, assignedSupervisorId, assignmentType, teamMembers } = body;
+    const body: AssignmentBody = await request.json();
+    const {
+      assignedTo,
+      teamLeaderId,
+      assignedSupervisorId,
+      assignmentType: rawAssignmentType,
+      teamMembers,
+    } = body;
 
-    if (!assignedTo) {
-      return NextResponse.json(
-        { success: false, error: 'assignedTo (user ID) is required' },
-        { status: 400 }
-      );
+    // Backward compatibility: missing assignmentType defaults to 'direct'
+    const assignmentType = rawAssignmentType || 'direct';
+    const isViaSupervisor = assignmentType === 'via_supervisor';
+    const isDirect = assignmentType === 'direct';
+    const isUserAdmin = isAdminCheck(session);
+
+    // ── Validation ─────────────────────────────────────────────────────────
+
+    if (isViaSupervisor) {
+      if (!assignedSupervisorId) {
+        return NextResponse.json(
+          { success: false, error: 'assignedSupervisorId is required for via_supervisor assignment' },
+          { status: 400 },
+        );
+      }
     }
 
-    const wo = await db.workOrder.findUnique({ where: { id } });
+    if (isDirect) {
+      const hasAssignedTo = !!assignedTo;
+      const hasTeamMembers = Array.isArray(teamMembers) && teamMembers.length > 0;
+
+      if (!hasAssignedTo && !hasTeamMembers) {
+        return NextResponse.json(
+          { success: false, error: 'assignedTo or teamMembers is required for direct assignment' },
+          { status: 400 },
+        );
+      }
+
+      // Validate teamLeaderId rules
+      if (hasTeamMembers && teamMembers!.length > 1) {
+        if (!teamLeaderId) {
+          return NextResponse.json(
+            { success: false, error: 'teamLeaderId is required when teamMembers has more than one member' },
+            { status: 400 },
+          );
+        }
+        const leaderInTeam = teamMembers!.some((m) => m.userId === teamLeaderId);
+        if (!leaderInTeam) {
+          return NextResponse.json(
+            { success: false, error: 'teamLeaderId must be one of the teamMembers' },
+            { status: 400 },
+          );
+        }
+      }
+
+      // Validate each team member has userId
+      if (hasTeamMembers) {
+        for (const m of teamMembers!) {
+          if (!m.userId) {
+            return NextResponse.json(
+              { success: false, error: 'Each team member must have a userId' },
+              { status: 400 },
+            );
+          }
+        }
+      }
+    }
+
+    // ── Fetch WO with plant info ───────────────────────────────────────────
+
+    const wo = await db.workOrder.findUnique({
+      where: { id },
+      include: {
+        assignee: { select: { id: true, fullName: true, username: true } },
+        teamLeader: { select: { id: true, fullName: true, username: true } },
+        assignedSupervisor: { select: { id: true, fullName: true, username: true } },
+      },
+    });
+
     if (!wo) {
       return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
     }
 
-    // Verify the assigned user exists
-    const assignee = await db.user.findUnique({ where: { id: assignedTo } });
-    if (!assignee) {
-      return NextResponse.json({ success: false, error: 'Assigned user not found' }, { status: 400 });
+    // Capture actual old values for audit log
+    const oldValues = {
+      assignedTo: wo.assignedTo,
+      teamLeaderId: wo.teamLeaderId,
+      assignedSupervisorId: wo.assignedSupervisorId,
+      assignmentType: wo.assignmentType,
+    };
+
+    // ── Plant-scope check helper ───────────────────────────────────────────
+
+    const plantScopeUserIds: string[] = [];
+
+    if (isDirect) {
+      if (assignedTo) plantScopeUserIds.push(assignedTo);
+      if (teamLeaderId) plantScopeUserIds.push(teamLeaderId);
+      if (teamMembers) {
+        for (const m of teamMembers) {
+          if (m.userId && !plantScopeUserIds.includes(m.userId)) {
+            plantScopeUserIds.push(m.userId);
+          }
+        }
+      }
     }
+    if (assignedSupervisorId && !plantScopeUserIds.includes(assignedSupervisorId)) {
+      plantScopeUserIds.push(assignedSupervisorId);
+    }
+
+    // Deduplicate
+    const uniqueUserIds = [...new Set(plantScopeUserIds)];
+
+    if (wo.plantId && uniqueUserIds.length > 0) {
+      const plantAccessRows = await db.userPlant.findMany({
+        where: {
+          userId: { in: uniqueUserIds },
+          plantId: wo.plantId,
+        },
+        select: { userId: true },
+      });
+      const usersWithAccess = new Set(plantAccessRows.map((r) => r.userId));
+
+      for (const uid of uniqueUserIds) {
+        if (!usersWithAccess.has(uid) && !isUserAdmin) {
+          return NextResponse.json(
+            { success: false, error: `User ${uid} does not have access to plant ${wo.plantId}` },
+            { status: 403 },
+          );
+        }
+      }
+    }
+
+    // ── Verify users exist ─────────────────────────────────────────────────
+
+    const allUserIdsToVerify: string[] = [];
+    if (isDirect) {
+      if (assignedTo) allUserIdsToVerify.push(assignedTo);
+      if (teamMembers) {
+        for (const m of teamMembers) {
+          if (m.userId && !allUserIdsToVerify.includes(m.userId)) {
+            allUserIdsToVerify.push(m.userId);
+          }
+        }
+      }
+    }
+    if (assignedSupervisorId && !allUserIdsToVerify.includes(assignedSupervisorId)) {
+      allUserIdsToVerify.push(assignedSupervisorId);
+    }
+
+    if (allUserIdsToVerify.length > 0) {
+      const users = await db.user.findMany({
+        where: { id: { in: allUserIdsToVerify } },
+        select: { id: true, fullName: true },
+      });
+      const existingUserIds = new Set(users.map((u) => u.id));
+      for (const uid of allUserIdsToVerify) {
+        if (!existingUserIds.has(uid)) {
+          return NextResponse.json(
+            { success: false, error: `User ${uid} not found` },
+            { status: 400 },
+          );
+        }
+      }
+    }
+
+    // ── Determine effective assignment values ──────────────────────────────
+
+    let effectiveAssignedTo = wo.assignedTo; // preserve existing
+    let effectiveTeamLeaderId = wo.teamLeaderId; // preserve existing
+
+    if (isDirect) {
+      const hasAssignedTo = !!assignedTo;
+      const hasTeamMembers = Array.isArray(teamMembers) && teamMembers!.length > 0;
+
+      if (hasAssignedTo && !hasTeamMembers) {
+        // Single assignee, no team array → they are both assignedTo and team leader
+        effectiveAssignedTo = assignedTo!;
+        effectiveTeamLeaderId = assignedTo!;
+      } else if (hasTeamMembers && !hasAssignedTo) {
+        // Team members only, no explicit assignedTo
+        effectiveAssignedTo = teamMembers![0].userId;
+        effectiveTeamLeaderId = teamMembers!.length === 1
+          ? teamMembers![0].userId
+          : teamLeaderId!;
+      } else if (hasAssignedTo && hasTeamMembers) {
+        // Both provided
+        effectiveAssignedTo = assignedTo!;
+        effectiveTeamLeaderId = teamMembers!.length === 1
+          ? teamMembers![0].userId
+          : teamLeaderId!;
+      }
+    }
+    // For via_supervisor: assignedTo/teamLeaderId stay as-is (preserved above)
 
     const now = new Date();
 
-    // Execute status transition via state machine (validates + updates status + creates history)
-    const result = await executeTransition(
-      'work_order',
-      id,
-      'assigned',
-      session,
-      {
-        extraData: {
-          assignedTo,
-          teamLeaderId: teamLeaderId || null,
-          assignedSupervisorId: assignedSupervisorId || null,
-          assignedBy: session.userId,
-          assignmentType: assignmentType || 'direct',
+    // ── Execute everything inside a transaction ────────────────────────────
+
+    const result = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+      // 1. Execute status transition via state machine
+      const transitionResult = await executeTransition(
+        'work_order',
+        id,
+        'assigned',
+        session,
+        {
+          extraData: {
+            assignedTo: effectiveAssignedTo,
+            teamLeaderId: effectiveTeamLeaderId,
+            assignedSupervisorId: assignedSupervisorId || null,
+            assignedBy: session.userId,
+            assignmentType,
+          },
+          tx,
         },
-      },
-    );
+      );
+
+      if (!transitionResult.success) {
+        throw new Error(transitionResult.error);
+      }
+
+      // 2. Create/upsert team members
+      if (isDirect) {
+        const membersToAdd: { userId: string; role: string; isLeader: boolean }[] = [];
+
+        const hasAssignedTo = !!assignedTo;
+        const hasTeamMembers = Array.isArray(teamMembers) && teamMembers!.length > 0;
+
+        if (hasAssignedTo && !hasTeamMembers) {
+          // Single assignee
+          membersToAdd.push({
+            userId: assignedTo!,
+            role: 'team_leader',
+            isLeader: true,
+          });
+        } else if (hasTeamMembers) {
+          for (const m of teamMembers!) {
+            const isLeader = m.userId === effectiveTeamLeaderId;
+            membersToAdd.push({
+              userId: m.userId,
+              role: isLeader ? 'team_leader' : (m.role || 'assistant'),
+              isLeader,
+            });
+          }
+        }
+
+        // Also add assignedTo to team if they're not already in the list
+        if (hasAssignedTo && hasTeamMembers && !teamMembers!.some((m) => m.userId === assignedTo)) {
+          const isLeader = assignedTo === effectiveTeamLeaderId;
+          membersToAdd.push({
+            userId: assignedTo!,
+            role: isLeader ? 'team_leader' : 'assistant',
+            isLeader,
+          });
+        }
+
+        // Upsert each member
+        for (const m of membersToAdd) {
+          const accessLevel = m.isLeader ? 'full' : 'execution';
+
+          await tx.workOrderTeamMember.upsert({
+            where: {
+              workOrderId_userId: {
+                workOrderId: id,
+                userId: m.userId,
+              },
+            },
+            update: {
+              role: m.role,
+              accessLevel,
+              addedById: session.userId,
+              addedVia: 'direct',
+              assignedAt: now,
+            },
+            create: {
+              workOrderId: id,
+              userId: m.userId,
+              role: m.role,
+              accessLevel,
+              addedById: session.userId,
+              addedVia: 'direct',
+              assignedAt: now,
+            },
+          });
+        }
+      }
+
+      // 3. Domain-specific audit log
+      const newValues: Record<string, unknown> = {
+        assignmentType,
+      };
+      if (effectiveAssignedTo) newValues.assignedTo = effectiveAssignedTo;
+      if (effectiveTeamLeaderId) newValues.teamLeaderId = effectiveTeamLeaderId;
+      if (assignedSupervisorId) newValues.assignedSupervisorId = assignedSupervisorId;
+      if (teamMembers && teamMembers.length > 0) {
+        newValues.teamMembersCount = teamMembers.length;
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'update',
+          entityType: 'work_order',
+          entityId: id,
+          oldValues: JSON.stringify(oldValues),
+          newValues: JSON.stringify(newValues),
+        },
+      });
+
+      return transitionResult;
+    });
 
     if (!result.success) {
       return NextResponse.json({ success: false, error: result.error }, { status: 400 });
     }
 
-    // Add assignee as team member if not already present
-    const existingMember = await db.workOrderTeamMember.findFirst({
-      where: { workOrderId: id, userId: assignedTo },
-    });
-    if (!existingMember) {
-      const isTeamLeader = assignedTo === teamLeaderId;
-      await db.workOrderTeamMember.create({
-        data: {
-          workOrderId: id,
-          userId: assignedTo,
-          role: isTeamLeader ? 'team_leader' : 'assistant',
-          accessLevel: isTeamLeader ? 'full' : 'read_only',
-          assignedAt: now,
-        },
-      });
-    }
+    // ── Fire-and-forget notifications ──────────────────────────────────────
 
-    // Create team member records if teamMembers array is provided
-    if (teamMembers && Array.isArray(teamMembers) && teamMembers.length > 0) {
-      for (const member of teamMembers) {
-        if (!member.userId || !member.role) continue;
-
-        // Skip if already a team member
-        const alreadyMember = await db.workOrderTeamMember.findFirst({
-          where: { workOrderId: id, userId: member.userId },
-        });
-        if (alreadyMember) continue;
-
-        const isTeamLeader = member.userId === teamLeaderId;
-        await db.workOrderTeamMember.create({
-          data: {
-            workOrderId: id,
-            userId: member.userId,
-            role: isTeamLeader ? 'team_leader' : member.role,
-            accessLevel: isTeamLeader ? 'full' : 'read_only',
-            assignedAt: now,
-          },
-        });
-      }
-    }
-
-    // Domain-specific audit log (status change is handled by state machine via WorkOrderStatusHistory)
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'work_order',
-        entityId: id,
-        oldValues: JSON.stringify({ assignedTo: null }),
-        newValues: JSON.stringify({
-          assignedTo: assignee.fullName,
-          assignmentType: assignmentType || 'direct',
-          teamMembersCount: teamMembers?.length || 1,
-        }),
-      },
-    });
-
-    // Notify the assigned user (force SMS for critical workflow step)
-    if (assignedTo !== session.userId) {
-      await notifyUser(
-        assignedTo,
+    // Notify assigned technician (direct assignment only)
+    if (isDirect && effectiveAssignedTo && effectiveAssignedTo !== session.userId) {
+      notifyUser(
+        effectiveAssignedTo,
         'wo_assigned',
         'Work Order Assigned',
         `${session.fullName} assigned ${wo.woNumber} to you: "${wo.title}"`,
@@ -131,14 +362,14 @@ export async function POST(
         id,
         `wo-detail?id=${id}`,
         { forceSms: true },
-      );
+      ).catch(() => {});
     }
 
-    // Notify team members (excluding assignee and session user, force SMS)
-    if (teamMembers && Array.isArray(teamMembers)) {
+    // Notify team members
+    if (isDirect && Array.isArray(teamMembers) && teamMembers.length > 0) {
       for (const member of teamMembers) {
-        if (member.userId !== session.userId && member.userId !== assignedTo) {
-          await notifyUser(
+        if (member.userId !== session.userId && member.userId !== effectiveAssignedTo) {
+          notifyUser(
             member.userId,
             'wo_assigned',
             'Work Order Team Assignment',
@@ -147,12 +378,30 @@ export async function POST(
             id,
             `wo-detail?id=${id}`,
             { forceSms: true },
-          );
+          ).catch(() => {});
         }
       }
     }
 
-    // Re-fetch with includes to return full object (state machine returns plain record)
+    // Notify supervisor (both paths)
+    if (assignedSupervisorId && assignedSupervisorId !== session.userId) {
+      const supervisorMsg = isViaSupervisor
+        ? `${session.fullName} delegated ${wo.woNumber} to you for assignment: "${wo.title}"`
+        : `${session.fullName} assigned ${wo.woNumber} with you as supervisor: "${wo.title}"`;
+      notifyUser(
+        assignedSupervisorId,
+        'wo_assigned',
+        isViaSupervisor ? 'Work Order Delegated' : 'Work Order Supervisor Assignment',
+        supervisorMsg,
+        'work_order',
+        id,
+        `wo-detail?id=${id}`,
+        { forceSms: true },
+      ).catch(() => {});
+    }
+
+    // ── Re-fetch with includes for response ────────────────────────────────
+
     const updated = await db.workOrder.findUnique({
       where: { id },
       include: {

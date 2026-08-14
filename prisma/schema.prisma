@@ -616,6 +616,9 @@ model WorkOrderTeamMember {
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   addedBy    User?     @relation("TMAddedBy", fields: [addedById], references: [id])
 
+  @@unique([workOrderId, userId]) // prevent duplicate team membership
+  @@index([workOrderId])
+  @@index([userId])
   @@map("wo_team_members")
 }
 
@@ -774,6 +777,8 @@ model StatusTransition {
   sortOrder        Int      @default(0)
   createdAt        DateTime @default(now())
 
+  @@unique([entityType, fromStatus, toStatus]) // prevent duplicate transition rules
+  @@index([entityType, toStatus])
   @@map("status_transitions")
 }
 
@@ -1159,6 +1164,8 @@ model WorkOrderStatusHistory {
   workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   performedBy User      @relation(fields: [performedById], references: [id])
 
+  @@index([workOrderId])
+  @@index([createdAt])
   @@map("wo_status_history")
 }
 

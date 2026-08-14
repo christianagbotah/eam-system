@@ -378,7 +378,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
 
   const fetchManualAssetOptions = useCallback(async () => {
-    const res = await api.get('/api/assets?limit=500');
+    const res = await api.get('/api/assets?limit=100');
     if (res.success && res.data) {
       const assets = (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
         value: a.id,
@@ -395,7 +395,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
     if (user.department) {
       setDepartmentLabel(user.department);
       // Look up department by name to get the ID
-      api.get('/api/departments').then(res => {
+      api.get('/api/departments?limit=100').then(res => {
         if (res.success && Array.isArray(res.data)) {
           const dept = res.data.find((d: any) => d.name === user.department);
           if (dept) setDepartmentId(dept.id);
@@ -548,7 +548,7 @@ export function CreateMRForm({ onSuccess }: { onSuccess: () => void }) {
               value={departmentId}
               onValueChange={setDepartmentId}
               fetchOptions={async () => {
-                const res = await api.get('/api/departments');
+                const res = await api.get('/api/departments?limit=100');
                 if (res.success && res.data) {
                   return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
                     value: d.id,
@@ -849,10 +849,10 @@ export function MRDetailPage({ id, onUpdate, autoOpenConvert, onDelete }: { id: 
     // Load dropdown data
     try {
       const [deptsRes, invRes, toolsRes, usersRes] = await Promise.all([
-        api.get('/api/departments'),
-        api.get('/api/inventory'),
-        api.get('/api/tools'),
-        api.get('/api/users'),
+        api.get('/api/departments?limit=100'),
+        api.get('/api/inventory?limit=100'),
+        api.get('/api/tools?limit=100'),
+        api.get('/api/users?limit=100'),
       ]);
       if (deptsRes.success && deptsRes.data) setDepartments(Array.isArray(deptsRes.data) ? deptsRes.data : []);
       if (invRes.success && invRes.data) setInventoryItems(Array.isArray(invRes.data) ? invRes.data : []);
@@ -2272,7 +2272,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
     if (!user) return;
     if (user.department) {
       setDepartmentLabel(user.department);
-      api.get('/api/departments').then(res => {
+      api.get('/api/departments?limit=100').then(res => {
         if (res.success && Array.isArray(res.data)) {
           const dept = res.data.find((d: any) => d.name === user.department);
           if (dept) {
@@ -2317,9 +2317,9 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
   useEffect(() => {
     if (departments.length === 0) {
       Promise.all([
-        api.get('/api/departments'),
-        api.get('/api/inventory'),
-        api.get('/api/tools'),
+        api.get('/api/departments?limit=100'),
+        api.get('/api/inventory?limit=100'),
+        api.get('/api/tools?limit=100'),
       ]).then(([deptsRes, invRes, toolsRes]) => {
         if (deptsRes.success && Array.isArray(deptsRes.data)) setDepartments(deptsRes.data);
         if (invRes.success && Array.isArray(invRes.data)) setInventoryItems(invRes.data);
@@ -2592,7 +2592,7 @@ export function CreateWOForm({ onSuccess }: { onSuccess: () => void }) {
                 value={form.departmentId}
                 onValueChange={v => updateField('departmentId', v)}
                 fetchOptions={async () => {
-                  const res = await api.get('/api/departments');
+                  const res = await api.get('/api/departments?limit=100');
                   if (res.success && res.data) {
                     return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
                       value: d.id,
@@ -3467,9 +3467,9 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
   useEffect(() => {
     if (editOpen) {
       Promise.all([
-        api.get('/api/departments'),
-        api.get('/api/inventory'),
-        api.get('/api/tools'),
+        api.get('/api/departments?limit=100'),
+        api.get('/api/inventory?limit=100'),
+        api.get('/api/tools?limit=100'),
       ]).then(([deptsRes, invRes, toolsRes]) => {
         if (deptsRes.success && Array.isArray(deptsRes.data)) setEditDepartments(deptsRes.data);
         if (invRes.success && Array.isArray(invRes.data)) setEditInventoryItems(invRes.data);
@@ -4174,7 +4174,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
             value=""
             onValueChange={(val) => handleAction('assign', { assignedToId: val, assignedToName: val })}
             fetchOptions={async () => {
-              const res = await api.get('/api/users');
+              const res = await api.get('/api/users?limit=100');
               if (res.success && res.data) {
                 return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
                   value: u.id,
@@ -4305,7 +4305,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     value={editForm.departmentId || ''}
                     onValueChange={v => editUpdateField('departmentId', v)}
                     fetchOptions={async () => {
-                      const res = await api.get('/api/departments');
+                      const res = await api.get('/api/departments?limit=100');
                       if (res.success && res.data) {
                         return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
                           value: d.id,
@@ -4905,7 +4905,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                   setMatItemId(val);
                 }}
                 fetchOptions={async () => {
-                  const res = await api.get('/api/inventory');
+                  const res = await api.get('/api/inventory?limit=100');
                   if (res.success && res.data) {
                     const items = Array.isArray(res.data) ? res.data : (res.data as any).items || [];
                     return items.map((item: any) => ({
@@ -4974,7 +4974,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                         updateToolReqItem(idx, { toolId: val, toolName: cached?.name || '', toolCode: cached?.toolCode || '' });
                       }}
                       fetchOptions={async () => {
-                        const res = await api.get('/api/tools?limit=999');
+                        const res = await api.get('/api/tools?limit=100');
                         if (res.success && Array.isArray(res.data)) {
                           toolsLookupCache.current = res.data.map((t: any) => ({ id: t.id, name: t.name || '', toolCode: t.toolCode || '' }));
                           return res.data.map((t: any) => ({ value: t.id, label: `${t.name}${t.toolCode ? ` (${t.toolCode})` : ''}` }));
@@ -6369,7 +6369,7 @@ export function WODetailPage({ id, onUpdate }: { id: string; onUpdate: () => voi
                     value={newMemberUserId}
                     onValueChange={setNewMemberUserId}
                     fetchOptions={async () => {
-                      const res = await api.get('/api/users');
+                      const res = await api.get('/api/users?limit=100');
                       if (res.success && res.data) return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
                       return [];
                     }}
@@ -7219,7 +7219,7 @@ export function PmSchedulesPage() {
                 value={formAssignedToId}
                 onValueChange={setFormAssignedToId}
                 fetchOptions={async () => {
-                  const res = await api.get('/api/users');
+                  const res = await api.get('/api/users?limit=100');
                   if (res.success && res.data) {
                     return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
                       value: u.id,
@@ -7238,7 +7238,7 @@ export function PmSchedulesPage() {
                 value={formDepartmentId}
                 onValueChange={setFormDepartmentId}
                 fetchOptions={async () => {
-                  const res = await api.get('/api/departments');
+                  const res = await api.get('/api/departments?limit=100');
                   if (res.success && res.data) {
                     return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
                       value: d.id,
@@ -7870,7 +7870,7 @@ export function MaintenanceCalibrationPage() {
   const [kpis, setKpis] = useState({ total: 0, calibrated: 0, dueSoon: 0, overdue: 0 });
 
   const fetchTechnicianOptions = useCallback(async () => {
-    const res = await api.get('/api/users?limit=500&role=technician');
+    const res = await api.get('/api/users?limit=100&role=technician');
     if (res.success && res.data) {
       return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
         value: u.id,
@@ -8084,7 +8084,7 @@ export function MaintenanceRiskAssessmentPage() {
   ];
 
   const fetchRiskAssetOptions = useCallback(async () => {
-    const res = await api.get('/api/assets?limit=500');
+    const res = await api.get('/api/assets?limit=100');
     if (res.success && res.data) {
       return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
         value: a.id,
@@ -8312,7 +8312,7 @@ export function MaintenanceToolsPage() {
 
   const loadTools = async () => {
     try {
-      const res = await api.get('/api/tools');
+      const res = await api.get('/api/tools?limit=100');
       if (res.success && res.data) {
         setTools(Array.isArray(res.data) ? res.data : []);
         if (res.kpis) setKpis(res.kpis);
@@ -8324,7 +8324,7 @@ export function MaintenanceToolsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await api.get('/api/tools');
+        const res = await api.get('/api/tools?limit=100');
         if (res.success && res.data) {
           setTools(Array.isArray(res.data) ? res.data : []);
           if (res.kpis) setKpis(res.kpis);
@@ -8359,7 +8359,7 @@ export function MaintenanceToolsPage() {
     if (!form.name || !form.category) { toast.error('Tool name and category are required'); return; }
     setSaving(true);
     try {
-      const res = await api.post('/api/tools', { ...form, quantity: parseInt(form.quantity) || 1 });
+      const res = await api.post('/api/tools?limit=100', { ...form, quantity: parseInt(form.quantity) || 1 });
       if (res.success) {
         toast.success('Tool added successfully');
         setCreateOpen(false);
@@ -8508,7 +8508,7 @@ export function MaintenanceToolsPage() {
           value={f.assignedToId || ''}
           onValueChange={v => setF((p: any) => ({ ...p, assignedToId: v }))}
           fetchOptions={async () => {
-            const res = await api.get('/api/users');
+            const res = await api.get('/api/users?limit=100');
             if (res.success && res.data) {
               return (Array.isArray(res.data) ? res.data : []).map((u: any) => ({
                 value: u.id,

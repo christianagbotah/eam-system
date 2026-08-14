@@ -1630,3 +1630,30 @@ Stage Summary:
 - Fix 2: Overdue card always clickable (navigates to overdue WO list)
 - Fix 3: Assets at Risk card navigates with at_risk condition filter
 - No WO page changes needed - API already scopes data by user role
+---
+Task ID: S1-S14
+Agent: Main Agent
+Task: MR→WO Enterprise Hardening Phase 1 - Full Implementation
+
+Work Log:
+- Completed comprehensive code discovery across 12+ files using 3 parallel exploration agents
+- Applied 3 Prisma schema changes (unique constraints, indexes)
+- Fixed plant-scope.ts fail-open → fail-closed security vulnerability
+- Refactored state-machine.ts to accept external Prisma transaction client
+- Created repairPlanning.service.ts domain service (557 lines, fully atomic)
+- Refactored convert route as thin controller (~55 lines)
+- Refactored assign route with two assignment paths (direct + supervisor delegation)
+- Fixed WO POST route: removed state-machine bypass, fixed tool semantics, added transaction
+- Created ConvertMRToWODialog shared component for PlannerWorkbench
+- Updated PlannerWorkbench to use proper conversion dialog
+- Fixed limit=999 patterns across 3 files
+- Wrote 75 Vitest tests across 3 test files
+
+Stage Summary:
+- All critical security and data-integrity issues addressed
+- Full atomic MR→WO conversion with idempotency
+- Two assignment paths (direct + supervisor delegation) implemented
+- Team member access levels fixed (execution for assistants, full for leaders)
+- Tool/material semantics corrected (tools → RepairToolRequest, parts → WorkOrderMaterial)
+- PlannerWorkbench now shows proper planning dialog with MR data defaults
+- 75 automated tests written and passing

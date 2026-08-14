@@ -30,6 +30,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
+import { ConvertMRToWODialog } from '@/components/shared/ConvertMRToWODialog';
 import { DatePicker, DateRangePicker } from '@/components/ui/datetime-picker';
 import { EmptyState, LoadingSkeleton, formatDate, formatCurrency, formatDuration } from '@/components/shared/helpers';
 import {
@@ -150,6 +151,9 @@ export default function PlannerWorkbench() {
   });
   const [createWOLoading, setCreateWOLoading] = useState(false);
 
+  // Convert MR to WO dialog
+  const [convertMR, setConvertMR] = useState<any>(null);
+
   // Work Package dialog
   const [workPackageDialogOpen, setWorkPackageDialogOpen] = useState(false);
   const [wpForm, setWpForm] = useState({ name: '', assignTo: '', scheduledDate: '', shift: 'day' });
@@ -186,7 +190,7 @@ export default function PlannerWorkbench() {
       const [woRes, mrRes, userRes] = await Promise.all([
         api.get('/api/work-orders?limit=100'),
         api.get('/api/maintenance-requests?status=approved&limit=50'),
-        api.get('/api/users'),
+        api.get('/api/users?limit=100'),
       ]);
       if (woRes.success && woRes.data) setWorkOrders(woRes.data);
       if (mrRes.success && mrRes.data) {
@@ -208,7 +212,7 @@ export default function PlannerWorkbench() {
   const fetchWorkPackages = useCallback(async () => {
     setWpLoadingList(true);
     try {
-      const res = await api.get('/api/work-packages?limit=50');
+      const res = await api.get('/api/work-packages?limit=100');
       if (res.success && res.data) setWorkPackages(res.data);
     } catch (_e) {
       // Silent catch
@@ -220,7 +224,7 @@ export default function PlannerWorkbench() {
   const fetchSTOEvents = useCallback(async () => {
     setStoLoading(true);
     try {
-      const res = await api.get('/api/sto/events?limit=50');
+      const res = await api.get('/api/sto/events?limit=100');
       if (res.success && res.data) {
         setStoEvents(Array.isArray(res.data) ? res.data : res.data.events || []);
       }
@@ -417,18 +421,15 @@ export default function PlannerWorkbench() {
     setCreateWOLoading(false);
   };
 
-  const handleCreateWOFromMR = async (mrId: string) => {
-    setCreateWOLoading(true);
-    const res = await api.post(`/api/maintenance-requests/${mrId}/convert`, {
-      title: 'WO from MR', priority: 'medium', type: 'corrective',
-    });
-    if (res.success) {
-      toast.success('Work order created from maintenance request');
-      setRefreshKey(k => k + 1);
-    } else {
-      toast.error(res.error || 'Failed');
-    }
-    setCreateWOLoading(false);
+  const handleCreateWOFromMR = (mrId: string) => {
+    const mr = approvedMRs.find(m => m.id === mrId);
+    if (mr) setConvertMR(mr);
+  };
+
+  const handleConvertSuccess = () => {
+    setConvertMR(null);
+    setRefreshKey(k => k + 1);
+    toast.success('Work order created from maintenance request');
   };
 
   const handleCreateWorkPackage = async () => {
@@ -1530,6 +1531,14 @@ export default function PlannerWorkbench() {
           </div>
         </div>
       </ResponsiveDialog>
+
+      {/* Convert MR to WO Dialog */}
+      <ConvertMRToWODialog
+        open={!!convertMR}
+        onOpenChange={(open) => { if (!open) setConvertMR(null); }}
+        mr={convertMR}
+        onSuccess={handleConvertSuccess}
+      />
     </div>
   );
 }
