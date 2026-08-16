@@ -7,6 +7,7 @@
 
 import { db } from '@/lib/db';
 import type { Prisma } from '@prisma/client';
+import { checkToolCalibration } from '@/services/toolCalibration.service';
 
 const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
 
@@ -95,6 +96,20 @@ export async function atomicIssueTools(
           }
 
           if (lineItem.toolId) {
+            // Calibration check — runs outside tx (read-only)
+            const calCheck = await checkToolCalibration(lineItem.toolId)
+            if (calCheck.blocked) {
+              warnings.push(`"${lineItem.toolName}" BLOCKED: ${calCheck.reason || 'calibration issue'}. Item skipped.`)
+              await tx.repairToolRequestItem.update({
+                where: { id: lineItem.id },
+                data: { availabilityStatus: 'unavailable', issueNotes: calCheck.reason || 'Blocked by calibration check' },
+              })
+              continue
+            }
+            if (calCheck.reason) {
+              warnings.push(`"${lineItem.toolName}" WARNING: ${calCheck.reason}`)
+            }
+
             // Re-read tool within transaction for consistent snapshot (prevents concurrent over-issue)
             const tool = await tx.tool.findUnique({ where: { id: lineItem.toolId } });
             if (!tool) {
@@ -160,6 +175,17 @@ export async function atomicIssueTools(
       } else if (toolReq.toolId) {
         // Legacy single-tool request
         const tool = toolReq.tool;
+
+        // Calibration check for single-tool path
+        const calCheck = await checkToolCalibration(toolReq.toolId)
+        if (calCheck.blocked) {
+          warnings.push(`Tool '${tool?.name || toolReq.toolId}' BLOCKED: ${calCheck.reason || 'calibration issue'}. Single-tool issue skipped.`)
+          return { success: true, warnings, updatedRequest: null }
+        }
+        if (calCheck.reason) {
+          warnings.push(`Tool '${tool?.name || toolReq.toolId}' WARNING: ${calCheck.reason}`)
+        }
+
         if (!tool || (tool.status !== 'in_repair' && tool.status !== 'available')) {
           throw new Error(`Tool is not available for issue (current status: ${tool?.status})`);
         }

@@ -2389,3 +2389,128 @@ Stage Summary:
 - No existing files modified
 - All components fully typed with TypeScript interfaces
 - Consistent with project codebase patterns (api client, helpers, ResponsiveDialog, shadcn/ui)
+
+---
+Task ID: 3S/3V
+Agent: Main Agent
+Task: PHASE 3S — Remove Unbounded Lookups + PHASE 3V — Remove Repairs TODO/Stub Debt
+
+Work Log:
+
+### PHASE 3S — Remove Unbounded Lookups
+
+Scanned 4 API directories for unbounded lookups (limit=999, limit=500, take:999, take:500):
+- src/app/api/repairs/ → 2 files, 3 occurrences
+- src/app/api/work-orders/ → 0 occurrences
+- src/app/api/maintenance-requests/ → 0 occurrences
+- src/app/api/shift-handovers/ → 0 occurrences
+
+Changes made:
+1. **src/app/api/repairs/reports/route.ts** (2 occurrences)
+   - Line 374: `handleTechnicianPerformanceReport` — `take: 500` → `take: 100` with comment explaining aggregate report tradeoff
+   - Line 537: `handleDowntimeReport` — `take: 500` → `take: 100` with comment explaining aggregate report tradeoff
+   - NOTE: These are aggregate report functions that compute totals/averages. Adding page/limit pagination would break aggregate accuracy. Capped at 100 with documentation.
+
+2. **src/app/api/repairs/reports/detailed/route.ts** (1 occurrence)
+   - Line 99: `take: 500` → added proper pagination support
+   - Added `page` (default 1) and `limit` (default 50, max 100) query params
+   - Added `db.workOrder.count()` for total count
+   - JSON format now returns `pagination: { page, limit, total, totalPages }`
+   - XLSX format skips pagination (uses full filtered set, capped at 100) since exports need all data
+   - Response shape preserved: `{ success, data, summary, pagination }` for JSON
+
+### PHASE 3V — Remove Repairs TODO/Stub Debt
+
+Scanned all scope files for:
+- TODO, FIXME, stub, placeholder, not implemented → none found (one benign "placeholder" comment in reportExportXlsx.service.ts is actual working code for empty sheet)
+- Silent empty catch blocks → 7 found, all fixed
+- Debug console.log in API routes/services → 3 found, all fixed
+- Hardcoded IDs, plant IDs, costs/rates → none found
+- Fire-and-forget notifyUser in routes → left per task instructions (acceptable in non-delegated routes)
+
+Changes made:
+1. **src/services/workExecution.service.ts:166** — `.catch(() => {})` → `.catch((err) => { console.error(...) })` on last-resort notification fallback
+2. **src/app/api/repairs/damaged-tools/[id]/route.ts:400** — bare `catch {}` → `catch (err) { console.error(...) }` for replacement tool update
+3. **src/app/api/work-orders/[id]/time-logs/route.ts:102** — bare `catch {}` → `catch (err) { console.warn(...) }` for schema migration fallback (GET)
+4. **src/app/api/work-orders/[id]/time-logs/route.ts:425** — bare `catch {}` → `catch (err) { console.warn(...) }` for schema migration fallback (POST)
+5. **src/app/api/work-orders/[id]/personal-tools/route.ts:38** — bare `catch {}` → `catch (err) { console.warn(...) }` for JSON parse
+6. **src/app/api/work-orders/[id]/personal-tools/route.ts:111** — bare `catch { /* ignore */ }` → `catch (err) { console.warn(...) }` for JSON parse
+7. **src/app/api/work-orders/[id]/personal-tools/route.ts:239** — bare `catch {}` → `catch (err) { console.warn(...) }` for JSON parse
+8. **src/app/api/repairs/tool-requests/route.ts:25,56,58** — `console.log` → `console.info` for backfill operation logs (informational, not debug)
+
+Stage Summary:
+- Files changed: 6 files modified
+  - src/app/api/repairs/reports/route.ts (Phase 3S)
+  - src/app/api/repairs/reports/detailed/route.ts (Phase 3S + pagination)
+  - src/services/workExecution.service.ts (Phase 3V)
+  - src/app/api/repairs/damaged-tools/[id]/route.ts (Phase 3V)
+  - src/app/api/work-orders/[id]/time-logs/route.ts (Phase 3V)
+  - src/app/api/work-orders/[id]/personal-tools/route.ts (Phase 3V)
+  - src/app/api/repairs/tool-requests/route.ts (Phase 3V)
+- Zero new lint errors in changed files (pre-existing parsing error at workExecution.service.ts:887 unrelated)
+- Tests: 452 passed, 2 failed (pre-existing failures in observability-persistence.test.ts, unrelated)
+
+---
+Task ID: 3T/3U
+Agent: Main Agent
+Task: Write vitest tests for toolOperations.service.ts and workExecution.service.ts Phase 3A/3D
+
+Work Log:
+- Read worklog.md for project context (2452 lines)
+- Read workExecution.service.ts (919 lines) to understand all exported functions and their flows
+- Read toolOperations.service.ts (389 lines) to understand atomicIssueTools and atomicConfirmToolReturn
+- Read toolCalibration.service.ts (153 lines) to understand calibration check API
+- Studied existing test patterns in:
+  - src/services/__tests__/workExecution.test.ts (815 lines, 50 tests)
+  - src/services/__tests__/repairPlanning.service.test.ts (489 lines, 12 tests)
+  - src/lib/__tests__/state-machine.test.ts (442 lines, 14 tests)
+- Identified common mocking pattern: vi.hoisted() → vi.mock('@/lib/db') → import after mocks
+- Identified transaction mock pattern: mockDb.$transaction.mockImplementation(async (cb) => cb(mockTx))
+
+- Created src/services/__tests__/toolOperations.service.test.ts (45 tests)
+  1. Type contract tests (5): IssueItem, AtomicIssueResult, AtomicReturnResult, function exports
+  2. Error paths (5): not found, wrong status, empty issuedItems, DB errors, non-Error exceptions
+  3. Multi-item issue (7): atomically issue multiple, partial issue, skip unknown item, zero-qty unavailable, tool not found warning, no toolId path, limited status
+  4. Calibration checks (3): blocked tool skipped, non-blocking warning, legacy single-tool blocked
+  5. Legacy single-tool path (2): successful issue, invalid status rejection
+  6. Tool quantity/status logic (3): checked_out when zero, keep status when positive, clamp qty to approved/stock
+  7. Transaction notes (2): WO number + condition in notes, [PARTIAL] marker
+  8. Return error paths (3): not found, wrong status, DB error
+  9. Multi-item return (6): confirm with pending qty, skip no-pending items, invalid condition default, poor→in_repair, damaged→in_repair, allReturned=false detection
+  10. Legacy single-tool return (3): good condition, poor/damaged→in_repair, invalid condition default
+  11. Valid conditions documented (3): five conditions, poor/damaged trigger in_repair
+  12. Request status update (1): status set to issued with timestamps
+  13. Return status/timestamps (2): returned status + returnedAt, always set returnConfirmedById/At
+
+- Created src/services/__tests__/workExecution.service.test.ts (68 tests)
+  1. startWork (6): not found, non-assignee rejected, readiness fail, transition fail, success with time log, admin override
+  2. pauseWork (3): not found, closes active timers, transition fail
+  3. resumeWork (2): not found, creates resume time log
+  4. enterWaitingState (2): not found, closes timers + transitions to waiting_tools, waiting_permit
+  5. initiateHandover (2): not found, transitions to pending_handover
+  6. resumeAfterHandover (3): not found, requires confirmed handover, succeeds with handover
+  7. submitCompletion (7): not found, multi-tech team leader enforcement, readiness fail, actual hours calculation, provided costs, completion comment, PM schedule advancement, non-auto-calculable frequency skip
+  8. supervisorVerify (4): not found, readiness fail, success with verification comment, quality rating in comment, default comment without notes
+  9. requestRework (4): reason required, not found, rework counter increment + comment, category in extraData
+  10. plannerClose (5): not found, readiness fail, close+lock+audit, failure record creation, no failure record when no data, closing comment
+  11. cancelWorkOrder (4): reason required, not found, success, transition fail
+  12. calculateAuthoritativeCosts (6): not found→null, labor hours from durations, material cost from consumed+wasted, tool cost from issued*unitCost, all components sum, null/undefined handling
+  13. Team authority documented (4): admin bypass, multi-tech rules, start/pause vs complete governance
+  14. Waiting state types documented (2): four types, all values
+  15. Notification queuing documented (2): BullMQ queue, NOTIFICATION constant
+  16. Type contracts (8): all option types, SessionContext, all function exports, calculateAuthoritativeCosts return type
+
+- Fixed pre-existing syntax error in src/services/workExecution.service.ts:887-888
+  - Prisma select used semicolons instead of commas: `{ unitCost: true; consumedQty: true; wastedQty: true }`
+  - Changed to commas: `{ unitCost: true, consumedQty: true, wastedQty: true }`
+  - Also fixed line 888: same issue in repairToolRequests select
+
+- Vitest: 565 passed, 2 failed (pre-existing in observability-persistence.test.ts, unrelated)
+- New test count: 113 tests (45 toolOperations + 68 workExecution.service)
+- Total test count: 567 (was 454 before)
+
+Stage Summary:
+- Files created: src/services/__tests__/toolOperations.service.test.ts, src/services/__tests__/workExecution.service.test.ts
+- Files modified: src/services/workExecution.service.ts (syntax fix at lines 887-888)
+- All 113 new tests pass, no regressions
+- Same mocking patterns used: vi.hoisted, vi.mock('@/lib/db'), Mock type assertions, beforeEach with clearAllMocks

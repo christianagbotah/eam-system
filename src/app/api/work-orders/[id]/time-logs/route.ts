@@ -99,7 +99,8 @@ export async function GET(
         },
         orderBy: { timestamp: 'asc' },
       });
-    } catch {
+    } catch (err) {
+      console.warn('[time-logs] Schema migration fallback for GET (loggedBy include):', err);
       timeLogs = await db.workOrderTimeLog.findMany({
         where,
         include: {
@@ -422,8 +423,9 @@ export async function POST(
           loggedBy: { select: { id: true, fullName: true, username: true } },
         },
       });
-    } catch {
+    } catch (err) {
       // Fallback: new columns may not exist on VPS yet
+      console.warn('[time-logs] Schema migration fallback for POST:', err);
       timeLog = await db.workOrderTimeLog.create({
         data: {
           workOrderId: id,

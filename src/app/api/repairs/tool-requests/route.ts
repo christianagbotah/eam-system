@@ -22,7 +22,7 @@ async function ensureLegacyRequestNumbers() {
     });
     if (legacy.length === 0) return;
 
-    console.log(`[backfill] Generating request numbers for ${legacy.length} legacy tool request(s)...`);
+    console.info(`[backfill] Generating request numbers for ${legacy.length} legacy tool request(s)...`);
 
     // Get all existing request numbers grouped by prefix
     const existing = await db.repairToolRequest.findMany({
@@ -53,9 +53,9 @@ async function ensureLegacyRequestNumbers() {
       if (!usedByPrefix.has(prefix)) usedByPrefix.set(prefix, new Set());
       usedByPrefix.get(prefix)!.add(counter);
       await db.repairToolRequest.update({ where: { id: row.id }, data: { requestNumber: num } });
-      console.log(`[backfill] ${row.id.slice(0, 8)}... → ${num}`);
+      console.info(`[backfill] ${row.id.slice(0, 8)}... → ${num}`);
     }
-    console.log(`[backfill] Done. ${legacy.length} request number(s) generated.`);
+    console.info(`[backfill] Done. ${legacy.length} request number(s) generated.`);
   } catch (err) {
     // Don't let backfill failure block the API
     console.warn('[backfill] Failed:', err instanceof Error ? err.message : err);

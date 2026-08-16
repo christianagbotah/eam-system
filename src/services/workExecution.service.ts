@@ -163,7 +163,9 @@ function enqueueNotification(payload: {
     notifyUser(payload.userId, payload.type, payload.title, payload.message,
       payload.entityType, payload.entityId, payload.actionUrl,
       { forceSms: payload.forceSms },
-    ).catch(() => {});
+    ).catch((err) => {
+      console.error('[workExecution] Direct notification fallback also failed:', err);
+    });
   });
 }
 
@@ -882,8 +884,8 @@ export async function calculateAuthoritativeCosts(workOrderId: string): Promise<
       laborCost: true,
       partsCost: true,
       timeLogs: { select: { duration: true } },
-      repairMaterialRequests: { select: { unitCost: true; consumedQty: true; wastedQty: true } },
-      repairToolRequests: { select: { items: { select: { unitCost: true; quantityIssued: true } } } },
+      repairMaterialRequests: { select: { unitCost: true, consumedQty: true, wastedQty: true } },
+      repairToolRequests: { select: { items: { select: { unitCost: true, quantityIssued: true } } } },
     },
   });
   if (!wo) return null;

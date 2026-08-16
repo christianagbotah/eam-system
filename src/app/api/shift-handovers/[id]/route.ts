@@ -58,9 +58,19 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
 
-    const existing = await db.shiftHandover.findUnique({ where: { id } });
+    const existing = await db.shiftHandover.findUnique({
+      where: { id },
+      include: { workOrder: { select: { plantId: true } } },
+    });
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Shift handover not found' }, { status: 404 });
+    }
+
+    // Phase 3G: Plant scope for update
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    if (plantScope.isScoped && plantScope.plantId && existing.workOrder?.plantId && existing.workOrder.plantId !== plantScope.plantId) {
+      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
 
     const updateData: Record<string, unknown> = {};
@@ -121,9 +131,19 @@ export async function DELETE(
 
     const { id } = await params;
 
-    const existing = await db.shiftHandover.findUnique({ where: { id } });
+    const existing = await db.shiftHandover.findUnique({
+      where: { id },
+      include: { workOrder: { select: { plantId: true } } },
+    });
     if (!existing) {
       return NextResponse.json({ success: false, error: 'Shift handover not found' }, { status: 404 });
+    }
+
+    // Phase 3G: Plant scope for delete
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    if (plantScope.isScoped && plantScope.plantId && existing.workOrder?.plantId && existing.workOrder.plantId !== plantScope.plantId) {
+      return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
     }
 
     await db.shiftHandover.delete({ where: { id } });

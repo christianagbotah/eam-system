@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getPlantScope } from '@/lib/plant-scope';
 import * as XLSX from 'xlsx';
 
 // GET /api/repairs/reports/detailed — Machine + Parts repair report
-// Query params: dateFrom, dateTo, status, type, plantId, format (json|xlsx)
+// Query params: dateFrom, dateTo, status, type, plantId, format (json|xlsx), page, limit
 export async function GET(request: NextRequest) {
   try {
     const session = getSession(request);
@@ -12,13 +13,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const dateFrom = searchParams.get('dateFrom');
     const dateTo = searchParams.get('dateTo');
     const status = searchParams.get('status');
     const type = searchParams.get('type');
-    const plantId = searchParams.get('plantId');
+    const plantId = plantScope.isScoped && plantScope.plantId ? plantScope.plantId : searchParams.get('plantId');
     const format = searchParams.get('format') || 'json';
+
+    // Pagination params (used for JSON format; XLSX always fetches full filtered set)
+    const pageParam = searchParams.get('page');
+    const limitParam = searchParams.get('limit');
+    const page = Math.max(1, parseInt(pageParam || '1', 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(limitParam || '50', 10) || 50));
 
     // Build where clause for completed WOs
     const where: Record<string, unknown> = {};
@@ -45,9 +57,20 @@ export async function GET(request: NextRequest) {
       where.createdAt = dateFilter;
     }
 
+    const filterWhere = Object.keys(where).length > 0 ? where : undefined;
+
+    // Count total matching WOs for pagination
+    const total = await db.workOrder.count({ where: filterWhere });
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    // For XLSX, fetch all (capped at 100 for memory safety); for JSON, paginate
+    const usePagination = format !== 'xlsx';
+    const skip = usePagination ? (page - 1) * limit : 0;
+    const take = usePagination ? limit : Math.min(100, total);
+
     // Fetch WOs with components, asset, completion, and material requests
     const workOrders = await db.workOrder.findMany({
-      where: Object.keys(where).length > 0 ? where : undefined,
+      where: filterWhere,
       include: {
         asset: { select: { id: true, name: true, assetTag: true, serialNumber: true } },
         assignee: { select: { id: true, fullName: true, username: true } },
@@ -90,7 +113,8 @@ export async function GET(request: NextRequest) {
         },
       },
       orderBy: { createdAt: 'desc' },
-      take: 500,
+      skip,
+      take,
     });
 
     // Transform into report rows (one row per WO-component pair)
@@ -175,7 +199,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // JSON response
+    // JSON response (paginated)
     if (format === 'json') {
       return NextResponse.json({
         success: true,
@@ -186,10 +210,11 @@ export async function GET(request: NextRequest) {
           workOrdersWithComponents: workOrders.filter((wo) => wo.workOrderComponents.length > 0).length,
           workOrdersWithoutComponents: workOrders.filter((wo) => wo.workOrderComponents.length === 0).length,
         },
+        pagination: { page, limit, total, totalPages },
       });
     }
 
-    // Excel response
+    // Excel response (full filtered set, no pagination)
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
 

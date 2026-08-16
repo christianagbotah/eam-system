@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,15 +10,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    // ── Phase 3G: Plant scope enforcement ──
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
     const shiftType = searchParams.get('shiftType');
     const status = searchParams.get('status');
     const workOrderId = searchParams.get('workOrderId');
     const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 100);
 
+    // Build where clause — plant scope applied via linked WO's plantId
     const where: Record<string, unknown> = {};
+
+    // Plant scope: filter handovers by linked work order's plant
+    if (plantScope.isScoped && plantScope.plantId) {
+      where.workOrder = { plantId: plantScope.plantId };
+    }
 
     if (workOrderId) where.workOrderId = workOrderId;
     if (shiftType) where.shiftType = shiftType;
@@ -37,6 +48,7 @@ export async function GET(request: NextRequest) {
         include: {
           handedOverBy: { select: { id: true, fullName: true, username: true } },
           receivedBy: { select: { id: true, fullName: true, username: true } },
+          workOrder: { select: { id: true, woNumber: true, title: true, plantId: true } },
         },
         orderBy: { shiftDate: 'desc' },
         skip: (page - 1) * limit,
@@ -47,17 +59,22 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
-    // KPI counts
+    // ── Phase 3G: KPI counts also plant-scoped ──
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    const kpiWhere: Record<string, unknown> = {};
+    if (plantScope.isScoped && plantScope.plantId) {
+      kpiWhere.workOrder = { plantId: plantScope.plantId };
+    }
+
     const [totalCount, todayCount, pendingCount, confirmedCount] = await Promise.all([
-      db.shiftHandover.count(),
-      db.shiftHandover.count({ where: { shiftDate: { gte: today, lt: tomorrow } } }),
-      db.shiftHandover.count({ where: { status: 'pending' } }),
-      db.shiftHandover.count({ where: { status: 'confirmed' } }),
+      db.shiftHandover.count({ where: Object.keys(kpiWhere).length > 0 ? kpiWhere : undefined }),
+      db.shiftHandover.count({ where: { ...kpiWhere, shiftDate: { gte: today, lt: tomorrow } } }),
+      db.shiftHandover.count({ where: { ...kpiWhere, status: 'pending' } }),
+      db.shiftHandover.count({ where: { ...kpiWhere, status: 'confirmed' } }),
     ]);
 
     return NextResponse.json({
@@ -87,17 +104,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    // ── Phase 3G: Plant scope check for create ──
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+
     const body = await request.json();
     const { shiftType, shiftDate, fromShift, toShift, departmentId, receivedById, tasksSummary, pendingIssues, safetyNotes, equipmentStatus, notes, workOrderId } = body;
 
-    // ── WO linkage validation (P2K) ──
+    // ── WO linkage validation (P2K + 3G plant scope) ──
     if (workOrderId) {
       const wo = await db.workOrder.findUnique({
         where: { id: workOrderId },
-        select: { id: true, status: true, assignedTo: true, teamMembers: { select: { userId: true } } },
+        select: { id: true, status: true, plantId: true, assignedTo: true, teamMembers: { select: { userId: true } } },
       });
       if (!wo) {
         return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+      }
+      // ── Phase 3G: Cross-plant WO handover access denied ──
+      if (plantScope.isScoped && plantScope.plantId && wo.plantId && wo.plantId !== plantScope.plantId) {
+        return NextResponse.json({ success: false, error: 'Cannot create handover for a work order in another plant' }, { status: 403 });
       }
       const nonTerminalStatuses = ['draft', 'assigned', 'in_progress', 'waiting_parts', 'waiting_tools', 'waiting_permit', 'pending_handover', 'completed', 'verified'];
       if (!nonTerminalStatuses.includes(wo.status)) {
@@ -121,33 +146,19 @@ export async function POST(request: NextRequest) {
     let parsedEquipment: string | null = null;
 
     if (tasksSummary) {
-      if (typeof tasksSummary === 'string') {
-        parsedTasks = JSON.stringify([{ task: tasksSummary }]);
-      } else if (Array.isArray(tasksSummary)) {
-        parsedTasks = JSON.stringify(tasksSummary);
-      } else {
-        parsedTasks = JSON.stringify(tasksSummary);
-      }
+      parsedTasks = typeof tasksSummary === 'string'
+        ? JSON.stringify([{ task: tasksSummary }])
+        : JSON.stringify(tasksSummary);
     }
-
     if (pendingIssues) {
-      if (typeof pendingIssues === 'string') {
-        parsedIssues = JSON.stringify([{ issue: pendingIssues }]);
-      } else if (Array.isArray(pendingIssues)) {
-        parsedIssues = JSON.stringify(pendingIssues);
-      } else {
-        parsedIssues = JSON.stringify(pendingIssues);
-      }
+      parsedIssues = typeof pendingIssues === 'string'
+        ? JSON.stringify([{ issue: pendingIssues }])
+        : JSON.stringify(pendingIssues);
     }
-
     if (equipmentStatus) {
-      if (typeof equipmentStatus === 'string') {
-        parsedEquipment = JSON.stringify([{ status: equipmentStatus }]);
-      } else if (Array.isArray(equipmentStatus)) {
-        parsedEquipment = JSON.stringify(equipmentStatus);
-      } else {
-        parsedEquipment = JSON.stringify(equipmentStatus);
-      }
+      parsedEquipment = typeof equipmentStatus === 'string'
+        ? JSON.stringify([{ status: equipmentStatus }])
+        : JSON.stringify(equipmentStatus);
     }
 
     const handover = await db.shiftHandover.create({
@@ -167,7 +178,7 @@ export async function POST(request: NextRequest) {
         workOrderId: workOrderId || null,
       },
       include: {
-        workOrder: { select: { id: true, woNumber: true, title: true } },
+        workOrder: { select: { id: true, woNumber: true, title: true, plantId: true } },
         handedOverBy: { select: { id: true, fullName: true, username: true } },
         receivedBy: { select: { id: true, fullName: true, username: true } },
       },

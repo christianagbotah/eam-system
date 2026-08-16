@@ -27,6 +27,9 @@ export async function GET(request: NextRequest) {
     const moduleFilter = searchParams.get('moduleFilter') || 'all';
 
     const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
     const plantFilter = getPlantFilterWhere(plantScope);
 
     // Date filter

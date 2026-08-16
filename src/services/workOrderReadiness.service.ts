@@ -57,7 +57,12 @@ type WoReadinessData = {
   }[]
   repairCompletion: {
     id: string
+    reworkCount: number
   } | null
+  shiftHandovers: {
+    id: string
+    status: string
+  }[]
   assignee?: {
     id: string
     plantAccess: {
@@ -108,7 +113,8 @@ export async function checkReadiness(
           wastedQty: true,
         },
       },
-      repairCompletion: { select: { id: true } },
+      repairCompletion: { select: { id: true, reworkCount: true } },
+      shiftHandovers: { select: { id: true, status: true } },
       assignee: {
         select: {
           id: true,
@@ -167,6 +173,19 @@ function checkStartBlockers(wo: WoReadinessData, out: ReadinessItem[]): void {
       message: 'Work order has no assigned technician or team members',
       severity: 'blocker',
     })
+  }
+
+  // MANDATORY_HANDOVER_PENDING: WO is in pending_handover but no confirmed handover exists
+  if (wo.status === 'pending_handover') {
+    const confirmedHandover = wo.shiftHandovers.some((sh) => sh.status === 'confirmed')
+    if (!confirmedHandover) {
+      out.push({
+        code: 'MANDATORY_HANDOVER_PENDING',
+        category: 'safety',
+        message: 'Work order is in pending_handover status — shift handover must be confirmed before resuming',
+        severity: 'blocker',
+      })
+    }
   }
 
   // NO_PLANT_ACCESS: assignedTo user has no plant access for WO's plant
@@ -270,8 +289,10 @@ function checkVerificationBlockers(wo: WoReadinessData, out: ReadinessItem[]): v
     })
   }
 
-  // UNRESOLVED_CUSTODY: same as completion tool/material blockers
+  // TOOLS_OUTSTANDING: same as completion tool custody check (already exists via checkToolCustody)
   checkToolCustody(wo, out)
+
+  // UNRESOLVED_MATERIALS: same as completion material check
   checkMaterialReconciliation(wo, out)
 }
 
@@ -300,6 +321,16 @@ function checkClosureBlockers(wo: WoReadinessData, out: ReadinessItem[]): void {
       code: 'INCOMPLETE_COST',
       category: 'evidence',
       message: 'No cost data has been recorded for this work order',
+      severity: 'blocker',
+    })
+  }
+
+  // OPEN_REWORK: WO has reworkCount > 0 and status is not 'verified' (safety check)
+  if (wo.repairCompletion && wo.repairCompletion.reworkCount > 0 && wo.status !== 'verified') {
+    out.push({
+      code: 'OPEN_REWORK',
+      category: 'quality',
+      message: `Repair completion has ${wo.repairCompletion.reworkCount} rework(s) — work order must be re-verified before closure`,
       severity: 'blocker',
     })
   }

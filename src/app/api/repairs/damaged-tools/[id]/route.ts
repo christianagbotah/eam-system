@@ -397,8 +397,8 @@ export async function POST(
             where: { id: replacedWithToolId },
             data: { status: 'available' },
           });
-        } catch {
-          // Replacement tool may not exist, ignore
+        } catch (err) {
+          console.error('[damaged-tools] Failed to update replacement tool status:', err);
         }
       }
 

@@ -14,6 +14,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
     const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
     const plantWhere = plantScope?.isScoped && plantScope.plantId ? { plantId: plantScope.plantId } : {};
 
     const [

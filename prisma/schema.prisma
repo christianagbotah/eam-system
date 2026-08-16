@@ -131,6 +131,8 @@ model User {
   toolTransactions ToolTransaction[] @relation("ToolTxnPerformedBy")
   toolTxnsFrom     ToolTransaction[] @relation("ToolTxnFromUser")
   toolTxnsTo       ToolTransaction[] @relation("ToolTxnToUser")
+  toolCalibrationsPerformed  ToolCalibrationRequirement[] @relation("ToolCalBy")
+  toolCalibrationOverrides    ToolCalibrationRequirement[] @relation("ToolCalOverride")
 
   // IoT Management relations
   iotDevicesCreated IotDevice[]    @relation("IotDeviceCreatedBy")
@@ -1366,6 +1368,7 @@ model Tool {
   repairToolRequestItems RepairToolRequestItem[] @relation("ToolReqItemTool")
   damagedToolReports      DamagedToolReport[]
   componentRequirements   ComponentToolRequirement[] @relation("ToolComponentReq")
+  calibrationRequirement  ToolCalibrationRequirement?
 
   @@map("tools")
 }
@@ -2072,6 +2075,8 @@ model CalibrationRecord {
   notes             String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+
+  toolCalibrationRequirements ToolCalibrationRequirement[]
 
   @@map("calibration_records")
 }
@@ -4977,4 +4982,29 @@ model WorkOrderComponent {
   @@index([workOrderId])
   @@index([componentRegistryId])
   @@map("work_order_components")
+}
+
+model ToolCalibrationRequirement {
+  id                  String   @id @default(cuid())
+  toolId              String   @unique
+  calibrationRequired Boolean  @default(false)
+  lastCalibrationDate DateTime?
+  nextCalibrationDue  DateTime?
+  calibrationStatus   String   @default("not_required") // not_required, calibrated, due_soon, overdue, failed, expired
+  calibrationCertId    String?
+  calibratedById       String?
+  calibrationIntervalDays Int?
+  emergencyOverride    Boolean  @default(false)
+  emergencyOverrideReason String?
+  emergencyOverrideById String?
+  emergencyOverrideAt   DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tool           Tool             @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  calibrationRecord CalibrationRecord? @relation(fields: [calibrationCertId], references: [id])
+  calibratedBy    User?            @relation("ToolCalBy", fields: [calibratedById], references: [id])
+  emergencyOverrideBy User? @relation("ToolCalOverride", fields: [emergencyOverrideById], references: [id])
+
+  @@map("tool_calibration_requirements")
 }

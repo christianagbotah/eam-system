@@ -16,6 +16,9 @@ export async function GET(request: NextRequest) {
 
     // Resolve plant scope
     const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
     const where: Record<string, unknown> = {};
     if (plantScope) {
       applyPlantScope(where, plantScope);

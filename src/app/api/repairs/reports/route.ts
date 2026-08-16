@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
+import { getPlantScope, applyPlantScope } from '@/lib/plant-scope';
 import { generateReportPDF, type ReportPDFParams } from '@/lib/generate-report-pdf';
 
 type ReportType = 'lifecycle' | 'execution' | 'materials' | 'tools' | 'downtime' | 'technician_performance';
@@ -16,6 +17,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions to view reports' }, { status: 403 });
     }
 
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') as ReportType | null;
 
@@ -26,7 +32,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const plantId = searchParams.get('plantId') || undefined;
+    const plantId = plantScope.isScoped && plantScope.plantId ? plantScope.plantId : (searchParams.get('plantId') || undefined);
     const from = searchParams.get('from') ? new Date(searchParams.get('from')!) : undefined;
     const to = searchParams.get('to') ? new Date(searchParams.get('to')!) : undefined;
     const priority = searchParams.get('priority') || undefined;
@@ -365,7 +371,9 @@ async function handleTechnicianPerformanceReport(
       timeLogs: true,
     },
     orderBy: { createdAt: 'desc' },
-    take: 500,
+    // Capped at 100 for aggregate report — date/plant/department filters
+    // should narrow the result set sufficiently for accurate aggregations.
+    take: 100,
   });
 
   // Group by technician
@@ -528,7 +536,9 @@ async function handleDowntimeReport(
       createdBy: { select: { id: true, fullName: true } },
     },
     orderBy: { createdAt: 'desc' },
-    take: 500,
+    // Capped at 100 for aggregate report — date/plant filters should
+    // narrow the result set sufficiently for accurate aggregations.
+    take: 100,
   });
 
   const total = downtimes.length;

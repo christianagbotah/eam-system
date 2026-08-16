@@ -35,8 +35,8 @@ export async function GET(
       if (Array.isArray(parsed)) {
         tools = parsed;
       }
-    } catch {
-      // If parsing fails, return empty array
+    } catch (err) {
+      console.warn('[personal-tools] Failed to parse personalTools JSON:', err);
     }
 
     return NextResponse.json({ success: true, data: tools });
@@ -108,7 +108,9 @@ export async function POST(
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) existingTools = parsed;
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[personal-tools] Failed to parse existing personalTools JSON:', err);
+    }
 
     // Add the new tool
     const newTool = {
@@ -236,8 +238,8 @@ export async function PUT(
       if (Array.isArray(parsed)) {
         parsedTools = parsed;
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn('[personal-tools] Failed to parse personalTools after update:', err);
     }
 
     return NextResponse.json({
