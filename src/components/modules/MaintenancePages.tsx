@@ -7378,19 +7378,12 @@ export function MaintenanceDashboardPage() {
   const recentWOs = stats?.recentWorkOrders || [];
 
   // ===== Status chart config =====
-  // eslint-disable-next-line react-compiler/react-compiler
-  const woStatusChartConfig = useMemo(() => {
-    const config: Record<string, { label: string; color: string }> = {};
-    statusChartData.forEach((d, i) => { config[d.status] = { label: d.status, color: CHART_COLORS[i % CHART_COLORS.length] }; });
-    return config;
-  }, [statusChartData]);
+  const woStatusChartConfig: Record<string, { label: string; color: string }> = {};
+  statusChartData.forEach((d, i) => { woStatusChartConfig[d.status] = { label: d.status, color: CHART_COLORS[i % CHART_COLORS.length] }; });
 
-  const priorityChartConfig = useMemo(() => {
-    const config: Record<string, { label: string; color: string }> = {};
-    const pColors: Record<string, string> = { Low: '#10b981', Medium: '#f59e0b', High: '#ef4444', Urgent: '#dc2626' };
-    priorityChartData.forEach(d => { config[d.priority] = { label: d.priority, color: pColors[d.priority] || '#94a3b8' }; });
-    return config;
-  }, [priorityChartData]);
+  const priorityChartConfig: Record<string, { label: string; color: string }> = {};
+  const pColors: Record<string, string> = { Low: '#10b981', Medium: '#f59e0b', High: '#ef4444', Urgent: '#dc2626' };
+  priorityChartData.forEach(d => { priorityChartConfig[d.priority] = { label: d.priority, color: pColors[d.priority] || '#94a3b8' }; });
 
   // ===== Loading / Error states =====
   if (loading) return <LoadingSkeleton />;
