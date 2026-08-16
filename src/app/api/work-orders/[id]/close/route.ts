@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
 import { getSession, hasAnyPermission } from '@/lib/auth';
-import { notifyUser } from '@/lib/notifications';
-import { executeTransition } from '@/lib/state-machine';
-import { checkReadiness } from '@/services/workOrderReadiness.service';
-import { emitReliabilityEvent } from '@/lib/reliability-events';
+import { plannerClose, type SessionContext, type AuditContext } from '@/services/workExecution.service';
+import { extractAuditContext } from '@/lib/audit-helpers';
 
 export async function POST(
   request: NextRequest,
@@ -25,137 +22,29 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { notes, failureMode, failureCause, correctiveAction } = body;
+    const auditCtx = extractAuditContext(request);
 
-    const wo = await db.workOrder.findUnique({ where: { id } });
-    if (!wo) {
-      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
-    }
-
-    // ── P2O: Readiness check before closure ──
-    const readiness = await checkReadiness(id, 'close');
-    if (!readiness.ready) {
-      return NextResponse.json({
-        success: false,
-        error: 'Work order is not ready for closure',
-        blockers: readiness.blockers,
-      }, { status: 422 });
-    }
-
-    const now = new Date();
-
-    // Execute status transition via state machine (validates + updates status + creates history)
-    const result = await executeTransition(
-      'work_order',
-      id,
-      'closed',
-      session,
-      {
-        extraData: {
-          isLocked: true,
-          lockedBy: session.userId,
-          lockedAt: now,
-          lockReason: 'Work order closed',
-        },
-      },
-    );
+    const result = await plannerClose(id, session as SessionContext, {
+      notes: body.notes,
+      failureMode: body.failureMode,
+      failureCause: body.failureCause,
+      correctiveAction: body.correctiveAction,
+      pmRecommendation: body.pmRecommendation,
+      followUpRequired: body.followUpRequired,
+      followUpNotes: body.followUpNotes,
+      auditCtx: auditCtx as AuditContext,
+    });
 
     if (!result.success) {
-      return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+      const status = result.readiness ? 422 : 400;
+      return NextResponse.json({
+        success: false,
+        error: result.error,
+        ...(result.readiness ? { blockers: result.readiness.blockers, warnings: result.readiness.warnings } : {}),
+      }, { status });
     }
 
-    // ── P2O: Immutability on close — lock the WO ──
-    await db.workOrder.update({
-      where: { id },
-      data: { isLocked: true, lockedBy: session.userId, lockedAt: now, lockReason: 'Planner closeout' },
-    });
-
-    // Add closing comment if notes provided
-    if (notes) {
-      await db.workOrderComment.create({
-        data: {
-          workOrderId: id,
-          userId: session.userId,
-          content: `[Closed] ${notes}`,
-        },
-      });
-    }
-
-    // Domain-specific audit log (status change handled by state machine via WorkOrderStatusHistory)
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'update',
-        entityType: 'work_order',
-        entityId: id,
-        oldValues: JSON.stringify({ isLocked: wo.isLocked }),
-        newValues: JSON.stringify({ isLocked: true }),
-      },
-    });
-
-    // Notify assigned user, requester (from linked MR), and all team members
-    const notifyTargets: string[] = [];
-    if (wo.assignedTo && wo.assignedTo !== session.userId) {
-      notifyTargets.push(wo.assignedTo);
-    }
-    // Look up the linked MR's requester
-    if (wo.maintenanceRequestId) {
-      const linkedMR = await db.maintenanceRequest.findUnique({
-        where: { id: wo.maintenanceRequestId },
-        select: { requestedBy: true },
-      });
-      if (linkedMR?.requestedBy && linkedMR.requestedBy !== session.userId && !notifyTargets.includes(linkedMR.requestedBy)) {
-        notifyTargets.push(linkedMR.requestedBy);
-      }
-    }
-    // Add all team members
-    const teamMembers = await db.workOrderTeamMember.findMany({
-      where: { workOrderId: id },
-      select: { userId: true },
-    });
-    for (const member of teamMembers) {
-      if (member.userId !== session.userId && !notifyTargets.includes(member.userId)) {
-        notifyTargets.push(member.userId);
-      }
-    }
-    for (const targetId of notifyTargets) {
-      await notifyUser(
-        targetId,
-        'wo_closed',
-        'Work Order Closed',
-        `${session.fullName} closed ${wo.woNumber}: "${wo.title}"`,
-        'work_order',
-        id,
-        `wo-detail?id=${id}`,
-        { forceSms: true },
-      );
-    }
-
-    // ── P2P: Fire reliability event after planner closeout ──
-    emitReliabilityEvent({
-      workOrderId: id,
-      assetId: wo.assetId || undefined,
-      failureMode,
-      failureCause,
-      correctiveAction,
-      downtimeMinutes: wo.downtimeMinutes ?? undefined,
-      repairCost: wo.totalCost ?? undefined,
-      performedById: session.userId,
-    }).catch(() => {}); // Fire-and-forget
-
-    // Re-fetch with includes to return full object (state machine returns plain record)
-    const updated = await db.workOrder.findUnique({
-      where: { id },
-      include: {
-        assignee: { select: { id: true, fullName: true, username: true } },
-        teamLeader: { select: { id: true, fullName: true, username: true } },
-        assignedSupervisor: { select: { id: true, fullName: true, username: true } },
-        locker: { select: { id: true, fullName: true, username: true } },
-        maintenanceRequest: { select: { id: true, requestNumber: true, title: true } },
-      },
-    });
-
-    return NextResponse.json({ success: true, data: updated });
+    return NextResponse.json({ success: true, data: result.data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to close work order';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

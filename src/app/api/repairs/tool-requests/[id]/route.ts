@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, isAdmin, hasRole } from '@/lib/auth';
 import { notifyUser } from '@/lib/notifications';
 import { getPlantScope } from '@/lib/plant-scope';
+import { atomicIssueTools, atomicConfirmToolReturn } from '@/services/toolOperations.service';
 
 const VALID_CONDITIONS = ['new', 'good', 'fair', 'poor', 'damaged'];
 
@@ -252,129 +253,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
 
       case 'issue': {
-        if (toolReq.status !== 'storekeeper_approved') return NextResponse.json({ success: false, error: `Cannot issue: status is ${toolReq.status}` }, { status: 400 });
-
-        // Multi-item issue: requires issuedItems array
-        if (toolReq.items.length > 0) {
-          if (!Array.isArray(issuedItems) || issuedItems.length === 0) {
-            return NextResponse.json({ success: false, error: 'issuedItems array is required for multi-tool requests' }, { status: 400 });
-          }
-
-          for (const issuedItem of issuedItems) {
-            const lineItem = toolReq.items.find((i: any) => i.id === issuedItem.itemId);
-            if (!lineItem) {
-              warnings.push(`Item ${issuedItem.itemId} not found in this request, skipping`);
-              continue;
-            }
-
-            const qtyToIssue = Math.max(0, Math.min(
-              parseInt(issuedItem.quantityIssued, 10) || 0,
-              lineItem.quantityApproved ?? lineItem.quantityRequested,
-            ));
-
-            if (qtyToIssue === 0) {
-              await db.repairToolRequestItem.update({
-                where: { id: lineItem.id },
-                data: { availabilityStatus: 'unavailable', issueNotes: issuedItem.issueNotes || 'No quantity issued' },
-              });
-              continue;
-            }
-
-            // Determine availability status
-            const availStatus = qtyToIssue >= lineItem.quantityRequested ? 'available' : 'limited';
-
-            // Deduct from tool quantity
-            if (lineItem.toolId) {
-              const refreshTool = await db.tool.findUnique({ where: { id: lineItem.toolId } });
-              if (!refreshTool) {
-                warnings.push(`Tool "${lineItem.toolName}" not found`);
-                continue;
-              }
-
-              if (refreshTool.quantity < qtyToIssue) {
-                warnings.push(`"${lineItem.toolName}": only ${refreshTool.quantity} available, issuing all available`);
-              }
-
-              const actualIssued = Math.min(qtyToIssue, refreshTool.quantity);
-              const conditionAtIssue = refreshTool.condition;
-
-              await db.tool.update({
-                where: { id: lineItem.toolId },
-                data: {
-                  quantity: { decrement: actualIssued },
-                  status: refreshTool.quantity - actualIssued <= 0 ? 'checked_out' : refreshTool.status,
-                  ...(refreshTool.quantity - actualIssued <= 0 && !refreshTool.assignedToId ? { assignedToId: toolReq.requestedById, checkedOutAt: now } : {}),
-                },
-              });
-
-              await db.toolTransaction.create({
-                data: {
-                  toolId: lineItem.toolId,
-                  type: 'checkout',
-                  toUserId: toolReq.requestedById,
-                  notes: `Issued ${actualIssued}x for WO ${toolReq.workOrder.woNumber} (condition: ${conditionAtIssue})${qtyToIssue < lineItem.quantityRequested ? ' [PARTIAL]' : ''}`,
-                  performedById: session.userId,
-                },
-              });
-
-              await db.repairToolRequestItem.update({
-                where: { id: lineItem.id },
-                data: {
-                  quantityIssued: actualIssued,
-                  conditionAtIssue,
-                  availabilityStatus: actualIssued >= lineItem.quantityRequested ? 'available' : 'limited',
-                  issueNotes: issuedItem.issueNotes || (actualIssued < qtyToIssue ? `Only ${actualIssued} available in stock` : null),
-                },
-              });
-            } else {
-              // No toolId — just update the line item
-              await db.repairToolRequestItem.update({
-                where: { id: lineItem.id },
-                data: {
-                  quantityIssued: qtyToIssue,
-                  availabilityStatus: availStatus,
-                  issueNotes: issuedItem.issueNotes || null,
-                },
-              });
-            }
-          }
-        } else if (toolReq.toolId) {
-          // Legacy single-tool request
-          const tool = toolReq.tool;
-          if (!tool || (tool.status !== 'in_repair' && tool.status !== 'available')) {
-            return NextResponse.json({ success: false, error: `Tool is not available for issue (current status: ${tool?.status})` }, { status: 400 });
-          }
-
-          const conditionAtIssue = toolReq.toolConditionAtIssue || tool.condition;
-
-          await db.tool.update({
-            where: { id: toolReq.toolId },
-            data: {
-              status: 'checked_out',
-              assignedToId: toolReq.requestedById,
-              checkedOutAt: now,
-            },
-          });
-          await db.toolTransaction.create({
-            data: {
-              toolId: toolReq.toolId,
-              type: 'checkout',
-              toUserId: toolReq.requestedById,
-              notes: `Issued for WO ${toolReq.workOrder.woNumber} (condition: ${conditionAtIssue})`,
-              performedById: session.userId,
-            },
-          });
-
-          await db.repairToolRequest.update({
-            where: { id },
-            data: { toolConditionAtIssue: conditionAtIssue },
-          });
+        // Delegated to atomic tool issue service (Phase 3D)
+        const issueResult = await atomicIssueTools(id, session, issuedItems || []);
+        if (!issueResult.success) {
+          return NextResponse.json({ success: false, error: issueResult.error }, { status: 400 });
         }
-
-        updated = await db.repairToolRequest.update({
-          where: { id },
-          data: { status: 'issued', issuedById: session.userId, issuedAt: now },
-        });
+        updated = issueResult.updatedRequest;
+        if (issueResult.warnings) warnings.push(...issueResult.warnings);
 
         // Notify requester
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Issued',
@@ -480,113 +365,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
 
       case 'storekeeper_confirm_return': {
-        // Store keeper confirms return — process inventory updates
-        if (toolReq.status !== 'pending_return') {
-          return NextResponse.json({ success: false, error: `Cannot confirm return: status is ${toolReq.status}` }, { status: 400 });
-        }
+        // Store keeper confirms return — delegated to atomic service (Phase 3D)
         if (!isAdmin(session) && !hasRole(session, 'store_keeper') && !hasRole(session, 'inventory_manager') && !hasRole(session, 'tools_shop_attendant')) {
           return NextResponse.json({ success: false, error: 'Only store keeper or admin can confirm returns' }, { status: 403 });
         }
 
-        // Multi-item: process pending returns
-        if (toolReq.items.length > 0) {
-          for (const item of toolReq.items) {
-            if (!item.pendingReturnQty || item.pendingReturnQty <= 0) continue;
-
-            const condition = VALID_CONDITIONS.includes(item.pendingReturnCondition || '')
-              ? item.pendingReturnCondition!
-              : 'good';
-
-            // Update tool inventory
-            if (item.toolId) {
-              const refreshTool = await db.tool.findUnique({ where: { id: item.toolId } });
-              if (refreshTool) {
-                const toolStatus = (condition === 'poor' || condition === 'damaged') ? 'in_repair' :
-                  (refreshTool.quantity + item.pendingReturnQty > 0 ? 'available' : refreshTool.status);
-
-                await db.tool.update({
-                  where: { id: item.toolId },
-                  data: {
-                    quantity: { increment: item.pendingReturnQty },
-                    status: toolStatus,
-                    condition: condition,
-                    ...(toolStatus === 'available' ? { assignedToId: null, checkedOutAt: null } : {}),
-                  },
-                });
-
-                await db.toolTransaction.create({
-                  data: {
-                    toolId: item.toolId,
-                    type: 'return',
-                    fromUserId: toolReq.requestedById,
-                    notes: `Returned ${item.pendingReturnQty}x from WO ${toolReq.workOrder.woNumber} (condition: ${condition})${item.pendingReturnNotes ? ` — ${item.pendingReturnNotes}` : ''}`,
-                    performedById: session.userId,
-                  },
-                });
-              }
-            }
-
-            // Move pending → confirmed
-            await db.repairToolRequestItem.update({
-              where: { id: item.id },
-              data: {
-                quantityReturned: { increment: item.pendingReturnQty },
-                conditionAtReturn: condition,
-                pendingReturnQty: 0,
-                pendingReturnCondition: null,
-                pendingReturnNotes: null,
-              },
-            });
-
-            if (condition === 'poor' || condition === 'damaged') {
-              warnings.push(`"${item.toolName}" confirmed in "${condition}" condition — flagged for repair`);
-            }
-          }
-        } else if (toolReq.toolId) {
-          // Legacy single-tool
-          const resolvedCondition = VALID_CONDITIONS.includes(toolReq.toolConditionAtReturn || '')
-            ? toolReq.toolConditionAtReturn!
-            : 'good';
-
-          const toolStatus = (resolvedCondition === 'poor' || resolvedCondition === 'damaged') ? 'in_repair' : 'available';
-          await db.tool.update({
-            where: { id: toolReq.toolId },
-            data: { status: toolStatus, assignedToId: null, checkedOutAt: null, condition: resolvedCondition },
-          });
-          await db.toolTransaction.create({
-            data: {
-              toolId: toolReq.toolId,
-              type: 'return',
-              fromUserId: toolReq.requestedById,
-              notes: `Returned from WO ${toolReq.workOrder.woNumber} (condition: ${resolvedCondition})`,
-              performedById: session.userId,
-            },
-          });
+        const returnResult = await atomicConfirmToolReturn(id, session);
+        if (!returnResult.success) {
+          return NextResponse.json({ success: false, error: returnResult.error }, { status: 400 });
         }
-
-        // Check if ALL items are now fully returned/transferred
-        let allDone = true;
-        if (toolReq.items.length > 0) {
-          const refreshedItems = await db.repairToolRequestItem.findMany({ where: { repairToolRequestId: id } });
-          for (const item of refreshedItems) {
-            const issued = item.quantityIssued || 0;
-            const ret = item.quantityReturned || 0;
-            const xfer = item.quantityTransferred || 0;
-            if ((ret + xfer) < issued) { allDone = false; break; }
-          }
-        } else {
-          allDone = true;
-        }
-
-        updated = await db.repairToolRequest.update({
-          where: { id },
-          data: {
-            status: allDone ? 'returned' : 'issued',
-            ...(allDone ? { returnedAt: now } : {}),
-            returnConfirmedById: session.userId,
-            returnConfirmedAt: now,
-          },
-        });
+        updated = returnResult.updatedRequest;
+        if (returnResult.warnings) warnings.push(...returnResult.warnings);
 
         // Notify technician
         await notifyUser(toolReq.requestedById, 'repair_tool_request', 'Tool Return Confirmed',
@@ -594,7 +383,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             'repair_tool_request', id, `tool-requests?id=${id}`);
 
         // Notify WO planner on full return
-        if (allDone && toolReq.workOrder.plannerId && toolReq.workOrder.plannerId !== toolReq.requestedById) {
+        if (returnResult.allReturned && toolReq.workOrder.plannerId && toolReq.workOrder.plannerId !== toolReq.requestedById) {
           await notifyUser(toolReq.workOrder.plannerId, 'repair_tool_request', 'Tool Returned from WO',
               `${toolReq.items.length > 0 ? 'Tools' : `"${toolReq.toolName}"`} returned by ${toolReq.requestedBy.fullName} from WO ${toolReq.workOrder.woNumber}`,
               'repair_tool_request', id, 'maintenance-work-orders');

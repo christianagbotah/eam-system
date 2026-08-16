@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { executeTransition } from '@/lib/state-machine';
+import { resumeWork, type SessionContext, type AuditContext } from '@/services/workExecution.service';
+import { extractAuditContext } from '@/lib/audit-helpers';
 
-/**
- * POST /api/work-orders/[id]/resume
- *
- * Resumes a work order that was on hold (on_hold → in_progress).
- */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -24,47 +19,18 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { notes } = body;
+    const auditCtx = extractAuditContext(request);
 
-    const wo = await db.workOrder.findUnique({ where: { id } });
-    if (!wo) {
-      return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
-    }
-
-    const result = await executeTransition(
-      'work_order',
-      id,
-      'in_progress',
-      session,
-      { reason: notes },
-    );
+    const result = await resumeWork(id, session as SessionContext, {
+      reason: body.notes,
+      auditCtx: auditCtx as AuditContext,
+    });
 
     if (!result.success) {
       return NextResponse.json({ success: false, error: result.error }, { status: 400 });
     }
 
-    // Create time log entry
-    await db.workOrderTimeLog.create({
-      data: {
-        workOrderId: id,
-        userId: session.userId,
-        action: 'resume',
-        notes: notes || 'Work resumed',
-        timestamp: new Date(),
-      },
-    });
-
-    // Re-fetch with includes
-    const updated = await db.workOrder.findUnique({
-      where: { id },
-      include: {
-        assignee: { select: { id: true, fullName: true, username: true } },
-        teamLeader: { select: { id: true, fullName: true, username: true } },
-        assignedSupervisor: { select: { id: true, fullName: true, username: true } },
-      },
-    });
-
-    return NextResponse.json({ success: true, data: updated });
+    return NextResponse.json({ success: true, data: result.data });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to resume work order';
     return NextResponse.json({ success: false, error: message }, { status: 500 });

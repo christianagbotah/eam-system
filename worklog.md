@@ -2217,3 +2217,175 @@ Work Log:
 
 Stage Summary:
 - See Phase 2Y Evidence Report below
+
+---
+Task ID: 3P
+Agent: full-stack-developer
+Task: XLSX enterprise report export infrastructure
+
+Work Log:
+- Created src/services/reportExportXlsx.service.ts — reusable XLSX report builder with createStandardWorkbook, addDataSheet, addAnalyticsSheet, format helpers, generateXlsxBuffer
+- Created src/services/repairsReportXlsx.service.ts — 10 report-specific exports: work-order, maintenance-request, labor, downtime, material, tool, failure-analysis, cost, backlog-aging, sla
+- Created src/app/api/repairs/reports/xlsx/route.ts — POST endpoint with auth + RBAC (reports.view permission) + plant scope enforcement via getPlantScope
+- Verified new files pass ESLint with zero errors
+- Verified vitest: 452 passed, 2 failed (pre-existing in observability-persistence.test.ts, unrelated)
+
+Stage Summary:
+- Reusable XLSX report builder with Summary/Data/Analytics sheet types
+- 10 report-specific exports (WO, MR, Labor, Downtime, Materials, Tools, Failure, Cost, Backlog, SLA)
+- API route with auth + RBAC + plant scope enforcement
+- All column definitions use typed ReportColumn interface with format hints
+- Analytics sheets auto-generated for status breakdowns, failure mode Pareto, cost by type, aging buckets, SLA compliance
+---
+Task ID: 3Q
+Agent: full-stack-developer
+Task: Build Closed Work Order PDF Pack Generator + API route + fix notification queue processor
+
+Work Log:
+- Read worklog (2238 lines) for project context
+- Read both existing PDF generators (generate-report-pdf.ts: 628 lines, generate-wo-detail-pdf.ts: 1002 lines) to understand patterns
+- Read Prisma schema for WorkOrder, RepairCompletion, RepairMaterialRequest, RepairToolRequest, ShiftHandover, FailureRecord, WorkOrderTimeLog, WorkOrderDowntime, Attachment, WorkInstructionExecution, ToolTransaction, WorkOrderComponent, WoTeamMemberRequest, MaintenanceRequest, Asset, Plant models
+- Read queue.ts to find notification processor stub (lines 607-612)
+- Read notifications.ts for notifyUser() function signature
+- Read auth.ts/plant-scope.ts for getSession/getPlantScope/hasAnyPermission patterns
+- Read existing print route (work-orders/[id]/print/route.ts) for data-fetching pattern
+
+- CREATED src/lib/generate-closed-wo-pack.ts (~820 lines)
+  - Comprehensive 30-section A4 portrait PDF generator
+  - Follows existing PDFKit patterns: createDoc(), ensureSpace(), drawTable(), drawKVRow(), drawSectionHeader()
+  - Uses same color/font constants style as generate-wo-detail-pdf.ts
+  - 30 sections: (1) Company/plant branded header, (2) WO identification, (3) Linked MR, (4) Asset/component info, (5) Location, (6) Priority, (7) Planner/supervisor, (8) Technician/team with all members and roles, (9) Work description, (10) Work instruction reference, (11) Failure mode/cause/remedy, (12) RCA, (13) Work performed summary with materials-used JSON parse, (14) Tasks/checklists with completion stats, (15) Labor/time summary with break totals and unique tech count, (16) Downtime summary with production loss, (17) Materials requested/issued/consumed/returned, (18) Tools issued/returned/condition + transactions, (19) Measurements/test results, (20) Attachments/evidence index, (21) Assistance requests, (22) Shift handovers, (23) Rework history, (24) Completion details, (25) Supervisor verification, (26) Planner closeout, (27) Cost summary (estimated vs actual with labor/parts/contractor breakdown), (28) Reliability/follow-up recommendation, (29) Signatures (technician/supervisor/planner), (30) Audit/reference timestamps
+  - Exported: ClosedWOPackData interface + generateClosedWOPackPDF() function
+
+- CREATED src/app/api/work-orders/[id]/closed-pack/route.ts (~140 lines)
+  - GET endpoint returning PDF as application/pdf with Content-Disposition: attachment
+  - Auth: getSession() for authentication
+  - RBAC: hasAnyPermission(session, ['work_orders.view', 'reports.view']) or isAdmin
+  - Plant scope: getPlantScope() with denyAccess check and scoped plantId filter
+  - Status gate: returns 400 if WO.status !== 'closed'
+  - Comprehensive Prisma include with all relations: teamMembers, timeLogs, materials, taskExecutions, statusHistory, downtimes, repairCompletion, failureRecords, shiftHandovers, teamMemberRequests, workOrderComponents, repairMaterialRequests, repairToolRequests, toolTransactions, plant
+  - Separate fetches for: Asset (with category), InventoryItems, Attachments, WorkInstructionExecutions, CompanyProfile
+  - Builds ClosedWOPackData object and passes to generateClosedWOPackPDF()
+
+- MODIFIED src/lib/queue.ts (lines 606-622)
+  - Replaced notification processor stub (was just logging) with actual notifyUser() call
+  - Now extracts full job.data fields: userId, title, message, type, entityType, entityId, actionUrl, forceSms
+  - Calls notifyUser(userId, type, title, message, entityType, entityId, actionUrl, { forceSms })
+  - Returns { delivered: true, timestamp: new Date().toISOString() }
+  - Uses require() for lazy import with eslint-disable comment (consistent with BullMQ adapter pattern)
+
+- ESLint: all 3 files pass with zero errors
+- Vitest: 452/454 tests pass (2 pre-existing failures in observability-persistence.test.ts, unrelated)
+
+Stage Summary:
+- Files created: src/lib/generate-closed-wo-pack.ts, src/app/api/work-orders/[id]/closed-pack/route.ts
+- Files modified: src/lib/queue.ts (notification processor only)
+- No other files modified
+- ESLint clean on all new/modified files
+- Pre-existing test failures (observability-persistence) are unrelated
+---
+Task ID: 3J/3K
+Agent: Main Agent
+Task: Build Technician Work Order Workspace
+
+Work Log:
+- Created 3 new files under src/components/repairs/execution/:
+  1. hooks/useElapsedTime.ts — Live-updating elapsed time hook (HH:MM:SS format, 1s interval, starts/stops based on WO status)
+  2. hooks/useWorkOrderExecution.ts — Comprehensive WO execution hook that fetches WO detail with all relations (team, tools, materials, time logs, tasks, downtime, comments), provides startWork/pauseWork/resumeWork/submitCompletion actions, plus addComment/logTime/createDowntime/toggleTask helpers. Uses existing api client with auth headers and AbortController cleanup.
+  3. TechnicianWorkspace.tsx — Full technician workspace component with:
+     - Compact sticky header: WO number, status/priority/SLA badges, plant/department/asset/component breadcrumb, team info (collapsible), planned dates, live elapsed timer
+     - 10 tabs (mobile-scrollable): Overview, Tasks (checkbox+progress), Time (controls+history+labor summary), Tools (request/approval/status/return tracking), Materials (request/reserved/picked/issued/consumed/returned), Assistance (request form + existing requests), Downtime (logging + history), Evidence (photo upload area, voice note placeholder, readings, comments thread), Handover (progress/pending work/resources/safety/acknowledgement), Completion (readiness blockers, submit form — team leader only)
+     - Sticky bottom action bar: role-aware Start/Pause/Resume/Complete buttons with 48px touch targets
+     - Pause dialog with mandatory reason
+     - Completion confirmation dialog with blocker check
+     - Mobile-first responsive design (375px phone, 768px tablet, desktop)
+     - All shadcn/ui components, lucide-react icons, Tailwind CSS responsive prefixes
+
+- API integration uses existing endpoints:
+  - GET /api/work-orders/:id (full WO detail with relations)
+  - GET /api/work-orders/:id/tasks (task checklist)
+  - GET /api/work-orders/:id/time-logs?includeTeamLogs=true (time entries + summary)
+  - GET /api/repairs/downtime?workOrderId=:id (downtime records)
+  - POST /api/work-orders/:id/start (start work)
+  - POST /api/work-orders/:id/hold (pause with reason)
+  - POST /api/work-orders/:id/resume (resume work)
+  - POST /api/repairs/completion/:id (submit completion with readiness checks)
+  - POST /api/work-orders/:id/time-logs (log time entries)
+  - POST /api/repairs/downtime (create downtime records)
+  - PATCH /api/work-orders/:id/tasks/:taskId (toggle task status)
+  - POST /api/work-orders/:id/comments (add comments)
+  - POST /api/work-orders/:id/team-member-requests (request assistance)
+
+- Zero new lint errors (verified)
+- No existing test regressions (2 pre-existing failures in observability-persistence.test.ts, unrelated)
+
+Stage Summary:
+- Files created: src/components/repairs/execution/hooks/useElapsedTime.ts, hooks/useWorkOrderExecution.ts, TechnicianWorkspace.tsx
+- All 3 files pass ESLint cleanly
+- Component is fully typed with exported interfaces
+- No existing files were modified
+
+---
+Task ID: 3L/3M
+Agent: UI Agent
+Task: Build Supervisor Verification UI and Planner Closeout UI components
+
+Work Log:
+- Read worklog.md, RepairsPages.tsx (patterns: api import, StatusBadge, PriorityBadge, ResponsiveDialog, table/list layouts), PlannerWorkbench.tsx (patterns: fetchData, SLAIndicator, PriorityBadge), page.tsx (routing), api.ts (api.get/post/patch, useAbortRef, getAuthHeaders)
+- Created 5 new component files, 0 existing files modified
+
+1. src/components/repairs/shared/ReadinessDisplay.tsx
+   - Reusable component for blockers (red AlertTriangle) and warnings (amber AlertCircle)
+   - Category icons: team→Users, tool→Wrench, material→Package, timer→Timer, safety→ShieldCheck, evidence→Camera
+   - Props: blockers[], warnings[], hideWarnings?
+   - Returns null when no items (and warnings hidden)
+
+2. src/components/repairs/verification/SupervisorInboxList.tsx
+   - Fetches GET /api/work-orders/supervisor-inbox
+   - Desktop: table with WO#, title, asset, priority, SLA risk, completion date
+   - Mobile: card layout
+   - Rework jobs highlighted with red bg + RotateCcw icon, sorted to top
+   - SLA indicator: breached (red pulse), at-risk (amber), ok (emerald)
+   - Search + priority filter
+   - Props: onSelectWO(workOrderId)
+
+3. src/components/repairs/closeout/PlannerCloseoutInboxList.tsx
+   - Fetches GET /api/work-orders/planner-inbox
+   - Desktop: table with WO#, title, asset, priority, cost summary, verification date
+   - Mobile: card layout
+   - Cost summary preview with variance (over/under estimate)
+   - Header badge shows total cost sum and overall variance
+   - Search + priority filter
+   - Props: onSelectWO(workOrderId)
+
+4. src/components/repairs/verification/SupervisorVerificationView.tsx
+   - Fetches GET /api/work-orders/{id}
+   - 12 display sections: WO header, problem description, work performed, failure/cause/remedy, team/labor, downtime, materials, tools, measurements, attachments, handover, safety restoration, outstanding custody
+   - ReadinessDisplay for blockers/warnings at top
+   - VERIFY button: quality rating 1-5 stars (required), comments textarea → POST /api/work-orders/{id}/verify {action:'verify', notes, qualityRating, checklistPassed:true}
+   - REQUEST REWORK button: opens ResponsiveDialog with reason (required), category dropdown (quality/incomplete/safety/incorrect/other), comments → POST /api/work-orders/{id}/verify {action:'rework', reason, category}
+   - Outstanding custody card with amber styling when items not returned
+   - Safety restoration as 4-card grid (LOTO, guards, area, hazards) with green/red status
+   - Quality rating interactive star component with hover state
+
+5. src/components/repairs/closeout/PlannerCloseoutView.tsx
+   - Fetches GET /api/work-orders/{id}
+   - Pre-fills form from existing WO data (failureMode, failureCause, remedy, pmRecommendation)
+   - 11 display sections: WO header, linked MR, problem, failure analysis, team/labor, downtime, materials, tools, cost breakdown, rework history, reliability impact, PM recommendation
+   - CostBreakdown sub-component: labor/parts/contractor/total cards + variance indicator
+   - Blockers/warnings at top via ReadinessDisplay
+   - CLOSE button DISABLED when blockers exist
+   - Close form: failure mode, failure cause, corrective action, PM recommendation, notes, follow-up checkbox + conditional notes → POST /api/work-orders/{id}/close
+   - Rework history displayed as orange-accented card list
+   - Repeat failure indicator with occurrence count badge
+
+- Vitest: 452 passed, 2 failed (pre-existing failures in observability-persistence.test.ts, unrelated to new code)
+- TypeScript: no errors in new files (verified via tsc --noEmit grep for src/components/repairs/)
+- All files use 'use client' directive
+- All files use project patterns: api from @/lib/api, helpers from @/components/shared/helpers, ResponsiveDialog, shadcn/ui components, Lucide icons
+
+Stage Summary:
+- Files created: 5 new components across 3 directories
+- No existing files modified
+- All components fully typed with TypeScript interfaces
+- Consistent with project codebase patterns (api client, helpers, ResponsiveDialog, shadcn/ui)

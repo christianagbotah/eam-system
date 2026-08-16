@@ -603,11 +603,21 @@ export async function closeQueueAdapter(): Promise<void> {
 // ============================================================================
 
 export function registerDefaultProcessors() {
-  // Notification queue processor
+  // Notification queue processor — dispatches via notifyUser (in-app, WebSocket, email, SMS)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { notifyUser } = require('@/lib/notifications');
   jobQueue.process(QUEUES.NOTIFICATION, async (job) => {
-    const { userId, title, message, type } = job.data as { userId: string; title: string; message: string; type: string };
-    // In production: push via WebSocket, email, SMS
-    logger.info('Processing notification', { userId, type, title });
+    const { userId, title, message, type, entityType, entityId, actionUrl, forceSms } = job.data as {
+      userId: string;
+      title: string;
+      message: string;
+      type: string;
+      entityType?: string;
+      entityId?: string;
+      actionUrl?: string;
+      forceSms?: boolean;
+    };
+    await notifyUser(userId, type, title, message, entityType, entityId, actionUrl, { forceSms });
     return { delivered: true, timestamp: new Date().toISOString() };
   });
 
